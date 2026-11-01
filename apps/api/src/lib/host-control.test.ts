@@ -34,7 +34,7 @@ vi.mock("@repo/db", () => ({
 // @repo/adapters is NOT mocked: the point is that syncHostControlOverride mutates
 // the REAL adapters override that hostControlDisabled reads.
 const { resolveHostControlEnabled, syncHostControlOverride, clearHostControlCache } = await import(
-  "./host-control"
+  "@repo/platform/engine/lib/host-control"
 );
 const { hostControlDisabled, setHostControlOverride } = await import("@repo/adapters");
 
@@ -125,3 +125,12 @@ describe("syncHostControlOverride — pushes the disabled-polarity override into
     getSpy.mockRestore();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  resolvePlatformConfig: () => ({ target: state.target }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  resolvePlatformConfig: () => ({ target: state.target }),
+}));

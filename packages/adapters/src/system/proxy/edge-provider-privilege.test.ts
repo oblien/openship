@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OS_RELEASE, probeOutput } from "../environment.fixtures";
@@ -94,14 +95,14 @@ describe("containerEdgeProvider privilege", () => {
   // can — but the reason has to be SAID. Failing silently is what shipped; failing the
   // deploy would be a different regression, because the app itself is fine.
   it("names the privilege problem instead of failing, when the login can't elevate", async () => {
-    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
     const { executor, commands } = probeHost(NON_ROOT_NO_SUDO);
     const edge = await providerExecutor(executor);
 
     await edge.exec("openresty -s reload");
     expect(commands.at(-1)).not.toContain("sudo");
 
-    const said = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    const said = warn.mock.calls.map((c) => c.slice(1).map(String).join(" ")).join("\n");
     expect(said).toMatch(/passwordless sudo/);
     expect(said).toMatch(/routing will be incomplete|deploy continues/i);
   });
@@ -111,7 +112,7 @@ describe("containerEdgeProvider privilege", () => {
   // is what turned a firewalled host channel into a failed deploy in #490; a probe that
   // cannot answer must degrade the same way.
   it("continues unelevated when the host cannot be measured", async () => {
-    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
     const executor = {
       exec: vi.fn(async () => {
         throw new Error("All configured authentication methods failed");
@@ -125,7 +126,7 @@ describe("containerEdgeProvider privilege", () => {
     } as unknown as CommandExecutor;
 
     await expect(providerExecutor(executor)).resolves.toBeDefined();
-    const said = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    const said = warn.mock.calls.map((c) => c.slice(1).map(String).join(" ")).join("\n");
     expect(said).toMatch(/could not check this host's privileges/);
     // The work, not just the cause: this is the one arm where nothing about the host was
     // measured, so the step being degraded is the only thing the operator can act on.

@@ -10,6 +10,7 @@
  * run-once key), and `catalogSerial` (anti-rollback high-water mark).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../../types";
 
 export interface OnBoxManifest {
@@ -63,7 +64,7 @@ export async function readManifest(
   executor: CommandExecutor,
   module: string,
 ): Promise<OnBoxManifest | null> {
-  const raw = await executor.readFile(manifestPath(module)).catch(() => "");
+  const raw = await executor.readFile(manifestPath(module)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/modules/on-box-manifest"); return ""; });
   if (!raw.trim()) return null;
   try {
     return normalize(module, JSON.parse(raw));
@@ -87,7 +88,7 @@ export async function readManifestOrSeed(
 ): Promise<OnBoxManifest> {
   const existing = await readManifest(executor, module);
   if (existing) return existing;
-  if (seed && (await executor.exists(seed.legacyMarkerPath).catch(() => false))) {
+  if (seed && (await executor.exists(seed.legacyMarkerPath).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/modules/on-box-manifest"); return false; }))) {
     return { module, migrationVersion: seed.baselineVersion, appliedSteps: [] };
   }
   return emptyManifest(module);

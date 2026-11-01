@@ -9,6 +9,7 @@
  * root (POSIX atomic on same filesystem).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import { dirname, join, normalize, posix, resolve } from "node:path";
@@ -32,6 +33,7 @@ const pipelineP = promisify(pipeline);
 const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>([
   "streamingPut",
   "streamingGet",
+  "rangedGet",
 ]);
 
 class LocalDestinationImpl implements BackupDestination {
@@ -94,12 +96,14 @@ class LocalDestinationImpl implements BackupDestination {
     try {
       await fs.access(current);
       return current;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/backup/destinations/local");
       const legacy = join(this.legacyRoot, normalize(key));
       try {
         await fs.access(legacy);
         return legacy;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/backup/destinations/local");
         return current; // neither exists; report against the current layout
       }
     }
@@ -115,6 +119,7 @@ class LocalDestinationImpl implements BackupDestination {
       await fs.unlink(probePath);
       return { ok: true };
     } catch (err) {
+      observeCaughtError(err, "adapters/backup/destinations/local");
       const message = safeErrorMessage(err);
       return { ok: false, reason: message };
     }
@@ -153,15 +158,17 @@ class LocalDestinationImpl implements BackupDestination {
       await fs.rename(tmpPath, targetPath);
     } catch (err) {
       // Clean up the partial file.
-      await fs.unlink(tmpPath).catch(() => {});
+      await fs.unlink(tmpPath).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/backup/destinations/local");
+      });
       throw err;
     }
 
     return { bytesWritten, etag: digest };
   }
 
-  async get(key: string): Promise<Readable> {
-    return createReadStream(await this.resolveKeyForRead(key));
+  async get(key: string, options?: { range?: { start: number; end: number } }): Promise<Readable> {
+    return createReadStream(await this.resolveKeyForRead(key), options?.range);
   }
 
   async head(key: string): Promise<HeadInfo | null> {
@@ -232,6 +239,7 @@ class LocalDestinationImpl implements BackupDestination {
         await this.delete(key);
         deleted.push(key);
       } catch (err) {
+        observeCaughtError(err, "adapters/backup/destinations/local");
         failed.push({
           key,
           error: safeErrorMessage(err),

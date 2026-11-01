@@ -11,6 +11,7 @@
  * transfer target from four independent directions.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { safeErrorMessage } from "@repo/core";
 
 export interface TargetProbe {
@@ -53,9 +54,10 @@ export async function probeTarget(
   const url = baseUrl.replace(/\/+$/, "");
   try {
     const res = await f(`${url}/api/health`, { signal: AbortSignal.timeout(opts.timeoutMs ?? 10000) });
-    const data = (await res.json().catch(() => ({}))) as { status?: string; cloudMode?: boolean };
+    const data = (await res.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/migration/target-probe"); return ({}); })) as { status?: string; cloudMode?: boolean };
     return { reachable: res.ok, cloudMode: data.cloudMode === true, status: data.status };
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/migration/target-probe");
     return { reachable: false, cloudMode: false, error: safeErrorMessage(err) };
   }
 }

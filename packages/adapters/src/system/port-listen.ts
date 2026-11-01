@@ -20,6 +20,7 @@
  *      as "not listening".
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { ExecOnly } from "../types";
 
 /** Minimal command surface this probe needs. A full `CommandExecutor` satisfies it. */
@@ -34,6 +35,12 @@ export interface PortProbeResult {
    * treat `checked:false` as "no signal", never as "not listening".
    */
   checked: boolean;
+  /**
+   * True when every LISTEN socket on the port is bound to a loopback address, so
+   * only a client in the same network namespace can connect. Set only from a
+   * complete procfs reading; the lsof/ss fallbacks don't report the bind address.
+   */
+  loopbackOnly?: boolean;
 }
 
 const PROC_NET_TCP_FILES = ["/proc/net/tcp", "/proc/net/tcp6"] as const;
@@ -88,7 +95,28 @@ const TCP_LISTEN = "0A";
  * field[1] = local_address (`HEXIP:HEXPORT`), field[3] = state.
  */
 export function parseListeningPorts(procText: string): Set<number> {
-  const ports = new Set<number>();
+  return new Set(listeningSockets(procText).map((socket) => socket.port));
+}
+
+/**
+ * Of the LISTEN ports in procfs text, those whose every socket is bound to a
+ * loopback address (127.0.0.0/8, ::1, or IPv4-mapped 127.x). Such a listener only
+ * answers from inside the same network namespace; one wildcard or interface
+ * socket on the port makes it reachable, so the port is left out.
+ */
+export function parseLoopbackOnlyPorts(procText: string): Set<number> {
+  const loopbackOnly = new Set<number>();
+  const reachable = new Set<number>();
+  for (const { hexAddress, port } of listeningSockets(procText)) {
+    if (isLoopbackHexAddress(hexAddress)) loopbackOnly.add(port);
+    else reachable.add(port);
+  }
+  for (const port of reachable) loopbackOnly.delete(port);
+  return loopbackOnly;
+}
+
+function listeningSockets(procText: string): { hexAddress: string; port: number }[] {
+  const sockets: { hexAddress: string; port: number }[] = [];
   for (const rawLine of procText.split("\n")) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -102,9 +130,22 @@ export function parseListeningPorts(procText: string): Set<number> {
     // A port is at most 0xFFFF (4 hex digits); reject anything that isn't clean hex.
     if (!/^[0-9A-Fa-f]{1,4}$/.test(hexPort)) continue;
     const port = parseInt(hexPort, 16);
-    if (port > 0) ports.add(port);
+    if (port > 0) sockets.push({ hexAddress: local.slice(0, colon).toUpperCase(), port });
   }
-  return ports;
+  return sockets;
+}
+
+/**
+ * procfs writes each 32-bit word of the address in host byte order (little-endian
+ * on every Linux target here), so 127.0.0.1 reads `0100007F`: the first octet is
+ * the LAST byte of the word.
+ */
+function isLoopbackHexAddress(hexAddress: string): boolean {
+  if (hexAddress.length === 8) return hexAddress.endsWith("7F");
+  if (hexAddress.length !== 32) return false;
+  if (hexAddress === "00000000000000000000000001000000") return true; // ::1
+  // ::ffff:127.x.x.x, a v4 loopback socket seen through tcp6.
+  return hexAddress.startsWith("0000000000000000FFFF0000") && hexAddress.endsWith("7F");
 }
 
 /**
@@ -131,6 +172,15 @@ export async function probePortListeningOnce(
   executor: PortProbeExecutor,
   port: number,
 ): Promise<boolean | null> {
+  const listener = await readPortListener(executor, port);
+  return listener === null ? null : listener.listening;
+}
+
+/** {@link probePortListeningOnce}, plus whether a procfs reading shows a loopback-only bind. */
+async function readPortListener(
+  executor: PortProbeExecutor,
+  port: number,
+): Promise<{ listening: boolean; loopbackOnly: boolean } | null> {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) return null;
 
   const readable: string[] = [];
@@ -142,16 +192,28 @@ export async function probePortListeningOnce(
   for (const file of PROC_NET_TCP_FILES) {
     try {
       readable.push(await executor.exec(`cat ${file} 2>/dev/null`, { timeout: 5_000 }));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/port-listen");
       // Try the other address family before declaring the probe inconclusive.
     }
   }
-  if (readable.length > 0) return parseListeningPorts(readable.join("\n")).has(port);
+  if (readable.length > 0) {
+    const procText = readable.join("\n");
+    return {
+      listening: parseListeningPorts(procText).has(port),
+      // A socket in the unreadable family might bind to a routable address.
+      // Positive occupancy survives a partial read; exclusivity does not.
+      loopbackOnly:
+        readable.length === PROC_NET_TCP_FILES.length && parseLoopbackOnlyPorts(procText).has(port),
+    };
+  }
 
   try {
     const out = await executor.exec(buildPortProbeCommand(port), { timeout: 5_000 });
-    return parsePortProbeOutput(out);
-  } catch {
+    const listening = parsePortProbeOutput(out);
+    return listening === null ? null : { listening, loopbackOnly: false };
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/port-listen");
     return null;
   }
 }
@@ -161,12 +223,14 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Poll `probePortListeningOnce` until the port is found listening or the deadline
- * passes — mirrors the shape of `waitForReady` (reachability.ts) because an app
- * may bind its port a beat after the container reports started.
+ * Poll the {@link probePortListeningOnce} reading until the port is found
+ * listening or the deadline passes — mirrors the shape of `waitForReady`
+ * (reachability.ts) because an app may bind its port a beat after the container
+ * reports started.
  *
  * NEVER throws. Returns:
- *   - `{ listening:true,  checked:true }`  — found a listener.
+ *   - `{ listening:true,  checked:true }`  — found a listener (`loopbackOnly:true`
+ *      added when procfs shows it bound to loopback only).
  *   - `{ listening:false, checked:true }`  — got at least one real "not listening"
  *      reading and the deadline passed (a genuine negative).
  *   - `{ listening:false, checked:false }` — every attempt errored (executor
@@ -184,14 +248,21 @@ export async function waitForPortListening(
 
   try {
     for (;;) {
-      const result = await probePortListeningOnce(executor, port);
-      if (result === true) return { listening: true, checked: true };
-      if (result === false) anyConclusive = true;
+      const result = await readPortListener(executor, port);
+      if (result?.listening) {
+        return {
+          listening: true,
+          checked: true,
+          ...(result.loopbackOnly ? { loopbackOnly: true } : {}),
+        };
+      }
+      if (result) anyConclusive = true;
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
       await delay(Math.min(intervalMs, remaining));
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/port-listen");
     return { listening: false, checked: false };
   }
 
@@ -237,7 +308,8 @@ export async function waitForPortFree(
       if (remaining <= 0) break;
       await delay(Math.min(intervalMs, remaining));
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/port-listen");
     return { free: false, checked: false };
   }
 

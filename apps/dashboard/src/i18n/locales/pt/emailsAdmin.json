@@ -9,7 +9,8 @@
       "dns": "DNS",
       "health": "Saúde",
       "backup": "Backup",
-      "advanced": "Avançado"
+      "advanced": "Avançado",
+      "aliases": "Aliases"
     },
     "ariaLabel": "Seções de administração de e-mail"
   },
@@ -22,7 +23,7 @@
     "edit": "Editar",
     "emptyTitle": "Nenhuma regra de notificação ainda",
     "emptyBody": "Adicione uma regra para ser notificado no Slack, Telegram, Discord ou em um webhook quando um e-mail chegar a uma caixa de correio ou a um domínio deste servidor.",
-    "noChannels": "Você ainda não tem canais de notificação verificados. Adicione e verifique um em Configurações → Notificações e depois volte aqui para criar uma regra.",
+    "noChannels": "Adicione e verifique um canal em Monitoramento → Notificações e volte para criar uma regra.",
     "addChannel": "Adicionar um canal de notificação",
     "manageChannels": "Gerenciar canais",
     "fieldName": "Nome",
@@ -66,7 +67,73 @@
     "confirmDelete": "Excluir a regra “{name}”? A captura do endereço dela é interrompida, a menos que outra regra ainda precise dela."
   },
   "sending": {
-    "testLiveNote": "Envia pelo caminho ativo agora, não pelas alterações não salvas acima."
+    "testLiveNote": "Envia pelo caminho ativo agora, não pelas alterações não salvas acima.",
+    "title": "Envio de saída",
+    "subtitle": "O recebimento permanece neste servidor. Escolha como as mensagens de saída são enviadas.",
+    "modeDirectTitle": "Entrega direta",
+    "modeDirectDesc": "Este servidor envia os e-mails de saída por conta própria. É simples, mas IPs de novos VPSs frequentemente estão em listas de bloqueio e muitos provedores bloqueiam a porta de saída 25 — os e-mails podem cair no spam ou falhar.",
+    "modeRelayTitle": "Retransmissão por um provedor",
+    "modeRelayDesc": "Encaminhe os e-mails de saída para um smarthost — SES, SendGrid, Mailgun, Postmark, Resend ou qualquer servidor SMTP. Melhor entregabilidade. Sua caixa de entrada e todo o DNS de recebimento permanecem exatamente iguais.",
+    "pathTitle": "Caminho de saída",
+    "setUpRelay": "Configurar um relay",
+    "directActive": "Os e-mails saem diretamente deste servidor. Nada a configurar — escolha um relay acima se a entregabilidade se tornar um problema.",
+    "switchToDirect": "Mudar para entrega direta",
+    "switchToDirectHint": "Remove o smarthost e suas credenciais armazenadas, e retira o include SPF do relay do seu DNS. O e-mail de saída irá direto para o servidor de cada destinatário novamente.",
+    "statusOn": "Relay ativo",
+    "statusOff": "Entrega direta (padrão)",
+    "sendersTitle": "Quais remetentes usam o relay?",
+    "scopeAll": "Todos os remetentes",
+    "scopeSelected": "Remetentes selecionados",
+    "scopeAllHint": "Todos os domínios neste servidor enviam pelo relay.",
+    "scopeSelectedHint": "Apenas os remetentes selecionados usam o relay; o restante continua com entrega direta.",
+    "sendersDomains": "Domínios inteiros",
+    "sendersAddresses": "Remetentes individuais",
+    "sendersAddressesHint": "Retransmita uma única caixa postal sem retransmitir todo o domínio — contato@exemplo.com pode enviar pelo provedor e continuar recebendo via IMAP aqui.",
+    "senderPlaceholder": "contato@exemplo.com",
+    "addSender": "Adicionar",
+    "removeSender": "Remover",
+    "senderInvalid": "Informe um endereço simples como contato@exemplo.com — sem nome de exibição.",
+    "noSenders": "Escolha pelo menos um domínio ou endereço de remetente para o relay.",
+    "noDomains": "Nenhum domínio encontrado neste servidor ainda.",
+    "credentialsTitle": "Provedor e credenciais",
+    "provider": "Provedor",
+    "regionFor": "Região de {provider}",
+    "host": "Host SMTP",
+    "port": "Porta",
+    "username": "Usuário SMTP",
+    "password": "Senha SMTP",
+    "passwordKeep": "Deixe em branco para manter a senha atual",
+    "port465Blocked": "A porta 465 (TLS implícito) é uma configuração global do servidor, portanto não pode ser usada enquanto apenas alguns remetentes usam o relay. Use a porta STARTTLS do provedor — geralmente 587.",
+    "spfIncludeLabel": "Include SPF",
+    "spfIncludeHint": "Cole o mecanismo include: que o seu provedor instrui publicar. Se deixado em branco, não alteraremos seu registro SPF — mas e-mails retransmitidos por um host não listado no SPF falharão na validação.",
+    "spfNone": "Nenhum",
+    "mailFromDomain": "Domínio MAIL FROM personalizado",
+    "mailFromHint": "Opcional. Um subdomínio como bounce.exemplo.com para alinhamento de SPF/bounce. Configure-o também no provedor.",
+    "identityTitle": "Identidade de {provider} por domínio",
+    "identityHint": "O {provider} verifica cada domínio de envio separadamente. Cole os registros de cada domínio retransmitido (opcional — o amavis já assina, logo o DMARC se alinha sem eles, mas o provedor exige que o domínio seja verificado antes do envio).",
+    "identityPrimary": "Principal",
+    "dkimRecords": "Registros DKIM de {provider}",
+    "dkimRecordsHint": "Cole os registros CNAME exibidos pelo seu provedor (SES: console → Identidades verificadas → seu domínio → DKIM). Nós os exibimos e verificamos na aba DNS.",
+    "dkimName": "Nome CNAME",
+    "dkimValue": "Valor CNAME",
+    "summaryTitle": "Resumo",
+    "summaryTarget": "Smarthost",
+    "summarySenders": "Remetentes",
+    "summaryUpdated": "Última atualização",
+    "guidanceTitle": "Antes de funcionar",
+    "guidanceVerify": "Verifique seu domínio no console do Amazon SES.",
+    "guidanceSandbox": "Solicite acesso de produção — o SES começa em um sandbox que envia apenas para endereços verificados.",
+    "guidanceCreds": "Use as credenciais SMTP do SES (um usuário IAM SMTP) — não as suas chaves de acesso da AWS.",
+    "guidanceDns": "Publique os registros DNS na aba DNS e depois faça uma nova verificação para confirmar.",
+    "guidanceSystem": "Os e-mails do sistema (redefinições de senha, convites, notificações) também são enviados por este relay — a menos que você tenha configurado um remetente separado em Configurações → E-mail.",
+    "save": "Ativar relay",
+    "update": "Salvar alterações",
+    "disable": "Desativar relay",
+    "saved": "Relay de saída atualizado.",
+    "disabled": "Relay desativado — retorno à entrega direta.",
+    "saveFailed": "Não foi possível atualizar o relay.",
+    "disableFailed": "Não foi possível desativar o relay.",
+    "dnsHint": "Os registros de envio do provedor agora aparecem na aba DNS. Publique e verifique-os para entregabilidade máxima."
   },
   "overview": {
     "mailServer": "Servidor de e-mail",
@@ -98,7 +165,9 @@
     "quickActions": "Ações rápidas",
     "addMailbox": "Adicionar uma caixa de correio",
     "addDomain": "Adicionar um domínio",
-    "reviewDns": "Revisar registros DNS"
+    "reviewDns": "Revisar registros DNS",
+    "legacyWebmail": "Implantado por uma versão mais antiga do Openship — pode ser substituído pelo aplicativo de webmail, que se atualiza com seus lançamentos.",
+    "upgradeWebmail": "Substituir webmail"
   },
   "webmail": {
     "title": "Webmail",
@@ -300,8 +369,19 @@
       "notListeningHint": "Nenhum processo está escutando nesta porta.",
       "notExposedHint": "Escutando apenas em loopback; clientes remotos não podem conectar.",
       "unknownHint": "Não foi possível verificar o acesso público.",
-      "ports": { "smtp": "SMTP de entrada", "smtps": "Envio SMTP (TLS)", "submission": "Envio SMTP (STARTTLS)", "imaps": "Acesso IMAP (TLS)" },
-      "status": { "reachable": "Acessível", "blocked": "Bloqueado", "not_listening": "Sem listener", "not_exposed": "Não exposto", "unknown": "Desconhecido" }
+      "ports": {
+        "smtp": "SMTP de entrada",
+        "smtps": "Envio SMTP (TLS)",
+        "submission": "Envio SMTP (STARTTLS)",
+        "imaps": "Acesso IMAP (TLS)"
+      },
+      "status": {
+        "reachable": "Acessível",
+        "blocked": "Bloqueado",
+        "not_listening": "Sem listener",
+        "not_exposed": "Não exposto",
+        "unknown": "Desconhecido"
+      }
     },
     "delivery": {
       "title": "Envio de saída",
@@ -411,7 +491,8 @@
       "partSignatures": "{names} não está em execução - as assinaturas de vírus não são mais atualizadas, então o e-mail é verificado com um conjunto de assinaturas envelhecendo",
       "partAdvisory": "{names} não está em execução",
       "almostSubQueueOne": "{count} mensagem aguardando para sair - veja Envio de saída abaixo.",
-      "almostSubQueueOther": "{count} mensagens aguardando para sair - veja Envio de saída abaixo."
+      "almostSubQueueOther": "{count} mensagens aguardando para sair - veja Envio de saída abaixo.",
+      "partCertificate": "O certificado de e-mail requer atenção"
     },
     "time": {
       "secondsAgo": "há {n}s",
@@ -647,5 +728,74 @@
     "loadingLogs": "Carregando logs…",
     "noLogLines": "Ainda não há linhas de log para este componente.",
     "rowActions": "Ações para {name}"
+  },
+  "certificate": {
+    "title": "Certificado de e-mail",
+    "manage": "Gerenciar certificado",
+    "check": "Verificar certificado",
+    "checking": "Verificando…",
+    "renew": "Renovar certificado",
+    "renewing": "Renovando…",
+    "autoRenew": "Renovação automática",
+    "autoRenewHint": "Renovar antes de expirar e recarregar os serviços de e-mail.",
+    "desktopHint": "Mantenha o Openship aberto para renovar automaticamente.",
+    "jobDisabled": "A tarefa compartilhada de renovação SSL está desativada.",
+    "manageJob": "Abrir tarefa de renovação",
+    "failed": "Não foi possível atualizar o certificado de e-mail.",
+    "notChecked": "Não verificado",
+    "expires": "Expira em {date}",
+    "checked": "Verificado: {time}",
+    "status": {
+      "ok": "Válido",
+      "warn": "Renovação necessária",
+      "fail": "Requer atenção",
+      "unknown": "Não confirmado"
+    }
+  },
+  "aliases": {
+    "heading": "Aliases",
+    "description": "Encaminhe e-mails de um endereço para outro, ou capture todos os endereços não correspondentes em um domínio. Entra em vigor assim que você salva — sem necessidade de reiniciar.",
+    "addAlias": "Adicionar alias",
+    "domainLabel": "Domínio",
+    "loading": "Carregando…",
+    "activeCount": "{active} de {total} ativos",
+    "colSource": "Origem",
+    "colDestination": "Encaminha para",
+    "colType": "Tipo",
+    "colStatus": "Status",
+    "typeAlias": "Alias",
+    "typeCatchAll": "Catch-all",
+    "active": "Ativo",
+    "disabled": "Desativado",
+    "activateAction": "Ativar",
+    "deactivateAction": "Desativar",
+    "deleteAction": "Excluir",
+    "loadDomainsFailed": "Falha ao carregar domínios",
+    "loadFailed": "Falha ao carregar aliases",
+    "emptyTitle": "Nenhum alias ainda",
+    "emptyDesc": "Encaminhe um endereço ou configure um catch-all para {domain}.",
+    "create": {
+      "title": "Novo alias · {domain}",
+      "description": "Cria uma linha na tabela de encaminhamento do servidor de e-mail. O Postfix a lê em tempo real — sem necessidade de reiniciar.",
+      "submit": "Criar alias",
+      "submitting": "Criando…",
+      "catchAllLabel": "Catch-all para este domínio",
+      "catchAllHint": "Encaminha todos os endereços em {domain} que não correspondam a uma caixa postal real ou a outro alias. Substitui qualquer catch-all existente para este domínio.",
+      "localPartLabel": "Parte local",
+      "localPartHint": "A parte antes do @. Minúsculas, alfanumérico.",
+      "destinationLabel": "Encaminha para",
+      "destinationHint": "Qualquer endereço de e-mail válido — uma caixa postal neste servidor ou externa (ex.: Gmail)."
+    },
+    "deleteForm": {
+      "title": "Excluir este alias?",
+      "sourceCatchAll": "Catch-all para {domain}",
+      "description": "Remove a linha de encaminhamento imediatamente. E-mails para {source} serão rejeitados ou passarão para a próxima regra correspondente, válido a partir da próxima mensagem.",
+      "submit": "Excluir alias",
+      "submitting": "Excluindo…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} é uma caixa postal real — criar um alias aqui redirecionaria seus e-mails. Em vez disso, edite ou exclua a caixa postal.",
+      "alreadyExists": "Esse encaminhamento exato já existe."
+    }
   }
 }

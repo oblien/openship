@@ -1,0 +1,87 @@
+---
+title: billing checkout
+description: Commands, arguments, and options for openship billing checkout.
+cliGroup: openship billing checkout
+---
+
+See the [workflow guide](/docs/cli/cloud) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship billing checkout
+
+Recover existing payment checkouts without creating another purchase
+
+```text
+openship billing checkout [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/billing/checkout#openship-billing-checkout-list) | List open and recoverable checkouts |
+| [`get [options] <id>`](/docs/cli/reference/billing/checkout#openship-billing-checkout-get) | Read payment and provisioning status |
+| [`resume [options] <id>`](/docs/cli/reference/billing/checkout#openship-billing-checkout-resume) | Resume this existing checkout |
+| [`cancel [options] <id>`](/docs/cli/reference/billing/checkout#openship-billing-checkout-cancel) | Cancel this unpaid checkout |
+
+## openship billing checkout cancel
+
+Cancel this unpaid checkout
+
+```text
+openship billing checkout cancel [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Action ID from checkout list |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `-y, --yes` | Confirm cancellation |
+
+## openship billing checkout get
+
+Read payment and provisioning status
+
+```text
+openship billing checkout get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Checkout ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing checkout list
+
+List open and recoverable checkouts
+
+```text
+openship billing checkout list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing checkout resume
+
+Resume this existing checkout
+
+```text
+openship billing checkout resume [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Action ID from checkout list |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |

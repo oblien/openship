@@ -1,0 +1,88 @@
+---
+title: project git
+description: Commands, arguments, and options for openship project git.
+cliGroup: openship project git
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship project git
+
+Manage git linkage and auto-deploy
+
+```text
+openship project git [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`link [options] <id>`](/docs/cli/reference/project/git#openship-project-git-link) | Link a GitHub repository to a project |
+| [`branch <id> <branch>`](/docs/cli/reference/project/git#openship-project-git-branch) | Set the deploy branch |
+| [`auto-deploy [options] <id>`](/docs/cli/reference/project/git#openship-project-git-auto-deploy) | Enable or disable push-to-deploy |
+| [`webhook-domain [options] <id> [domain]`](/docs/cli/reference/project/git#openship-project-git-webhook-domain) | Set or clear the domain that receives GitHub webhooks |
+
+## openship project git auto-deploy
+
+Enable or disable push-to-deploy
+
+```text
+openship project git auto-deploy [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--enable` | Enable auto-deploy |
+| `--disable` | Disable auto-deploy |
+
+## openship project git branch
+
+Set the deploy branch
+
+```text
+openship project git branch [options] <id> <branch>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `branch` | Branch name |
+
+## openship project git link
+
+Link a GitHub repository to a project
+
+```text
+openship project git link [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--owner <owner>` | GitHub owner/org |
+| `--repo <repo>` | Repository name |
+| `--branch <branch>` | Branch (defaults to the repo's default branch) |
+| `--installation-id <id>` | GitHub App installation id |
+
+## openship project git webhook-domain
+
+Set or clear the domain that receives GitHub webhooks
+
+```text
+openship project git webhook-domain [options] <id> [domain]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `domain` | Verified project domain (omit with --clear to unset) |
+
+| Option | Meaning |
+| --- | --- |
+| `--clear` | Clear the webhook domain |

@@ -1,8 +1,10 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Client } from "ssh2";
 import type { ClientChannel, ConnectConfig, SFTPWrapper } from "ssh2";
 import type { Duplex, Readable } from "node:stream";
 
-import { safeErrorMessage } from "@repo/core";
+import { assertSshDestination, safeErrorMessage } from "@repo/core";
+import { openCloudflareSshStream } from "./cloudflare-ssh";
 
 import type { SshConfig } from "../types";
 import { isSshAuthError } from "./errors";
@@ -52,9 +54,13 @@ function toConnectConfig(config: SshConfig): ConnectConfig {
 }
 
 export async function connectSshClient(config: SshConfig): Promise<StreamLocalCapableClient> {
-  await reconcileKnownHosts(config);
+  assertSshDestination(config);
+  // ssh-keyscan cannot reach an Access application over its public SSH port.
+  if (config.sshTransport !== "cloudflare") await reconcileKnownHosts(config);
 
   const client = new Client() as StreamLocalCapableClient;
+  const transport = config.sshTransport === "cloudflare" ? openCloudflareSshStream(config.host) : undefined;
+  client.once("close", () => transport?.destroy());
 
   return new Promise<StreamLocalCapableClient>((resolve, reject) => {
     let settled = false;
@@ -65,9 +71,10 @@ export async function connectSshClient(config: SshConfig): Promise<StreamLocalCa
       resolve(client);
     });
 
-    client.on("error", (err) => {
+    client.on("error", (err) => { observeCaughtError(err, "adapters/system/ssh-client");
       if (settled) return;
       settled = true;
+      transport?.destroy();
       if (isSshAuthError(err)) {
         reject(new Error(describeSshAuthFailure(config, err.message)));
         return;
@@ -81,7 +88,14 @@ export async function connectSshClient(config: SshConfig): Promise<StreamLocalCa
       reject(new Error(describeSshConnectFailure(config, "SSH connection closed before ready")));
     });
 
-    client.connect(toConnectConfig(config));
+    try {
+      client.connect({ ...toConnectConfig(config), ...(transport ? { sock: transport } : {}) });
+    } catch (err) {
+      observeCaughtError(err, "adapters/system/ssh-client");
+      transport?.destroy();
+      client.end();
+      reject(err);
+    }
   });
 }
 
@@ -210,7 +224,7 @@ export function attachDialStdioDiagnostics<T extends Duplex>(stream: T): T {
     diagnostics.exitCode = typeof code === "number" ? code : null;
     diagnostics.signal = typeof signal === "string" ? signal : null;
   });
-  stream.on("error", (err: unknown) => {
+  stream.on("error", (err: unknown) => { observeCaughtError(err, "adapters/system/ssh-client");
     diagnostics.error ??= safeErrorMessage(err);
   });
 
@@ -265,7 +279,8 @@ export async function execSshCommand(
       if (stream) {
         try {
           stream.close();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-client");
           /* already closed */
         }
       }
@@ -286,7 +301,8 @@ export async function execSshCommand(
         // channel) - tear this one down too instead of leaving it orphaned.
         try {
           stream.close();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-client");
           /* already closed */
         }
         return;

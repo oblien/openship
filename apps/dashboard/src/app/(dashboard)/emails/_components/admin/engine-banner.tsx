@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Panel-level mail-engine notice — the answer to "the admin panel is throwing
  * errors and there is nothing I can press".
@@ -17,26 +19,27 @@
  *   - no engine at all → the re-run-setup wizard entry, the only thing that can
  *     legitimately recreate one, and NOT something to fire off a banner click.
  *
- * Renders nothing when the engine is serving, and nothing when `engine` is absent
- * — absent means the probe couldn't conclude, and a failed read must never be
- * shown as a broken server.
+ * An unavailable observation offers a status retry. It never infers a stopped
+ * or missing engine from a failed read. A serving engine needs no banner.
  */
 
 import Link from "next/link";
-import { AlertTriangle, RotateCw, Wrench } from "lucide-react";
 
 import type { MailEngineState } from "@/lib/api";
 import { useI18n } from "@/components/i18n-provider";
 import { useInfraFix } from "@/hooks/useInfraFix";
 import { useReattachActiveFix } from "@/hooks/useReattachActiveFix";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 
 export function MailEngineBanner({
   serverId,
   engine,
+  observationError,
   onRepaired,
 }: {
   serverId: string;
   engine: MailEngineState | undefined;
+  observationError?: string;
   /** Re-read status once the repair session ends, so the banner clears itself. */
   onRepaired: () => void;
 }) {
@@ -54,6 +57,12 @@ export function MailEngineBanner({
     ],
   });
 
+  if (observationError) return <ConnectionNotice
+    title={t.issues.connectivity.mailTitle}
+    message={t.issues.connectivity.mailHint}
+    detail={observationError}
+    onRetry={onRepaired}
+  />;
   if (!engine || engine.running) return null;
 
   const gone = engine.flavor === "none";
@@ -66,7 +75,7 @@ export function MailEngineBanner({
       />
       <div className="relative flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="size-9 shrink-0 rounded-xl border border-danger-border bg-danger-bg flex items-center justify-center">
-          <AlertTriangle className="size-4 text-danger" strokeWidth={2} />
+          <UiIcon name="warning" className="size-4 text-danger" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-semibold leading-snug text-danger">
@@ -85,7 +94,7 @@ export function MailEngineBanner({
             href={`/emails?serverId=${encodeURIComponent(serverId)}&force=wizard`}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-danger-solid px-3.5 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
-            <RotateCw className="size-3.5" />
+            <UiIcon name="refresh" className="size-3.5" />
             {c.rerunSetup}
           </Link>
         ) : (
@@ -104,7 +113,7 @@ export function MailEngineBanner({
             }
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-danger-solid px-3.5 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
-            <Wrench className="size-3.5" />
+            <UiIcon name="wrench" className="size-3.5" />
             {c.start}
           </button>
         )}

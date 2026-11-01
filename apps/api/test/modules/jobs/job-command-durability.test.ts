@@ -28,6 +28,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    server: {
+      getMany: async (ids: string[]) => new Map(ids.filter(id => ["srv1", "srvA", "srvB"].includes(id))
+        .map(id => [id, { id, organizationId: "org_1", workspaceId: null, sshHost: "192.0.2.10" }])),
+      getInOrganization: async (id: string, organizationId: string) =>
+        organizationId === "org_1" && ["srv1", "srvA", "srvB"].includes(id)
+          ? { id, organizationId, workspaceId: null, sshHost: "192.0.2.10" } : null,
+    },
     job: {
       findByKey: async (k: string) => h.jobRows[k] ?? null,
       listAll: async () => Object.values(h.jobRows),
@@ -38,6 +45,10 @@ vi.mock("@repo/db", () => ({
         // A dependency fan-out opens its own run row — record who fired.
         if (d.trigger === "dependency") h.dependencyStarts.push(String(d.jobId));
         return { id: `jrun_${h.attempted.length + 1}`, ...d };
+      },
+      startOnce: async (d: Record<string, unknown>, id: string) => {
+        if (d.trigger === "dependency") h.dependencyStarts.push(String(d.jobId));
+        return { id, ...d };
       },
       finish: async (id: string, data: Record<string, unknown>) => {
         h.attempted.push({ id, ...data });
@@ -58,8 +69,11 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: { emit: () => {} } }));
+
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
+    acquire: async () => ({}),
     retain: () => {},
     release: () => {},
     withExecutor: async (_id: string, fn: (ex: unknown) => Promise<unknown>) =>
@@ -67,11 +81,13 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
   },
 }));
 
-import { runCommandJobTick } from "../../../src/modules/jobs/job-command";
-import { jobRunBus, type JobRunEvent } from "../../../src/modules/jobs/job-run.sse";
+import { runCommandJobTick } from "@repo/platform/engine/modules/jobs/job-command";
+import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 
 const cmdJob = (key: string, cfg: Record<string, unknown>) => ({
   key,
+  updatedAt: new Date("2026-10-10T00:00:00Z"),
+  scheduleType: "recurring",
   actionType: "command",
   actionConfig: cfg,
   dependsOn: null,

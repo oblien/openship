@@ -12,19 +12,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const deregister = vi.fn(async () => ({ ok: true as const, removed: true }));
 
-vi.mock("./cloud/client", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({
   cloudClient: () => ({ edgeProxy: { deregister } }),
 }));
 
 // The suffix comes from SYSTEM.DOMAINS.CLOUD_DOMAIN; stub the predicate pair so
 // the test doesn't depend on env-resolved routing config.
-vi.mock("./public-endpoints", () => ({
+vi.mock("@repo/platform/engine/lib/public-endpoints", () => ({
   isCloudManagedHostname: (h: string) => h.endsWith(".opsh.io"),
   managedHostnameToSlug: (h: string) =>
     h.endsWith(".opsh.io") ? h.slice(0, -".opsh.io".length) : undefined,
 }));
 
-const { releaseManagedHostnames } = await import("./managed-edge-proxy");
+const { releaseManagedHostnames } = await import("@repo/platform/engine/lib/managed-edge-proxy");
 
 describe("releaseManagedHostnames", () => {
   beforeEach(() => deregister.mockClear());

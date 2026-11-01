@@ -34,11 +34,10 @@ function makePgFake(rows: Array<Record<string, unknown>>): PgFake {
             if (terminal.includes(status) || row.finishedAt) continue;
 
             // Mirror of sweepRunsWithStaleHeartbeat's WHERE. Two states are NOT
-            // idle-swept. `uploading`, because a single-artifact dump holds
-            // (uploading, bytes=NULL, lastEventAt=frozen) for the whole honest
-            // upload. And `queued`, because lastEventAt does not move while a run
-            // waits for a worker, so an idle window there measures queue depth —
-            // both are bounded by the ceiling only.
+            // idle-swept. `uploading`, because changing its row cannot abort the
+            // producer/destination promise that owns the worker slot. And
+            // `queued`, because lastEventAt does not move while a run waits for
+            // a worker — both are bounded by the ceiling only.
             const stale =
               (["preparing", "snapshotting", "verifying"].includes(status) && last < idleCutoff) ||
               last < ceilingCutoff;
@@ -125,12 +124,10 @@ describe("backupRun.sweepRunsWithStaleHeartbeat", () => {
     expect(pg.rows[0].status).toBe("server_error");
   });
 
-  it("does NOT idle-sweep an uploading run with null bytes (honest large dump, #516)", async () => {
-    // A single-artifact pg_dump/mysqldump/mongodump streams the whole payload
-    // through one destination.put; bytesTransferred stays NULL and lastEventAt
-    // is frozen at the transition into `uploading` until the artifact finishes.
-    // Idle-sweeping this would kill the exact backup #516 is about. A genuine
-    // wedge is reaped in-process by the executor's per-stream idle watchdog.
+  it("does NOT idle-sweep an uploading run without an abort path", async () => {
+    // A database update cannot stop the producer/destination promise holding
+    // the worker slot. Until capture has abort plumbing, changing this row to a
+    // terminal state would report recovery without actually recovering capacity.
     const pg = makePgFake([
       {
         id: "bkr_u",

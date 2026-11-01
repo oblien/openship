@@ -14,6 +14,7 @@
  * copy the wizard uses (no duplication).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { isValidEmail } from "@repo/core";
 import { internalFetch, internalPost, waitHealthy, bootstrapAdmin } from "./loopback-api";
 
@@ -222,7 +223,8 @@ async function drainProvisionStream(
         }
       }
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/instance-provision");
     /* best-effort: the edge/cert work continues server-side and retries on boot */
   }
   return { completed: false, detail };

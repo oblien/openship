@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
-import type { Database } from "../client";
+import type { Database, DatabaseTransaction } from "../client";
 import { updateStatus } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -11,23 +11,37 @@ export type NewUpdateStatus = typeof updateStatus.$inferInsert;
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createUpdateStatusRepo(db: Database) {
+  async function write<T>(run: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+    return db.transaction(async (tx) => {
+      // Cache maintenance must not occupy a pooled connection indefinitely on
+      // a row lock. LOCAL keeps these limits out of unrelated transactions.
+      await tx.execute(sql`SET LOCAL lock_timeout = '1500ms'`);
+      await tx.execute(sql`SET LOCAL statement_timeout = '2000ms'`);
+      return run(tx);
+    });
+  }
   return {
     /** Upsert the polled upstream state for a project (unique on projectId). */
     async upsert(data: Omit<NewUpdateStatus, "id">): Promise<void> {
       const id = generateId("ups");
-      await db
-        .insert(updateStatus)
-        .values({ id, ...data })
-        .onConflictDoUpdate({
-          target: updateStatus.projectId,
-          set: {
-            organizationId: data.organizationId,
-            kind: data.kind,
-            detail: data.detail ?? null,
-            checkedAt: data.checkedAt ?? new Date(),
-            updatedAt: new Date(),
-          },
-        });
+      const checkedAt = data.checkedAt ?? new Date();
+      await write(async (tx) => {
+        await tx
+          .insert(updateStatus)
+          .values({ id, ...data, checkedAt })
+          .onConflictDoUpdate({
+            target: updateStatus.projectId,
+            set: {
+              organizationId: data.organizationId,
+              kind: data.kind,
+              detail: data.detail ?? null,
+              checkedAt,
+              updatedAt: new Date(),
+            },
+            // An older poll may acquire its connection/lock after a newer one.
+            setWhere: lte(updateStatus.checkedAt, sql`excluded.checked_at`),
+          });
+      });
     },
 
     /** All cached upstream rows for an org (newest poll first). */
@@ -47,8 +61,17 @@ export function createUpdateStatusRepo(db: Database) {
       });
     },
 
-    async deleteByProject(projectId: string): Promise<void> {
-      await db.delete(updateStatus).where(eq(updateStatus.projectId, projectId));
+    async deleteByProject(projectId: string, checkedBefore?: Date): Promise<void> {
+      await write(async (tx) => {
+        await tx
+          .delete(updateStatus)
+          .where(
+            and(
+              eq(updateStatus.projectId, projectId),
+              checkedBefore ? lte(updateStatus.checkedAt, checkedBefore) : undefined,
+            ),
+          );
+      });
     },
   };
 }

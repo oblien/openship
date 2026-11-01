@@ -1,11 +1,14 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { Globe, Shield, Server, Eye, EyeOff, Link2, Hash, CornerUpRight } from "lucide-react";
 import { domainsApi } from "@/lib/api";
 import { usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Input } from "@/components/ui/input";
 import DnsConfiguration from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DnsConfiguration";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { normalizeSubdomain, normalizeSubdomainInput } from "@/utils/subdomain";
@@ -58,8 +61,7 @@ export interface RoutingSettingsCardProps {
   /**
    * Canonical redirect: serve a 30x to another of the project's hostnames instead
    * of the app. Omit the whole prop to hide the control — the parent decides
-   * whether it applies (there's nothing to redirect to with one hostname, and
-   * Openship Cloud owns routing for cloud projects, so it's refused there).
+   * whether it applies (there is nothing to redirect to with one hostname).
    *
    * `targets` are the project's OTHER hostnames; picking "" means serve normally.
    */
@@ -148,7 +150,8 @@ export function RoutingSettingsCard({
       const res = await domainsApi.previewRecords(hostname);
       setDnsRecords(res.data.records);
       setDnsMode(res.data.mode);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/routing/RoutingSettingsCard");
       setDnsRecords([]);
     } finally {
       setLoadingRecords(false);
@@ -180,7 +183,7 @@ export function RoutingSettingsCard({
         <div className="p-5">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-              <Server className="size-4 text-primary" />
+              <UiIcon name="server" className="size-4 text-primary" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-foreground">{w.dnsConfiguration}</h3>
@@ -248,7 +251,9 @@ export function RoutingSettingsCard({
   // so the row aligns cleanly with no dead whitespace.
   const portInlineField = showsPortTarget ? (
     <div className="shrink-0">
-      <input
+      <Input
+        dir="ltr"
+        variant="filled"
         type="text"
         inputMode="numeric"
         aria-label={w.exposedPort}
@@ -264,7 +269,7 @@ export function RoutingSettingsCard({
         placeholder={w.exposedPort}
         disabled={disabled}
         list={hasPortOptions ? portListId : undefined}
-        className="w-24 h-11 rounded-2xl border border-border/50 bg-background/60 px-3.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/40"
+        className="w-24"
       />
       {hasPortOptions && (
         <datalist id={portListId}>
@@ -284,11 +289,13 @@ export function RoutingSettingsCard({
     redirect && redirect.targets.length > 0 ? (
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2">
-          <CornerUpRight className="size-3.5 text-muted-foreground" />
+          <UiIcon name="forward" className="size-3.5 text-muted-foreground" />
           <span className="text-[13px] font-medium text-muted-foreground">{w.redirectTo}</span>
         </div>
         <div className="min-w-[190px] flex-1">
           <CustomSelect
+            variant="filled"
+            triggerClassName="bg-muted/60 hover:bg-muted"
             value={redirect.to}
             onChange={(next) => void redirect.onChange({ to: next, status: redirect.status || 301 })}
             options={[
@@ -303,6 +310,8 @@ export function RoutingSettingsCard({
         {redirect.to ? (
           <div className="w-[132px]">
             <CustomSelect
+              variant="filled"
+              triggerClassName="bg-muted/60 hover:bg-muted"
               value={String(redirect.status || 301)}
               onChange={(next) => void redirect.onChange({ to: redirect.to, status: Number(next) })}
               options={[
@@ -320,7 +329,7 @@ export function RoutingSettingsCard({
       {typeof exposed === "boolean" && onExposedChange && (
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {visible ? <Eye className="size-4 text-info" /> : <EyeOff className="size-4 text-muted-foreground" />}
+            {visible ? <UiIcon name="eye" className="size-4 text-info" /> : <UiIcon name="eye-off" className="size-4 text-muted-foreground" />}
             <span className="text-sm font-medium text-foreground">
               {visible ? w.publiclyExposed : w.internalOnly}
             </span>
@@ -374,8 +383,10 @@ export function RoutingSettingsCard({
           {domainType === "free" ? (
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1 flex items-center gap-2">
-                <div className="flex-1 flex items-center rounded-2xl border border-border/50 bg-background/60 overflow-hidden h-11">
-                  <input
+                <div dir="ltr" className="min-w-0 flex-1 flex items-center rounded-xl bg-background focus-within:ring-2 focus-within:ring-ring/40 focus-within:ring-offset-2 focus-within:ring-offset-background">
+                  <Input
+                    dir="ltr"
+                    variant="filled"
                     value={saveMode === "explicit" ? draftDomain : domain}
                     onChange={(event) => {
                       const next = normalizeSubdomainInput(event.target.value);
@@ -391,7 +402,7 @@ export function RoutingSettingsCard({
                       if (saveMode === "explicit" && draftDomain !== domain) commitFreeDomain();
                     }}
                     placeholder={projectName || "my-project"}
-                    className="min-w-0 flex-1 h-full ps-3.5 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
+                    className="min-w-0 flex-1 bg-transparent pe-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                   <span className="shrink-0 ps-2 pe-3.5 text-sm text-muted-foreground">.{baseDomain}</span>
                 </div>
@@ -413,8 +424,9 @@ export function RoutingSettingsCard({
             <div className="space-y-2">
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1 flex items-center gap-2">
-                  <div className="flex-1 flex items-center rounded-2xl border border-border/50 bg-background/60 overflow-hidden h-11">
-                  <input
+                  <Input
+                    dir="ltr"
+                    variant="filled"
                     value={saveMode === "explicit" ? draftCustomDomain : customDomain}
                     onChange={(event) => {
                       const next = event.target.value.toLowerCase();
@@ -426,9 +438,8 @@ export function RoutingSettingsCard({
                     }}
                     onBlur={handleCustomDomainBlur}
                     placeholder="app.example.com"
-                    className="flex-1 h-full px-3.5 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
+                    className="min-w-0 flex-1"
                   />
-                </div>
                 {saveMode === "explicit" && draftCustomDomain !== customDomain && (
                   <button
                     type="button"
@@ -448,10 +459,15 @@ export function RoutingSettingsCard({
                   "checking…" loading state was dropped: it flashed on every
                   keystroke and jittered the card height. DNS isn't required up
                   front (verified later at preflight / in domain settings). */}
+              {(saveMode === "explicit" ? draftCustomDomain : customDomain).trim().startsWith("*.") && (
+                <p className="text-sm leading-relaxed text-muted-foreground">{dnsMode === "selfhosted"
+                  ? t.projectSettings.domains.wildcard.notice
+                  : t.projectSettings.domains.wildcard.scope}</p>
+              )}
               {hasRecords && (
-                <div className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
+                <div className="rounded-xl bg-card overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2">
-                    <Server className="size-3 text-muted-foreground shrink-0" />
+                    <UiIcon name="server" className="size-3 text-muted-foreground shrink-0" />
                     <p className="text-sm text-muted-foreground flex-1">
                       {interpolate(w.addRecordHint, {
                         primary: dnsRecords.find((record) => record.type !== "TXT")?.type ?? "",
@@ -478,10 +494,12 @@ export function RoutingSettingsCard({
           {!portInline && showsPortTarget && (
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <Hash className="size-3.5 text-muted-foreground" />
+                <UiIcon name="hash" className="size-3.5 text-muted-foreground" />
                 <span className="text-[13px] text-muted-foreground font-medium">{w.exposedPort}</span>
               </div>
-              <input
+              <Input
+                dir="ltr"
+                variant="filled"
                 type="text"
                 inputMode="numeric"
                 value={saveMode === "explicit" ? draftPort : exposedPort}
@@ -498,7 +516,7 @@ export function RoutingSettingsCard({
                 placeholder="3000"
                 disabled={disabled}
                 list={hasPortOptions ? portListId : undefined}
-                className="w-24 px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border/40 text-foreground outline-none"
+                className="w-24"
               />
               {hasPortOptions && (
                 <datalist id={portListId}>
@@ -524,9 +542,9 @@ export function RoutingSettingsCard({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 {readOnlyTarget.icon === "path" ? (
-                  <Link2 className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="link" className="size-3.5 text-muted-foreground" />
                 ) : (
-                  <Hash className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="hash" className="size-3.5 text-muted-foreground" />
                 )}
                 <span className="text-[13px] text-muted-foreground font-medium">
                   {readOnlyTarget.label}
@@ -542,11 +560,13 @@ export function RoutingSettingsCard({
             <div className="space-y-2">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <Link2 className="size-3.5 text-muted-foreground" />
+                  <UiIcon name="link" className="size-3.5 text-muted-foreground" />
                   <span className="text-[13px] text-muted-foreground font-medium">{w.staticPath}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-1">
-                  <input
+                  <Input
+                    dir="ltr"
+                    variant="filled"
                     value={saveMode === "explicit" ? draftTargetPath : (targetPath || "/")}
                     onChange={(event) => {
                       if (saveMode === "explicit") {
@@ -557,7 +577,7 @@ export function RoutingSettingsCard({
                     }}
                     placeholder="/"
                     disabled={disabled}
-                    className="flex-1 px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border/40 text-foreground outline-none"
+                    className="min-w-0 flex-1"
                   />
                   {saveMode === "explicit" && draftTargetPath !== (targetPath ?? "/") && (
                     <button

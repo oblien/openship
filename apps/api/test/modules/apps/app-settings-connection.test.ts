@@ -35,29 +35,30 @@ vi.mock("@repo/db", () => ({
     project: { findById, listEnvVars },
     service: { listByProject },
     domain: { listByProject: listDomains },
+    clusterDatabase: { list: async () => [] },
   },
 }));
 
-vi.mock("../../../src/modules/apps/catalog-source", () => ({ getTemplateForOrg }));
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({ getTemplateForOrg }));
 
 vi.mock("../../../src/lib/controller-helpers", () => ({
   assertResourceInOrg: () => undefined,
 }));
 
 // Rows are encrypt()-ed at rest; the prefix keeps "was decrypted" observable.
-vi.mock("../../../src/lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   encrypt: (v: string) => `enc:${v}`,
   decrypt: (v: string) => (v.startsWith("enc:") ? v.slice(4) : v),
 }));
 
 // Only the server lookup is faked — isLoopbackHost stays REAL, since "is this
 // host usable" is the behaviour under test.
-vi.mock("../../../src/lib/server-target", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/server-target")>()),
+vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/server-target")>()),
   resolveProjectServerHost,
 }));
 
-import { getAppConnectionView } from "../../../src/modules/apps/app-settings.service";
+import { getAppConnectionView } from "@repo/platform/engine/modules/apps/app-settings.service";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ctx = { organizationId: "org1", userId: "u1" } as RequestContext;
@@ -127,12 +128,18 @@ beforeEach(() => {
   });
   getTemplateForOrg.mockResolvedValue(convexTemplate);
   listByProject.mockResolvedValue([backend]);
-  listEnvVars.mockResolvedValue([{ key: "CONVEX_ADMIN_KEY", value: "enc:admin-secret" }]);
+  listEnvVars.mockResolvedValue([{ serviceId: "svc-backend", key: "CONVEX_ADMIN_KEY", value: "enc:admin-secret" }]);
   listDomains.mockResolvedValue([]);
   resolveProjectServerHost.mockResolvedValue("203.0.113.5");
 });
 
 describe("stored `{{publicUrl:…}}` tokens in an env value", () => {
+  it("does not turn a wildcard route into a literal application URL", async () => {
+    listDomains.mockResolvedValue([domainRow({ hostname: "*.example.com", serviceId: "svc-backend", targetPort: 3210 })]);
+    const { outputs } = await getAppConnectionView(ctx, "proj1");
+    expect(valueOf(outputs, "url")).toBe("http://203.0.113.5:3210");
+    expect(outputs.some((output) => output.value.includes("https://*."))).toBe(false);
+  });
   it("resolves a routed port to its persisted hostname and a port-only sibling to its reachable host port", async () => {
     listDomains.mockResolvedValue([domainRow({ serviceId: "svc-backend", targetPort: 3210 })]);
 
@@ -162,7 +169,7 @@ describe("stored `{{publicUrl:…}}` tokens in an env value", () => {
 
   it("an env_vars override of a token value wins over the compose literal", async () => {
     listEnvVars.mockResolvedValue([
-      { key: "CONVEX_CLOUD_ORIGIN", value: "enc:https://chosen.example.com" },
+      { serviceId: "svc-backend", key: "CONVEX_CLOUD_ORIGIN", value: "enc:https://chosen.example.com" },
     ]);
 
     const { outputs } = await getAppConnectionView(ctx, "proj1");
@@ -391,7 +398,7 @@ describe("synthesized internal view (no template connection)", () => {
       "http://db:5432",
     ]);
     for (const o of view.outputs) expect(o.internal).toBe(true);
-    expect(view.outputs.find((o) => o.id === "web")?.envKey).toBe("WEB_URL");
+    expect(view.outputs.find((o) => o.sourceServiceId === "s-web")?.envKey).toBe("WEB_URL");
   });
 
   it("service-based: a custom `advanced.alias` becomes the hostname (DNS-normalized)", async () => {
@@ -416,7 +423,7 @@ describe("synthesized internal view (no template connection)", () => {
 
     const { outputs } = await getAppConnectionView(ctx, "proj1");
 
-    expect(outputs.map((o) => o.id)).toEqual(["web"]);
+    expect(outputs.map((o) => o.id)).toEqual(["s-web:url"]);
   });
 
   it("service-based: skips a STATIC monorepo sub-app even though it carries a port", async () => {
@@ -440,7 +447,7 @@ describe("synthesized internal view (no template connection)", () => {
 
     const { outputs } = await getAppConnectionView(ctx, "proj1");
 
-    expect(outputs.map((o) => o.id)).toEqual(["web"]);
+    expect(outputs.map((o) => o.id)).toEqual(["s-web:url"]);
   });
 
   it("service-based: static skip does not rely on a null port (exposedPort set, ports empty)", async () => {
@@ -506,5 +513,106 @@ describe("synthesized internal view (no template connection)", () => {
     const view = await getAppConnectionView(ctx, "proj1");
 
     expect(view).toEqual({ outputs: [] });
+  });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  assertResourceInOrg: () => undefined,
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  assertResourceInOrg: () => undefined,
+}));
+
+describe("database connection values for project services", () => {
+  beforeEach(() => {
+    getTemplateForOrg.mockResolvedValue(null);
+    listEnvVars.mockResolvedValue([]);
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "db", image: "postgres:16", ports: ["5432"], enabled: true, environment: { POSTGRES_USER: "app", POSTGRES_PASSWORD: "a@b:c/d#", POSTGRES_DB: "my db" } }]);
+  });
+
+  it("builds a database driver URL with correctly escaped credentials", async () => {
+    const { outputs } = await getAppConnectionView(ctx, "proj1");
+    expect(outputs[0]).toMatchObject({ id: "svc-db:url", sourceServiceId: "svc-db", secret: true, envKey: "DATABASE_URL", value: "postgresql://app:a%40b%3Ac%2Fd%23@db:5432/my%20db" });
+  });
+
+  it("uses the same scoped env and Compose interpolation as the deployed service", async () => {
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "db", image: "postgres:16", ports: ["5432"], environment: { POSTGRES_PASSWORD: "${DB_SECRET}" }, advanced: { environmentTemplateKeys: ["POSTGRES_PASSWORD"] } }]);
+    listEnvVars.mockResolvedValue([{ key: "DB_SECRET", value: "enc:project-secret", serviceId: null }, { key: "DB_SECRET", value: "enc:service-secret", serviceId: "svc-db" }]);
+    const { outputs } = await getAppConnectionView(ctx, "proj1");
+    expect(outputs[0].value).toBe("postgresql://postgres:service-secret@db:5432/postgres");
+  });
+
+  // #1309: the dashboard catalog generates these credentials (24 random bytes as
+  // hex). Each catalog default must yield a connection URL with that password.
+  const generated = "0123456789abcdef".repeat(3);
+  it.each([
+    {
+      image: "postgres:16-alpine",
+      port: "5432",
+      environment: { POSTGRES_USER: "postgres", POSTGRES_PASSWORD: generated, POSTGRES_DB: "app" },
+      url: `postgresql://postgres:${generated}@db:5432/app`,
+    },
+    {
+      image: "mysql:8",
+      port: "3306",
+      environment: { MYSQL_ROOT_PASSWORD: generated, MYSQL_DATABASE: "app" },
+      url: `mysql://root:${generated}@db:3306/app`,
+    },
+    {
+      image: "mariadb:11",
+      port: "3306",
+      environment: { MARIADB_ROOT_PASSWORD: generated, MARIADB_DATABASE: "app" },
+      url: `mysql://root:${generated}@db:3306/app`,
+    },
+    {
+      image: "mongo:7",
+      port: "27017",
+      environment: { MONGO_INITDB_ROOT_USERNAME: "root", MONGO_INITDB_ROOT_PASSWORD: generated },
+      url: `mongodb://root:${generated}@db:27017/?authSource=admin`,
+    },
+  ])(
+    "builds the $image catalog default's URL from its generated password",
+    async ({ image, port, environment, url }) => {
+      listByProject.mockResolvedValue([
+        { id: "svc-db", name: "db", image, ports: [port], enabled: true, environment },
+      ]);
+      const { outputs } = await getAppConnectionView(ctx, "proj1");
+      expect(outputs[0]).toMatchObject({ secret: true, value: url });
+    },
+  );
+
+  it("does not offer a fabricated connection when credentials are missing", async () => {
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "db", image: "postgres:16", ports: ["5432"], environment: {} }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe("");
+  });
+
+  it("does not treat an unused Redis password env var as active authentication", async () => {
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "cache", image: "redis:7", ports: ["6379"], environment: { REDIS_PASSWORD: "unused" } }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe("redis://cache:6379/0");
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "cache", image: "redis:7", ports: ["6379"], commandArgv: ["redis-server", "--requirepass", "real-password"], environment: {} }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe("redis://:real-password@cache:6379/0");
+  });
+
+  it.each([
+    { commandArgv: ["redis-server", "--requirepass", "$literal"], password: "%24literal" },
+    { commandArgv: ["redis-server", "--requirepass=real-password"], password: "real-password" },
+    { commandArgv: ["sh", "-c", 'redis-server --requirepass "$REDIS_PASSWORD"'], password: "from-env" },
+  ])("resolves Redis authentication using the runtime's command semantics: $commandArgv", async ({ commandArgv, password }) => {
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "cache", image: "redis:7", ports: ["6379"], commandArgv, environment: { REDIS_PASSWORD: "from-env" } }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe(`redis://:${password}@cache:6379/0`);
+  });
+
+  it("uses a Redis URI for Valkey and an HTTP URL for RedisInsight", async () => {
+    listByProject.mockResolvedValue([{ id: "cache", name: "cache", image: "valkey/valkey:8", ports: ["6379"], environment: { VALKEY_EXTRA_FLAGS: "--requirepass secret --appendonly yes" } }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe("redis://:secret@cache:6379/0");
+    listByProject.mockResolvedValue([{ id: "ui", name: "insight", image: "redis/redisinsight:3", ports: ["5540"], environment: {} }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs[0].value).toBe("http://insight:5540");
+  });
+
+  it("skips disabled services", async () => {
+    listByProject.mockResolvedValue([{ id: "svc-db", name: "db", image: "postgres:16", ports: ["5432"], enabled: false }]);
+    expect((await getAppConnectionView(ctx, "proj1")).outputs).toEqual([]);
   });
 });

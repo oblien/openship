@@ -1,0 +1,199 @@
+---
+title: Data transfer
+description: Export, review, and import installation or project data.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+## Instance location
+
+Use **Settings → Instance → Instance location** to move an entire controller between Desktop and a
+server. `/api/system/instance/*` uses one durable handoff in both directions: pause and drain the
+source, verify the encrypted snapshot, retire the source, then activate the receiver. Resume uses the
+same saved snapshot; it never reactivates stale source data. These operations require the instance
+administrator, while pairing a Desktop grants only its signed-in user's existing permissions.
+
+`POST /api/system/instance/provision` accepts `{ serverId, access: "desktop" | "browser", domain: { kind: "custom" | "free", hostname }, confirmed: true }`.
+Optional `mapping` contains
+`sourceServerId` and `connectionServerId` for a verified SSH connection to the source host.
+The normal deployment engine installs the compatible API image with persistent storage; `browser`
+also installs the dashboard. Server preparation completes before the source is paused.
+
+See [Move your Openship instance](/docs/guides/migrate-control-plane) for prerequisites, credential
+handling, API addresses, cancellation and recovery. Archive import below is for data recovery and
+does not retire another controller.
+
+## Earlier team-mode migration endpoints
+
+These routes remain for clients using the earlier team-mode workflow and require an **instance
+administrator**. New instance moves use the handoff above. Forward requests require
+`teamMode === "single_user"`; switch-back requires an earlier team mode.
+
+`POST /api/system/migration/start`, `client.instance.migrateToServer()` and
+`openship system migration start` remain disabled with **501 `SERVER_MIGRATION_UNAVAILABLE`**.
+They do not start the new handoff or copy any data. Use **Settings → Instance → Instance location**
+to review the destination and confirm a move.
+
+The earlier preflight and disabled start endpoint share a body:
+
+```
+POST /api/system/migration/start
+```
+
+<TypeTable
+  type={{
+    serverId: { type: 'string', description: 'The saved server to migrate onto.', required: true },
+    domain: { type: '{ kind: "custom", hostname } | { kind: "free", slug }', description: 'Where the migrated instance will be reachable — a custom hostname or a free subdomain slug.', required: true },
+  }}
+/>
+
+- `POST /api/system/migration/start-cloud` — Path B, migrate to Openship Cloud. Body: `{ allowNonEmptyTarget?: boolean }`.
+- `POST /api/system/migration/start-tunnel` — Path C, expose via an edge tunnel. Body: `{ slug: string }` (required).
+- `POST /api/system/migration/switch-back` — reverse any of them. Body: `{ abandonRemote?: boolean }`.
+
+<Callout title="Switch-back cuts teammates off" type="warn">
+Reversing to single-user mode revokes teammate access. The remote keeps a copy for a 30-day grace period so
+you can recover if you change your mind.
+</Callout>
+
+## Instance and project data transfer
+
+Export the entire instance or a dependency-complete selection of projects and environments. These
+routes require **instance administrator** access (`requireInstanceAdmin()` plus a handler-level check).
+A workspace owner role alone does not grant access to instance credentials.
+
+```
+POST /api/system/data-transfer/export
+```
+
+<TypeTable
+  type={{
+    selection: { type: 'object', description: 'scope: instance or projects; projectIds for project scope; history: analytics, activity, backups, incidents, migrations. Credentials and all history are included by default. Project options include includeEnvironments, includeLinkedProjects, includeServers, includeSecrets, includeDomains, includeBackups, and includeIntegrations.' },
+  }}
+/>
+
+```
+POST /api/system/data-transfer/import
+```
+
+<TypeTable
+  type={{
+    file: { type: 'object', description: 'A DataTransferFile produced by export.', required: true },
+    passphrase: { type: 'string', description: 'Only needed for older password-protected archives. New exports do not use a password.' },
+    mode: { type: '"wipe" | "merge"', description: 'wipe replaces the entire instance; merge adds records. Project scope requires merge.', default: 'merge' },
+    selection: { type: 'object', description: 'scope, projectIds, history, conflictPolicy (skip or overwrite), per-project projectActions, serverMappings, includeSecrets, includeDomains, includeBackups, includeIntegrations, and overwriteDependencies.' },
+  }}
+/>
+
+Project imports remap ownership to the active request workspace. They omit instance accounts/settings,
+reuse matching server connections, and skip existing projects by default. Overwrite replaces the selected
+projects, including removing destination-only records in the selected categories and clearing credentials
+that were cleared at the source. Categories excluded from the import are retained. Shared dependencies are kept unless
+`overwriteDependencies` is explicitly enabled. Source local hosts require an explicit `serverMappings`
+entry (`local` for a project without a server row). Cloud projects require the same connected cloud
+account. A project archive cannot be used with `wipe`.
+
+Use the chunk-upload endpoints for large files. After uploading, POST `{ selection }` to the session's
+`preview` endpoint. It returns `projects`, `servers`, `availableServers`, row counts, `rowsRemoved`, `warnings`, and
+`blockers` without consuming the upload. POST `{ mode, passphrase, selection }` to
+`/api/system/data-transfer/import/session/:sessionId/finalize/stream` to apply. Validation is repeated
+inside the import transaction. A failed review or password attempt retains the uploaded chunks.
+
+New instance and project exports use envelope version 4 and contain **unencrypted JSON**, including
+environment values, SSH keys, tokens, deployment snapshots, and inline Compose configuration. No
+password is required; a `passphrase` supplied by an older export client is ignored. Set
+`includeSecrets: false` explicitly to omit credentials. Imports still accept versions 1–3, including
+legacy password-protected files, and encrypt restored credentials with the destination instance's key.
+New archives with tables or fields the destination cannot store are rejected before any data changes;
+update the destination instead of losing those fields. Volume data, source folders, and host TLS files
+remain on their server.
+
+In project imports, loopback server connections require explicit mapping. Backup policies that point at source-local storage
+or a changed backup host are disabled until the operator verifies the destination storage. Direct transfer
+supports whole-instance exports; project selections use the file review and import endpoints.
+
+<Callout title="Import limits & errors" type="error">
+The import body is capped at **500 MB** (**413 `PAYLOAD_TOO_LARGE`** above it). A malformed file or a wrong
+or missing password for a legacy sealed archive returns **400**. Project dependency/mapping conflicts return **409
+`PROJECT_IMPORT_REQUIRES_REVIEW`**; whole-instance merge collisions return **409 `PK_COLLISION`**. Select
+project scope and explicit overwrite options to resolve project conflicts. A concurrent migration/import
+returns **503 `BUSY`**.
+</Callout>
+
+## SDK and CLI
+
+Remote `client.instance.previewExport`, `exportData` and `importData` use the existing instance-admin
+handlers. An organization-bound or scoped credential cannot export other workspaces by omitting its
+organization. The SDK does not retry an import whose response is lost.
+
+```ts
+const preview = await client.instance.previewExport();
+const archive = await client.instance.exportData();
+// Store privately: current exports include plaintext credentials.
+const result = await destination.instance.importData({ file: archive, mode: "merge" });
+```
+
+Import requires an explicit `mode` in the SDK. `selection` supports project IDs, conflict choices,
+server mappings and included resources. Database rows and secret envelopes are opaque to the client;
+the controller owns archive validation and restoration.
+
+Use `openship system data-transfer` for JSON exports/imports. Direct-transfer pairing and chunk upload
+remain the dashboard's recovery protocol. Legacy `instance` team-mode migration calls retain the API's
+capability restrictions; `migrations` is the separate workload move/copy API.
+
+{/* api-operations:start */}
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Team-migration readiness check (read-only). | `instance.preflightMigration(input)`<br />Remote client | `POST /api/system/migration/preflight`<br />`settings:admin` · Self-hosted |
+| Earlier server migration (501 unavailable; use Instance location). | `instance.migrateToServer(input)`<br />Remote client | `POST /api/system/migration/start`<br />`settings:admin` · Self-hosted |
+| Migrate → Openship Cloud. | `instance.migrateToCloud(input?)`<br />Remote client | `POST /api/system/migration/start-cloud`<br />`settings:admin` · Self-hosted |
+| Expose this instance via an edge tunnel. | `instance.exposeTunnel(input)`<br />Remote client | `POST /api/system/migration/start-tunnel`<br />`settings:admin` · Self-hosted |
+| Reverse a migration back to single-user. | `instance.switchBack(input?)`<br />Remote client | `POST /api/system/migration/switch-back`<br />`settings:admin` · Self-hosted |
+| Preview a project selection and its dependencies (instance administrator). | `instance.previewExport(input?)`<br />Remote client | `POST /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
+| Export the instance or selected projects (instance administrator). | `instance.exportData(input?)`<br />Remote client | `POST /api/system/data-transfer/export`<br />`settings:admin` · Self-hosted |
+| Import an export file, ≤500 MB, with scope and conflict options (instance administrator). | `instance.importData(input)`<br />Remote client | `POST /api/system/data-transfer/import`<br />`settings:admin` · Self-hosted |
+| Receive one chunk of an authorized direct transfer. | HTTP only | `PUT /api/system/data-transfer/direct/chunk/:sessionId/:index`<br />`Handler authentication` · Self-hosted |
+| Finalize a received direct transfer and stream progress. | HTTP only | `POST /api/system/data-transfer/direct/chunk/:sessionId/finalize/stream`<br />`Handler authentication` · Self-hosted |
+| Keep a direct chunk-transfer session alive. | HTTP only | `POST /api/system/data-transfer/direct/chunk/:sessionId/heartbeat`<br />`Handler authentication` · Self-hosted |
+| Open a direct chunk-transfer upload. | HTTP only | `POST /api/system/data-transfer/direct/chunk/init`<br />`Handler authentication` · Self-hosted |
+| Receive a direct instance transfer. | HTTP only | `POST /api/system/data-transfer/direct/receive`<br />`Handler authentication` · Self-hosted |
+| Send an instance to an authorized destination. | HTTP only | `POST /api/system/data-transfer/direct/send`<br />`settings:admin` · Self-hosted |
+| Send an instance and stream transfer progress. | HTTP only | `POST /api/system/data-transfer/direct/send/stream`<br />`settings:admin` · Self-hosted |
+| Create a direct-transfer session. | HTTP only | `POST /api/system/data-transfer/direct/session`<br />`settings:admin` · Self-hosted |
+| Open a chunked file-import session. | HTTP only | `POST /api/system/data-transfer/import/session`<br />`settings:admin` · Self-hosted |
+| Upload one file-import chunk. | HTTP only | `PUT /api/system/data-transfer/import/session/:sessionId/chunk/:index`<br />`settings:admin` · Self-hosted |
+| Apply a reviewed file import and stream progress. | HTTP only | `POST /api/system/data-transfer/import/session/:sessionId/finalize/stream`<br />`settings:admin` · Self-hosted |
+| Preview an uploaded file's selection, conflicts, and server mappings. | HTTP only | `POST /api/system/data-transfer/import/session/:sessionId/preview`<br />`settings:admin` · Self-hosted |
+| List exportable projects and instance row counts (instance administrator). | HTTP only | `GET /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
+
+### Instance location
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Show connection instructions for an API-only instance. | HTTP only | `GET /`<br />`Handler authentication` · Self-hosted |
+| Show how to sign in to an API-only instance through Desktop. | HTTP only | `GET /login`<br />`Handler authentication` · Self-hosted |
+| Show the invitation address to open in Desktop; no invitation data is exposed. | HTTP only | `GET /accept-invite/:id`<br />`Handler authentication` · Self-hosted |
+| Read this installation’s controller role and handoff progress (instance administrator or trusted Desktop recovery). | HTTP only | `GET /api/system/instance`<br />`Handler authentication` · Self-hosted |
+| Read the active installation identity and protocol version without account data. | HTTP only | `GET /api/system/instance/identity`<br />`Handler authentication` · Self-hosted |
+| Check portable credentials and source-host bindings before moving (instance administrator, read-only). | HTTP only | `POST /api/system/instance/preflight`<br />`settings:admin` · Self-hosted |
+| Create a ten-minute source or receiver capability for a whole-instance handoff (instance administrator). | HTTP only | `POST /api/system/instance/offer`<br />`settings:admin` · Self-hosted |
+| Start a reviewed move using the other instance’s code; existing workloads stay on their hosts. | HTTP only | `POST /api/system/instance/move`<br />`settings:admin` · Self-hosted |
+| Deploy API-only or API plus dashboard on a selected server through the normal deployment engine, then hand off control. | HTTP only | `POST /api/system/instance/provision`<br />`settings:admin` · Self-hosted |
+| Resume the saved handoff; a retired source never falls back to its stale data. | HTTP only | `POST /api/system/instance/resume`<br />`Handler authentication` · Self-hosted |
+| Cancel before retirement and restore the receiver only after source confirmation. | HTTP only | `POST /api/system/instance/cancel`<br />`Handler authentication` · Self-hosted |
+| Connect Desktop with a one-use device code without copying instance data. | HTTP only | `POST /api/system/instance/connect`<br />`settings:admin` · Self-hosted |
+| Connect Desktop to a confirmed API address; remote sign-in is still required. | HTTP only | `POST /api/system/instance/connect-address`<br />`settings:admin` · Self-hosted |
+| Resume an unrelated paused local instance; a migrated source must use a reverse handoff. | HTTP only | `POST /api/system/instance/disconnect`<br />`settings:admin` · Self-hosted |
+| Pull the latest remote instance back into Desktop with remote administrator authorization. | HTTP only | `POST /api/system/instance/return`<br />`settings:admin` · Self-hosted |
+| Move current Desktop data back to the previously paired server installation. | HTTP only | `POST /api/system/instance/move-previous`<br />`settings:admin` · Self-hosted |
+| Issue a ten-minute device code for the signed-in user’s own permissions. | HTTP only | `POST /api/system/instance/pair`<br />`Handler authentication` · Self-hosted |
+| Atomically exchange the one-use code for its issuing user’s remote device session. | HTTP only | `POST /api/system/instance/pair/claim`<br />`Handler authentication` · Self-hosted |
+| Bind a provisioned receiver to one handoff using its installation secret; does not activate it. | HTTP only | `POST /api/system/instance/bootstrap`<br />`Handler authentication` · Self-hosted |
+| Capability-authenticated bind, freeze, stage, prepare, retire, activate, complete or abort; activation requires source retirement proof. | HTTP only | `POST /api/system/instance/peer/:id/:action`<br />`Handler authentication` · Self-hosted |
+| Download an authenticated encrypted snapshot chunk for the bound handoff. | HTTP only | `GET /api/system/instance/peer/:id/chunks/:index`<br />`Handler authentication` · Self-hosted |
+| Verify and store an encrypted snapshot chunk for the bound receiver. | HTTP only | `PUT /api/system/instance/peer/:id/chunks/:index`<br />`Handler authentication` · Self-hosted |
+
+{/* api-operations:end */}

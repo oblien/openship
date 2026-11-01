@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { compileCloudDockerfilePlan } from "./cloud";
 import { resolveDockerBuildArgs } from "./docker-build-args";
 
 describe("resolveDockerBuildArgs (#689)", () => {
@@ -47,21 +46,31 @@ describe("resolveDockerBuildArgs (#689)", () => {
   });
 });
 
-describe("cloud Dockerfile build args (#689)", () => {
-  it("applies the same explicit ARG override to the compiled workspace plan", () => {
-    const plan = compileCloudDockerfilePlan(
-      `ARG BASE=alpine\nFROM \${BASE}\nARG APP_PACKAGE=default\nRUN echo \${APP_PACKAGE}\n`,
-      {
-        envVars: { BASE: "busybox" },
-        buildArgs: { BASE: "alpine:3.20", APP_PACKAGE: "@myorg/api" },
-      },
-    );
+describe("OPENSHIP_COMMIT_SHA (#1495)", () => {
+  const head = "9f2c4e1a7b3d5f6e8a0c2b4d6f8e0a1c3b5d7f9e";
 
-    expect(plan.globalArgs.BASE).toBe("alpine:3.20");
-    // The plan deliberately keeps FROM symbolic; the cloud executor resolves
-    // it from globalArgs when it selects the workspace base image.
-    expect(plan.stages[0]?.baseImage).toBe("${BASE}");
-    expect(plan.stages[0]?.args.APP_PACKAGE).toBe("@myorg/api");
-    expect(JSON.stringify(plan.stages[0]?.steps)).toContain("@myorg/api");
+  it("passes the deployment's commit to the build", () => {
+    expect(resolveDockerBuildArgs({ envVars: {}, commitSha: head })).toEqual({
+      NODE_ENV: "production",
+      OPENSHIP_COMMIT_SHA: head,
+    });
+  });
+
+  it("overrides a stale stored value of the same name", () => {
+    const stale = "0000000aaaaaaabbbbbbbcccccccdddddddeeeee";
+    expect(
+      resolveDockerBuildArgs({
+        envVars: { OPENSHIP_COMMIT_SHA: stale },
+        buildArgs: { OPENSHIP_COMMIT_SHA: stale, REVISION: stale },
+        commitSha: head,
+      }),
+    ).toMatchObject({ OPENSHIP_COMMIT_SHA: head, REVISION: stale });
+  });
+
+  it("is omitted when the source has no commit or the value is not a commit hash", () => {
+    expect(resolveDockerBuildArgs({ envVars: {} })).not.toHaveProperty("OPENSHIP_COMMIT_SHA");
+    expect(resolveDockerBuildArgs({ envVars: {}, commitSha: "main; rm -rf /" })).not.toHaveProperty(
+      "OPENSHIP_COMMIT_SHA",
+    );
   });
 });

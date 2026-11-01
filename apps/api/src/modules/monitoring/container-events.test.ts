@@ -42,7 +42,7 @@ const h = vi.hoisted(() => ({
   tracked: true,
 }));
 
-vi.mock("./health-watch", () => ({
+vi.mock("@repo/platform/engine/modules/monitoring/health-watch", () => ({
   runHealthWatch: h.run,
   isTrackedHealthContainer: () => h.tracked,
   // Mirrors health-watch.ts's own helpers (asserted against the real pair by the
@@ -59,7 +59,7 @@ vi.mock("./health-watch", () => ({
   },
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     get OPENSHIP_DISABLE_CONTAINER_EVENTS() {
       return h.disabled;
@@ -71,8 +71,8 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/adapters")>()),
   getPlatform: () => ({ target: h.target }),
 }));
-vi.mock("../../lib/deployment-runtime", () => ({ resolveDeploymentRuntimeForRead: h.resolve }));
-vi.mock("../../lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({ resolveDeploymentRuntimeForRead: h.resolve }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: h.retain, release: h.release },
 }));
 
@@ -157,7 +157,7 @@ async function advance(ms: number) {
 
 /** One full sweep's worth of lease renewal, as `runHealthWatch` would issue it. */
 async function renew(keys: string[]) {
-  const { renewEventWatchers } = await import("./container-events");
+  const { renewEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
   await renewEventWatchers(keys);
   await flush();
 }
@@ -167,7 +167,7 @@ beforeEach(async () => {
   // want a real timer, and this suite's first `beforeEach` pays the whole
   // transform+resolve cost — under a parallel `turbo run test` that exceeded the 10s
   // hook timeout, so the suite failed only when the rest of the repo ran alongside it.
-  const { __resetContainerEventWatchers } = await import("./container-events");
+  const { __resetContainerEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
   vi.useFakeTimers();
   __resetContainerEventWatchers();
   boxes.clear();
@@ -183,7 +183,7 @@ beforeEach(async () => {
     const serverId = (dep.meta?.serverId as string | undefined) ?? null;
     return { runtime: box(serverId).runtime, serverId };
   });
-});
+}, 20_000);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -530,15 +530,33 @@ describe("lease", () => {
     expect(h.release).not.toHaveBeenCalled();
   });
 
-  it("closes every stream on shutdown", async () => {
+  it("closes every stream on shutdown and rejects renewal from an in-flight sweep", async () => {
     await renew([key("srv1"), key("srv2")]);
-    const { stopAllContainerEventWatchers } = await import("./container-events");
+    const { stopAllContainerEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
 
-    await stopAllContainerEventWatchers();
+    await stopAllContainerEventWatchers({ closing: true });
 
     expect(box("srv1").live().stopped).toBe(true);
     expect(box("srv2").live().stopped).toBe(true);
     expect(h.release.mock.calls.map((c) => c[0]).sort()).toEqual(["srv1", "srv2"]);
+
+    h.resolve.mockClear();
+    await renew([key("srv1"), key("srv2"), key("srv3")]);
+    await advance(60_000);
+    expect(h.resolve).not.toHaveBeenCalled();
+    expect(h.run).not.toHaveBeenCalled();
+  });
+
+  it("can resume subscriptions after monitoring is paused", async () => {
+    await renew([key("srv1")]);
+    const original = box("srv1").live();
+    const { stopAllContainerEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
+    await stopAllContainerEventWatchers();
+    expect(original.stopped).toBe(true);
+
+    await renew([key("srv1")]);
+    expect(box("srv1").streams).toHaveLength(2);
+    expect(box("srv1").live().stopped).toBe(false);
   });
 });
 
@@ -566,14 +584,16 @@ describe("gates", () => {
     expect(h.release).toHaveBeenCalledWith("srv1");
   });
 
-  it("subscribes to nothing on a target with no event feed", async () => {
-    // Desktop has no always-on poller to accelerate; Oblien exposes no event feed.
-    for (const target of ["desktop", "cloud"]) {
-      h.target = target;
-      await renew([key("srv1")]);
-    }
+  it("subscribes to the managed Docker event feed in Cloud mode", async () => {
+    h.target = "cloud";
+    await renew([key("srv1")]);
+    expect(h.resolve).toHaveBeenCalledOnce();
+  });
 
-    expect(h.resolve).not.toHaveBeenCalled();
+  it("accelerates an enabled desktop watcher using the same Docker subscriptions", async () => {
+    h.target = "desktop";
+    await renew([key("srv1")]);
+    expect(h.resolve).toHaveBeenCalledOnce();
   });
 
   it("ignores an org-less group key rather than resolving a runtime for it", async () => {

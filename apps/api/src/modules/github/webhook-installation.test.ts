@@ -24,13 +24,13 @@ vi.mock("@repo/db", () => ({
     resourceGrant: { deleteGitHubGrantsForOwner: h.deleteGrants },
   },
 }));
-vi.mock("../../config/env", () => ({ env: { CLOUD_MODE: false } }));
-vi.mock("./github.auth", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   getGitHubAuthMode: () => "app",
   invalidateUserGitHubCache: h.invalidateUser,
   invalidateOrgGitHubCache: h.invalidateOrg,
 }));
-vi.mock("./github-source.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github-source.service", () => ({
   listGitHubSourcesForWebhook: h.listSourcesForWebhook,
 }));
 

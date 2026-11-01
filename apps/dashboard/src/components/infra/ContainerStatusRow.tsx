@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowUpCircle, RefreshCw, CheckCircle2, CircleSlash, Wrench, Download } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { type ServerContainerStatus } from "@/lib/api/system";
 import { useI18n } from "@/components/i18n-provider";
 import { useInfraFix } from "@/hooks/useInfraFix";
@@ -77,9 +78,9 @@ export function ContainerStatusRow({
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-warning-bg px-3 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
         >
           {busy ? (
-            <RefreshCw className="size-3.5 animate-spin" />
+            <UiIcon name="refresh" className="size-3.5 animate-spin" />
           ) : (
-            <ArrowUpCircle className="size-3.5" />
+            <UiIcon name="arrow-up-circle" className="size-3.5" />
           )}
           {busy ? c.updating : c.update}
         </button>
@@ -92,18 +93,18 @@ export function ContainerStatusRow({
           disabled={busy}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-danger-bg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
         >
-          {busy ? <RefreshCw className="size-3.5 animate-spin" /> : <Wrench className="size-3.5" />}
+          {busy ? <UiIcon name="refresh" className="size-3.5 animate-spin" /> : <UiIcon name="wrench" className="size-3.5" />}
           {busy ? c.starting : c.fix}
         </button>
       ) : down ? (
         // Down with no safe fix: don't claim "Up to date" (it isn't serving).
         <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <CircleSlash className="size-3.5" />
+          <UiIcon name="ban" className="size-3.5" />
           {c.stopped}
         </span>
       ) : (
         <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-success">
-          <CheckCircle2 className="size-3.5" />
+          <UiIcon name="check-circle" className="size-3.5" />
           {legacy ? c.running : c.upToDate}
         </span>
       )}
@@ -147,7 +148,7 @@ export function EdgeInstallRow({
             : "inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-muted/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
         }
       >
-        <Download className="size-3.5" />
+        <UiIcon name="download" className="size-3.5" />
         {c.installEdge}
       </button>
     </div>

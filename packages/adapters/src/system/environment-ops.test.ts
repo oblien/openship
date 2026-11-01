@@ -84,9 +84,7 @@ const HOSTS = {
     interceptedProbe('Please login as the user "ec2-user" rather than the user "root".'),
   ),
   /** A box we never measured at all — refused for a different reason than the above. */
-  unmeasured: parseEnvironmentProbe(
-    unansweredProbe("command timed out after 20000ms: sh -lc '…'"),
-  ),
+  unmeasured: parseEnvironmentProbe(unansweredProbe("command timed out after 20000ms: sh -lc '…'")),
 } satisfies Record<string, EnvironmentProfile>;
 
 type HostName = keyof typeof HOSTS;
@@ -124,8 +122,8 @@ const CALLS: Readonly<Record<keyof HostCommands, (ops: EnvOps) => Answer<unknown
   pkgAvailableVersion: (ops) => ops.pkgAvailableVersion("git"),
   serviceEnableStart: (ops) => ops.serviceEnableStart("openship-api"),
   serviceIsActive: (ops) => ops.serviceIsActive("docker"),
-  firewallAllow: (ops) =>
-    ops.firewallAllow({ cidrs: ["172.16.0.0/12"], port: 2222, proto: "tcp" }),
+  managedNetworkServices: (ops) => ops.managedNetworkServices("abcdef0123456789abcdef0123456789"),
+  firewallAllow: (ops) => ops.firewallAllow({ cidrs: ["172.16.0.0/12"], port: 2222, proto: "tcp" }),
   dockerInstall: (ops) => ops.dockerInstall(),
   dockerStart: (ops) => ops.dockerStart(),
   releaseArch: (ops) => ops.releaseArch(),
@@ -144,9 +142,7 @@ function steps(answer: Answer<unknown>): readonly string[] {
   return answer.value as readonly string[];
 }
 
-const CASES = HOST_NAMES.flatMap((hostName) =>
-  COMMANDS.map((command) => ({ hostName, command })),
-);
+const CASES = HOST_NAMES.flatMap((hostName) => COMMANDS.map((command) => ({ hostName, command })));
 
 /** The refusal itself, with the `(host: …)` label envOps appends stripped off. */
 function withoutHostSuffix(reason: string): string {
@@ -162,34 +158,49 @@ describe("envOps totality", () => {
    * finished provisioning with no dockerd and no error anywhere. There is no third shape
    * to read that way now, and this asserts it for every host × every command.
    */
-  it.each(CASES)("$hostName · $command answers with commands or a reason", ({ hostName, command }) => {
-    const answer = CALLS[command](envOps(HOSTS[hostName]));
+  it.each(CASES)(
+    "$hostName · $command answers with commands or a reason",
+    ({ hostName, command }) => {
+      const answer = CALLS[command](envOps(HOSTS[hostName]));
 
-    if (answer.supported) {
-      expect(answer).not.toHaveProperty("reason");
-      const value = answer.value;
-      if (Array.isArray(value)) {
-        expect(value.length).toBeGreaterThan(0);
-        for (const step of value) {
-          expect(typeof step).toBe("string");
-          expect(step.trim()).not.toBe("");
+      if (answer.supported) {
+        expect(answer).not.toHaveProperty("reason");
+        const value = answer.value;
+        if (Array.isArray(value)) {
+          expect(value.length).toBeGreaterThan(0);
+          for (const step of value) {
+            expect(typeof step).toBe("string");
+            expect(step.trim()).not.toBe("");
+          }
+        } else if (command === "managedNetworkServices") {
+          expect(Object.keys(value as object).sort()).toEqual([
+            "armTimer",
+            "cancelTimer",
+            "disable",
+            "enable",
+            "reload",
+          ]);
+          for (const step of Object.values(value as Record<string, string>)) {
+            expect(typeof step).toBe("string");
+            expect(step.trim()).not.toBe("");
+          }
+        } else {
+          expect(typeof value).toBe("string");
+          expect(value).not.toBe("");
         }
-      } else {
-        expect(typeof value).toBe("string");
-        expect(value).not.toBe("");
+        return;
       }
-      return;
-    }
 
-    expect(answer).not.toHaveProperty("value");
-    // A refusal an operator can't act on is the same dead end as a silent skip, just
-    // louder — so a bare "unsupported" fails here.
-    //
-    // Measured WITHOUT the `(host: …)` suffix envOps appends. With it, every refusal
-    // clears any sane floor on the strength of the host label alone, and the assertion
-    // could not fail — a literal `reason: "no"` would have passed.
-    expect(withoutHostSuffix(answer.reason).length).toBeGreaterThan(30);
-  });
+      expect(answer).not.toHaveProperty("value");
+      // A refusal an operator can't act on is the same dead end as a silent skip, just
+      // louder — so a bare "unsupported" fails here.
+      //
+      // Measured WITHOUT the `(host: …)` suffix envOps appends. With it, every refusal
+      // clears any sane floor on the strength of the host label alone, and the assertion
+      // could not fail — a literal `reason: "no"` would have passed.
+      expect(withoutHostSuffix(answer.reason).length).toBeGreaterThan(30);
+    },
+  );
 
   it.each(CASES)("$hostName · $command names the host when it refuses", ({ hostName, command }) => {
     const ops = envOps(HOSTS[hostName]);
@@ -263,7 +274,11 @@ describe("envOps gating", () => {
     for (const hostName of HOST_NAMES) {
       for (const answer of allAnswers(HOSTS[hostName])) {
         if (!answer.supported) continue;
-        const text = Array.isArray(answer.value) ? answer.value.join(" ") : String(answer.value);
+        const text = Array.isArray(answer.value)
+          ? answer.value.join(" ")
+          : typeof answer.value === "object" && answer.value
+            ? Object.values(answer.value).join(" ")
+            : String(answer.value);
         expect(text).not.toMatch(/\bzypper\b|\bpacman\b/);
       }
     }
@@ -322,7 +337,9 @@ describe("envOps docker install", () => {
       if (name === "amzn2") continue;
       const other = envOps(HOSTS[name]).dockerInstall();
       if (!other.supported) continue;
-      expect(opScript(other.value as readonly string[]), name).not.toContain("|| command -v docker");
+      expect(opScript(other.value as readonly string[]), name).not.toContain(
+        "|| command -v docker",
+      );
     }
   });
 
@@ -456,11 +473,21 @@ describe("envOps packages", () => {
     ]);
     expect(steps(envOps(HOSTS.amzn2023).pkgInstall(["git"]))).toEqual(["dnf install -y git"]);
     expect(steps(envOps(HOSTS.centos7).pkgInstall(["git"]))).toEqual(["yum install -y git"]);
-    expect(steps(envOps(HOSTS.alpine320).pkgInstall(["git"]))).toEqual([
-      "apk add --no-cache git",
-    ]);
+    expect(steps(envOps(HOSTS.alpine320).pkgInstall(["git"]))).toEqual(["apk add --no-cache git"]);
     expect(steps(envOps(HOSTS.macos).pkgInstall(["git"]))).toEqual(["brew install git"]);
     expect(steps(envOps(HOSTS.alpine320).pkgRemove(["git"]))).toEqual(["apk del git"]);
+  });
+
+  it("can install network prerequisites without optional firewall or kernel recommendations", () => {
+    expect(
+      steps(envOps(HOSTS.ubuntu2404).pkgInstall(["wireguard-tools"], { installRecommends: false })),
+    ).toEqual([
+      "apt-get update -qq",
+      "apt-get install -y -qq --no-install-recommends wireguard-tools",
+    ]);
+    expect(
+      steps(envOps(HOSTS.amzn2023).pkgInstall(["wireguard-tools"], { installRecommends: false })),
+    ).toEqual(["dnf install -y --setopt=install_weak_deps=False wireguard-tools"]);
   });
 
   it("picks the per-manager package set, and repeats the reason when there isn't one", () => {
@@ -469,9 +496,7 @@ describe("envOps packages", () => {
       "apt-get update -qq",
       "apt-get install -y -qq python3 python3-pip python3-venv",
     ]);
-    expect(steps(python(envOps(HOSTS.amzn2023)))).toEqual([
-      "dnf install -y python3 python3-pip",
-    ]);
+    expect(steps(python(envOps(HOSTS.amzn2023)))).toEqual(["dnf install -y python3 python3-pip"]);
     // A gap in a toolchain table is a sentence someone wrote, and it survives to here
     // instead of becoming an install that quietly does nothing.
     const onAlpine = python(envOps(HOSTS.alpine320));
@@ -515,7 +540,9 @@ describe("envOps services", () => {
     expect(steps(systemd.serviceEnableStart("openship-api"))).toEqual([
       "systemctl enable --now 'openship-api'",
     ]);
-    expect(steps(systemd.serviceIsActive("docker"))).toEqual(["systemctl is-active --quiet 'docker'"]);
+    expect(steps(systemd.serviceIsActive("docker"))).toEqual([
+      "systemctl is-active --quiet 'docker'",
+    ]);
 
     // Two steps on OpenRC, not one: there is no `--now`, which is how Alpine used to get a
     // start command of `undefined` out of a table that assumed systemd.
@@ -555,11 +582,19 @@ describe("envOps services", () => {
 describe("envOps firewall", () => {
   it("renders each manager's syntax", () => {
     expect(
-      steps(envOps(HOSTS.ubuntu2404).firewallAllow({ cidrs: ["172.16.0.0/12"], port: 2222, proto: "tcp" })),
+      steps(
+        envOps(HOSTS.ubuntu2404).firewallAllow({
+          cidrs: ["172.16.0.0/12"],
+          port: 2222,
+          proto: "tcp",
+        }),
+      ),
     ).toEqual(["ufw allow from 172.16.0.0/12 to any port 2222 proto tcp"]);
 
     expect(
-      steps(envOps(HOSTS.rocky9).firewallAllow({ cidrs: ["172.16.0.0/12"], port: 2222, proto: "tcp" })),
+      steps(
+        envOps(HOSTS.rocky9).firewallAllow({ cidrs: ["172.16.0.0/12"], port: 2222, proto: "tcp" }),
+      ),
     ).toEqual([
       'firewall-cmd --permanent --add-rich-rule=\'rule family="ipv4" source address="172.16.0.0/12" port port="2222" protocol="tcp" accept\'',
       "firewall-cmd --reload",
@@ -570,7 +605,9 @@ describe("envOps firewall", () => {
     ).toEqual(["nft add rule inet filter input tcp dport 2222 accept"]);
 
     expect(
-      steps(envOps(HOSTS.rawIptables).firewallAllow({ cidrs: ["10.0.0.0/8"], port: 443, proto: "tcp" })),
+      steps(
+        envOps(HOSTS.rawIptables).firewallAllow({ cidrs: ["10.0.0.0/8"], port: 443, proto: "tcp" }),
+      ),
     ).toEqual(["iptables -I INPUT -p tcp -s 10.0.0.0/8 --dport 443 -j ACCEPT"]);
   });
 

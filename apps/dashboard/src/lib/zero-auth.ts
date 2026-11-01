@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { LOOPBACK_HOSTNAMES } from "@repo/core";
 
 /**
@@ -60,7 +61,8 @@ export function readZeroAuthAttempt(): number | undefined {
     if (!raw) return undefined;
     const at = Number(raw);
     return Number.isFinite(at) ? at : undefined;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/zero-auth");
     return undefined;
   }
 }
@@ -68,7 +70,8 @@ export function readZeroAuthAttempt(): number | undefined {
 export function markZeroAuthAttempt(now: number): void {
   try {
     window.sessionStorage.setItem(ATTEMPT_KEY, String(now));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/zero-auth");
     /* best-effort: without the mark we can still loop, which is the old behaviour */
   }
 }
@@ -76,7 +79,8 @@ export function markZeroAuthAttempt(now: number): void {
 export function clearZeroAuthAttempt(): void {
   try {
     window.sessionStorage.removeItem(ATTEMPT_KEY);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/zero-auth");
     /* nothing to clear */
   }
 }

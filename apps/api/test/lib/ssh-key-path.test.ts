@@ -7,7 +7,7 @@ import {
   operatorSshKeyRoots,
   resolveSafeSshKeyPath,
   sshKeyPathProblem,
-} from "../../src/lib/ssh-key-path";
+} from "@repo/platform/engine/lib/ssh-key-path";
 
 // This guard exists so an attacker who can write the servers row can't point
 // sshKeyPath at /etc/shadow and have the bytes exfiltrated through the SFTP

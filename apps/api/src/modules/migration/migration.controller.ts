@@ -2,17 +2,18 @@
  * Docker migration controller — inspect an existing Docker deployment on a
  * server so it can be adopted as an Openship project.
  *
- * Self-hosted only (mounted behind `localOnly`): inspection requires SSH into
- * a user's own server, which cloud mode has no notion of. Mirrors the mail
- * scan/adopt shape: read-only `/scan` returns what's adoptable, no mutation.
+ * Connected and managed destinations share the same migration engine. Cloud
+ * accepts external SSH connections only as migration sources.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { repos } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import type { MigrationSourceInput } from "@repo/contracts";
+import { AppError, NotFoundError, safeErrorMessage, type StackRole } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
-import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
+import { parseRevealKeys, pickRevealed } from "@repo/platform/engine/lib/env-reveal";
 import { isControlPlaneProject, isServerInOrg, param } from "../../lib/controller-helpers";
 import { streamRunSSE } from "../../lib/run-sse";
 import { streamSSE } from "../../lib/sse";
@@ -21,13 +22,18 @@ import {
   revealContainerEnv,
   type DiscoveredStack,
   type DiscoveredService,
-} from "./docker-inspect.service";
-import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "./migrate.service";
-import { assertProjectMovable, ProjectMoveRefused, type ProjectMoveIntent } from "./project-move";
-import { maskEnv, maskServicesEnv } from "../../lib/secret-env";
-import { buildMigrationPreview } from "./migration-preflight";
-import { migrationOrchestrator } from "./migration.orchestrator";
-import { migrationRunBus } from "./migration.sse";
+} from "@repo/platform/engine/modules/migration/docker-inspect.service";
+import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "@repo/platform/engine/modules/migration/migrate.service";
+import {
+  assertProjectMovable,
+  loadProjectRoleWork,
+  ProjectMoveRefused,
+  type ProjectMoveIntent,
+} from "@repo/platform/engine/modules/migration/project-move";
+import { maskEnv, maskServicesEnv } from "@repo/platform/engine/lib/secret-env";
+import { buildMigrationPreview } from "@repo/platform/engine/modules/migration/migration-preflight";
+import { migrationOrchestrator } from "@repo/platform/engine/modules/migration/migration.orchestrator";
+import { migrationRunBus } from "@repo/platform/engine/modules/migration/migration.sse";
 import {
   sanitizeVolumeStrategies,
   sanitizeSubpaths,
@@ -37,14 +43,52 @@ import {
   sanitizeCustomPaths,
   sanitizeRoutes,
   sanitizeConflictResolution,
-} from "./migration-input";
+} from "@repo/platform/engine/modules/migration/migration-input";
 import {
   getTransferPrefs,
   isValidTransferMode,
   isValidTransferCompression,
-} from "../settings/settings.service";
+} from "@repo/platform/engine/modules/settings/settings.service";
+import { assertMigrationEndpoints, requireMigrationServer } from "@repo/platform/engine/modules/migration/migration-access";
+import * as sources from "@repo/platform/engine/modules/migration/migration-sources";
+
+export async function listSources(c: Context) {
+  return c.json({ sources: await sources.listMigrationSources(getRequestContext(c)) });
+}
+
+export async function createSource(c: Context) {
+  return c.json({ server: await sources.createMigrationSource(getRequestContext(c), await c.req.json<MigrationSourceInput>()) }, 201);
+}
+
+export async function testSource(c: Context) {
+  return c.json(await sources.testMigrationSource(await c.req.json<MigrationSourceInput>()));
+}
+
+export async function deleteSource(c: Context) {
+  await sources.deleteMigrationSource(getRequestContext(c), param(c, "serverId"));
+  return c.json({ success: true });
+}
 
 const TERMINAL_MIGRATION = ["succeeded", "failed", "rolled_back"];
+
+async function assertRunAccess(c: Context, run: NonNullable<Awaited<ReturnType<typeof repos.dockerMigrationRun.findById>>>, action: "read" | "write") {
+  const ctx = getRequestContext(c);
+  if (run.organizationId !== ctx.organizationId) throw new NotFoundError("Migration", run.id);
+  for (const id of new Set([run.sourceServerId, run.targetServerId].filter((id): id is string => !!id)))
+    await permission.assert(ctx, { resourceType: "server", resourceId: id, action });
+  const source = (run.inputSnapshot?.projectMove as { projectId?: string } | undefined)?.projectId;
+  for (const id of new Set([run.projectId, source].filter((id): id is string => !!id))) {
+    if (action === "read" && !await repos.project.findByIdInOrganization(id, ctx.organizationId)) continue;
+    await permission.assert(ctx, { resourceType: "project", resourceId: id, action });
+  }
+}
+
+async function requireRunAccess(c: Context, action: "read" | "write") {
+  const run = await repos.dockerMigrationRun.findById(param(c, "id"));
+  if (!run) throw new NotFoundError("Migration", param(c, "id"));
+  await assertRunAccess(c, run, action);
+  return run;
+}
 
 /**
  * #336: mask the live `env` read off running containers before it leaves the
@@ -86,6 +130,7 @@ async function assertServersWritable(
       return c.json({ error: "Server not found" }, 404);
     }
   }
+  await assertMigrationEndpoints(ctx.organizationId, sourceServerId, targetServerId);
   return { organizationId: ctx.organizationId };
 }
 
@@ -113,8 +158,11 @@ export async function repoCompose(c: Context) {
       repo.trim(),
       branch?.trim() || undefined,
     );
-    return c.json({ success: true, services: maskServicesEnv(services) });
+    // Template expressions stay server-side; they may contain secret defaults.
+    const display = services.map(({ environmentTemplates: _templates, ...service }) => service);
+    return c.json({ success: true, services: maskServicesEnv(display) });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Failed to parse repo compose: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -146,6 +194,7 @@ export async function scanServer(c: Context) {
     });
     return c.json({ success: true, stack: maskDiscoveredStack(stack) });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Scan failed: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -189,6 +238,7 @@ export async function scanServerStream(c: Context) {
         data: JSON.stringify({ type: "result", stack: maskDiscoveredStack(stack) }),
       });
     } catch (err) {
+      observeCaughtError(err, "api/modules/migration/migration.controller");
       await s.writeSSE({
         event: "error",
         data: JSON.stringify({ type: "error", error: `Scan failed: ${safeErrorMessage(err)}` }),
@@ -209,7 +259,7 @@ export async function scanServerStream(c: Context) {
  */
 export async function revealServiceEnv(c: Context) {
   type RevealBody = { serverId?: string; containerId?: string; keys?: unknown };
-  const body = await c.req.json<RevealBody>().catch(() => ({}) as RevealBody);
+  const body = await c.req.json<RevealBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return ({}) as RevealBody; });
   const { serverId, containerId } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
   if (!containerId) return c.json({ error: "containerId is required" }, 400);
@@ -231,6 +281,7 @@ export async function revealServiceEnv(c: Context) {
     c.set("auditAfter", { containerId, revealedEnvKeys: Object.keys(environment) });
     return c.json({ success: true, environment });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Reveal failed: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -285,10 +336,14 @@ export async function adoptServer(c: Context) {
     return c.json({ error: "Server not found" }, 404);
   }
 
+  const target = await requireMigrationServer(ctx.organizationId, serverId, "target");
+  if (target.workspaceId) throw new AppError("Use the migration flow to import into a managed server", 400, "MANAGED_IMPORT_REQUIRED");
+
   try {
     const result = await adoptServerStack({
       serverId,
       organizationId: ctx.organizationId,
+      ctx,
       projectName: projectName.trim(),
       serviceNames,
       serviceContainerIds,
@@ -300,6 +355,7 @@ export async function adoptServer(c: Context) {
     });
     return c.json({ success: true, ...result });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Adopt failed: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -333,6 +389,9 @@ export async function reimportServer(c: Context) {
     return c.json({ error: "Server not found" }, 404);
   }
 
+  const target = await requireMigrationServer(ctx.organizationId, serverId, "target");
+  if (target.workspaceId) throw new AppError("Use the migration flow to import into a managed server", 400, "MANAGED_IMPORT_REQUIRED");
+
   try {
     const result = await reimportOpenshipProject({
       serverId,
@@ -343,6 +402,7 @@ export async function reimportServer(c: Context) {
     });
     return c.json({ success: true, ...result });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Re-import failed: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -389,6 +449,7 @@ export async function previewMigration(c: Context) {
     });
     return c.json({ success: true, preview });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Preview failed: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -472,6 +533,7 @@ export async function startMigration(c: Context) {
     });
     return c.json({ success: true, ...result });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Migration failed to start: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -508,7 +570,10 @@ async function assertProjectMoveAllowed(
         name: string;
         slug: string;
         serverId: string;
-        cloudWorkspaceId: string | null;
+        workspaceId: string | null;
+        runtimeMode: string | null;
+        roles: StackRole[] | null;
+        activeDeploymentId: string | null;
         isControlPlane: boolean;
       };
     }
@@ -535,7 +600,10 @@ async function assertProjectMoveAllowed(
       name: project.name,
       slug: project.slug,
       serverId: project.serverId,
-      cloudWorkspaceId: project.cloudWorkspaceId ?? null,
+      workspaceId: project.workspaceId ?? null,
+      runtimeMode: project.runtimeMode ?? null,
+      roles: project.roles ?? null,
+      activeDeploymentId: project.activeDeploymentId ?? null,
       isControlPlane: isControlPlaneProject(project),
     },
   };
@@ -602,9 +670,16 @@ export async function startProjectMove(c: Context) {
         name: guard.project.name,
         slug: guard.project.slug,
         serverId: guard.project.serverId,
-        cloudWorkspaceId: guard.project.cloudWorkspaceId,
+        workspaceId: guard.project.workspaceId,
+        runtimeMode: guard.project.runtimeMode,
+        roles: guard.project.roles,
       },
       targetServerId: body.targetServerId,
+      roleWork: await loadProjectRoleWork({
+        id: guard.project.id,
+        organizationId: guard.organizationId,
+        activeDeploymentId: guard.project.activeDeploymentId,
+      }),
       isControlPlane: guard.project.isControlPlane,
       intent,
       serviceNames: scopedServices,
@@ -614,7 +689,7 @@ export async function startProjectMove(c: Context) {
         ? ((
             await repos.server
               .getInOrganization(guard.project.serverId, guard.organizationId)
-              .catch(() => null)
+              .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return null; })
           )?.name ?? null)
         : null,
     });
@@ -646,6 +721,7 @@ export async function startProjectMove(c: Context) {
     if (err instanceof ProjectMoveRefused) {
       return c.json({ error: err.message, code: err.code }, 400);
     }
+    if (err instanceof AppError) throw err;
     return c.json({ error: `Migration failed to start: ${safeErrorMessage(err)}` }, 502);
   }
 }
@@ -657,6 +733,7 @@ export async function getMigration(c: Context) {
   if (!run || run.organizationId !== ctx.organizationId) {
     return c.json({ error: "Migration not found" }, 404);
   }
+  await assertRunAccess(c, run, "read");
   // Prefer the in-memory log tail while the run is live (fresher than the
   // throttled DB copy); fall back to the persisted logs once terminal.
   const liveLogs = migrationOrchestrator.getLiveLogs(run.id);
@@ -666,17 +743,18 @@ export async function getMigration(c: Context) {
   const safeRun = maskMigrationRunEnv(run);
   return c.json({
     success: true,
-    run: liveLogs ? { ...safeRun, logs: liveLogs } : safeRun,
+    run: { ...safeRun, ...(liveLogs ? { logs: liveLogs } : {}), pendingPrompt: migrationOrchestrator.getPendingPrompt(run.id) },
     progress: migrationOrchestrator.getProgress(run.id),
   });
 }
 
 /** Mask serviceEnv inside a migration run's inputSnapshot (see #336). */
-function maskMigrationRunEnv<T extends { inputSnapshot?: unknown }>(run: T): T {
+function maskMigrationRunEnv<T extends { inputSnapshot?: unknown; recovery?: unknown }>(run: T): Omit<T, "recovery"> {
+  const { recovery: _recovery, ...publicRun } = run;
   const snap = run.inputSnapshot as { serviceEnv?: Record<string, Record<string, string>> } | null;
-  if (!snap?.serviceEnv) return run;
+  if (!snap?.serviceEnv) return publicRun;
   return {
-    ...run,
+    ...publicRun,
     inputSnapshot: {
       ...snap,
       serviceEnv: Object.fromEntries(
@@ -707,6 +785,7 @@ export async function getMigrationRuns(c: Context) {
 
   let runs;
   if (projectId) {
+    await permission.assert(ctx, { resourceType: "project", resourceId: projectId, action: "read" });
     // Org-scope through the PROJECT first, so an id from another org resolves to nothing
     // before it reaches the run query — the same guard shape the per-server branch gets from
     // passing organizationId into the repo.
@@ -716,14 +795,20 @@ export async function getMigrationRuns(c: Context) {
       limit: 50,
     });
   } else {
+    await permission.assert(ctx, { resourceType: "server", resourceId: serverId!, action: "read" });
     runs = await repos.dockerMigrationRun.listForServer(ctx.organizationId, serverId!, {
       limit: 50,
     });
   }
   // Summary rows only: the 256 KiB session log, the input snapshot, and the
   // cutover token belong to the per-run detail fetch, not a 50-row list.
-  const lite = runs.map(
-    ({ logs: _logs, confirmationToken: _t, inputSnapshot: _in, ...rest }) => rest,
+  const visible = [];
+  for (const run of runs) {
+    try { await assertRunAccess(c, run, "read"); visible.push(run); }
+    catch (error) { if (!(error instanceof AppError) || ![403, 404].includes(error.statusCode)) throw error; }
+  }
+  const lite = visible.map(
+    ({ logs: _logs, confirmationToken: _t, inputSnapshot: _in, recovery: _recovery, ...rest }) => rest,
   );
   return c.json({ success: true, runs: lite });
 }
@@ -736,12 +821,13 @@ export async function streamMigration(c: Context) {
   if (!initial || initial.organizationId !== ctx.organizationId) {
     return c.json({ error: "Migration not found" }, 404);
   }
+  await assertRunAccess(c, initial, "read");
 
   const finished = TERMINAL_MIGRATION.includes(initial.status);
   return streamRunSSE(c, {
     bus: migrationRunBus,
     id,
-    snapshot: { type: "snapshot", run: initial },
+    snapshot: { type: "snapshot", run: { ...maskMigrationRunEnv(initial), pendingPrompt: migrationOrchestrator.getPendingPrompt(id) } },
     terminalComplete: finished
       ? {
           type: "complete",
@@ -760,11 +846,12 @@ export async function streamMigration(c: Context) {
  * be retried with kill=true; it can never be changed back to the keep choice.
  */
 export async function confirmCutover(c: Context) {
+  await requireRunAccess(c, "write");
   const ctx = getRequestContext(c);
   const id = param(c, "id");
   const body = await c.req
     .json<{ confirmationToken?: string; kill?: boolean }>()
-    .catch(() => ({}) as { confirmationToken?: string; kill?: boolean });
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return ({}) as { confirmationToken?: string; kill?: boolean }; });
   if (!body.confirmationToken) {
     return c.json({ error: "confirmationToken is required" }, 400);
   }
@@ -787,10 +874,30 @@ export async function confirmCutover(c: Context) {
  * valid once parked at awaiting_cutover (use cutover) or terminal.
  */
 export async function cancelMigration(c: Context) {
+  await requireRunAccess(c, "write");
   const ctx = getRequestContext(c);
   const result = await migrationOrchestrator.cancel(param(c, "id"), ctx.organizationId);
   if (!result.ok) return c.json({ error: result.error }, result.status as 400);
   return c.json({ success: true });
+}
+
+/** POST /migration/migrations/:id/respond — answer the current takeover prompt. */
+export async function respondMigration(c: Context) {
+  await requireRunAccess(c, "write");
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  const run = await repos.dockerMigrationRun.findById(id);
+  if (!run || run.organizationId !== ctx.organizationId || !run.sourceServerId || !run.targetServerId) {
+    return c.json({ error: "Migration not found" }, 404);
+  }
+  const guard = await assertServersWritable(c, run.sourceServerId, run.targetServerId);
+  if (guard instanceof Response) return guard;
+  const body = await c.req.json<{ promptId?: string; action?: string }>();
+  if (typeof body.promptId !== "string" || typeof body.action !== "string") {
+    return c.json({ error: "promptId and action are required" }, 400);
+  }
+  const ok = await migrationOrchestrator.respondToPrompt(id, ctx.organizationId, body.promptId, body.action);
+  return ok ? c.json({ success: true }) : c.json({ error: "This prompt is no longer pending or the action is invalid." }, 409);
 }
 
 /**
@@ -800,6 +907,7 @@ export async function cancelMigration(c: Context) {
  * so a retry starts clean. Source untouched; succeeded runs are rejected.
  */
 export async function cleanupTargetData(c: Context) {
+  await requireRunAccess(c, "write");
   const ctx = getRequestContext(c);
   const result = await migrationOrchestrator.cleanupTargetData(param(c, "id"), ctx.organizationId);
   if (!result.ok) return c.json({ error: result.error }, result.status as 400);
@@ -813,10 +921,11 @@ export async function cleanupTargetData(c: Context) {
  * overrides), skip the chosen ones, then finish to cutover when nothing remains.
  */
 export async function resumeMigration(c: Context) {
+  await requireRunAccess(c, "write");
   const ctx = getRequestContext(c);
   const body = await c.req
     .json<{ overrides?: Record<string, string>; skip?: string[] }>()
-    .catch(() => ({}) as { overrides?: Record<string, string>; skip?: string[] });
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return ({}) as { overrides?: Record<string, string>; skip?: string[] }; });
   const overrides = body.overrides && typeof body.overrides === "object" ? body.overrides : {};
   const skip = Array.isArray(body.skip) ? body.skip.filter((s) => typeof s === "string") : [];
   const result = await migrationOrchestrator.resume(ctx, param(c, "id"), ctx.organizationId, {
@@ -842,6 +951,12 @@ export async function deleteMigration(c: Context) {
   if (!run || run.organizationId !== ctx.organizationId) {
     return c.json({ error: "Migration not found" }, 404);
   }
+  await assertRunAccess(c, run, "write");
+  if (run.executionStartedAt && !run.executionFinishedAt) throw new AppError("Wait for the migration worker to finish before deleting its history", 409, "MIGRATION_BUSY");
+  if (run.recovery?.transferRunTag || run.recovery?.targetRunningContainerIds?.length)
+    throw new AppError("Wait for the migration's connection and container recovery before deleting its history", 409, "MIGRATION_RECOVERY_PENDING");
+  if (run.status === "rolled_back" && run.projectId && run.projectId === run.recovery?.createdProjectId)
+    throw new AppError("Wait for the imported draft's cleanup before deleting its migration history", 409, "MIGRATION_RECOVERY_PENDING");
   if (!TERMINAL_MIGRATION.includes(run.status)) {
     return c.json({ error: "Cancel the migration before deleting its record." }, 409);
   }
@@ -862,7 +977,7 @@ export async function deleteMigration(c: Context) {
  * panel that has to ask for it knows about it only while it happens to be mounted. The project
  * payload carries it now (`readActiveMigration` in the projects module), which is the same
  * field the status pills read, so there is one answer and every surface sees it. Note the
- * gates differ: this route is `server:write` and returns the confirmation token; the project
+ * gates differ: this route is `server:read` and returns the confirmation token; the project
  * payload is `project:read` and returns id/status/mode only.
  */
 export async function getActiveMigration(c: Context) {
@@ -871,9 +986,11 @@ export async function getActiveMigration(c: Context) {
   if (!serverId) {
     return c.json({ error: "serverId is required" }, 400);
   }
+  await permission.assert(ctx, { resourceType: "server", resourceId: serverId, action: "read" });
 
   const runs = await repos.dockerMigrationRun.findActiveForServer(serverId);
   // Org-scope: a run for a server outside this org won't match (IDOR guard).
   const run = runs.find((r) => r.organizationId === ctx.organizationId) ?? null;
-  return c.json({ success: true, run, confirmationToken: run?.confirmationToken ?? null });
+  if (run) await assertRunAccess(c, run, "read");
+  return c.json({ success: true, run: run ? maskMigrationRunEnv(run) : null, confirmationToken: run?.confirmationToken ?? null });
 }

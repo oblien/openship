@@ -86,7 +86,32 @@ You can declare the same thing in your repo instead, so a fresh deploy of the sa
 - **Volume names are scoped per project.** Two projects that both keep `storage` never share one volume.
 - **Multi-service projects** declare mounts per service instead — see the Services tab, or
   `services[].volumes` in `openship.json`.
-- **Openship Cloud has no volumes.** A declared path is reported and skipped there; use object storage.
+- **Managed Cloud Docker workloads also have persistent volumes.** They stay in the project's Cloud space.
+  A volume does not automatically copy itself to another host or replace a backup.
+
+### Dockerfile `VOLUME` declarations
+
+When an image declares a data directory with `VOLUME`, Openship mounts persistent storage there even
+when you have not added an explicit mount. New storage has a stable identity for the project, service
+and destination. Rebuilding the image or replacing its container reuses that storage.
+
+```dockerfile
+VOLUME ["/app/data"]
+```
+
+An explicit mount such as `app-data:/app/data` takes precedence. Store the SQLite database and its
+journal files together inside that directory, and put uploaded files on persistent storage too.
+Files elsewhere in the container's writable layer still belong to that particular container.
+
+For existing Docker deployments, Openship inspects the outgoing container before replacement and
+reattaches its data volume. It does not copy a live database or choose among abandoned volumes. If
+the recorded container or volume cannot be verified, deployment stops rather than silently starting
+with empty storage. Recover the correct mount from a retained container or backup before retrying.
+
+Persistent volumes survive normal redeploys and image cleanup. Project deletion keeps data unless
+you explicitly select volume deletion; the deletion preview also includes owned volumes left by a
+failed container creation. Configure [backups](/docs/guides/backups-restore) for protection against
+accidental data changes or loss of the host.
 
 ## Object storage (an S3 bucket)
 

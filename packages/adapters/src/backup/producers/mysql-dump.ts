@@ -17,6 +17,7 @@
 
 import { isDbImage, payloadSpec, shellQuote } from "@repo/core";
 import { registerProducer } from "../registry";
+import { yieldArtifact } from "../common/artifact-stream";
 import {
   codecSuffix,
   detectDumpCodec,
@@ -84,7 +85,7 @@ class MysqlDumpProducerImpl implements BackupProducer {
     );
     const { stdout, awaitExit } = await executor.execStream(service, cmd);
 
-    yield {
+    yield* yieldArtifact({
       name: `mysql-dump.sql${codecSuffix(codec)}`,
       stream: stdout,
       payloadKind: "mysql_dump",
@@ -93,12 +94,7 @@ class MysqlDumpProducerImpl implements BackupProducer {
         mysqlDatabase: db || "(all)",
         compression: codec,
       },
-    };
-
-    const exit = await awaitExit;
-    if (exit.code !== 0) {
-      throw new Error(`mysqldump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
-    }
+    }, awaitExit, exit => `mysqldump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
   }
 
   async restore(

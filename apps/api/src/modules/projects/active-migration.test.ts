@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DockerMigrationRun } from "@repo/db";
-import { readActiveMigration } from "./active-migration";
+import { readActiveMigration } from "@repo/platform/engine/modules/projects/active-migration";
 
 /**
  * The run→project-payload projection. Small on purpose, and tested because the thing it gets

@@ -109,10 +109,18 @@ vi.mock("@repo/db", () => ({
     backupRestore: { findById: vi.fn(async () => null) },
   },
 }));
-vi.mock("../../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
-import { authorizeMcpClient } from "../../../src/modules/tokens/token.controller";
-import { canUseGitHubRepo } from "../../../src/modules/github/github-access";
+import { authorizeMcpClient } from "@repo/platform/engine/modules/tokens/token.service";
+import { canUseGitHubRepo } from "@repo/platform/engine/modules/github/github-access";
+
+async function serviceReply(work: Promise<unknown>): Promise<Reply> {
+  try { return { body: { data: await work as never }, status: 200 }; }
+  catch (error) {
+    const e = error as { message: string; code?: string; statusCode?: number };
+    return { body: { error: e.message, code: e.code }, status: e.statusCode ?? 500 };
+  }
+}
 
 interface Reply {
   body: { data?: unknown; error?: string; code?: string };
@@ -170,8 +178,7 @@ function requestFrom(activeOrg: string, body: unknown): { c: Context; reply: () 
 
 async function authorize(activeOrg: string, body: unknown): Promise<Reply> {
   const { c, reply } = requestFrom(activeOrg, body);
-  await authorizeMcpClient(c);
-  return reply();
+  return serviceReply(authorizeMcpClient(c.get("ctx"), body as never));
 }
 
 beforeEach(() => {

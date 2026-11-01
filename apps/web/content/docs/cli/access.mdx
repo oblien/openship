@@ -1,200 +1,163 @@
 ---
-title: Access & the raw API
-description: Log in, switch between instances with contexts, manage personal access tokens, and call any API route directly with openship api.
+title: Connections and access
+description: Authenticate, select an installation, manage tokens, and call HTTP endpoints.
 ---
 
-These commands are how the CLI knows *which* Openship it's talking to and *who* you are — plus an escape
-hatch (`openship api`) for reaching any route that doesn't have its own command yet.
+The CLI stores named **contexts** in `~/.openship/config.json`. Each context contains an API URL,
+dashboard URL, personal access token, and optional fixed organization. One context is the saved default;
+`openship --context production <command>` selects another for one invocation.
 
-<Callout title="Where auth lives">
-The CLI keeps its settings in **`~/.openship/config.json`** (mode `0600`). That file holds one or more named
-**contexts** — each pins an API URL, a dashboard URL, and a personal access token (a `opsh_pat_…` string).
-One context is *active* at a time; every authenticated command reads from it. The default context is called
-**`default`** and points at your local instance (`http://localhost:4000`).
-</Callout>
+Each command pins its connection settings for the entire invocation. Switching or updating a context
+in another terminal affects the next command, including while this command paginates, uploads or watches logs.
 
-<Callout title="JSON output" type="info">
-`--json` is a global flag — put it **before** the subcommand (`openship --json token list`). In JSON mode the
-data is written to stdout as JSON while status messages go to stderr, so a piped stream stays clean. Setting
-`OPENSHIP_JSON=1` in the environment does the same thing. `openship api` always prints the response body.
-</Callout>
+## Choose where to connect
 
-## `openship login`
+The same CLI works on your laptop and on an Openship server:
 
-Authenticate against an instance and save the token into a context. Run with no `--token` and it opens the
-dashboard's **Settings** page — where Personal Access Tokens live — and waits for you to paste one; pass
-`--token` to log in non-interactively (CI, scripts). The token is validated against the API before it's stored, and it must
-start with `opsh_pat_`.
+| Destination | Authentication | Start here |
+| --- | --- | --- |
+| Openship installed on this server | Automatic for the installation owner, using its protected local credential | `openship --local project list` |
+| A remote self-hosted installation | Sign in once with a personal access token | `openship login --api-url https://ship.example.com --context production` |
+| Openship Cloud | Sign in once with a Cloud personal access token | `openship login --cloud` |
+
+On a fresh machine, `openship` offers Cloud, an existing self-hosted installation, or installing
+Openship on this machine. Choosing a connection does not start a local server. `openship login`
+also offers a guided Cloud/self-hosted choice when no endpoint is saved.
+
+## On the installation server
+
+Run the CLI as the OS account that installed Openship. Ordinary resource commands discover the
+installed service when there is no remote connection configured. Use `--local` to choose it explicitly,
+including after signing into Cloud or another server:
 
 ```bash
-# Interactive — opens the dashboard, prompts for a pasted token
-openship login
+openship --local project list
+openship --local server list
+openship --local service list --project proj_123
+```
 
-# Non-interactive — against a remote self-hosted instance, stored as a named context
+The CLI reads the existing private installation credential, discovers the actual API port, and obtains
+a temporary administrator session over loopback. It uses the normal API permissions and signs out
+when the command finishes. It does not save that session in your contexts or enable anonymous API access.
+An interrupted process's session expires within 24 hours; the next local authentication cleans expired sessions.
+
+Both CLI-managed bare and Docker Compose installations are supported. If you installed under another OS account
+or a custom `OPENSHIP_HOME`, run as that account or use the correct installation home with appropriate
+permissions. Merely installing the CLI or being another user on the same server does not grant access.
+Automatic local authentication requires a server release containing this feature. Older servers can
+still use the existing PAT login until upgraded.
+
+`--local` ignores saved and ambient remote credentials. An explicit remote endpoint/context or token
+never falls back to local administrator privileges. Local setup, start, stop, and password recovery
+continue to manage this machine independently of the active remote context.
+
+## Log in to Cloud or a remote server
+
+```bash
 openship login \
-  --token opsh_pat_xxxxxxxx \
-  --api-url https://openship.example.com \
-  --dashboard-url https://openship.example.com \
-  --context prod
+  --api-url https://ship.example.com \
+  --context production
 ```
 
-| Flag | Purpose | Default |
-|---|---|---|
-| `--token <token>` | Personal access token (`opsh_pat_…`) for non-interactive login. | *(prompted)* |
-| `--api-url <url>` | API base URL to authenticate against. | `http://localhost:4000` |
-| `--dashboard-url <url>` | Dashboard base URL (used to open the token page). | `http://localhost:3001` |
-| `--context <name>` | Name of the context to store this login under. | `default` |
+The CLI opens the dashboard token page and prompts for a token without echoing it. For scripts, use
+`--token-file /path/to/token` or `--token-file -` to read stdin. Login validates the token before storing
+it and selects the context. Saved credentials are written atomically with owner-only permissions.
+For most self-hosted installations, the public dashboard URL is also the API URL. Pass
+`--dashboard-url` when they use different origins. Login reuses a saved connection's endpoints;
+retargeting its API also updates the default dashboard address. The installed service's remembered
+ports take precedence over the local defaults of API port 4000 and dashboard port 3001.
 
-<Callout title="Can't reach the API?" type="warn">
-If login reports it couldn't reach the API, the host in `--api-url` isn't responding. Point it at the right
-instance — for a remote self-hosted box that's the same URL you open in the browser.
-</Callout>
-
-## `openship logout`
-
-Remove the stored token from a context. The endpoints stay saved, so a later `login` just re-adds the token.
+## Switch contexts
 
 ```bash
-openship logout                 # active context
-openship logout --context prod  # a specific one
+openship context list
+openship context use production
+openship status
+openship --context cloud project list
+openship --local project list
 ```
 
-| Flag | Purpose | Default |
-|---|---|---|
-| `--context <name>` | Log out of a specific context. | *(active context)* |
-
-## `openship context`
-
-Manage the named connections in `~/.openship/config.json`. This is pure local config editing — no API calls.
-Use it to keep several instances side by side (local, staging, production) and switch between them. Alias:
-`openship ctx`. Running it bare prints the active context and the full list (the active row is starred).
+`context add` stores endpoints and a token without validating them. Use `login` when you want
+validation. `context rm` removes an inactive context. `logout` clears a token while keeping its endpoints.
+Changing a context's API clears its previous token, organization and capability cache. Authenticate
+again for the new endpoint. If `OPENSHIP_TOKEN` is set, logout reports that environment authentication
+is still active; unset the variable to stop using it.
 
 ```bash
-openship context           # show active + list all
-openship context use prod  # switch the active context
+openship logout --context production
 ```
 
-| Subcommand | Purpose |
-|---|---|
-| `list` (alias `ls`) | List configured contexts. |
-| `use <name>` | Switch the active context. |
-| `add <name>` | Create or update a context's endpoints/token. |
-| `rm <name>` (alias `remove`) | Remove a context (can't remove the active one — switch away first). |
+See the [context](/docs/cli/reference/context), [login](/docs/cli/reference/login), and
+[logout](/docs/cli/reference/logout) references for all options.
 
-The list shows one row per context: `current` (`*` marks the active one), `name`, `apiUrl`,
-`dashboardUrl`, and `auth` (`token` when a token is stored, `-` when not).
-
-### `context add`
-
-Register an instance without logging in interactively. `add` only writes config — use `login` when you want
-the token checked against the API first.
+## Select an organization
 
 ```bash
-openship context add staging \
-  --api-url https://staging.example.com \
-  --dashboard-url https://staging.example.com \
-  --token opsh_pat_xxxxxxxx \
-  --use
+openship access workspaces
+openship login --cloud --organization org_123 --token-file /path/to/cloud-token
+openship --organization org_123 --json project list
+openship --organization org_123 init --project proj_123
 ```
 
-| Flag | Purpose |
-|---|---|
-| `--api-url <url>` | API base URL. |
-| `--dashboard-url <url>` | Dashboard base URL. |
-| `--token <token>` | Personal access token to store. |
-| `--use` | Switch to this context after adding. |
+`--organization` uses the SDK's fixed scope and requires a server that supports it. It never grants access
+the credential does not already have. Use the same organization option when deploying a link created
+with it. The native configuration selects its own organization.
 
-## `openship token`
+`OPENSHIP_API_URL`, `OPENSHIP_TOKEN`, `OPENSHIP_ORGANIZATION_ID`, and `OPENSHIP_CONTEXT` can select an
+ephemeral connection for CI. They are not saved. An explicit `--context` selects that context's complete
+connection and ignores ambient connection variables. See [automation](/docs/cli/automation).
 
-Create and manage the personal access tokens that authenticate the CLI and the API. Tokens are
-**self-scoped** — every call operates on your own tokens. In the dashboard these live under
-**Settings → Personal Access Tokens**.
+`access` also manages team workspaces, members, invitations and resource grants. See the
+[access reference](/docs/cli/reference/access). Changes use the platform's existing permission checks.
 
-| Subcommand | Purpose |
-|---|---|
-| `list` | List your personal access tokens. |
-| `create <name>` | Mint a new token (the secret is shown once). |
-| `revoke <id>` | Revoke one of your tokens. |
-
-### `token create`
+## Store provider credentials
 
 ```bash
-# A full-access, non-expiring token — the breadth has to be stated
-openship token create "laptop" --full-access
-
-# A read-only token that expires in 30 days
-openship token create "ci-reader" --read-only --expires 30 --full-access
-
-# Scope a token to one project with specific permissions (repeatable)
-openship token create "deploy-bot" --grant project:abc123:read,write
+openship credential providers
+openship credential create registry.json
+openship credential list
+openship credential verify credential_123
 ```
 
-| Flag | Purpose | Default |
-|---|---|---|
-| `--read-only` | Reject mutation methods (`POST`/`PUT`/`PATCH`/`DELETE`). | off |
-| `--expires <days>` | Expire after N days (1–365); omit for a non-expiring token. | never |
-| `--grant <type:id:perms>` | Scope the token to a resource. Repeatable. Format `type:id:perm1,perm2`, e.g. `project:abc123:read,write`. | — |
-| `--full-access` | Deliberately mint an **unscoped** token with your own full access. Required when no `--grant` is given. | off |
+The JSON file contains `provider`, `name`, optional `selector`, and provider `values`. Provider discovery
+describes the required fields. Reads return masked secrets; verification failures exit nonzero.
 
-<Callout title="Scope must be stated" type="warn">
-Pass **either** `--grant` (scoped) **or** `--full-access` (unscoped) — one is required, and both together
-is an error. `openship token create "laptop"` on its own is refused.
+## Create a token
 
-An unscoped token acts with your own role, so it can't be reached by omission: a missing `--grant` used to
-mean full access, which made "I want no limits" and "my scope came out empty" the same command.
-</Callout>
-
-<Callout title="Copy the secret immediately" type="warn">
-`token create` prints the full `opsh_pat_…` secret **once** and never again. `token list` only ever shows a
-short prefix. If you lose it, revoke the token and mint a new one.
-</Callout>
-
-The `list` table shows: `id`, `name`, `prefix`, `readOnly`, `scoped`, `expires`, `lastUsed`, and `revoked`.
-Pass a token's `id` (they look like `pat_…`) to `revoke`:
+Choose explicit access for each token:
 
 ```bash
+openship token create deploy-bot --grant project:proj_123:read,write
+openship token create edge-domains --expires 90 --grant project:proj_123:domains:read,domains:write,domains:delete
+openship token create report-reader --read-only --expires 30 --full-access
 openship token list
-openship token revoke pat_abc123
 ```
 
-## `openship api`
+A grant's permissions are levels (`read`, `write`, `admin`) or
+[capabilities](/docs/security/permissions#capabilities-finer-than-read--write--admin) such as `domains:delete`.
+Pass either `--grant` or `--full-access`; omitting both is refused. A full-access token acts with your
+own permissions. Scoped credentials cannot mint unrestricted credentials.
 
-The escape hatch. Make an authenticated request to **any** API route using the active context's token —
-much like `gh api`. This is what keeps the CLI small: anything without a dedicated command (audit log,
-one-off reads, routes added after your CLI version) is still reachable here.
-
-The `<path>` argument is relative to `/api`, so `openship api /projects` calls
-`<your-api-url>/api/projects`. The method defaults to `GET`, or `POST` when you pass `--data`.
+Copy a new token's secret when it is created; later reads show only metadata. Revoke by token ID:
 
 ```bash
-# GET a collection
-openship api /projects
-
-# GET a single resource
-openship api /deployments/dep_abc123
-
-# POST with a JSON body (method defaults to POST when --data is given)
-openship api /domains -d '{"projectId":"proj_123","hostname":"app.example.com"}'
-
-# DELETE with an explicit method
-openship api /tokens/pat_abc123 -X DELETE
-
-# Add query parameters (repeatable)
-openship api /domains -q projectId=proj_123
+openship token revoke pat_123
 ```
 
-| Flag | Purpose | Default |
-|---|---|---|
-| `-X, --method <method>` | HTTP method. | `GET`, or `POST` when `--data` is set |
-| `-d, --data <json>` | Request body as a JSON string. | *(none)* |
-| `-q, --query <kv...>` | Query parameter `key=value`. Repeatable. | *(none)* |
+See [token options](/docs/cli/reference/token) and [permission scopes](/docs/security/permissions).
 
-The response body is printed to stdout — pretty-printed when it's JSON, raw otherwise. On a non-2xx
-response the body is still printed and the command exits non-zero, so you can pipe it into `jq` and still
-detect failures in scripts.
+## Call an HTTP endpoint
 
-<Callout title="Which routes exist?" type="info">
-Browse the [API reference](/docs/api) for paths, methods, and required permissions. The resource commands
-([`project`, `service`, `domain`, and friends](/docs/cli/projects)) wrap the common ones in a friendlier
-form — reach for `openship api` when there's no dedicated command.
-</Callout>
+```bash
+openship api /projects
+openship api /domains --query projectId=proj_123
+```
+
+Paths are relative to `/api`. Use `--method` to select a method and `--data` for a JSON body; supplying
+data defaults the method to POST. Responses are printed, and non-success HTTP results exit nonzero.
+See [raw API options](/docs/cli/reference/api) and the [HTTP reference](/docs/api).
+
+## Native mode
+
+Contexts describe remote HTTP connections. [Native mode](/docs/cli/native) uses an explicitly trusted
+configuration file to select an owned installation and identity.

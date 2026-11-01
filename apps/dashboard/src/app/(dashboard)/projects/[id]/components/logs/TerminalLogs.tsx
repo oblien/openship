@@ -1,7 +1,9 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import '@xterm/xterm/css/xterm.css';
 import './logs.css';
 import { useLogStream } from "@/hooks/useSSEConnection";
@@ -9,13 +11,17 @@ import { useLogStream } from "@/hooks/useSSEConnection";
 import { useToast } from "@/context/ToastContext";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useTheme } from "@/components/theme-provider";
+import { readTerminalTheme, observeTerminalAppearance } from "@/lib/terminal-appearance";
 import { api } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
+import { TerminalSearch } from "@/components/terminal/TerminalSearch";
+import { Button } from "@/components/ui/button";
 
 interface TerminalLogsProps {
     projectId: string;
     projectName: string;
+    title?: React.ReactNode;
     streamTarget: string;
     historyTarget: string;
     onLogsChange: (logs: string[]) => void;
@@ -38,7 +44,8 @@ const decodeLogEntry = (entry: any): string | null => {
                 bytes[i] = binary.charCodeAt(i);
             }
             return new TextDecoder().decode(bytes).replace(/\r?\n$/, '');
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs");
             // Fall through to message below.
         }
     }
@@ -53,6 +60,7 @@ const decodeLogEntry = (entry: any): string | null => {
 export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     projectId,
     projectName,
+    title,
     streamTarget,
     historyTarget,
     onLogsChange,
@@ -68,7 +76,6 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     } = useProjectSettings();
 
     const { resolvedTheme } = useTheme();
-    const isDarkMode = resolvedTheme !== "light"; // dim + dark both use the dark terminal
 
     const [searchQuery, setSearchQuery] = useState("");
     const [hasMatches, setHasMatches] = useState(false);
@@ -82,57 +89,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     const lastLogIndexRef = useRef(0); // Track last written log index to prevent duplicates
     const terminalLogCountRef = useRef(0);
     const effectShows = useRef(false);
-    const getDarkTheme = () => ({
-        background: '#060606',
-        foreground: '#e5e5e5',
-        cursor: '#ffffff',
-        cursorAccent: '#060606',
-        selectionBackground: 'rgba(255, 255, 255, 0.25)',
-        selectionForeground: '#ffffff',
-        black: '#000',
-        red: '#ff5556',
-        green: '#51fa7b',
-        yellow: '#f2fa8c',
-        blue: '#6372a4',
-        magenta: '#ff79c6',
-        cyan: '#86eafd',
-        white: '#d3d7cf',
-        brightBlack: '#6b7280',
-        brightRed: '#ff8888',
-        brightGreen: '#7dffaa',
-        brightYellow: '#f7ffb3',
-        brightBlue: '#8a9cd6',
-        brightMagenta: '#ffa1dd',
-        brightCyan: '#b0f3ff',
-        brightWhite: '#ffffff',
-    });
-
-    const getLightTheme = () => ({
-        background: '#ffffff',
-        foreground: '#1a1a1a',
-        cursor: '#1a1a1a',
-        cursorAccent: '#ffffff',
-        selectionBackground: 'rgba(59, 130, 246, 0.3)',
-        selectionForeground: '#1a1a1a',
-        black: '#1a1a1a',
-        red: '#dc2626',
-        green: '#16a34a',
-        yellow: '#ca8a04',
-        blue: '#2563eb',
-        magenta: '#c026d3',
-        cyan: '#0891b2',
-        white: '#6b7280',
-        brightBlack: '#4b5563',
-        brightRed: '#ef4444',
-        brightGreen: '#22c55e',
-        brightYellow: '#eab308',
-        brightBlue: '#3b82f6',
-        brightMagenta: '#d946ef',
-        brightCyan: '#06b6d4',
-        brightWhite: '#111827',
-    });
-
-    const getTerminalTheme = () => isDarkMode ? getDarkTheme() : getLightTheme();
+    const getTerminalTheme = () => readTerminalTheme(terminalRef.current);
     const initializeTerminal = async () => {
         if (!terminalRef.current) return;
 
@@ -175,7 +132,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     // Show visual feedback
                     showToast(t.projectDetail.logs.terminal.copiedToClipboard, 'success');
                 }).catch(err => {
-                    console.error('Failed to copy text:', err);
+                    errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Failed to copy text:', err);
                 });
             }
         });
@@ -194,7 +151,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     }
                 }, 100);
             } catch (e) {
-                console.error('Resize error:', e);
+                errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Resize error:', e);
             }
         };
 
@@ -265,7 +222,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     try {
                         xtermRef.current.xterm.write(log + '\r\n');
                     } catch (err) {
-                        console.error('Error writing log to terminal:', err);
+                        errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error writing log to terminal:', err);
                     }
                 }
             });
@@ -281,6 +238,13 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             terminalLogsData.xtermInstance.options.theme = getTerminalTheme();
         }
     }, [resolvedTheme]);
+
+    useEffect(() => {
+        if (!terminalReady || !terminalRef.current || !xtermRef.current) return;
+        return observeTerminalAppearance(xtermRef.current.xterm, terminalRef.current, () =>
+            xtermRef.current?.fitAddon.fit(),
+        );
+    }, [terminalReady]);
 
     useEffect(() => {
         onLogsChange(terminalLogsData.logs);
@@ -331,7 +295,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
 
             setHasMatches(found);
         } catch (error) {
-            console.warn('Search addon error:', error);
+            errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Search addon error:', error);
             setHasMatches(false);
         }
     }, []);
@@ -380,7 +344,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 }
             });
         } catch (error) {
-            console.warn('Search next error:', error);
+            errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Search next error:', error);
         }
     };
 
@@ -402,7 +366,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 }
             });
         } catch (error) {
-            console.warn('Search previous error:', error);
+            errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Search previous error:', error);
         }
     };
 
@@ -427,7 +391,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 }
             },
             onError: (message) => {
-                console.error('Terminal logs error:', message);
+                errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Terminal logs error:', message);
                 showToast(message, 'error', t.projectDetail.logs.terminal.logsErrorTitle);
             },
             onContainerExit: (exitCode, message) => {
@@ -446,7 +410,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             setTerminalStreaming(false);
         },
         onError: (error) => {
-            console.error('Terminal logs stream error:', error);
+            errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Terminal logs stream error:', error);
             setTerminalStreaming(false);
             showToast(t.projectDetail.logs.terminal.connectFailed, 'error', t.projectDetail.logs.terminal.connectFailedTitle);
         },
@@ -466,7 +430,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                 if (text) addTerminalLog(text);
             }
         } catch (error) {
-            console.warn('Failed to load recent terminal logs:', error);
+            errorDiagnostics.warn("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Failed to load recent terminal logs:', error);
         }
     }, [historyTarget, addTerminalLog]);
 
@@ -504,7 +468,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     }, 1500);
                 }
             } catch (error) {
-                console.error('Error starting stream:', error);
+                errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error starting stream:', error);
                 setTerminalStreaming(false);
             }
         }
@@ -537,7 +501,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             await loadRecentLogs(true);
             await connectLiveStream();
         })().catch((error) => {
-            console.error('Error switching log stream:', error);
+            errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs", 'Error switching log stream:', error);
             setTerminalStreaming(false);
         });
     }, [streamTarget, loadRecentLogs, connectLiveStream]);
@@ -551,7 +515,8 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         void (async () => {
             await loadRecentLogs();
             await connectLiveStream();
-        })().catch(() => {
+        })().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/logs/TerminalLogs");
             setTerminalStreaming(false);
         });
     }, [terminalReady, streamTarget, loadRecentLogs, connectLiveStream]);
@@ -586,7 +551,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     useEffect(() => {
         isStreamingRef.current = terminalLogsData.isStreaming;
     }, [terminalLogsData.isStreaming]);
-    
+
     const writeAnimated = async (term: any, text: any, delay = 5) => {
         for (const char of text) {
             if(isStreamingRef.current) return;
@@ -599,7 +564,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         if (effectShows.current) return;
         const term = xtermRef.current.xterm;
         const fitAddon = xtermRef.current.fitAddon;
-      
+
         if (fitAddon) fitAddon.fit();
         term.reset();
         effectShows.current = true;
@@ -621,63 +586,17 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     return (
         <TerminalCardShell
             name={projectName || t.projectDetail.logs.terminal.fallbackName}
+            title={title}
             toolbar={
-                <div className="flex-1 max-w-md">
-                    <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                            <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
-                            <input
-                                type="text"
-                                placeholder={t.projectDetail.logs.terminal.searchPlaceholder}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        if (e.shiftKey) {
-                                            handleSearchPrevious();
-                                        } else {
-                                            handleSearchNext();
-                                        }
-                                    }
-                                }}
-                                className="w-full ps-9 pe-8 py-1.5 bg-muted border-border text-foreground placeholder:text-muted-foreground/70 focus:bg-card border rounded-lg text-xs focus:outline-none transition-all"
-                            />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => {
-                                        setSearchQuery("");
-                                        setHasMatches(false);
-                                    }}
-                                    className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                        </div>
-
-                        {searchQuery && (
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={handleSearchPrevious}
-                                    disabled={!hasMatches || isSearching}
-                                    className="p-1 bg-muted hover:bg-muted/80 border-border disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors"
-                                    title={t.projectDetail.logs.terminal.previousMatch}
-                                >
-                                    <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
-                                </button>
-                                <button
-                                    onClick={handleSearchNext}
-                                    disabled={!hasMatches || isSearching}
-                                    className="p-1 bg-muted hover:bg-muted/80 border-border disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors"
-                                    title={t.projectDetail.logs.terminal.nextMatch}
-                                >
-                                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <TerminalSearch
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    onNext={handleSearchNext}
+                    onPrevious={handleSearchPrevious}
+                    hasMatches={hasMatches}
+                    searching={isSearching}
+                    disabled={!terminalReady}
+                />
             }
             status={
                 <>
@@ -686,25 +605,29 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                         <span className="text-xs text-muted-foreground font-mono hidden sm:inline">{interpolate(t.projectDetail.logs.terminal.lines, { count: String(terminalLogsData.logs.length) })}</span>
                     </div>
 
-                    <button
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={toggleStreaming}
-                        className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg font-medium text-xs transition-all ${terminalLogsData.isStreaming
-                            ? 'bg-danger-bg hover:bg-danger-bg text-danger border border-danger-border'
-                            : 'bg-success-bg hover:bg-success-bg text-success border border-success-border'
+                        aria-label={terminalLogsData.isStreaming ? t.projectDetail.logs.terminal.stop : t.projectDetail.logs.terminal.start}
+                        className={`h-9 ${terminalLogsData.isStreaming
+                            ? 'bg-danger-bg text-danger hover:bg-danger-bg hover:text-danger'
+                            : 'bg-success-bg text-success hover:bg-success-bg hover:text-success'
                             }`}
                     >
                         {terminalLogsData.isStreaming ? (
                             <>
-                                <Pause className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">{t.projectDetail.logs.terminal.stop}</span>
+                                <UiIcon name="pause" className="w-3.5 h-3.5" />
+                                <span>{t.projectDetail.logs.terminal.stop}</span>
                             </>
                         ) : (
                             <>
-                                <Play className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">{t.projectDetail.logs.terminal.start}</span>
+                                <UiIcon name="play" className="w-3.5 h-3.5" />
+                                <span>{t.projectDetail.logs.terminal.start}</span>
                             </>
                         )}
-                    </button>
+                    </Button>
                 </>
             }
             overlay={

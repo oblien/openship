@@ -55,6 +55,10 @@
     "appsEmptyDesc": "一键部署，完全自托管——数据库、自动化、分析、密码库等，都运行在你自己的服务器上。"
   },
   "nav": {
+    "affiliates": "赚取收益",
+    "resources": "云空间",
+    "support": "支持",
+    "scale": "扩缩容",
     "home": "首页",
     "new-project": "新建项目",
     "projects": "项目",
@@ -73,6 +77,7 @@
     "addMailbox": "添加邮箱",
     "webmail": "网页邮箱",
     "sections": {
+      "help": "帮助",
       "main": "主要",
       "settings": "设置",
       "infrastructure": "基础设施",
@@ -82,7 +87,9 @@
       "account": "账户"
     },
     "apps": "应用",
-    "jobs": "任务"
+    "jobs": "任务",
+    "workspaces": "工作区",
+    "actions": "操作"
   },
   "sidebar": {
     "expand": "展开侧边栏",
@@ -126,7 +133,27 @@
         "analytics": "分析",
         "automation": "自动化",
         "mail": "邮件",
-        "other": "工具"
+        "other": "工具",
+        "ai": "AI 与模型"
+      },
+      "addCustom": "添加自定义",
+      "howToAddApp": "如何添加应用",
+      "removeCustomApp": "删除自定义应用",
+      "needsUpdateDesc": "更新您的 Openship 实例以安装此应用。",
+      "needsUpdateBadge": "需要更新",
+      "needsVersionBadge": "需要 v{version}",
+      "removedToast": "已删除 \"{name}\"。",
+      "removeFailedToast": "无法删除该应用。",
+      "gpu": {
+        "recommended": "建议使用 GPU",
+        "required": "需要 NVIDIA GPU",
+        "mode": "计算方式",
+        "cpu": "仅 CPU",
+        "nvidia": "NVIDIA GPU 加速",
+        "hint": "NVIDIA 模式需要服务器上安装兼容驱动和 NVIDIA Container Toolkit。",
+        "cloudUnsupported": "此应用仅支持自托管。请选择已连接的自托管服务器。",
+        "selfHostedOnly": "仅支持自托管",
+        "noGpu": "未检测到 GPU。请检查 NVIDIA 驱动和 Container Toolkit，或选择 CPU 模式。"
       }
     },
     "projects": {

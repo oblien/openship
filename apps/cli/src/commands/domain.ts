@@ -1,67 +1,27 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship domain` — custom domains, DNS verification, and SSL.
  *
- * Grounded in apps/api/src/modules/domains/domain.routes.ts (mounted at
- * /api/domains in app.ts). Each subcommand hits the real route:
- *   list        GET    /domains?projectId=<id>
- *   add         POST   /domains                 { projectId, hostname, isPrimary? }
- *   preview     POST   /domains/preview         { hostname }
- *   verify      POST   /domains/:id/verify      (200 verified | 422 not-yet)
- *   primary     POST   /domains/:id/primary
- *   records     GET    /domains/:id/records
- *   renew       POST   /domains/:id/renew
- *   verify-ssl  POST   /domains/:id/verify-ssl
- *   renew-all   POST   /domains/renew-all
+ * Uses the named SDK operations shared with native integrations.
  */
 
-import { Command } from "commander";
-import chalk from "chalk";
-import ora, { type Ora } from "ora";
-import { apiRaw, apiRequest, ApiError } from "../lib/api-client";
+import { Command, Option } from "commander";
+import { UploadCertBody, parseInput } from "@repo/contracts";
+import { readFileSync } from "node:fs";
+import { attachCustomDomainEndpoint } from "../lib/custom-domain-endpoint";
+import { getShipClient } from "../lib/ship-client";
+import { spin, fail, confirmOrExit, printResult } from "../lib/cmd-helpers";
+import type { Domain, DomainRecords, DomainSsl } from "@repo/sdk/client";
 import { printJson, printTable, isJsonMode, ok, err, info } from "../lib/output";
+import { positiveInteger, timeoutMilliseconds } from "../lib/command-input";
+import { printEvents } from "../lib/event-output";
 
 // ─── Shapes (subset of @repo/db Domain we render) ────────────────────────────
 
-interface DomainRow {
-  id: string;
-  hostname: string;
-  domainType?: string;
-  isPrimary?: boolean;
-  verified?: boolean;
-  status?: string;
-  sslStatus?: string | null;
-  sslExpiresAt?: string | null;
-}
-
-interface DnsRecord {
-  type: string;
-  host: string;
-  value: string;
-}
-
-interface RecordsResult {
-  mode: "cloud" | "selfhosted";
-  records: DnsRecord[];
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Suppress the spinner in JSON mode so stdout stays a clean data stream. */
-function spin(text: string): Ora | null {
-  return isJsonMode() ? null : ora(text).start();
-}
-
-/** Print an ApiError (or any error) and exit non-zero. */
-function fail(e: unknown): never {
-  if (e instanceof ApiError) {
-    err(`  ${e.message}${e.status ? chalk.dim(` (${e.status})`) : ""}`);
-  } else {
-    err(`  ${e instanceof Error ? e.message : String(e)}`);
-  }
-  process.exit(1);
-}
-
-function domainRow(d: DomainRow): Record<string, unknown> {
+function domainRow(d: Domain): Record<string, unknown> {
   return {
     id: d.id,
     hostname: d.hostname,
@@ -74,7 +34,7 @@ function domainRow(d: DomainRow): Record<string, unknown> {
 }
 
 /** Render a DNS-records result: the mode line plus a type/host/value table. */
-function printRecords(result: RecordsResult): void {
+function printRecords(result: DomainRecords): void {
   if (isJsonMode()) {
     printJson(result);
     return;
@@ -93,40 +53,41 @@ const listCmd = new Command("list")
   .requiredOption("-p, --project <id>", "Project ID to list domains for")
   .action(async (opts) => {
     try {
-      const res = await apiRequest<{ data: DomainRow[] }>(
-        `/domains?projectId=${encodeURIComponent(opts.project)}`,
-      );
-      const rows = res.data ?? [];
+      const rows = await getShipClient().domains.list(opts.project);
       if (isJsonMode()) {
         printJson(rows);
         return;
       }
       printTable(rows.map(domainRow), ["id", "hostname", "type", "primary", "verified", "status", "ssl"]);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       fail(e);
     }
   });
 
 const addCmd = new Command("add")
-  .description("Add a custom domain to a project")
+  .description("Add a custom domain and route it on the next deploy")
   .argument("<hostname>", "Domain hostname (e.g. app.example.com)")
   .requiredOption("-p, --project <id>", "Project ID to attach the domain to")
   .option("--primary", "Mark this domain as the project's primary", false)
   .action(async (hostname: string, opts) => {
     const sp = spin(`Adding ${hostname}…`);
     try {
-      const res = await apiRequest<{ data: DomainRow; records: RecordsResult }>("/domains", {
-        method: "POST",
-        body: JSON.stringify({ projectId: opts.project, hostname, isPrimary: !!opts.primary }),
-      });
-      sp?.succeed(`Added ${res.data.hostname}`);
+      const ship = getShipClient();
+      const res = await ship.domains.create(opts.project, { hostname, isPrimary: !!opts.primary });
+      const routed = await attachCustomDomainEndpoint(ship, opts.project, res.domain.hostname);
+      sp?.succeed(`Added ${res.domain.hostname}`);
+      if (routed) info(`  ${res.domain.hostname} is configured to be routed on the next deploy.`);
       if (isJsonMode()) {
-        printJson({ domain: res.data, records: res.records });
+        printJson(res);
         return;
       }
-      info("  Add these DNS records at your registrar, then run `openship domain verify " + res.data.id + "`:");
+      info("  Add these DNS records at your registrar, then run `openship domain verify " + res.domain.id + "`:");
       if (res.records) printRecords(res.records);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       sp?.fail("Add failed");
       fail(e);
     }
@@ -137,12 +98,10 @@ const previewCmd = new Command("preview")
   .argument("<hostname>", "Domain hostname to preview")
   .action(async (hostname: string) => {
     try {
-      const res = await apiRequest<{ data: RecordsResult }>("/domains/preview", {
-        method: "POST",
-        body: JSON.stringify({ hostname }),
-      });
-      printRecords(res.data);
+      printRecords(await getShipClient().domains.preview({ hostname }));
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       fail(e);
     }
   });
@@ -150,27 +109,22 @@ const previewCmd = new Command("preview")
 const verifyCmd = new Command("verify")
   .description("Run DNS verification for a domain")
   .argument("<id>", "Domain ID")
-  .action(async (id: string) => {
+  .option("--force", "Recheck an already-verified hostname")
+  .option("--follow", "Stream DNS and certificate progress")
+  .option("--timeout <ms>", "Stop following after this deadline", timeoutMilliseconds)
+  .action(async (id: string, opts) => {
     const sp = spin("Checking DNS records…");
     try {
-      // The API returns 422 (not an error condition) when DNS isn't propagated
-      // yet, with the same result body as a 200. Use apiRaw so both are handled
-      // without throwing; anything else (401/404/500) is a real failure.
-      const res = await apiRaw(`/domains/${encodeURIComponent(id)}/verify`, { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as {
-        verified?: boolean;
-        cnameVerified?: boolean;
-        txtVerified?: boolean;
-        message?: string;
-        sslStatus?: string;
-        error?: string;
-      };
-      if (!res.ok && res.status !== 422) {
-        throw new ApiError(body.error || body.message || `API error: ${res.status}`, res.status, body);
+      if (opts.follow) {
+        sp?.stop();
+        await printEvents(getShipClient().domains.verifyStream(id, { force: opts.force }, { signal: opts.timeout ? AbortSignal.timeout(opts.timeout) : undefined }));
+        return;
       }
+      const body = await getShipClient().domains.verify(id, { force: opts.force });
       if (isJsonMode()) {
         sp?.stop();
         printJson(body);
+        if (!body.verified) exitCommand(1);
         return;
       }
       if (body.verified) {
@@ -180,8 +134,10 @@ const verifyCmd = new Command("verify")
       }
       info(`  route/CNAME: ${body.cnameVerified ? "ok" : "missing"}   TXT: ${body.txtVerified ? "ok" : "missing"}`);
       if (body.sslStatus) info(`  SSL: ${body.sslStatus}`);
-      if (!body.verified) process.exit(1);
+      if (!body.verified) exitCommand(1);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       sp?.fail("Verify failed");
       fail(e);
     }
@@ -193,12 +149,12 @@ const primaryCmd = new Command("primary")
   .action(async (id: string) => {
     const sp = spin("Setting primary…");
     try {
-      const res = await apiRequest<{ data: DomainRow }>(`/domains/${encodeURIComponent(id)}/primary`, {
-        method: "POST",
-      });
-      sp?.succeed(`${res.data.hostname} is now primary`);
-      if (isJsonMode()) printJson(res.data);
+      const domain = await getShipClient().domains.setPrimary(id);
+      sp?.succeed(`${domain.hostname} is now primary`);
+      if (isJsonMode()) printJson(domain);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       sp?.fail("Failed to set primary");
       fail(e);
     }
@@ -209,22 +165,15 @@ const recordsCmd = new Command("records")
   .argument("<id>", "Domain ID")
   .action(async (id: string) => {
     try {
-      const res = await apiRequest<{ data: RecordsResult }>(`/domains/${encodeURIComponent(id)}/records`);
-      printRecords(res.data);
+      printRecords(await getShipClient().domains.records(id));
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       fail(e);
     }
   });
 
-interface SslResult {
-  domain: string;
-  sslStatus: string;
-  expiresAt?: string | null;
-  issuer?: string | null;
-  verified?: boolean;
-}
-
-function printSsl(data: SslResult): void {
+function printSsl(data: DomainSsl): void {
   if (isJsonMode()) {
     printJson(data);
     return;
@@ -241,12 +190,12 @@ const renewCmd = new Command("renew")
   .action(async (id: string) => {
     const sp = spin("Renewing certificate…");
     try {
-      const res = await apiRequest<{ data: SslResult }>(`/domains/${encodeURIComponent(id)}/renew`, {
-        method: "POST",
-      });
-      sp?.succeed(`Renewed ${res.data.domain}`);
-      printSsl(res.data);
+      const data = await getShipClient().domains.renewSsl(id);
+      sp?.succeed(`Renewed ${data.domain}`);
+      printSsl(data);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       sp?.fail("Renew failed");
       fail(e);
     }
@@ -258,48 +207,75 @@ const verifySslCmd = new Command("verify-ssl")
   .action(async (id: string) => {
     const sp = spin("Checking certificate…");
     try {
-      const res = await apiRequest<{ data: SslResult }>(`/domains/${encodeURIComponent(id)}/verify-ssl`, {
-        method: "POST",
-      });
-      if (res.data.verified) sp?.succeed(`Certificate valid for ${res.data.domain}`);
-      else sp?.fail(`Certificate not valid yet for ${res.data.domain}`);
-      printSsl(res.data);
-      if (!isJsonMode() && !res.data.verified) process.exit(1);
+      const data = await getShipClient().domains.verifySsl(id);
+      if (data.verified) sp?.succeed(`Certificate valid for ${data.domain}`);
+      else sp?.fail(`Certificate not valid yet for ${data.domain}`);
+      printSsl(data);
+      if (!data.verified) exitCommand(1);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       sp?.fail("SSL check failed");
       fail(e);
     }
   });
-
-interface RenewAllResult {
-  renewed: number;
-  results: Array<{ domain: string; status: string; error?: string }>;
-}
 
 const renewAllCmd = new Command("renew-all")
   .description("Renew SSL for every near-expiry domain in your organization")
   .action(async () => {
     const sp = spin("Renewing expiring certificates…");
     try {
-      const res = await apiRequest<{ data: RenewAllResult }>("/domains/renew-all", { method: "POST" });
-      sp?.succeed(`Renewed ${res.data.renewed} domain(s)`);
+      const data = await getShipClient().domains.renewAllSsl();
+      sp?.succeed(`Renewed ${data.renewed} domain(s)`);
       if (isJsonMode()) {
-        printJson(res.data);
+        printJson(data);
         return;
       }
-      if (res.data.results.length > 0) {
+      if (data.results.length > 0) {
         printTable(
-          res.data.results.map((r) => ({ domain: r.domain, status: r.status, error: r.error ?? "" })),
+          data.results.map((r) => ({ domain: r.domain, status: r.status, error: r.error ?? "" })),
           ["domain", "status", "error"],
         );
       } else {
         info("  Nothing needed renewal.");
       }
     } catch (e) {
+      observeCaughtError(e, "cli/commands/domain");
+      rethrowCommandExit(e);
       sp?.fail("Renew-all failed");
       fail(e);
     }
   });
+
+const dnsCmd = new Command("dns").description("Plan and apply provider-managed DNS records");
+dnsCmd.command("plan").argument("<id>", "Domain ID").option("--server <id>", "Target server ID")
+  .description("Preview DNS record changes without applying them")
+  .action((id: string, opts) => printResult(() => getShipClient().domains.dnsPlan(id, { serverId: opts.server })));
+dnsCmd.command("apply").argument("<id>", "Domain ID").option("--server <id>", "Target server ID")
+  .description("Apply DNS records through the shared provider workflow")
+  .action((id: string, opts) => printResult(async () => {
+    const result = await getShipClient().domains.dnsApply(id, { serverId: opts.server });
+    if (!result.provisioned) process.exitCode = 1;
+    return result;
+  }));
+const challengeCmd = new Command("challenge").description("Manage a DNS certificate challenge");
+challengeCmd.command("get").argument("<id>", "Domain ID").description("Inspect the current challenge and required TXT record")
+  .action((id: string) => printResult(() => getShipClient().domains.dnsChallenge(id)));
+challengeCmd.command("start").argument("<id>", "Domain ID")
+  .addOption(new Option("--mode <mode>", "Use a DNS provider or add the TXT record yourself").choices(["automatic", "manual"]).default("automatic"))
+  .option("--force", "Request a new certificate even if the current certificate is still valid")
+  .description("Start a certificate challenge through the shared certificate workflow")
+  .action((id: string, opts) => printResult(() => getShipClient().domains.startDnsChallenge(id, { mode: opts.mode, force: opts.force })));
+for (const [name, method] of [["check", "checkDnsChallenge"], ["cancel", "cancelDnsChallenge"]] as const) {
+  challengeCmd.command(name).argument("<id>", "Domain ID").requiredOption("--attempt <id>", "Exact challenge attempt ID from start/get")
+    .description(`${name === "check" ? "Check the TXT record for" : "Cancel"} a specific challenge attempt`)
+    .action((id: string, opts) => printResult(async () => {
+      const result = await getShipClient().domains[method](id, { attemptId: opts.attempt });
+      if (result.status === "failed" || result.status === "expired") process.exitCode = 1;
+      return result;
+    }));
+}
+dnsCmd.addCommand(challengeCmd);
 
 // ─── Parent group ────────────────────────────────────────────────────────────
 
@@ -313,4 +289,28 @@ export const domainCommand = new Command("domain")
   .addCommand(recordsCmd)
   .addCommand(renewCmd)
   .addCommand(verifySslCmd)
-  .addCommand(renewAllCmd);
+  .addCommand(renewAllCmd)
+  .addCommand(dnsCmd);
+domainCommand.command("get").argument("<id>", "Domain ID").description("Show a domain and its routing configuration")
+  .action((id: string) => printResult(() => getShipClient().domains.get(id)));
+domainCommand.command("remove").alias("rm").argument("<id>", "Domain ID")
+  .description("Remove a domain and its managed route").option("-y, --yes", "Skip confirmation")
+  .action((id: string, opts) => printResult(async () => {
+    await confirmOrExit(opts.yes, `Remove domain ${id}?`);
+    return getShipClient().domains.remove(id);
+  }));
+domainCommand.command("upload-cert").argument("<id>", "Domain ID")
+  .requiredOption("--cert <file>", "PEM certificate chain file")
+  .requiredOption("--key <file>", "PEM private key file")
+  .description("Install a manual certificate through the shared hostname and key validation")
+  .action((id: string, opts) => printResult(() => getShipClient().domains.uploadCert(id, parseInput(UploadCertBody, {
+    certPem: readFileSync(opts.cert, "utf8"), keyPem: readFileSync(opts.key, "utf8"),
+  }))));
+domainCommand.command("verify-pending").description("Retry eligible pending domains within the selected organization")
+  .option("--limit <number>", "Maximum domains to inspect", positiveInteger)
+  .option("--min-age <minutes>", "Minimum pending age in minutes", positiveInteger)
+  .action(opts => printResult(async () => {
+    const result = await getShipClient().domains.verifyPending({ limit: opts.limit, minAgeMinutes: opts.minAge });
+    if (result.failed) process.exitCode = 1;
+    return result;
+  }));

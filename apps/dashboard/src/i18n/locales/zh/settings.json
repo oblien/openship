@@ -1,4 +1,67 @@
 {
+  "appearance": {
+    "title": "外观",
+    "description": "选择主题或跟随设备的外观设置。更改会立即生效。",
+    "themes": {
+      "light": "浅色",
+      "dim": "柔暗",
+      "dark": "深色",
+      "system": "跟随系统"
+    },
+    "editor": {
+      "description": "个人主题、实时预览和可移植的 JSON。",
+      "newTheme": "新建主题",
+      "duplicate": "复制",
+      "reset": "重置",
+      "saved": "已保存",
+      "preview": "实时预览",
+      "unsaved": "正在预览未保存的更改。",
+      "invalid": "请先修正标记的值再保存。",
+      "retry": "重试",
+      "name": "主题名称",
+      "base": "基础主题",
+      "tokens": "设计令牌",
+      "search": "搜索令牌…",
+      "typography": "字体排版",
+      "interfaceFont": "界面字体",
+      "monoFont": "等宽字体",
+      "fontSize": "界面字号",
+      "monoSize": "等宽字号",
+      "lineHeight": "行高",
+      "weight": "字重",
+      "uploadFont": "上传 WOFF2",
+      "export": "下载主题",
+      "exportAll": "全部下载",
+      "json": "粘贴主题 JSON",
+      "url": "主题 JSON 地址",
+      "loadUrl": "加载地址",
+      "selectFile": "上传 JSON",
+      "importHint": "导入主题或主题库，保存以保留更改。",
+      "fontHint": "WOFF2 字体随主题一起导出。每个字体最大 256 KiB。",
+      "personal": "更改仅适用于此账户。",
+      "presets": "预设",
+      "discard": "放弃",
+      "color": "颜色",
+      "systemFont": "系统字体",
+      "serifFont": "衬线字体",
+      "systemMono": "系统等宽字体",
+      "workspace": "你的工作区",
+      "active": "运行中",
+      "queued": "排队中",
+      "failed": "失败",
+      "groups": {
+        "surfaces": "表面",
+        "text": "文本",
+        "controls": "控件",
+        "status": "状态",
+        "effects": "效果",
+        "scales": "色阶"
+      },
+      "libraryLimit": "请先删除一个自定义主题再添加新主题。"
+    },
+    "customize": "自定义",
+    "backToGeneral": "返回常规设置"
+  },
   "language": {
     "title": "语言",
     "description": "选择整个仪表盘使用的语言。"
@@ -48,6 +111,7 @@
     "title": "设置",
     "tabs": {
       "general": "常规",
+      "security": "安全",
       "git": "Git",
       "tokens": "API 令牌",
       "mcp": "MCP",
@@ -56,10 +120,13 @@
       "credentials": "凭据",
       "cloud": "云",
       "infrastructure": "基础设施",
-      "instance": "实例"
+      "instance": "实例",
+      "email": "邮件",
+      "systemSender": "系统发件人"
     }
   },
   "github": {
+    "tokenCreate": "创建令牌",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "已连接 · 尚无安装",
@@ -103,8 +170,49 @@
       "optionalSuffix": "在此机器上，以便对你的 App 安装范围之外的仓库启用本地构建克隆。远程部署始终通过 App 进行。",
       "disconnectPrefix": "要断开连接，请运行",
       "disconnectSuffix": "在你的终端中。",
-      "use": "使用 gh CLI"
-    }
+      "use": "使用 gh CLI",
+      "login": "使用 GitHub 登录",
+      "deviceHint": "在 GitHub 上输入此一次性代码以授权此实例：",
+      "waiting": "等待授权中 — 将自动更新。",
+      "tokenAltPrefix": "更喜欢使用令牌？请在以下位置添加个人访问令牌：",
+      "tokenAltLink": "克隆凭据。",
+      "forwardOnNote": "转发已开启 — gh CLI 还会验证远程服务器的克隆。您的身份将通过 SSH 在每次克隆时建立隧道；服务器上不存储任何内容。",
+      "forwardOffHint": "目前仅限本地构建。开启“将我的 git 身份转发到构建服务器”，也可将 gh CLI 用于远程服务器部署。",
+      "manageForward": "管理转发",
+      "disconnectBody": "Openship 将从此实例中移除此凭据，并停止将其用于克隆。在您于 GitHub 撤销之前，该凭据在 GitHub 上仍有效。您可以随时重新连接。",
+      "recheck": "重新检查"
+    },
+    "replaceToken": "替换 GitHub 令牌",
+    "clearToken": "清除已保存的令牌",
+    "tokenEditorDescription": "使用 GitHub 个人访问令牌浏览仓库并在此实例上构建。",
+    "methodTokenDesc": "使用 GitHub 令牌浏览仓库并进行本地构建。",
+    "activeVia": "已通过 {method} 连接",
+    "pickMethod": "选择 Openship 访问您仓库的方式。",
+    "methodDevice": "GitHub 登录",
+    "methodApp": "GitHub App",
+    "methodAppDesc": "用于本地和远程部署的具有特定作用域的短期安装令牌。",
+    "methodSshDesc": "为每台服务器绑定一个部署密钥（服务器 → GitHub）。",
+    "signIn": "使用 GitHub 登录",
+    "signInDesc": "使用设备代码在浏览器中登录。无需注册，无需 SSH 进入服务器。",
+    "changeMethod": "更改方式",
+    "otherMethods": "其他方式",
+    "openGithub": "打开 GitHub",
+    "copyCode": "点击复制",
+    "tokenConnect": "连接",
+    "tokenGhHint": "已在服务器上登录：",
+    "tokenSaveFailed": "无法保存令牌。",
+    "forwardOffHint": "仅限本地构建。开启“将我的 git 身份转发到构建服务器”以将其用于远程服务器部署。",
+    "remoteCredentialHint": "用于在此主机上运行的仓库浏览和构建。在远程服务器上构建的部署使用该服务器自身的凭据 — 请为每台服务器添加部署密钥或令牌。",
+    "methodToken": "GitHub 令牌",
+    "methodHostCli": "此主机上的 gh CLI",
+    "manageTokensOnGithub": "在 GitHub 上管理令牌",
+    "manageAccessOnGithub": "在 GitHub 上管理访问权限",
+    "disconnectScopeNote": "断开连接会从 Openship 中移除此凭据，并停止将其用于克隆。在您于 GitHub 撤销之前，它在 GitHub 上保持有效。",
+    "credentialRejected": "GitHub 拒绝了存储的 {method}。",
+    "credentialRejectedImpact": "它已被撤销、已过期或丢失了所需的作用域。使用它进行克隆的部署将持续失败，直到您在下方重新连接。",
+    "credentialUnreachable": "无法连接到 GitHub 以检查存储的 {method}。",
+    "credentialUnreachableImpact": "这通常是网络问题而非凭据错误 — Openship 将继续使用它。如果 GitHub 无法访问，重新连接也无济于事。",
+    "credentialCheckedAt": "上次检查时间 {time}"
   },
   "deployDefaults": {
     "title": "部署默认设置",
@@ -219,9 +327,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub 克隆凭据",
-    "description": "当未安装 GitHub App 时，用于克隆私有仓库的个人令牌",
+    "description": "个人访问私有仓库的凭据。",
     "loading": "加载中…",
-    "intro": "粘贴一个 GitHub 个人访问令牌（经典版或细粒度版）。克隆模块将其作为第二优先级凭据使用 —— 在所有按项目的覆盖设置之后，在 GitHub App 安装令牌之前。",
+    "intro": "项目专用令牌优先。启用后，此令牌会先于 GitHub App 凭据使用。关闭后，令牌仍会保留。",
     "placeholder": "ghp_… 或 github_pat_…",
     "showToken": "显示令牌",
     "hideToken": "隐藏令牌",
@@ -233,8 +341,12 @@
     "justNow": "刚刚",
     "replace": "替换",
     "clear": "清除",
-    "useAsDefault": "用作默认克隆令牌",
-    "useAsDefaultDesc": "开启时，克隆模块会将此令牌作为链中的第二层级使用（在按项目的覆盖设置之后）。关闭时，令牌会被存储但不使用 —— 如果你只想在特定部署中启用它，这会很方便。",
+    "useAsDefault": "默认使用",
+    "useAsDefaultDesc": "项目没有专用令牌时使用此令牌。",
+    "tokenLabel": "个人访问令牌",
+    "helpTitle": "令牌权限与使用说明",
+    "forwardGitLabel": "转发本地 GitHub 访问权限",
+    "forwardGitDesc": "通过 SSH 与远程构建服务器共享本地 GitHub 登录。",
     "toast": {
       "pasteFirst": "保存前请先粘贴一个令牌",
       "notLikeToken": "这看起来不像一个 GitHub 令牌。如果你确定，仍可保存。",
@@ -243,7 +355,8 @@
       "cleared": "克隆令牌已清除",
       "clearFailed": "清除令牌失败",
       "updateDefaultFailed": "更新默认设置失败"
-    }
+    },
+    "forwardGitFailed": "更新 git 转发失败"
   },
   "tokens": {
     "title": "个人访问令牌",
@@ -290,7 +403,9 @@
       "revoked": "已撤销 \"{name}\"",
       "revokeFailed": "撤销令牌失败",
       "loadFailed": "加载令牌失败"
-    }
+    },
+    "callsOne": " · 1 次调用",
+    "callsMany": " · {count} 次调用"
   },
   "mcp": {
     "title": "MCP",
@@ -319,13 +434,30 @@
     "allResources": "所有资源",
     "resourcesOne": "{count} 项资源",
     "resourcesMany": "{count} 项资源",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "已授权 {date}",
     "lastUsedSuffix": " · 上次使用 {date}",
     "toast": {
       "disconnected": "MCP 客户端已断开连接",
       "disconnectFailed": "断开连接失败"
-    }
+    },
+    "callsOne": " · 1 次调用",
+    "callsMany": " · {count} 次调用",
+    "editAccess": "编辑访问权限",
+    "viewActivity": "活动",
+    "editScopeTitle": "{client} 访问权限",
+    "editScopeSubtitle": "更改将在 Agent 的下一次请求中生效 — 无需重新连接。",
+    "editScopeOrg": "在 {org} 中",
+    "wasNResourcesOne": "当前 1 个资源",
+    "wasNResourcesMany": "当前 {count} 个资源",
+    "saveScope": "保存访问权限",
+    "scopeSaved": "访问权限已更新",
+    "scopeSaveFailed": "无法更新访问权限",
+    "loadScopeFailed": "无法加载此客户端的访问权限",
+    "scopeGrantRejected": "您无法再授予 {resource} 的权限，因此已将其移除。再次保存以继续。",
+    "confirmWidenTitle": "这将解除所有限制",
+    "confirmWidenBody": "Agent 将立即以您的完全访问权限行动。再次按下以确认。",
+    "confirmWidenAction": "解除所有限制"
   },
   "team": {
     "heading": "团队",
@@ -375,7 +507,31 @@
       "deleteBody": "永久删除此工作区及其中的所有内容。",
       "leaveBody": "退出此工作区 —— 需要新的邀请才能重新加入。",
       "deleteConfirm": "删除此工作区？其项目、成员和设置将对所有人移除。此操作无法撤销。",
-      "leaveConfirm": "退出此工作区？在再次收到邀请之前你将无法访问。"
+      "leaveConfirm": "退出此工作区？在再次收到邀请之前你将无法访问。",
+      "manage": {
+        "title": "管理工作区",
+        "sectionBody": "重命名此工作区、暂停其项目或将其删除。",
+        "nameLabel": "工作区名称",
+        "rename": "重命名",
+        "projects": "项目 ({count})",
+        "noProjects": "此工作区中暂无项目。",
+        "running": "运行中",
+        "stopped": "已停止",
+        "pauseTitle": "全部暂停",
+        "pauseBody": "停止每个项目但保留工作区 — 随时可以恢复。",
+        "pauseButton": "停止所有项目",
+        "deleteTitle": "删除工作区",
+        "deleteBody": "销毁所有 {count} 个项目（容器和路由）并删除工作区。卷数据保持可恢复状态。此操作无法撤销。",
+        "confirmLabel": "输入 “{name}” 以确认",
+        "deleting": "正在删除…",
+        "deletingProject": "正在移除 {name}…",
+        "deletingWorkspace": "正在移除工作区…",
+        "toastRenamed": "工作区已重命名",
+        "toastRenameFailed": "无法重命名工作区",
+        "toastPaused": "已停止 {count} 个项目",
+        "toastPauseFailed": "某些项目无法停止",
+        "toastProjectFailed": "无法移除 {name}"
+      }
     },
     "toast": {
       "teamNameRequired": "团队名称为必填项",
@@ -393,6 +549,17 @@
       "deleted": "工作区已删除",
       "leaveFailed": "无法退出工作区",
       "left": "已退出工作区"
+    },
+    "reachability": {
+      "description": "团队成员需要一个公开 URL 才能访问此工作区。",
+      "notInstalledTitle": "为 Openship 提供公开地址",
+      "notInstalledBody": "Openship 尚未配置公开 URL。请使用公开地址部署（例如 `openship up --public-url …`），然后在此添加域名以便团队成员访问。",
+      "noDomainTitle": "为 Openship 添加域名",
+      "noDomainBody": "为 Openship 应用添加域名，以便团队成员可以访问此工作区 — 一旦上线，邀请功能将自动开启。",
+      "addDomain": "添加域名",
+      "pendingTitle": "完成域名设置",
+      "pendingBody": "您的 Openship 域名正在等待验证 (DNS / SSL)。上线后即可开启邀请。",
+      "viewDomain": "查看域名"
     }
   },
   "inviteMember": {
@@ -423,7 +590,27 @@
       "invitationLinkCreated": "邀请链接已创建 — 请从待处理邀请中复制",
       "personalOrgBlocked": "个人工作区无法邀请成员。请先创建团队组织，然后再发送邀请。",
       "updateMailSourceFailed": "更新邮件来源失败"
-    }
+    },
+    "delivery": "发送方式",
+    "emailDelivery": "电子邮件",
+    "linkDelivery": "复制链接",
+    "emailDeliveryHint": "通过此实例已配置的邮件服务发送。",
+    "linkDeliveryHint": "创建链接，直接分享给此人。",
+    "checkingEmail": "正在检查邮件服务…",
+    "emailUnavailable": "尚未配置邮件服务。你可以分享链接。",
+    "linkReady": "邀请已准备好分享",
+    "emailSent": "邀请邮件已发送",
+    "recipientHint": "只有 {email} 可以接受此邀请。",
+    "invitationLink": "邀请链接",
+    "manageLinkHint": "在“待处理邀请”中管理或撤销此链接。",
+    "mailReady": "就绪",
+    "mailNotSetUp": "未配置",
+    "cloudReady": "已连接",
+    "cloudNotReady": "未连接",
+    "noMailSystem": "未设置邮件系统，因此邀请将无法送达。",
+    "setUpEmail": "配置邮件 →",
+    "cloudNotConnected": "Openship Cloud 未连接，因此无法发送邀请。",
+    "connectCloud": "连接 Openship Cloud →"
   },
   "teamWorkspace": {
     "title": "团队工作区",
@@ -451,9 +638,88 @@
     "toast": {
       "disconnected": "已断开与 Openship Cloud 的连接",
       "disconnectFailed": "断开连接失败"
+    },
+    "pitch": {
+      "title": "添加 Openship Cloud",
+      "body": "每个项目均可获得免费的 .{domain} 域名及自动 SSL — 无需配置 DNS 和证书。您自己的服务器将完全保持现有工作方式。",
+      "perkDomain": "每个项目均享有免费 .{domain} 域名 + 自动 SSL",
+      "perkDeploy": "部署到托管云，或保留在您自己的服务器上",
+      "perkServices": "一键配置托管 Postgres、Redis 等服务",
+      "perkGithub": "无需注册您自己的应用即可连接 GitHub",
+      "noLockIn": "免费连接。不移动任何数据，您可以随时断开连接。",
+      "viewPricing": "查看价格"
+    },
+    "connectModal": {
+      "title": "连接 Openship Cloud",
+      "requiresConnection": "{feature} 需要连接 Openship Cloud。连接您的账号以解锁：",
+      "features": {
+        "deployments": "云端部署",
+        "infra": "托管基础设施",
+        "ssl": "自动 SSL 与域名",
+        "cdn": "全球 CDN"
+      },
+      "connect": "连接到 Openship Cloud",
+      "waitingSignIn": "等待登录…",
+      "maybeLater": "稍后再说"
     }
   },
   "instance": {
+    "location": {
+      "title": "实例位置",
+      "thisDesktop": "这台电脑",
+      "thisServer": "此服务器",
+      "desktopHint": "连接以使用现有实例的数据，或将 Openship 迁移到服务器以保持在线。",
+      "serverHint": "任务、Webhook 和团队访问在此管理。",
+      "remoteHint": "你正在使用远程实例的实时数据。",
+      "retiredHint": "此服务器不再管理项目。将实例移至此处即可重新使用。",
+      "moveToServer": "移至服务器",
+      "moveToAnotherServer": "移至其他服务器",
+      "moveToDesktop": "移至 Desktop",
+      "returnToDesktop": "移回 Desktop",
+      "previousServer": "移至原来的服务器",
+      "connectExisting": "连接现有实例",
+      "reconnect": "重新连接",
+      "pairDesktop": "连接 Desktop",
+      "receiveInstance": "将实例移至此处",
+      "disconnect": "返回本地实例",
+      "moreOptions": "更多实例选项",
+      "memberTitle": "通过 Desktop 使用 Openship",
+      "memberHint": "使用你在此拥有的权限连接 Desktop。",
+      "loading": "正在加载实例…",
+      "sendHint": "创建迁移码，然后在 Desktop 的实例设置中，从更多选项里选择“{action}”。Desktop 完成交接之前，控制权仍在此处。",
+      "connectHint": "在实例地址登录，或在其实例设置中使用“{action}”获取连接码。连接期间，本地实例将暂停。",
+      "secureAccount": "保护你的实例",
+      "reviewMove": "确认迁移",
+      "accountHint": "添加迁移后登录所用的邮箱和密码。开始传输前，你将再次确认目标位置。",
+      "backToDestination": "返回目标选择",
+      "continueSetup": "继续",
+      "pairHint": "在你的另一台 Desktop 上，以当前权限使用此实例的实时数据。不会迁移数据。",
+      "pairOwnDevice": "此代码会以你的账户登录。邀请其他人请使用“团队”。",
+      "teamAccessTitle": "启用团队邀请",
+      "teamAccessHint": "团队邀请需要可访问的实例。为 Openship 设置公共地址，或将它迁移到持续运行的服务器。",
+      "adminRequired": "请联系实例管理员进行设置。",
+      "webhookAccessHint": "GitHub 需要可访问的 Openship API 来发送部署事件。将此实例迁移到持续运行的服务器，或为其 API 设置公共地址。"
+    },
+    "transfer": {
+      "installOnServer": "全新安装",
+      "existingInstance": "现有实例",
+      "destinationCodeHint": "在目标实例中打开设置 → 实例 → {more} → {receive}。选择{create}，确认替换，然后将接收代码复制到这里。",
+      "destinationCodeLabel": "目标实例的接收代码",
+      "receiveDescription": "将另一个实例的数据迁移到这里。保存恢复快照后，当前数据将被替换。",
+      "pasteMoveCode": "粘贴迁移代码",
+      "createReceiveCode": "创建接收代码",
+      "sourceCodeHint": "在源服务器中打开设置 → 实例 → {send} → {create}。要将 Desktop 迁移到这里，请改选{receive}。",
+      "sourceCodeLabel": "源实例的迁移代码",
+      "createMoveCode": "创建迁移代码",
+      "connectionCode": "连接代码",
+      "moveCode": "迁移代码",
+      "receiveCode": "接收代码",
+      "connectionCodeHint": "在另一台 Desktop 上打开设置 → 实例 → {connect}，然后选择{useCode}。",
+      "moveCodeHint": "在接收方 Desktop 上打开设置 → 实例 → {more} → {receive}。选择{paste}并粘贴此代码。",
+      "receiveCodeHint": "在源实例中打开设置 → 实例 → {move}或{another}，然后选择{existing}。粘贴在这里创建的接收代码。",
+      "codeExpiry": "10 分钟后过期。请勿泄露此代码。",
+      "replaceDestinationConfirmation": "将所有工作区、用户和凭据迁移到目标实例。保存恢复快照后，目标实例的现有数据将被替换。"
+    },
     "title": "实例",
     "descDesktop": "桌面应用",
     "descCloud": "云",
@@ -466,11 +732,37 @@
     "authCloud": "云认证",
     "authLocal": "本地认证",
     "localUser": "本地用户",
-    "change": "更改"
+    "change": "更改",
+    "connection": {
+      "title": "连接到实例",
+      "description": "输入实例地址，然后使用自己的账户登录。",
+      "address": "实例 URL",
+      "addressHint": "也可以粘贴团队邀请链接。连接期间，本地实例将暂停。",
+      "codeTitle": "使用连接码",
+      "codeDescription": "已在其他设备登录？请在该实例打开“设置 → 实例 → {action}”。",
+      "codeLabel": "连接码",
+      "codeHint": "使用自己账户的连接码。连接码在 10 分钟后失效，并以你的身份登录。",
+      "continue": "继续登录",
+      "connectCode": "连接此 Desktop",
+      "connecting": "正在连接…",
+      "useCode": "改用连接码",
+      "useAddress": "使用实例 URL",
+      "invalidAddress": "请输入 HTTPS 实例地址或邀请链接，不要包含凭据或额外参数。",
+      "invitationTitle": "打开此邀请",
+      "invitationDescription": "连接到 {instance}，然后在加入前查看工作区和角色。",
+      "reviewInvitation": "查看邀请",
+      "invitationHint": "连接期间，本地实例将暂停。不会移动任何数据。"
+    },
+    "recovery": {
+      "title": "您的 Openship 实例",
+      "subtitle": "完成迁移或重新连接以继续管理您的项目。",
+      "checkConnection": "检查连接",
+      "signInRemote": "登录到远程实例"
+    }
   },
   "upgradeAuth": {
     "title": "添加密码",
-    "description": "将此零认证实例升级为真正的电子邮件 + 密码登录。你的项目和历史记录将保持完好。",
+    "description": "设置邮箱和密码以保护 Openship 的访问权限。你的项目和历史记录会保留。",
     "close": "关闭",
     "name": "姓名",
     "namePlaceholder": "Jane Doe",
@@ -488,9 +780,29 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "发送记录",
+      "description": "所有渠道的投递记录。",
+      "page": "第 {page} 页",
+      "refresh": "刷新",
+      "loading": "正在加载发送记录…",
+      "error": "无法加载发送记录，请刷新重试。",
+      "empty": "暂无最近的发送记录。",
+      "attempts": "尝试次数：{count}",
+      "errorDetails": "错误详情",
+      "unknownCategory": "未知事件",
+      "unknownChannel": "未知渠道",
+      "status": {
+        "sent": "已发送",
+        "queued": "排队中",
+        "sending": "发送中",
+        "failed": "失败",
+        "seen": "已查看"
+      }
+    },
     "channels": {
       "title": "投递渠道",
-      "description": "你的通知发送到哪里。已验证的渠道可以送达；未验证的渠道会被跳过。",
+      "description": "已启用且已验证的渠道可以接收提醒。发送测试以检查是否送达。",
       "empty": "尚无渠道。添加一个以开始接收通知。",
       "verified": "已验证",
       "unverified": "未验证",
@@ -500,7 +812,11 @@
       "addChannel": "添加渠道",
       "confirmDelete": "删除此渠道？使用它的订阅将停止。",
       "channelRemoved": "渠道已移除",
-      "channelAdded": "渠道已添加"
+      "channelAdded": "渠道已添加",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "edit": "编辑",
+      "updated": "渠道已更新"
     },
     "describe": {
       "slackWebhook": "Slack webhook",
@@ -529,7 +845,22 @@
       "telegramHint": "先用 @BotFather 创建机器人，然后向它发送一条消息（或把它加入群组），它才能回复。",
       "adding": "正在添加…",
       "addChannel": "添加渠道",
-      "labelRequired": "标签为必填项"
+      "labelRequired": "标签为必填项",
+      "channelType": "渠道类型",
+      "labels": {
+        "name": "名称",
+        "address": "电子邮件地址",
+        "url": "Webhook 地址",
+        "botToken": "机器人令牌",
+        "chatId": "聊天 ID"
+      },
+      "saving": "正在保存…",
+      "editHint": "凭据字段留空可保留已存储的密钥。更改目标后需要重新测试以验证发送。",
+      "signingSecret": "签名密钥",
+      "secretHint": "请立即复制此密钥以验证 Webhook 签名。密钥仅显示一次。",
+      "noEmailTransport": "此实例上未配置邮件服务器，因此邮件通知将无法送达。",
+      "setUpSmtp": "配置 SMTP →",
+      "otherAddress": "其他地址…"
     },
     "subscriptions": {
       "title": "要接收哪些通知",
@@ -538,13 +869,173 @@
       "allTab": "全部",
       "eventHeader": "事件",
       "cellAria": "通过 {channel} 接收 {category}",
-      "notifyMe": "通知我"
+      "notifyMe": "通知我",
+      "search": "搜索提醒",
+      "noResults": "没有匹配的提醒。"
     },
     "orgDefaults": {
       "title": "组织默认设置",
-      "description": "当新成员加入此组织时应用的默认设置。成员可按渠道进行覆盖。",
+      "description": "成员尚未明确选择某项提醒的偏好时，将使用组织默认设置。成员可以通过个人偏好覆盖默认设置。",
       "notifyAria": "在 {category} 时通知",
       "nChannels": "{n} 个渠道"
+    },
+    "overview": {
+      "title": "通知",
+      "description": "渠道属于你的账户，可跨组织使用。提醒偏好和默认设置仅适用于当前组织。",
+      "ready": "{total} 个渠道中有 {count} 个就绪",
+      "preferences": "提醒偏好",
+      "configuration": "渠道与提醒",
+      "retry": "重试"
+    },
+    "groups": {
+      "deployment": "部署",
+      "app_health": "应用健康",
+      "backups": "备份",
+      "jobs": "任务",
+      "actions": "操作",
+      "domains": "域名与 SSL",
+      "members": "成员",
+      "mail": "邮件",
+      "billing": "账单",
+      "security": "安全"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "部署失败",
+        "description": "构建或部署出错。我们发送错误消息和失败日志片段。"
+      },
+      "deploy.succeeded": {
+        "label": "部署成功",
+        "description": "每次成功的生产部署。默认关闭。"
+      },
+      "deploy.cancelled": {
+        "label": "部署已取消",
+        "description": "正在进行的部署被您或其他成员取消。"
+      },
+      "service.down": {
+        "label": "应用停止运行",
+        "description": "应运行的容器已退出或因内存不足 (OOM) 终止。不针对手动停止的服务发送。"
+      },
+      "service.crash_loop": {
+        "label": "应用崩溃循环",
+        "description": "容器不断重启 (crash loop)。"
+      },
+      "service.unhealthy": {
+        "label": "应用状态异常",
+        "description": "容器正在运行，但其健康检查失败。"
+      },
+      "service.recovered": {
+        "label": "应用已恢复",
+        "description": "故障结束，容器已恢复健康。"
+      },
+      "server.unreachable": {
+        "label": "服务器不可达",
+        "description": "无法连接到服务器的 Docker 守护程序。"
+      },
+      "backup.failed": {
+        "label": "备份失败",
+        "description": "计划或手动备份执行出错。"
+      },
+      "backup.succeeded": {
+        "label": "备份成功",
+        "description": "每次成功的备份。"
+      },
+      "backup.restore_completed": {
+        "label": "恢复已完成",
+        "description": "恢复已完成（或失败）。"
+      },
+      "job.run.failed": {
+        "label": "任务执行失败",
+        "description": "计划或手动任务执行出错。"
+      },
+      "job.run.succeeded": {
+        "label": "任务执行成功",
+        "description": "每次任务成功运行。"
+      },
+      "job.run.started": {
+        "label": "任务已开始",
+        "description": "任务开始运行。"
+      },
+      "action.run.failed": {
+        "label": "操作失败",
+        "description": "GitHub Actions 工作流运行出错或被取消。"
+      },
+      "action.run.succeeded": {
+        "label": "操作成功",
+        "description": "每次成功的 GitHub Actions 工作流运行。"
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL 证书即将过期",
+        "description": "域名证书无法续订且即将到期。"
+      },
+      "member.invited": {
+        "label": "已邀请成员",
+        "description": "已邀请新成员加入您的组织。"
+      },
+      "member.joined": {
+        "label": "成员已加入",
+        "description": "成员接受了邀请并加入了组织。"
+      },
+      "member.removed": {
+        "label": "成员已移除",
+        "description": "成员离开了组织或被移除。"
+      },
+      "mail.dns_unverified": {
+        "label": "邮件域名未验证",
+        "description": "邮件域名缺少 DNS 记录或记录有误。"
+      },
+      "mail.queue_backed_up": {
+        "label": "邮件队列积压",
+        "description": "外发邮件发送队列异常高或正在重试。"
+      },
+      "billing.quota_warning": {
+        "label": "配额警告",
+        "description": "接近资源使用上限或支出上限。"
+      },
+      "billing.invoice_paid": {
+        "label": "发票已支付",
+        "description": "订阅账单已成功支付。"
+      },
+      "billing.payment_failed": {
+        "label": "支付失败",
+        "description": "订阅付款失败，需要处理。"
+      },
+      "domain.expiring": {
+        "label": "SSL 证书即将到期",
+        "description": "每日检查 — 当任何自定义域名证书剩余时间少于 7 天且续订程序无法连接到主机时触发。"
+      },
+      "domain.verification_failed": {
+        "label": "域名验证失败",
+        "description": "在初始域名设置期间 DNS 检查未通过。"
+      },
+      "member.added": {
+        "label": "新成员加入",
+        "description": "有人接受了邀请并加入了此组织。"
+      },
+      "invitation.sent": {
+        "label": "已发送邀请",
+        "description": "管理员向新成员发送了邀请。可用作安全信号。"
+      },
+      "mail.inbound_received": {
+        "label": "监视的地址收到邮件",
+        "description": "邮件已到达您的通知规则所监视的邮箱或域名。"
+      },
+      "action.run.cancelled": {
+        "label": "工作流已取消",
+        "description": "Actions 工作流运行已被取消。"
+      },
+      "billing.alert": {
+        "label": "账单警报",
+        "description": "付款失败、达到方案限额或账单逾期。始终通知账单所有者。"
+      },
+      "quota.warning": {
+        "label": "配额警告",
+        "description": "您即将达到方案限制（存储、部署、成员）。在出现故障前发出提醒。"
+      },
+      "security.advisory": {
+        "label": "安全公告",
+        "description": "已发布的安全公告影响 Openship 或已部署的服务。包含原因和可用更新。"
+      }
     }
   },
   "audit": {
@@ -587,7 +1078,9 @@
       "today": "今天",
       "last7": "最近 7 天",
       "last30": "最近 30 天",
-      "last90": "最近 90 天"
+      "last90": "最近 90 天",
+      "anyAgent": "任意 Agent",
+      "agentCalls": "{count} 个事件"
     },
     "tabs": {
       "all": "全部"
@@ -611,7 +1104,190 @@
       "when": "时间",
       "cameFrom": "来源",
       "technical": "技术详情",
-      "eventType": "事件类型"
+      "eventType": "事件类型",
+      "viaAgent": "Agent"
+    },
+    "categories": {
+      "deployments": "部署",
+      "apps": "应用与服务",
+      "domains": "域名与 SSL",
+      "servers": "服务器",
+      "members": "成员与权限",
+      "agent": "AI 代理",
+      "security": "安全",
+      "billing": "账单",
+      "system": "系统"
+    },
+    "events": {
+      "server:write": {
+        "action": "更改了服务器",
+        "label": "服务器已更改"
+      },
+      "server:admin": {
+        "action": "对服务器执行了管理操作",
+        "label": "服务器管理操作"
+      },
+      "server:add": {
+        "action": "添加了服务器",
+        "label": "已添加服务器"
+      },
+      "server:remove": {
+        "action": "移除了服务器",
+        "label": "已移除服务器"
+      },
+      "settings:write": {
+        "action": "更改了设置",
+        "label": "设置已更改"
+      },
+      "settings:admin": {
+        "action": "对设置执行了管理操作",
+        "label": "设置管理操作"
+      },
+      "project:create": {
+        "action": "创建了",
+        "label": "项目已创建"
+      },
+      "project:write": {
+        "action": "更改了",
+        "label": "项目已更改"
+      },
+      "project:delete": {
+        "action": "删除了",
+        "label": "项目已删除"
+      },
+      "deployment:start": {
+        "action": "启动了部署",
+        "label": "部署已启动"
+      },
+      "deployment:success": {
+        "action": "成功部署了",
+        "label": "部署成功"
+      },
+      "deployment:failed": {
+        "action": "部署失败",
+        "label": "部署失败"
+      },
+      "deployment:cancelled": {
+        "action": "取消了部署",
+        "label": "部署已取消"
+      },
+      "domain:add": {
+        "action": "添加了域名",
+        "label": "已添加域名"
+      },
+      "domain:remove": {
+        "action": "移除了域名",
+        "label": "已移除域名"
+      },
+      "domain:verify": {
+        "action": "验证了域名",
+        "label": "域名已验证"
+      },
+      "member:add": {
+        "action": "添加了",
+        "label": "成员已添加"
+      },
+      "member:remove": {
+        "action": "移除了",
+        "label": "成员已移除"
+      },
+      "terminal:write": {
+        "action": "打开了终端：",
+        "label": "终端会话已打开"
+      },
+      "deployment:write": {
+        "action": "启动了部署:",
+        "actionWithoutResource": "启动了部署",
+        "label": "部署操作",
+        "description": "调用了部署端点 — 启动、重试、回滚或提升。"
+      },
+      "deployment:admin": {
+        "action": "对部署执行了管理操作:",
+        "actionWithoutResource": "对部署执行了管理操作",
+        "label": "部署管理操作",
+        "description": "对部署调用了管理操作。"
+      },
+      "job:write": {
+        "action": "更改了任务",
+        "actionWithoutResource": "更改了任务",
+        "label": "任务已更改",
+        "description": "已创建、编辑、运行或删除定时或自定义任务。"
+      },
+      "notification_default.updated": {
+        "action": "更改了默认通知设置",
+        "actionWithoutResource": "更改了默认通知设置",
+        "label": "默认通知设置已更改",
+        "description": "组织的默认通知路由已更新。"
+      },
+      "notification_channel.created": {
+        "action": "添加了通知渠道",
+        "actionWithoutResource": "添加了通知渠道",
+        "label": "通知渠道已添加"
+      },
+      "notification_channel.updated": {
+        "action": "更新了通知渠道",
+        "actionWithoutResource": "更新了通知渠道",
+        "label": "通知渠道已更新"
+      },
+      "notification_channel.deleted": {
+        "action": "删除了通知渠道",
+        "actionWithoutResource": "删除了通知渠道",
+        "label": "通知渠道已删除"
+      },
+      "notification_subscription.updated": {
+        "action": "更改了发送至该目标的通知内容",
+        "actionWithoutResource": "更改了通知路由",
+        "label": "通知路由已更改"
+      },
+      "notification_subscription.deleted": {
+        "action": "停止发送通知至",
+        "actionWithoutResource": "停止了发送通知",
+        "label": "通知已停止"
+      },
+      "notification_delivery.seen": {
+        "action": "标记为已读",
+        "actionWithoutResource": "标记为已读",
+        "label": "提醒已标记为已读"
+      },
+      "notifications:write": {
+        "action": "更改了通知",
+        "actionWithoutResource": "更改了通知",
+        "label": "通知已更改"
+      },
+      "notifications:admin": {
+        "action": "执行了通知管理操作",
+        "actionWithoutResource": "执行了通知管理操作",
+        "label": "通知管理操作"
+      },
+      "job_run.started": {
+        "action": "启动了任务",
+        "actionWithoutResource": "启动了任务",
+        "label": "任务已启动"
+      },
+      "job_run.succeeded": {
+        "action": "成功运行了任务",
+        "actionWithoutResource": "成功运行了任务",
+        "label": "任务成功"
+      },
+      "job_run.failed": {
+        "action": "运行了失败的任务",
+        "actionWithoutResource": "运行了失败的任务",
+        "label": "任务失败"
+      },
+      "issues.history.clear": {
+        "action": "清除了已解决的监控事件历史",
+        "actionWithoutResource": "清除了已解决的监控事件历史",
+        "label": "监控历史已清除"
+      }
+    },
+    "resourceLabels": {
+      "project": "应用",
+      "service": "服务",
+      "container": "容器",
+      "deployment": "部署",
+      "domain": "域名",
+      "server": "服务器",
+      "settings": "设置"
     }
   },
   "updates": {
@@ -713,7 +1389,43 @@
       "rowsRestored": "已恢复 {count} 行",
       "secretsRestored": "已恢复 {count} 项机密信息",
       "secretsNotRestored": "机密信息未恢复（无口令/口令不正确）—— 请重新输入凭据"
-    }
+    },
+    "backupTitle": "备份与恢复",
+    "backupDesc": "导出备份文件或还原现有备份。",
+    "backupWarning": "归档文件包含 Openship 数据库和凭据。Docker 卷内容保留在其服务器上；服务数据请使用项目备份。",
+    "exportInstanceTitle": "导出实例或项目",
+    "exportInstanceDesc": "选择完整实例或特定项目及其环境和依赖项。",
+    "exportProjectTitle": "导出项目",
+    "exportProjectDesc": "以纯 JSON 格式下载所有项目设置、环境变量和凭据。",
+    "exportProjectIntro": "包含所有环境、服务、部署历史记录、分析、连接、域名、备份设置、环境变量和密钥。JSON 文件未加密，无需密码即可导入。",
+    "exportProjectReconnection": "目标端需要相同的服务器或 OpenShip Cloud 帐户才能重新连接到现有工作负载。",
+    "exportInstanceIntro": "导出控制面板数据，包括存储的环境变量、服务器密钥、凭据、配置和历史记录。JSON 文件未加密且不需要密码。",
+    "scopeLabel": "导出范围",
+    "scopeInstance": "整个实例",
+    "scopeProjects": "选定的项目和环境",
+    "recordsAcrossEnvsIncluded": "包含跨 {envs} 个环境的 {count} 条记录。",
+    "checkingExport": "正在检查导出内容…",
+    "downloadExport": "下载导出文件",
+    "downloadAgain": "再次下载",
+    "exporting": "正在导出…",
+    "exportDownloaded": "导出已下载",
+    "exportCompleteToast": "导出已下载。请在目标控制平面的“设置 → 实例”中将其导入。",
+    "optSecretsLabel": "环境变量、密钥和凭据",
+    "optSecretsDesc": "以可读 JSON 格式包含，带有服务器密钥、内联 Compose 配置和元数据中存储的机密文件。",
+    "optLinkedAppsLabel": "关联应用",
+    "optLinkedAppsDesc": "包含所选内容所需的数据库和存储项目。",
+    "optServersLabel": "关联的自托管服务器（推荐）",
+    "optServersDesc": "包含服务器连接及其 Git 密钥。现有匹配服务器可在导入期间重复使用。",
+    "optDomainsLabel": "域名与路由",
+    "optBackupsLabel": "备份配置",
+    "optBackupsDesc": "策略和目标；备份数据保留在其存储中。",
+    "optIntegrationsLabel": "共享集成",
+    "optIntegrationsDesc": "Git 提供商应用、镜像仓库登录名和工作区 DNS 凭据。",
+    "historyOptionsSummary": "历史记录选项 · 已包含 {count}/{total} 项",
+    "recordsSelected": "已选择 {count} 条记录。",
+    "recordsAcrossEnvsSelected": "已选择跨 {envs} 个环境的 {count} 条记录。",
+    "selectAtLeastOne": "请选择至少一个项目或环境。",
+    "cloudNotice": "在目标工作区连接到同一个 Openship Cloud 帐户之前，Cloud 项目将无法运行。"
   },
   "migrate": {
     "chooseTitle": "切换到多用户模式",
@@ -886,6 +1598,188 @@
       "deleteFailed": "无法删除凭据",
       "verifyOk": "提供方已接受该凭据",
       "verifyFailed": "提供方拒绝了该凭据"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "容器镜像仓库",
+        "summary": "在部署期间从镜像仓库拉取私有镜像。",
+        "selector": {
+          "label": "镜像仓库主机",
+          "help": "在镜像引用中显示的主机 — ghcr.io、registry.example.com:5000 或 Docker Hub 的 docker.io。"
+        },
+        "fields": {
+          "username": {
+            "label": "用户名"
+          },
+          "secret": {
+            "label": "密码或访问令牌",
+            "help": "建议使用具有只读仓库权限的令牌，而非账户密码。"
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "让 Openship 自动写入自定义域名所需的 DNS 记录，无需手动粘贴。",
+        "fields": {
+          "apiToken": {
+            "label": "API 令牌",
+            "help": "对您希望 Openship 管理的区域拥有 Zone:Read 和 DNS:Edit 权限的令牌。"
+          }
+        }
+      }
     }
+  },
+  "accountSecurity": {
+    "title": "双重验证",
+    "description": "使用身份验证器应用和恢复码保护账户。",
+    "enabled": "已启用",
+    "notEnabled": "未启用",
+    "loginHint": "通过密码、社交账户或通行密钥登录后，仍需完成第二步验证。",
+    "passwordNeeded": "请添加密码以管理双重验证。原有的社交账户登录仍可使用。",
+    "passwordHint": "确认密码以设置身份验证器应用。",
+    "enable": "设置双重验证",
+    "disable": "关闭双重验证",
+    "disableHint": "确认密码以关闭双重验证。恢复码也将失效。",
+    "regenerate": "更换恢复码",
+    "regenerateHint": "请确认密码。新的恢复码将替换所有旧恢复码。",
+    "recoveryCodes": "恢复码",
+    "password": "当前密码",
+    "newPassword": "新密码",
+    "confirmPassword": "确认密码",
+    "passwordMismatch": "两次输入的密码不一致。",
+    "addPassword": "添加密码",
+    "passwordAdded": "密码已添加，现在可以设置双重验证。",
+    "continue": "继续",
+    "verify": "验证并启用",
+    "cancel": "取消",
+    "done": "完成",
+    "retry": "重试",
+    "loading": "正在加载账户安全设置…",
+    "loadFailed": "无法加载账户安全设置，请重试。",
+    "failed": "无法更新账户安全设置，请重试。",
+    "enabledMessage": "已启用双重验证。",
+    "disabledMessage": "已关闭双重验证。",
+    "scanHint": "使用身份验证器应用扫描此二维码，然后输入应用中的六位验证码。验证成功后设置才会完成。",
+    "scanTitle": "身份验证器设置二维码",
+    "manualKey": "或手动输入此设置密钥",
+    "copyKey": "复制设置密钥",
+    "code": "身份验证器验证码",
+    "saveCodes": "保存恢复码",
+    "codesHint": "请妥善保管。每个恢复码可代替身份验证器使用一次。更换恢复码后，所有旧恢复码将失效。",
+    "copyCodes": "复制恢复码",
+    "download": "下载",
+    "savedCodes": "我已保存恢复码",
+    "copied": "已复制。",
+    "copyFailed": "无法复制，请手动选择并复制文本。",
+    "passkeysTitle": "通行密钥",
+    "passkeysDescription": "使用指纹、面容、设备 PIN 或安全密钥登录。",
+    "passkeyName": "通行密钥名称",
+    "passkeyPlaceholder": "例如：我的笔记本电脑",
+    "passkeyDefault": "通行密钥",
+    "passkeyAdd": "添加通行密钥",
+    "passkeyUnsupported": "请在支持通行密钥的浏览器中通过 HTTPS（或 localhost）打开控制面板，以添加或使用通行密钥。仍可在此管理已保存的通行密钥。",
+    "passkeysEmpty": "尚未添加通行密钥。",
+    "passkeyAdded": "已添加通行密钥。",
+    "passkeyRemoved": "已移除通行密钥。",
+    "passkeyFailed": "无法更新通行密钥，请重试。如果会话已过期，请先重新登录。",
+    "synced": "已同步的通行密钥",
+    "deviceBound": "绑定设备的通行密钥",
+    "removeNamed": "移除 {name}",
+    "remove": "移除",
+    "removeConfirm": "此通行密钥将无法再用于登录，请确保还有其他登录方式。"
+  },
+  "preferences": {
+    "title": "偏好设置",
+    "description": "当前浏览器的个人显示偏好设置 — 不会向服务器发送任何数据。",
+    "demoMode": {
+      "title": "演示模式",
+      "description": "在屏幕共享和录屏期间模糊处理 IP 地址、主机名和环境变量值。"
+    }
+  },
+  "productView": {
+    "title": "界面",
+    "description": "此仪表板向您展示的控制平面。",
+    "platformLabel": "完整平台",
+    "platformDesc": "项目、应用、部署、服务器 — 此安装支持的所有功能。",
+    "mailLabel": "仅邮件",
+    "mailDesc": "侧边栏中的邮件控制面板：域名、邮箱、DNS、队列、日志。",
+    "instanceDefault": "此实例默认为 {mode}。",
+    "useDefault": "使用实例默认值"
+  },
+  "mailMode": {
+    "title": "产品模式",
+    "description": "此实例呈现自身的形式。这是所有用户的默认设置 — 每位用户仍可在“设置 → 常规”中选择自己的视图。",
+    "platformLabel": "完整平台",
+    "platformDesc": "项目、应用、部署、服务器 — 此安装支持的所有功能。",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "将实例品牌化为 Openship Mail，并将侧边栏作为邮件控制面板。",
+    "savedOverridden": "已保存。您的个人视图保持不变 — 您已在“设置 → 常规”中进行了选择。",
+    "errorToast": "无法更改产品模式。",
+    "envNote": "此实例遵循环境变量 OPENSHIP_PRODUCT=mail。在此选择模式将覆盖该变量。"
+  },
+  "email": {
+    "title": "邮件 (SMTP)",
+    "description": "此实例发送邮件所使用的 SMTP 服务",
+    "intro": "用于密码重置、邮箱验证、团队邀请和通知。只需粘贴来自任何服务商（Amazon SES、Gmail、Mailgun、企业中继）的 SMTP 凭据 — 主机、端口、用户名、密码。无需设置服务器；Openship 直接与其连接。密码经过加密且不会再次显示。",
+    "loading": "加载中…",
+    "configuredBadge": "已配置",
+    "notConfigured": "尚未配置 — 在您于下方输入 SMTP 凭据之前，密码重置、邀请和邮件通知将保持关闭状态。",
+    "providerLabel": "服务商",
+    "hostLabel": "SMTP 主机",
+    "hostPlaceholder": "smtp.example.com",
+    "portLabel": "端口",
+    "userLabel": "用户名",
+    "userPlaceholder": "user@example.com",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "SMTP 密码或应用密钥",
+    "passwordKeepPlaceholder": "•••••••• (留空以保留当前密码)",
+    "fromLabel": "发件人地址",
+    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromHint": "可选。默认为用户名。",
+    "fromHintRequired": "必填 — 您的用户名不是邮箱地址，因此收件人需要一个真实的发件人地址。",
+    "fromRequired": "请输入发件人地址 — 该服务商的用户名不是邮箱，因此不能作为发件人。",
+    "fromInvalid": "发件人地址必须包含有效邮箱（例如 Name <you@example.com>）。",
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "SMTP 设置已保存",
+    "saveFailed": "无法保存 SMTP 设置",
+    "hostRequired": "请输入 SMTP 主机。",
+    "portInvalid": "端口必须是 1 到 65535 之间的数字。",
+    "testTitle": "发送测试邮件",
+    "testPlaceholder": "you@example.com",
+    "sendTest": "发送测试",
+    "sending": "正在发送…",
+    "testSent": "测试邮件已发送 — 请检查收件箱。",
+    "testFailed": "测试失败",
+    "saveFirst": "在发送测试邮件之前，请先保存您的 SMTP 设置。",
+    "disable": "停用并清除 SMTP",
+    "disabled": "SMTP 已停用",
+    "toastTitle": "邮件"
+  },
+  "edgeOrphans": {
+    "title": "未跟踪的边缘路由",
+    "description": "此机器仍在提供服务但 Openship 无记录的主机名",
+    "scan": "扫描",
+    "scanning": "正在扫描…",
+    "allClear": "边缘服务的所有主机名均已记录。",
+    "comparedTo": "已与 {count} 个受跟踪的主机名进行比对。",
+    "unavailable": "无法检查边缘",
+    "explain": "使用“仅从 Openship 中移除”删除项目时，会有意保留其路由运行。遗留的应用路由在容器消失后将返回 502，但遗留的静态 (STATIC) 路由会继续以 200 返回旧文件 — 即使该主机名后来分配给了另一个项目也是如此。",
+    "kindStatic": "静态文件",
+    "kindProxy": "应用路由",
+    "staticWarning": "仍在提供文件服务。今天仍在响应请求。",
+    "proxyWarning": "指向可能已不存在的上游服务。",
+    "servingFrom": "服务来源",
+    "proxyingTo": "代理至",
+    "alsoAnswers": "同时响应",
+    "stopServing": "停止服务",
+    "stopping": "正在停止…",
+    "stopped": "不再为 {hostname} 提供服务。",
+    "stopFailed": "无法停止为 {hostname} 提供服务",
+    "confirmTitle": "停止为 {hostname} 提供服务？",
+    "confirmBody": "这仅会移除该主机名的边缘配置。构建的文件仍保留在磁盘上，服务器上的其他内容不受影响。如果稍后有项目部署到该主机名，它将创建自己的路由。",
+    "confirmCta": "停止服务",
+    "cancel": "取消",
+    "noReverseProxy": "在此机器上未检测到反向代理。"
   }
 }

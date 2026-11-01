@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getRouteRegistry, isPublicSpec } from "../../../src/lib/route-permission";
+import "../../../src/modules/projects/project.routes";
 
 describe("project build-cache route", () => {
-  it("is registered as a self-hosted, project-admin action", async () => {
-    await import("../../../src/modules/projects/project.routes");
+  it("is registered as a self-hosted, project-admin action", () => {
     const route = getRouteRegistry().find(
       (entry) => entry.method === "POST" && entry.path === "/api/projects/:id/clear-build",
     );

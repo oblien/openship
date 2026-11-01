@@ -1,4 +1,5 @@
-export { user, session, account, verification } from "./auth";
+export { user, session, account, verification, passkey, twoFactor } from "./auth";
+export { externalIdentity, externalNamespace, platformInstance } from "./embedding";
 export { organization, member, invitation } from "./organization";
 export { auditEvent } from "./audit-event";
 export { auditSettings } from "./audit-settings";
@@ -14,6 +15,8 @@ export { githubInstallState, type GithubInstallStatePayload } from "./github-ins
 export { projectGroup, project, envVar } from "./project";
 export { deployment, buildSession } from "./deployment";
 export { domain } from "./domain";
+export { acmeAccount, domainDnsChallenge } from "./domain-dns-challenge";
+export { routeProtection } from "./route-protection";
 export { routeRule } from "./route-rule";
 export { webhookSource } from "./webhook-source";
 export {
@@ -24,17 +27,36 @@ export {
 } from "./incoming-webhook";
 export { systemNotice } from "./system-notice";
 export { updateStatus } from "./update-status";
+export { advisoryFeed, projectSecurity, securityRefreshAttempt } from "./security-advisory";
 export { serverModuleStatus } from "./server-module-status";
 export { serverContainerStatus, type ServerContainerDetail } from "./server-container-status";
 export { edgeTargetVerification } from "./edge-target-verification";
 export { serviceIncident, INCIDENT_KINDS, type IncidentKind } from "./service-incident";
 export { cloudWebhookBinding } from "./cloud-webhook-binding";
+export { cloudDockerWorkspace } from "./cloud-docker-workspace";
+export {
+  cloudWorkspace,
+  cloudServerDeletion,
+  type CloudWorkspaceOperation,
+  type CloudWorkspaceActivity,
+  type LinkedCloudServer,
+} from "./cloud-workspace";
 export { projectConnection } from "./project-connection";
 export { webhookDelivery } from "./webhook-delivery";
 export { service, serviceDeployment } from "./service";
 export { deploymentCheckRun } from "./deployment-check-run";
 export { userSettings, instanceSettings } from "./settings";
 export { servers } from "./servers";
+export {
+  serverCluster,
+  clusterNetwork,
+  clusterMember,
+  serverNetworkAttachment,
+  clusterVerification,
+  managedNetworkOperation,
+  managedNetworkClaim,
+  managedNetworkPreparation,
+} from "./server-cluster";
 export { serverGithubAuth, githubDeployKey } from "./server-github";
 export { serverTunnels } from "./server-tunnel";
 export { mailServers, mailInboundRule } from "./mail";
@@ -65,6 +87,43 @@ export {
   billingAnniversaryGrant,
   billingUsageSnapshot,
 } from "./billing";
+export { billingPlanGrant } from "./billing-plan-grant";
 export { customAppTemplate } from "./custom-app-template";
 export { dnsCredential } from "./dns-credential";
 export { credential } from "./credential";
+
+export { computeCluster, computeClusterMember } from "./compute-cluster";
+export { clusterRuntime } from "./cluster-runtime";
+export { clusterStorage } from "./cluster-storage";
+export { clusterDatabase } from "./cluster-database";
+export {
+  cloudAnalyticsEvent,
+  cloudAnalyticsCheckout,
+  cloudAnalyticsWorkspace,
+} from "./cloud-analytics";
+export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
+export { instanceController, instanceHandoff } from "./instance-controller";
+export {
+  actionRunner,
+  actionWorkflow,
+  actionProject,
+  actionDeployment,
+  actionRun,
+  actionJob,
+  actionEvent,
+  actionDelivery,
+  actionRunnerSession,
+  actionCommand,
+} from "./actions";
+export { actionStorageObject, actionStorageChunk } from "./action-storage";
+export { actionOidcKey } from "./action-oidc";
+export { actionBudget, actionCreditPurchase } from "./action-billing";
+
+export { cloudBuildActivity, type CloudBuildActivity } from "./cloud-build-activity";
+
+export * from "./ingress-connection";
+export * from "./ingress-hostname";
+
+export * from "./pull-request-preview";
+
+export * from "./management-billing";

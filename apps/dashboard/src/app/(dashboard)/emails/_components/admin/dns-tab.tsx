@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * DNS tab - per-domain reference of the records this mail server expects,
  * plus a live "are they published?" check.
@@ -14,17 +17,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  FileText,
-  Globe,
-  Loader2,
-  RefreshCcw,
-  ShieldCheck,
-  Check,
-  AlertTriangle,
-  CircleX,
-  CircleDashed,
-} from "lucide-react";
 import {
   mailAdminApi,
   getApiErrorMessage,
@@ -83,7 +75,9 @@ export function DnsTab({
           onSelectDomain(primaryDomain);
         }
       })
-      .catch(() => {})
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/dns-tab");
+      })
       .finally(() => {
         if (!cancelled) setLoadingDomains(false);
       });
@@ -114,7 +108,8 @@ export function DnsTab({
       .then((res) => {
         if (!cancelled) setRecords(res.records as unknown as DnsRecords);
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/dns-tab");
         // 404 = no records generated for this domain → empty, not an error.
         if (!cancelled) {
           setRecords(null);
@@ -188,12 +183,12 @@ export function DnsTab({
       <SectionCard
         title={t.emailsAdmin.dns.recordsTitle}
         description={interpolate(t.emailsAdmin.dns.recordsDesc, { domain: activeDomain })}
-        icon={FileText}
+        icon={"file-text"}
         density="split"
       >
         {recordsLoading ? (
           <div className="p-8 flex items-center justify-center">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : records ? (
           <div className="p-5">
@@ -201,9 +196,8 @@ export function DnsTab({
           </div>
         ) : (
           <div className="px-5 py-10 text-center">
-            <Globe
+            <UiIcon name="globe"
               className="size-7 text-muted-foreground/60 mx-auto mb-3"
-              strokeWidth={1.5}
             />
             <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
               {recordsMsg ?? t.emailsAdmin.dns.recordsEmpty}
@@ -216,7 +210,7 @@ export function DnsTab({
       <SectionCard
         title={t.emailsAdmin.dns.checkTitle}
         description={interpolate(t.emailsAdmin.dns.checkDesc, { domain: activeDomain })}
-        icon={ShieldCheck}
+        icon={"shield-check"}
         density="split"
         action={
           <button
@@ -224,7 +218,7 @@ export function DnsTab({
             disabled={scanning || !activeDomain}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors disabled:opacity-50"
           >
-            <RefreshCcw className={`size-3 ${scanning ? "animate-spin" : ""}`} />
+            <UiIcon name="refresh" className={`size-3 ${scanning ? "animate-spin" : ""}`} />
             {scan ? t.emailsAdmin.dns.rescan : t.emailsAdmin.dns.verify}
           </button>
         }
@@ -236,7 +230,7 @@ export function DnsTab({
         )}
         {scanning && scan === null ? (
           <div className="px-5 py-10 flex items-center justify-center">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : scan === null ? (
           <div className="px-5 py-10 text-center">
@@ -248,9 +242,8 @@ export function DnsTab({
           </div>
         ) : scan.checks.length === 0 ? (
           <div className="px-5 py-10 text-center">
-            <Globe
+            <UiIcon name="globe"
               className="size-7 text-muted-foreground/60 mx-auto mb-3"
-              strokeWidth={1.5}
             />
             <p className="text-sm text-muted-foreground">
               {interpolate(t.emailsAdmin.dns.noRecordsVerify, { domain: activeDomain })}
@@ -300,7 +293,7 @@ function DnsCheckRow({ check }: { check: DnsCheck }) {
       <div
         className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${pres.iconBg}`}
       >
-        <pres.Icon className={`size-5 ${pres.iconColor}`} strokeWidth={2} />
+        <UiIcon name={pres.Icon} className={`size-5 ${pres.iconColor}`} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
@@ -361,7 +354,7 @@ function presentation(status: DnsCheckStatus) {
   switch (status) {
     case "pass":
       return {
-        Icon: Check,
+        Icon: "check" as const,
         iconBg: "bg-success-bg",
         iconColor: "text-success",
         pill: "bg-success-bg text-success",
@@ -369,7 +362,7 @@ function presentation(status: DnsCheckStatus) {
       };
     case "warn":
       return {
-        Icon: AlertTriangle,
+        Icon: "warning" as const,
         iconBg: "bg-warning-bg",
         iconColor: "text-warning",
         pill: "bg-warning-bg text-warning",
@@ -377,7 +370,7 @@ function presentation(status: DnsCheckStatus) {
       };
     case "fail":
       return {
-        Icon: CircleX,
+        Icon: "x-circle" as const,
         iconBg: "bg-danger-bg",
         iconColor: "text-danger",
         pill: "bg-danger-bg text-danger",
@@ -385,7 +378,7 @@ function presentation(status: DnsCheckStatus) {
       };
     default:
       return {
-        Icon: CircleDashed,
+        Icon: "circle-dashed" as const,
         iconBg: "bg-muted",
         iconColor: "text-muted-foreground",
         pill: "bg-muted text-muted-foreground",

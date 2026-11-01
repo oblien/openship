@@ -34,16 +34,17 @@
  * footgun.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "@repo/adapters";
 import { safeErrorMessage, mailHostname } from "@repo/core";
-import { decrypt, encrypt } from "../../../lib/encryption";
-import { sshManager } from "../../../lib/ssh-manager";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import {
   readState,
   mutateState,
   type MailServerState,
   type TestMailboxState,
-} from "../mail-state";
+} from "@repo/platform/engine/modules/mail/mail-state";
 import {
   buildCreds,
   buildUpsertMailboxSql,
@@ -55,14 +56,14 @@ import {
   randomPassword,
   rollbackMailbox,
   type PlatformMailboxCreds,
-} from "./platform-mailbox.service";
-import { transaction, queryOne, q } from "./psql-runner";
-import { hashPassword } from "./password";
+} from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
+import { transaction, queryOne, q } from "@repo/platform/engine/modules/mail/admin/psql-runner";
+import { hashPassword } from "@repo/platform/engine/modules/mail/admin/password";
 import {
   createMaildirOnDisk,
   generateMaildir,
-} from "./maildir";
-import { recountDomain } from "./domains.service";
+} from "@repo/platform/engine/modules/mail/admin/maildir";
+import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domains.service";
 
 export interface EnsureOpenshipTestMailboxOptions {
   /** Force a fresh password even if cached creds exist. */
@@ -124,7 +125,7 @@ export async function ensureOpenshipTestMailbox(
       try {
         plaintext = decrypt(cached.password);
       } catch {
-        console.warn(
+        errorDiagnostics.warn("api/modules/mail/admin/test-mailbox.service",
           `[ensureOpenshipTestMailbox] state.testMailboxes["${targetDomain}"].password failed to decrypt — treating as legacy plaintext. It will be re-encrypted on next rotation.`,
         );
         plaintext = cached.password;
@@ -144,7 +145,7 @@ export async function ensureOpenshipTestMailbox(
       cached.email.toLowerCase() === email &&
       cached.password
     ) {
-      console.warn(
+      errorDiagnostics.warn("api/modules/mail/admin/test-mailbox.service",
         `[ensureOpenshipTestMailbox] cached mailbox ${email} is missing or inactive in vmail; recreating it and rotating the stale credential.`,
       );
     }
@@ -199,7 +200,10 @@ async function mintAndPersist(args: MintArgs): Promise<PlatformMailboxCreds> {
   try {
     await createMaildirOnDisk(exec, layout);
   } catch (err) {
-    await rollbackMailbox(exec, email).catch(() => {});
+    observeCaughtError(err, "api/modules/mail/admin/test-mailbox.service");
+    await rollbackMailbox(exec, email).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/mail/admin/test-mailbox.service");
+    });
     throw new PlatformMailboxError(
       `Failed to create test mailbox maildir for ${domain}; mailbox row rolled back: ${safeErrorMessage(err)}`,
     );
@@ -226,7 +230,10 @@ async function mintAndPersist(args: MintArgs): Promise<PlatformMailboxCreds> {
       },
     }));
   } catch (err) {
-    await rollbackMailbox(exec, email, layout).catch(() => {});
+    observeCaughtError(err, "api/modules/mail/admin/test-mailbox.service");
+    await rollbackMailbox(exec, email, layout).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/mail/admin/test-mailbox.service");
+    });
     throw new PlatformMailboxError(
       `Failed to persist test mailbox to mail-state.json; mailbox row + maildir rolled back: ${safeErrorMessage(err)}`,
     );
@@ -236,7 +243,8 @@ async function mintAndPersist(args: MintArgs): Promise<PlatformMailboxCreds> {
   //    Counter drift is cosmetic; never fail the ensure on it.
   try {
     await recountDomain(serverId, domain);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/mail/admin/test-mailbox.service");
     // ignore
   }
 

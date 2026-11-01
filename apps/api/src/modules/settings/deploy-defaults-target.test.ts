@@ -20,6 +20,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    server: { getInOrganization: async (id: string, organizationId: string) =>
+      organizationId === "org1" && ["srv-1", "srv-managed"].includes(id)
+        ? { id, organizationId, workspaceId: id === "srv-managed" ? "ws-1" : null } : null },
     settings: {
       findByUser: async () => h.row,
       upsert: async (values: Record<string, unknown>) => {
@@ -32,33 +35,12 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../lib/request-context", () => ({
-  getRequestContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
-}));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ encrypt: (v: string) => v }));
 
-vi.mock("../../lib/audit", () => ({
-  audit: { recordAsync: () => {} },
-  auditContextFrom: () => ({}),
-}));
+const { updateDeployDefaults } = await import("@repo/platform/engine/modules/settings/preferences.service");
+const { isValidDefaultDeployTarget, getDeployDefaults } = await import("@repo/platform/engine/modules/settings/settings.service");
 
-vi.mock("../../lib/encryption", () => ({ encrypt: (v: string) => v }));
-
-const { updateDeployDefaults } = await import("./settings.controller");
-const { isValidDefaultDeployTarget, getDeployDefaults } = await import("./settings.service");
-
-/** Enough of a Hono context for this handler: a JSON body in, a JSON reply out. */
-function context(body: unknown) {
-  const sent: { body: unknown; status: number } = { body: undefined, status: 0 };
-  const c = {
-    req: { json: async () => body },
-    json: (payload: unknown, status = 200) => {
-      sent.body = payload;
-      sent.status = status;
-      return payload as never;
-    },
-  };
-  return { c: c as never, sent };
-}
+const ctx = { userId: "u1", organizationId: "org1", role: "owner" } as never;
 
 beforeEach(() => {
   h.row = null;
@@ -78,37 +60,25 @@ describe("isValidDefaultDeployTarget", () => {
   });
 });
 
-describe("PATCH /deploy-defaults", () => {
-  it("rejects 'local' with a 400 that names what IS accepted", async () => {
-    const { c, sent } = context({ defaultDeployTarget: "local" });
-    await updateDeployDefaults(c);
-    expect(sent.status).toBe(400);
-    expect((sent.body as { error: string }).error).toMatch(/'server', 'cloud', or null/);
-    // Nothing written: a rejected value must not half-land as a cleared default.
+describe("deploy defaults application service", () => {
+  it("rejects a derived local target before persistence", async () => {
+    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "local" } as never))
+      .rejects.toMatchObject({ statusCode: 400, message: "defaultDeployTarget must be 'server', 'cloud', or null" });
     expect(h.upserts).toEqual([]);
     expect(h.updates).toEqual([]);
   });
-
-  it("still clears on null, and still stores the two real targets", async () => {
-    const cleared = context({ defaultDeployTarget: null });
-    await updateDeployDefaults(cleared.c);
-    expect(cleared.sent.status).toBe(200);
+  it("still clears on null and stores the two explicit targets", async () => {
+    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: null }))
+      .resolves.toEqual({ defaultDeployTarget: null, defaultServerId: null });
     expect(h.upserts[0]?.defaultDeployTarget).toBeNull();
-
-    const cloud = context({ defaultDeployTarget: "cloud" });
-    await updateDeployDefaults(cloud.c);
-    expect(cloud.sent.body).toEqual({ defaultDeployTarget: "cloud", defaultServerId: null });
-
-    const server = context({ defaultDeployTarget: "server", defaultServerId: "srv-1" });
-    await updateDeployDefaults(server.c);
-    expect(server.sent.body).toEqual({ defaultDeployTarget: "server", defaultServerId: "srv-1" });
+    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "cloud", defaultServerId: "srv-managed" }))
+      .resolves.toEqual({ defaultDeployTarget: "cloud", defaultServerId: "srv-managed" });
+    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "server", defaultServerId: "srv-1" }))
+      .resolves.toEqual({ defaultDeployTarget: "server", defaultServerId: "srv-1" });
   });
-
-  it("a server default still requires the server it binds to", async () => {
-    const { c, sent } = context({ defaultDeployTarget: "server" });
-    await updateDeployDefaults(c);
-    expect(sent.status).toBe(400);
-    expect((sent.body as { error: string }).error).toMatch(/defaultServerId is required/);
+  it("requires a server binding when selecting a server target", async () => {
+    await expect(updateDeployDefaults(ctx, { defaultDeployTarget: "server" }))
+      .rejects.toMatchObject({ statusCode: 400, message: "Choose a server for the deployment default" });
   });
 });
 
@@ -132,3 +102,9 @@ describe("getDeployDefaults", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
+  audit: { recordAsync: () => {} },
+  operationAuditContext: () => ({}),
+}));

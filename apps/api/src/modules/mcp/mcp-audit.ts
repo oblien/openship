@@ -19,7 +19,8 @@
  * nothing extra and reads go dark again.
  */
 
-import { audit } from "../../lib/audit";
+import { audit } from "@repo/platform/engine/lib/audit-emitter";
+import { cloudAnalytics } from "@repo/platform/engine/modules/cloud-analytics/index";
 
 /** One executed tool call — the facts the audit decision is made from. */
 export interface ToolCallRecord {
@@ -31,6 +32,8 @@ export interface ToolCallRecord {
   action: string;
   status: number;
   ok: boolean;
+  /** Explicit destination verified by a successful fixed-scope sub-request. */
+  organizationId?: string;
 }
 
 /** Who made the call, resolved once per MCP request by the route. */
@@ -64,12 +67,15 @@ export function needsOwnAuditRow(record: Pick<ToolCallRecord, "ok" | "action">):
  * the same reasoning already keeps grant tuples out of `mcp.scope_changed`.
  */
 export function recordToolCall(actor: ToolCallActor, record: ToolCallRecord): void {
-  if (!actor.organizationId) return;
+  // Never attribute a failed request to an unverified caller-supplied tenant.
+  const organizationId = record.ok ? record.organizationId ?? actor.organizationId : actor.organizationId;
+  if (!organizationId) return;
+  cloudAnalytics.capture({ organizationId, userId: actor.userId, source: "mcp" }, "cloud_mcp_tool_called", { tool: record.tool, ok: record.ok, status: record.status });
   if (!needsOwnAuditRow(record)) return;
 
   audit.recordAsync(
     {
-      organizationId: actor.organizationId,
+      organizationId,
       actorUserId: actor.userId,
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,

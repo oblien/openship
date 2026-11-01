@@ -7,6 +7,11 @@ import type { RendererConfigKey } from "../security";
 
 export interface DesktopBridge {
   isDesktop: true;
+  instanceLinks: {
+    pending: () => Promise<import("@repo/core").DesktopInstanceLinkRequest | null>;
+    acknowledge: (id: number) => Promise<boolean>;
+    onLink: (cb: () => void) => () => void;
+  };
   config: {
     get: (key: RendererConfigKey) => Promise<unknown>;
     set: (key: RendererConfigKey, value: unknown) => Promise<boolean>;

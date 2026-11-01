@@ -95,12 +95,12 @@ git -C "$SRC_DIR" pull --ff-only origin "$REF" 2>/dev/null || info "(pinned ref 
 # 4. Build the CLI like `bun dev` (tsup + bundled server, then the dashboard).
 info "Installing workspace dependencies (bun install)…"
 ( cd "$SRC_DIR" && bun install )
-info "Building the CLI (tsup + server bundle)…"
-( cd "$SRC_DIR/apps/cli" && bun run build )
+info "Building Openship (SDK + CLI + server bundle)…"
+( cd "$SRC_DIR/packages/openship" && bun run build )
 info "Building the dashboard (compiles Next — needs RAM/CPU; small boxes can OOM)…"
 ( cd "$SRC_DIR/apps/cli" && bun run build/stage-dashboard.ts )
 
-ENTRY="$SRC_DIR/apps/cli/dist/index.js"
+ENTRY="$SRC_DIR/packages/openship/dist/index.js"
 DASH="$SRC_DIR/apps/dashboard/.next/standalone"
 [ -f "$ENTRY" ] || { err "Build produced no CLI at $ENTRY"; exit 1; }
 [ -f "$DASH/apps/dashboard/server.js" ] || { err "Build produced no dashboard at $DASH/apps/dashboard/server.js"; exit 1; }

@@ -1,13 +1,14 @@
-import { and, desc, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
 import {
   generateId,
-  serializeSourceAccessScope,
-  type Permission,
+  AppError,
+  type GrantPermission,
   type ResourceType,
   type SourceAccessScope,
 } from "@repo/core";
 import type { Database } from "../client";
 import { personalAccessToken, personalAccessTokenGrant } from "../schema";
+import { insertPatGrants, type PatGrantInput } from "./personal-access-token-grant.repo";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,26 +30,39 @@ export interface CreatePatInput {
   expiresAt: Date | null;
 }
 
+async function insertPat(db: Pick<Database, "insert">, input: CreatePatInput): Promise<PersonalAccessToken> {
+  const [row] = await db.insert(personalAccessToken).values({
+    id: generateId("pat"), userId: input.userId, organizationId: input.organizationId,
+    name: input.name, tokenPrefix: input.tokenPrefix, tokenHash: input.tokenHash,
+    readOnly: input.readOnly, scoped: input.scoped ?? false, expiresAt: input.expiresAt,
+  }).returning();
+  return row!;
+}
+
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createPersonalAccessTokenRepo(db: Database) {
   return {
+    /** Internal delegation revalidation by identifier; no bearer material is returned. */
+    async findById(id: string): Promise<PublicPersonalAccessToken | null> {
+      const row = await db.query.personalAccessToken.findFirst({
+        columns: { tokenHash: false },
+        where: eq(personalAccessToken.id, id),
+      });
+      return row ?? null;
+    },
+
     async create(input: CreatePatInput): Promise<PersonalAccessToken> {
-      const [row] = await db
-        .insert(personalAccessToken)
-        .values({
-          id: generateId("pat"),
-          userId: input.userId,
-          organizationId: input.organizationId,
-          name: input.name,
-          tokenPrefix: input.tokenPrefix,
-          tokenHash: input.tokenHash,
-          readOnly: input.readOnly,
-          scoped: input.scoped ?? false,
-          expiresAt: input.expiresAt,
-        })
-        .returning();
-      return row!;
+      return insertPat(db, input);
+    },
+
+    /** A failed grant insert must never leave a partially configured live credential. */
+    async createWithGrants(input: CreatePatInput, grants: readonly PatGrantInput[]): Promise<PersonalAccessToken> {
+      return db.transaction(async tx => {
+        const row = await insertPat(tx, input);
+        if (input.scoped) await insertPatGrants(tx, row.id, grants);
+        return row;
+      });
     },
 
     /**
@@ -97,6 +111,7 @@ export function createPersonalAccessTokenRepo(db: Database) {
           eq(personalAccessToken.userId, userId),
           isNotNull(personalAccessToken.oauthClientId),
           isNull(personalAccessToken.revokedAt),
+          or(isNull(personalAccessToken.expiresAt), gt(personalAccessToken.expiresAt, new Date())),
         ),
         orderBy: [desc(personalAccessToken.createdAt)],
       });
@@ -121,17 +136,19 @@ export function createPersonalAccessTokenRepo(db: Database) {
 
     /**
      * The grant-holder row for an OAuth MCP client binding, keyed by
-     * (userId, oauthClientId). Returns null (never revoked/expired-filtered —
-     * a binding has no expiry) if the client hasn't been authorized yet.
+     * (userId, oauthClientId). Revoked or expired bindings cannot authenticate.
      */
-    async findOAuthBinding(userId: string, oauthClientId: string): Promise<PersonalAccessToken | null> {
+    async findOAuthBinding(userId: string, oauthClientId: string, includeInactive = false): Promise<PersonalAccessToken | null> {
       const row = await db.query.personalAccessToken.findFirst({
         where: and(
           eq(personalAccessToken.userId, userId),
           eq(personalAccessToken.oauthClientId, oauthClientId),
           // Honor revocation for parity with findActiveByHash / listOAuthBindings —
           // a revoked binding must NOT resolve, or a torn-down client keeps access.
-          isNull(personalAccessToken.revokedAt),
+          ...(includeInactive ? [] : [
+            isNull(personalAccessToken.revokedAt),
+            or(isNull(personalAccessToken.expiresAt), gt(personalAccessToken.expiresAt, new Date())),
+          ]),
         ),
       });
       return row ?? null;
@@ -159,14 +176,32 @@ export function createPersonalAccessTokenRepo(db: Database) {
       readOnly: boolean;
       scoped: boolean;
       unrevoke: boolean;
+      expiresAt?: Date | null;
       grants: ReadonlyArray<{
         resourceType: ResourceType;
         resourceId: string;
-        permissions: Permission[];
+        permissions: GrantPermission[];
         scope?: SourceAccessScope | null;
       }>;
     }): Promise<PersonalAccessToken> {
       return db.transaction(async (tx) => {
+        if (!input.unrevoke) {
+          const [binding] = await tx.update(personalAccessToken).set({
+            readOnly: input.readOnly,
+            scoped: input.scoped,
+            expiresAt: input.expiresAt ?? null,
+          }).where(and(
+            eq(personalAccessToken.userId, input.userId),
+            eq(personalAccessToken.oauthClientId, input.oauthClientId),
+            input.organizationId === null ? isNull(personalAccessToken.organizationId) : eq(personalAccessToken.organizationId, input.organizationId),
+            isNull(personalAccessToken.revokedAt),
+            or(isNull(personalAccessToken.expiresAt), gt(personalAccessToken.expiresAt, new Date())),
+          )).returning();
+          if (!binding) throw new AppError("MCP client is not connected", 404, "MCP_CLIENT_NOT_CONNECTED");
+          await tx.delete(personalAccessTokenGrant).where(eq(personalAccessTokenGrant.tokenId, binding.id));
+          if (input.scoped) await insertPatGrants(tx, binding.id, input.grants);
+          return binding;
+        }
         const [row] = await tx
           .insert(personalAccessToken)
           .values({
@@ -182,6 +217,7 @@ export function createPersonalAccessTokenRepo(db: Database) {
             tokenHash: `oauth-binding:${generateId("patbind")}`,
             readOnly: input.readOnly,
             scoped: input.scoped,
+            expiresAt: input.expiresAt ?? null,
           })
           .onConflictDoUpdate({
             target: [personalAccessToken.userId, personalAccessToken.oauthClientId],
@@ -189,6 +225,7 @@ export function createPersonalAccessTokenRepo(db: Database) {
               organizationId: input.organizationId,
               readOnly: input.readOnly,
               scoped: input.scoped,
+              expiresAt: input.expiresAt ?? null,
               ...(input.unrevoke ? { revokedAt: null } : {}),
             },
           })
@@ -201,20 +238,7 @@ export function createPersonalAccessTokenRepo(db: Database) {
           .delete(personalAccessTokenGrant)
           .where(eq(personalAccessTokenGrant.tokenId, binding.id));
 
-        if (input.scoped && input.grants.length > 0) {
-          await tx.insert(personalAccessTokenGrant).values(
-            input.grants.map((g) => ({
-              id: generateId("patgrant"),
-              tokenId: binding.id,
-              resourceType: g.resourceType,
-              resourceId: g.resourceId,
-              permissionsJson: JSON.stringify(g.permissions),
-              // Normalized on write so a pattern the matcher would reject is never
-              // stored as though it were enforceable.
-              scopeJson: serializeSourceAccessScope(g.scope ?? undefined),
-            })),
-          );
-        }
+        if (input.scoped) await insertPatGrants(tx, binding.id, input.grants);
 
         return binding;
       });

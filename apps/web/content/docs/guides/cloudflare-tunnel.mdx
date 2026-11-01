@@ -1,0 +1,150 @@
+---
+title: Cloudflare Tunnel ingress
+description: Publish custom domains through a server-owned Cloudflare Tunnel, with optional Cloudflare Access policies and ownership-checked cleanup.
+---
+
+Use this when your self-hosted server receives web traffic through `cloudflared`
+instead of open inbound web ports. Openship can manage each custom hostname's
+tunnel rule, proxied DNS CNAME and optional Cloudflare Access application.
+
+This works on self-hosted installations and SSH servers controlled from Desktop.
+Openship Cloud managed servers keep their existing Cloud routing. This integration
+publishes project domains; it does not expose the Openship control plane or create
+anonymous `trycloudflare.com` quick tunnels.
+
+## Before connecting
+
+- Add the deployment server to Openship and make sure its edge proxy is working.
+- Use a domain in an active Cloudflare DNS zone.
+- Save a Cloudflare API token in **Settings → Credentials**, or add one inline during setup.
+  Scope it to the required account and zones with **Zone:Read**, **DNS:Edit** and
+  **Cloudflare Tunnel:Edit**. Add **Access: Apps and Policies:Edit** if using Access.
+- For Access, first create a reusable **Allow** or **Service Auth** policy in Cloudflare.
+  Openship references that policy; it never deletes the reusable policy.
+- Allow the connector's outbound connections to Cloudflare. The tunnel normally
+  uses port `7844` over UDP or TCP. No public inbound web port is required.
+
+Openship administrators configure the connection. Resource-scoped tokens also need
+administrative access to the selected server and write access to a domain they change.
+A saved DNS-only token needs its Tunnel/Access permissions updated before use here.
+
+## Connect the server
+
+Open **Servers → your server → Security → Cloudflare Tunnel**.
+
+1. Choose a saved credential and its Cloudflare account.
+2. Choose an existing named tunnel, or create a new one.
+3. Choose **Use an existing connector** if `cloudflared` already runs on this server.
+   It must connect the selected tunnel to this server, because hostname rules target
+   the local edge at `http://127.0.0.1:80`. Advanced settings can change that edge port.
+4. Alternatively, choose **Install connector on this server**. Automatic installation
+   supports Linux x86-64 and ARM64 with root or passwordless sudo. It prefers a
+   hardened systemd service and uses a pinned, nonprivileged Docker container when
+   systemd is unavailable or too old. The container mounts a token file, never the Docker socket.
+5. Choose whether new custom domains should use this connection automatically, and
+   optionally select their default reusable Access policy.
+6. Connect, then wait for **Configured**. Setup errors remain visible with **Retry setup**.
+
+Only remotely managed named tunnels are supported. A tunnel managed by a local
+configuration file must be converted in Cloudflare first. Openship leaves existing
+rules and the final catch-all rule intact. It refuses conflicting or shadowing
+rules instead of taking them over.
+
+## Publish domains
+
+With automatic enrollment enabled, new custom domains added from the deployment
+wizard, project or service domain forms join the tunnel. The form identifies this
+server default before saving. Existing domains, free Openship subdomains and
+manually configured external ingress stay unchanged.
+
+For an existing custom domain, open its **External ingress → Manage** action and
+connect it to the server's tunnel. Choose an Access policy or leave protection off.
+The project must have a deployment before publication finishes.
+
+Each exact hostname is independent. Multiple domains, service hostnames and a
+`www` companion get separate DNS and tunnel entries, and their existing redirect
+choices still apply. Wildcard enrollment is not supported: add exact hostnames, or
+disable automatic enrollment before configuring a wildcard manually.
+
+Openship prepares Access first, applies the project's HTTP edge route, then publishes
+the tunnel rule and DNS. Cloudflare terminates public HTTPS; the local edge does not
+request a certificate or redirect the tunnel's HTTP origin back to HTTPS. Protected
+rules also require the Access audience at `cloudflared`.
+
+The saved domain and its connection show the same persisted setup result. **Verify**
+uses this workflow too. Failed work retries with backoff after an API restart; a
+ready hostname receives a slower drift check. A provider outage cannot appear as
+successful publication.
+
+## Change or remove a connection
+
+Changing server defaults affects future domains. Existing hostnames retain their
+Access policy until you change it in that domain's **Manage** dialog.
+
+Disconnecting a hostname removes its owned DNS record, tunnel rule and Access
+application. Its domain remains in the project using external ingress, so configure
+another ingress path or remove the domain. Moving a project to another server
+requires disconnecting the old hostname connection before connecting the new one.
+
+Deleting a domain queues the same cleanup even if its project has been removed.
+Disconnecting the server tunnel stops new enrollment and drains its hostnames before
+removing the connector installed by Openship and any tunnel created by that setup.
+An existing tunnel or connector you supplied is retained. Cleanup must finish before
+removing its saved credential or server.
+
+Foreign DNS records or Access applications are never adopted, even when they point
+to the same destination. If an owned object was edited elsewhere, Openship stops and
+shows a conflict for review instead of overwriting or deleting it. Tunnel updates
+are serialized inside Openship, but Cloudflare's configuration write has no shared
+lock with its dashboard: avoid editing the same tunnel there during reconciliation.
+
+Whole-instance exports retain the ownership ledger and encrypted credentials.
+Individual project transfer is blocked while its domains are bound; disconnect them
+first so another instance cannot inherit incomplete cleanup ownership.
+
+## SDK, API and CLI
+
+Use the existing `dns` namespace in both remote and native SDK clients. Ingress
+payloads carry saved credential IDs, never API tokens. For example:
+
+```ts
+const setup = await client.dns.connectIngress({
+  serverId: "srv_your_server",
+  credentialId: "cred_your_cloudflare_credential",
+  accountId: "your_cloudflare_account_id",
+  name: "Production ingress",
+  tunnelId: "your_remotely_managed_tunnel_id",
+  connector: "existing",
+  defaultForDomains: true,
+});
+
+await client.dns.listIngressConnections({ serverId: "srv_your_server" });
+await client.dns.getDomainIngress({ domainId: "dom_your_domain" });
+await client.dns.setDomainIngress({
+  domainId: "dom_your_domain",
+  connectionId: setup.id,
+  accessPolicyId: null,
+});
+```
+
+The HTTP entry point is `/api/dns/ingress`. Consult the [DNS API reference](/docs/api/dns)
+for discovery, defaults, retry, disconnection and domain operations.
+
+The same operations are available through the CLI:
+
+```bash
+openship dns ingress list --server srv_your_server
+openship dns ingress discover discovery.json
+openship dns ingress connect connection.json
+openship dns ingress defaults defaults.json
+openship dns ingress retry igc_your_connection
+openship dns ingress domain get dom_your_domain
+openship dns ingress domain set domain.json
+openship dns ingress disconnect igc_your_connection --yes
+```
+
+JSON files use the SDK operation inputs. `domain set` requires `--yes` when
+`connectionId` is `null`. See the [CLI reference](/docs/cli) for command details.
+
+Cloudflare documents [tunnel configuration](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/)
+and [Access policies](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/).

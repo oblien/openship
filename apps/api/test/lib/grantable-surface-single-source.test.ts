@@ -48,7 +48,7 @@ describe("one definition, re-exported not re-declared", () => {
   });
 
   it("the token minter validates through the shared predicate, not a local Set", () => {
-    const src = read("apps/api/src/modules/tokens/token.controller.ts");
+    const src = read("packages/platform/src/engine/modules/tokens/token.service.ts");
     expect(src).toContain("isGrantableResourceType(g.resourceType)");
     expect(
       src,

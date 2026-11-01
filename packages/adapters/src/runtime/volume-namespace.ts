@@ -19,6 +19,8 @@
  * Pure string logic, no dependencies — trivially unit-testable.
  */
 
+import { isHostPathSource } from "@repo/core";
+
 /** Trailing bind mode suffix (":ro" / ":rw" / SELinux / nocopy). Mirrors the
  *  regex in backup/executors/docker.ts so classification stays identical. */
 const MODE_SUFFIX = /:(ro|rw|z|Z|nocopy)$/;
@@ -49,14 +51,7 @@ export function ensureScopedVolumeName(slug: string, source: string): string {
  * volumes get scoped; bind mounts must pass through untouched. Covers the `~`
  * (home) case that the legacy backup classifier missed.
  */
-export function isHostPathSource(source: string): boolean {
-  return (
-    source.startsWith("/") ||
-    source.startsWith("./") ||
-    source.startsWith("../") ||
-    source.startsWith("~")
-  );
-}
+export { isHostPathSource } from "@repo/core";
 
 /**
  * Rewrite each NAMED volume in a list of raw compose volume specs to its

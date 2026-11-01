@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseVolumeSpec, isHostPathSource } from "./volume-spec";
+import { parseVolumeSpec, isHostPathSource } from "@repo/platform/engine/modules/services/volume-spec";
 
 describe("parseVolumeSpec", () => {
   it("named volume with target", () => {

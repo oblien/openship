@@ -64,7 +64,7 @@ export const BimiAvatar = ({
   return (
     <Avatar className={className}>
       {bimiData?.logo?.svgContent && !isLoading ? (
-        <div
+        <span
           className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-white dark:bg-[#373737]"
           dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bimiData.logo.svgContent) }}
         />

@@ -9,6 +9,6 @@
  * `./dns.routes` directly, which is the only place that should.
  */
 
-export * from "./types";
-export { resolveDnsProvider, listDnsProviders, describeDnsProviders } from "./registry";
-export * from "./dns-credential.service";
+export * from "@repo/platform/engine/modules/dns/types";
+export { resolveDnsProvider, listDnsProviders, describeDnsProviders } from "@repo/platform/engine/modules/dns/registry";
+export * from "@repo/platform/engine/modules/dns/dns-credential.service";

@@ -218,11 +218,13 @@ local status  = ngx.var.status         or "0"
 --
 -- pcall'd because a corrupt or partially-written mmdb makes the lookup raise, and an
 -- error here would abort every counter below it (see the section header).
-local cc = nil
-if geo and geo.get_country_code then
+local cc = ngx.ctx.openship_country
+if cc == nil and geo and geo.get_country_code then
     local ok_cc, res = pcall(geo.get_country_code, ip)
     if ok_cc and type(res) == "string" and res ~= "" then cc = res end
 end
+
+cc = cc or nil
 
 -- ── 1. Minute-bucket counters ────────────────────────────────────────────────
 

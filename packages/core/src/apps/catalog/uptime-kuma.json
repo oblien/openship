@@ -2,7 +2,7 @@
   "available": true,
   "id": "uptime-kuma",
   "name": "Uptime Kuma",
-  "description": "Self-hosted uptime monitoring with status pages and alerts. Create your admin account on the first visit.",
+  "description": "Uptime monitoring with status pages and alerts for your services.",
   "kind": "template",
   "logo": "uptime-kuma",
   "category": "other",
@@ -47,5 +47,21 @@
       "note": "Do this immediately after deploy: until you create the admin, anyone who opens this URL can claim the instance. Monitors and history live in the uptime_kuma_data volume."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Uptime checks",
+        "description": "Monitor the endpoints that matter to your project."
+      },
+      {
+        "title": "Status pages",
+        "description": "Share availability with your users."
+      },
+      {
+        "title": "Alerts",
+        "description": "Configure notifications for failed checks."
+      }
+    ]
+  }
 }

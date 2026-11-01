@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../../packages/ui/src/AppLogo.tsx";
 @import "../styles/fonts.css";
 @import "../styles/theme.css";
 @import "../styles/landing.css";

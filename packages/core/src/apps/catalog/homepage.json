@@ -1,0 +1,187 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": false,
+  "minEngine": "0.9.0",
+  "id": "homepage",
+  "name": "Homepage",
+  "description": "A configurable service dashboard behind a generated-password login, without Docker socket or host filesystem access.",
+  "kind": "template",
+  "logo": "homepage",
+  "category": "other",
+  "framework": "docker-compose",
+  "repository": "https://github.com/gethomepage/homepage",
+  "services": [
+    {
+      "name": "homepage",
+      "image": "ghcr.io/gethomepage/homepage:v2.5.0",
+      "restart": "unless-stopped",
+      "environment": {
+        "HOMEPAGE_ALLOWED_HOSTS": "homepage:3000",
+        "HOSTNAME": "0.0.0.0"
+      },
+      "volumes": ["homepage_config:/app/config"],
+      "commandArgv": ["node", "/etc/openship/homepage-start.cjs"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/healthcheck"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "30s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 384,
+        "diskMb": 512
+      }
+    },
+    {
+      "name": "homepage-access",
+      "image": "caddy:2.11.7-alpine",
+      "restart": "unless-stopped",
+      "dependsOn": ["homepage"],
+      "secretEnv": ["OPENSHIP_ADMIN_PASSWORD"],
+      "commandArgv": ["sh", "/etc/openship/homepage-access.sh"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
+      "exposed": true,
+      "exposedPort": 8080,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 256
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "homepage-access",
+      "port": 8080,
+      "label": "Dashboard",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    }
+  ],
+  "minResources": {
+    "cpuCores": 0.5,
+    "memoryMb": 512
+  },
+  "tags": ["dashboard", "bookmarks", "services"],
+  "management": {
+    "kind": "schema"
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Persistent storage",
+        "description": "Application data stays on project-scoped volumes across deployments."
+      },
+      {
+        "title": "Published images",
+        "description": "Install pinned upstream containers without building images on your server."
+      }
+    ],
+    "articleFile": "articles/homepage.md"
+  },
+  "configFields": [
+    {
+      "service": "homepage-access",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Dashboard password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "homepage-access",
+      "key": "OPENSHIP_ADMIN_USER",
+      "label": "Dashboard username",
+      "default": "admin",
+      "required": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Dashboard access",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "homepage-access",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Dashboard username",
+          "type": "text",
+          "default": "admin",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[a-zA-Z0-9_.-]+$",
+          "help": "Username for the authentication proxy. Change access credentials in Openship configuration."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "connection": {
+    "title": "Open Homepage",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Homepage",
+        "source": "publicUrl:homepage-access",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:homepage-access:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Initial password",
+        "source": "env:homepage-access:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Homepage has no built-in login. Openship adds password protection to every public request. Change these credentials in Openship configuration."
+    }
+  },
+  "files": [
+    {
+      "service": "homepage",
+      "path": "/etc/openship/homepage-start.cjs",
+      "content": "const { existsSync, writeFileSync } = require('node:fs');\nfor (const [file, content] of Object.entries({ 'settings.yaml': 'title: My services\\n', 'services.yaml': '[]\\n', 'bookmarks.yaml': '[]\\n', 'widgets.yaml': '[]\\n', 'docker.yaml': '{}\\n', 'kubernetes.yaml': '{}\\n' })) {\n  const path = '/app/config/' + file;\n  if (!existsSync(path)) writeFileSync(path, content, { mode: 0o600 });\n}\nrequire('/app/server.js');\n"
+    },
+    {
+      "service": "homepage-access",
+      "path": "/etc/openship/homepage-access.sh",
+      "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/homepage.Caddyfile --adapter caddyfile\n"
+    },
+    {
+      "service": "homepage-access",
+      "path": "/etc/openship/homepage.Caddyfile",
+      "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy homepage:3000 {\n    header_up Host homepage:3000\n  }\n}\n"
+    }
+  ]
+}

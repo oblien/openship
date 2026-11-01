@@ -7,7 +7,7 @@ const { mockEnv, mockRuntimeTarget } = vi.hoisted(() => ({
   mockEnv: { OPENSHIP_PUBLIC_URL: undefined as string | undefined },
   mockRuntimeTarget: { api: "http://localhost:4000", dashboard: "http://localhost:3001" },
 }));
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: mockEnv,
   runtimeTarget: mockRuntimeTarget,
   // public-url.ts reads localDashboardUrl for resolveDashboardPublicUrl's fallback.
@@ -22,7 +22,7 @@ import {
   resolveAuthBaseUrl,
   requestApiPublicUrl,
   requestPublicOrigin,
-} from "../../src/lib/public-url";
+} from "@repo/platform/engine/lib/public-url";
 
 afterEach(() => {
   mockEnv.OPENSHIP_PUBLIC_URL = undefined;

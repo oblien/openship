@@ -1,0 +1,111 @@
+---
+title: Ship SDK
+description: Deploy and manage Openship from JavaScript or TypeScript.
+---
+
+Ship SDK lets you deploy and operate OpenShip from JavaScript or TypeScript. The `openship` package
+includes remote clients, an embeddable native engine, and the CLI. Native SDK calls and HTTP
+controllers use the same shared core.
+
+## Choose a mode
+
+| Mode | Use when | Start here |
+| --- | --- | --- |
+| **Remote client** | Openship already runs on a server or in Cloud. | [Connect to an API](/docs/api/sdk/client) |
+| **Native SDK** | Your Node application owns storage, providers, and the installation lifecycle. | [Embed Openship](/docs/api/sdk/native) |
+
+Both modes expose the same named operation groups. A configured provider and the caller's permissions
+determine which operations can run.
+
+## Install
+
+The SDK is published in **`openship` 0.8.0 and later** and requires Node.js 22 or later:
+
+```bash
+npm install openship
+```
+
+See [installation](/docs/api/sdk/installation) for ESM, CommonJS, and upgrading an older CLI-only package.
+
+## Deploy your application
+
+Replace the URL with your OpenShip API, set `OPENSHIP_TOKEN` and `OPENSHIP_ORGANIZATION_ID` for an
+organization where you can create and deploy projects, and put your application in `./app`.
+The installation must already have a configured deployment target.
+
+```ts title="deploy-app.mts"
+import { resolve } from "node:path";
+import { OpenshipClient } from "openship/client";
+
+const ship = new OpenshipClient({
+  baseUrl: "https://ship.example.com",
+  token: process.env.OPENSHIP_TOKEN!,
+  organizationId: process.env.OPENSHIP_ORGANIZATION_ID!,
+});
+
+const run = await ship.deploy({
+  name: "commerce-api",
+  source: { type: "directory", path: resolve("./app") },
+  onStep: console.log,
+});
+
+const result = await ship.deployment(run.deployment_id)
+  .wait({ timeoutMs: 120_000 });
+
+if (!result.success) throw new Error(result.status);
+console.log("Ready:", run.project_id);
+```
+
+Save this as `deploy-app.mts` and run it with a TypeScript runner such as `npx tsx deploy-app.mts`.
+`deploy()` uploads a snapshot of the directory, detects its build configuration, and submits the
+deployment. `wait()` checks the saved outcome; a failed, cancelled, or action-required deployment
+does not print the success message. Adjust its timeout for your application's build time.
+
+Pass `serverId` to `deploy()` to select a registered server. For later updates, pass
+`projectId: run.project_id` to deploy into the same project. See [remote setup](/docs/api/sdk/client)
+for token and organization configuration and [deployment decisions](/docs/api/deployments#wait-decisions-and-cancellation)
+for handling a request for review.
+
+## A deployment in code
+
+This function accepts either a remote client or a native user scope:
+
+```ts title="deploy-site.mts"
+import type { OpenshipClient, ScopedShip } from "openship";
+
+export async function deploySite(ship: OpenshipClient | ScopedShip) {
+  const submitted = await ship.deploy({
+    name: "my-site",
+    source: { type: "files", files: { "index.html": "<h1>Hello from Openship</h1>" } },
+  });
+  const outcome = await ship.deployment(submitted.deployment_id).wait({ timeoutMs: 120_000 });
+  if (!outcome.success) throw new Error(outcome.message ?? outcome.status);
+  return ship.projects.get(submitted.project_id);
+}
+```
+
+## Next steps
+
+<Cards>
+  <Card title="Deployment workflows" href="/docs/api/deployments" description="Deploy files, directories, or Git sources; follow logs and handle decisions." />
+  <Card title="Users and organizations" href="/docs/api/sdk/identity" description="Select a tenant and connect your application's verified identities." />
+  <Card title="Runnable example" href="/docs/api/sdk/examples" description="Deploy, redeploy, reopen state, and clean up using the installed package." />
+  <Card title="Method reference" href="/docs/api" description="Find every current operation, organized by resource." />
+</Cards>
+
+## Scale and operate
+
+Both clients expose the current named operations in the shared [method reference](/docs/api).
+For self-hosted infrastructure, start with a private network and a ready compute cluster:
+
+| Task | Guide |
+| --- | --- |
+| Connect servers and prepare a cluster | [Private networking](/docs/api/servers#server-clusters-and-private-networking) and [compute clusters](/docs/api/servers#compute-clusters) |
+| Run an application across servers | [Application replicas](/docs/api/projects#scale-a-stateless-application-on-a-cluster) |
+| Create or grow PostgreSQL and Redis databases | [Database lifecycle](/docs/api/projects#add-import-or-recover-a-database) |
+| Share files between application instances | [Cluster storage](/docs/api/servers#share-files-across-servers) and [project volumes](/docs/api/projects#share-application-files) |
+| Follow logs, back up, and recover | [Deployment workflows](/docs/api/deployments), [backups](/docs/api/backups), and [errors and streams](/docs/api/sdk/errors) |
+
+Cluster management uses self-hosted servers. Other operations depend on the selected provider and
+your permissions. See [compatibility and current limits](/docs/api/sdk/compatibility) for native,
+Cloud, and HTTP-only capabilities.

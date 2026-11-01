@@ -1,17 +1,121 @@
 ---
 title: Servers
-description: Add your own servers over SSH, let Openship install what a deployment needs, and manage each server's health, rate limiting, port forwarding, and a live terminal.
+description: Manage your deployment servers, with automatic setup on Openship Cloud and SSH connections for your own machines.
 ---
 
-The **Servers** section is where you connect the machines Openship deploys to. You give Openship SSH access to a
-box you already own — a VPS, a bare-metal server, a VM — and it installs and checks everything a deployment
-needs (Docker, OpenResty, Git). Once a server is connected, you can pick it as a deploy target from the
-[deploy flow](/docs/guides/deploy-from-github) and manage it from its own detail screen.
+The **Servers** section shows where your projects run. On **Openship Cloud**, choose a plan and deploy:
+Openship prepares a managed server automatically. You can open Servers later to inspect usage or change
+supported settings. On **self-hosted Openship**, connect a machine you own over SSH and Openship installs
+and checks the software your deployments need.
+
+Connecting a Cloud account from self-hosted Openship also lists that account's managed servers here,
+alongside your own machines. Existing execution links appear once. Cloud server settings, terminal
+sessions and billing use their Cloud operations; browsing the list does not create another server.
 
 <Callout title="Where this lives">
 The list is at **`/servers`**, adding a server is **`/servers/new`**, and each server's detail screen is
-**`/servers/<serverId>`**. For the conceptual walkthrough, see [Deploy to your own server](/docs/guides/custom-servers).
+**`/servers/<serverId>`**. Every project uses the same server destination, whether Openship manages the
+host or you connect it yourself.
 </Callout>
+
+## Managed servers on Openship Cloud
+
+Your first subscription prepares a **Production** server. Repository deployments, uploaded source, and
+catalog apps automatically use that server when it is the only compatible destination. You do not need
+SSH credentials or a separate setup step. **Add Server** creates an additional, separately billed target.
+
+The list shows each server's state, placement, and project count. Open one for:
+
+- **Overview** — measured CPU, memory, and disk use, purchased capacity, and the projects sharing it.
+  Project storage represents measured application data; shared images, cache, and system files are counted
+  once. Reserved disk capacity is shown separately from used storage.
+- **Terminal** — a full-width interactive shell, next to Overview. The provider supports one server
+  shell at a time; an existing session is preserved if another connection is attempted.
+- **SSH access** — enable SSH, replace an authorized public key or password, and issue a temporary
+  connection for a terminal or SFTP client. Disabling SSH requires confirmation.
+- **Activity** — the latest server operation, its status and logs. Queued work shows its next retry;
+  failed work offers **Try again**. Completed logs stay here without covering the other tabs.
+- **Settings → Components** — inspect Docker and Git health and run a fresh check. Software on managed servers
+  is maintained by the platform; the page does not offer host package installation or removal.
+- **Networking → Listening ports** — scan listening ports through the server's existing execution connection. A listener
+  inside the server does not establish public reachability; provider networking and project routes
+  control external access.
+- **Networking → Outbound & access** — choose an available managed outbound IP, configure a custom
+  HTTP/HTTPS proxy, or return to a managed connection. Internet access and the destination allowlist
+  have their own save action. A revision check rejects stale edits. Applying a change affects every project on this server. Domains and HTTPS stay in each
+  project's **Domains & routing** tab; Oblien manages the edge proxy and certificates.
+- **Workloads** — inspect native host processes and their live state. Read recent logs, or create a
+  stopped manual background process and explicitly start it. Project and system processes link to their
+  owning controls; they cannot be deleted or stopped from this view. Docker containers remain in projects.
+- **Settings → Runtime API** — reveal a server-only automation token or rotate it with confirmation. This API
+  remains enabled because Openship uses it for deployments and terminals. Rotation invalidates older
+  tokens and connections; let active work finish first.
+- **Settings** — inspect the managed image, operating system, persistent lifecycle and allocated
+  resources, read recent boot logs, and open the existing capacity-change review. Application images
+  belong to project deployment settings; the shared server image is maintained by Openship.
+
+Only supported tabs appear. These are the shared server overview, health, listener and terminal
+components, with provider controls and the plan card for managed servers. Host package installation
+and OpenResty maintenance belong to connected servers. Secret access, process logs and mutations
+require server-admin permission. Credentials are cleared from the page after one minute, when the
+browser tab is hidden, or when you leave the server tab; copying them does not revoke them.
+
+### Outbound connections
+
+The managed-IP picker reads the provider's current pool, with country codes. **Automatic** keeps
+an existing managed address or assigns one when returning from a custom proxy. Changing an IP affects
+external services that allowlist the server's outgoing address; it does not change application domains.
+
+Custom proxies require a **public IPv4 address**, port and HTTP or HTTPS protocol. Hostnames and
+private addresses are rejected. Enter both username and password if authentication is enabled;
+credentials are never returned by Openship or included in its audit events. Re-enter them when
+replacing an authenticated proxy. The provider performs its own connection preflight and enforces
+proxy availability on the underlying Cloud account.
+
+Openship applies one outbound change under the existing server activity lock, then reads the result
+before confirming success. It does not combine that change with internet-policy or routing writes.
+If a response is lost, **Refresh status** reads the current settings; it does not repeat the mutation.
+A changed provider revision rejects an outdated proxy form, including a password-only replacement.
+
+The same controls are available through `ship.servers.managedOutbound(id)`,
+`ship.servers.managedOutboundOptions(id)` and `ship.servers.setManagedOutbound(id, input)`, or the CLI:
+
+```bash
+openship server managed outbound get srv_production
+openship server managed outbound options srv_production
+openship server managed outbound set srv_production reviewed-outbound.json
+```
+
+The JSON contains `mode`, the `expectedRevision` from the read, and `confirm: true`. For managed mode,
+optionally include a listed `ip`; for custom mode, include `proxy` with `host`, `port`, `protocol`, and
+both credentials or neither. Read secret-bearing JSON from a private file or stdin, rather than putting
+credentials in shell arguments. Connected self-hosted installations use the owning Cloud server's
+same operations.
+
+### Plan changes and recovery
+
+**Billing** opens this server's subscription, coverage, usage and payments. Top-ups appear only for
+eligible metered subscriptions; monthly CPU, RAM and storage need no compute credits. Projects on a
+shared Docker server use its existing capacity; creating a project does not reserve another VM or disk.
+
+**Resume server** checks the current entitlement before starting a stopped host. **Apply plan capacity**
+previews the purchased size and all projects that may restart. Disk shrinking is unavailable. Operations
+show their progress and logs in **Activity**; action confirmations remain visible on the current tab.
+Refreshing or reopening the page observes the same operation without starting another one.
+
+Renaming a server preserves its placement and subscription. Deleting a project preserves the shared
+server and its other projects. Deleting the server requires no remaining projects and an ended
+subscription, followed by explicit confirmation.
+
+See the [managed Cloud server guide](/docs/guides/cloud-workspaces) for lifecycle details and the
+[Servers API and SDK](/docs/api/servers) for automation.
+
+## Connected servers on self-hosted Openship
+
+The remaining setup and infrastructure controls apply to machines you connect yourself. Give Openship
+SSH access to a VPS, bare-metal server, or VM, then select it in the
+[deploy flow](/docs/guides/deploy-from-github). See [Deploy to your own server](/docs/guides/custom-servers)
+for a walkthrough.
 
 ## The Servers list
 
@@ -38,8 +142,6 @@ Server** button and four cards under "What gets configured":
 | **Monitoring** | Health checks |
 | **Git** | Source deployments |
 
-<Callout title="Screenshot">Servers list with one or more server cards and the **Quick Info** panel; plus the empty state with the four "What gets configured" cards. *(screenshot pending)*</Callout>
-
 ## Adding a server
 
 Press **Add Server** to reach **`/servers/new`**. The page title is **Add Server** with the subtitle "Enter
@@ -51,6 +153,7 @@ need: a server with SSH access (Ubuntu, Debian, or similar) and an SSH key or pa
 | Field | Notes |
 |---|---|
 | **Server Name** | Optional label shown in the list and header. Leave blank to fall back to the host. |
+| **Connection** | **Direct SSH** or **Cloudflare Access**. |
 | **Server IP Address** | The host to connect to, e.g. `123.45.67.89`. Required. |
 | **Port** | SSH port; defaults to `22`. |
 | **Username** | SSH user; defaults to `root`. |
@@ -64,7 +167,16 @@ The **Authentication** control is a three-way toggle:
   here. The machine running Openship must already have access to the server.
 
 Under **Advanced** you can add a **Jump Host** (e.g. `user@bastion.example.com`) and **Extra SSH Arguments**
-(e.g. `-o StrictHostKeyChecking=no`).
+(e.g. `-o ConnectTimeout=30`). Only connection tuning options are accepted.
+
+For an existing Cloudflare Access SSH application, choose **Cloudflare Access** and enter its hostname,
+such as `ssh.example.com`. Password, encrypted private key, and agent authentication are supported.
+The SSH origin port is configured in Cloudflare Tunnel. Complete Cloudflare sign-in on the machine
+running OpenShip before testing the connection. Windows desktop bundles the verified `cloudflared`
+client; other installations need it on their PATH or configured through `OPENSHIP_CLOUDFLARED_PATH`.
+The saved connection is reused for setup, deployments, health checks, Docker, source transfers, terminals,
+and port forwarding. The server's **Open Cloudflare Access** link opens its Access application;
+a browser terminal is available there only if you enabled it in Cloudflare.
 
 Two buttons finish the form:
 
@@ -72,8 +184,6 @@ Two buttons finish the form:
   reason, without saving anything.
 - **Save & Continue to Setup** — saves the server and moves straight into the component setup flow. (When
   you're editing an existing server, this button reads **Save Changes** instead.)
-
-<Callout title="Screenshot">The **SSH Connection** card with the Password / SSH Key / Agent toggle, the **Advanced** section expanded, and the **Test Connection** / **Save & Continue to Setup** buttons. *(screenshot pending)*</Callout>
 
 ### The setup flow
 
@@ -94,8 +204,6 @@ You don't have to get setup perfect here. Every check, install, reinstall, and r
 from the server's **Components** tab.
 </Callout>
 
-<Callout title="Screenshot">The setup mode picker (**Automatic** vs **Step-by-Step**) and the install progress view with the Connect / Check / Install steps and streaming logs. *(screenshot pending)*</Callout>
-
 ## The server detail screen
 
 Opening a server (**`/servers/<serverId>`**) shows its name with a **Healthy** or **Issues** badge and the
@@ -110,8 +218,6 @@ If Openship can't reach the server, a banner appears above the tabs explaining w
 the credentials were rejected, or the config is incomplete — with a **Retry** and an **Edit** shortcut. A
 **Connection** panel on the right always shows the current **Host**, **User**, and **Auth** method.
 
-<Callout title="Screenshot">The server detail header with the **Healthy** badge, the **Migrate Docker** / **Edit** / **⋯** buttons, and the tab bar. *(screenshot pending)*</Callout>
-
 The screen is organized into tabs. **Overview**, **Components**, **Security**, and **Terminal** always show;
 **Ports** appears only in the desktop app.
 
@@ -122,8 +228,6 @@ A live dashboard for the server. Four stat cards show **CPU** (with load average
 **Components** card lists each installed component with a **Healthy** / **Unhealthy** marker and version. The
 header summary reads "All systems operational" or "\{n} of \{m} unhealthy". See
 [Logs & monitoring](/docs/guides/logs-monitoring) for more on reading these signals.
-
-<Callout title="Screenshot">Overview tab with the CPU / Memory / Disk / Uptime stat cards and the Components health list. *(screenshot pending)*</Callout>
 
 ### Components tab
 
@@ -146,8 +250,6 @@ Removing a component is destructive and can disable related deployment features 
 Removing **OpenResty** takes down the reverse proxy and its managed config; use **Reinstall** if you only need
 to refresh its scripts or settings.
 </Callout>
-
-<Callout title="Screenshot">Components tab showing the System Health list with per-row Install / Reinstall / Remove actions and the Detected Infrastructure divider. *(screenshot pending)*</Callout>
 
 ### Security tab (rate limiting)
 
@@ -176,8 +278,6 @@ and classifies each as **exposed** (bound to a public/all-interfaces address) or
 internet — a database that should be loopback-only, a debug port left open — so you can lock it down. It's a
 read-only probe (it changes nothing); re-run it after a deploy to confirm only what you expect is exposed.
 
-<Callout title="Screenshot">Security tab with the Requests / second field, the automatic-burst hint, the Advanced burst controls, the Whitelisted IPs input, and the Scan ports card. *(screenshot pending)*</Callout>
-
 ### Ports tab (port forwarding)
 
 Desktop-only. Port forwarding exposes a remote server port as `localhost:<port>` on your own machine — like VS
@@ -187,19 +287,23 @@ Existing forwards are listed with a running/stopped dot, the remote `host:port`,
 per-forward controls: **Start** / **Stop**, **Remove**, and an **Open on startup** toggle. To add one, enter a
 **Remote port** (1–65535) and an optional **Local (auto)** port (`0` for auto, or 1–65535), then press **Add**.
 
+A service's **Open on localhost** action uses the same saved forwards. Private services use their live
+container IP and configured TCP port, so they do not need a public domain or a published host port.
+If no TCP port is configured, enter the port the service listens on when prompted.
+The action is enabled when the service is running and its address is known. For a database,
+connect your database client to the assigned localhost port using the database's normal credentials.
+
 <Callout title="Desktop only" type="info">
 This tab is hidden on hosted instances — port forwarding only makes sense when the Openship orchestrator is
 your own machine.
 </Callout>
 
-<Callout title="Screenshot">Ports tab listing active forwards with Start / Stop / Remove controls and the add-forward row. *(screenshot pending)*</Callout>
-
 ### Terminal tab
 
-A live SSH shell to the server, right in the browser, running over WebSocket. You can open **up to 3
-concurrent** shells in tabs, and text is copied on select. The shell only stays open while this tab is active.
-
-<Callout title="Screenshot">Terminal tab with a live shell session and the multi-shell tab strip. *(screenshot pending)*</Callout>
+A live shell to the server, right in the browser. The header shows the configured session limit
+(3 by default for connected servers; 1 for managed Cloud Docker servers). Text is copied on select.
+Leaving the tab disconnects the browser and briefly parks the shell for reconnection; closing a shell
+explicitly terminates it.
 
 ## Editing and removing a server
 
@@ -210,7 +314,7 @@ or key blank keeps the stored secret; you only re-enter it when switching auth m
 To disconnect a server, use **Remove Server** from the **⋯** menu. This clears the SSH credentials and
 connection settings for that entry.
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy to your own server" href="/docs/guides/custom-servers" description="The full walkthrough for connecting a server and deploying to it." />

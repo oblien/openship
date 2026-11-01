@@ -44,6 +44,25 @@ function fakeExecutor(files: Record<string, string> = {}): CommandExecutor {
 const opts = () => ({ onLog: () => {}, warnings: [] as string[] });
 
 describe("registerImportedSites", () => {
+  it("imports path-only sites without promoting the first upstream to a catch-all", async () => {
+    const { routing, ssl } = providers();
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), [{
+      serverNames: ["api.onvo.me"],
+      ssl: false,
+      target: { kind: "proxy", url: "http://127.0.0.1:9000" },
+      routes: [
+        { path: "/v3", url: "http://127.0.0.1:9000" },
+        { path: "/mcp", url: "http://127.0.0.1:4000", exact: true },
+      ],
+    }], opts());
+    expect(routing.registerRoute).toHaveBeenCalledWith({
+      domain: "api.onvo.me", tls: false, terminatesTlsLocally: false, notFound: true,
+      proxyLocations: [
+        { pathPrefix: "/v3", targetUrl: "http://127.0.0.1:9000" },
+        { pathPrefix: "/mcp", targetUrl: "http://127.0.0.1:4000", exact: true },
+      ],
+    });
+  });
   it("registers a proxy site and a static site as routes", async () => {
     const { routing, ssl } = providers();
     const sites: ImportedSite[] = [

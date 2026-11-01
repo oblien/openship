@@ -66,7 +66,7 @@ export const serverAnalytics = pgTable(
     bandwidthIn: bigint("bandwidth_in", { mode: "number" }).notNull().default(0),
     bandwidthOut: bigint("bandwidth_out", { mode: "number" }).notNull().default(0),
 
-    /** Average response time in seconds (float) */
+    /** Total request duration in seconds for this bucket (float) */
     responseTime: real("response_time").notNull().default(0),
 
     /** Per-minute country breakdown: { "US": 42, "DE": 17, ... } */

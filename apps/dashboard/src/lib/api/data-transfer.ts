@@ -1,31 +1,37 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { readSseTerminalEvent } from "@repo/core";
+import type {
+  ExportSelection,
+  ExportHistoryCategory,
+  ExportPreview,
+  ImportSelection,
+  ImportPreview,
+  TransferManifest,
+} from "@repo/core";
+export type {
+  ExportSelection,
+  ExportHistoryCategory,
+  ExportPreview,
+  ImportSelection,
+  ImportPreview,
+  TransferProject,
+  TransferServer,
+  TransferManifest,
+} from "@repo/core";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { api, ApiError, getActiveOrganizationId, getApiBaseUrl } from "./client";
 import { endpoints } from "./endpoints";
 
 /**
- * Whole-instance data export / import API client. Talks to the routes under
- * /api/system/data-transfer. Self-hosted + owner-only on the API side.
+ * Scoped data export / import API client. Talks to the routes under
+ * /api/system/data-transfer. Self-hosted + instance-admin-only on the API side.
  *
  * Whole-DB moves are slow, so both calls override the default 15s timeout.
  */
 
 export type ImportMode = "wipe" | "merge";
-export type ExportHistoryCategory =
-  | "analytics"
-  | "activity"
-  | "backups"
-  | "incidents"
-  | "migrations";
-
-export interface ExportPreview {
-  core: number;
-  history: Record<ExportHistoryCategory, number>;
-  total: number;
-}
-
 /** Opaque export file — the dashboard treats it as a JSON blob to download. */
-export type DataTransferFile = Record<string, unknown>;
+export type DataTransferFile = Record<string, unknown> & { manifest?: TransferManifest };
 
 export interface ImportResult {
   mode: ImportMode;
@@ -36,6 +42,10 @@ export interface ImportResult {
    *  machine — that path won't exist here (e.g. a Mac path on a Linux server), so
    *  re-point or re-deploy before their next deploy. Empty when nothing needs it. */
   localPathProjects: Array<{ slug: string; localPath: string }>;
+  warnings?: string[];
+  projectsCreated?: number;
+  projectsUpdated?: number;
+  projectsSkipped?: number;
 }
 
 export interface DirectReceiveSession {
@@ -97,6 +107,45 @@ interface ResumableImportUpload {
 // automatically when the picker/modal releases its File object.
 const resumableImportUploads = new WeakMap<File, ResumableImportUpload>();
 
+async function uploadImportFile(
+  file: File,
+  onProgress?: (completed: number, total: number) => void,
+): Promise<ImportUploadSession> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let upload = resumableImportUploads.get(file);
+    if (!upload) {
+      upload = {
+        session: await api.post<ImportUploadSession>(endpoints.system.dataTransfer.importSession, {
+          size: file.size,
+        }),
+        completedChunks: 0,
+      };
+      resumableImportUploads.set(file, upload);
+    }
+    const { session } = upload;
+    try {
+      if (upload.completedChunks) onProgress?.(upload.completedChunks, session.totalChunks);
+      for (let index = upload.completedChunks; index < session.totalChunks; index++) {
+        const start = index * session.chunkSize;
+        await uploadWithRetry(
+          session.uploadId,
+          index,
+          file.slice(start, Math.min(file.size, start + session.chunkSize)),
+        );
+        upload.completedChunks = index + 1;
+        onProgress?.(index + 1, session.totalChunks);
+      }
+      return session;
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof ApiError) || error.status !== 410) throw error;
+      resumableImportUploads.delete(file);
+    }
+  }
+  throw lastError;
+}
+
 async function sha256Hex(blob: Blob): Promise<string> {
   const digest = sha256(new Uint8Array(await blob.arrayBuffer()));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -146,7 +195,7 @@ async function postTransferStream<T>(path: string, body: unknown): Promise<T> {
     signal: AbortSignal.timeout(TRANSFER_STREAM_TIMEOUT),
   });
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
+    const text = await response.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/api/data-transfer"); return ""; });
     let parsed: unknown = text;
     try {
       parsed = JSON.parse(text);
@@ -173,7 +222,14 @@ async function postTransferStream<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const dataTransferApi = {
-  preview: () => api.get<ExportPreview>(endpoints.system.dataTransfer.preview),
+  preview: (selection?: ExportSelection) =>
+    selection
+      ? api.post<ExportPreview>(
+          endpoints.system.dataTransfer.preview,
+          { selection },
+          { timeout: LONG_TIMEOUT },
+        )
+      : api.get<ExportPreview>(endpoints.system.dataTransfer.preview),
 
   createDirectReceiveSession: (mode: ImportMode) =>
     api.post<DirectReceiveSession>(endpoints.system.dataTransfer.directSession, {
@@ -187,19 +243,49 @@ export const dataTransferApi = {
       ...(history ? { selection: { history } } : {}),
     }),
 
-  export: (passphrase?: string, history?: ExportHistoryCategory[]) =>
+  export: (passphrase?: string, selection?: ExportSelection | ExportHistoryCategory[]) =>
     api.post<DataTransferFile>(
       endpoints.system.dataTransfer.export,
-      { passphrase, ...(history ? { selection: { history } } : {}) },
+      {
+        passphrase,
+        ...(selection
+          ? { selection: Array.isArray(selection) ? { history: selection } : selection }
+          : {}),
+      },
       { timeout: LONG_TIMEOUT },
     ),
 
-  import: (file: DataTransferFile, passphrase: string | undefined, mode: ImportMode) =>
+  import: (
+    file: DataTransferFile,
+    passphrase: string | undefined,
+    mode: ImportMode,
+    selection?: ImportSelection,
+  ) =>
     api.post<ImportResult>(
       endpoints.system.dataTransfer.import,
-      { file, passphrase, mode },
+      { file, passphrase, mode, ...(selection ? { selection } : {}) },
       { timeout: LONG_TIMEOUT },
     ),
+
+  previewFile: async (
+    file: File,
+    selection?: ImportSelection,
+    onProgress?: (completed: number, total: number) => void,
+  ): Promise<ImportPreview> => {
+    for (let attempt = 0; ; attempt++) {
+      const session = await uploadImportFile(file, onProgress);
+      try {
+        return await api.post<ImportPreview>(
+          endpoints.system.dataTransfer.importPreview(session.uploadId),
+          { selection },
+          { timeout: LONG_TIMEOUT },
+        );
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 410 || attempt > 0) throw error;
+        resumableImportUploads.delete(file);
+      }
+    }
+  },
 
   /** Upload a local export in bounded pieces; the browser never materializes the
    * complete JSON document and every request stays below the edge body limit. */
@@ -208,38 +294,15 @@ export const dataTransferApi = {
     passphrase: string | undefined,
     mode: ImportMode,
     onProgress?: (completed: number, total: number) => void,
+    selection?: ImportSelection,
   ): Promise<ImportResult> => {
     let lastError: unknown;
     for (let sessionAttempt = 0; sessionAttempt < 2; sessionAttempt += 1) {
-      let upload = resumableImportUploads.get(file);
-      if (!upload) {
-        upload = {
-          session: await api.post<ImportUploadSession>(
-            endpoints.system.dataTransfer.importSession,
-            { size: file.size },
-          ),
-          completedChunks: 0,
-        };
-        resumableImportUploads.set(file, upload);
-      }
-      const { session } = upload;
+      const session = await uploadImportFile(file, onProgress);
       try {
-        if (upload.completedChunks > 0) {
-          onProgress?.(upload.completedChunks, session.totalChunks);
-        }
-        for (let index = upload.completedChunks; index < session.totalChunks; index += 1) {
-          const start = index * session.chunkSize;
-          await uploadWithRetry(
-            session.uploadId,
-            index,
-            file.slice(start, Math.min(file.size, start + session.chunkSize)),
-          );
-          upload.completedChunks = index + 1;
-          onProgress?.(index + 1, session.totalChunks);
-        }
         const result = await postTransferStream<ImportResult>(
           endpoints.system.dataTransfer.importFinalizeStream(session.uploadId),
-          { passphrase, mode },
+          { passphrase, mode, ...(selection ? { selection } : {}) },
         );
         resumableImportUploads.delete(file);
         return result;

@@ -1,5 +1,7 @@
+import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { once } from "node:events";
 import { mkdtemp, rm as fsRm, stat, unlink } from "node:fs/promises";
 import { connect as netConnect } from "node:net";
@@ -26,7 +28,9 @@ import {
   makeControlPath,
   sshChildEnv,
   sshTarget,
+  supportsSshMultiplexing,
 } from "./system-ssh";
+import { attachDialStdioDiagnostics, DOCKER_DIAL_STDIO_COMMAND } from "./ssh-client";
 import { openSystemSshReverseTunnel } from "./reverse-tunnel";
 import { commandForError, SshDisconnectedError } from "./errors";
 
@@ -70,11 +74,13 @@ function describeSshFailure(stderr: string, fallback: string): Error {
  * Used for "agent" auth, where only the real OpenSSH client reliably resolves
  * the agent / `~/.ssh/config` / default keys / macOS keychain (the same thing
  * that makes `ssh root@host` work). Everything — exec, file ops, transfer,
- * port-forward, Docker socket-forward, the interactive shell — rides ONE
- * authenticated OpenSSH ControlMaster connection. Password/key auth keep using
- * the in-process `ssh2` SshExecutor.
+ * port-forward, Docker socket-forward, the interactive shell — shares an
+ * authenticated OpenSSH ControlMaster connection on Unix. Windows opens one
+ * process per operation. Password/key auth keep using the in-process `ssh2`
+ * SshExecutor.
  */
 export class SystemSshExecutor implements CommandExecutor {
+  readonly persistentConnection = supportsSshMultiplexing();
   private readonly config: SshConfig;
   private readonly abortScope = new AsyncLocalStorage<AbortSignal>();
   private readonly controlPath = makeControlPath();
@@ -85,6 +91,8 @@ export class SystemSshExecutor implements CommandExecutor {
   private readonly localSockets = new Set<string>();
   private readonly disconnectListeners = new Set<(err: Error) => void>();
   private disposed = false;
+  private readonly children = new Set<ChildProcess>();
+  private readonly reverseTunnels = new Set<() => Promise<void>>();
 
   /** Prefix applied to every remote command - keeps dpkg non-interactive. */
   private static readonly ENV_PREFIX =
@@ -124,6 +132,13 @@ export class SystemSshExecutor implements CommandExecutor {
     return buildBaseSshArgs(this.config, this.controlPath);
   }
 
+  private track<T extends ChildProcess>(child: T): T {
+    this.children.add(child);
+    child.once("close", () => this.children.delete(child));
+    if (this.disposed) child.kill();
+    return child;
+  }
+
   onDisconnect(cb: (err: Error) => void): () => void {
     this.disconnectListeners.add(cb);
     return () => {
@@ -141,13 +156,22 @@ export class SystemSshExecutor implements CommandExecutor {
    */
   private async maybeSignalDisconnect(code: number): Promise<void> {
     if (code !== 255 || this.disposed) return;
+    if (!supportsSshMultiplexing()) {
+      for (const cb of this.disconnectListeners) {
+        try { cb(new SshDisconnectedError("SSH connection closed")); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+        }
+      }
+      return;
+    }
     // Already torn down by an earlier signal for this master — debounce.
     if (!this.masterPromise) return;
     if (await this.isMasterAlive()) return; // alive => this 255 was auth/command, not a drop
     this.masterPromise = null;
     const err = new SshDisconnectedError("SSH master connection lost");
     for (const cb of [...this.disconnectListeners]) {
-      try { cb(err); } catch { /* listener bug must not break disconnect handling */ }
+      try { cb(err); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor"); /* listener bug must not break disconnect handling */ }
     }
   }
 
@@ -161,13 +185,18 @@ export class SystemSshExecutor implements CommandExecutor {
         env: sshChildEnv(this.config),
       });
       return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
       return false;
     }
   }
 
   /** Open (once) the multiplexed master connection. Authenticates here. */
   private async ensureMaster(): Promise<void> {
+    if (this.disposed) throw new Error("SSH executor has been disposed.");
+    // Windows OpenSSH cannot reliably use Unix ControlMaster sockets. Each
+    // operation keeps its own process and carries the same saved transport.
+    if (!supportsSshMultiplexing()) return;
     if (this.masterPromise) return this.masterPromise;
     this.masterPromise = (async () => {
       try {
@@ -179,6 +208,7 @@ export class SystemSshExecutor implements CommandExecutor {
           env: sshChildEnv(this.config),
         });
       } catch (err) {
+        observeCaughtError(err, "adapters/system/system-ssh-executor");
         this.masterPromise = null; // allow a later retry
         const e = err as { stderr?: string };
         throw describeSshFailure(e.stderr ?? "", safeErrorMessage(err));
@@ -199,12 +229,23 @@ export class SystemSshExecutor implements CommandExecutor {
     onConnection: (stream: Duplex) => void,
   ): Promise<{ port: number; close: () => Promise<void> }> {
     await this.ensureMaster(); // `-O forward` needs a live master
-    return openSystemSshReverseTunnel({
+    const tunnel = await openSystemSshReverseTunnel({
       baseArgs: this.baseArgs(),
       target: sshTarget(this.config),
       env: sshChildEnv(this.config),
       onConnection,
+      multiplex: supportsSshMultiplexing(),
     });
+    const close = async () => {
+      this.reverseTunnels.delete(close);
+      await tunnel.close();
+    };
+    if (this.disposed) {
+      await close();
+      throw new Error("SSH executor has been disposed.");
+    }
+    this.reverseTunnels.add(close);
+    return { port: tunnel.port, close };
   }
 
   /** Run a remote command, resolving with stdout/stderr/exit code (never rejects on non-zero). */
@@ -217,10 +258,11 @@ export class SystemSshExecutor implements CommandExecutor {
     await this.ensureMaster();
     this.throwIfAborted("command", signal);
     return new Promise((resolve, reject) => {
-      const child = spawn("ssh", [...this.baseArgs(), sshTarget(this.config), remoteCommand], {
+      const child = this.track(spawn("ssh", [...this.baseArgs(), sshTarget(this.config), remoteCommand], {
         env: sshChildEnv(this.config),
         stdio: ["pipe", "pipe", "pipe"],
-      });
+      }));
+      child.stdin.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor"); });
 
       let stdout = "";
       let stderr = "";
@@ -238,7 +280,9 @@ export class SystemSshExecutor implements CommandExecutor {
         act();
       };
       const onAbort = () => {
-        try { child.kill("SIGKILL"); } catch {}
+        try { child.kill("SIGKILL"); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+        }
       };
       signal?.addEventListener("abort", onAbort, { once: true });
       if (opts?.timeout) {
@@ -251,12 +295,14 @@ export class SystemSshExecutor implements CommandExecutor {
 
       child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
       child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-      child.on("error", (e) => {
+      child.on("error", (e) => { observeCaughtError(e, "adapters/system/system-ssh-executor");
         finish(() => reject(new Error(`ssh failed to start: ${e.message}`)));
       });
       child.on("close", (code) => {
         const c = code ?? 1;
-        void this.maybeSignalDisconnect(c).catch(() => {});
+        void this.maybeSignalDisconnect(c).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+        });
         finish(() => {
           if (signal?.aborted) reject(abortError("command", signal));
           else resolve({ stdout, stderr, code: c, timedOut });
@@ -280,7 +326,10 @@ export class SystemSshExecutor implements CommandExecutor {
     const timeout = opts?.timeout ?? 30_000;
     const res = await this.runSsh(SystemSshExecutor.ENV_PREFIX + command, { timeout });
     if (res.timedOut) {
-      throw new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`);
+      throw new DOMException(
+        `Command timed out after ${timeout}ms: ${commandForError(command)}`,
+        "TimeoutError",
+      );
     }
     if (res.code !== 0) {
       // 255 is an SSH-level failure (auth/connection); map auth specially so
@@ -300,11 +349,11 @@ export class SystemSshExecutor implements CommandExecutor {
     const signal = this.resolvedSignal(opts?.signal);
     if (signal?.aborted) return { code: 0, output: "" };
     return new Promise((resolve) => {
-      const child = spawn(
+      const child = this.track(spawn(
         "ssh",
         [...this.baseArgs(), sshTarget(this.config), SystemSshExecutor.ENV_PREFIX + command],
         { env: sshChildEnv(this.config), stdio: ["ignore", "pipe", "pipe"] },
-      );
+      ));
 
       // Abort = kill the ssh client, which tears the channel down. Resolve with
       // code 0 like SshExecutor does: an abort is the caller's own decision, not
@@ -332,7 +381,7 @@ export class SystemSshExecutor implements CommandExecutor {
 
       child.stdout.on("data", (chunk: Buffer) => onChunk(chunk, "info"));
       child.stderr.on("data", (chunk: Buffer) => onChunk(chunk, "warn"));
-      child.on("error", (err) => {
+      child.on("error", (err) => { observeCaughtError(err, "adapters/system/system-ssh-executor");
         signal?.removeEventListener("abort", onAbort);
         onLog(logEntry(`Process error: ${err.message}`, "error"));
         resolve({ code: 1, output: err.message });
@@ -340,7 +389,9 @@ export class SystemSshExecutor implements CommandExecutor {
       child.on("close", (code) => {
         signal?.removeEventListener("abort", onAbort);
         const c = aborted ? 0 : (code ?? 1);
-        void this.maybeSignalDisconnect(c).catch(() => {});
+        void this.maybeSignalDisconnect(c).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+        });
         resolve({ code: c, output: chunks.join("") });
       });
     });
@@ -386,45 +437,41 @@ export class SystemSshExecutor implements CommandExecutor {
   async rm(path: string): Promise<void> {
     try {
       await this.exec(`rm -rf ${sq(path)}`);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
       // Already gone
     }
   }
 
   /** Pipe a local command's stdout into a remote command's stdin over ssh. */
   private async pipeLocal(
-    localCmd: string,
+    localFile: string,
     remoteCmd: string,
     onLog?: (log: LogEntry) => void,
     onBytes?: (bytes: number) => void,
   ): Promise<{ code: number }> {
     await this.ensureMaster();
     return new Promise((resolve, reject) => {
-      onLog?.(logEntry(`local: ${localCmd}`));
-
-      const remote = spawn("ssh", [...this.baseArgs(), sshTarget(this.config), remoteCmd], {
+      const remote = this.track(spawn("ssh", [...this.baseArgs(), sshTarget(this.config), remoteCmd], {
         env: sshChildEnv(this.config),
         stdio: ["pipe", "pipe", "pipe"],
-      });
-      const local = spawn("sh", ["-c", localCmd], { stdio: ["ignore", "pipe", "pipe"] });
+      }));
+      const local = createReadStream(localFile);
 
       if (onBytes) {
-        local.stdout.on("data", (chunk: Buffer) => onBytes(chunk.length));
+        local.on("data", (chunk) => onBytes(Buffer.byteLength(chunk)));
       }
-      local.stdout.pipe(remote.stdin);
+      local.pipe(remote.stdin);
+      remote.stdin.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor"); });
 
-      local.stderr.on("data", (d: Buffer) => {
-        const text = d.toString().trim();
-        if (text) onLog?.(logEntry(`local stderr: ${text}`, "warn"));
-      });
       remote.stderr.on("data", (d: Buffer) => {
         const text = d.toString().trim();
         if (text) onLog?.(logEntry(`remote stderr: ${text}`, "warn"));
       });
 
-      local.on("error", (e) => reject(new Error(`Local process failed to start: ${e.message}`)));
-      remote.on("error", (e) => reject(new Error(`ssh failed to start: ${e.message}`)));
-      remote.on("close", (code) => resolve({ code: code ?? 1 }));
+      local.on("error", (e) => { observeCaughtError(e, "adapters/system/system-ssh-executor");  remote.kill(); reject(e); });
+      remote.on("error", (e) => { observeCaughtError(e, "adapters/system/system-ssh-executor"); return reject(new Error(`ssh failed to start: ${e.message}`)); });
+      remote.on("close", (code) => { local.destroy(); resolve({ code: code ?? 1 }); });
     });
   }
 
@@ -470,8 +517,12 @@ export class SystemSshExecutor implements CommandExecutor {
 
       await extractRemoteArchive((command) => this.exec(command), remoteArchive, remotePath, totalBytes, onLog);
     } finally {
-      await cleanupTarList().catch(() => {});
-      await fsRm(tmpLocalDir, { recursive: true, force: true }).catch(() => {});
+      await cleanupTarList().catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+      });
+      await fsRm(tmpLocalDir, { recursive: true, force: true }).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+      });
     }
   }
 
@@ -487,10 +538,11 @@ export class SystemSshExecutor implements CommandExecutor {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       if (attempt > 1) onLog?.(logEntry(`Retrying upload (attempt ${attempt}/${MAX_ATTEMPTS})...`, "warn"));
       try {
-        const { code } = await this.pipeLocal(`cat ${sq(localArchive)}`, `cat > ${sq(remoteArchive)}`, onLog);
+        const { code } = await this.pipeLocal(localArchive, `cat > ${sq(remoteArchive)}`, onLog);
         if (code === 0) return;
         lastErr = new Error(`archive upload failed (exit ${code})`);
       } catch (err) {
+        observeCaughtError(err, "adapters/system/system-ssh-executor");
         lastErr = err instanceof Error ? err : new Error(String(err));
       }
     }
@@ -501,7 +553,8 @@ export class SystemSshExecutor implements CommandExecutor {
     try {
       const out = await this.exec(`command -v ${command} >/dev/null 2>&1 && echo ok`, { timeout: 5_000 });
       return out.trim() === "ok";
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
       return false;
     }
   }
@@ -510,15 +563,16 @@ export class SystemSshExecutor implements CommandExecutor {
     await this.ensureMaster();
     // -W wires this ssh process's stdio straight to remoteHost:remotePort
     // through the master. The child's stdin/stdout become the byte tunnel.
-    const child = spawn(
+    const child = this.track(spawn(
       "ssh",
       [...this.baseArgs(), "-W", `${remoteHost}:${remotePort}`, sshTarget(this.config)],
       { env: sshChildEnv(this.config), stdio: ["pipe", "pipe", "ignore"] },
-    );
+    ));
     const duplex = Duplex.from({ writable: child.stdin, readable: child.stdout });
-    duplex.on("close", () => { try { child.kill(); } catch { /* already gone */ } });
+    duplex.on("close", () => { try { child.kill(); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor"); /* already gone */ } });
     child.on("exit", () => { duplex.destroy(); });
-    child.on("error", (e) => { duplex.destroy(e); });
+    child.on("error", (e) => { observeCaughtError(e, "adapters/system/system-ssh-executor");  duplex.destroy(e); });
     return duplex;
   }
 
@@ -538,7 +592,8 @@ export class SystemSshExecutor implements CommandExecutor {
         return localSocket;
       })();
       // Don't cache a failed forward — evict so the next call re-establishes it.
-      pending.catch(() => {
+      pending.catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
         if (this.socketForwards.get(remoteSocket) === pending) {
           this.socketForwards.delete(remoteSocket);
         }
@@ -549,6 +604,9 @@ export class SystemSshExecutor implements CommandExecutor {
   }
 
   async forwardUnixSocket(socketPath: string): Promise<Duplex> {
+    if (!supportsSshMultiplexing()) {
+      throw new Error("Windows OpenSSH uses Docker's SSH command transport instead of Unix socket forwarding.");
+    }
     const attempt = async (): Promise<Duplex> => {
       const localSocket = await this.ensureSocketForward(socketPath);
       const sock = netConnect(localSocket);
@@ -557,11 +615,26 @@ export class SystemSshExecutor implements CommandExecutor {
     };
     try {
       return await attempt();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
       // Master/forward may have lapsed — re-establish once.
       this.socketForwards.delete(socketPath);
       return attempt();
     }
+  }
+
+  /** Docker's byte protocol over the same OpenSSH route as commands/terminals. */
+  async openDockerDialStdio(): Promise<Duplex> {
+    await this.ensureMaster();
+    const child = this.track(spawn("ssh", [...this.baseArgs(), sshTarget(this.config), DOCKER_DIAL_STDIO_COMMAND], {
+      env: sshChildEnv(this.config), stdio: ["pipe", "pipe", "pipe"],
+    }));
+    const stream = Object.assign(Duplex.from({ writable: child.stdin, readable: child.stdout }), { stderr: child.stderr });
+    attachDialStdioDiagnostics(stream);
+    child.once("error", (error) => { observeCaughtError(error, "adapters/system/system-ssh-executor"); return stream.destroy(error); });
+    child.once("exit", (code, signal) => stream.emit("exit", code, signal));
+    stream.once("close", () => { if (child.exitCode === null) child.kill(); });
+    return stream;
   }
 
   /**
@@ -571,11 +644,12 @@ export class SystemSshExecutor implements CommandExecutor {
    */
   private fireAndForget(command: string): void {
     try {
-      spawn("ssh", [...this.baseArgs(), sshTarget(this.config), command], {
+      this.track(spawn("ssh", [...this.baseArgs(), sshTarget(this.config), command], {
         env: sshChildEnv(this.config),
         stdio: "ignore",
-      }).on("error", () => { /* best-effort */ });
-    } catch { /* best-effort */ }
+      })).on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor");  /* best-effort */ });
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor"); /* best-effort */ }
   }
 
   async openShell(opts?: ShellOptions): Promise<ShellSession> {
@@ -602,16 +676,16 @@ export class SystemSshExecutor implements CommandExecutor {
     // this mirrors what the ssh2 path passed via client.shell({ term }).
     const env = { ...sshChildEnv(this.config), TERM: term };
 
-    const child = spawn("ssh", [...this.baseArgs(), "-tt", sshTarget(this.config), remoteInit], {
+    const child = this.track(spawn("ssh", [...this.baseArgs(), "-tt", sshTarget(this.config), remoteInit], {
       env,
       stdio: ["pipe", "pipe", "pipe"],
-    });
+    }));
 
     // Writing to a dead shell or reading a closed pipe must not throw an
     // unhandled 'error' that takes down the API.
-    child.stdin.on("error", () => {});
-    child.stdout.on("error", () => {});
-    child.stderr.on("error", () => {});
+    child.stdin.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor"); });
+    child.stdout.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor"); });
+    child.stderr.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor"); });
 
     const closeListeners: Array<(code: number | null, signal?: string) => void> = [];
     let closed = false;
@@ -624,11 +698,12 @@ export class SystemSshExecutor implements CommandExecutor {
       if (resizeTimer) clearTimeout(resizeTimer);
       this.fireAndForget(`rm -f ${ptyMarker}`); // best-effort marker cleanup
       for (const cb of closeListeners) {
-        try { cb(code, signal); } catch { /* listener bug shouldn't break cleanup */ }
+        try { cb(code, signal); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor"); /* listener bug shouldn't break cleanup */ }
       }
     };
     child.on("exit", (code, signal) => fireClose(code, signal ?? undefined));
-    child.on("error", () => fireClose(null));
+    child.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/system/system-ssh-executor"); return fireClose(null); });
 
     return {
       stdin: child.stdin,
@@ -655,7 +730,8 @@ export class SystemSshExecutor implements CommandExecutor {
       },
       close: (_signal?: string) => {
         if (resizeTimer) clearTimeout(resizeTimer);
-        try { child.kill(); } catch { /* already gone */ }
+        try { child.kill(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor"); /* already gone */ }
       },
       onClose: (cb) => { closeListeners.push(cb); },
     };
@@ -664,6 +740,9 @@ export class SystemSshExecutor implements CommandExecutor {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    for (const child of this.children) child.kill();
+    this.children.clear();
+    await observedAllSettled([...this.reverseTunnels].map(close => close()), "adapters/system/system-ssh-executor");
 
     // Tear down the master (this also drops all forwards), then unlink the
     // local forward sockets best-effort.
@@ -673,12 +752,15 @@ export class SystemSshExecutor implements CommandExecutor {
           timeout: 5_000,
           env: sshChildEnv(this.config),
         });
-      } catch { /* master may already be gone */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor"); /* master may already be gone */ }
     }
     this.masterPromise = null;
     this.socketForwards.clear();
     for (const socket of this.localSockets) {
-      await unlink(socket).catch(() => {});
+      await unlink(socket).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/system-ssh-executor");
+      });
     }
     this.localSockets.clear();
   }

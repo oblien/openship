@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneOnServerAvailable } from "./clone-auth";
+import { cloneOnServerAvailable } from "@repo/platform/engine/modules/github/clone-auth";
 
 /**
  * ONE definition of "can the build host clone this itself".

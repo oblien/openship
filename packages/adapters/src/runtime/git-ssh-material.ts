@@ -15,6 +15,7 @@
  * `writeSecret` rather than an `exec`'d heredoc.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 
 import { sq } from "./git-clone";
@@ -85,7 +86,9 @@ export function shellGitSshWriter(io: {
       await io.exec(`chmod 600 ${sq(path)}`);
     },
     remove: async (dir) => {
-      await io.exec(`rm -rf ${sq(dir)}`).catch(() => {});
+      await io.exec(`rm -rf ${sq(dir)}`).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/git-ssh-material");
+      });
     },
   };
 }
@@ -95,6 +98,8 @@ export function localGitSshWriter(): GitSshWriter {
   return {
     ensureDir: (dir) => mkdir(dir, { recursive: true, mode: 0o700 }).then(() => {}),
     writeSecret: (path, content) => writeFile(path, content, { mode: 0o600 }),
-    remove: (dir) => rm(dir, { recursive: true, force: true }).catch(() => {}),
+    remove: (dir) => rm(dir, { recursive: true, force: true }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/git-ssh-material");
+    }),
   };
 }

@@ -31,7 +31,49 @@
     "createLabel": "新建项目",
     "settingsText": "在项目设置中配置环境变量和自定义域名。",
     "settingsLabel": "项目设置",
-    "connected": "已连接"
+    "connected": "已连接",
+    "tips": {
+      "envVars": {
+        "text": "为任意项目添加加密的环境变量和机密信息。",
+        "label": "打开项目"
+      },
+      "customDomain": {
+        "text": "将自定义域名指向项目 — 自动配置 HTTPS。",
+        "label": "打开项目"
+      },
+      "autoDeploy": {
+        "text": "连接 GitHub 以在每次推送时自动部署，无需配置 CI。",
+        "label": "打开 Git 设置"
+      },
+      "rollback": {
+        "text": "一键回滚到任何之前的部署。",
+        "label": "查看部署"
+      },
+      "apps": {
+        "text": "一键安装 Gitea、n8n 和 Metabase 等自托管应用。",
+        "label": "浏览应用"
+      },
+      "servers": {
+        "text": "通过 SSH 连接您自己的服务器并从此处向其部署。",
+        "label": "管理服务器"
+      },
+      "jobs": {
+        "text": "使用 cron 定时任务调度命令 — 包含重试、实时日志和历史记录。",
+        "label": "打开任务"
+      },
+      "backups": {
+        "text": "为您的数据库和卷设置自动备份。",
+        "label": "配置备份"
+      },
+      "mail": {
+        "text": "运行您自己的邮件服务器和网页邮件，完全自托管。",
+        "label": "设置邮件"
+      },
+      "team": {
+        "text": "邀请团队成员并按项目划分访问权限。",
+        "label": "管理团队"
+      }
+    }
   },
   "welcome": {
     "title": "启动你的第一个项目",

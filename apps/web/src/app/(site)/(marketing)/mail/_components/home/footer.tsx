@@ -53,7 +53,7 @@ export default function MailFooter() {
                 transition={{ duration: 0.5, delay: 0.4 }}
                 className="flex w-fit flex-col items-center justify-center md:pt-4"
               >
-                <Link href="/docs/install">
+                <Link href="/docs/getting-started/quickstart">
                   <Button className="h-8 bg-white text-black cursor-pointer">
                     Install Openship
                   </Button>

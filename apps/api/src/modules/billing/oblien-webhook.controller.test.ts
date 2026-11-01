@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createHmac } from "node:crypto";
+import { monthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
 
 /**
  * End-to-end dispatch test for the Oblien webhook handler with every heavy
@@ -16,28 +17,36 @@ const h = vi.hoisted(() => ({
   orgFindById: vi.fn(),
   auditRecord: vi.fn(),
   notificationEmit: vi.fn(),
+  enqueue: vi.fn(),
   sendMail: vi.fn(),
   orgRows: [{ id: "org_1" }] as Array<{ id: string }>,
   existingRows: [] as Array<{ processedAt: Date | null }>,
+  processed: new Map<string, Date>(),
+  sync: vi.fn(),
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
+  localDashboardUrl: "https://app.openship.io",
   env: {
     get OBLIEN_WEBHOOK_SECRET() {
       return h.secret;
     },
   },
 }));
-vi.mock("../../lib/mail", () => ({ sendMail: h.sendMail }));
-vi.mock("../../lib/audit", () => ({ audit: { record: h.auditRecord } }));
-vi.mock("../../lib/notification-dispatcher", () => ({
-  notification: { emit: h.notificationEmit },
+vi.mock("@repo/platform/engine/lib/mail", () => ({ sendMail: h.sendMail }));
+vi.mock("@repo/db/repos", () => ({
+  createAuditEventRepo: () => ({ create: h.auditRecord }),
+  createAuditSettingsRepo: () => ({}),
 }));
-vi.mock("../../lib/org-actor", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
+  notification: { prepare: h.notificationEmit },
+}));
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({
   resolveOrgOwner: async () => ({ user: { email: "owner@example.com", name: "Owner" } }),
 }));
-vi.mock("./billing-oblien-quota", () => ({
+vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
   fromOblienCredits: (c: number) => c * 1000,
+  withCloudBillingLock: async (_orgId: string, work: (sync: typeof h.sync) => Promise<unknown>) => work(h.sync),
 }));
 vi.mock("@repo/db", () => {
   const tx = {
@@ -45,22 +54,32 @@ vi.mock("@repo/db", () => {
     select: () => ({
       from: () => ({ where: () => ({ limit: async () => h.existingRows }) }),
     }),
-    insert: () => ({ values: () => ({ onConflictDoUpdate: async () => {} }) }),
+    insert: () => ({ values: (value: { oblienEventId: string; processedAt: Date }) => ({ onConflictDoUpdate: async () => {
+      h.processed.set(value.oblienEventId, value.processedAt);
+    } }) }),
   };
   return {
     db: {
       transaction: async (cb: (t: typeof tx) => unknown) => cb(tx),
-      select: () => ({ from: () => ({ where: () => ({ limit: async () => h.orgRows }) }) }),
+      select: () => ({ from: (table: { kind?: string }) => ({ where: (predicate: { value: string }) => ({ limit: async () =>
+        table.kind === "event" ? (h.processed.has(predicate.value) ? [{ processedAt: h.processed.get(predicate.value) }] : h.existingRows) : h.orgRows,
+      }) }) }),
+      insert: () => ({ values: (value: { oblienEventId: string; processedAt: Date }) => ({ onConflictDoUpdate: async () => {
+        h.processed.set(value.oblienEventId, value.processedAt);
+      } }) }),
     },
     schema: {
       organization: { id: {}, oblienNamespace: {} },
-      oblienWebhookEvent: { oblienEventId: {}, processedAt: {} },
+      oblienWebhookEvent: { kind: "event", oblienEventId: {}, processedAt: {} },
     },
     repos: {
+      cloudWorkspace: { findByNamespace: async () => undefined },
+      actionBilling: { byNamespace: async () => undefined },
+      managementBilling: { byNamespace: async () => undefined, get: async () => undefined },
       billingUsageSnapshot: { upsert: h.usageUpsert },
       organization: { findById: h.orgFindById },
     },
-    eq: () => ({}),
+    eq: (_column: unknown, value: string) => ({ value }),
     sql: (..._a: unknown[]) => ({}),
     hashStringToInt: () => 1,
   };
@@ -78,10 +97,10 @@ interface JsonResult {
   status: number;
 }
 
-function makeCtx(body: string, sig?: string) {
+function makeCtx(body: string, sig?: string, deliveryId?: string) {
   return {
     req: {
-      header: (n: string) => (n.toLowerCase() === "x-webhook-signature" ? sig : undefined),
+      header: (n: string) => (n.toLowerCase() === "x-webhook-signature" ? sig : n.toLowerCase() === "x-webhook-id" ? deliveryId : undefined),
       text: async () => body,
     },
     json: (obj: unknown, status = 200): JsonResult => ({ obj, status }),
@@ -95,8 +114,12 @@ beforeEach(() => {
   h.orgFindById.mockReset();
   h.usageUpsert.mockReset();
   h.auditRecord.mockReset();
-  h.notificationEmit.mockReset();
+  h.enqueue.mockReset().mockResolvedValue(undefined);
+  h.notificationEmit.mockReset().mockResolvedValue(h.enqueue);
   h.sendMail.mockReset();
+  h.processed.clear();
+  h.sync.mockReset().mockResolvedValue({ tier: "pro", entitlement: { namespace: "os-abc", status: "credit_exhausted", quota: { balance: 0,
+    alert: { state: "depleted", percent: 100, used: 10000, limit: 10000, remaining: 0, balance: 0, thresholds: [80,95], threshold: 95 } } } });
 });
 
 describe("oblienWebhook — signature gate", () => {
@@ -118,16 +141,49 @@ describe("oblienWebhook — signature gate", () => {
     const res = (await oblienWebhook(makeCtx(body, undefined))) as unknown as JsonResult;
     expect(res.status).toBe(401);
   });
+
+  it.each([undefined, "evt-other"])("rejects a signed body id that does not match header %s", async deliveryId => {
+    const body = JSON.stringify({ id: "evt-signed", event: "payment.succeeded", data: { namespace: "os-abc" } });
+    const res = (await oblienWebhook(makeCtx(body, sign(body), deliveryId))) as unknown as JsonResult;
+    expect(res.status).toBe(400);
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.processed.size).toBe(0);
+  });
 });
 
 describe("oblienWebhook — dispatch", () => {
-  it("credits.usage → upserts the snapshot with credits converted to milli (×1000)", async () => {
+  it.each(["capacity.changed", "capacity.renewed", "capacity.expired", "capacity.payment_required", "capacity.revoked",
+    "network.topup_applied", "network.allowance.low", "network.allowance.depleted",
+    "storage.retention.payment_required", "storage.retention.paid"])("reconciles and deduplicates signed %s events using current coverage", async event => {
+    const { entitlement } = monthlyCloudBilling("org_1", "os-abc");
+    h.sync.mockResolvedValue({ tier: "pro", entitlement });
+    const id = `event-${event}`;
+    const body = JSON.stringify({ id, event, data: { namespace: "os-abc", computeCovered: false, balance: -999 } });
+    const receive = () => oblienWebhook(makeCtx(body, sign(body), id)) as unknown as Promise<JsonResult>;
+    expect((await receive()).status).toBe(200);
+    expect((await receive()).status).toBe(200);
+    expect(h.sync).toHaveBeenCalledOnce();
+    expect(h.processed.size).toBe(1);
+    expect(h.notificationEmit).not.toHaveBeenCalled();
+    expect(h.usageUpsert).not.toHaveBeenCalled();
+  });
+  it("does not replay an old credit-exhaustion alert after adopting monthly coverage", async () => {
+    const { entitlement } = monthlyCloudBilling("org_1", "os-abc");
+    h.sync.mockResolvedValue({ tier: "pro", entitlement });
+    const body = JSON.stringify({ id: "old-credit-event", event: "credits.depleted", data: { namespace: "os-abc", balance: 0 } });
+    const response = await oblienWebhook(makeCtx(body, sign(body), "old-credit-event")) as unknown as JsonResult;
+    expect(response.status).toBe(200);
+    expect(h.notificationEmit).not.toHaveBeenCalled();
+    expect(h.auditRecord).not.toHaveBeenCalled();
+  });
+  it("credits.usage uses the fresh namespace balance instead of an owner-wallet or stale payload balance", async () => {
+    h.sync.mockResolvedValue({ entitlement: { namespace: "os-abc", status: "active", quota: { balance: 5 } } });
     const body = JSON.stringify({
       event: "credits.usage",
       timestamp: "t1",
       data: {
         namespace: "os-abc",
-        balance: 5,
+        balance: -999999,
         credits_used: 2,
         usage: { cpu_time_minutes: 120, memory_gb_minutes: 30, disk_io_gb: 1, network_gb: 0.5 },
       },
@@ -142,7 +198,7 @@ describe("oblienWebhook — dispatch", () => {
     expect(arg.cpuTimeMinutes).toBe(120); // physical unit, not converted
   });
 
-  it("credits.depleted → records audit + emits notification (Oblien owns the stop, we don't suspend)", async () => {
+  it("credits.depleted queues a notification and records activity before acknowledgement", async () => {
     h.orgFindById.mockResolvedValue({
       id: "org_1",
       subscriptionStatus: "active",
@@ -156,18 +212,26 @@ describe("oblienWebhook — dispatch", () => {
     });
     const res = (await oblienWebhook(makeCtx(body, sign(body)))) as unknown as JsonResult;
     expect(res.status).toBe(200);
-    expect(h.auditRecord).toHaveBeenCalledTimes(1);
+    expect(h.auditRecord).toHaveBeenCalledOnce();
+    expect(h.auditRecord).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: "org_1", eventType: "billing.credit_exhausted", source: "webhook",
+      after: expect.objectContaining({ planTierId: "pro", oblienNamespace: "os-abc" }),
+    }));
+    expect(h.enqueue).toHaveBeenCalledOnce();
     expect(h.notificationEmit).toHaveBeenCalledTimes(1);
   });
 
-  it("namespace.quota.threshold → emails + emits", async () => {
+  it("namespace.quota.threshold queues delivery without sending an email in the request", async () => {
+    h.sync.mockResolvedValue({ entitlement: { namespace: "os-abc", status: "active", quota: { balance: 2000,
+      alert: { state: "low", percent: 80, threshold: 80, used: 8000, limit: 10000, remaining: 2000, balance: 2000 } } } });
     const body = JSON.stringify({
       event: "namespace.quota.threshold",
       data: { namespace: "os-abc", percent: 80, used: 8000, limit: 10000 },
     });
     const res = (await oblienWebhook(makeCtx(body, sign(body)))) as unknown as JsonResult;
     expect(res.status).toBe(200);
-    expect(h.sendMail).toHaveBeenCalledTimes(1);
+    expect(h.sendMail).not.toHaveBeenCalled();
+    expect(h.enqueue).toHaveBeenCalledOnce();
     expect(h.notificationEmit).toHaveBeenCalledTimes(1);
   });
 
@@ -186,5 +250,74 @@ describe("oblienWebhook — dispatch", () => {
     const res = (await oblienWebhook(makeCtx(body, sign(body)))) as unknown as JsonResult;
     expect(res.status).toBe(200);
     expect(h.usageUpsert).not.toHaveBeenCalled();
+  });
+
+  it.each(["payment.succeeded", "subscription.renewed", "subscription.tier_changed", "subscription.past_due", "subscription.canceled", "subscription.updated", "entitlement.changed", "namespace.restored"])("%s refreshes authoritative entitlement", async (event) => {
+    const body = JSON.stringify({ event, data: { namespace: "os-abc", credits: 999999 } });
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-1"))) as unknown as JsonResult).status).toBe(200);
+    expect(h.sync).toHaveBeenCalledOnce();
+  });
+
+  it("deduplicates retries with the same X-Webhook-Id even if delivery timestamps change", async () => {
+    for (const timestamp of ["first", "retry"]) {
+      const body = JSON.stringify({ event: "payment.succeeded", timestamp, data: { namespace: "os-abc" } });
+      await oblienWebhook(makeCtx(body, sign(body), "evt-stable"));
+    }
+    expect(h.sync).toHaveBeenCalledOnce();
+  });
+
+  it("deduplicates current signed body ids and rejects a replay with a changed header", async () => {
+    const body = JSON.stringify({ id: "evt-current", event: "payment.succeeded", data: { namespace: "os-abc" } });
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-current"))) as unknown as JsonResult).status).toBe(200);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-current"))) as unknown as JsonResult).status).toBe(200);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-replayed"))) as unknown as JsonResult).status).toBe(400);
+    expect(h.sync).toHaveBeenCalledOnce();
+    expect(h.processed.size).toBe(1);
+  });
+
+  it("returns 503 and does not acknowledge a failed synchronization", async () => {
+    const body = JSON.stringify({ event: "payment.succeeded", data: { namespace: "os-abc" } });
+    h.sync.mockRejectedValueOnce(new Error("provider unavailable"));
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-retry"))) as unknown as JsonResult).status).toBe(503);
+    expect(h.processed.size).toBe(0);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-retry"))) as unknown as JsonResult).status).toBe(200);
+    expect(h.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not announce credit exhaustion when a delayed suspension arrives after payment", async () => {
+    h.sync.mockResolvedValue({ entitlement: { namespace: "os-abc", status: "active", quota: { balance: 100 } } });
+    const body = JSON.stringify({ event: "namespace.suspended", data: { namespace: "os-abc" } });
+    await oblienWebhook(makeCtx(body, sign(body), "evt-late"));
+    expect(h.notificationEmit).not.toHaveBeenCalled();
+  });
+});
+
+describe("durable quota alert receipt", () => {
+  it("returns 503 without a checkpoint when notification storage fails, then retries the same event", async () => {
+    const body = JSON.stringify({ id: "evt-critical", event: "credits.depleted", data: { namespace: "os-abc", service: "workspace_vm" } });
+    h.enqueue.mockRejectedValueOnce(new Error("database unavailable"));
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-critical"))) as unknown as JsonResult).status).toBe(503);
+    expect(h.processed.size).toBe(0);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-critical"))) as unknown as JsonResult).status).toBe(200);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-critical"))) as unknown as JsonResult).status).toBe(200);
+    expect(h.enqueue).toHaveBeenCalledTimes(2);
+    expect(h.auditRecord).toHaveBeenCalledOnce();
+    expect(h.processed.size).toBe(1);
+  });
+  it("leaves the event retryable when exhaustion activity cannot be recorded", async () => {
+    const body = JSON.stringify({ id: "evt-activity", event: "credits.depleted", data: { namespace: "os-abc", service: "workspace_vm" } });
+    h.auditRecord.mockRejectedValueOnce(new Error("activity storage unavailable"));
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-activity"))) as unknown as JsonResult).status).toBe(503);
+    expect(h.processed.size).toBe(0);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-activity"))) as unknown as JsonResult).status).toBe(200);
+    expect(h.processed.size).toBe(1);
+  });
+  it("never routes a compute quota warning or a changed namespace to the Cloud credit recipient", async () => {
+    const body = JSON.stringify({ event: "credits.depleted", data: { namespace: "os-abc", service: "compute" } });
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-compute"))) as unknown as JsonResult).status).toBe(200);
+    expect(h.notificationEmit).not.toHaveBeenCalled();
+    h.sync.mockResolvedValue({ entitlement: { namespace: "os-other", status: "credit_exhausted", quota: {} } });
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-rebound"))) as unknown as JsonResult).status).toBe(503);
+    expect(h.notificationEmit).not.toHaveBeenCalled();
   });
 });

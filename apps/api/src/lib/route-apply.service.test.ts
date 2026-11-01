@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { repos } from "@repo/db";
 
 const reserveObserved = vi.hoisted(() => vi.fn());
 const prepareTarget = vi.hoisted(() => vi.fn());
 const convergeTarget = vi.hoisted(() => vi.fn());
 const withTargetLock = vi.hoisted(() => vi.fn(async (_target, run) => run()));
-vi.mock("../modules/deployments/observed-host-port-claims", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../modules/deployments/observed-host-port-claims")>()),
+vi.mock("@repo/platform/engine/modules/deployments/observed-host-port-claims", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/deployments/observed-host-port-claims")>()),
   reserveObservedLoopbackPublishes: reserveObserved,
 }));
-vi.mock("../modules/deployments/pinned-host-ports", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   convergeTargetHostPortClaimsUnlocked: convergeTarget,
   prepareTargetPinnedHostPorts: prepareTarget,
   withHostPortTargetLock: withTargetLock,
@@ -17,16 +18,16 @@ vi.mock("../modules/deployments/pinned-host-ports", () => ({
 vi.mock("./controller-helpers", () => ({
   platform: () => ({ routing: { removeRoute: vi.fn() } }),
 }));
-vi.mock("./deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   disposePlatform: vi.fn(),
   resolveDeploymentPlatform: vi.fn(),
 }));
-vi.mock("./cloud-route.service", () => ({
+vi.mock("@repo/platform/engine/lib/cloud-route.service", () => ({
   reapplyCloudProjectRoute: vi.fn(),
   removeCloudProjectRoute: vi.fn(),
 }));
 
-import { reconcileProjectRoutes } from "./route-apply.service";
+import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.service";
 
 const target = { targetKey: "local" as const, legacyTargetKeys: [], stable: true };
 const edgeProxy = { listLoopbackUpstreamPortsStrict: vi.fn(async () => new Set<number>()) };
@@ -35,17 +36,37 @@ const project = {
   slug: "app",
   organizationId: "org_1",
   activeDeploymentId: "dep_1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   webhookDomain: null,
   routingConfig: null,
 };
 
 describe("reconcileProjectRoutes host-port ownership gate", () => {
   beforeEach(() => {
+    vi.spyOn(repos.project, "findById").mockResolvedValue(project as never);
     reserveObserved.mockReset().mockResolvedValue(undefined);
     prepareTarget.mockReset().mockResolvedValue([]);
     convergeTarget.mockReset().mockResolvedValue({ released: 0, retained: [] });
     withTargetLock.mockClear();
+  });
+  it("registers a path-only vhost and reserves only its explicit loopback upstreams", async () => {
+    const routing = { registerRoute: vi.fn(async (_route: unknown) => {}), removeRoute: vi.fn() };
+    await reconcileProjectRoutes(project, {
+      routing: routing as never, hostPortTarget: target, edgeProxy,
+      registers: [{
+        hostname: "api.onvo.me", isCustomDomain: true, notFound: true,
+        proxyLocations: [{ pathPrefix: "/v3", targetUrl: "http://127.0.0.1:23001" }],
+        observedLoopbackPublishes: [{ serviceId: "svc-api", containerPort: 9000, hostPort: 23001 }],
+      }],
+    });
+    expect(routing.registerRoute).toHaveBeenCalledWith(expect.objectContaining({
+      domain: "api.onvo.me", notFound: true,
+      proxyLocations: [{ pathPrefix: "/v3", targetUrl: "http://127.0.0.1:23001" }],
+    }));
+    expect(routing.registerRoute.mock.calls[0]![0]).not.toHaveProperty("targetUrl");
+    expect(reserveObserved.mock.calls[0]![0].publishes).toEqual([
+      { serviceId: "svc-api", containerPort: 9000, hostPort: 23001 },
+    ]);
   });
 
   it("fails closed before any edge mutation when a claim conflicts", async () => {
@@ -301,3 +322,12 @@ describe("reconcileProjectRoutes host-port ownership gate", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ routing: { removeRoute: vi.fn() } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ routing: { removeRoute: vi.fn() } }),
+}));

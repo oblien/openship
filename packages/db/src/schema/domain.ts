@@ -103,7 +103,7 @@ export const domain = pgTable(
     manualSsl: boolean("manual_ssl").notNull().default(false),
 
     /* ── Verification ───────────────────────────────────────────────────── */
-    /** Domain status: pending | active | failed | removing */
+    /** pending (not checked yet) | active | failed (last check failed) | removing */
     status: text("status").notNull().default("pending"),
     /** DNS TXT verification value (e.g. "openship-verify=abc123") */
     verificationToken: text("verification_token"),
@@ -111,12 +111,11 @@ export const domain = pgTable(
     verified: boolean("verified").notNull().default(false),
     verifiedAt: timestamp("verified_at"),
     /**
-     * Verify state machine (so the UI can tell never-tried vs propagating vs
-     * persistently-failing, instead of an eternal "pending"). `verifyAttempts`
+     * Verification/TLS retry state. `verifyAttempts`
      * counts consecutive failed checks (reset to 0 on success); `lastVerifyError`
      * is the most recent human-readable failure reason; `lastCheckedAt` is when
-     * verify last ran (manual or the auto cron). Status flips to `failed` only
-     * after enough attempts that it's clearly misconfigured, not mid-propagation.
+     * a check last completed (manual or automatic). Failed checks remain eligible
+     * for automatic retry with persisted backoff; success resets the counter.
      */
     verifyAttempts: integer("verify_attempts").notNull().default(0),
     lastVerifyError: text("last_verify_error"),
@@ -127,6 +126,8 @@ export const domain = pgTable(
     sslStatus: text("ssl_status").notNull().default("none"),
     /** SSL challenge mechanism: http-01 | dns-01 */
     sslChallenge: text("ssl_challenge").notNull().default("http-01"),
+    /** Manual DNS needs a new TXT confirmation at renewal; never start it in a sweep. */
+    sslDnsMode: text("ssl_dns_mode").$type<"automatic" | "manual">().notNull().default("automatic"),
     /** Issuer (e.g. "letsencrypt", "oblien") */
     sslIssuer: text("ssl_issuer"),
     /** When the current certificate expires */

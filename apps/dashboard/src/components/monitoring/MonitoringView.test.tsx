@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18nProvider } from "@/components/i18n-provider";
 import { MonitoringView } from "./MonitoringView";
+import { ResponseMix } from "./ResponseMix";
 import { TopPathsEmptyState } from "./TopPathsEmptyState";
 import { resolveHues } from "./VisitorMap";
 import countryHues from "./country-hues.json";
@@ -785,8 +786,8 @@ describe("map hover does not track the pointer", () => {
   });
 });
 
-describe("responses are reported per exact code", () => {
-  it("lists the individual codes under each class", () => {
+describe("response codes within each class", () => {
+  it("lists all codes when each class has three or fewer", () => {
     const html = render();
     const card = html.slice(html.indexOf("Responses"));
     // The class is the first read; the exact code is the actionable half. Both are in the
@@ -794,7 +795,40 @@ describe("responses are reported per exact code", () => {
     for (const code of ["200", "204", "301", "304", "404", "429", "500", "502", "503"]) {
       expect(card).toContain(`>${code}<`);
     }
+    expect(card).not.toContain(">Others<");
   });
+
+  it.each([200, 300, 400, 500])(
+    "shows the three busiest %s-class codes and combines the rest without losing traffic",
+    (base) => {
+      const html = renderToStaticMarkup(
+        <I18nProvider>
+          <ResponseMix statuses={{
+            [base]: 10,
+            [base + 1]: 40,
+            [base + 2]: 20,
+            [base + 3]: 5,
+            [base + 4]: 25,
+            "0": 100,
+          }} />
+        </I18nProvider>,
+      );
+      const topCodes = [base + 1, base + 4, base + 2];
+      for (const code of topCodes) expect(html).toContain(`>${code}<`);
+      expect(html.indexOf(`>${topCodes[0]}<`)).toBeLessThan(html.indexOf(`>${topCodes[1]}<`));
+      expect(html.indexOf(`>${topCodes[1]}<`)).toBeLessThan(html.indexOf(`>${topCodes[2]}<`));
+      for (const code of [base, base + 3]) expect(html).not.toContain(`>${code}<`);
+
+      const others = html.match(/<li[^>]*><span[^>]*>Others<\/span>(.*?)<\/li>/)?.[1];
+      expect(others).toBeDefined();
+      expect(others).toContain(">15<");
+      // Shares still use ALL responses, including the unclassified 100.
+      expect(others).toContain(">7.5%<");
+      expect(html).toContain(`title="${base / 100}xx: 100"`);
+      expect(html).toContain(">50.0%<");
+      expect(html).toContain("100 with no status class");
+    },
+  );
 
   it("still shows the class summary, so the glance still works", () => {
     const card = render().slice(render().indexOf("Responses"));
@@ -873,9 +907,25 @@ describe("resource card structure", () => {
     const html = render({ isUsageConnected: false });
     expect(html).toContain("Disconnected");
     expect(html).toContain("Reconnect");
-    // A static green dot looks identical whether the stream works or died minutes ago, so
-    // the disconnected state must change the colour too.
-    expect(html).toContain("bg-muted-foreground/40");
+    expect(html).toContain("Showing the last available data");
+    expect(html).not.toContain("Live, refreshed every few seconds");
+  });
+
+  it("keeps old readings visible with a disabled reconnect while a new sample is pending", () => {
+    const html = render({ isUsageConnected: false, isUsageConnecting: true, usageError: "Connection lost" });
+    expect(html).toContain("63.4%");
+    expect(html).toContain("Connecting");
+    const reconnect = [...html.matchAll(/<button\b[\s\S]*?<\/button>/g)]
+      .find(([button]) => button.includes("Reconnect"));
+    expect(reconnect?.[0]).toContain("disabled");
+  });
+
+  it("shows live-traffic failure feedback and stops the live pulse", () => {
+    const html = render({ live: { enabled: true, onEnabledChange: () => {}, onReconnect: () => {}, total: 0, ripples: [], feed: [], status: "error" } });
+    expect(html).toContain("Live requests unavailable");
+    expect(html).toContain("Reconnect");
+    expect(html).not.toContain("animate-ping");
+    expect(html).toContain("United States");
   });
 
   it("wraps each metric in a tile that is not a second card surface", () => {
@@ -940,10 +990,9 @@ describe("Top Paths is opt-in", () => {
       "utf8",
     );
     const empty = readFileSync(new URL("./TopPathsEmptyState.tsx", import.meta.url), "utf8");
-    // Same lucide glyph in both. Also NOT utils/icons: that file is JSX inside a .js, which
-    // the test transform cannot parse, so importing it takes down any test rendering the card.
-    expect(populated).toContain('<TrendingUp className="size-5 text-primary" />');
-    expect(empty).toContain('<TrendingUp className="size-5 text-primary" />');
+    // Both states use the same catalog ID and the same header styling.
+    expect(populated).toContain('<UiIcon name="trending-up" className="size-5 text-primary" />');
+    expect(empty).toContain('<UiIcon name="trending-up" className="size-5 text-primary" />');
     expect(populated).not.toContain("generateIcon");
     expect(empty).not.toContain("generateIcon");
   });
@@ -991,5 +1040,25 @@ describe("the recent-hit list is opt-in", () => {
     // Read in a useState initializer like the colour mode, so the first paint is already
     // right rather than flashing the default.
     expect(src).toContain("useState<boolean>(initialFeed)");
+  });
+});
+
+
+describe("analytics failure isolation (#396)", () => {
+  it("shows the request failure while retaining independent resources and geography", () => {
+    const html = render({ analytics: null, analyticsError: "Request timed out", onRetryAnalytics: () => {} });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Request timed out");
+    expect(html).toContain("Retry");
+    expect(html).toContain("Resource usage");
+    expect(html).toContain("United States");
+    // The failed section is named in the notice, but its empty chart control is absent.
+    const buttons = [...html.matchAll(/<button\b[\s\S]*?<\/button>/g)];
+    expect(buttons.some(([button]) => button.includes("Traffic overview"))).toBe(false);
+  });
+
+  it("preserves Monitoring's intentional All domains option", () => {
+    const html = render({ domains: ["a.example.com", "b.example.com"], domainScope: null, onDomainScopeChange: () => {} });
+    expect(html).toContain("All domains");
   });
 });

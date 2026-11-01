@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
-import { detectStack, type RepoFile } from "../../src/lib/stack-detector";
+import { detectStack, type RepoFile } from "@repo/platform/engine/lib/stack-detector";
 import {
   STACKS,
   LANGUAGES,

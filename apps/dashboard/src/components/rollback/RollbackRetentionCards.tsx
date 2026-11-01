@@ -1,8 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Loader2, RotateCcw } from "lucide-react";
-import { MAX_ROLLBACK_WINDOW } from "@repo/core";
+import { DEFAULT_ROLLBACK_WINDOW, MAX_ROLLBACK_WINDOW } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { InfoCard } from "@/components/settings/InfoCard";
 import { formatBytes } from "@/lib/formatBytes";
@@ -12,14 +13,13 @@ import type { RollbackCapacityUI } from "@/lib/api/projects";
  * The rollback retention controls — strategy + how many releases stay
  * restorable — as one props-driven pair of cards.
  *
- * Rendered in TWO places (project settings → Git, and the deploy wizard's target
+ * Rendered in two places (project settings → Advanced, and the deploy wizard's target
  * panel), which is exactly why it takes values and callbacks instead of reading
  * ProjectSettingsContext: the wizard route lives outside that provider, and a
  * second hand-built copy of these controls is how the two surfaces would drift.
  *
  * The window value shown is always the one retention actually enforces: an
- * explicit override when the operator typed one, otherwise the disk-sized auto
- * window measured at the last deploy (`capacity.source`).
+ * explicit override when the operator typed one, otherwise the instance default.
  */
 export interface RollbackRetentionCardsProps {
   /** Project retention preference: "snapshot" keeps artifacts, "git" rebuilds. */
@@ -36,7 +36,7 @@ export interface RollbackRetentionCardsProps {
   capacity: RollbackCapacityUI | null;
   onToggleStrategy?: () => void;
   /** Called with the new explicit window. Absent → the stepper is hidden. */
-  onChangeWindow?: (next: number) => void;
+  onChangeWindow?: (next: number | null) => void;
   togglingStrategy?: boolean;
   savingWindow?: boolean;
   /** No project row yet (a first deploy): show what WILL apply, no controls. */
@@ -57,12 +57,13 @@ export function RollbackRetentionCards({
   const g = t.projectSettings.git;
   const isSnapshot = strategy === "snapshot";
   const isFiles = artifactKind === "files";
-  const windowVal = capacity?.window ?? 5;
+  const windowVal = capacity?.window ?? DEFAULT_ROLLBACK_WINDOW;
   const maxWindow = capacity?.maxWindow ?? MAX_ROLLBACK_WINDOW;
-  const canEdit = !readOnly && !!onChangeWindow;
+  const canEdit = !readOnly && !!capacity && !!onChangeWindow;
+  const busy = savingWindow || togglingStrategy;
+  const automatic = capacity?.explicit === null;
 
-  /** "files on disk · ~1.8 GB each · 42 GB free · auto" — the artifact kind
-   *  always, then only the parts we actually measured. */
+  /** Show the artifact kind, then only measurements the host supplied. */
   const measured: string[] = [
     isFiles ? g.rollbackHistory.kindFiles : g.rollbackHistory.kindImages,
   ];
@@ -76,34 +77,22 @@ export function RollbackRetentionCards({
       interpolate(g.rollbackHistory.diskFree, { size: formatBytes(capacity.diskFreeBytes) }),
     );
   }
-  if (capacity?.source === "auto") measured.push(g.rollbackHistory.autoBadge);
+  if (capacity?.source === "instance-default") measured.push(g.rollbackHistory.autoBadge, g.rollbackHistory.defaultBadge);
   if (capacity?.source === "explicit") measured.push(g.rollbackHistory.manualBadge);
 
   // Description and MEASUREMENTS stay separate. Joining them with " — " produced
   // one long paragraph that, in the deploy wizard's narrow two-column layout,
   // wrapped into ~8 lines and blew out the card height. The numbers go in the
   // card's footer slot instead, where they read as metadata.
-  const historyDescription = isSnapshot
-    ? g.rollbackHistory.descSnapshot
-    : isFiles
-      ? g.rollbackHistory.descGitFiles
-      : g.rollbackHistory.descGit;
+  const historyDescription = automatic ? g.rollbackHistory.automaticDescription : g.rollbackHistory.retentionDescription;
 
   return (
-    // STACKED, not side by side — and it comes out SHORTER, which is the counter-intuitive part.
-    // Two narrow columns forced both descriptions to wrap over four or five lines, and the grid
-    // takes the height of the taller one. Full width lets each description sit on one or two
-    // lines, so two stacked rows total less height than one row of two tall columns — and the
-    // number stepper stops competing with the text for the same ~200px.
-    //
-    // Rendered in three places (the deploy target step's Advanced panel, Backup settings, Git
-    // settings), each of which is a NARROW column, so there is no width at which the two-up was
-    // the better trade.
+    // Stacked cards fit both Advanced settings and the narrow deploy wizard.
     <div className="grid gap-3">
       <InfoCard
-        icon={RotateCcw}
+        icon={"rotate-left"}
         title={g.rollbackStrategy.title}
-        value={isSnapshot ? g.rollbackStrategy.keepCopies : g.rollbackStrategy.keepNone}
+        value={capacity ? (isSnapshot ? g.rollbackStrategy.keepCopies : g.rollbackStrategy.keepNone) : "—"}
         description={
           isSnapshot
             ? isFiles
@@ -120,13 +109,13 @@ export function RollbackRetentionCards({
               role="switch"
               aria-checked={isSnapshot}
               onClick={onToggleStrategy}
-              disabled={togglingStrategy}
+              disabled={busy || !capacity}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSnapshot ? "bg-primary" : "bg-muted"} ${togglingStrategy ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
               aria-label={g.rollbackStrategy.toggleAria}
             >
               {togglingStrategy ? (
                 <span className="mx-auto">
-                  <Loader2 className="size-3.5 animate-spin text-background" />
+                  <UiIcon name="spinner" className="size-3.5 animate-spin text-background" />
                 </span>
               ) : (
                 <span
@@ -138,12 +127,12 @@ export function RollbackRetentionCards({
         }
       />
       <InfoCard
-        icon={RotateCcw}
+        icon={"rotate-left"}
         title={g.rollbackHistory.title}
-        value={interpolate(
-          windowVal === 1 ? g.rollbackHistory.valueOne : g.rollbackHistory.valueOther,
+        value={capacity ? interpolate(
+          automatic ? g.rollbackHistory.automaticValue : windowVal === 1 ? g.rollbackHistory.valueOne : g.rollbackHistory.valueOther,
           { count: String(windowVal) },
-        )}
+        ) : "—"}
         description={historyDescription}
         footer={
           <p className="text-[11px] leading-relaxed text-muted-foreground/80">
@@ -152,11 +141,17 @@ export function RollbackRetentionCards({
         }
         action={
           canEdit ? (
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {!automatic && (
+                <button type="button" disabled={busy} onClick={() => onChangeWindow?.(null)}
+                  className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40">
+                  {g.rollbackHistory.autoBadge}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onChangeWindow?.(windowVal - 1)}
-                disabled={savingWindow || windowVal <= 0}
+                disabled={busy || windowVal <= 0}
                 className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors enabled:hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label={g.rollbackHistory.decreaseAria}
               >
@@ -164,7 +159,7 @@ export function RollbackRetentionCards({
               </button>
               <span className="w-5 text-center text-[13px] font-medium tabular-nums text-foreground">
                 {savingWindow ? (
-                  <Loader2 className="mx-auto size-3.5 animate-spin text-muted-foreground" />
+                  <UiIcon name="spinner" className="mx-auto size-3.5 animate-spin text-muted-foreground" />
                 ) : (
                   windowVal
                 )}
@@ -172,7 +167,7 @@ export function RollbackRetentionCards({
               <button
                 type="button"
                 onClick={() => onChangeWindow?.(windowVal + 1)}
-                disabled={savingWindow || windowVal >= maxWindow}
+                disabled={busy || windowVal >= maxWindow}
                 className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors enabled:hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label={g.rollbackHistory.increaseAria}
               >

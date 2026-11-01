@@ -1,0 +1,162 @@
+---
+title: notification
+description: Commands, arguments, and options for openship notification.
+cliGroup: openship notification
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship notification
+
+Manage notification channels, subscriptions and deliveries
+
+```text
+openship notification|notifications [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`categories`](/docs/cli/reference/notification#openship-notification-categories) | List notification categories and groups |
+| [`channel`](/docs/cli/reference/notification/channel#openship-notification-channel) | Configure notification delivery channels |
+| [`subscription`](/docs/cli/reference/notification#openship-notification-subscription) | Choose which events use each channel |
+| [`defaults`](/docs/cli/reference/notification#openship-notification-defaults) | Manage organization notification defaults |
+| [`deliveries`](/docs/cli/reference/notification#openship-notification-deliveries) | Inspect notification delivery attempts |
+
+## openship notification categories
+
+List notification categories and groups
+
+```text
+openship notification categories [options]
+```
+
+## openship notification defaults
+
+Manage organization notification defaults
+
+```text
+openship notification defaults [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/notification#openship-notification-defaults-get) | Show organization defaults |
+| [`set <file>`](/docs/cli/reference/notification#openship-notification-defaults-set) | Set organization defaults (requires admin access) |
+
+## openship notification defaults get
+
+Show organization defaults
+
+```text
+openship notification defaults get [options]
+```
+
+## openship notification defaults set
+
+Set organization defaults (requires admin access)
+
+```text
+openship notification defaults set [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON default containing category, defaultEnabled and defaultChannelKinds |
+
+## openship notification deliveries
+
+Inspect notification delivery attempts
+
+```text
+openship notification deliveries [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/notification#openship-notification-deliveries-list) | List deliveries and their status |
+| [`unseen-count`](/docs/cli/reference/notification#openship-notification-deliveries-unseen-count) | Count unseen deliveries |
+| [`seen <id>`](/docs/cli/reference/notification#openship-notification-deliveries-seen) | Mark a delivery as seen |
+
+## openship notification deliveries list
+
+List deliveries and their status
+
+```text
+openship notification deliveries list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--unseen` | Only unseen deliveries |
+| `--limit <n>` | Maximum deliveries (default: "50") |
+
+## openship notification deliveries seen
+
+Mark a delivery as seen
+
+```text
+openship notification deliveries seen [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Delivery ID |
+
+## openship notification deliveries unseen-count
+
+Count unseen deliveries
+
+```text
+openship notification deliveries unseen-count [options]
+```
+
+## openship notification subscription
+
+Choose which events use each channel
+
+```text
+openship notification subscription [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/notification#openship-notification-subscription-list) | List your notification subscriptions |
+| [`set [options] <category>`](/docs/cli/reference/notification#openship-notification-subscription-set) | Enable or disable delivery for one category and channel |
+| [`remove\|rm <id>`](/docs/cli/reference/notification#openship-notification-subscription-remove) | Remove a notification subscription |
+
+## openship notification subscription list
+
+List your notification subscriptions
+
+```text
+openship notification subscription list [options]
+```
+
+## openship notification subscription remove
+
+Remove a notification subscription
+
+```text
+openship notification subscription remove|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Subscription ID |
+
+## openship notification subscription set
+
+Enable or disable delivery for one category and channel
+
+```text
+openship notification subscription set [options] <category>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `category` | Notification category ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--channel <id>` | Channel ID |
+| `--disabled` | Disable this category/channel subscription |

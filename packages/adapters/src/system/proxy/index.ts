@@ -178,6 +178,7 @@ export async function ensureEdge<T>(
     acmeEmail?: string;
     nginx?: EdgeTakeoverOptions["nginx"];
     extraRoutes?: EdgeTakeoverOptions["extraRoutes"];
+    edgeImage?: string;
   },
 ): Promise<EnsureEdgeOutcome<T>> {
   try {
@@ -199,6 +200,7 @@ export async function takeoverOnMigrate(
     acmeEmail?: string;
     nginx?: EdgeTakeoverOptions["nginx"];
     extraRoutes?: EdgeTakeoverOptions["extraRoutes"];
+    edgeImage?: string;
   },
 ): Promise<EdgeTakeoverResult> {
   opts.onLog(
@@ -215,6 +217,7 @@ export async function takeoverOnMigrate(
       acmeEmail: opts.acmeEmail,
       nginx: opts.nginx,
       extraRoutes: opts.extraRoutes,
+      edgeImage: opts.edgeImage,
     },
     opts.onLog,
   );

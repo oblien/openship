@@ -19,13 +19,13 @@ class FakeTunnel extends Duplex {
 
 const active = vi.hoisted(() => ({ tunnel: null as FakeTunnel | null }));
 
-vi.mock("../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     acquire: async () => ({ forwardPort: async () => active.tunnel }),
   },
 }));
 
-import { tunnelRequest, tunnelStream } from "../../src/lib/ssh-tunnel";
+import { tunnelRequest, tunnelStream } from "@repo/platform/engine/lib/ssh-tunnel";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 

@@ -20,7 +20,7 @@ import {
   effectiveDependencies,
   resolveServiceNamespaces,
   topoSort,
-} from "../../../src/modules/deployments/compose/deploy.service";
+} from "@repo/platform/engine/modules/deployments/compose/deploy.service";
 
 const svc = (over: Partial<Service> & { name: string }) =>
   ({ dependsOn: [], advanced: {}, ...over }) as Service;

@@ -14,13 +14,13 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile, chmod } from "node:fs/promises";
+import { mkdtemp, writeFile, chmod, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { PassThrough, Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 import { RedisRdbProducer } from "./redis";
-import type { BackupExecutor, ServiceHandle } from "../types";
+import type { ArtifactRef, BackupExecutor, ServiceHandle } from "../types";
 
 const service = {
   id: "svc_1",
@@ -34,7 +34,7 @@ const service = {
 } as unknown as ServiceHandle;
 
 /** The `sh -c` script the producer would run in the container. */
-async function dumpScript(): Promise<string> {
+async function dumpScript(target: ServiceHandle = service): Promise<string> {
   const cmds: string[][] = [];
   const executor = {
     execStream: async (_s: ServiceHandle, cmd: string[]) => {
@@ -47,7 +47,7 @@ async function dumpScript(): Promise<string> {
   } as unknown as BackupExecutor;
 
   // One `next()` is enough: the artifact is yielded before the exit is awaited.
-  const it = RedisRdbProducer.produce(service, executor, {})[Symbol.asyncIterator]();
+  const it = RedisRdbProducer.produce(target, executor, {})[Symbol.asyncIterator]();
   await it.next();
   // [0] is the codec probe (answers nothing → "none", so the dump is not piped).
   const dump = cmds[1];
@@ -63,13 +63,15 @@ async function dumpScript(): Promise<string> {
 async function runScript(
   script: string,
   env: Record<string, string>,
+  cliName = "redis-cli",
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const dir = await mkdtemp(join(tmpdir(), "openship-redis-stub-"));
-  const cli = join(dir, "redis-cli");
+  const cli = join(dir, cliName);
   await writeFile(
     cli,
     [
       "#!/bin/sh",
+      '[ -n "$EXPECT_PASSWORD" ] && [ "$2" != "$EXPECT_PASSWORD" ] && { echo NOAUTH; exit 1; }',
       // Every real redis-cli 4+ prints this on stderr when -a is used. Folding it into
       // the timestamp is the regression this stub exists to catch.
       '[ -n "$WARN" ] && echo "Warning: Using a password with \'-a\' may not be safe." >&2',
@@ -92,34 +94,278 @@ async function runScript(
   await writeFile(cat, "#!/bin/sh\nprintf RDBDATA\n");
   await chmod(cat, 0o755);
 
-  return await new Promise((resolve) => {
-    execFile(
-      "/bin/sh",
-      ["-c", script],
-      {
-        env: {
-          ...process.env,
-          PATH: `${dir}:${process.env.PATH}`,
-          STATE: dir,
-          BEFORE: "1000",
-          AFTER: "2000",
-          INFO_OUT: "rdb_bgsave_in_progress:1\nrdb_last_bgsave_status:ok",
-          ...env,
+  // Keep command discovery inside this fixture; a host-installed database CLI
+  // must never be selected when exercising the Valkey-only image shape.
+  for (const [name, source] of Object.entries({
+    tr: "/usr/bin/tr",
+    grep: "/usr/bin/grep",
+    tail: "/usr/bin/tail",
+    sleep: "/bin/sleep",
+  }))
+    await symlink(source, join(dir, name));
+
+  try {
+    return await new Promise((resolve) => {
+      execFile(
+        "/bin/sh",
+        ["-c", script],
+        {
+          env: {
+            ...process.env,
+            PATH: dir,
+            STATE: dir,
+            BEFORE: "1000",
+            AFTER: "2000",
+            INFO_OUT: "rdb_bgsave_in_progress:1\nrdb_last_bgsave_status:ok",
+            ...env,
+          },
         },
-      },
-      (err, stdout, stderr) => {
-        const code = err ? ((err as { code?: number }).code ?? 1) : 0;
-        resolve({ code, stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
-  });
+        (err, stdout, stderr) => {
+          const code = err ? ((err as { code?: number }).code ?? 1) : 0;
+          resolve({ code, stdout: String(stdout), stderr: String(stderr) });
+        },
+      );
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
+
+describe("Valkey uses the existing Redis backup path", () => {
+  const valkey: ServiceHandle = {
+    ...service,
+    image: "valkey/valkey:8.1-alpine",
+    env: { VALKEY_PASSWORD: "audit's password $value" },
+  };
+
+  it("selects the RDB producer only when the service can execute commands", () => {
+    expect(RedisRdbProducer.detects(valkey)).toBe(true);
+    expect(RedisRdbProducer.detects({ ...valkey, containerId: null })).toBe(false);
+    expect(RedisRdbProducer.detects({ ...valkey, containerRunning: false })).toBe(false);
+  });
+
+  it.each([undefined, ""])(
+    "authenticates with VALKEY_PASSWORD when REDIS_PASSWORD is %s",
+    async (redisPassword) => {
+      const target = {
+        ...valkey,
+        env: {
+          ...valkey.env,
+          ...(redisPassword === undefined ? {} : { REDIS_PASSWORD: redisPassword }),
+        },
+      };
+      const result = await runScript(
+        await dumpScript(target),
+        { EXPECT_PASSWORD: valkey.env.VALKEY_PASSWORD },
+        "valkey-cli",
+      );
+      expect(result.code, result.stderr).toBe(0);
+      expect(result.stdout).toBe("RDBDATA");
+    },
+  );
+
+  it("retains the AOF restore refusal before writing any snapshot bytes", async () => {
+    const execStream = vi.fn(async () => ({
+      stdout: Readable.from(["appendonly\nyes\n"]),
+      awaitExit: Promise.resolve({ code: 0, stderr: "" }),
+    }));
+    await expect(
+      RedisRdbProducer.restore(
+        valkey,
+        { execStream } as unknown as BackupExecutor,
+        {} as ArtifactRef,
+        {},
+      ),
+    ).rejects.toThrow(/AOF persistence enabled/);
+    expect(execStream).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RDB restore verifies persistence before writing", () => {
+  const probe = (output: string, code = 0) => ({
+    stdout: Readable.from([output]),
+    awaitExit: Promise.resolve({ code, stderr: "" }),
+  });
+
+  function restoreWith(...responses: ReturnType<typeof probe>[]) {
+    const open = vi.fn(async () => Readable.from(["snapshot"]));
+    const artifact = { metadata: { compression: "none" }, open } as unknown as ArtifactRef;
+    const execStream = vi.fn(async () => responses.shift()!);
+    const pipeIntoCommand = vi.fn(async (_s, _cmd, body) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of body) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe("snapshot");
+      return { code: 0, stderr: "" };
+    });
+    const executor = { execStream, pipeIntoCommand } as unknown as BackupExecutor;
+    return {
+      open,
+      execStream,
+      pipeIntoCommand,
+      run: () => RedisRdbProducer.restore(service, executor, artifact, {}),
+    };
+  }
+
+  it.each([
+    ["", 0],
+    ["NOAUTH Authentication required.\n", 0],
+    ["appendonly\nno\nextra\n", 0],
+    ["appendonly\nno\n", 1],
+    [`${"x".repeat(4096)}appendonly\nno\n`, 0],
+  ])("refuses an unverified AOF response (%j, exit %i)", async (output, code) => {
+    const restore = restoreWith(probe(output, code));
+    await expect(restore.run()).rejects.toThrow(/Could not verify/);
+    expect(restore.execStream).toHaveBeenCalledTimes(1);
+    expect(restore.open).not.toHaveBeenCalled();
+    expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
+  });
+
+  it("refuses a probe whose output stream fails", async () => {
+    const stdout = new PassThrough();
+    const restore = restoreWith({ ...probe(""), stdout });
+    const pending = expect(restore.run()).rejects.toThrow(/Could not verify/);
+    stdout.destroy(new Error("connection lost"));
+    await pending;
+    expect(restore.open).not.toHaveBeenCalled();
+    expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
+  });
+
+  it("bounds the command exit as well as the output stream", async () => {
+    vi.useFakeTimers();
+    try {
+      const restore = restoreWith({
+        ...probe("appendonly\nno\n"),
+        awaitExit: new Promise(() => {}),
+      });
+      const pending = expect(restore.run()).rejects.toThrow(/Could not verify/);
+      await vi.advanceTimersByTimeAsync(30_001);
+      await pending;
+      expect(restore.open).not.toHaveBeenCalled();
+      expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["NOPERM", 0],
+    ["", 0],
+    ["OK\n", 1],
+  ])(
+    "refuses to write if disabling snapshots is unconfirmed (%j, exit %i)",
+    async (output, code) => {
+      const restore = restoreWith(
+        probe("appendonly\nno\n"), probe("save\n3600 1\n"), probe(output, code), probe("OK\n"),
+      );
+      await expect(restore.run()).rejects.toThrow(/Could not disable/);
+      expect(restore.open).not.toHaveBeenCalled();
+      expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
+    },
+  );
+
+  it("writes the snapshot only after both persistence checks succeed", async () => {
+    const restore = restoreWith(probe("appendonly\r\nno\r\n"), probe("save\r\n3600 1\r\n"), probe("OK\n"));
+    await restore.run();
+    expect(restore.execStream).toHaveBeenCalledTimes(3);
+    expect(restore.open).toHaveBeenCalledTimes(1);
+    expect(restore.pipeIntoCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["", "NOPERM\n", "save\ninvalid\n", "save\n3600 1\nextra\n"])(
+    "refuses unverified snapshot settings (%j) before disabling them",
+    async (output) => {
+      const restore = restoreWith(probe("appendonly\nno\n"), probe(output));
+      await expect(restore.run()).rejects.toThrow(/Could not read/);
+      expect(restore.execStream).toHaveBeenCalledTimes(2);
+      expect(restore.open).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts an empty automatic snapshot schedule", async () => {
+    const restore = restoreWith(probe("appendonly\nno\n"), probe("save\n\n"), probe("OK\n"));
+    await restore.run();
+    expect(restore.pipeIntoCommand).toHaveBeenCalledOnce();
+  });
+
+  it("reports when a failed artifact open also cannot restore snapshot settings", async () => {
+    const restore = restoreWith(
+      probe("appendonly\nno\n"), probe("save\n3600 1\n"), probe("OK\n"), probe("NOPERM\n"),
+    );
+    restore.open.mockRejectedValueOnce(new Error("backup is unavailable"));
+    await expect(restore.run()).rejects.toThrow(/Reapply the service's save configuration/);
+    expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
+  });
+
+  it("keeps snapshots disabled after a possible partial write until the service restarts", async () => {
+    const restore = restoreWith(probe("appendonly\nno\n"), probe("save\n3600 1\n"), probe("OK\n"));
+    restore.pipeIntoCommand.mockRejectedValueOnce(new Error("write interrupted"));
+    await expect(restore.run()).rejects.toThrow("write interrupted");
+    expect(restore.execStream).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["artifact-open", "save-reply", "save-transport"])(
+    "preserves automatic snapshots after a pre-write failure (%s)", async (failure) => {
+      let save = "3600 1 300 100 60 10000";
+      const initialSave = save;
+      const transportError = new Error("Redis connection lost after applying CONFIG SET");
+      const executor = {
+        execStream: vi.fn(async (_service, command: string[]) => {
+          const script = command[2]!;
+          if (script.includes("CONFIG GET appendonly")) return probe("appendonly\nno\n");
+          if (script.includes("CONFIG GET save")) return probe(`save\n${save}\n`);
+          if (script.includes("CONFIG SET save")) {
+            save = script.includes(initialSave) ? initialSave : "";
+            if (!save && failure === "save-reply") return probe("");
+            if (!save && failure === "save-transport") throw transportError;
+            return probe("OK\n");
+          }
+          throw new Error("Unexpected Redis command");
+        }),
+        pipeIntoCommand: vi.fn(),
+      };
+      const openError = new Error("backup is unavailable");
+      await expect(RedisRdbProducer.restore(service, executor as unknown as BackupExecutor, {
+        metadata: { compression: "none" },
+        open: async () => { throw openError; },
+      } as unknown as ArtifactRef, {})).rejects.toThrow(
+        failure === "artifact-open" ? openError : failure === "save-transport" ? transportError : /Could not disable/,
+      );
+      expect(save).toBe(initialSave);
+      expect(executor.pipeIntoCommand).not.toHaveBeenCalled();
+  });
+});
 
 describe("redis capture proves BGSAVE actually ran", () => {
   it("captures when LASTSAVE advances", async () => {
     const res = await runScript(await dumpScript(), {});
     expect(res.code).toBe(0);
     expect(res.stdout).toBe("RDBDATA");
+  });
+
+  it.each([
+    "Background saving started",
+    "ERR Background save already in progress",
+  ])("captures a completed save in the same LASTSAVE second (%s)", async (reply) => {
+    const script = (await dumpScript()).replace("-lt 300 ]", "-lt 2 ]");
+    const res = await runScript(script, {
+      AFTER: "1000",
+      BGSAVE_REPLY: reply,
+      INFO_OUT: "rdb_bgsave_in_progress:0\nrdb_last_bgsave_status:ok",
+    });
+    expect(res.code, res.stderr).toBe(0);
+    expect(res.stdout).toBe("RDBDATA");
+  });
+
+  it("does not accept an earlier successful save when BGSAVE was not acknowledged", async () => {
+    const script = (await dumpScript()).replace("-lt 300 ]", "-lt 2 ]");
+    const res = await runScript(script, {
+      AFTER: "1000",
+      NO_START: "1",
+      BGSAVE_REPLY: "NOPERM this user has no permissions to run the 'bgsave' command",
+      INFO_OUT: "rdb_bgsave_in_progress:0\nrdb_last_bgsave_status:ok",
+    });
+    expect(res.code).toBe(92);
+    expect(res.stdout).toBe("");
   });
 
   it("is not fooled by redis-cli's own auth warning", async () => {
@@ -189,7 +435,7 @@ describe("redis capture proves BGSAVE actually ran", () => {
     // The real window is 300s — pinned here, then shortened so the test does not sit
     // through it. Nothing else about the loop changes.
     expect(script).toContain('[ "$i" -lt 300 ]');
-    const res = await runScript(script.replace('-lt 300 ]', '-lt 2 ]'), {
+    const res = await runScript(script.replace("-lt 300 ]", "-lt 2 ]"), {
       AFTER: "1000",
     });
     expect(res.code).toBe(94);

@@ -1,13 +1,18 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { authContinuationHref } from "@/lib/cloud-auth";
 import { getSession, getDeploymentInfoOrNull } from "@/lib/server/session";
 import { resolveRequestProductView } from "@/lib/server/product-view";
 import { ApiUnavailable } from "@/components/api-unavailable";
-import { Sidebar } from "@/components/sidebar";
+import { DashboardShell } from "@/components/dashboard-shell";
 import { UpdateCenter } from "@/components/updates/UpdateCenter";
 import { MigratedLauncher } from "@/components/migrated-launcher";
 import { MigrationInProgress } from "@/components/migration-in-progress";
 import { DashboardProviders } from "./providers";
 import { serverApi, ServerApiError } from "@/lib/server/api";
+import { InstanceRecovery } from "@/components/instance/InstanceRecovery";
+import type { InstanceStatus } from "@/lib/api/instance";
 
 /**
  * Better Auth's organization plugin returns `{ data: Org[] }` from
@@ -26,6 +31,7 @@ async function fetchUserOrgs(): Promise<OrgListItem[]> {
     if (Array.isArray(res)) return res;
     return res.data ?? [];
   } catch (err) {
+    observeCaughtError(err, "dashboard/app/(dashboard)/layout");
     // 401/404 here means the org plugin can't enumerate — fall back to
     // "single org" semantics (no chooser, no auto-set). Never block
     // the dashboard on a probe failure.
@@ -68,7 +74,8 @@ async function resolveOrgChooserGate(
       await serverApi.post("auth/organization/set-active", {
         organizationId: orgs[0].id,
       });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/layout");
       // Couldn't auto-set — render the dashboard anyway; the api-side
       // resolveActiveOrganizationId fallback will pick the membership
       // for org-scoped queries.
@@ -88,8 +95,13 @@ async function resolveOrgChooserGate(
  * migrated-instance URL.
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const destination = (await headers()).get("x-pathname-with-search");
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) {
+    const controller = await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/layout"); return null; });
+    if (controller && controller.role !== "active") return <InstanceRecovery initial={controller} />;
+    redirect(authContinuationHref("/login", destination));
+  }
 
   // Org chooser gate. If the session has no explicit activeOrganizationId
   // and the user belongs to 2+ orgs, send them to /select-organization;
@@ -97,7 +109,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // the migration / teamMode gates because those are configured per-org
   // and reading them with the wrong active org would mis-route.
   const { redirectTo } = await resolveOrgChooserGate(session.session.activeOrganizationId);
-  if (redirectTo) redirect(redirectTo);
+  if (redirectTo) redirect(authContinuationHref("/select-organization", destination));
 
   // Layout MUST see fresh `migrationInProgress` to route correctly during
   // the cutover window — the lock flips faster than the deploy-info cache
@@ -106,7 +118,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // lock releases would trap the operator on the in-progress launcher.
   // Other callers can keep using the cache.
   const deploymentInfo = await getDeploymentInfoOrNull({ skipCache: true });
-  if (!deploymentInfo) return <ApiUnavailable />;
+  if (!deploymentInfo) {
+    const controller = await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/layout"); return null; });
+    return controller && controller.role !== "active" ? <InstanceRecovery initial={controller} /> : <ApiUnavailable />;
+  }
 
   // Mid-flight migration gate. The DB is being cut over — rendering
   // the normal UI would risk a 503'd write, and rendering the
@@ -135,10 +150,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     );
   }
 
-  const initialGithubData = await serverApi
-    .get("github/home", { cache: "no-store" })
-    .catch(() => null);
-
   // Resolve the rail HERE, on the server, so the first painted sidebar is already
   // the right one. Doing it client-side from document.cookie would render the
   // platform rail and then flip the entire nav after hydration. Passing the
@@ -147,7 +158,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <DashboardProviders
-      initialGithubData={initialGithubData}
       initialUser={session.user}
       selfHosted={deploymentInfo.selfHosted}
       deployMode={deploymentInfo.deployMode}
@@ -168,11 +178,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             partial outage, maintenance) / available update / what's-new, so it
             adds no chrome when idle. */}
         <UpdateCenter />
-        <div className="flex flex-1 min-h-0">
-          <Sidebar />
-          {/* Main content */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
-        </div>
+        <DashboardShell>{children}</DashboardShell>
       </div>
     </DashboardProviders>
   );

@@ -5,6 +5,14 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./diagnostics": {
+      "types": "./src/diagnostics/index.ts",
+      "import": "./src/diagnostics/index.ts"
+    },
+    "./diagnostics/node": {
+      "types": "./src/diagnostics/node.ts",
+      "import": "./src/diagnostics/node.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
@@ -12,28 +20,40 @@
     "./ports": {
       "types": "./src/ports.ts",
       "import": "./src/ports.ts"
+    },
+    "./scale": {
+      "types": "./src/scale/index.ts",
+      "import": "./src/scale/index.ts"
     }
   },
   "//typesVersions": "Electron main (apps/desktop) emits CommonJS, so it is stuck on classic moduleResolution, which predates `exports` maps and cannot see the ./ports subpath. This is how that resolver finds it; modern consumers use `exports` above.",
   "typesVersions": {
     "*": {
+      "diagnostics": ["./src/diagnostics/index.ts"],
+      "diagnostics/node": ["./src/diagnostics/node.ts"],
       "ports": [
         "./src/ports.ts"
+      ],
+      "scale": [
+        "./src/scale/index.ts"
       ]
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "generate:bootstrap": "bun scripts/generate-package-manager-bootstrap.ts",
+    "build": "tsup src/index.ts src/scale/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/scale/index.ts --format esm --dts --watch",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
+    "semver": "7.7.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
+    "@types/semver": "^7.8.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

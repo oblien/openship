@@ -1,6 +1,6 @@
 ---
-title: Audit API
-description: Read the append-only audit log for your organization — who did what, when — with cursor or page pagination and filters.
+title: Audit log
+description: Read and filter organization activity.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,24 +10,7 @@ significant action (logins, member changes, deployments, settings edits, and mor
 dashboard this is the **Audit** page; there's no dedicated CLI command — reach it through
 [`openship api`](/docs/cli/access).
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/audit`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/audit` | `audit:read` | List audit events for the active org (newest first), with cursor or page pagination and filters. |
-
 ## List audit events
-
-```
-GET /api/audit
-```
 
 Every event is scoped to your active organization. Access is gated by role: owners and admins always see the
 log, plain members are denied, and restricted users need an explicit `audit:read` grant on the org-level
@@ -38,6 +21,29 @@ log, plain members are denied, and restricted users need an explicit `audit:read
 All parameters are optional. Choose **one** pagination mode: pass `cursor` (keyset) *or* `page`/`perPage`
 (offset). Cursor mode is recommended for anything that streams pages — it survives concurrent writes without
 shifting rows; page mode powers the dashboard's "Showing 1–50 of N" count.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.audit.list();
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+# Cursor mode — newest 50 deployment-failure events
+curl -G "$OPENSHIP_URL/api/audit" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  --data-urlencode "cursor=" \
+  --data-urlencode "limit=50" \
+  --data-urlencode "eventType=deployment.failed"
+```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -64,21 +70,7 @@ The pagination envelope depends on the mode:
   the next page; there is no `total`.
 - **Offset mode** → `{ data, total, page, perPage }`.
 
-```bash
-# Cursor mode — newest 50 deployment-failure events
-curl -G https://your-host/api/audit \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  --data-urlencode "cursor=" \
-  --data-urlencode "limit=50" \
-  --data-urlencode "eventType=deployment.failed"
-```
-
-```bash
-# Same thing via the CLI escape hatch (path is relative to /api):
-openship api /audit -q eventType=deployment.failed -q limit=50
-```
-
-## Errors you might see
+## Errors
 
 <Callout title="403 — not permitted" type="warn">
 Your role can't read the audit log. Members are denied by default; ask an owner/admin to grant `audit:read`
@@ -91,3 +83,16 @@ Filters that match nothing return `200` with an empty `data` array. Double-check
 (it's the exact dot-namespaced tag) and that `resourceId` belongs to your organization. Retention is
 org-configurable (default 90 days), so events older than the window are pruned and won't appear.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read filtered, paginated audit events. | `audit.list(input?)` | `GET /api/audit`<br />`audit:read` |
+| Read available audit filter values. | `audit.facets(input?)` | `GET /api/audit/facets`<br />`audit:read` |
+| Read audit retention settings. | `audit.getSettings()` | `GET /api/audit/settings`<br />`audit:read` |
+| Change audit retention settings. | `audit.updateSettings(input)` | `PATCH /api/audit/settings`<br />`audit:write` |
+
+{/* api-operations:end */}

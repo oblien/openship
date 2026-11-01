@@ -33,8 +33,6 @@ This is the fastest way to try out any public GitHub project — no account link
 
 Go to the **Library** page (the **New project** button lands you here too) and click the **Git URL** tab.
 
-<Callout title="Screenshot">Library page, **Git URL** tab — the "Import from Git URL" panel with a single link field. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -58,7 +56,7 @@ just fetches the code. Private repos and other hosts won't work here; for those,
 
 Openship reads the repo and drops you on the same setup screen as any other deploy: it shows the framework
 it detected, the build command, and the web address your app will get. From here, the steps are identical to
-a normal GitHub deploy — [choose where it runs and press Deploy](/docs/guides/deploy-from-github#the-click-by-click-way).
+a normal GitHub deploy — [choose where it runs and press Deploy](/docs/guides/deploy-from-github#steps).
 
 </Step>
 
@@ -78,8 +76,6 @@ get a working project to build on — like starting a document from a blank temp
 On the **Library** page, click the **Template** tab. You'll see a grid of framework tiles — things like
 **Next.js**, **Astro**, **Express**, **Django**, and more.
 
-<Callout title="Screenshot">Library page, **Template** tab — the grid of framework starter tiles. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -96,14 +92,14 @@ source, so there's nothing to paste or fill in.
 ### Finish on the setup screen
 
 Just like the URL path, you land on the standard setup screen with everything pre-filled. Review it if you
-like, then [choose where it runs and press Deploy](/docs/guides/deploy-from-github#the-click-by-click-way).
+like, then [choose where it runs and press Deploy](/docs/guides/deploy-from-github#steps).
 When the build finishes, you get a live link to your brand-new app.
 
 </Step>
 
 </Steps>
 
-## Prefer the terminal?
+## CLI
 
 The Git URL path is really just "make a project pointing at this owner and repo." You can do the same from
 the CLI — split the link's `owner` and `repo` out of `github.com/owner/repo`:
@@ -116,7 +112,7 @@ openship project create --name my-app --git-owner openship --git-repo example
 openship deploy
 ```
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“Enter a valid GitHub repository URL”" type="warn">
 Openship couldn't find an owner and repository in what you pasted. The box only accepts **github.com**
@@ -136,7 +132,7 @@ The Git URL box only reaches **public** code. To deploy a private repository, co
 first — see [Deploy from GitHub](/docs/guides/deploy-from-github).
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Connect your account to deploy your own repos — including private ones — and redeploy on every push." />

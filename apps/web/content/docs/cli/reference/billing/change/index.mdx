@@ -1,0 +1,95 @@
+---
+title: billing change
+description: Commands, arguments, and options for openship billing change.
+cliGroup: openship billing change
+---
+
+See the [workflow guide](/docs/cli/cloud) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship billing change
+
+Preview and confirm a subscription change with its exact quote
+
+```text
+openship billing change [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`preview [options] <plan>`](/docs/cli/reference/billing/change#openship-billing-change-preview) | Create a quote showing the price and affected-project restarts |
+| [`apply [options] <quote>`](/docs/cli/reference/billing/change#openship-billing-change-apply) | Confirm a reviewed quote and its listed server restarts |
+| [`get [options] <id>`](/docs/cli/reference/billing/change#openship-billing-change-get) | Read a queued, applied or failed change |
+| [`cancel [options] <id>`](/docs/cli/reference/billing/change#openship-billing-change-cancel) | Cancel a change if its current state permits it |
+
+## openship billing change apply
+
+Confirm a reviewed quote and its listed server restarts
+
+```text
+openship billing change apply [options] <quote>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `quote` | Exact quote ID returned by change preview |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `--confirm-restart` | Acknowledge the restarts listed in this quote |
+| `-y, --yes` | Confirm this subscription change |
+
+## openship billing change cancel
+
+Cancel a change if its current state permits it
+
+```text
+openship billing change cancel [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Change ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `-y, --yes` | Confirm cancellation |
+
+## openship billing change get
+
+Read a queued, applied or failed change
+
+```text
+openship billing change get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Change ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing change preview
+
+Create a quote showing the price and affected-project restarts
+
+```text
+openship billing change preview [options] <plan>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `plan` | Next plan ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `--idempotency-key <key>` | Stable key for this change request |
+| `--custom <file>` | JSON custom resources and quoteReference |

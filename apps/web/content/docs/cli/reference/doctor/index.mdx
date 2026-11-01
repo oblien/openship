@@ -1,0 +1,19 @@
+---
+title: doctor
+description: Commands, arguments, and options for openship doctor.
+cliGroup: openship doctor
+---
+
+See the [CLI overview](/docs/cli) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship doctor
+
+Check database + services health and repair a corrupt local database
+
+```text
+openship doctor [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--fix` | Attempt an automatic database repair (backup → heal → restart), no prompts |

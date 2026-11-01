@@ -109,6 +109,11 @@ export function NavUser() {
   if (!isRendered) return null;
   if (!session) return null;
 
+  const accountEmail = activeAccount?.email || session.user.email;
+  const displayName = activeAccount?.name || session.user.name;
+  const hasDistinctName =
+    !!displayName && displayName.trim().toLowerCase() !== accountEmail?.trim().toLowerCase();
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-3">
@@ -116,8 +121,12 @@ export function NavUser() {
           activeAccount && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <div className="flex cursor-pointer items-center">
-                  <div className="relative">
+                <button
+                  type="button"
+                  aria-label={m['common.navUser.accounts']()}
+                  className="flex cursor-pointer items-center"
+                >
+                  <span className="relative">
                     <Avatar className="relative left-0.5 size-7 rounded-[5px]">
                       <AvatarImage
                         className="rounded-[5px]"
@@ -134,8 +143,8 @@ export function NavUser() {
                           .slice(0, 2)}
                       </AvatarFallback>
                     </Avatar>
-                  </div>
-                </div>
+                  </span>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 className="w-(--radix-dropdown-menu-trigger-width) ml-3 min-w-56 bg-white font-medium dark:bg-[#131313]"
@@ -384,7 +393,10 @@ export function NavUser() {
               )}
 
               <AddConnectionDialog>
-                <Button className="hover:bg-offsetLight/80 dark:hover:bg-offsetDark/80 flex h-7 w-7 cursor-pointer items-center justify-center rounded-[5px] border border-dashed bg-transparent px-0 text-black dark:bg-[#262626] dark:text-[#929292]">
+                <Button
+                  aria-label={m['pages.settings.connections.addEmail']()}
+                  className="hover:bg-offsetLight/80 dark:hover:bg-offsetDark/80 flex h-7 w-7 cursor-pointer items-center justify-center rounded-[5px] border border-dashed bg-transparent px-0 text-black dark:bg-[#262626] dark:text-[#929292]"
+                >
                   <Plus className="size-4" />
                 </Button>
               </AddConnectionDialog>
@@ -398,7 +410,11 @@ export function NavUser() {
               )} */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className={cn('md:h-fit md:px-2')}>
+                  <Button
+                    variant="ghost"
+                    aria-label={m['common.threadDisplay.moreOptions']()}
+                    className={cn('md:h-fit md:px-2')}
+                  >
                     <ThreeDots className="fill-iconLight dark:fill-iconDark" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -443,13 +459,18 @@ export function NavUser() {
       {state !== 'collapsed' && (
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="mt-[2px] flex flex-col items-start gap-1 space-y-1">
-            <div className="flex items-center gap-1 text-[13px] leading-none text-black dark:text-white">
-              <p className={cn('max-w-[14.5ch] truncate text-[13px]')}>
-                {activeAccount?.name || session.user.name || 'User'}
-              </p>
-            </div>
-            <div className="h-5 max-w-[200px] overflow-hidden truncate text-xs font-normal leading-none text-[#898989]">
-              {activeAccount?.email || session.user.email}
+            {hasDistinctName && (
+              <div className="flex items-center gap-1 text-[13px] leading-none text-black dark:text-white">
+                <p className="max-w-[14.5ch] truncate text-[13px]" title={displayName}>
+                  {displayName}
+                </p>
+              </div>
+            )}
+            <div
+              className="h-5 max-w-[200px] overflow-hidden truncate text-xs font-normal leading-none text-[#898989]"
+              title={accountEmail}
+            >
+              {accountEmail}
             </div>
           </div>
         </div>

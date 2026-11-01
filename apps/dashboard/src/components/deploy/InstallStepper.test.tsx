@@ -12,7 +12,7 @@ function render(status: StepStatus, extra?: { children?: React.ReactNode }) {
 describe("InstallStepper status → icon + token", () => {
   it("pending: a plain dim circle, no spinner", () => {
     const html = render("pending");
-    expect(html).toContain("lucide-circle "); // plain Circle, not circle-check/minus/alert
+    expect(html).toContain("data-icon=\"circle\""); // plain Circle, not circle-check/minus/alert
     expect(html).toContain("text-muted-foreground/40");
     expect(html).not.toContain("animate-spin");
     expect(html).toContain("Step pending");
@@ -20,26 +20,26 @@ describe("InstallStepper status → icon + token", () => {
 
   it("active: a spinning primary loader", () => {
     const html = render("active");
-    expect(html).toContain("lucide-loader-circle");
+    expect(html).toContain("data-icon=\"spinner\"");
     expect(html).toContain("animate-spin");
     expect(html).toContain("text-primary");
   });
 
   it("running behaves like active (shared superset status)", () => {
     const html = render("running");
-    expect(html).toContain("lucide-loader-circle");
+    expect(html).toContain("data-icon=\"spinner\"");
     expect(html).toContain("animate-spin");
   });
 
   it("done: a success check", () => {
     const html = render("done");
-    expect(html).toContain("lucide-circle-check");
+    expect(html).toContain("data-icon=\"check-circle\"");
     expect(html).toContain("text-success");
   });
 
   it("skipped: a dim minus — dimmed, NOT active", () => {
     const html = render("skipped");
-    expect(html).toContain("lucide-circle-minus");
+    expect(html).toContain("data-icon=\"minus-circle\"");
     expect(html).toContain("text-muted-foreground/40");
     expect(html).not.toContain("animate-spin");
     expect(html).not.toContain("text-primary");
@@ -47,16 +47,16 @@ describe("InstallStepper status → icon + token", () => {
 
   it("failed: a danger alert on icon and label", () => {
     const html = render("failed");
-    expect(html).toContain("lucide-circle-alert");
+    expect(html).toContain("data-icon=\"alert-circle\"");
     expect(html).toContain("text-danger");
   });
 
   it("stopped: a neutral slash — settled, but NOT a failure and NOT still running", () => {
     const html = render("stopped");
-    expect(html).toContain("lucide-circle-slash");
+    expect(html).toContain("data-icon=\"ban\"");
     expect(html).not.toContain("animate-spin"); // a stopped install must not still spin
     expect(html).not.toContain("text-danger"); // a cancel is not a fault
-    expect(html).not.toContain("lucide-circle-alert");
+    expect(html).not.toContain("data-icon=\"alert-circle\"");
   });
 
   it("uses only theme tokens, never hardcoded status colors", () => {

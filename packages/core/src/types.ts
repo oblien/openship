@@ -10,7 +10,12 @@ export type DeploymentStatus =
   | "deploying"
   | "ready"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "partial_failure"
+  | "action_required"
+  | "rejected"
+  | "no_changes"
+  | "reconciling";
 
 export type Environment = "production" | "preview" | "development";
 
@@ -43,14 +48,15 @@ export type BuildStrategy = "server" | "local";
  *   "local"  → This machine (desktop/dev)
  *   "server" → User's remote server via SSH (selfhosted)
  *   "cloud"  → Oblien cloud workspace
+ *   "cluster" → Kubernetes workloads on a self-hosted server cluster
  */
-export type DeployTarget = "local" | "server" | "cloud";
+export type DeployTarget = "local" | "server" | "cloud" | "cluster";
 
 /**
- * A project's deploy target, DERIVED from its two durable bindings.
+ * A project's deploy target, derived from its durable infrastructure bindings.
  *
  * There is deliberately no `deployTarget` column — see the schema notes on
- * `project.cloudWorkspaceId` and `project.serverId`, which already determine this fact;
+ * `project.workspaceId` and `project.serverId`, which already determine this fact;
  * storing it too would be a second source of truth for the same thing. This function is
  * where that rule lives, so the access URL, the payload the deploy wizard hydrates from,
  * and the deploy resolver cannot drift into disagreeing about where a project runs.
@@ -59,10 +65,12 @@ export type DeployTarget = "local" | "server" | "cloud";
  * first-class, separately pickable target.
  */
 export function deriveProjectDeployTarget(project: {
-  cloudWorkspaceId?: string | null;
+  workspaceId?: string | null;
   serverId?: string | null;
+  clusterId?: string | null;
 }): DeployTarget {
-  if (project.cloudWorkspaceId) return "cloud";
+  if (project.workspaceId) return "cloud";
+  if (project.clusterId) return "cluster";
   if (project.serverId) return "server";
   return "local";
 }
@@ -133,6 +141,30 @@ export type ComposeHealthcheck = {
   startPeriod?: string;
   disable?: boolean;
 };
+
+/**
+ * GPU request authored in a compose file (`deploy.resources.reservations.devices` with a `gpu`
+ * capability, or the short form `gpus: all`). Docker has no "GPU" field of its own: what it takes is
+ * `HostConfig.DeviceRequests`, and that is what the Docker runtime builds from this (see
+ * `toDeviceRequests` in the adapters). Compose spells the count as an integer or the word `all`.
+ *
+ * Only NVIDIA is supported. Unsupported drivers are refused, never silently dropped.
+ */
+export interface ComposeGpu {
+  /** Device driver. Only `nvidia` is supported. */
+  driver?: string;
+  /** `"all"` or a non-negative integer. Mutually exclusive with `deviceIds`. */
+  count?: "all" | number;
+  /** Specific GPU ids/UUIDs (compose `device_ids`). */
+  deviceIds?: string[];
+  /** Compose `capabilities`, e.g. `["gpu"]`, `["gpu","compute","utility"]`. */
+  capabilities?: string[];
+  /** Driver options from Compose's device reservation. */
+  options?: Record<string, string>;
+}
+
+/** Live Docker GPU configuration; an empty object records that neither was set. */
+export type ComposeGpuConfig = Pick<ComposeAdvanced, "gpus" | "runtime">;
 
 /**
  * Extended compose fields that don't warrant their own first-class columns.
@@ -258,6 +290,9 @@ export type ComposeAdvanced = {
    * Internal/compose-owned: API clients do not author this field.
    */
   environmentTemplateKeys?: string[];
+  /** Inline environment keys explicitly edited, removed, or kept during drift
+   * review. Names only; template provenance still controls interpolation. */
+  environmentOverrideKeys?: string[];
   /**
    * Build-argument keys whose stored value is the original expression from a
    * raw Compose file. Unlike `buildArgs` received from the CLI (already expanded
@@ -310,8 +345,23 @@ export type ComposeAdvanced = {
    * value — so a service that declares its own limit now overrides the project
    * default at deploy time. `0`/absent = inherit the project (see
    * UNLIMITED_RESOURCES in ./resources).
+   *
+   * `swapDisabled` is a Docker-only opt-in (HostConfig.MemorySwap = Memory)
+   * that requires a positive effective memory limit. It is NOT compose-owned:
+   * compose has no equivalent, so imported services leave it alone.
    */
-  resources?: { cpuCores?: number; memoryMb?: number };
+  resources?: { cpuCores?: number; memoryMb?: number; swapDisabled?: boolean };
+  /**
+   * GPU this service asks for (compose `deploy.resources.reservations.devices` / `gpus`). Absent = no GPU.
+   * Compose-owned: dropping it from the file must release the GPU, so it is swept in
+   * COMPOSE_OWNED_ADVANCED_KEYS. A target without a GPU gets a PREFLIGHT WARNING, not a refusal (the
+   * operator may have a GPU the probe cannot see; Docker itself still rejects the create if not).
+   */
+  gpus?: ComposeGpu | ComposeGpu[];
+  /** Legacy NVIDIA runtime. Preserve NVIDIA_VISIBLE_DEVICES; this is not `gpus: all`. */
+  runtime?: "nvidia";
+  /** Private /dev/shm capacity in bytes (Compose shm_size). Does not enable host IPC. */
+  shmSize?: number;
   /**
    * Compose `network_mode` — the network namespace this service SHARES instead of
    * getting its own. `"none"`, `"service:<name>"` (a sibling in this stack), or
@@ -332,6 +382,9 @@ export type ComposeAdvanced = {
    * nothing else (it keeps its own network identity, ports, and aliases).
    */
   pidMode?: string;
+  /** Docker/Compose hostname-to-address mappings, including host-gateway.
+   * Frozen with the service definition for redeploy and rollback. */
+  extraHosts?: Record<string, string>;
   /**
    * Custom east-west DNS alias for this service, resolving ALONGSIDE the default
    * `service.name` on the project network — both names reach the container. Set

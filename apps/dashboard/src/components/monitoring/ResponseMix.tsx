@@ -18,9 +18,9 @@
  * in Postgres.
  *
  * The class stays the top-level unit because it is the right first read (a rising 5xx share
- * is the thing you want to notice without looking). Each class now expands to the exact
- * codes underneath it, ordered by count, so the follow-up question — WHICH failure — is
- * answerable in the same card instead of by reading logs.
+ * is the thing you want to notice without looking). Each class shows its three most
+ * frequent codes, followed by an "Others" total for the remaining codes. This keeps the
+ * list short while accounting for every response in the counts and shares.
  */
 
 import React, { useMemo } from "react";
@@ -30,6 +30,8 @@ import { formatCount } from "./format";
 interface Props {
   statuses: Record<string, number> | undefined;
 }
+
+const MAX_CODES_PER_CLASS = 3;
 
 /** Semantic tokens, never hardcoded hues — 5xx must read as danger in every theme. */
 const CLASSES = [
@@ -45,7 +47,7 @@ export const ResponseMix: React.FC<Props> = ({ statuses }) => {
 
   const { buckets, codes, total, unclassified } = useMemo(() => {
     const counts = new Map<string, number>();
-    /** class key → its exact codes, biggest first. */
+    /** Class key → its top codes, biggest first, then the combined remainder. */
     const perCode = new Map<string, Array<{ code: string; count: number }>>();
     let sum = 0;
     let other = 0;
@@ -70,6 +72,13 @@ export const ResponseMix: React.FC<Props> = ({ statuses }) => {
     for (const list of perCode.values()) {
       // Descending: the code you need to see is the one there is most of.
       list.sort((a, b) => b.count - a.count || Number(a.code) - Number(b.code));
+      if (list.length > MAX_CODES_PER_CLASS) {
+        const remaining = list.splice(MAX_CODES_PER_CLASS);
+        list.push({
+          code: "others",
+          count: remaining.reduce((sum, entry) => sum + entry.count, 0),
+        });
+      }
     }
     return { buckets: counts, codes: perCode, total: sum, unclassified: other };
   }, [statuses]);
@@ -135,7 +144,9 @@ export const ResponseMix: React.FC<Props> = ({ statuses }) => {
                       key={e.code}
                       className="flex items-center gap-3 text-xs text-muted-foreground"
                     >
-                      <span className="tabular-nums">{e.code}</span>
+                      <span className="tabular-nums">
+                        {e.code === "others" ? m.statusesOthers : e.code}
+                      </span>
                       <span className="min-w-0 flex-1" />
                       <span className="shrink-0 tabular-nums">{formatCount(e.count)}</span>
                       <span className="w-14 shrink-0 text-right tabular-nums text-muted-foreground/60">

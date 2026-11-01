@@ -1,3 +1,4 @@
+import { createEncryption } from "../encryption";
 import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -23,7 +24,7 @@ async function freshRepo(deletionInProgress: boolean) {
     slug: "app",
     deletionInProgress,
   });
-  return { db, repo: createDeploymentRepo(db) };
+  return { db, repo: createDeploymentRepo(db, createEncryption("repository-test-secret")) };
 }
 
 describe("deployment creation vs. project deletion", () => {

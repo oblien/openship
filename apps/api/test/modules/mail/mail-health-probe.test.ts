@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { checkMailHealth } from "../../../src/modules/mail/mail-health.service";
-import { parseMailUnitProbe } from "../../../src/modules/mail/mail-engine";
+import { checkMailHealth, mailIsServing } from "@repo/platform/engine/modules/mail/mail-health.service";
+import { parseMailUnitProbe } from "@repo/platform/engine/modules/mail/mail-engine";
 import type { CommandExecutor } from "@repo/adapters";
 
 /**
@@ -167,11 +167,10 @@ describe("parseMailUnitProbe — host flavor", () => {
 });
 
 /** Detection answers first; `{{.Config.Image}}` is only in that probe's format. */
-function engine(reply: (cmd: string) => string | Error, detect = "true\topenship/mail:latest") {
+function engine(reply: (cmd: string) => string | Error, detect: string | Error = "true\topenship/mail:latest") {
   return {
     exec: vi.fn(async (cmd: string) => {
-      if (cmd.includes("{{.Config.Image}}")) return detect;
-      const out = reply(cmd);
+      const out = cmd.includes("{{.Config.Image}}") ? detect : reply(cmd);
       if (out instanceof Error) throw out;
       return out;
     }),
@@ -214,10 +213,50 @@ describe("checkMailHealth", () => {
   // No engine of either flavor is a CONCLUSION — "there is nothing here" — so it
   // must not read as nine failed probes.
   it("reports missing, not unknown, on a box with no mail engine at all", async () => {
-    const rows = await checkMailHealth(engine(() => "", ""));
+    const rows = await checkMailHealth(engine(() => "__OPENSHIP_NO_SYSTEMCTL__", new Error("Error: No such object: openship-mail")));
 
     expect(rows).toHaveLength(9);
     expect(rows.every((r) => r.status === "missing")).toBe(true);
     expect(rows.every((r) => r.detail === undefined)).toBe(true);
   });
+
+  it("keeps every daemon unknown after connection loss without issuing nine more probes", async () => {
+    const exec = engine(() => { throw new Error("unnecessary daemon probe"); }, new Error("connect ENETUNREACH 192.0.2.1:22"));
+    const rows = await checkMailHealth(exec);
+    expect(rows.every((row) => row.status === "unknown" && row.detail?.includes("ENETUNREACH"))).toBe(true);
+    expect(exec.exec).toHaveBeenCalledOnce();
+  });
+});
+
+describe("mailIsServing observation failures", () => {
+  it("does not tell adoption that mail is absent when engine detection loses the connection", async () => {
+    const exec = engine(() => "", new Error("connect ENETUNREACH 192.0.2.1:22"));
+    await expect(mailIsServing(exec)).rejects.toThrow("ENETUNREACH");
+    expect(exec.exec).toHaveBeenCalledOnce();
+  });
+
+  it("preserves an inconclusive daemon read after the engine answered", async () => {
+    const exec = engine(() => new Error("SSH connection lost"));
+    await expect(mailIsServing(exec)).rejects.toThrow("SSH connection lost");
+  });
+});
+
+
+it("leaves SSH channel capacity for the queue, state and certificate probes", async () => {
+  let active = 0;
+  let peak = 0;
+  const executor = { exec: vi.fn(async (command: string) => {
+    if (command.includes("{{.Config.Image}}")) return "true\topenship/mail:latest";
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    active--;
+    if (command.includes("{{.State.Running}}")) return "true";
+    const unit = /supervisorctl status '([^']+)'/.exec(command)?.[1];
+    return `${unit} RUNNING pid 12`;
+  }) } as unknown as CommandExecutor;
+  const states = await checkMailHealth(executor);
+  expect(states).toHaveLength(9);
+  expect(states.every((state) => state.status === "active")).toBe(true);
+  expect(peak).toBeLessThanOrEqual(4);
 });

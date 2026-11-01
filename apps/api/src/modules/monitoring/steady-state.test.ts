@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ContainerStabilitySample } from "@repo/adapters";
-import { classifySteadyState, CRASH_RESTART_DELTA } from "./steady-state";
+import { classifySteadyState, CRASH_RESTART_DELTA } from "@repo/platform/engine/modules/monitoring/steady-state";
 
 /**
  * These cases ARE the noise policy. Every `kind: null` below is a state that

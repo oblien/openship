@@ -1,7 +1,7 @@
 /**
  * Pre-flight checks for the "move to my own server" migration path.
  *
- * Three independent verifications, run in parallel so the wizard can
+ * Three infrastructure verifications, run in parallel so the wizard can
  * paint the readiness checklist in one round-trip:
  *
  *   1. SSH connectivity — can we actually log into the chosen server?
@@ -22,8 +22,10 @@
  * single rendering instead of one-failure-at-a-time.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { sshManager } from "../../../lib/ssh-manager";
+import { SERVER_MIGRATION_UNAVAILABLE } from "./migrate-instance.service";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { resolveOpenshipDistDirOrNull } from "./openship-dist";
 
 export type DomainChoice =
@@ -37,13 +39,14 @@ export interface PreflightInput {
 }
 
 export interface PreflightResult {
-  /** True iff EVERY check passed. */
+  /** Includes the deployment capability, currently unavailable. */
   ready: boolean;
   /** Independent per-check status so the wizard can paint a checklist. */
   checks: {
     ssh: { ok: boolean; detail: string };
     releaseDist: { ok: boolean; detail: string };
     domain: { ok: boolean; detail: string };
+    deployment: { ok: boolean; detail: string };
   };
 }
 
@@ -56,8 +59,13 @@ export async function runPreflight(input: PreflightInput): Promise<PreflightResu
   ]);
 
   return {
-    ready: ssh.ok && releaseDist.ok && domain.ok,
-    checks: { ssh, releaseDist, domain },
+    ready: false,
+    checks: {
+      ssh,
+      releaseDist,
+      domain,
+      deployment: { ok: false, detail: SERVER_MIGRATION_UNAVAILABLE },
+    },
   };
 }
 
@@ -69,7 +77,7 @@ async function checkSshReachable(
 ): Promise<{ ok: boolean; detail: string }> {
   const server = await repos.server
     .getInOrganization(serverId, organizationId)
-    .catch(() => undefined);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/migration/preflight.service"); return undefined; });
   if (!server) {
     return { ok: false, detail: `Server ${serverId} not found.` };
   }
@@ -80,6 +88,7 @@ async function checkSshReachable(
     });
     return { ok: true, detail: `Connected to ${server.sshHost}.` };
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/migration/preflight.service");
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, detail: `SSH connection failed: ${msg}` };
   }
@@ -126,12 +135,13 @@ async function checkCustomDomain(
 ): Promise<{ ok: boolean; detail: string }> {
   const server = await repos.server
     .getInOrganization(serverId, organizationId)
-    .catch(() => undefined);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/migration/preflight.service"); return undefined; });
   if (!server) {
     return { ok: false, detail: `Server ${serverId} not found.` };
   }
 
   const expectedHost = server.sshHost;
+  if (server.workspaceId || !expectedHost) return { ok: false, detail: "This check requires a connected host. Manage Cloud routing through its workspace." };
   // Node ESM dns.promises — dynamic import keeps this module clean to
   // import in non-Node environments (e.g. unit tests against schema).
   const dns = await import("node:dns/promises");
@@ -140,6 +150,7 @@ async function checkCustomDomain(
   try {
     addresses = await dns.resolve4(hostname);
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/migration/preflight.service");
     const code =
       err && typeof err === "object" && "code" in err
         ? (err as { code: string }).code
@@ -162,7 +173,8 @@ async function checkCustomDomain(
   } else {
     try {
       expectedIps = await dns.resolve4(expectedHost);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/system/migration/preflight.service");
       expectedIps = [];
     }
   }

@@ -4,7 +4,7 @@ import {
   planResumeTransfer,
   describeCutoverRemainder,
   type PendingItem,
-} from "./migration.orchestrator";
+} from "@repo/platform/engine/modules/migration/migration.orchestrator";
 
 describe("resolveScannedContainerId", () => {
   it("returns the scanned container id for a service that was discovered", () => {

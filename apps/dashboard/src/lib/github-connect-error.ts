@@ -7,6 +7,7 @@
  * post-close handler reads + clears it and shows a toast — otherwise the flow
  * would just silently report "not connected".
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export const GITHUB_CONNECT_ERROR_KEY = "openship.github.connectError";
 
 type ConnectErrorStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -15,7 +16,8 @@ function browserStorage(): ConnectErrorStorage | null {
   if (typeof window === "undefined") return null;
   try {
     return window.localStorage;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/github-connect-error");
     return null;
   }
 }
@@ -24,11 +26,13 @@ function browserStorage(): ConnectErrorStorage | null {
 export function storeGitHubConnectError(
   error: string,
   storage: ConnectErrorStorage | null = browserStorage(),
+  state?: string,
 ): void {
   if (!error || !storage) return;
   try {
-    storage.setItem(GITHUB_CONNECT_ERROR_KEY, error);
-  } catch {
+    storage.setItem(state ? `${GITHUB_CONNECT_ERROR_KEY}.${state}` : GITHUB_CONNECT_ERROR_KEY, error);
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/github-connect-error");
     /* storage unavailable */
   }
 }
@@ -36,13 +40,16 @@ export function storeGitHubConnectError(
 /** Read and clear the callback error so it cannot leak into a later attempt. */
 export function consumeGitHubConnectError(
   storage: ConnectErrorStorage | null = browserStorage(),
+  state?: string,
 ): string | null {
   if (!storage) return null;
   try {
-    const error = storage.getItem(GITHUB_CONNECT_ERROR_KEY);
-    if (error !== null) storage.removeItem(GITHUB_CONNECT_ERROR_KEY);
+    const key = state ? `${GITHUB_CONNECT_ERROR_KEY}.${state}` : GITHUB_CONNECT_ERROR_KEY;
+    const error = storage.getItem(key);
+    if (error !== null) storage.removeItem(key);
     return error;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/github-connect-error");
     return null;
   }
 }

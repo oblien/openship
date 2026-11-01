@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Notifications tab — "mail arrives at this address → tell me in this channel".
  *
@@ -20,7 +23,7 @@
  *     only be attributed via To/Cc: mail that arrived by Bcc or through an alias is
  *     invisible to a mailbox rule. Domain scope has no such gap.
  *
- * Channels are not created here — they live in Settings → Notifications, org-wide,
+ * Channels are not created here — they live in Monitoring → Notifications, org-wide,
  * because everything else that notifies (jobs, deploys, health) shares them. Every
  * dead end that a missing channel produces therefore carries a link to that screen
  * instead of a sentence describing where it is.
@@ -31,7 +34,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bell, Pencil, Plus, Trash2, FlaskConical } from "lucide-react";
 import {
   getApiErrorMessage,
   mailAdminApi,
@@ -59,7 +61,7 @@ interface NotificationsTabProps {
 const SCOPES: InboundScope[] = ["mailbox", "domain", "all"];
 
 /** Where notification channels are added and verified — org-wide, not per server. */
-const CHANNELS_HREF = "/settings?tab=notifications";
+const CHANNELS_HREF = "/monitoring?tab=notifications";
 
 export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabProps) {
   const { showModal, hideModal } = useModal();
@@ -84,7 +86,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
         notificationsApi
           .listChannels()
           .then((x) => x.channels)
-          .catch(() => [] as NotificationChannel[]),
+          .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/notifications-tab"); return [] as NotificationChannel[]; }),
       ]);
       setRules(r.rules);
       setChannels(c);
@@ -187,7 +189,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
           <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
-            <Bell className="size-4 text-muted-foreground" strokeWidth={2} />
+            <UiIcon name="bell" className="size-4 text-muted-foreground" />
           </div>
           <p className="text-sm font-medium text-foreground truncate">{r.name}</p>
         </div>
@@ -264,7 +266,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
             disabled={testing || rules.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2.5 border border-border text-foreground text-sm font-medium rounded-xl hover:bg-muted/50 transition-colors disabled:opacity-50"
           >
-            <FlaskConical className="size-4" />
+            <UiIcon name="flask" className="size-4" />
             {testing ? a.testing : a.test}
           </button>
           <button
@@ -272,7 +274,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
             disabled={usable.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none"
           >
-            <Plus className="size-4" />
+            <UiIcon name="plus" className="size-4" />
             {a.newRule}
           </button>
         </div>
@@ -300,7 +302,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
         rowKey={(r) => r.id}
         loading={loading}
         empty={{
-          icon: Bell,
+          icon: "bell",
           title: a.emptyTitle,
           description: a.emptyBody,
           // One CTA per screen state. With no channels the warning strip above is
@@ -313,7 +315,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
                 onClick={() => openEditor()}
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors"
               >
-                <Plus className="size-4" />
+                <UiIcon name="plus" className="size-4" />
                 {a.newRule}
               </button>
             ),
@@ -325,14 +327,14 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
               {
                 id: "edit",
                 label: a.edit,
-                icon: <Pencil className="size-4" />,
+                icon: <UiIcon name="edit" className="size-4" />,
                 onClick: () => openEditor(r),
               },
               { id: "sep", divider: true },
               {
                 id: "delete",
                 label: a.deleteConfirm,
-                icon: <Trash2 className="size-4" />,
+                icon: <UiIcon name="trash" className="size-4" />,
                 variant: "danger",
                 onClick: () => openDelete(r),
               },
@@ -345,7 +347,7 @@ export function NotificationsTab({ serverId, primaryDomain }: NotificationsTabPr
 }
 
 /**
- * The trip to Settings → Notifications.
+ * The trip to Monitoring → Notifications.
  *
  * One component for every place that dead-ends on a missing channel, so they all
  * land on the same screen and none of them describes the route in prose instead of
@@ -376,7 +378,7 @@ function ChannelsLink({
       className={`inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-2 decoration-current/40 hover:decoration-current ${className ?? "text-primary"}`}
     >
       {label}
-      <ArrowRight className="size-3.5 rtl:rotate-180" />
+      <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
     </Link>
   );
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { pickHostPort } from "@repo/adapters";
+import { allocateHostPort, pickHostPort } from "@repo/adapters";
+import { HostPortClaimConflictError } from "@repo/db";
 import {
   allocateAndReservePinnedHostPort,
   convergeTargetHostPortClaims,
@@ -9,9 +10,11 @@ import {
   pinnedHostPortsToAvoid,
   prepareTargetPinnedHostPorts,
   releaseNewPinnedHostPortClaims,
+  suggestAlternativePinnedHostPort,
+  type AllocatedPinnedHostPort,
   type PinnedHostPort,
-} from "./pinned-host-ports";
-import type { HostPortTargetIdentity } from "../../lib/host-port-target";
+} from "@repo/platform/engine/modules/deployments/pinned-host-ports";
+import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
 
 const claimRepo = vi.hoisted(() => ({
   reserve: vi.fn(),
@@ -98,6 +101,130 @@ describe("pinnedHostPortsToAvoid", () => {
       createdAt: new Date(0),
       updatedAt: new Date(0),
     }));
+  });
+
+  describe("a replacement chosen in the port-conflict dialog", () => {
+    function replacement() {
+      const allocation: AllocatedPinnedHostPort = {
+        port: 20001,
+        scanned: true,
+        preferred: 20001,
+        claim: storedClaim("original", "local", claims[0]!),
+        previousClaim: claims[0],
+        claimWasCreated: false,
+      };
+      return {
+        target: localTarget,
+        allocation,
+        excluded: new Set([20000]),
+        readClaims: vi.fn(async (): Promise<readonly PinnedHostPort[]> => claims),
+        allocate: vi.fn(async (options: Parameters<typeof pickHostPort>[1]) => ({
+          port: pickHostPort(new Set(), options),
+          scanned: true,
+        })),
+        isAvailable: vi.fn(async (_port: number): Promise<boolean | null> => true),
+        onSelected: vi.fn(),
+      };
+    }
+
+    it("avoids stopped and excluded ports, reserving only after the user chooses", async () => {
+      const input = replacement();
+      const suggestion = await suggestAlternativePinnedHostPort(input);
+      expect(suggestion?.port).toBe(20004);
+      expect(claimRepo.reserve).not.toHaveBeenCalled();
+      expect(input.onSelected).not.toHaveBeenCalled();
+
+      await expect(suggestion!.apply()).resolves.toBe(true);
+      expect(input.readClaims).toHaveBeenCalledTimes(2);
+      expect(input.isAvailable.mock.calls).toEqual([[20004], [20004]]);
+      expect(claimRepo.reserve).toHaveBeenCalledExactlyOnceWith({
+        targetKey: "local",
+        projectId: "single",
+        serviceId: null,
+        containerPort: null,
+        port: 20004,
+      });
+      expect(input.onSelected).toHaveBeenCalledWith(
+        expect.objectContaining({
+          port: 20004,
+          claimWasCreated: true,
+          previousClaim: claims[0],
+        }),
+      );
+      expect(claimRepo.release).not.toHaveBeenCalled();
+    });
+
+    it("skips Docker publishes the socket allocator cannot see", async () => {
+      const input = replacement();
+      input.isAvailable.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      expect((await suggestAlternativePinnedHostPort(input))?.port).toBe(20005);
+      expect(claimRepo.reserve).not.toHaveBeenCalled();
+    });
+
+    it("does not offer an unverified port", async () => {
+      const input = replacement();
+      input.isAvailable.mockResolvedValue(null);
+      expect(await suggestAlternativePinnedHostPort(input)).toBeNull();
+      expect(claimRepo.reserve).not.toHaveBeenCalled();
+      expect(input.onSelected).not.toHaveBeenCalled();
+    });
+
+    it.each([false, null])(
+      "keeps the original choice if availability becomes %s",
+      async (availability) => {
+        const input = replacement();
+        input.isAvailable.mockResolvedValueOnce(true).mockResolvedValueOnce(availability);
+        const suggestion = await suggestAlternativePinnedHostPort(input);
+        await expect(suggestion!.apply()).resolves.toBe(false);
+        expect(input.allocate).toHaveBeenCalledOnce(); // no unapproved fallback
+        expect(claimRepo.reserve).not.toHaveBeenCalled();
+        expect(input.onSelected).not.toHaveBeenCalled();
+      },
+    );
+
+    it("rechecks reservations when another project claims the suggestion", async () => {
+      const input = replacement();
+      const suggestion = await suggestAlternativePinnedHostPort(input);
+      input.readClaims.mockResolvedValue([
+        ...claims,
+        {
+          projectId: "other-project",
+          serviceId: null,
+          containerPort: 3000,
+          port: suggestion!.port,
+        },
+      ]);
+      await expect(suggestion!.apply()).resolves.toBe(false);
+      expect(claimRepo.reserve).not.toHaveBeenCalled();
+      expect(input.onSelected).not.toHaveBeenCalled();
+    });
+
+    it("honors a reservation race without changing the deploy configuration", async () => {
+      const input = replacement();
+      const suggestion = await suggestAlternativePinnedHostPort(input);
+      claimRepo.reserve.mockRejectedValueOnce(
+        new HostPortClaimConflictError("port", "local", 20004),
+      );
+      await expect(suggestion!.apply()).resolves.toBe(false);
+      expect(input.onSelected).not.toHaveBeenCalled();
+      expect(claimRepo.release).not.toHaveBeenCalled();
+    });
+
+    it("preserves the original recovery claim and can release only the new reservation", async () => {
+      const input = replacement();
+      const suggestion = await suggestAlternativePinnedHostPort(input);
+      await suggestion!.apply();
+      const selected = input.onSelected.mock.calls[0]![0] as AllocatedPinnedHostPort;
+      expect(selected.previousClaim).toBe(input.allocation.previousClaim);
+      await releaseNewPinnedHostPortClaims(localTarget, [input.allocation, selected]);
+      expect(claimRepo.release).toHaveBeenCalledExactlyOnceWith({
+        targetKey: "local",
+        projectId: "single",
+        serviceId: null,
+        containerPort: null,
+        port: 20004,
+      });
+    });
   });
 
   it("reads legacy server aliases until a canonical port supersedes them", async () => {
@@ -216,6 +343,9 @@ describe("pinnedHostPortsToAvoid", () => {
     const canonicalClaims = [quarantine];
     claimRepo.list.mockImplementation(async (targetKey: string) =>
       targetKey === remoteTarget.targetKey ? canonicalClaims : [],
+    );
+    claimRepo.reserve.mockRejectedValueOnce(
+      new HostPortClaimConflictError("port", remoteTarget.targetKey, 20008),
     );
     claimRepo.replaceQuarantine.mockImplementationOnce(async () => {
       canonicalClaims.splice(0, 1, replacement);
@@ -543,6 +673,97 @@ describe("pinnedHostPortsToAvoid", () => {
     expect(claimRepo.reserve).toHaveBeenCalledWith(
       expect.objectContaining({ ...owner, port: 20000 }),
     );
+  });
+
+  it("reserves a safe replacement for an ephemeral pin without releasing the old claim", async () => {
+    const owner = { projectId: "compose", serviceId: "api", containerPort: 3000 };
+    const previousClaim = storedClaim("unsafe-carried", remoteTarget.targetKey, {
+      ...owner,
+      port: 20500,
+    });
+    const foreignClaim = storedClaim("stopped-foreign", remoteTarget.targetKey, {
+      projectId: "other-project",
+      serviceId: "web",
+      containerPort: 8080,
+      port: 25001,
+    });
+    const persisted = [previousClaim, foreignClaim];
+    claimRepo.reserve.mockImplementationOnce(async (input) => {
+      const claim = storedClaim("safe-replacement", input.targetKey, input);
+      persisted.push(claim);
+      return claim;
+    });
+    const executor = {
+      exec: vi.fn(async (command: string) =>
+        command.includes("ip_local_port_range")
+          ? "20000\t25000\n"
+          : [
+              "tcp LISTEN 0 511 127.0.0.1:20500 0.0.0.0:*",
+              "tcp LISTEN 0 511 127.0.0.1:25002 0.0.0.0:*",
+            ].join("\n"),
+      ),
+    } as unknown as Parameters<typeof allocateHostPort>[0];
+
+    const allocation = await allocateAndReservePinnedHostPort({
+      target: remoteTarget,
+      claims: persisted,
+      owner,
+      // An owned running listener must still move out of the ephemeral range.
+      reuseOccupiedPreferred: true,
+      allocate: (options) => allocateHostPort(executor, options),
+    });
+
+    expect(allocation).toMatchObject({
+      port: 25003,
+      scanned: true,
+      preferred: 20500,
+      previousClaim,
+      claimWasCreated: true,
+    });
+    expect(claimRepo.reserve).toHaveBeenCalledExactlyOnceWith({
+      targetKey: remoteTarget.targetKey,
+      ...owner,
+      port: 25003,
+    });
+    expect(persisted).toEqual([
+      previousClaim,
+      foreignClaim,
+      expect.objectContaining({ ...owner, port: 25003 }),
+    ]);
+    // The previous route can still use 20500 until the normal cutover finishes.
+    expect(claimRepo.release).not.toHaveBeenCalled();
+    expect(claimRepo.releaseQuarantine).not.toHaveBeenCalled();
+  });
+
+  it("keeps existing claims when the target's ephemeral range leaves no safe replacement", async () => {
+    const owner = { projectId: "compose", serviceId: "api", containerPort: 3000 };
+    const previousClaim = storedClaim("unsafe-carried", remoteTarget.targetKey, {
+      ...owner,
+      port: 20500,
+    });
+    const persisted = [previousClaim];
+    const executor = {
+      exec: vi.fn(async (command: string) =>
+        command.includes("ip_local_port_range") ? "20000\t60999\n" : "##tcp\n",
+      ),
+    } as unknown as Parameters<typeof allocateHostPort>[0];
+
+    await expect(
+      allocateAndReservePinnedHostPort({
+        target: remoteTarget,
+        claims: persisted,
+        owner,
+        reuseOccupiedPreferred: true,
+        allocate: (options) => allocateHostPort(executor, options),
+      }),
+    ).rejects.toThrow(/No free host port/);
+
+    expect(persisted).toEqual([previousClaim]);
+    expect(claimRepo.reserve).not.toHaveBeenCalled();
+    expect(claimRepo.release).not.toHaveBeenCalled();
+    expect(claimRepo.quarantine).not.toHaveBeenCalled();
+    expect(claimRepo.replaceQuarantine).not.toHaveBeenCalled();
+    expect(claimRepo.releaseQuarantine).not.toHaveBeenCalled();
   });
 
   it("never steals a preferred port claimed by another durable owner", async () => {
@@ -875,6 +1096,80 @@ describe("pinnedHostPortsToAvoid", () => {
     expect(claimRepo.reserve).toHaveBeenCalledTimes(1);
     expect(scan).toHaveBeenCalledWith({ refresh: true });
     expect(claimRepo.list).not.toHaveBeenCalled();
+    expect(claimRepo.release).not.toHaveBeenCalled();
+    expect(claimRepo.releaseQuarantine).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("needs no edge for an unrouted project with no claims (foreign claims: %s)", async (foreign) => {
+    claimRepo.list.mockImplementation(async (targetKey: string) => foreign
+      ? [storedClaim(`foreign-${targetKey}`, targetKey, {
+          projectId: "project-b", serviceId: null, containerPort: 3000, port: 20010,
+        })]
+      : []);
+    const scan = vi.fn(async () => { throw new Error("no Openship edge installed"); });
+
+    await expect(convergeTargetHostPortClaims({
+      target: remoteTarget,
+      projectId: "unrouted-worker",
+      desiredPublishes: [],
+      edgeProxy: { listLoopbackUpstreamPortsStrict: scan },
+    })).resolves.toEqual({ released: 0, retained: [] });
+
+    expect(claimRepo.list).toHaveBeenCalledTimes(2);
+    expect(claimRepo.list).toHaveBeenCalledWith(remoteTarget.targetKey);
+    expect(claimRepo.list).toHaveBeenCalledWith(remoteTarget.legacyTargetKeys[0]);
+    expect(scan).not.toHaveBeenCalled();
+    expect(claimRepo.reserve).not.toHaveBeenCalled();
+    expect(claimRepo.release).not.toHaveBeenCalled();
+    expect(claimRepo.releaseQuarantine).not.toHaveBeenCalled();
+  });
+
+  it.each(["canonical", "legacy", "quarantine"])(
+    "still requires edge inventory before cleaning up %s claims with no desired publishes",
+    async (kind) => {
+      const targetKey = kind === "legacy" ? remoteTarget.legacyTargetKeys[0]! : remoteTarget.targetKey;
+      claimRepo.list.mockImplementation(async (key: string) => key === targetKey
+        ? [storedClaim("retained", targetKey, kind === "quarantine"
+            ? { projectId: "__host_port_quarantine__", serviceId: "__host_port_quarantine__", containerPort: 20010, port: 20010 }
+            : { projectId: "project-a", serviceId: null, containerPort: 3000, port: 20010 })]
+        : []);
+      const scan = vi.fn(async () => { throw new Error("edge inventory unavailable"); });
+
+      await expect(convergeTargetHostPortClaims({
+        target: remoteTarget, projectId: "project-a", desiredPublishes: [],
+        edgeProxy: { listLoopbackUpstreamPortsStrict: scan },
+      })).rejects.toThrow("edge inventory unavailable");
+      expect(scan).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+      expect(claimRepo.release).not.toHaveBeenCalled();
+      expect(claimRepo.releaseQuarantine).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reclaims unused claims after a project stops publishing ports", async () => {
+    claimRepo.list.mockResolvedValue([
+      storedClaim("old", "local", { projectId: "project-a", serviceId: null, containerPort: 3000, port: 20010 }),
+      storedClaim("still-routed", "local", { projectId: "project-a", serviceId: "api", containerPort: 4000, port: 20011 }),
+    ]);
+    const scan = vi.fn(async () => new Set([20011]));
+    const result = await convergeTargetHostPortClaims({
+      target: localTarget, projectId: "project-a", desiredPublishes: [],
+      edgeProxy: { listLoopbackUpstreamPortsStrict: scan },
+    });
+    expect(result.released).toBe(1);
+    expect(result.retained.map(claim => claim.id)).toEqual(["still-routed"]);
+    expect(claimRepo.list).toHaveBeenCalledTimes(1);
+    expect(scan).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+    expect(claimRepo.release).toHaveBeenCalledExactlyOnceWith({
+      targetKey: "local", projectId: "project-a", serviceId: null, containerPort: 3000, port: 20010,
+    });
+  });
+
+  it("does not treat a failed claim read as an unrouted project", async () => {
+    claimRepo.list.mockRejectedValue(new Error("claim database unavailable"));
+    await expect(convergeTargetHostPortClaims({
+      target: localTarget, projectId: "project-a", desiredPublishes: [],
+      edgeProxy: { listLoopbackUpstreamPortsStrict: async () => new Set<number>() },
+    })).rejects.toThrow("claim database unavailable");
     expect(claimRepo.release).not.toHaveBeenCalled();
     expect(claimRepo.releaseQuarantine).not.toHaveBeenCalled();
   });

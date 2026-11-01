@@ -1,10 +1,8 @@
 /**
- * Curated catalog for **local / self-hosted** Docker deployments.
+ * Curated upstream catalog for Docker deployments, including managed Cloud hosts.
  *
- * The Oblien `images.list()` catalog is cloud-specific (oblien/* images
- * running on managed workspaces). When the user deploys to their own
- * machine or server, those images don't apply - they need the plain
- * upstream Docker images instead.
+ * The Oblien `images.list()` catalog provides server images.
+ * Docker servers use these upstream images regardless of who hosts the server.
  *
  * This list is hand-curated to the things people actually add to apps:
  * databases, caches, search, vector stores, queues, storage, browsers
@@ -12,13 +10,23 @@
  *
  * Logos use the simpleicons.org CDN where available (returns a clean,
  * single-color SVG). Entries without a simpleicons slug fall back to
- * lucide-react's Container icon at render time.
+ * catalog's package icon at render time.
  *
  * Default env keys cover the minimum needed to boot the image - the
- * user will paste their real secrets in the configure step.
+ * user will paste their real secrets in the configure step. A credential
+ * the image refuses to start without uses `generate: "secret"`, so the
+ * default Add boots. The configure step can still replace the value.
  */
 
 import type { ImageCatalogEntry } from "@/lib/api/images";
+import { getAppTemplate, appGpuEnvironment } from "@repo/core";
+
+// The app and companion-service entry points must use the same reviewed image
+// and its required command. Keep these defaults in the canonical app template.
+const ollamaTemplate = getAppTemplate("ollama")!;
+const ollama = ollamaTemplate.services![0]!;
+
+const minio = getAppTemplate("minio")!.services!.find((service) => service.name === "minio")!;
 
 function si(slug: string): string {
   // simpleicons.org auto-coloring CDN. Falls back to monochrome silently
@@ -44,7 +52,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     ports: [5432],
     defaultEnv: [
       { key: "POSTGRES_USER", value: "postgres" },
-      { key: "POSTGRES_PASSWORD", value: "" },
+      { key: "POSTGRES_PASSWORD", generate: "secret" },
       { key: "POSTGRES_DB", value: "app" },
     ],
     defaultVolumes: ["pgdata:/var/lib/postgresql/data"],
@@ -58,7 +66,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     description: "Popular relational database, especially common with PHP and WordPress.",
     ports: [3306],
     defaultEnv: [
-      { key: "MYSQL_ROOT_PASSWORD", value: "" },
+      { key: "MYSQL_ROOT_PASSWORD", generate: "secret" },
       { key: "MYSQL_DATABASE", value: "app" },
     ],
     defaultVolumes: ["mysql_data:/var/lib/mysql"],
@@ -72,7 +80,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     description: "MySQL-compatible drop-in maintained by the original authors.",
     ports: [3306],
     defaultEnv: [
-      { key: "MARIADB_ROOT_PASSWORD", value: "" },
+      { key: "MARIADB_ROOT_PASSWORD", generate: "secret" },
       { key: "MARIADB_DATABASE", value: "app" },
     ],
     defaultVolumes: ["mariadb_data:/var/lib/mysql"],
@@ -87,7 +95,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     ports: [27017],
     defaultEnv: [
       { key: "MONGO_INITDB_ROOT_USERNAME", value: "root" },
-      { key: "MONGO_INITDB_ROOT_PASSWORD", value: "" },
+      { key: "MONGO_INITDB_ROOT_PASSWORD", generate: "secret" },
     ],
     defaultVolumes: ["mongo_data:/data/db"],
   },
@@ -109,15 +117,20 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     id: "cockroachdb",
     name: "CockroachDB",
     image: "cockroachdb/cockroach:latest",
+    commandArgv: ["start-single-node", "--certs-dir=/cockroach/certs"],
     logo: gh("cockroachdb"),
     category: "database",
     description: "Distributed SQL database with PostgreSQL wire compatibility.",
     ports: [26257, 8080],
     defaultEnv: [
       { key: "COCKROACH_DATABASE", value: "app" },
-      { key: "COCKROACH_USER", value: "root" },
+      { key: "COCKROACH_USER", value: "app" },
+      { key: "COCKROACH_PASSWORD", generate: "secret" },
     ],
-    defaultVolumes: ["cockroach_data:/cockroach/cockroach-data"],
+    defaultVolumes: [
+      "cockroach_data:/cockroach/cockroach-data",
+      "cockroach_certs:/cockroach/certs",
+    ],
   },
 
   /* ── Caches ───────────────────────────────────────────────────────── */
@@ -203,7 +216,7 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     description: "Fast, open-source search engine with first-class typo tolerance.",
     ports: [8108],
     defaultEnv: [
-      { key: "TYPESENSE_API_KEY", value: "" },
+      { key: "TYPESENSE_API_KEY", generate: "secret" },
       { key: "TYPESENSE_DATA_DIR", value: "/data" },
     ],
     defaultVolumes: ["typesense_data:/data"],
@@ -269,12 +282,28 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
   {
     id: "ollama",
     name: "Ollama",
-    image: "ollama/ollama:latest",
+    image: ollama.image!,
     logo: si("ollama"),
     category: "vector",
     description: "Run local LLMs (Llama, Mistral, etc.) with an OpenAI-compatible API.",
     ports: [11434],
-    defaultVolumes: ["ollama_data:/root/.ollama"],
+    defaultVolumes: [...ollama.volumes!],
+    defaultEnv: Object.entries(appGpuEnvironment(ollama, false)).map(([key, value]) => ({ key, value })),
+    supportsCloud: ollamaTemplate.supportsCloud,
+  },
+  {
+    id: "ollama-gpu",
+    name: "Ollama (NVIDIA GPU)",
+    image: ollama.image!,
+    logo: si("ollama"),
+    category: "vector",
+    description:
+      "Ollama with one NVIDIA GPU on the server. Needs a GPU server with the NVIDIA Container Toolkit.",
+    ports: [11434],
+    defaultVolumes: [...ollama.volumes!],
+    defaultEnv: Object.entries(ollama.environment ?? {}).map(([key, value]) => ({ key, value })),
+    supportsCloud: ollamaTemplate.supportsCloud,
+    gpus: Array.isArray(ollama.gpus) ? ollama.gpus[0] : ollama.gpus,
   },
 
   /* ── Queues & Streams ─────────────────────────────────────────────── */
@@ -316,16 +345,17 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
   {
     id: "minio",
     name: "MinIO",
-    image: "minio/minio:latest",
+    image: minio.image,
+    commandArgv: minio.commandArgv ? [...minio.commandArgv] : undefined,
     logo: si("minio"),
     category: "storage",
     description: "S3-compatible object storage. Self-hosted alternative to AWS S3.",
     ports: [9000, 9001],
     defaultEnv: [
       { key: "MINIO_ROOT_USER", value: "minioadmin" },
-      { key: "MINIO_ROOT_PASSWORD", value: "minioadmin" },
+      { key: "MINIO_ROOT_PASSWORD", generate: "secret" },
     ],
-    defaultVolumes: ["minio_data:/data"],
+    defaultVolumes: minio.volumes ? [...minio.volumes] : undefined,
   },
 
   /* ── Auth & Identity ──────────────────────────────────────────────── */
@@ -345,10 +375,11 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
   {
     id: "authentik",
     name: "Authentik",
-    image: "ghcr.io/goauthentik/server:latest",
+    image: "ghcr.io/goauthentik/server:2026.8.3",
+    commandArgv: ["server"],
     logo: gh("goauthentik"),
     category: "auth",
-    description: "Modern open-source identity provider with SAML, OAuth2, LDAP.",
+    description: "Authentik server. Requires a separate worker and PostgreSQL service.",
     ports: [9000],
     defaultEnv: [
       { key: "AUTHENTIK_SECRET_KEY", value: "" },
@@ -356,7 +387,6 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
       { key: "AUTHENTIK_POSTGRESQL__USER", value: "authentik" },
       { key: "AUTHENTIK_POSTGRESQL__PASSWORD", value: "" },
       { key: "AUTHENTIK_POSTGRESQL__NAME", value: "authentik" },
-      { key: "AUTHENTIK_REDIS__HOST", value: "redis" },
     ],
   },
 

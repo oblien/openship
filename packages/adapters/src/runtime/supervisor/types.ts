@@ -12,7 +12,14 @@
  * while the supervisor handles process lifecycle portably.
  */
 
-import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../../types";
+import type {
+  CommandExecutor,
+  LogEntry,
+  LogCallback,
+  ResourceUsage,
+  RuntimeLogStreamOptions,
+  ContainerInfo,
+} from "../../types";
 
 // ─── Deploy options ──────────────────────────────────────────────────────────
 
@@ -27,6 +34,8 @@ export interface SupervisorDeployOpts {
   startCommand: string;
   /** Port the application listens on */
   port: number;
+  /** Declared listeners; an empty list represents a portless worker. */
+  ports?: number[];
   /** Environment variables to set for the process */
   env: Record<string, string>;
 }
@@ -46,6 +55,9 @@ export interface ProcessSupervisor {
   /** Start a previously stopped process (unit/config must still exist) */
   start(deploymentId: string): Promise<void>;
 
+  /** Whether the saved activation configuration can restart this process. */
+  canStart(deploymentId: string): Promise<boolean>;
+
   /** Restart a process (stop + start with same config) */
   restart(deploymentId: string): Promise<void>;
 
@@ -54,6 +66,15 @@ export interface ProcessSupervisor {
 
   /** Check if the process is currently running */
   isRunning(deploymentId: string): Promise<boolean>;
+
+  /** Detailed state and owned listeners, when supplied by the host's process manager. */
+  getInfo?(deploymentId: string): Promise<ContainerInfo>;
+
+  /** Authoritative project inventory, including stopped and failed releases. */
+  listProjectDeploymentIds?(projectId: string): Promise<string[]>;
+
+  /** Release log subscriptions owned by this runtime borrower. */
+  dispose?(): Promise<void>;
 
   /**
    * Current CPU / memory / disk-IO for the process.
@@ -74,7 +95,7 @@ export interface ProcessSupervisor {
   streamLogs(
     deploymentId: string,
     onLog: LogCallback,
-    opts?: { tail?: number },
+    opts?: RuntimeLogStreamOptions,
   ): Promise<() => void>;
 }
 

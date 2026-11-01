@@ -4,39 +4,24 @@ import {
   timestamp,
   bigint,
   uniqueIndex,
+  index,
+  integer,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { DeploymentCheckSource } from "@repo/core";
 import { deployment } from "./deployment";
 import { serviceDeployment } from "./service";
 
 // ─── Deployment check runs (GitHub Checks rollup + per-service) ─────────────
 
 /**
- * GitHub `check_run` mirror rows for a deployment.
- *
- * Two flavors share this table, discriminated by the `kind` column:
- *
- *   - `kind = "rollup"`  — single project-level summary check named
- *     `openship/deploy`. One row per deployment. `serviceDeploymentId`
- *     is null. Conclusion aggregates per-service results
- *     (any failure → failure; all skipped → neutral; all success → success).
- *
- *   - `kind = "service"` — per-service mirror named
- *     `openship/deploy/<service>`. One row per (deployment, service)
- *     pair that produced a check run. `serviceDeploymentId` references
- *     the matching `service_deployment` row.
- *
- * Two partial unique indexes enforce the actual invariants:
- *
- *   - `uq_deployment_check_run_rollup` — one rollup row per deployment
- *     (WHERE kind = 'rollup'). A plain unique on
- *     (deployment_id, kind, service_deployment_id) does NOT enforce this
- *     because PostgreSQL treats NULLs as distinct in unique indexes by
- *     default — multiple (dep_id, 'rollup', NULL) rows could coexist.
- *
- *   - `uq_deployment_check_run_service` — one row per
- *     (deployment, service_deployment) pair (WHERE
- *     service_deployment_id IS NOT NULL). Re-runs upsert in place.
+ * Durable delivery intent and GitHub `check_run` mirrors for one attempt.
+ * The unique rollup owns the captured source, preferences and delivery lease,
+ * even when only service Checks are selected. Service mirrors are unique by
+ * name within the attempt, so failures before runtime startup still report.
+ * Remote IDs and service-deployment links are filled in as delivery progresses.
+ * New deployment attempts get new rows; transport retries update the same Check.
  */
 export const deploymentCheckRun = pgTable(
   "deployment_check_run",
@@ -46,8 +31,8 @@ export const deploymentCheckRun = pgTable(
       .notNull()
       .references(() => deployment.id, { onDelete: "cascade" }),
     /** GitHub `check_run.id` — bigint because the id space exceeds 32-bit. */
-    checkRunId: bigint("check_run_id", { mode: "number" }).notNull(),
-    /** Check-run name as registered with GitHub (e.g. `openship/deploy`, `openship/deploy/web`). */
+    checkRunId: bigint("check_run_id", { mode: "number" }),
+    /** Stable project/environment name, with a service suffix for service Checks. */
     name: text("name").notNull(),
     /** Discriminator: `"rollup"` (project-level) | `"service"` (per-service mirror). */
     kind: text("kind").notNull(),
@@ -60,11 +45,25 @@ export const deploymentCheckRun = pgTable(
     status: text("status").notNull(),
     /** GitHub check-run conclusion (only set when status = completed): `success | failure | neutral | cancelled | skipped | timed_out | action_required | stale`. */
     conclusion: text("conclusion"),
+    /** Rollup rows also own the durable delivery queue, even for service-only reporting. */
+    source: jsonb("source").$type<DeploymentCheckSource>(),
+    /** Service identity exists before a runtime service_deployment row is created. */
+    serviceName: text("service_name"),
+    publishedDigest: text("published_digest"),
+    nextAttemptAt: timestamp("next_attempt_at"),
+    leaseToken: text("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    index("ix_deployment_check_run_due").on(t.nextAttemptAt)
+      .where(sql`${t.kind} = 'rollup' and ${t.nextAttemptAt} is not null`),
+    uniqueIndex("uq_deployment_check_run_service_name").on(t.deploymentId, t.serviceName)
+      .where(sql`${t.kind} = 'service'`),
     // Rollup: exactly one row per deployment with kind = "rollup".
     // Partial index because NULL is distinct in PG unique indexes by
     // default — a non-partial unique over (deployment_id, kind,

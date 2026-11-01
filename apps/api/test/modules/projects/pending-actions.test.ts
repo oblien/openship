@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const {
+  currentIncidents,
   projectFindById,
   projectListByOrganization,
   findLatestByProject,
@@ -28,6 +29,7 @@ const {
   listByProject,
   listByProjects,
 } = vi.hoisted(() => ({
+  currentIncidents: vi.fn(),
   projectFindById: vi.fn(),
   projectListByOrganization: vi.fn(),
   findLatestByProject: vi.fn(),
@@ -49,22 +51,24 @@ vi.mock("@repo/db", () => ({
       findManyById,
     },
     domain: { listByProject, listByProjects },
+    serviceIncident: { listOpenForActiveProjects: currentIncidents },
   },
 }));
 
-vi.mock("../../../src/modules/deployments/session-manager", () => ({ getSession }));
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({ getSession }));
 
 import {
   getDeploymentPendingActions,
   getOrgPendingActions,
   getProjectPendingActions,
-} from "../../../src/modules/projects/pending-actions.service";
+} from "@repo/platform/engine/modules/projects/pending-actions.service";
 
 const ORG = "org-1";
 const PROJECT = "proj-1";
 
 const dep = (over: Record<string, unknown> = {}) => ({
   id: "dep-1",
+  projectId: PROJECT,
   organizationId: ORG,
   status: "ready",
   meta: null,
@@ -91,6 +95,7 @@ const blockedByPort = (over: Record<string, unknown> = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  currentIncidents.mockResolvedValue([]);
 
   projectFindById.mockResolvedValue({
     id: PROJECT,
@@ -517,6 +522,56 @@ describe("advisories stay advisories", () => {
     expect(action.severity).toBe("advisory");
   });
 
+  it.each([
+    { framework: undefined, target: 8080 },
+    { framework: "docker-compose", target: "svc-1" },
+  ])(
+    "reuses the port review action for a confirmed loopback bind ($framework)",
+    async ({ framework, target }) => {
+      const meta = {
+        portCheck: [
+          {
+            port: 8080,
+            serviceId: "svc-1",
+            serviceName: "api",
+            checked: true,
+            listening: true,
+            loopbackOnly: true,
+          },
+        ],
+      };
+      withPortCheck(meta, framework);
+
+      const actions = await getProjectPendingActions(PROJECT, ORG);
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).toMatchObject({
+        id: `port_advisory:dep-live:${target}`,
+        kind: "port_advisory",
+        severity: "action_required",
+        details: { port: 8080, serviceId: "svc-1", loopbackOnly: true },
+        resolveWith: [
+          { method: "POST", path: "/api/deployments/dep-live/skip-port-check", body: { target } },
+        ],
+      });
+      expect(actions[0].message).toContain("0.0.0.0");
+      expect(actions[0].message).not.toContain("different port");
+
+      withPortCheck({ ...meta, portCheckSkipped: [target] }, framework);
+      expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+    },
+  );
+
+  it("does not turn an unconfirmed bind or a reachable listener into an action", async () => {
+    withPortCheck({
+      portCheck: [
+        { port: 8080, checked: false, listening: true, loopbackOnly: true },
+        { port: 8081, checked: true, listening: true },
+      ],
+    });
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
   /**
    * The dismissal target must match `skipTarget` in PortAdvisoryModal exactly:
    * the numeric PORT for a single-app project, the service id only for compose.
@@ -746,5 +801,44 @@ describe("scoping", () => {
 
     expect(actions.map((a) => a.kind)).toEqual(["deploy_blocked"]);
     expect(actions[0].resolveWith[0].path).toBe("/api/deployments/dep-blocked/redeploy");
+  });
+});
+
+describe("runtime health from the existing incident state", () => {
+  const activeProject = () => ({ id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live" });
+  const incident = (kind = "crash_loop") => ({ id: "incident", projectId: PROJECT,
+    organizationId: ORG, status: "open", kind, serviceId: "svc_1", serviceName: "api",
+    reason: "service is not healthy", restartCount: 8, exitCode: 1, oomKilled: false });
+
+  it.each(["unhealthy", "crash_loop", "down"])("shows current %s without rewriting deployment success", async kind => {
+    projectFindById.mockResolvedValue(activeProject());
+    deploymentFindById.mockResolvedValue(dep({ id: "dep-live" }));
+    currentIncidents.mockResolvedValue([incident(kind)]);
+    const actions = await getProjectPendingActions(PROJECT, ORG);
+    expect(actions).toEqual([expect.objectContaining({ kind: "runtime_health", severity: "action_required",
+      details: expect.objectContaining({ deploymentId: "dep-live", href: `/projects/${PROJECT}/health` }) })]);
+    expect(actions[0]!.resolveWith[0]).toMatchObject({ method: "POST", path: "/api/deployments/dep-live/redeploy" });
+    currentIncidents.mockResolvedValue([]);
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
+  it("shows the action only on the active deployment, never a historical release or persisted old flag", async () => {
+    projectFindById.mockResolvedValue(activeProject());
+    deploymentFindById.mockResolvedValue(dep({ id: "dep-live" }));
+    currentIncidents.mockResolvedValue([incident()]);
+    expect((await getDeploymentPendingActions("dep-live", ORG)).map(row => row.kind)).toEqual(["runtime_health"]);
+    currentIncidents.mockClear();
+    projectFindById.mockResolvedValue({ ...activeProject(), activeDeploymentId: "new-release" });
+    deploymentFindById.mockResolvedValue(dep({ id: "dep-live", meta: { restartLoop: { services: [{}] } } }));
+    expect(await getDeploymentPendingActions("dep-live", ORG)).toEqual([]);
+    expect(currentIncidents).not.toHaveBeenCalled();
+  });
+
+  it("does not duplicate workload incidents in the global Issues pending-action source", async () => {
+    projectListByOrganization.mockResolvedValue({ rows: [activeProject()] });
+    findManyById.mockResolvedValue(new Map([["dep-live", dep({ id: "dep-live" })]]));
+    currentIncidents.mockResolvedValue([incident()]);
+    expect(await getOrgPendingActions(ORG)).toEqual(new Map());
+    expect(currentIncidents).not.toHaveBeenCalled();
   });
 });

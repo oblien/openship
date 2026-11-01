@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getChangelog } from "@/lib/changelog";
@@ -17,7 +18,10 @@ export async function generateStaticParams() {
   return entries.map((e) => ({ slug: e.slug }));
 }
 
-export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+export async function generateMetadata(
+  { params }: { params: Params },
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
   const { slug } = await params;
   const entry = (await getChangelog()).find((e) => e.slug === slug);
   if (!entry) return { title: "Changelog" };
@@ -26,7 +30,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const description = entry.summary || "Features, fixes, and improvements shipping in Openship.";
   const url = `/changelog/${slug}`;
 
-  return {
+  const metadata: Metadata = {
     title,
     description,
     alternates: { canonical: url },
@@ -45,6 +49,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       description,
     },
   };
+  return inheritSocialImages(metadata, parent);
 }
 
 export default async function ChangelogEntryPage({ params }: { params: Params }) {

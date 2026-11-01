@@ -1,0 +1,791 @@
+import { describe, expect, it, vi } from "vitest";
+import { KubernetesRuntime } from "./kubernetes";
+import {
+  KubernetesApiError,
+  type KubernetesApi,
+  type KubernetesObject,
+} from "../cluster/kubernetes-api";
+import type { DockerRuntime } from "./docker";
+import type { DeployConfig } from "../types";
+import type { ClusterVolumeMount } from "@repo/core";
+import { kubernetesIdLabel } from "../cluster/kubernetes-label";
+import { clusterDatabaseNamespace } from "../cluster/database";
+import {
+  admitProjectManifests,
+  PROJECT_MANIFEST_LABEL,
+} from "../cluster/project-manifests";
+
+const image = `ghcr.io/team/api@sha256:${"a".repeat(64)}`;
+const config = (id = "deploy-1"): DeployConfig => ({
+  deploymentId: id,
+  projectId: "project-1",
+  buildSessionId: "build-1",
+  imageRef: image,
+  port: 3000,
+  environment: "production",
+  envVars: { DATABASE_URL: "private-value" },
+  resources: { cpuCores: 0.5, memoryMb: 256, diskMb: 1024 },
+});
+function setup(
+  sharedDatabases?: () => Promise<readonly { databaseId: string; projectId: string }[]>,
+) {
+  const resources = new Map<string, KubernetesObject>();
+  let version = 1;
+  const ready = (object: KubernetesObject) => {
+    object.status = {
+      observedGeneration: object.metadata.generation,
+      availableReplicas: object.spec.replicas,
+      readyReplicas: object.spec.replicas,
+      updatedReplicas: object.spec.replicas,
+    };
+  };
+  const request = vi.fn(async (method: string, path: string, body?: any) => {
+    const clean = path.split("?")[0];
+    if (method === "GET") {
+      if (path.includes("labelSelector="))
+        return {
+          items: [...resources.entries()]
+            .filter(([key]) => key.startsWith(clean + "/"))
+            .map(([, value]) => structuredClone(value)),
+        };
+      const found = resources.get(path);
+      if (!found) throw new KubernetesApiError(404, "Not found");
+      return structuredClone(found);
+    }
+    if (method === "POST") {
+      const key = `${path}/${body.metadata.name}`;
+      if (resources.has(key)) throw new KubernetesApiError(409, "Already exists");
+      const value = structuredClone(body);
+      value.metadata.uid = `uid-${version}`;
+      value.metadata.resourceVersion = String(version++);
+      value.metadata.generation = 1;
+      if (value.kind === "Service") value.spec.clusterIP = "10.43.0.20";
+      resources.set(key, value);
+      return structuredClone(value);
+    }
+    const found = resources.get(path);
+    if (!found) throw new KubernetesApiError(404, "Not found");
+    if (method === "PATCH") {
+      if (body.metadata.resourceVersion !== found.metadata.resourceVersion)
+        throw new KubernetesApiError(409, "Changed");
+      found.spec = { ...found.spec, ...body.spec };
+      found.metadata.resourceVersion = String(version++);
+      found.metadata.generation!++;
+      if (found.kind === "Deployment") ready(found);
+      return structuredClone(found);
+    }
+    if (method === "DELETE") {
+      expect(body.preconditions.uid).toBe(found.metadata.uid);
+      resources.delete(path);
+      return {};
+    }
+    throw new Error("Unexpected request");
+  });
+  const watch = vi.fn(async function* (path: string) {
+    const name = new URL(`https://cluster${path}`).searchParams.get("fieldSelector")!.split("=")[1];
+    const value = resources.get(path.split("?")[0] + "/" + name)!;
+    yield { type: "BOOKMARK", object: { metadata: { resourceVersion: "2" } } };
+    ready(value);
+    yield { type: "MODIFIED", object: structuredClone(value) };
+  });
+  const api = {
+    request,
+    watch,
+    logs: vi.fn(async function* () {}),
+    dispose: vi.fn(async () => {}),
+  } as unknown as KubernetesApi;
+  const builder = {
+    docker: {
+      getImage: vi.fn(() => ({
+        inspect: vi.fn(async () => ({ Architecture: "arm64", Os: "linux" })),
+      })),
+    },
+    build: vi.fn(async () => ({
+      sessionId: "build-1",
+      status: "deploying",
+      imageRef: "local:image",
+    })),
+    prepareImage: vi.fn(async () => ({
+      sessionId: "build-1",
+      status: "deploying",
+      imageRef: image,
+      artifactOwned: false,
+    })),
+    publishImage: vi.fn(async () => image),
+    pullImage: vi.fn(async () => {}),
+    dispose: vi.fn(async () => {}),
+    removeImage: vi.fn(async () => {}),
+  };
+  const create = (projectId = "project-1", mounts?: ClusterVolumeMount[]) =>
+    new KubernetesRuntime({
+      api,
+      projectId,
+      runtimeId: "runtime-1",
+      sharedDatabases,
+      edgePrivateIp: "10.20.0.1",
+      servers: [{ serverId: "server-a", name: "Production A", nodeName: "openship-a" }],
+      config: { replicas: 3, imageRepository: "ghcr.io/team/api", mounts },
+      builder: async () => builder as unknown as DockerRuntime,
+      resolveRegistryAuth: async () => ({
+        username: "user",
+        password: "registry-secret",
+        serveraddress: "ghcr.io",
+      }),
+    });
+  return { runtime: create(), create, resources, request, watch, builder, ready, api };
+}
+
+function discoverForCleanup(
+  fixture: ReturnType<typeof setup>,
+  extra?: { kind: string; name: string; value: KubernetesObject },
+) {
+  const original = fixture.request.getMockImplementation()!;
+  const collections = [
+    { name: "secrets", kind: "Secret" },
+    { name: "services", kind: "Service" },
+    ...(extra ? [{ name: extra.name, kind: extra.kind }] : []),
+  ];
+  fixture.request.mockImplementation(async (method, path, body) => {
+    if (method === "GET" && path === "/apis") return { groups: [] } as any;
+    if (method === "GET" && path === "/api/v1")
+      return {
+        resources: collections.map((resource) => ({
+          ...resource,
+          namespaced: true,
+          verbs: ["list"],
+        })),
+      } as any;
+    const collection = collections.find(
+      (item) => path === `/api/v1/namespaces/${fixture.runtime.namespace}/${item.name}`,
+    );
+    if (method === "GET" && collection) {
+      return {
+        items:
+          extra?.name === collection.name
+            ? [extra.value]
+            : [...fixture.resources.entries()]
+                .filter(([key]) => key.startsWith(path + "/"))
+                .map(([, value]) => value),
+      } as any;
+    }
+    return original(method, path, body);
+  });
+}
+
+describe("Kubernetes workload lifecycle", () => {
+  async function withDatabaseConnections(
+    sharedDatabases?: () => Promise<readonly { databaseId: string; projectId: string }[]>,
+  ) {
+    const fixture = setup(sharedDatabases);
+    const databases = [];
+    for (const [id, group, collection, host] of [
+      ["orders", "postgresql.cnpg.io/v1", "clusters", "database-rw"],
+      ["cache", "redis.redis.opstreelabs.in/v1beta2", "redisclusters", "database-leader"],
+      ["sessions", "redis.redis.opstreelabs.in/v1beta2", "redis", "database"],
+    ]) {
+      const namespace = clusterDatabaseNamespace(id);
+      const labels = {
+        "openship.io/project": kubernetesIdLabel("project-1"),
+        "openship.io/runtime": "runtime-1",
+        "openship.io/database": id,
+      };
+      await fixture.request("POST", "/api/v1/namespaces", {
+        kind: "Namespace",
+        metadata: { name: namespace, labels },
+      });
+      await fixture.request("POST", `/api/v1/namespaces/${namespace}/secrets`, {
+        kind: "Secret",
+        metadata: { name: "credentials", labels },
+        data: { password: Buffer.from("database-password").toString("base64") },
+      });
+      const path = `/apis/${group}/namespaces/${namespace}/${collection}/database`;
+      await fixture.request("POST", path.slice(0, -"/database".length), {
+        kind: "Database",
+        metadata: { name: "database", labels },
+        spec: {},
+      });
+      databases.push({ namespace, path, host: `${host}.${namespace}.svc.cluster.local` });
+    }
+    const deployment = {
+      ...config(),
+      envVars: Object.fromEntries(databases.map((db, i) => [`DATABASE_${i}`, db.host])),
+    };
+    return { ...fixture, databases, deployment };
+  }
+  it.each(["orders", "cache", "sessions"])(
+    "deploys an explicitly shared native database without changing source ownership (%s)",
+    async (databaseId) => {
+      const fixture = await withDatabaseConnections(async () => [
+        { databaseId, projectId: "source-project" },
+      ]);
+      for (const object of fixture.resources.values())
+        if (object.metadata.labels?.["openship.io/database"] === databaseId)
+          object.metadata.labels["openship.io/project"] = kubernetesIdLabel("source-project");
+      const result = await fixture.runtime.deploy(fixture.deployment);
+      expect(result.status).toBe("running");
+      for (const object of fixture.resources.values())
+        if (object.metadata.labels?.["openship.io/database"] === databaseId)
+          expect(object.metadata.labels["openship.io/project"]).toBe(
+            kubernetesIdLabel("source-project"),
+          );
+    },
+  );
+
+  it("rejects a foreign database without an explicit grant before reading its credentials", async () => {
+    const fixture = await withDatabaseConnections();
+    const db = fixture.databases[0];
+    fixture.resources.get(`/api/v1/namespaces/${db.namespace}`)!.metadata.labels![
+      "openship.io/project"
+    ] = "foreign";
+    fixture.request.mockClear();
+    await expect(fixture.runtime.deploy(fixture.deployment)).rejects.toMatchObject({
+      code: "CLUSTER_DATABASE_UNAVAILABLE",
+    });
+    expect(
+      fixture.request.mock.calls.some(
+        ([, path]) => path === `/api/v1/namespaces/${db.namespace}/secrets/credentials`,
+      ),
+    ).toBe(false);
+  });
+
+  it("refuses cutover when the database grant is revoked while the candidate starts", async () => {
+    let checks = 0;
+    const fixture = await withDatabaseConnections(async () =>
+      ++checks === 1 ? [{ databaseId: "orders", projectId: "source-project" }] : [],
+    );
+    for (const object of fixture.resources.values())
+      if (object.metadata.labels?.["openship.io/database"] === "orders")
+        object.metadata.labels["openship.io/project"] = "source-project";
+    await expect(fixture.runtime.deploy(fixture.deployment)).rejects.toThrow(
+      "database connection is unavailable",
+    );
+    expect(
+      [...fixture.resources.values()].some(
+        (object) => object.kind === "Service" && object.metadata.name === "app",
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["start", "restart"] as const)(
+    "rechecks an explicit database grant before %s",
+    async (operation) => {
+      let granted = true;
+      const fixture = await withDatabaseConnections(async () =>
+        granted ? [{ databaseId: "orders", projectId: "source-project" }] : [],
+      );
+      for (const object of fixture.resources.values())
+        if (object.metadata.labels?.["openship.io/database"] === "orders")
+          object.metadata.labels["openship.io/project"] = "source-project";
+      const result = await fixture.runtime.deploy(fixture.deployment);
+      await fixture.runtime.stop(result.containerId!);
+      granted = false;
+      fixture.request.mockClear();
+      await expect(fixture.runtime[operation](result.containerId!)).rejects.toMatchObject({
+        code: "CLUSTER_DATABASE_UNAVAILABLE",
+      });
+      expect(fixture.request.mock.calls.some(([method]) => method === "PATCH")).toBe(false);
+    },
+  );
+
+  it("restarts a release with the same databases even when saved connection keys arrive in a different order", async () => {
+    const { runtime, resources, deployment } = await withDatabaseConnections();
+    const result = await runtime.deploy(deployment);
+    await runtime.stop(result.containerId!);
+    const release = [...resources.values()].find((value) => value.kind === "Deployment")!;
+    const secret = resources.get(
+      `/api/v1/namespaces/${runtime.namespace}/secrets/${release.metadata.name}-env`,
+    )!;
+    secret.data = Object.fromEntries(Object.entries(secret.data).reverse());
+    const identities = JSON.parse(release.metadata.annotations!["openship.io/database-identities"]);
+    release.metadata.annotations!["openship.io/database-identities"] = JSON.stringify(
+      Object.fromEntries(
+        Object.entries(identities)
+          .reverse()
+          .map(([name, value]) => [
+            name,
+            Object.fromEntries(Object.entries(value as object).reverse()),
+          ]),
+      ),
+    );
+    expect(release.metadata.annotations!["openship.io/database-identities"]).not.toContain(
+      "database-password",
+    );
+    await runtime.start(result.containerId!);
+    expect(release.spec.replicas).toBe(3);
+  });
+  it.each(["namespace", "credentials", "password", "database", "stopped", "foreign", "legacy"])(
+    "refuses an old release after its database identity changes (%s)",
+    async (change) => {
+      const { runtime, resources, request, databases, deployment } =
+        await withDatabaseConnections();
+      const result = await runtime.deploy(deployment);
+      await runtime.stop(result.containerId!);
+      const database = databases[0];
+      const secret = resources.get(`/api/v1/namespaces/${database.namespace}/secrets/credentials`)!;
+      if (change === "namespace")
+        resources.get(`/api/v1/namespaces/${database.namespace}`)!.metadata.uid = "replacement";
+      if (change === "credentials") secret.metadata.uid = "replacement";
+      if (change === "password")
+        secret.data.password = Buffer.from("rotated-password").toString("base64");
+      if (change === "database") resources.get(database.path)!.metadata.uid = "replacement";
+      if (change === "stopped") resources.delete(database.path);
+      if (change === "foreign")
+        resources.get(database.path)!.metadata.labels!["openship.io/database"] = "another-database";
+      if (change === "legacy")
+        delete [...resources.values()].find((value) => value.kind === "Deployment")!.metadata
+          .annotations!["openship.io/database-identities"];
+      request.mockClear();
+      await expect(runtime.start(result.containerId!)).rejects.toMatchObject({
+        code: "CLUSTER_DATABASE_UNAVAILABLE",
+      });
+      expect(request.mock.calls.some(([method]) => method === "PATCH")).toBe(false);
+    },
+  );
+  it("explains a missing database before it creates an application release", async () => {
+    const { runtime, resources, databases, deployment } = await withDatabaseConnections();
+    resources.delete(`/api/v1/namespaces/${databases[0].namespace}`);
+    await expect(runtime.deploy(deployment)).rejects.toMatchObject({
+      code: "CLUSTER_DATABASE_UNAVAILABLE",
+    });
+    expect([...resources.values()].some((value) => value.kind === "Deployment")).toBe(false);
+  });
+  async function withSharedFiles() {
+    const fixture = setup();
+    const runtime = fixture.create("project-1", [
+      { name: "uploads", mountPath: "/app/uploads", readOnly: true },
+    ]);
+    const labels = {
+      "openship.io/project": kubernetesIdLabel("project-1"),
+      "openship.io/runtime": "runtime-1",
+      "app.kubernetes.io/managed-by": "openship",
+      "openship.io/volume": "uploads",
+    };
+    const claim = await fixture.request(
+      "POST",
+      `/api/v1/namespaces/${runtime.namespace}/persistentvolumeclaims`,
+      {
+        apiVersion: "v1",
+        kind: "PersistentVolumeClaim",
+        metadata: { name: "shared-uploads", labels },
+        spec: {
+          accessModes: ["ReadWriteMany"],
+          storageClassName: "openship-replicated",
+          volumeName: "files-disk",
+        },
+        status: { phase: "Bound" },
+      },
+    );
+    await fixture.request("POST", "/api/v1/persistentvolumes", {
+      apiVersion: "v1",
+      kind: "PersistentVolume",
+      metadata: { name: "files-disk" },
+      spec: {
+        claimRef: { uid: claim.metadata.uid, namespace: runtime.namespace },
+        csi: { driver: "driver.longhorn.io" },
+      },
+    });
+    return {
+      ...fixture,
+      runtime,
+      claimPath: `/api/v1/namespaces/${runtime.namespace}/persistentvolumeclaims/shared-uploads`,
+    };
+  }
+  it("keeps shared files and their read-only mount when restarting a retained release", async () => {
+    const { runtime, resources } = await withSharedFiles();
+    const result = await runtime.deploy(config());
+    const release = [...resources.values()].find((value) => value.kind === "Deployment")!;
+    expect(release.spec.template.spec.containers[0].volumeMounts).toEqual([
+      { name: expect.any(String), mountPath: "/app/uploads", readOnly: true },
+    ]);
+    expect(release.spec.template.spec.volumes[0].persistentVolumeClaim).toEqual({
+      claimName: "shared-uploads",
+      readOnly: true,
+    });
+    const volumes = structuredClone(release.spec.template.spec.volumes);
+    await runtime.stop(result.containerId!);
+    await runtime.start(result.containerId!);
+    expect(release.spec.template.spec.volumes).toEqual(volumes);
+    expect(
+      [...resources.values()].filter((value) => value.kind === "PersistentVolumeClaim"),
+    ).toHaveLength(1);
+  });
+  it("refuses a replaced volume when an older release is started or rolled back", async () => {
+    const { runtime, resources, claimPath, request } = await withSharedFiles();
+    const result = await runtime.deploy(config());
+    await runtime.stop(result.containerId!);
+    resources.get(claimPath)!.metadata.uid = "different-data";
+    request.mockClear();
+    await expect(runtime.start(result.containerId!)).rejects.toMatchObject({
+      code: "CLUSTER_VOLUME_UNAVAILABLE",
+    });
+    expect(request.mock.calls.some(([method]) => method === "PATCH")).toBe(false);
+  });
+  it("refuses foreign or unbound shared data before creating a release", async () => {
+    for (const change of ["foreign", "pending"]) {
+      const { runtime, resources, claimPath } = await withSharedFiles();
+      const claim = resources.get(claimPath)!;
+      if (change === "foreign") claim.metadata.labels!["openship.io/project"] = "other";
+      else claim.status.phase = "Pending";
+      await expect(runtime.deploy(config())).rejects.toThrow();
+      expect([...resources.values()].some((value) => value.kind === "Deployment")).toBe(false);
+    }
+  });
+  it.each(["_", "-", ".", "a".repeat(80)])(
+    "routes and manages IDs ending in %s through valid, consistent labels",
+    async (suffix) => {
+      const projectId = `proj_label${suffix}`;
+      const deploymentId = `dep_label${suffix}`;
+      const { create, resources, request } = setup();
+      const runtime = create(projectId);
+      const result = await runtime.deploy({ ...config(deploymentId), projectId });
+      expect(result.deploymentId).toBe(deploymentId);
+      const values = [...resources.values()];
+      const workload = values.find((value) => value.kind === "Deployment")!;
+      const projectLabel = workload.metadata.labels!["openship.io/project"];
+      const deploymentLabel = workload.metadata.labels!["openship.io/deployment"];
+      for (const value of values) {
+        for (const label of Object.values(value.metadata.labels ?? {})) {
+          expect(label).toMatch(/^[a-z0-9](?:[-a-z0-9_.]*[a-z0-9])?$/i);
+          expect(label.length).toBeLessThanOrEqual(63);
+        }
+        expect(value.metadata.labels!["openship.io/project"]).toBe(projectLabel);
+        if (value.kind === "Service")
+          expect(value.spec.selector).toEqual({ "openship.io/deployment": deploymentLabel });
+      }
+      expect(workload.spec.template.metadata.labels).toEqual(workload.metadata.labels);
+      expect(workload.spec.selector.matchLabels).toEqual({
+        "openship.io/deployment": deploymentLabel,
+      });
+      expect(
+        workload.spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels,
+      ).toEqual({ "openship.io/project": projectLabel });
+      expect(await runtime.listProjectContainerIds(projectId)).toEqual([result.containerId]);
+      expect(request.mock.calls.at(-1)?.[1]).toContain(
+        `labelSelector=${encodeURIComponent(`openship.io/project=${projectLabel}`)}`,
+      );
+      await runtime.stop(result.containerId!);
+      await runtime.start(result.containerId!);
+      expect(await runtime.getContainerInfo(result.containerId!)).toMatchObject({
+        status: "running",
+      });
+      await runtime.destroy(result.containerId!);
+      expect(await runtime.listProjectContainerIds(projectId)).toEqual([]);
+      await runtime.dispose();
+    },
+  );
+
+  it("creates isolated replicas, pins the architecture and waits before exposing a stable service", async () => {
+    const { runtime, resources, watch } = setup();
+    const result = await runtime.deploy(config());
+    const values = [...resources.values()];
+    const deployment = values.find((value) => value.kind === "Deployment")!;
+    expect(watch).toHaveBeenCalledTimes(1);
+    expect(deployment.spec.replicas).toBe(3);
+    expect(deployment.spec.template.spec).toMatchObject({
+      automountServiceAccountToken: false,
+      nodeSelector: { "openship.io/runtime": "runtime-1", "kubernetes.io/arch": "arm64" },
+      containers: [{ image, resources: { requests: { cpu: "0.5", memory: "256Mi" } } }],
+    });
+    expect(JSON.stringify(deployment)).not.toContain("private-value");
+    expect(JSON.stringify(deployment)).not.toContain("registry-secret");
+    expect(values.find((value) => value.metadata.name === "app")!.spec.selector).toEqual(
+      deployment.spec.selector.matchLabels,
+    );
+    expect(await runtime.getContainerInfo(result.containerId!)).toMatchObject({
+      status: "running",
+      ip: "10.43.0.20",
+    });
+    for (const [name, nodeName] of [
+      ["instance-a", "openship-a"],
+      ["instance-b", "unrecognized-node"],
+    ]) {
+      resources.set(`/api/v1/namespaces/${runtime.namespace}/pods/${name}`, {
+        kind: "Pod",
+        metadata: { ...deployment.spec.template.metadata, name },
+        spec: { nodeName },
+        status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }] },
+      });
+    }
+    const status = await runtime.status(result.containerId!);
+    expect(status.pods).toEqual([
+      {
+        name: "instance-a",
+        nodeName: "openship-a",
+        serverId: "server-a",
+        serverName: "Production A",
+        ready: true,
+        phase: "Running",
+        restarts: 0,
+      },
+      {
+        name: "instance-b",
+        nodeName: "unrecognized-node",
+        serverId: null,
+        serverName: null,
+        ready: true,
+        phase: "Running",
+        restarts: 0,
+      },
+    ]);
+  });
+  it("publishes a source build through the existing builder and records an immutable artifact", async () => {
+    const { runtime, builder } = setup();
+    const result = await runtime.build({ sessionId: "build-1" } as never);
+    expect(builder.build).toHaveBeenCalledOnce();
+    expect(builder.publishImage).toHaveBeenCalledWith(
+      "local:image",
+      expect.stringMatching(/^ghcr.io\/team\/api:release-/),
+      expect.any(AbortSignal),
+    );
+    expect(result).toMatchObject({ imageRef: image, artifactOwned: false });
+    expect(builder.removeImage).toHaveBeenCalledWith(
+      expect.stringMatching(/^ghcr.io\/team\/api:release-/),
+    );
+    expect(builder.removeImage).not.toHaveBeenCalledWith("local:image");
+  });
+
+  it.each(["failed", "cancelled"])(
+    "preserves a %s image acquisition without trying to inspect or deploy it",
+    async (status) => {
+      const { runtime, builder, request } = setup();
+      builder.prepareImage.mockResolvedValueOnce({
+        sessionId: "build-1",
+        status,
+        imageRef: "app:latest",
+        artifactOwned: false,
+      });
+      expect(
+        await runtime.prepareImage({ sessionId: "build-1", imageRef: "app:latest" } as never),
+      ).toMatchObject({ status });
+      expect(builder.docker.getImage).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses a known database image before pulling it or creating workload resources", async () => {
+    const { runtime, builder, request } = setup();
+    await expect(
+      runtime.deploy({
+        ...config(),
+        imageRef: `docker.io/library/postgres@sha256:${"a".repeat(64)}`,
+      }),
+    ).rejects.toMatchObject({ code: "CLUSTER_WORKLOAD_UNSUPPORTED" });
+    expect(builder.pullImage).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("refuses stateful mounts and another project's reference without sending a mutation", async () => {
+    const { runtime, request } = setup();
+    await expect(runtime.deploy({ ...config(), volumes: ["data:/var/lib/db"] })).rejects.toThrow(
+      "Persistent mounts",
+    );
+    await expect(runtime.destroy("k8s:foreign:release-1")).rejects.toThrow("another project");
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("leaves a foreign namespace untouched", async () => {
+    const { runtime, resources, request } = setup();
+    resources.set(`/api/v1/namespaces/${runtime.namespace}`, {
+      metadata: { name: runtime.namespace, labels: { "openship.io/project": "other-project" } },
+    });
+    await expect(runtime.deploy(config())).rejects.toThrow("not owned");
+    expect(
+      request.mock.calls.some(
+        ([method, path]) => method === "POST" && path.includes("/deployments"),
+      ),
+    ).toBe(false);
+  });
+  it("reconnects an expired watch by reading state without replaying deployment creation", async () => {
+    const { runtime, watch, request } = setup();
+    watch.mockImplementationOnce(async function* () {
+      yield { type: "ERROR", object: { metadata: {}, code: 410 } };
+    });
+    await runtime.deploy(config());
+    expect(watch).toHaveBeenCalledTimes(2);
+    expect(
+      request.mock.calls.filter(
+        ([method, path]) => method === "POST" && path.endsWith("/deployments"),
+      ),
+    ).toHaveLength(1);
+  });
+  it("pause and resume preserve the chosen replica count", async () => {
+    const { runtime } = setup();
+    const result = await runtime.deploy(config());
+    await runtime.stop(result.containerId!);
+    expect(await runtime.getContainerInfo(result.containerId!)).toMatchObject({
+      status: "stopped",
+    });
+    await runtime.start(result.containerId!);
+    expect((await runtime.status(result.containerId!)).desired).toBe(3);
+  });
+  it("keeps the old internal service when a new rollout fails and removes only the failed release", async () => {
+    const { runtime, resources, watch } = setup();
+    const old = await runtime.deploy(config());
+    const appPath = `/api/v1/namespaces/${runtime.namespace}/services/app`;
+    const selector = structuredClone(resources.get(appPath)!.spec.selector);
+    watch.mockImplementationOnce(async function* (path: string) {
+      const name = new URL(`https://cluster${path}`).searchParams
+        .get("fieldSelector")!
+        .split("=")[1];
+      const value = structuredClone(resources.get(path.split("?")[0] + "/" + name)!);
+      value.status = {
+        conditions: [
+          {
+            type: "Progressing",
+            status: "False",
+            message: "ImagePullBackOff: registry denied access",
+          },
+        ],
+      };
+      yield { type: "MODIFIED", object: value };
+    });
+    await expect(
+      runtime.deploy({ ...config("deploy-2"), previousDeploymentId: "deploy-1" }),
+    ).rejects.toThrow("registry denied");
+    expect(resources.get(appPath)!.spec.selector).toEqual(selector);
+    expect(await runtime.getContainerInfo(old.containerId!)).toMatchObject({ status: "running" });
+    expect([...resources.values()].filter((value) => value.kind === "Deployment")).toHaveLength(1);
+  });
+  it("restores the still-running previous internal service when a ready release is rolled back", async () => {
+    const { runtime, resources } = setup();
+    await runtime.deploy(config());
+    const next = await runtime.deploy({ ...config("deploy-2"), previousDeploymentId: "deploy-1" });
+    await runtime.destroy(next.containerId!);
+    expect(
+      resources.get(`/api/v1/namespaces/${runtime.namespace}/services/app`)!.spec.selector[
+        "openship.io/deployment"
+      ],
+    ).toBe("deploy-1");
+  });
+  it("reports a removed workload as missing for the existing lifecycle readers", async () => {
+    const { runtime } = setup();
+    const deployment = await runtime.deploy(config());
+    await runtime.destroy(deployment.containerId!);
+    expect(await runtime.getContainerInfo(deployment.containerId!)).toMatchObject({
+      status: "missing",
+    });
+  });
+  it("removes an owned, empty project namespace after its workload is gone", async () => {
+    const fixture = setup();
+    const deployment = await fixture.runtime.deploy(config());
+    await fixture.runtime.destroy(deployment.containerId!);
+    discoverForCleanup(fixture);
+    await fixture.runtime.cleanupProject("project-1");
+    expect(fixture.resources.has(`/api/v1/namespaces/${fixture.runtime.namespace}`)).toBe(false);
+  });
+  it("keeps manifest Deployments out of native release inventory and cleans their owned namespace", async () => {
+    const fixture = setup();
+    const deployment = await fixture.runtime.deploy(config());
+    const namespace = `/api/v1/namespaces/${fixture.runtime.namespace}`;
+    const manifest = admitProjectManifests(
+      [
+        {
+          apiVersion: "apps/v1",
+          kind: "Deployment",
+          metadata: { name: "custom-api" },
+          spec: {
+            selector: { matchLabels: { app: "custom-api" } },
+            template: {
+              metadata: { labels: { app: "custom-api" } },
+              spec: { containers: [{ name: "api", image: "nginx:alpine" }] },
+            },
+          },
+        },
+      ],
+      { projectId: "project-1", runtimeId: "runtime-1", namespace: fixture.runtime.namespace },
+    )[0]!;
+    const created = await fixture.request(
+      "POST",
+      `/apis/apps/v1/namespaces/${fixture.runtime.namespace}/deployments`,
+      manifest,
+    );
+    expect(await fixture.runtime.listProjectContainerIds("project-1")).toEqual([
+      deployment.containerId,
+    ]);
+    await fixture.runtime.destroy(deployment.containerId!);
+    expect(await fixture.runtime.listProjectContainerIds("project-1")).toEqual([]);
+    discoverForCleanup(fixture, { kind: "Deployment", name: "deployments", value: created });
+    await fixture.runtime.cleanupProject("project-1");
+    expect(fixture.resources.has(namespace)).toBe(false);
+  });
+  it.each(["openship.io/project", "openship.io/runtime"])(
+    "still rejects foreign manifest Deployments with a mismatched %s",
+    async (label) => {
+      const fixture = setup();
+      const deployment = await fixture.runtime.deploy(config());
+      const namespace = `/api/v1/namespaces/${fixture.runtime.namespace}`;
+      const labels = {
+        ...fixture.resources.get(namespace)!.metadata.labels,
+        [PROJECT_MANIFEST_LABEL]: "true",
+        [label]: "foreign",
+      };
+      fixture.resources.set(
+        `/apis/apps/v1/namespaces/${fixture.runtime.namespace}/deployments/custom-api`,
+        { kind: "Deployment", metadata: { name: "custom-api", labels } },
+      );
+      await fixture.runtime.destroy(deployment.containerId!);
+      await expect(fixture.runtime.listProjectContainerIds("project-1")).rejects.toMatchObject({
+        code: "CLUSTER_WORKLOAD_OWNERSHIP",
+      });
+      await expect(fixture.runtime.cleanupProject("project-1")).rejects.toMatchObject({
+        code: "CLUSTER_WORKLOAD_OWNERSHIP",
+      });
+      expect(fixture.resources.has(namespace)).toBe(true);
+    },
+  );
+  it.each(["PersistentVolumeClaim", "PostgresCluster"])(
+    "preserves attached %s even with copied ownership labels and omitted item kind",
+    async (kind) => {
+      const fixture = setup();
+      const deployment = await fixture.runtime.deploy(config());
+      const namespace = `/api/v1/namespaces/${fixture.runtime.namespace}`;
+      const labels = fixture.resources.get(namespace)!.metadata.labels;
+      await fixture.runtime.destroy(deployment.containerId!);
+      discoverForCleanup(fixture, {
+        kind,
+        name: "attached-data",
+        value: { metadata: { name: "database", uid: "attached", labels } },
+      });
+      await expect(fixture.runtime.cleanupProject("project-1")).rejects.toThrow(
+        kind === "PersistentVolumeClaim" ? "persistent storage" : "PostgresCluster",
+      );
+      expect(fixture.resources.has(namespace)).toBe(true);
+      expect(
+        fixture.request.mock.calls.some(
+          ([method, path]) => method === "DELETE" && path === namespace,
+        ),
+      ).toBe(false);
+    },
+  );
+  it.each(["ConfigMap", "Job", "CronJob"])(
+    "removes a project-manifest %s that carries this project's ownership labels (#1039)",
+    async (kind) => {
+      const fixture = setup();
+      const deployment = await fixture.runtime.deploy(config());
+      const namespace = `/api/v1/namespaces/${fixture.runtime.namespace}`;
+      const labels = fixture.resources.get(namespace)!.metadata.labels;
+      await fixture.runtime.destroy(deployment.containerId!);
+      discoverForCleanup(fixture, {
+        kind,
+        name: "manifest-objects",
+        value: { kind, metadata: { name: "from-manifest", uid: "manifest", labels } },
+      });
+      await fixture.runtime.cleanupProject("project-1");
+      expect(fixture.resources.has(namespace)).toBe(false);
+    },
+  );
+  it("still preserves a ConfigMap this project does not own", async () => {
+    const fixture = setup();
+    const deployment = await fixture.runtime.deploy(config());
+    const namespace = `/api/v1/namespaces/${fixture.runtime.namespace}`;
+    await fixture.runtime.destroy(deployment.containerId!);
+    discoverForCleanup(fixture, {
+      kind: "ConfigMap",
+      name: "configmaps",
+      value: {
+        kind: "ConfigMap",
+        metadata: { name: "operator-config", uid: "foreign", labels: {} },
+      },
+    });
+    await expect(fixture.runtime.cleanupProject("project-1")).rejects.toThrow("ConfigMap");
+    expect(fixture.resources.has(namespace)).toBe(true);
+  });
+});

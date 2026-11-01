@@ -1,0 +1,76 @@
+---
+title: system settings
+description: Commands, arguments, and options for openship system settings.
+cliGroup: openship system settings
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship system settings
+
+Read or update instance settings
+
+```text
+openship system settings [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`patch [options] [file]`](/docs/cli/reference/system/settings#openship-system-settings-patch) | Update any supported instance setting using its shared JSON contract |
+| [`reset [options]`](/docs/cli/reference/system/settings#openship-system-settings-reset) | Reset instance settings and return to setup |
+| [`get`](/docs/cli/reference/system/settings#openship-system-settings-get) | Show current instance settings |
+| [`set [options]`](/docs/cli/reference/system/settings#openship-system-settings-set) | Update instance-level settings |
+
+## openship system settings get
+
+Show current instance settings
+
+```text
+openship system settings get [options]
+```
+
+## openship system settings patch
+
+Update any supported instance setting using its shared JSON contract
+
+```text
+openship system settings patch [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship system settings reset
+
+Reset instance settings and return to setup
+
+```text
+openship system settings reset [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm the instance reset |
+
+## openship system settings set
+
+Update instance-level settings
+
+```text
+openship system settings set [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--auth-mode <mode>` | Auth mode: none \| local \| cloud |
+| `--confirm <phrase>` | Required for auth-mode none: "I-understand-no-auth" |
+| `--tunnel-provider <provider>` | Tunnel provider (empty string clears) |
+| `--tunnel-token <token>` | Tunnel token |
+| `--default-build-mode <mode>` | Default build mode |
+| `--default-rollback-window <n>` | Default rollback window |
+| `--invitation-mail-source <src>` | Invitation mail source: platform \| cloud |

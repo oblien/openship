@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { buildHelperScript } from "./relay";
+import { buildHelperScript } from "@repo/platform/engine/lib/git-forwarding/relay";
 
 const execFileAsync = promisify(execFile);
 

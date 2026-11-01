@@ -20,6 +20,7 @@
  * one pass over the box.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { ProxySettings } from "@repo/core";
 
 import type { CommandExecutor, ManualCert } from "../../types";
@@ -55,8 +56,10 @@ export interface ProxySiteRouteSsl {
 }
 
 export interface ProxySiteRoute {
-  /** Published host port the proxy forwards to — the container-join key. */
+  /** Upstream port (a host publish OR a port on a Docker-private address). */
   port: number;
+  /** Full upstream identity. A port alone cannot distinguish Docker services. */
+  upstream?: string;
   /** Location path this upstream serves (e.g. "/", "/v3"). */
   path: string;
   /** Whether the source used nginx's exact-match selector (`location = …`). */
@@ -76,14 +79,13 @@ export interface ProxySiteRoute {
 }
 
 /**
- * PURE. Reverse-index parsed sites by their upstream (published host) port.
+ * PURE. Reverse-index parsed sites by their upstream port.
  * A vhost's `routes` (per-location upstreams) are indexed individually, so a
  * path-fan-out domain (`/ → :1010`, `/v3 → :1020`) yields one entry PER port,
  * each carrying its path — letting a join attach `/v3` to the `:1020` service.
  * Each port maps to a LIST (a port can serve multiple paths / come from multiple
- * vhosts). Static docroots (no upstream port) are skipped. Same (port,path,match
- * mode) from multiple vhosts union their domains and prefer an SSL-terminating
- * one's cert.
+ * vhosts). Static docroots are skipped. Only identical upstreams and location
+ * selectors union their domains; two private Docker IPs on :3000 are distinct.
  */
 export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySiteRoute[]> {
   const byPort = new Map<number, ProxySiteRoute[]>();
@@ -93,17 +95,19 @@ export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySi
       site.routes ?? (site.target.kind === "proxy" ? [{ path: "/", url: site.target.url }] : []);
 
     for (const up of upstreams) {
-      let port: number;
+      let url: URL;
       try {
-        port = Number(new URL(up.url).port);
+        url = new URL(up.url);
       } catch {
         continue;
       }
-      if (!Number.isFinite(port) || port <= 0) continue;
+      if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+      const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) continue;
 
       const list = byPort.get(port) ?? [];
       const existing = list.find(
-        (r) => r.path === up.path && Boolean(r.exact) === Boolean(up.exact),
+        (r) => r.upstream === url.href && r.path === up.path && Boolean(r.exact) === Boolean(up.exact),
       );
       if (existing) {
         existing.domains = [...new Set([...existing.domains, ...site.serverNames])];
@@ -120,6 +124,7 @@ export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySi
       } else {
         list.push({
           port,
+          upstream: url.href,
           path: up.path,
           ...(up.exact ? { exact: true } : {}),
           domains: [...site.serverNames],
@@ -238,7 +243,7 @@ export async function edgeProxy(
   exec: CommandExecutor,
   opts: { status?: EdgeStatus } = {},
 ): Promise<EdgeProxyApi | null> {
-  const status = opts.status ?? (await probeEdge(exec).catch(() => null));
+  const status = opts.status ?? (await probeEdge(exec).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/api"); return null; }));
   if (!status) return null;
 
   let kind: ProxyKind | null = null;
@@ -252,7 +257,7 @@ export async function edgeProxy(
   }
   // Nothing on the ports (or something unrecognized) — but a stopped proxy's
   // config is still on disk and still migratable.
-  if (!kind) kind = await detectInstalledProxy(exec).catch(() => null);
+  if (!kind) kind = await detectInstalledProxy(exec).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/api"); return null; });
   if (!kind) return null;
 
   const container = status.occupants.find((o) => o.proxy === kind)?.containerName ?? null;
@@ -296,7 +301,7 @@ export async function collectProxyCerts(
   const warnings: string[] = [];
   const hosts = [...new Set(sites.filter((s) => s.ssl).flatMap((s) => s.serverNames))];
   for (const host of hosts) {
-    const candidate = await api.certCandidateFor(host).catch(() => null);
+    const candidate = await api.certCandidateFor(host).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/api"); return null; });
     if (candidate?.cert) {
       certPems[host] = { certPem: candidate.cert.certPem, keyPem: candidate.cert.keyPem };
     } else if (candidate?.reason) {
@@ -315,11 +320,12 @@ function makeApi(
   // One scan per instance backs sites / by-port / siteFor / certFor.
   let scan: Promise<ProxyScanResult> | null = null;
   const listSites = () => {
-    scan ??= (ours ? scanOpenshipEdge(exec) : scanImportableSites(exec, kind)).catch(() => ({
+    scan ??= (ours ? scanOpenshipEdge(exec) : scanImportableSites(exec, kind)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/api"); return ({
       proxy: kind,
       sites: [],
+      readable: false,
       warnings: [`${kind}: config scan failed`],
-    }));
+    }); });
     return scan;
   };
 
@@ -338,7 +344,8 @@ function makeApi(
       // A transient transport/config failure must remain visible to this caller,
       // but it must not poison the API instance forever. The next call retries a
       // real scan; it never falls back to an older successful inventory.
-      void nextScan.catch(() => {
+      void nextScan.catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/proxy/api");
         if (strictLoopbackPorts === nextScan) strictLoopbackPorts = null;
       });
     }
@@ -368,7 +375,7 @@ function makeApi(
     const ctx: CertLookupCtx = { exec, host, site, container };
     let lastReason: string | null = null;
     for (const source of CERT_SOURCES[kind] ?? []) {
-      const raw = await source(ctx).catch(() => null);
+      const raw = await source(ctx).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/api"); return null; });
       if (!raw) continue;
       const candidate = validateCertFor(host, raw, raw.source);
       if (candidate.cert) return candidate;

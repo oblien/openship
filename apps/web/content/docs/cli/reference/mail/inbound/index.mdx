@@ -1,0 +1,86 @@
+---
+title: mail inbound
+description: Commands, arguments, and options for openship mail inbound.
+cliGroup: openship mail inbound
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship mail inbound
+
+Manage inbound-mail notification rules
+
+```text
+openship mail inbound [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <server>`](/docs/cli/reference/mail/inbound#openship-mail-inbound-list) | List rules and paused state |
+| [`create [options] <id> [file]`](/docs/cli/reference/mail/inbound#openship-mail-inbound-create) | Create a rule for existing notification channels |
+| [`update [options] <parent> <id> [file]`](/docs/cli/reference/mail/inbound#openship-mail-inbound-update) | Update a rule; pausedReason=null explicitly clears its pause |
+| [`remove [options] <server> <rule>`](/docs/cli/reference/mail/inbound#openship-mail-inbound-remove) | Remove a rule and release unneeded capture |
+| [`test <server>`](/docs/cli/reference/mail/inbound#openship-mail-inbound-test) | Preview matches without sending notifications or deleting captured mail |
+
+## openship mail inbound create
+
+Create a rule for existing notification channels
+
+```text
+openship mail inbound create [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship mail inbound list
+
+List rules and paused state
+
+```text
+openship mail inbound list [options] <server>
+```
+
+## openship mail inbound remove
+
+Remove a rule and release unneeded capture
+
+```text
+openship mail inbound remove [options] <server> <rule>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm removal |
+
+## openship mail inbound test
+
+Preview matches without sending notifications or deleting captured mail
+
+```text
+openship mail inbound test [options] <server>
+```
+
+## openship mail inbound update
+
+Update a rule; pausedReason=null explicitly clears its pause
+
+```text
+openship mail inbound update [options] <parent> <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `parent` | Parent resource ID |
+| `id` | Resource ID or name |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

@@ -1,8 +1,10 @@
+import { reportClientError } from "./error-reporting";
 /**
  * SSE Client Utility
  * Provides helper functions for connecting to SSE endpoints
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { getApiBaseUrl } from '@/lib/api';
 
 export interface SSEClientOptions {
@@ -149,7 +151,7 @@ export const connectToSSE = async (
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => response.statusText);
+    const errorText = await response.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/sseClient"); return response.statusText; });
     options.onError?.(new Error(errorText));
     return { disconnect: () => {} };
   }
@@ -224,7 +226,7 @@ const processSSEStream = async (
         const chunk = decoder.decode(value, { stream: true });
         
         // Check for terminal error states before passing to onMessage
-        const { hasTerminalError, data } = parseSSEMessage(chunk);
+        const { hasTerminalError } = parseSSEMessage(chunk);
         
         // Always send the message to the UI
         options.onMessage(chunk);
@@ -232,18 +234,19 @@ const processSSEStream = async (
         // If this message indicates a terminal error, mark it
         if (hasTerminalError) {
           lastMessageHadError = true;
-          console.log('[SSEClient] Detected terminal error state in message:', data);
         }
       }
       
       // Stream ended - check if last message was an error
       if (lastMessageHadError) {
-        console.log('[SSEClient] Stream ended with terminal error - preventing reconnection');
-        options.onError?.(new NoRetryError('Build completed with error'));
+        const error = new NoRetryError('Build completed with error');
+        reportClientError(error, { component: 'sse-client', kind: 'deployment' });
+        options.onError?.(error);
       } else {
         options.onDisconnect?.();
       }
     } catch (err: any) {
+      observeCaughtError(err, "dashboard/lib/sseClient");
       if (err.name !== 'AbortError') {
         options.onError?.(err);
       } else {

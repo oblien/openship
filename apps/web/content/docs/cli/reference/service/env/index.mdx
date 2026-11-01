@@ -1,0 +1,133 @@
+---
+title: service env
+description: Commands, arguments, and options for openship service env.
+cliGroup: openship service env
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship service env
+
+Inspect, edit, and apply a service's environment variables
+
+```text
+openship service env [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get [options] <service>`](/docs/cli/reference/service/env#openship-service-env-get) | List a service's environment variables (secrets masked) |
+| [`set [options] <service> <pairs...>`](/docs/cli/reference/service/env#openship-service-env-set) | Set a service's environment variables for one environment |
+| [`inspect [options] <service>`](/docs/cli/reference/service/env#openship-service-env-inspect) | Show effective variables, their sources, and pending runtime changes (secrets masked) |
+| [`reveal [options] <service> <keys...>`](/docs/cli/reference/service/env#openship-service-env-reveal) | Print explicitly selected secret values; requires service write access |
+| [`delete\|unset [options] <service> <keys...>`](/docs/cli/reference/service/env#openship-service-env-delete) | Remove selected service overrides; inherited values become effective again |
+| [`apply [options] <service>`](/docs/cli/reference/service/env#openship-service-env-apply) | Apply the saved environment to the active container through the engine's replacement and rollback workflow |
+
+## openship service env apply
+
+Apply the saved environment to the active container through the engine's replacement and rollback workflow
+
+```text
+openship service env apply [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service env delete
+
+Remove selected service overrides; inherited values become effective again
+
+```text
+openship service env delete|unset [options] <service> <keys...>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+| `keys` | Override keys to remove |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development (default: "production") |
+
+## openship service env get
+
+List a service's environment variables (secrets masked)
+
+```text
+openship service env get [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development |
+
+## openship service env inspect
+
+Show effective variables, their sources, and pending runtime changes (secrets masked)
+
+```text
+openship service env inspect [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development |
+| `--runtime` | Inspect the running container to check whether saved values are applied |
+
+## openship service env reveal
+
+Print explicitly selected secret values; requires service write access
+
+```text
+openship service env reveal [options] <service> <keys...>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+| `keys` | Variable keys to reveal |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development |
+| `--source <source>` | Read saved effective values or the live container (choices: "effective", "runtime", default: "effective") |
+| `--container <id>` | Expected container ID when reading runtime values |
+
+## openship service env set
+
+Set a service's environment variables for one environment
+
+```text
+openship service env set [options] <service> <pairs...>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or id |
+| `pairs` | KEY=VALUE pairs |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `-e, --env <environment>` | Environment: production \| preview \| development (default: "production") |
+| `--secret` | Mark the provided variables as secret |
+| `--replace` | Replace ALL variables for this environment with only the given pairs |

@@ -1,0 +1,291 @@
+{
+  "cloudSubtitle": "أوامر مجدولة وعند الطلب على خوادمك المُدارة.",
+  "create": {
+    "commandHint": "يعمل على كل خادم محدد. استخدم docker run --rm لتشغيل مهمة داخل حاوية.",
+    "cloudServersHint": "استخدم خادمًا موجودًا أو أضف خادمًا مخصصًا باشتراك مستقل.",
+    "cloudUsageHint": "تشارك المهام موارد الخادم المحدد ورصيد استخدامه. يجب أن يكون اشتراكه نشطًا لتشغيلها.",
+    "addDedicatedServer": "إضافة خادم مخصص",
+    "title": "مهمة جديدة",
+    "name": "الاسم",
+    "namePlaceholder": "تنظيف قاعدة البيانات الليلي",
+    "server": "الخادم",
+    "servers": "الخوادم",
+    "noServers": "لم يتم ربط أي خوادم بعد — أضف خادماً أولاً.",
+    "command": "الأمر",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "scheduleType": "وقت التشغيل",
+    "scheduleTypes": {
+      "recurring": "وفق جدول زمني",
+      "once": "مرة واحدة",
+      "manual": "يدوي"
+    },
+    "sections": {
+      "basics": "الأساسيات",
+      "schedule": "الجدول الزمني",
+      "servers": "الخوادم المستهدفة",
+      "reliability": "الموثوقية",
+      "environment": "البيئة",
+      "triggers": "التبعيات والمشغلات",
+      "notifications": "الإشعارات"
+    },
+    "schedule": "الجدول الزمني (cron)",
+    "runAt": "التشغيل في",
+    "manualHint": "يعمل فقط عند تشغيله — تشغيل الآن، أو تبعية، أو حدث.",
+    "timeout": "المهلة (ثوانٍ)",
+    "retryAttempts": "أقصى عدد للمحاولات",
+    "retryBackoff": "فترة التراجع (ثوانٍ)",
+    "advanced": "متقدم",
+    "env": "متغيرات البيئة",
+    "addVar": "إضافة متغير",
+    "secrets": "الأسرار",
+    "addSecret": "إضافة سر",
+    "replaceSecrets": "استبدال الأسرار",
+    "secretsSet": "أسرار محددة",
+    "noSecrets": "لم يتم تعيين أي أسرار.",
+    "dependencies": "تشغيل بعد",
+    "dependenciesHint": "تعمل هذه المهمة بعد نجاح المهمة (أو المهام) المحددة.",
+    "triggers": "مشغلات الأحداث",
+    "notifications": "الإشعارات",
+    "noChannels": "لا توجد قنوات إشعار بعد — أضف واحدة في المراقبة ← الإشعارات.",
+    "notificationsHint": "يتجاوز إعدادات الإشعارات العامة لهذه المهمة.",
+    "submit": "إنشاء مهمة",
+    "creating": "جارٍ الحفظ…",
+    "cancel": "إلغاء",
+    "needServer": "قم بربط خادم أولاً",
+    "pasteEnv": "لصق .env",
+    "uploadEnv": "رفع .env",
+    "envPasteEmpty": "لم يتم العثور على أي متغيرات",
+    "comingSoon": "قريباً",
+    "setupChannel": "إعداد قناة",
+    "customTriggerSoon": "مشغل مخصص",
+    "docsLink": "تعرف على المزيد حول المهام",
+    "docsBody": "الجداول الزمنية وإعادة المحاولة والأسرار والإشعارات",
+    "summary": {
+      "title": "ملخص",
+      "command": "الأمر",
+      "schedule": "الجدول الزمني",
+      "targets": "الأهداف",
+      "retry": "إعادة المحاولة",
+      "timeout": "المهلة",
+      "notify": "الإشعارات",
+      "none": "—",
+      "retryOff": "لا يوجد"
+    }
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "فحوصات نشر GitHub",
+    "cloud:workspace-recovery": "عمليات مساحة العمل السحابية",
+    "ssl:renew": "تجديد شهادة SSL",
+    "projects:orphan-gc": "تنظيف الموارد المعزولة",
+    "images:gc": "تنظيف عناصر النشر",
+    "domains:verify-pending": "التحقق من النطاقات المخصصة",
+    "updates:scan": "فحص التحديثات",
+    "backups:retention-prune": "حذف النسخ الاحتياطية القديمة",
+    "backups:stale-sweep": "مطابقة النسخ الاحتياطية المعلقة",
+    "prune:audit": "تنظيف سجل التدقيق",
+    "prune:incidents": "تنظيف سجل الحوادث",
+    "sampler:resources": "أداة أخذ عينات الموارد",
+    "system:analytics-scraper": "جامع التحليلات",
+    "build-cache:gc": "تنظيف ذاكرة التخزين المؤقت للبناء",
+    "cloud:https-health": "فحص صحة HTTPS السحابي",
+    "system:server-modules": "فحص وحدات الخادم",
+    "system:server-containers": "فحص حاويات الخادم",
+    "system:health-watch": "فحص الصحة الشامل",
+    "jobs:due-once": "تشغيل المهام المؤقتة المنتظرة",
+    "edge:verify": "فحص التحقق من الحافة",
+    "audit:retention-prune": "تنظيف سجل التدقيق",
+    "retention-prune-daily": "تنظيف النسخ الاحتياطية القديمة",
+    "backups:stale-run-sweep": "مطابقة النسخ الاحتياطية العالقة",
+    "domains:check-https": "فحص حالة HTTPS السحابية",
+    "analytics:scrape": "جمع تحليلات حركة المرور",
+    "resources:sample": "أخذ عينات استخدام الموارد",
+    "analytics:retention-prune": "تنظيف تحليلات حركة المرور",
+    "resources:retention-prune": "تنظيف استخدام الموارد",
+    "migrations:recover": "استعادة عمليات النقل",
+    "deployments:cloud-build-queue": "قائمة انتظار البناء السحابي",
+    "deployments:cloud-build-recovery": "استعادة البناء السحابي",
+    "deployments:reconcile": "مطابقة عمليات النشر",
+    "permissions:pending-grant-prune": "تنظيف الدعوات المعلقة",
+    "github:webhook-event-prune": "تنظيف خطافات ويب GitHub",
+    "edge:target-verify": "التحقق من النطاقات المجانية",
+    "modules:scan": "فحص وحدات الخادم الأصلية",
+    "infra:scan": "فحص الحاويات المدارة",
+    "mail:inbound-watch": "قواعد البريد الوارد",
+    "mail:inbound-reconcile": "مطابقة قواعد البريد الوارد",
+    "services:health-watch": "مراقبة صحة الحاويات",
+    "incidents:prune": "تنظيف سجل الحوادث",
+    "jobs:oneshot": "جدولة المهام لمرة واحدة",
+    "Audit log prune": "تنظيف سجل التدقيق",
+    "Backup in-flight stale reconciliation": "مطابقة النسخ الاحتياطية العالقة",
+    "Backup retention prune": "تنظيف النسخ الاحتياطية القديمة",
+    "Cloud HTTPS health": "فحص حالة HTTPS السحابية",
+    "Cloud workspace operations": "عمليات مساحة العمل السحابية",
+    "Container health watch": "مراقبة صحة الحاويات",
+    "Deployment artifact cleanup": "تنظيف عناصر النشر",
+    "Deployment reconcile": "مطابقة عمليات النشر",
+    "GitHub deployment Checks": "فحوصات نشر GitHub",
+    "GitHub webhook event prune": "تنظيف خطافات ويب GitHub",
+    "Incident history prune": "تنظيف سجل الحوادث",
+    "Managed-container update scan": "فحص الحاويات المدارة",
+    "Migration recovery": "استعادة عمليات النقل",
+    "Native-module update scan": "فحص وحدات الخادم الأصلية",
+    "Notification rule capture drift": "مطابقة قواعد البريد الوارد",
+    "Notification rules": "قواعد البريد الوارد",
+    "One-time job dispatcher": "جدولة المهام لمرة واحدة",
+    "Orphaned resource cleanup": "تنظيف الموارد المعزولة",
+    "Pending grant prune": "تنظيف الدعوات المعلقة",
+    "Resource usage prune": "تنظيف استخدام الموارد",
+    "Resource usage sampling": "أخذ عينات استخدام الموارد",
+    "SSL certificate renewal": "تجديد شهادات SSL",
+    "Traffic analytics collection": "جمع تحليلات حركة المرور",
+    "Traffic analytics prune": "تنظيف تحليلات حركة المرور",
+    "Update scan": "فحص التحديثات",
+    "Free-domain target verification": "التحقق من النطاقات المجانية",
+    "Domain DNS verification": "التحقق من نظام أسماء النطاقات"
+  },
+  "backups": {
+    "section": "جداول النسخ الاحتياطي",
+    "sectionDesc": "نسخ احتياطية تلقائية مجدولة لكل مشروع أو خدمة. تتم إدارتها تحت علامة تبويب النسخ الاحتياطي لكل مشروع.",
+    "projectDefault": "الافتراضي للمشروع",
+    "mailServer": "خادم البريد",
+    "manage": "إدارة في النسخ الاحتياطية",
+    "badge": "نسخة احتياطية",
+    "never": "لم يتم التشغيل أبداً",
+    "status": {
+      "succeeded": "نجح",
+      "failed": "فشل",
+      "cancelled": "ملغى",
+      "running": "قيد التشغيل"
+    }
+  },
+  "title": "المهام",
+  "subtitle": "أعمال الصيانة المدمجة والأوامر المخصصة التي تعمل على خوادمك.",
+  "empty": "لا توجد مهام مجدولة بعد.",
+  "searchPlaceholder": "البحث في المهام…",
+  "noResults": "لا توجد مهام تطابق عوامل التصفية.",
+  "overview": {
+    "title": "نظرة عامة",
+    "subtitle": "المهام على هذا المثيل",
+    "all": "جميع المهام",
+    "running": "قيد التشغيل",
+    "failed": "فشلت",
+    "scheduled": "مجدولة",
+    "disabled": "معطلة"
+  },
+  "loadFailed": "فشل تحميل المهام.",
+  "kind": {
+    "system": "نظام",
+    "custom": "مخصص"
+  },
+  "fields": {
+    "schedule": "الجدول الزمني",
+    "nextRun": "التشغيل التالي",
+    "lastRun": "آخر تشغيل",
+    "never": "لم يتم التشغيل أبداً",
+    "notScheduled": "غير مجدول"
+  },
+  "status": {
+    "success": "نجاح",
+    "failed": "فشل",
+    "running": "قيد التشغيل"
+  },
+  "actions": {
+    "run": "تشغيل الآن",
+    "running": "جارٍ التشغيل…",
+    "edit": "تعديل الجدول الزمني",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "enable": "تمكين",
+    "disable": "تعطيل",
+    "viewLogs": "السجلات"
+  },
+  "cronHint": "تعبير cron قياسي من 5 حقول (دقيقة ساعة يوم شهر يوم_الأسبوع)، بتوقيت UTC.",
+  "toast": {
+    "ran": "تم بدء تشغيل {label}.",
+    "ranFailed": "فشل تشغيل {label}.",
+    "saved": "تم تحديث الجدول الزمني لـ {label}.",
+    "saved2": "تم تحديث المهمة.",
+    "saveFailed": "فشل تحديث {label}.",
+    "enabled": "تم تمكين {label}.",
+    "disabled": "تم تعطيل {label}.",
+    "toggleFailed": "فشل تحديث {label}.",
+    "title": "المهام",
+    "created": "تم إنشاء المهمة.",
+    "createFailed": "فشل إنشاء المهمة.",
+    "deleted": "تم حذف المهمة.",
+    "deleteFailed": "فشل حذف المهمة."
+  },
+  "newJob": "مهمة جديدة",
+  "sections": {
+    "system": "مهام النظام",
+    "systemDesc": "صيانة مدمجة على هذا المثيل.",
+    "custom": "مهام مخصصة",
+    "customDesc": "أوامر تقوم بتشغيلها على خوادمك وفقاً لجدول زمني."
+  },
+  "customEmpty": {
+    "title": "لا توجد مهام مخصصة بعد",
+    "desc": "قم بتشغيل أمر على أحد خوادمك — وفق جدول زمني، أو لمرة واحدة، أو عند حدث معين — مع إعادة المحاولة، والأسرار، وسجلات البث المباشر والإشعارات.",
+    "cta": "إنشاء مهمة",
+    "docs": "المستندات"
+  },
+  "edit": {
+    "title": "تعديل المهمة",
+    "action": "تعديل",
+    "save": "حفظ التغييرات"
+  },
+  "detail": {
+    "back": "العودة إلى المهام",
+    "tabs": {
+      "overview": "نظرة عامة",
+      "runs": "عمليات التشغيل"
+    },
+    "servers": "الخوادم",
+    "retry": "إعادة المحاولة",
+    "retryValue": "{n} محاولات، فترة تراجع {s} ثانية",
+    "notifyValue": "{c} قناة في {s}",
+    "onceAt": "مرة واحدة في",
+    "noRuns": "لا توجد عمليات تشغيل بعد."
+  },
+  "delete": {
+    "action": "حذف",
+    "confirm": "هل تريد حذف هذه المهمة؟",
+    "deleting": "جارٍ الحذف…"
+  },
+  "logs": {
+    "title": "سجلات التشغيل",
+    "streaming": "بث مباشر…",
+    "empty": "لا توجد مخرجات بعد.",
+    "close": "إغلاق",
+    "exit": "رمز الخروج {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "نجح النشر",
+      "description": "اكتمل نشر الإنتاج بنجاح."
+    },
+    "deployment.failed": {
+      "label": "فشل النشر",
+      "description": "حدث خطأ أثناء البناء أو النشر."
+    },
+    "backup_run.succeeded": {
+      "label": "نجح النسخ الاحتياطي",
+      "description": "اكتمل النسخ الاحتياطي المجدول أو اليدوي."
+    },
+    "backup_run.failed": {
+      "label": "فشل النسخ الاحتياطي",
+      "description": "حدث خطأ أثناء تشغيل النسخ الاحتياطي."
+    },
+    "backup_restore.completed": {
+      "label": "اكتملت الاستعادة",
+      "description": "اكتملت عملية الاستعادة."
+    },
+    "ssl.renewal_failed": {
+      "label": "فشل تجديد SSL",
+      "description": "تعذر تجديد الشهادة."
+    },
+    "domain.verification_failed": {
+      "label": "فشل التحقق من النطاق",
+      "description": "فشل فحص DNS للنطاق."
+    }
+  }
+}

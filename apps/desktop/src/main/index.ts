@@ -14,7 +14,10 @@
  *         └─ API (remote server, reached via HTTP)
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics, reportError } from "@repo/core/diagnostics";
+import { installNodeErrorReporting } from "@repo/core/diagnostics/node";
 import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme } from "electron";
+import { observeIpcHandler } from "./ipc-errors";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
@@ -22,6 +25,7 @@ import { hostname } from "node:os";
 import {
   CLOUD_API_URL as DEFAULT_CLOUD_API_URL,
   CLOUD_DASHBOARD_URL as DEFAULT_CLOUD_DASHBOARD_URL,
+  DESKTOP_INSTANCE_SCHEME,
 } from "@repo/core";
 import {
   type SystemSettings,
@@ -43,12 +47,15 @@ import {
 } from "./updater";
 import { closeUpdateWindow, openUpdateWindow } from "./update-window";
 import { buildAppMenu } from "./menu";
+import { buildLoadingScreen, type LoadingStage } from "./loading-screen";
 import {
   classifyFrameNavigation,
+  isAllowedFrameUrl,
   isRendererConfigKey,
   isSafeExternalUrl,
   type RendererConfigKey,
 } from "./security";
+import { InstanceLinkInbox, registerInstanceLinks } from "./instance-links";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -135,6 +142,7 @@ class ConfigStore {
   }
 }
 
+installNodeErrorReporting("desktop");
 const store = new ConfigStore();
 
 // ─── Internal token (ephemeral, per-session) ─────────────────────────────────
@@ -182,7 +190,7 @@ async function pushInstanceSettings(
     });
   } catch (err) {
     // Log but don't block - settings can be pushed again later
-    console.error("[openship] Failed to push instance settings:", err);
+    errorDiagnostics.error("desktop/main/index", "[openship] Failed to push instance settings:", err);
   }
 }
 
@@ -208,7 +216,8 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
         signal: AbortSignal.timeout(2000),
       });
       if (res.ok) return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "desktop/main/index");
       // Not ready yet - keep polling
     }
     await new Promise((r) => setTimeout(r, intervalMs));
@@ -219,6 +228,32 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
 // ─── Window management ───────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;
+let servicesReady = false;
+const instanceLinks = new InstanceLinkInbox();
+
+function focusMainWindow() {
+  if (!mainWindow && servicesReady) {
+    createWindow();
+    routeInitialView();
+  }
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function notifyInstanceLink() {
+  // The renderer only receives a notification. It reads the validated address
+  // through the main-frame-only channel below and asks before connecting.
+  mainWindow?.webContents.send("instance:link");
+}
+
+const ownsInstance = registerInstanceLinks(app, (value) => {
+  if (instanceLinks.receive(value)) {
+    focusMainWindow();
+    notifyInstanceLink();
+  }
+}, focusMainWindow, process.argv);
 
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
@@ -265,21 +300,16 @@ function createWindow() {
           trafficLightPosition: { x: 18, y: 16 },
         }
       : { frame: false }),
-    // Match the OS appearance so there's no wrong-theme flash while the dashboard
-    // loads (the web UI defaults to "system" in desktop). Dark bg is the app's
-    // --th-bg-page dark value (#000000); light is #ffffff.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#000000" : "#ffffff",
+    // Initial native canvas, before CSS is available. Mirrors --th-bg-page:
+    // desktop's system appearance resolves to dim on a dark OS, otherwise light.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#141414" : "#f9f9f9",
     show: false, // Show after content is ready
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Still off because the preload does `require("@repo/onboarding")`, which a
-      // sandboxed preload can't resolve — it would silently hit the fallback path
-      // and degrade onboarding's SSH validation to no-ops. Turning this on means
-      // bundling the preload in dev too (dev builds with plain `tsc`; only the
-      // packaged build runs esbuild), so it's tracked separately.
-      sandbox: false,
+      // Helpers are bundled into the preload in development and release builds.
+      sandbox: true,
     },
   });
 
@@ -310,6 +340,11 @@ function createWindow() {
     });
   };
   mainWindow.webContents.on("did-navigate", emitNav);
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    if (details.reason !== "clean-exit") reportError("Desktop renderer stopped unexpectedly", {
+      source: "desktop", kind: "process", component: "renderer", code: "RENDERER_PROCESS_GONE", handled: true,
+    });
+  });
   mainWindow.webContents.on("did-navigate-in-page", emitNav);
 
   // Show the window once content is painted (avoids white flash)
@@ -351,7 +386,7 @@ function createWindow() {
     if (verdict === "allow") return;
     e.preventDefault();
     if (verdict === "external") shell.openExternal(url);
-    else console.warn(`[security] blocked main-frame navigation to ${url}`);
+    else errorDiagnostics.warn("desktop/main/index", `[security] blocked main-frame navigation to ${url}`);
   };
   mainWindow.webContents.on("will-navigate", containNavigation);
   mainWindow.webContents.on("will-redirect", containNavigation);
@@ -383,203 +418,36 @@ function createWindow() {
 
 // ─── Loading strategies ──────────────────────────────────────────────────────
 
-/**
- * Inline splash shown while the bundled services boot (packaged app).
- *
- * This is the app's FIRST screen, so it carries the brand mark (the Openship
- * ring) over the same node-graph motif the dashboard's first-run state uses —
- * hub wired to repo / services / data / domain, with the links animating as it
- * comes up. That reads as "connecting", which is what's actually happening, so
- * there's no generic spinner.
- *
- * Colours come from `prefers-color-scheme`, which Electron drives from
- * `nativeTheme` — the same source as the BrowserWindow's `backgroundColor`
- * above, so the splash can't be a white flash inside a black window (it was).
- * Dark uses #000 to match that window background exactly, with no seam.
- */
-const LOADING_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
-  :root{color-scheme:light dark;
-    --bg:#ffffff;--fg:#0f0f0f;--dim:rgba(0,0,0,.55);
-    --line:rgba(0,0,0,.14);--tile:rgba(0,0,0,.035);--glyph:rgba(0,0,0,.30);--ok:#16a34a;--glow:rgba(0,0,0,.035)}
-  @media (prefers-color-scheme: dark){
-    :root{--bg:#000000;--fg:#f5f5f5;--dim:rgba(255,255,255,.5);
-      --line:rgba(255,255,255,.16);--tile:rgba(255,255,255,.045);--glyph:rgba(255,255,255,.34);--ok:#22c55e;--glow:rgba(255,255,255,.045)}
-  }
-  body::before{content:"";position:fixed;inset:0;pointer-events:none;
-    background:radial-gradient(60% 55% at 50% 45%,var(--glow),transparent 70%)}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
-    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;
-    align-items:center;justify-content:center;overflow:hidden}
-  .box{text-align:center;animation:rise .6s cubic-bezier(.2,.7,.2,1) both}
-  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-  /* Fixed, modest size — a splash mark, not a poster. Scaling with the viewport
-     (68vw) made it fill half a desktop window. Only clamps on a tiny window. */
-  svg{display:block;width:min(300px,72vw);height:auto;margin:0 auto 20px}
-
-  /* Links flow inward — dash period (10) == offset, so the loop is seamless. */
-  .link{stroke:var(--line);stroke-width:1.5;fill:none;stroke-dasharray:5 5;
-    animation:flow 1.2s linear infinite}
-  @keyframes flow{to{stroke-dashoffset:-10}}
-
-  /* Each service "comes online" in turn: the tiles brighten around the ring. */
-  .node{animation:wake 3.2s ease-in-out infinite}
-  .node:nth-of-type(2){animation-delay:.4s}
-  .node:nth-of-type(3){animation-delay:.8s}
-  .node:nth-of-type(4){animation-delay:1.2s}
-  @keyframes wake{0%,55%,100%{opacity:.45}22%{opacity:1}}
-  .led{fill:var(--ok);opacity:0;animation:led 3.2s ease-in-out infinite}
-  .pkt{fill:var(--ok);opacity:0}
-  .node:nth-of-type(2) .led{animation-delay:.4s}
-  .node:nth-of-type(3) .led{animation-delay:.8s}
-  .node:nth-of-type(4) .led{animation-delay:1.2s}
-  @keyframes led{0%,55%,100%{opacity:0}22%{opacity:1}}
-  .tile{fill:var(--tile);stroke:var(--line);stroke-width:1.25}
-  .glyph{stroke:var(--glyph);stroke-width:1.75;fill:none;stroke-linecap:round}
-
-  /* The brand ring is the loading indicator — no spinner needed. */
-  .halo{fill:none;stroke:var(--fg);stroke-width:1;opacity:.10;
-    animation:halo 2.4s ease-out infinite;transform-origin:140px 62px}
-  @keyframes halo{0%{transform:scale(.8);opacity:.16}70%,100%{transform:scale(1.35);opacity:0}}
-  .mark{fill:none;stroke:var(--fg);stroke-width:5;opacity:.28}
-  /* Real progress, drawn on the brand ring itself. dasharray = 2*pi*r (r=24);
-     fill-box origin keeps the -90deg start at 12 o'clock without user-unit math. */
-  .prog{fill:none;stroke:var(--ok);stroke-width:5;stroke-linecap:round;
-    stroke-dasharray:150.8;stroke-dashoffset:150.8;
-    transform-box:fill-box;transform-origin:center;transform:rotate(-90deg);
-    transition:stroke-dashoffset .45s cubic-bezier(.3,.7,.2,1)}
-
-  h1{font-size:15px;font-weight:500;letter-spacing:-.1px;margin:0;color:var(--fg);opacity:.85}
-  .d{animation:blink 1.4s ease-in-out infinite;opacity:.25}
-  .d:nth-child(2){animation-delay:.2s}
-  .d:nth-child(3){animation-delay:.4s}
-  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:.95}}
-  @media (prefers-reduced-motion: reduce){
-    .link,.node,.led,.halo,.mark,.d,.box{animation:none}
-    .pkt{opacity:0}
-    .prog{transition:none}
-    .led{opacity:1}
-  }
-</style></head><body><div class="box">
-  <svg viewBox="0 0 280 124" fill="none" aria-hidden="true">
-    <!-- Tile edge (x=58 / 222) → ring edge (r=24 along each diagonal). -->
-    <path class="link" d="M58 32 Q 92 40 117 53"/>
-    <path class="link" d="M58 92 Q 92 84 117 71"/>
-    <path class="link" d="M163 53 Q 188 40 222 32"/>
-    <path class="link" d="M163 71 Q 188 84 222 92"/>
-
-    <!-- Repo -->
-    <g class="node">
-      <rect class="tile" x="18" y="14" width="40" height="36" rx="11"/>
-      <circle class="led" cx="50" cy="23" r="2.6"/>
-      <circle class="glyph" cx="31" cy="39" r="3.5"/>
-      <circle class="glyph" cx="45" cy="25" r="3.5"/>
-      <path class="glyph" d="M31 35.5v-4a4 4 0 0 1 4-4h6"/>
-    </g>
-    <!-- Data -->
-    <g class="node">
-      <rect class="tile" x="18" y="74" width="40" height="36" rx="11"/>
-      <circle class="led" cx="50" cy="83" r="2.6"/>
-      <ellipse class="glyph" cx="38" cy="85" rx="9" ry="3.4"/>
-      <path class="glyph" d="M29 85v10c0 1.9 4 3.4 9 3.4s9-1.5 9-3.4V85"/>
-      <path class="glyph" d="M29 90.5c0 1.9 4 3.4 9 3.4s9-1.5 9-3.4"/>
-    </g>
-    <!-- Domain -->
-    <g class="node">
-      <rect class="tile" x="222" y="14" width="40" height="36" rx="11"/>
-      <circle class="led" cx="254" cy="23" r="2.6"/>
-      <circle class="glyph" cx="242" cy="32" r="9.5"/>
-      <path class="glyph" d="M232.5 32h19M242 22.5c4.8 4.5 4.8 14.5 0 19M242 22.5c-4.8 4.5-4.8 14.5 0 19"/>
-    </g>
-    <!-- Services -->
-    <g class="node">
-      <rect class="tile" x="222" y="74" width="40" height="36" rx="11"/>
-      <circle class="led" cx="254" cy="83" r="2.6"/>
-      <rect class="glyph" x="232" y="84" width="20" height="15" rx="3"/>
-      <path class="glyph" d="M238.5 84v15M245.5 84v15"/>
-    </g>
-
-
-    <!-- Packets travel tile → hub, one per link, staggered so something is
-         always arriving. Paths are the links' shapes as deltas from cx/cy. -->
-    <g class="pkts">
-      <circle class="pkt" cx="58" cy="32" r="2.2">
-        <animateMotion dur="2.6s" begin="0s" repeatCount="indefinite" path="M0 0 Q 34 8 59 21"/>
-        <animate attributeName="opacity" dur="2.6s" begin="0s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
-      </circle>
-      <circle class="pkt" cx="58" cy="92" r="2.2">
-        <animateMotion dur="2.6s" begin=".65s" repeatCount="indefinite" path="M0 0 Q 34 -8 59 -21"/>
-        <animate attributeName="opacity" dur="2.6s" begin=".65s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
-      </circle>
-      <circle class="pkt" cx="222" cy="32" r="2.2">
-        <animateMotion dur="2.6s" begin="1.3s" repeatCount="indefinite" path="M0 0 Q -34 8 -59 21"/>
-        <animate attributeName="opacity" dur="2.6s" begin="1.3s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
-      </circle>
-      <circle class="pkt" cx="222" cy="92" r="2.2">
-        <animateMotion dur="2.6s" begin="1.95s" repeatCount="indefinite" path="M0 0 Q -34 -8 -59 -21"/>
-        <animate attributeName="opacity" dur="2.6s" begin="1.95s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
-      </circle>
-    </g>
-    <circle class="halo" cx="140" cy="62" r="30"/>
-    <circle class="mark" cx="140" cy="62" r="24"/>
-    <circle class="prog" id="prog" cx="140" cy="62" r="24"/>
-  </svg>
-  <h1><span id="stage">Starting Openship</span><span class="d">.</span><span class="d">.</span><span class="d">.</span></h1>
-</div>
-<script>
-  /* Progress on the ring. The main process reports the stage it has ACTUALLY
-     reached plus a ceiling; between stages the arc eases toward that ceiling
-     asymptotically (never touching it), so it always looks like work is
-     happening but never claims a milestone that hasn't landed. */
-  (function () {
-    var C = 150.8, p = 0.05, ceiling = 0.22, arc = null, timer = null;
-    function paint() {
-      arc = arc || document.getElementById("prog");
-      if (arc) arc.style.strokeDashoffset = String(C * (1 - p));
-    }
-    timer = setInterval(function () {
-      if (p < ceiling) { p += (ceiling - p) * 0.09; paint(); }
-    }, 180);
-    /* text: what's happening. target: 0..1 ceiling; >=1 completes and stops. */
-    window.__osStage = function (text, target) {
-      var el = document.getElementById("stage");
-      if (el && typeof text === "string" && text) el.textContent = text;
-      if (typeof target !== "number") return;
-      if (target >= 1) { clearInterval(timer); p = 1; } else { ceiling = target; }
-      paint();
-    };
-    paint();
-  })();
-</script>
-</body></html>`;
+let currentLoadingStage: LoadingStage = "launch";
 
 function showLoading() {
-  if (!mainWindow) return;
-  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`);
+  const window = mainWindow;
+  if (!window) return;
+  currentLoadingStage = "launch";
+  const html = buildLoadingScreen({
+    dark: nativeTheme.shouldUseDarkColors,
+    version: app.getVersion(),
+    windowControls: process.platform !== "darwin",
+  });
+  void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    .then(() => {
+      // Services can start before the first document is ready to receive updates.
+      if (mainWindow === window) setLoadingStage(currentLoadingStage);
+    })
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "desktop/main/index");
+    }); // Dashboard navigation may already have replaced the splash.
 }
 
-/**
- * Report boot progress to the splash: the caption, and a ceiling for the arc on
- * the brand ring.
- *
- * `ceiling` is where the arc is allowed to ease toward until the NEXT real
- * milestone — not where it jumps to. So the arc keeps moving during the long
- * wait (a parked arc reads as hung) while never claiming a stage that hasn't
- * landed. `1` completes it.
- *
- * The GRAPH stays ambient on purpose: desktop runs PGlite plus one bundled API
- * binary, so there is no per-node "postgres is up" truth to report, and lighting
- * tiles from invented milestones would be an animation that lies. Only the
- * caption and the arc are driven by real state.
- *
- * Fire-and-forget: the splash may already have been replaced by the dashboard
- * (or never loaded), and a failed progress update must never block launch.
- */
-function setLoadingStage(text: string, ceiling?: number) {
+/** Actual startup milestones; a progress update must never block launch. */
+function setLoadingStage(stage: LoadingStage) {
+  currentLoadingStage = stage;
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const args = ceiling === undefined ? JSON.stringify(text) : `${JSON.stringify(text)},${ceiling}`;
   void mainWindow.webContents
-    .executeJavaScript(`window.__osStage && window.__osStage(${args})`)
-    .catch(() => {});
+    .executeJavaScript(`window.__osStage && window.__osStage(${JSON.stringify(stage)})`)
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "desktop/main/index");
+    });
 }
 
 /**
@@ -593,6 +461,7 @@ const ONBOARDING_ENABLED =
 
 /** Decide the first real view once services are up: onboarding vs dashboard. */
 function routeInitialView() {
+  setLoadingStage("dashboard");
   if (!ONBOARDING_ENABLED || store.get("onboardingComplete")) {
     loadDashboard();
   } else {
@@ -617,7 +486,7 @@ function loadDashboard() {
       store.set("onboardingComplete", false);
       loadOnboarding();
     } else {
-      console.error("[openship] Dashboard failed to load:", err);
+      errorDiagnostics.error("desktop/main/index", "[openship] Dashboard failed to load:", err);
     }
   });
 }
@@ -625,6 +494,10 @@ function loadDashboard() {
 // ─── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  if (!ownsInstance) return;
+  // Packaged macOS also declares the scheme in Info.plist. Do not register a
+  // development executable over the user's installed Desktop application.
+  if (app.isPackaged) app.setAsDefaultProtocolClient(DESKTOP_INSTANCE_SCHEME);
   createWindow(); // shows the loading splash immediately
 
   // Native menu: Reload / Developer Tools / Help. Registered on every platform —
@@ -637,11 +510,10 @@ app.whenReady().then(async () => {
   // servers run via `bun dev`, so we skip straight to routing.
   if (app.isPackaged) {
     try {
-      // Ceilings, not positions: services are the long leg of the boot, so the
-      // arc creeps to ~55% while they come up and completes when they're up.
-      setLoadingStage("Starting services", 0.55);
+      setLoadingStage("services");
       await startLocalServices(internalToken);
     } catch (err) {
+      observeCaughtError(err, "desktop/main/index");
       dialog.showErrorBox(
         "Openship failed to start",
         err instanceof Error ? err.message : String(err),
@@ -649,8 +521,8 @@ app.whenReady().then(async () => {
       app.quit();
       return;
     }
-    setLoadingStage("Opening dashboard", 1);
   }
+  servicesReady = true;
   routeInitialView();
 
   // Background: ask GitHub if there's a newer release; if so, act per the user's
@@ -708,8 +580,29 @@ app.on("window-all-closed", () => {
 });
 
 // Tear down the bundled services when the app actually quits.
+const handleIpc: typeof ipcMain.handle = (channel, listener) => {
+  ipcMain.handle(channel, observeIpcHandler(channel, listener));
+};
+
 app.on("before-quit", () => {
   stopLocalServices();
+});
+
+// ─── IPC: Desktop invitations ─────────────────────────────────────────────────
+
+function isInstanceLinkReader(event: Electron.IpcMainInvokeEvent): boolean {
+  return !!mainWindow && event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame &&
+    isAllowedFrameUrl(event.senderFrame.url, [getLocalDashboardUrl()]);
+}
+
+handleIpc("instance:pending-link", (event) =>
+  isInstanceLinkReader(event) ? instanceLinks.pending() : null,
+);
+handleIpc("instance:acknowledge-link", (event, id: unknown) => {
+  if (!isInstanceLinkReader(event) || !instanceLinks.acknowledge(id)) return false;
+  notifyInstanceLink();
+  return true;
 });
 
 // ─── IPC: Updates ─────────────────────────────────────────────────────────────
@@ -721,11 +614,11 @@ app.on("before-quit", () => {
  *  work without a restart. `checkForUpdate` never throws. */
 async function ensurePendingUpdate(): Promise<void> {
   if (pendingUpdate) return;
-  const result = await checkForUpdate();
-  if (result.available) pendingUpdate = result;
+  const result = await checkForUpdate({ force: true });
+  pendingUpdate = result.available ? result : null;
 }
 
-ipcMain.handle("update:dismiss", () => {
+handleIpc("update:dismiss", () => {
   closeUpdateWindow();
   return true;
 });
@@ -733,15 +626,17 @@ ipcMain.handle("update:dismiss", () => {
 // Re-check GitHub on demand and stage the result — drives the dashboard's
 // "Check now" so a check happens without a restart. Returns the check result so
 // the renderer can reflect it.
-ipcMain.handle("update:check", async () => {
-  const result = await checkForUpdate();
-  if (result.available) pendingUpdate = result;
+handleIpc("update:check", async (_event, force?: boolean) => {
+  const result = await checkForUpdate({ force: force === true });
+  // A successful check can invalidate an old offer. A failed network read
+  // says nothing about the installer we already staged.
+  if (result.latest) pendingUpdate = result.available ? result : null;
   return result;
 });
 
 // Open the native update window on demand (the dashboard's "Update now"). Stages
 // the pending update first, so it works even when the boot check found nothing.
-ipcMain.handle("update:open", async () => {
+handleIpc("update:open", async () => {
   await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   openUpdateWindow(mainWindow, pendingUpdate);
@@ -775,7 +670,7 @@ async function performUpdate(): Promise<boolean> {
   // Close the notify modal — from here on progress belongs to the dashboard.
   closeUpdateWindow();
   try {
-    const file = await downloadUpdate(pendingUpdate.asset, (f) => {
+    const file = await downloadUpdate(pendingUpdate.asset, pendingUpdate.version, (f) => {
       mainWindow?.webContents.send("update:progress", f);
       mainWindow?.setProgressBar(f); // Dock / taskbar indicator
     });
@@ -788,6 +683,7 @@ async function performUpdate(): Promise<boolean> {
     installUpdate(file); // quits + relaunches on the new version (or opens installer)
     return true;
   } catch (err) {
+    observeCaughtError(err, "desktop/main/index");
     mainWindow?.setProgressBar(-1);
     mainWindow?.webContents.send(
       "update:error",
@@ -797,7 +693,7 @@ async function performUpdate(): Promise<boolean> {
   }
 }
 
-ipcMain.handle("update:start", () => runUpdate());
+handleIpc("update:start", () => runUpdate());
 
 // ─── IPC: Window controls ───────────────────────────────────────────────────
 //
@@ -805,26 +701,26 @@ ipcMain.handle("update:start", () => runUpdate());
 // buttons — macOS keeps its native traffic lights — but all four are registered
 // on every platform so the renderer never branches on process.platform.
 
-ipcMain.handle("window:minimize", () => {
+handleIpc("window:minimize", () => {
   mainWindow?.minimize();
   return true;
 });
 
-ipcMain.handle("window:toggle-maximize", () => {
+handleIpc("window:toggle-maximize", () => {
   if (!mainWindow) return false;
   if (mainWindow.isMaximized()) mainWindow.unmaximize();
   else mainWindow.maximize();
   return mainWindow.isMaximized();
 });
 
-ipcMain.handle("window:close", () => {
+handleIpc("window:close", () => {
   // close(), not destroy() — the existing "close" handler persists window bounds
   // and decides hide-vs-quit per platform.
   mainWindow?.close();
   return true;
 });
 
-ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+handleIpc("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
 
 // ─── IPC: In-app navigation (titlebar back / forward / reload) ──────────────
 //
@@ -844,24 +740,24 @@ function navState(): { canGoBack: boolean; canGoForward: boolean } {
   return { canGoBack: h?.canGoBack() ?? false, canGoForward: h?.canGoForward() ?? false };
 }
 
-ipcMain.handle("window:nav-back", () => {
+handleIpc("window:nav-back", () => {
   const h = navHistory();
   if (h?.canGoBack()) h.goBack();
   return navState();
 });
 
-ipcMain.handle("window:nav-forward", () => {
+handleIpc("window:nav-forward", () => {
   const h = navHistory();
   if (h?.canGoForward()) h.goForward();
   return navState();
 });
 
-ipcMain.handle("window:reload", () => {
+handleIpc("window:reload", () => {
   mainWindow?.webContents.reload();
   return true;
 });
 
-ipcMain.handle("window:nav-state", () => navState());
+handleIpc("window:nav-state", () => navState());
 
 /**
  * Toggle DevTools from the titlebar's ⋯ menu.
@@ -872,7 +768,7 @@ ipcMain.handle("window:nav-state", () => navState());
  * Developer Tools stays), but it lives in the system menu bar — having it in the
  * window too costs nothing and keeps the two platforms behaving the same.
  */
-ipcMain.handle("window:toggle-devtools", () => {
+handleIpc("window:toggle-devtools", () => {
   const wc = mainWindow?.webContents;
   if (!wc) return false;
   if (wc.isDevToolsOpened()) wc.closeDevTools();
@@ -886,17 +782,17 @@ ipcMain.handle("window:toggle-devtools", () => {
 // `system` (SSH host/user/password/passphrase) and `tunnel` tokens, so a generic
 // key passthrough would let any script in the loaded content read local
 // credentials off the bridge. There is deliberately no `getAll`.
-ipcMain.handle("config:get", (_event, key: unknown) => {
+handleIpc("config:get", (_event, key: unknown) => {
   if (!isRendererConfigKey(key)) {
-    console.warn(`[security] blocked config:get for non-exposed key ${String(key)}`);
+    errorDiagnostics.warn("desktop/main/index", `[security] blocked config:get for non-exposed key ${String(key)}`);
     return undefined;
   }
   return store.get(key);
 });
 
-ipcMain.handle("config:set", (_event, key: unknown, value: unknown) => {
+handleIpc("config:set", (_event, key: unknown, value: unknown) => {
   if (!isRendererConfigKey(key)) {
-    console.warn(`[security] blocked config:set for non-exposed key ${String(key)}`);
+    errorDiagnostics.warn("desktop/main/index", `[security] blocked config:set for non-exposed key ${String(key)}`);
     return false;
   }
   store.set(key, value as AppConfig[RendererConfigKey]);
@@ -905,15 +801,15 @@ ipcMain.handle("config:set", (_event, key: unknown, value: unknown) => {
 
 // ─── IPC: App metadata ──────────────────────────────────────────────────────
 
-ipcMain.handle("app:version", () => {
+handleIpc("app:version", () => {
   return app.getVersion();
 });
 
-ipcMain.handle("app:cloud-urls", () => {
+handleIpc("app:cloud-urls", () => {
   return { api: CLOUD_API_URL, dashboard: CLOUD_DASHBOARD_URL };
 });
 
-ipcMain.handle("app:local-urls", () => {
+handleIpc("app:local-urls", () => {
   return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
 });
 
@@ -924,7 +820,7 @@ ipcMain.handle("app:local-urls", () => {
 
 // ─── IPC: Onboarding ────────────────────────────────────────────────────────
 
-ipcMain.handle(
+handleIpc(
   "onboarding:complete",
   async (
     _event,
@@ -976,7 +872,7 @@ ipcMain.handle(
  * 5. Return immediately so the renderer can show polling UX
  * 6. Renderer polls via cloud-auth-poll until session is obtained
  */
-ipcMain.handle("onboarding:cloud-auth", async () => {
+handleIpc("onboarding:cloud-auth", async () => {
   if (!mainWindow) return { ok: false, error: "No window" };
 
   // Wait for API to be available
@@ -1009,7 +905,8 @@ ipcMain.handle("onboarding:cloud-auth", async () => {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     return { ok: false, error: "nonce_registration_failed" };
   }
 
@@ -1030,7 +927,7 @@ ipcMain.handle("onboarding:cloud-auth", async () => {
  * When the API reports "resolved", we navigate to the claim URL
  * which sets the cookie via HTTP Set-Cookie and redirects to the dashboard.
  */
-ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
+handleIpc("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
   if (!mainWindow) return { status: "expired" };
 
   try {
@@ -1068,7 +965,8 @@ ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
     }
 
     return { status: data.status };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     // Network error during poll - report as error so UI can show feedback
     return { status: "error" };
   }
@@ -1087,7 +985,7 @@ ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
  * The cloud-callback endpoint stores the cloud session token server-side.
  * After polling resolves, the renderer just refreshes cloudApi.status().
  */
-ipcMain.handle("cloud:connect", async () => {
+handleIpc("cloud:connect", async () => {
   if (!mainWindow) return { ok: false, error: "No window" };
 
   const apiReady = await waitForApi(getLocalApiUrl());
@@ -1113,7 +1011,8 @@ ipcMain.handle("cloud:connect", async () => {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     return { ok: false, error: "nonce_registration_failed" };
   }
 
@@ -1132,7 +1031,7 @@ ipcMain.handle("cloud:connect", async () => {
  * The cloud-callback has already stored the session token server-side.
  * The renderer should call cloudApi.status() to pick up the new state.
  */
-ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
+handleIpc("cloud:connect-poll", async (_event, nonce: string) => {
   if (!mainWindow) return { status: "expired" };
 
   try {
@@ -1156,7 +1055,8 @@ ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
     }
 
     return { status: data.status };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     return { status: "error" };
   }
 });
@@ -1164,15 +1064,15 @@ ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
 // http/https only. `shell.openExternal` hands the string to the OS dispatcher,
 // so an unvalidated scheme could launch a local handler or, on Windows, resolve a
 // UNC path and leak an NTLM hash outbound.
-ipcMain.handle("onboarding:open-external", (_event, url: string) => {
+handleIpc("onboarding:open-external", (_event, url: string) => {
   if (!isSafeExternalUrl(url)) {
-    console.warn(`[security] refused openExternal for ${url}`);
+    errorDiagnostics.warn("desktop/main/index", `[security] refused openExternal for ${url}`);
     return;
   }
   shell.openExternal(url);
 });
 
-ipcMain.handle("onboarding:browse-file", async () => {
+handleIpc("onboarding:browse-file", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     // showHiddenFiles or the dialog can't reach ~/.ssh, where the key it asks
@@ -1184,7 +1084,7 @@ ipcMain.handle("onboarding:browse-file", async () => {
   return canceled || !filePaths.length ? null : filePaths[0];
 });
 
-ipcMain.handle("system:browse-folder", async () => {
+handleIpc("system:browse-folder", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: "Select Project Folder",
@@ -1198,7 +1098,7 @@ ipcMain.handle("system:browse-folder", async () => {
 // machine, so a native dialog is the only picker that makes sense — the API reads
 // the path off this same filesystem. `showHiddenFiles` because the key lives in
 // ~/.ssh, which the dialog hides by default.
-ipcMain.handle("system:browse-file", async () => {
+handleIpc("system:browse-file", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: "Select SSH Key",
@@ -1219,7 +1119,7 @@ ipcMain.handle("system:browse-file", async () => {
 
 // ─── IPC: Reset (for settings → re-onboard) ─────────────────────────────────
 
-ipcMain.handle("app:reset", () => {
+handleIpc("app:reset", () => {
   store.set("onboardingComplete", false);
   store.set("apiUrl", "");
   store.set("dashboardUrl", "");

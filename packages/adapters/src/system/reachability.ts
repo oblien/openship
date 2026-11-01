@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { connect } from "node:net";
 import { request } from "node:http";
 
@@ -69,7 +70,8 @@ export function probeTcpDetailed(
       settled = true;
       try {
         socket?.destroy();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/reachability");
         /* already torn down */
       }
       resolve(result);
@@ -81,7 +83,7 @@ export function probeTcpDetailed(
     socket.once("timeout", () =>
       done({ ok: false, reason: "timeout", message: `no response within ${timeoutMs}ms` }, socket),
     );
-    socket.once("error", (err: Error) => {
+    socket.once("error", (err: Error) => { observeCaughtError(err, "adapters/system/reachability");
       const errno = err as NodeJS.ErrnoException;
       done(
         {
@@ -133,7 +135,8 @@ export function probeHttp(
       settled = true;
       try {
         req.destroy();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/reachability");
         /* already torn down */
       }
       resolve(false);
@@ -199,7 +202,8 @@ export function probeHostedHttp(opts: {
     const fail = () => {
       try {
         req.destroy();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/reachability");
         /* already torn down */
       }
       done(null);

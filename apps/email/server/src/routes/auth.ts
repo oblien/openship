@@ -22,7 +22,8 @@ import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { env } from '../env';
 import { signInSchema } from '../lib/schemas';
 import { probeImap } from '../lib/imap';
-import { createSession, deleteSession, defaultMailHosts, getSession } from '../lib/session';
+import { classifyImapFailure } from '../lib/imap-errors';
+import { saveSession, deleteSession, defaultMailHosts, getSession } from '../lib/session';
 import { db, schema } from '../db';
 import { eq, inArray } from 'drizzle-orm';
 import { createRateLimiter } from '../lib/rate-limit';
@@ -205,20 +206,33 @@ authRoutes.post('/sign-in', async (c) => {
     parsed.data.email,
   );
 
-  const ok = await probeImap({
-    host: imapHost,
-    port: imapPort,
-    user: parsed.data.email,
-    pass: parsed.data.password,
-  });
+  let ok: boolean;
+  try {
+    ok = await probeImap({
+      host: imapHost,
+      port: imapPort,
+      user: parsed.data.email,
+      pass: parsed.data.password,
+    });
+  } catch (error) {
+    const failure = classifyImapFailure(error);
+    // Never log the raw IMAP response/command: it can contain credentials.
+    audit({ event: 'sign-in', ok: false, ip, email: lcEmail, reason: `imap-${failure}` });
+    const message = failure === 'tls'
+      ? 'Webmail could not establish a secure connection to the mail server. Contact your administrator.'
+      : failure === 'connection'
+        ? 'Webmail cannot reach the mail server. Try again shortly or contact your administrator.'
+        : 'The mail server could not complete sign-in. Try again shortly or contact your administrator.';
+    return c.json({ error: message, code: 'MAIL_SERVER_UNAVAILABLE' }, 503);
+  }
   if (!ok) {
     audit({ event: 'sign-in', ok: false, ip, email: lcEmail, reason: 'invalid-credentials' });
     return c.json({ error: 'Invalid email or password' }, 401);
   }
 
   // If a session for this email already exists in our cookie list, reuse it
-  // instead of creating a duplicate row. Sign-in then degenerates into a
-  // "switch" - same connection id, refreshed cookie.
+  // instead of creating a duplicate row. Refresh the verified credentials too:
+  // retaining an old password or backend makes the next mailbox request fail.
   const existingIds = await readLiveSessionIds(getCookie(c, LIST_COOKIE_NAME));
   const existingRows = existingIds.length
     ? await db.query.session.findMany({
@@ -228,31 +242,16 @@ authRoutes.post('/sign-in', async (c) => {
     : [];
   const existing = existingRows.find((r) => r.email === lcEmail);
 
-  let activeId: string;
-  let activeExpiresAt: Date;
-  let liveIds: string[];
-
-  if (existing) {
-    if (parsed.data.name !== undefined) {
-      await db.update(schema.session).set({ name: parsed.data.name }).where(eq(schema.session.id, existing.id));
-    }
-    activeId = existing.id;
-    activeExpiresAt = existing.expiresAt;
-    liveIds = [existing.id, ...existingIds.filter((id) => id !== existing.id)];
-  } else {
-    const created = await createSession({
-      email: parsed.data.email,
-      name: parsed.data.name ?? null,
-      password: parsed.data.password,
-      imapHost,
-      imapPort,
-      smtpHost,
-      smtpPort,
-    });
-    activeId = created.id;
-    activeExpiresAt = created.expiresAt;
-    liveIds = [created.id, ...existingIds];
-  }
+  const { id: activeId, expiresAt: activeExpiresAt } = await saveSession({
+    email: parsed.data.email,
+    name: parsed.data.name,
+    password: parsed.data.password,
+    imapHost,
+    imapPort,
+    smtpHost,
+    smtpPort,
+  }, existing?.id);
+  const liveIds = [activeId, ...existingIds.filter((id) => id !== activeId)];
 
   setActiveCookies(c, activeId, activeExpiresAt);
   writeSessionListCookie(c, liveIds, activeExpiresAt);

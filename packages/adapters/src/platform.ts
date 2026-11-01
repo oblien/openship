@@ -32,6 +32,7 @@
  *   if (system) await system.requireFeature("deploy");
  */
 
+import { observedAllSettled, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { RuntimeAdapter } from "./runtime/types";
 import type { RoutingProvider, SslProvider } from "./infra/types";
 import type { CommandExecutor, SshConfig, ProvisionLock } from "./types";
@@ -58,11 +59,9 @@ export interface PlatformConfig {
   /** Deployment target */
   target: PlatformTarget;
   /**
-   * Runtime mode for self-hosted (ignored for cloud/desktop).
-   *
-   * This is the ONLY choice for self-hosted - everything else follows:
-  *   - "docker" → Docker containers + Nginx + certbot (default)
-  *   - "bare"   → Node.js processes + Nginx + certbot
+   * Runtime mode for connected and managed servers (desktop always uses Bare).
+   * Both destinations use the same Docker/Bare adapters with their own executor.
+   * Routing uses Nginx on connected servers and the managed edge on Cloud.
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */
@@ -77,17 +76,32 @@ export interface PlatformConfig {
   cloudClientSecret?: string;
   /** Oblien namespace-scoped token (cloud target - local instances) */
   cloudToken?: string;
+  /** Customer namespace; required alongside a token for cloud workload access. */
+  cloudNamespace?: string;
+  cloudApiUrl?: string;
+  /** Fresh provider entitlement check before starting billable work. */
+  cloudBeforeProvision?: () => Promise<void>;
+  /** Persisted, organization-validated Docker host for one project environment. */
+  cloudServer?: Pick<
+    import("./runtime/cloud/docker").CloudDockerOptions,
+    | "workspaceId"
+    | "projectId"
+    | "ownerWorkspaceId"
+    | "provisionLock"
+    | "bridgeLock"
+    | "resolveRegistryAuth"
+    | "buildCacheProtection"
+  >;
   /**
    * Admin-scoped Oblien operations that namespace tokens can't perform.
-   * Local/desktop instances inject these so CloudRuntime can hand them
-   * off to the SaaS (which runs them with the master client). SaaS
-   * instances leave this unset — the direct client already has admin
-   * scope.
+   * CloudInfraProvider receives a tenant-scoped admin proxy. Local/desktop
+   * requests forward to the SaaS; SaaS requests validate ownership before
+   * using its provider admin client.
    *
    * Currently scoped to static-page creation on shared zones like
    * `opsh.io`; same shape as analytics/edge-proxy proxy pattern.
    */
-  cloudAdminProxy?: import("./runtime/cloud").CloudAdminProxy;
+  cloudAdminProxy?: import("./infra/cloud-admin").CloudAdminProxy;
   /**
    * Allow a CLOUD-target runtime to do work on the machine this API process runs on
    * (the "build locally, upload the output" strategy, and the local-source Dockerfile
@@ -102,7 +116,7 @@ export interface PlatformConfig {
   /**
    * SSH config for remote server management (self-hosted only).
    *
-  * When provided, all system checks, installations, and Nginx file
+   * When provided, all system checks, installations, and Nginx file
    * operations run on the remote server via SSH instead of locally.
    * When omitted, everything runs on the current machine.
    */
@@ -239,31 +253,116 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 }
 
 async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
-  const { Oblien } = await import("oblien");
-  const { CloudRuntime } = await import("./runtime/cloud");
+  const { Oblien } = await import("./oblien");
   const { CloudInfraProvider } = await import("./infra/cloud");
-
-  // Single Oblien client - either from token or master creds
   const client = config.cloudToken
-    ? new Oblien({ token: config.cloudToken })
+    ? new Oblien({ token: config.cloudToken, baseUrl: config.cloudApiUrl })
     : new Oblien({
         clientId: config.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
         clientSecret: config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
+        baseUrl: config.cloudApiUrl,
       });
+  const common = { namespace: config.cloudNamespace, adminProxy: config.cloudAdminProxy };
 
-  const infra = new CloudInfraProvider(client);
+  if (!config.cloudServer) {
+    const { UnboundRuntime } = await import("./runtime/unbound");
+    const infra = new CloudInfraProvider(client, common);
+    return {
+      target: "cloud",
+      runtime: new UnboundRuntime(),
+      routing: infra,
+      ssl: infra,
+      system: null,
+      executor: null,
+      localHost: false,
+    };
+  }
+  if (!config.cloudToken || !config.cloudNamespace)
+    throw new Error("Managed servers require organization-scoped credentials");
 
+  if (config.runtime !== "bare") {
+    const { CloudDockerRuntime } = await import("./runtime/cloud/docker");
+    const runtime = await CloudDockerRuntime.forWorkspace(client, {
+      ...config.cloudServer,
+      namespace: config.cloudNamespace,
+      beforeProvision: config.cloudBeforeProvision,
+      allowHostSource: config.allowHostBuild,
+    });
+    const infra = new CloudInfraProvider(client, { ...common, scope: runtime.routingScope() });
+    return {
+      target: "cloud",
+      runtime,
+      routing: infra,
+      ssl: infra,
+      system: null,
+      executor: runtime.executor,
+      localHost: false,
+    };
+  }
+
+  const { BareRuntime } = await import("./runtime/bare");
+  const { CloudServerConnection } = await import("./runtime/cloud/server-connection");
+  const { CloudProcessSupervisor } = await import("./runtime/cloud/process-supervisor");
+  const { prepareRemoteSource } = await import("./runtime/remote-source");
+  const { managedProjectRoutingScope } = await import("./runtime/cloud/routing-scope");
+  const connection = new CloudServerConnection(client, {
+    ...config.cloudServer,
+    namespace: config.cloudNamespace,
+    beforeProvision: config.cloudBeforeProvision,
+  });
+  const paths = cloudDockerProjectPaths(config.cloudServer.projectId);
+  const supervisor = new CloudProcessSupervisor(
+    connection,
+    config.cloudServer.projectId,
+    paths.bare,
+  );
+  const runtime = new BareRuntime({
+    ...config.bare,
+    workDir: paths.bare,
+    executor: connection.executor,
+    projectId: config.cloudServer.projectId,
+    allowHostBuild: config.allowHostBuild ?? false,
+    beforeWork: () => connection.resume(),
+    supervisorFactory: async () => supervisor,
+    prepareSource: (build, directory, logger) =>
+      prepareRemoteSource(connection, build, directory, logger),
+  });
+  // One routing scope handles host processes, static releases and Docker
+  // sidecars. Open its Docker transport only if this platform changes routes.
+  let routingRuntime: Promise<import("./runtime/cloud/docker").CloudDockerRuntime> | undefined;
+  const projectRoutes = async () => {
+    routingRuntime ??= import("./runtime/cloud/docker").then(({ CloudDockerRuntime }) =>
+      CloudDockerRuntime.forWorkspace(client, {
+        ...config.cloudServer!,
+        namespace: config.cloudNamespace!,
+        beforeProvision: config.cloudBeforeProvision,
+      }),
+    );
+    return (await routingRuntime).containerRouteTargets();
+  };
+  const infra = new CloudInfraProvider(client, {
+    ...common,
+    scope: managedProjectRoutingScope(connection, config.cloudServer, projectRoutes),
+  });
+  const dispose = runtime.dispose.bind(runtime);
+  runtime.dispose = async () => {
+    try {
+      await dispose();
+    } finally {
+      try {
+        await (await routingRuntime?.catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/platform"); return undefined; }))?.dispose();
+      } finally {
+        await connection.dispose();
+      }
+    }
+  };
   return {
     target: "cloud",
-    runtime: new CloudRuntime(client, {
-      adminProxy: config.cloudAdminProxy,
-      allowHostBuild: config.allowHostBuild,
-    }),
+    runtime,
     routing: infra,
     ssl: infra,
     system: null,
-    executor: null,
-    // The workload runs in Oblien's infrastructure, never on this box.
+    executor: connection.executor,
     localHost: false,
   };
 }
@@ -301,9 +400,8 @@ async function createInfraProvider(
   // paths/pin decision for the edge image. Constructing the provider here too is
   // what let the two drift — and pointing `sitesDir` at a directory the edge never
   // reads fails silently, with the box dark.
-  const { containerEdgeProvider, localContainerEdgeProvider } = await import(
-    "./system/proxy/ensure-container-edge"
-  );
+  const { containerEdgeProvider, localContainerEdgeProvider } =
+    await import("./system/proxy/ensure-container-edge");
 
   // LOCAL containerized edge (compose): the api shares the routing mounts with the
   // `openship-edge` container and reaches it over the mounted Docker socket.
@@ -315,7 +413,7 @@ async function createInfraProvider(
   // REMOTE box already running our edge container — same edge, reached over the
   // pooled SSH executor rather than a socket.
   const { resolveOurEdgeContainer } = await import("./system/proxy/detect");
-  const remoteEdge = await resolveOurEdgeContainer(executor).catch(() => null);
+  const remoteEdge = await resolveOurEdgeContainer(executor).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/platform"); return null; });
   if (remoteEdge) {
     const nginx = await containerEdgeProvider(executor, remoteEdge, config.nginx);
     return { routing: nginx, ssl: nginx };
@@ -341,9 +439,8 @@ async function createInfraProvider(
 
   // Bare host OpenResty: legacy boxes not yet converted, and Docker-less servers.
   // No longer something we install — see `installContainerEdge`.
-  const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } = await import(
-    "./infra/openresty-lua"
-  );
+  const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } =
+    await import("./infra/openresty-lua");
 
   // Guarded for the same reason as `ensureOpenRestyConfig` below, one step earlier:
   // this is the first thing here that touches the target box, so an executor that
@@ -358,13 +455,22 @@ async function createInfraProvider(
   try {
     paths = await detectOpenRestyPaths(executor);
   } catch (err) {
-    console.error(
+    errorDiagnostics.error("adapters/platform",
       `[openresty] cannot reach the edge host (deploy continues without routing): ` +
-        `${err instanceof Error ? err.message : String(err)}`,
+        `${err instanceof Error ? err.message : String(err)}`, err,
     );
     const { NoopInfraProvider } = await import("./infra/noop");
     const noop = new NoopInfraProvider();
     return { routing: noop, ssl: noop };
+  }
+
+  // Fresh hosts have no bare OpenResty to drive. Provisioning below installs
+  // the canonical container edge, so select that provider before installation
+  // rather than retaining a host-binary executor for the whole first deploy.
+  if (!(await executor.exists(paths.bin))) {
+    const { EDGE_CONTAINER_NAME } = await import("./system/port-owner");
+    const nginx = await containerEdgeProvider(executor, EDGE_CONTAINER_NAME, config.nginx);
+    return { routing: nginx, ssl: nginx };
   }
 
   // Everything from here on WRITES to root-owned paths — nginx.conf, the Lua dir, the
@@ -382,7 +488,7 @@ async function createInfraProvider(
   const edgeExecutor = await rootOrDegrade(executor, {
     purpose: "Configuring routing and TLS",
     consequence: "Routing may be incomplete (deploy continues; the app still runs on its port).",
-    report: (message) => console.error(`[openresty] ${message}`),
+    report: (message) => errorDiagnostics.error("adapters/platform", `[openresty] ${message}`),
   });
 
   // Idempotent, but writes the SHARED nginx.conf (grep||sed). Concurrent deploys
@@ -396,9 +502,9 @@ async function createInfraProvider(
     // step, so the invariant never got a chance to apply (that's what turned a
     // macOS `mkdir /var/www` EACCES into "Deployment Failed").
     await ensureOpenRestyConfig(edgeExecutor, paths).catch((err: unknown) => {
-      console.error(
+      errorDiagnostics.error("adapters/platform",
         `[openresty] ensureOpenRestyConfig failed (deploy continues, routing may be ` +
-          `incomplete): ${err instanceof Error ? err.message : String(err)}`,
+          `incomplete): ${err instanceof Error ? err.message : String(err)}`, err,
       );
     });
     // Self-heal the edge Lua on EVERY deploy — a box that lost rules_guard.lua
@@ -451,32 +557,42 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   });
 
   // Runtime
-  let runtime: RuntimeAdapter;
-  if (runtimeMode === "bare") {
-    const { BareRuntime } = await import("./runtime/bare");
-    runtime = new BareRuntime({ ...config.bare, executor, systemManager: system });
-  } else {
-    const { DockerRuntime } = await import("./runtime/docker");
-    runtime = await DockerRuntime.create(config.docker, system, config.provisionLock);
+  let runtime: RuntimeAdapter | undefined;
+  try {
+    if (runtimeMode === "bare") {
+      const { BareRuntime } = await import("./runtime/bare");
+      runtime = new BareRuntime({ ...config.bare, executor, systemManager: system });
+    } else {
+      const { DockerRuntime } = await import("./runtime/docker");
+      runtime = await DockerRuntime.create(config.docker, system, config.provisionLock);
+    }
+
+    // Infrastructure - runtime implies the reverse proxy
+    const { routing, ssl } = await createInfraProvider(
+      runtimeMode,
+      config,
+      executor,
+      useDockerEdge ? edgeContainer : undefined,
+    );
+
+    return {
+      target: "selfhosted",
+      runtime,
+      routing,
+      ssl,
+      system,
+      executor,
+      localHost: targetIsThisMachine,
+    };
+  } catch (error) {
+    // Construction may fail after opening a runtime transport. Release the
+    // resources created here; an injected executor still belongs to its caller.
+    await observedAllSettled([
+      Promise.resolve().then(() => runtime?.dispose?.()),
+      Promise.resolve().then(() => (config.executor ? undefined : executor.dispose())),
+    ], "adapters/platform");
+    throw error;
   }
-
-  // Infrastructure - runtime implies the reverse proxy
-  const { routing, ssl } = await createInfraProvider(
-    runtimeMode,
-    config,
-    executor,
-    useDockerEdge ? edgeContainer : undefined,
-  );
-
-  return {
-    target: "selfhosted",
-    runtime,
-    routing,
-    ssl,
-    system,
-    executor,
-    localHost: targetIsThisMachine,
-  };
 }
 
 // ─── Singleton ───────────────────────────────────────────────────────────────
@@ -505,9 +621,7 @@ export async function initPlatform(config: PlatformConfig): Promise<Platform> {
  */
 export function getPlatform(): Platform {
   if (!_platform) {
-    throw new Error(
-      "Platform not initialized. Call initPlatform() at server startup.",
-    );
+    throw new Error("Platform not initialized. Call initPlatform() at server startup.");
   }
   return _platform;
 }
@@ -531,3 +645,4 @@ export function peekPlatform(): Platform | null {
 export function resetPlatform(): void {
   _platform = null;
 }
+import { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";

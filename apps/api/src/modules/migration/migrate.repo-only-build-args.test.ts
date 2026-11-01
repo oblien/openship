@@ -7,12 +7,13 @@ const h = vi.hoisted(() => ({
   syncFromCompose: vi.fn(),
   updateService: vi.fn(),
   findProject: vi.fn(),
+  bulkSetEnvVars: vi.fn(),
 }));
 
 vi.mock("@repo/db", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   repos: {
-    project: { findById: h.findProject },
+    project: { findById: h.findProject, bulkSetEnvVars: h.bulkSetEnvVars },
     service: {
       syncFromCompose: h.syncFromCompose,
       update: h.updateService,
@@ -20,21 +21,21 @@ vi.mock("@repo/db", async (importOriginal) => ({
   },
 }));
 
-vi.mock("../projects/project-crud.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-crud.service", () => ({
   ensureProject: h.ensureProject,
   createServicesProjectWithId: vi.fn(),
 }));
 
-vi.mock("./docker-inspect.service", () => ({
+vi.mock("@repo/platform/engine/modules/migration/docker-inspect.service", () => ({
   discoverServerStack: h.discoverServerStack,
 }));
 
-vi.mock("./managed-containers", () => ({
+vi.mock("@repo/platform/engine/modules/migration/managed-containers", () => ({
   excludeAlreadyManaged: h.excludeAlreadyManaged,
 }));
 
-import { adoptServerStack, type RepoComposeService } from "./migrate.service";
-import type { DiscoveredService } from "./docker-reconcile";
+import { adoptServerStack, type RepoComposeService } from "@repo/platform/engine/modules/migration/migrate.service";
+import type { DiscoveredService } from "@repo/platform/engine/modules/migration/docker-reconcile";
 
 const discovered = {
   name: "running-api",

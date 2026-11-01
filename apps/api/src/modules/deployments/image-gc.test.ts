@@ -1,16 +1,52 @@
 import { describe, it, expect } from "vitest";
 import type { Deployment } from "@repo/db";
-import { computeKeepSet, selectImageRemovalRefs } from "./image-gc";
+import { kubernetesBuildImageTag } from "@repo/adapters";
+import { computeKeepSet, selectImageRemovalRefs } from "@repo/platform/engine/modules/deployments/image-gc";
 
 // Minimal deployment shape for the pure keep-set logic (loaders are injected, so
-// no DB). Casts keep the fixtures terse — computeKeepSet only reads id/imageRef/pinned.
-const asDeps = (rows: Array<Partial<Deployment>>) => rows as unknown as Deployment[];
+// no DB). Include the project/organization binding used by the shared ownership check.
+const asDeps = (projectId: string, rows: Array<Partial<Deployment>>) =>
+  rows.map(row => ({ projectId, organizationId: "org1", status: "ready", ...row })) as Deployment[];
 
 describe("computeKeepSet", () => {
+  it("protects only the newest retryable completed build without spending rollback history", async () => {
+    const project = { id: "retry-project", organizationId: "org1", activeDeploymentId: "active", rollbackWindow: 1 };
+    const receipt = (digit: string) => ({ completedBuildArtifacts: { version: 1, images: [
+      { imageRef: `openship/app:bld_${digit}`, imageId: `sha256:${digit.repeat(64)}` },
+    ] } });
+    const rows = asDeps(project.id, [
+      { id: "new-failed", status: "failed", artifactRetainedAt: new Date(), meta: receipt("a") },
+      { id: "cancelled", status: "cancelled", artifactRetainedAt: new Date(), meta: receipt("b") },
+      { id: "old-failed", status: "failed", artifactRetainedAt: new Date(), meta: receipt("c") },
+      { id: "active", imageRef: "active-image" },
+      { id: "history", imageRef: "history-image" },
+    ]);
+    const loaders = { listForRetention: async () => rows, listByDeployment: async () => [] };
+    const keep = await computeKeepSet(project, loaders);
+    expect(keep.has("openship/app:bld_a")).toBe(true);
+    expect(keep.has(`sha256:${"a".repeat(64)}`)).toBe(true);
+    expect(keep.has("openship/app:bld_b")).toBe(false);
+    expect(keep.has("openship/app:bld_c")).toBe(false);
+    expect(keep.has("history-image")).toBe(true);
+    rows.unshift(...asDeps(project.id, [{ id: "new-success", imageRef: "new-success" }]));
+    expect((await computeKeepSet(project, loaders)).has("openship/app:bld_a")).toBe(false);
+  });
+
+  it("keeps a completed image while its worker is deploying, but not after cancellation", async () => {
+    const project = { id: "p", organizationId: "org1", activeDeploymentId: null, rollbackWindow: 0 };
+    const [dep] = asDeps(project.id, [{ id: "worker", status: "deploying", artifactRetainedAt: new Date(), meta: {
+      completedBuildArtifacts: { version: 1, images: [{ imageRef: "openship/app:bld_work", imageId: `sha256:${"a".repeat(64)}` }] },
+    } }]);
+    const loaders = { listForRetention: async () => [dep!], listByDeployment: async () => [] };
+    expect((await computeKeepSet(project, loaders)).has("openship/app:bld_work")).toBe(true);
+    dep!.status = "cancelled";
+    expect((await computeKeepSet(project, loaders)).has("openship/app:bld_work")).toBe(false);
+  });
+
   it("keeps active + newest rollbackWindow unpinned + all pinned; prunes older; unions dep + service imageRefs", async () => {
-    const project = { id: "p1", activeDeploymentId: "d5", rollbackWindow: 2 };
+    const project = { id: "p1", organizationId: "org1", activeDeploymentId: "d5", rollbackWindow: 2 };
     // ready, newest first: d5 (active), d4, d3, d2 (pinned), d1 (oldest, unpinned)
-    const ready = asDeps([
+    const ready = asDeps(project.id, [
       { id: "d5", imageRef: "compose", pinned: false }, // compose sentinel dep.imageRef
       { id: "d4", imageRef: "img-d4", pinned: false },
       { id: "d3", imageRef: "img-d3", pinned: false },
@@ -26,7 +62,7 @@ describe("computeKeepSet", () => {
     };
 
     const keep = await computeKeepSet(project, {
-      listReadyOrderedDesc: async () => ready,
+      listForRetention: async () => ready,
       findById: async (id) => ready.find((d) => d.id === id),
       listByDeployment: async (id) => sds[id] ?? [],
     });
@@ -41,10 +77,10 @@ describe("computeKeepSet", () => {
   });
 
   it("keeps the active deployment even when it's absent from the ready list", async () => {
-    const project = { id: "p2", activeDeploymentId: "dA", rollbackWindow: 1 };
+    const project = { id: "p2", organizationId: "org1", activeDeploymentId: "dA", rollbackWindow: 1 };
     const keep = await computeKeepSet(project, {
-      listReadyOrderedDesc: async () => asDeps([]),
-      findById: async (id) => (id === "dA" ? asDeps([{ id: "dA", imageRef: "img-dA", pinned: false }])[0] : undefined),
+      listForRetention: async () => asDeps(project.id, []),
+      findById: async (id) => (id === "dA" ? asDeps(project.id, [{ id: "dA", imageRef: "img-dA", pinned: false }])[0] : undefined),
       listByDeployment: async (id) => (id === "dA" ? [{ imageRef: "svc-dA" }] : []),
     });
     expect(keep.has("img-dA")).toBe(true);
@@ -52,14 +88,14 @@ describe("computeKeepSet", () => {
   });
 
   it("rollbackWindow 0 keeps only the active + pinned", async () => {
-    const project = { id: "p3", activeDeploymentId: "d3", rollbackWindow: 0 };
-    const ready = asDeps([
+    const project = { id: "p3", organizationId: "org1", activeDeploymentId: "d3", rollbackWindow: 0 };
+    const ready = asDeps(project.id, [
       { id: "d3", imageRef: "img-d3", pinned: false },
       { id: "d2", imageRef: "img-d2", pinned: false },
       { id: "d1", imageRef: "img-d1", pinned: true },
     ]);
     const keep = await computeKeepSet(project, {
-      listReadyOrderedDesc: async () => ready,
+      listForRetention: async () => ready,
       findById: async (id) => ready.find((d) => d.id === id),
       listByDeployment: async () => [],
     });
@@ -74,6 +110,17 @@ describe("selectImageRemovalRefs (never ruin an operator's image)", () => {
 
   it("keeps an image whose tag is in the keep-set", () => {
     expect(selectImageRemovalRefs({ id: "sha1", repoTags: ["openship/app-web:keep"] }, keep)).toEqual([]);
+  });
+
+  it("removes an expired build tag even when its image also has a retained tag", () => {
+    expect(selectImageRemovalRefs({ id: "shared", repoTags: ["openship/app-web:keep", "openship/app-web:bld_old"] }, keep))
+      .toEqual(["openship/app-web:bld_old"]);
+  });
+
+  it("keeps a registry or operator tag inside the openship namespace", () => {
+    expect(selectImageRemovalRefs({ id: "registry", repoTags: ["openship/agent:v1"] }, keep)).toEqual([]);
+    expect(selectImageRemovalRefs({ id: "tagged", repoTags: ["openship/app:bld_old", "openship/app:production"] }, keep))
+      .toEqual(["openship/app:bld_old"]);
   });
 
   it("removes ONLY our openship tags (never by id) for a prunable built image", () => {
@@ -97,5 +144,20 @@ describe("selectImageRemovalRefs (never ruin an operator's image)", () => {
 
   it("removes a truly dangling (untagged) labeled leftover by id", () => {
     expect(selectImageRemovalRefs({ id: "sha6", repoTags: [] }, keep)).toEqual(["sha6"]);
+  });
+
+  it("removes only a cluster build's exact local publish alias", () => {
+    const alias = kubernetesBuildImageTag("ghcr.io/acme/app", "bld_1");
+    const img = { id: "cluster-image", buildId: "bld_1", repoTags: [alias, "ghcr.io/acme/app:production", "operator/copy:latest"] };
+    expect(selectImageRemovalRefs(img, keep, "ghcr.io/acme/app")).toEqual([alias]);
+    expect(selectImageRemovalRefs(img, keep, "ghcr.io/acme/another")).toEqual([]);
+    expect(selectImageRemovalRefs({ ...img, buildId: null }, keep, "ghcr.io/acme/app")).toEqual([]);
+  });
+
+  it("honors retained image ids and aliases for cluster builds too", () => {
+    const alias = kubernetesBuildImageTag("ghcr.io/acme/app", "bld_1");
+    const img = { id: "cluster-image", buildId: "bld_1", repoTags: [alias] };
+    expect(selectImageRemovalRefs(img, new Set([img.id]), "ghcr.io/acme/app")).toEqual([]);
+    expect(selectImageRemovalRefs(img, new Set([alias]), "ghcr.io/acme/app")).toEqual([]);
   });
 });

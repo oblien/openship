@@ -21,12 +21,13 @@ const {
 
 const { ghFetch } = vi.hoisted(() => ({ ghFetch: vi.fn() }));
 
-const { getLocalGhToken, listLocalGhRepos } = vi.hoisted(() => ({
+const { getLocalGhToken, listLocalGhRepos, getLocalGhStatus } = vi.hoisted(() => ({
   getLocalGhToken: vi.fn(),
   listLocalGhRepos: vi.fn(),
+  getLocalGhStatus: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   githubFetch,
   resolveGitHubAuthMode,
   getUserStatus,
@@ -37,33 +38,33 @@ vi.mock("../../../src/modules/github/github.auth", () => ({
   getGitHubAuthMode: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.http", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
   ghFetch,
   ghFetchSoft: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   getLocalGhToken,
   listLocalGhRepos,
   listLocalGhOrgs: vi.fn(),
-  getLocalGhStatus: vi.fn(),
+  getLocalGhStatus,
 }));
 
 // env: {} → CLOUD_MODE is falsy, so createGitHubSource takes the LOCAL branch
 // (GhCliSource + LocalGitHubSource) — exactly the merge these tests exercise.
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {},
   runtimeTarget: { id: "local" },
 }));
 
-import { createGitHubSource } from "../../../src/modules/github/sources";
+import { createGitHubSource } from "@repo/platform/engine/modules/github/sources/index";
 // Pre-warm the lazily `await import`-ed source modules (+ their heavy
 // github.service dependency) at collection time, so createGitHubSource's
 // internal dynamic imports hit a warm cache. Otherwise the first call's cold
 // transform can exceed the per-test timeout under full-suite contention.
-import "../../../src/modules/github/sources/gh-cli-source";
-import "../../../src/modules/github/sources/local-source";
-import "../../../src/modules/github/sources/app-source";
+import "@repo/platform/engine/modules/github/sources/gh-cli-source";
+import "@repo/platform/engine/modules/github/sources/local-source";
+import "@repo/platform/engine/modules/github/sources/app-source";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as never;
 
@@ -83,21 +84,22 @@ beforeEach(() => {
   githubFetch.mockReset();
   getLocalGhToken.mockReset();
   listLocalGhRepos.mockReset();
+  getLocalGhStatus.mockResolvedValue({ available: true, login: "operator", method: "token" });
 });
 
 describe("listReposForOwner — source dispatch", () => {
   describe("user-token (oauth/cli/token mode)", () => {
-    it("lists org repos via /orgs/{owner}/repos when owner is not the user", async () => {
+    it("filters accessible user repositories for an organization or collaborator owner", async () => {
       resolveGitHubAuthMode.mockResolvedValue("oauth");
       getUserStatus.mockResolvedValue({ connected: true, login: "me" });
-      githubFetch.mockResolvedValue([raw("acme/site")]);
+      githubFetch.mockResolvedValue([raw("acme/site"), raw("another/repo")]);
 
       const repos = await call("acme");
 
       expect(repos).toHaveLength(1);
       expect(repos?.[0].full_name).toBe("acme/site");
       expect(githubFetch).toHaveBeenCalledWith(
-        expect.objectContaining({ url: expect.stringContaining("/orgs/acme/repos") }),
+        expect.objectContaining({ url: "https://api.github.com/user/repos", credential: ["user-oauth"] }),
       );
     });
 

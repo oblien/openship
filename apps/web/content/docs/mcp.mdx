@@ -153,10 +153,9 @@ This is the heart of the security model, and it's why MCP access is as safe as y
   bearer, and dispatches it through the same routes, validation, auth middleware, and per-resource permission
   check as a normal HTTP call.
 
-The practical upshot: a read-only token can only reach read tools, and a scoped token stays boxed into its
-granted resources. A scoped token isn't even *shown* the org-wide list and create tools — `get_projects`
-(list every project) simply won't appear in its `tools/list`; it sees only the per-resource tools for the
-resource types it was granted. And if a `tools/call` touches something outside that scope, it comes back
+A read-only token can only reach GET tools. A scoped token sees tools enabled by its grants, including
+collection tools when it has the matching wildcard permission. A grant to one project does not authorize
+listing every project. And if a `tools/call` touches something outside that scope, it comes back
 `404` — the scope doing its job. For the full protocol details (JSON-RPC methods, negotiation, error codes),
 see the [MCP API reference](/docs/api/mcp).
 
@@ -166,6 +165,19 @@ belong to and can never reach another org's projects, servers, or secrets — a 
 membership comes back `404`, just as it would in the dashboard. See [Isolation](/docs/security/isolation).
 
 ## Which tools map to which API
+
+To see your **workspace ID**, ask the agent to call `get_permissions_workspaces` with no arguments.
+Openship calls it `organizationId` in the API. The result lists workspace names and IDs, including empty
+workspaces, and identifies the current workspace and any credential binding.
+
+When installing an app or deploying Compose, pass the chosen `organizationId` alongside `body` on each
+tool call. The server uses that exact workspace. If several destinations are available, the agent's
+instructions tell it to clarify the destination before creating resources. See
+[workspace selection](/docs/api/mcp#discover-and-select-a-workspace) for examples.
+
+Tokens and OAuth connections created today are bound to one organization. To target another, authorize
+the connection or create a token in that workspace. Selecting an ID cannot widen a credential's scope,
+and it does not move an already installed app between organizations.
 
 Tools aren't a separate feature set — each one **maps onto a permission-tagged REST route**, and the tool name
 is built from that route's method and path. So `get_projects` is `GET /api/projects`, `post_domains` is
@@ -179,6 +191,7 @@ UI can flag a destructive call before it runs.
 
 | Tool name (examples) | REST route | Reference |
 |---|---|---|
+| `get_permissions_workspaces` | `/api/permissions/workspaces` | [Workspace discovery](/docs/api/permissions#list-workspaces) |
 | `get_projects`, `patch_projects_by_id` | `/api/projects` | [Projects API](/docs/api/projects) |
 | `get_deployments`, `post_deployments_build_access` | `/api/deployments` | [Deployments API](/docs/api/deployments) |
 | `get_projects_by_id_services`, `post_projects_by_id_services` | `/api/projects/:id/services` | [Services API](/docs/api/services) |
@@ -188,9 +201,10 @@ UI can flag a destructive call before it runs.
 | `get_notifications_channels` | `/api/notifications` | [Notifications API](/docs/api/notifications) |
 | `get_settings`, `patch_settings_build_mode` | `/api/settings` | [Settings API](/docs/api/settings) |
 | `get_projects_by_projectId_backup_policies`, `post_backup_policies_by_policyId_run` | `/api/backups` | [Backups API](/docs/api/backups) |
-| `get_cloud_status`, `get_cloud_workspaces` | `/api/cloud` | [Cloud API](/docs/api/cloud) |
+| `get_cloud_status` | `/api/cloud` | [Cloud API](/docs/api/cloud) |
+| `get_system_servers_destinations` | `/api/system/servers/destinations` | [Desktop folder → Cloud](/docs/api/mcp#deploy-a-desktop-folder-on-cloud) |
 | `get_jobs`, `post_jobs_by_key_run` | `/api/jobs` | [Jobs guide](/docs/guides/jobs) |
-| `get_apps_catalog`, `post_apps` | `/api/apps` | *(REST reference pending)* |
+| `get_apps_catalog`, `post_apps` | `/api/apps` | [App catalog](/docs/api/apps) |
 | `get_updates`, `post_updates_scan` | `/api/updates` | [Updating Openship](/docs/guides/updating) |
 
 <Callout title="Credentials and auth are never exposed" type="info">
@@ -198,6 +212,11 @@ The `tokens`, `auth`, and `mcp` modules are hard-blocked from ever becoming tool
 can't mint itself a fresh credential or escape its own scope. Manage tokens and connected clients from the
 dashboard or the [Tokens API](/docs/api/tokens), not from an agent.
 </Callout>
+
+The [generated MCP catalog](/docs/api/mcp-tools) publishes the current tool names, descriptions and
+HTTP-only boundaries directly from the routes. The [cluster and scaling guide](/docs/guides/mcp-clusters-and-scaling)
+covers private networking, automated k3s setup, application replica changes, recovery and cleanup.
+Manual replica scaling is supported; metric-driven autoscaling and live worker joining are not implemented.
 
 ## Guided flows
 
@@ -221,7 +240,7 @@ curl -s https://<your-host>/api/mcp \
 
 This returns exactly the tools that token is allowed to call.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="401 — Missing or invalid access token" type="error">
 There's no bearer credential, or it's expired or revoked. The response includes a `WWW-Authenticate` header
@@ -246,7 +265,7 @@ access level (read-only or full control) and how many resources it can reach. **
 client's issued tokens immediately and drops its consent, so it has to re-authorize next time. The same list
 and controls are available programmatically via the [Tokens API](/docs/api/tokens).
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="MCP API reference" href="/docs/api/mcp" description="The JSON-RPC methods, protocol negotiation, and error codes behind /api/mcp." />

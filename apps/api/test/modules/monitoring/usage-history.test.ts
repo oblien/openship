@@ -41,7 +41,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-const { getProjectUsageHistory } = await import("../../../src/modules/monitoring/usage-history");
+const { getProjectUsageHistory } = await import("@repo/platform/engine/modules/monitoring/usage-history");
 
 const ctx = { organizationId: "org1" } as never;
 

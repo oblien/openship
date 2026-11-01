@@ -25,8 +25,8 @@ There are three separate things people mix up, so let's name them up front:
 
 ## Connect your instance to Openship Cloud
 
-This links your instance to a Cloud account. It does **not** move any of your projects — it just unlocks the
-option to deploy to Cloud and to use Cloud-backed features.
+This links your instance to a Cloud account. Existing Cloud projects, apps and managed servers appear
+alongside your local resources. Connecting does not move projects or duplicate their settings.
 
 <Steps>
 
@@ -37,37 +37,37 @@ option to deploy to Cloud and to use Cloud-backed features.
 In the dashboard, go to **Settings** and choose the **Cloud** tab from the left. You'll see a card that says
 **Connect to Cloud** with a **Connect to Openship Cloud** button.
 
-<Callout title="Screenshot">Settings → **Cloud** tab, the "Connect to Cloud" card with the **Connect to Openship Cloud** button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
 
 ### Sign in and give consent
 
-Press **Connect to Openship Cloud**. A window opens on Openship Cloud and asks you to sign in, then to
-**authorize** the connection — this is the "do you allow this?" consent step, the same idea as connecting an
-app to your Google or GitHub account. Say yes.
+Press **Connect to Openship Cloud**. A window opens on Openship Cloud and asks you to sign in.
+Review the account and active **Organization** on the consent screen before pressing **Authorize**.
+Use **Switch** beside the account to sign in with another account, or beside Organization to choose
+another workspace. Switching keeps the connection request and requires you to authorize again.
+If organizations cannot be loaded, use **Try again**; the connection stays unauthorized.
 
 When the window closes, the card flips to a green **Connected** badge showing the Cloud account you linked.
-
-<Callout title="Screenshot">Settings → Cloud tab after connecting: the green **Connected** badge with the linked cloud account. *(screenshot pending)*</Callout>
 
 </Step>
 
 </Steps>
 
 <Callout title="Connecting doesn't move anything" type="info">
-After connecting, your projects still run exactly where they were. The connection just gives your instance
-permission to talk to Cloud. To actually move a project, see the next section.
+After connecting, your projects still run where they were. Opening a Cloud project uses its Cloud settings,
+history and operations through your instance. Local projects keep their local settings. Managed server
+purchases and billing stay in Cloud. To move a project, see the next section.
 </Callout>
 
 ### Disconnecting
 
-On the same card, the **Disconnect** button unlinks the account. Openship asks you to confirm first, because
-**cloud deployments stop working until you reconnect**, and disconnecting also drops the shared GitHub
-connection that rides on the cloud link — so any repos connected through Cloud will need reconnecting
-afterward.
+On the same card, **Disconnect** unlinks the account. Running workloads continue on their servers, but
+this installation cannot manage Cloud resources or start new work through that connection until you
+reconnect. Cloud inventory refreshes immediately, and any explicit local server links remain visible
+with their connection unavailable. Repositories using the shared Cloud GitHub connection also require
+reconnection.
 
 ## Move one project to Cloud (and back)
 
@@ -95,50 +95,22 @@ openship project transfer <project-id> to-self-hosted
 You can find a project's id with `openship project list`. Under the hood these call
 `POST /api/projects/:id/transfer/to-cloud` and `.../to-self-hosted`.
 
-## Open your instance to a team (migration)
+## Keep your instance online for a team
 
-Everything above keeps your instance **single-user** — only you sign in. When you're ready for teammates,
-you migrate the whole instance into **multi-user mode**. This is a bigger, one-time move, so here's just the
-shape of it — the full walkthrough lives in [Teams & members](/docs/guides/teams-members).
+Choose **Settings → Instance → Move to a server**. Select your own server or a connected
+managed Cloud server, then choose API-only access through Desktop or API + dashboard.
+Your workspaces and credentials move together while existing apps stay on their servers.
+The Team tab links to this same flow; there is no separate migration chooser.
 
-Go to **Settings → Team**. While the instance is still single-user, the owner sees a **Team workspace** card
-with a **Migrate** button. Pressing it opens the **Move to multi-user mode** chooser with three paths:
+Moving a control plane is separate from transferring a project to Openship Cloud. Your
+Cloud-owned projects continue to be managed by Cloud, and the transferred Cloud connection
+keeps them accessible from the relocated instance.
 
-- **Migrate to your server** — deploy Openship onto a VPS you own over SSH, and move your data there. No
-  outside dependency.
-- **Migrate to Openship Cloud** — push your data up to Cloud and let us host everything. Your local instance
-  becomes a launcher that points at Cloud. (Requires the Cloud connection above.)
-- **Keep local, expose via tunnel** — your data stays on this machine; Openship opens a public tunnel so
-  teammates can reach you while your machine is online. (Also requires the Cloud connection.)
+See [Move your Openship instance](/docs/guides/migrate-control-plane) for prerequisites,
+recovery, and moving the latest data back to Desktop. Team members can connect their own
+Desktop without becoming instance administrators.
 
-<Callout title="Screenshot">The **Move to multi-user mode** modal showing the three path cards: your server, Openship Cloud, and tunnel. *(screenshot pending)*</Callout>
-
-<Callout title="You can switch back" type="info">
-Migration isn't a trap door. Whichever path you pick, your local data stays on disk, and you can return to
-single-user mode later. Moving to Cloud also won't send your secrets — encrypted fields are stripped before
-the upload.
-</Callout>
-
-### The same migration from the terminal
-
-If you'd rather script it, the `system migration` commands map to the same three paths, plus a reversal:
-
-```bash
-# To your own server (run a read-only readiness check first)
-openship system migration preflight --server-id <id> --slug myteam
-openship system migration start     --server-id <id> --slug myteam
-
-# To Openship Cloud
-openship system migration start-cloud
-
-# Keep local, expose via a tunnel
-openship system migration start-tunnel --slug myteam
-
-# Reverse any of the above, back to single-user
-openship system migration switch-back
-```
-
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="There's no Cloud tab in Settings" type="warn">
 The **Cloud** tab only shows on a self-hosted instance. If you're already using Openship Cloud, there's
@@ -157,7 +129,7 @@ sign-in and the **Authorize** step in the popup. If your browser blocks pop-ups,
 and retry.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Cloud as source" href="/docs/architecture/cloud-as-source" description="Why a cloud project is owned by Cloud, and how your instance proxies to it." />

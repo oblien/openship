@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SSEStreamingApi } from "hono/streaming";
+import { errorReporter, type ErrorEvent } from "@repo/core/diagnostics";
+import { withErrorContext } from "@repo/core/diagnostics/node";
 
 import { serializeWrites } from "../../src/lib/sse";
 
@@ -31,6 +33,23 @@ function makeStream(delays: number[], failAt = -1) {
 }
 
 describe("serializeWrites", () => {
+  it("reports a failed terminal result after HTTP 200 without changing frames or their order", async () => {
+    const events: ErrorEvent[] = [];
+    await errorReporter.flush();
+    errorReporter.setEnabled(true);
+    errorReporter.setSink(batch => { events.push(...batch); });
+    const { stream, written } = makeStream([5, 0]);
+    const drain = withErrorContext({ requestId: "request-stream", organizationId: "org-stream" }, () => serializeWrites(stream), true);
+    await stream.writeSSE({ event: "log", data: "still running" });
+    const data = JSON.stringify({ success: false, error: "password=private-stream-913", code: "BUILD_FAILED" });
+    await stream.writeSSE({ event: "complete", data: Promise.resolve(data) });
+    await drain();
+    await errorReporter.flush();
+    expect(written).toEqual(["still running", data]);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.context).toMatchObject({ requestId: "request-stream", organizationId: "org-stream", code: "BUILD_FAILED", component: "sse-result" });
+    expect(JSON.stringify(events)).not.toContain("private-stream-913");
+  });
   it("emits frames in CALL order even when the first write is the slowest", async () => {
     // Without serialization these resolve by duration: "ping", "log", "complete".
     const { stream, written } = makeStream([30, 10, 0]);

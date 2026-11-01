@@ -1,4 +1,4 @@
-import { AlertTriangle, KeyRound, RefreshCw, Settings2, ShieldAlert, Unplug, Wifi, WifiOff } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import { useRouter } from "next/navigation";
 import {
   classifyConnectivityError,
@@ -137,7 +137,7 @@ export function ConnectionBanner(props: {
             body: interpolate(t.servers.banner.hostChannelAuthBody, {
               target: dialed ?? "the host",
             }),
-            icon: KeyRound,
+            icon: "key" as const,
             tone: "red",
           };
         }
@@ -147,41 +147,41 @@ export function ConnectionBanner(props: {
           ? {
               title: t.servers.banner.hostChannelMissingTitle,
               body: t.servers.banner.hostChannelMissingBody,
-              icon: Unplug,
+              icon: "unplug" as const,
               tone: "amber",
             }
           : {
               title: t.servers.banner.hostChannelTitle,
               body: interpolate(t.servers.banner.hostChannelBody, { target: dialed }),
-              icon: ShieldAlert,
+              icon: "shield-alert" as const,
               tone: "amber",
             };
       case "unreachable":
         return {
           title: interpolate(t.servers.banner.unreachableTitle, { host }),
           body: interpolate(t.servers.banner.unreachableBody, { host, port: String(port) }),
-          icon: WifiOff,
+          icon: "wifi-off" as const,
           tone: "amber",
         };
       case "auth":
         return {
           title: t.servers.banner.authTitle,
           body: interpolate(t.servers.banner.authBody, { host, port: String(port) }),
-          icon: KeyRound,
+          icon: "key" as const,
           tone: "red",
         };
       case "no_server":
         return {
           title: t.servers.banner.noServerTitle,
           body: t.servers.banner.noServerBody,
-          icon: AlertTriangle,
+          icon: "warning" as const,
           tone: "amber",
         };
       default:
         return {
           title: t.servers.banner.unknownTitle,
           body: message || t.servers.banner.unknownBody,
-          icon: AlertTriangle,
+          icon: "warning" as const,
           tone: "amber",
         };
     }
@@ -224,7 +224,7 @@ export function ConnectionBanner(props: {
     <div className={`rounded-2xl border p-4 mb-6 ${tone}`}>
       <div className="flex items-start gap-3">
         <div className={`size-9 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
-          <copy.icon className="size-4" />
+          <UiIcon name={copy.icon} className="size-4" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground">{copy.title}</p>
@@ -269,14 +269,14 @@ export function ConnectionBanner(props: {
               disabled={retrying}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium bg-foreground/[0.06] hover:bg-foreground/[0.1] text-foreground rounded-lg transition-colors disabled:opacity-50"
             >
-              {retrying ? <RefreshCw className="size-3 animate-spin" /> : <Wifi className="size-3" />}
+              {retrying ? <UiIcon name="refresh" className="size-3 animate-spin" /> : <UiIcon name="wifi" className="size-3" />}
               {retrying ? t.servers.banner.checking : t.servers.banner.retry}
             </button>
             <button
               onClick={() => router.push(`/servers/${serverId}?edit=true`)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium bg-foreground/[0.06] hover:bg-foreground/[0.1] text-foreground rounded-lg transition-colors"
             >
-              <Settings2 className="size-3" />
+              <UiIcon name="sliders" className="size-3" />
               {kind === "auth" ? t.servers.banner.editCredentials : t.servers.banner.editServer}
             </button>
           </div>

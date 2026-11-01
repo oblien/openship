@@ -32,7 +32,8 @@
       "total": "Total",
       "successful": "Bem-sucedidas",
       "failed": "Falhadas",
-      "inProgress": "Em curso"
+      "inProgress": "Em curso",
+      "pageTitle": "Nesta página"
     },
     "autoDeploy": {
       "title": "Implantação automática",
@@ -191,5 +192,75 @@
     "untouchedNote": "Eles continuam rodando e não são alterados: {names}",
     "confirm": "Voltar",
     "cancel": "Cancelar"
+  },
+  "loadFailed": "Não foi possível carregar as implantações.",
+  "retry": "Tentar novamente",
+  "pagination": {
+    "label": "Páginas do histórico de implantações",
+    "previous": "Página anterior",
+    "next": "Próxima página",
+    "pageOf": "Página {page} de {total}",
+    "range": "Implantações {from}–{to} de {total}"
+  },
+  "resourceGuidance": {
+    "label": "Orientações sobre recursos da implantação",
+    "reviewCapacity": "Revisar capacidade",
+    "reviewTitle": "Revisar a capacidade do espaço Cloud",
+    "reviewHint": "Verifique primeiro o uso e os limites configurados. O upgrade é opcional; abrir esta revisão não altera nem repete a implantação.",
+    "slowTitle": "Esta compilação está demorando",
+    "slowDescription": "Downloads, a rede ou comandos podem ser lentos. Mais capacidade pode ajudar em compilações intensivas; verifique os logs primeiro.",
+    "titles": {
+      "container-oom": "O contêiner ficou sem memória",
+      "memory-allocation": "Falha ao alocar memória",
+      "process-heap": "Limite de heap do aplicativo atingido",
+      "storage-full": "Falha ao alocar armazenamento",
+      "storage-low": "Armazenamento livre insuficiente para compilar",
+      "process-killed": "O processo de compilação foi encerrado"
+    },
+    "causes": {
+      "container-oom": "O Docker confirmou um encerramento por falta de memória. Verifique o limite do contêiner e a capacidade do espaço Cloud antes de tentar novamente.",
+      "memory-allocation": "O processo não conseguiu alocar memória. Verifique os limites configurados e a capacidade disponível antes de escolher um plano maior.",
+      "process-heap": "O processo atingiu seu próprio limite de heap. Verifique as configurações de execução; apenas aumentar o plano pode não resolver.",
+      "storage-full": "A operação esgotou o espaço em disco ou os inodes. Revise o uso e os artefatos não utilizados, preservando os dados do aplicativo.",
+      "storage-low": "O sistema de arquivos do Docker tem pouco espaço livre ou nenhum inode livre. Revise o uso ou aumente o armazenamento.",
+      "process-killed": "O processo recebeu SIGKILL (código de saída 137). Isso sozinho não comprova falta de memória. Verifique os logs."
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "Fila de compilação na nuvem",
+    "title": "Compilação na fila",
+    "position": "Compilação na fila · Posição {position}",
+    "concurrency": "Aguardando uma vaga para compilação simultânea.",
+    "resources": "Aguardando CPU ou memória disponível no servidor.",
+    "server": "Aguardando o servidor aceitar esta compilação.",
+    "automaticStart": "Ela iniciará automaticamente.",
+    "allowance": "Compilações simultâneas permitidas pelo seu plano: {count}.",
+    "unlimited": "Seu plano não limita as compilações simultâneas.",
+    "active": "Compilações ativas: {count}.",
+    "comparePlans": "Comparar planos",
+    "optionalUpgrade": "A mudança de plano é opcional. Você pode continuar aguardando.",
+    "compareConcurrency": "Compare planos para executar mais compilações simultâneas. Sua compilação pode permanecer na fila.",
+    "compareResources": "Compare planos para obter mais CPU ou memória. Você pode continuar aguardando até que os recursos do servidor estejam disponíveis."
+  },
+  "monitoring": {
+    "title": "Visão dos deployments",
+    "scope": "Projeto e pesquisa selecionados · dias UTC · histórico retido",
+    "period": "Período",
+    "days": "{count} dias",
+    "refresh": "Atualizar",
+    "attempts": "Tentativas de deployment",
+    "window": "No período selecionado",
+    "successRate": "Taxa de sucesso",
+    "rateHint": "Sucessos / (sucessos + falhas); exclui cancelamentos",
+    "failedHint": "Inclui versões parciais e bloqueadas",
+    "activeHint": "Tentativas em execução ou na fila neste período",
+    "unavailable": "Visão indisponível. Tente atualizar.",
+    "trend": "Resultados diários",
+    "avgBuild": "Build bem-sucedido médio",
+    "empty": "Nenhum deployment neste período.",
+    "projects": "Detalhes por projeto",
+    "projectHint": "Os 6 primeiros por falhas, depois tentativas ativas",
+    "failedShort": "falhas",
+    "history": "Histórico de deployments"
   }
 }

@@ -169,6 +169,8 @@ export type EdgeClassification = "free" | "ours" | "known" | "unknown";
 
 export interface EdgeOccupant {
   port: number;
+  /** Swarm retains ownership; never offer task/container takeover for this port. */
+  swarmService?: string;
   pid?: number;
   command?: string;
   rawCommand?: string;
@@ -269,6 +271,8 @@ export interface ImportedSite {
 export interface ProxyScanResult {
   proxy: ProxyKind;
   sites: ImportedSite[];
+  /** False when the inventory could not be read; an unreadable edge is not empty. */
+  readable?: boolean;
   /** Anything we couldn't parse/import — surfaced to the user, never silently dropped. */
   warnings: string[];
 }

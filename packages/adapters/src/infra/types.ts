@@ -15,16 +15,32 @@
 
 import type { ManualCert, RouteConfig, SslResult } from "../types";
 import type { OutputProbeResult, StaticProbeOptions } from "../system/output-exists";
+import type { RouteProtection } from "./route-protection";
 
 // ─── Routing ─────────────────────────────────────────────────────────────────
 
+export type ProjectRouteCleanupResult = "removed" | "absent" | "foreign";
+
 export interface RoutingProvider {
+  /** Validated atomic update of an already-published hostname; false means no route yet. */
+  setRouteProtection?(
+    domain: string,
+    policy: RouteProtection | null,
+  ): Promise<boolean>;
   /** Register a reverse-proxy route (domain → container/process) */
   registerRoute(route: RouteConfig): Promise<void>;
 
   /** Remove a reverse-proxy route. Providers that can roll back a failed
    * removal must not recreate it after the caller has abandoned the attempt. */
   removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void>;
+
+  /** Project-scoped teardown may preserve a route freshly proven to belong to
+   * another project. Unknown ownership must reject. A foreign result also forbids
+   * a later generic release of the managed hostname. */
+  removeProjectRoute?(domain: string): Promise<ProjectRouteCleanupResult>;
+
+  /** Pause a file-served site while retaining its hostname and certificate. */
+  suspendRoute?(domain: string): Promise<void>;
 
   /**
    * Re-emit vhosts an older generator wrote, so a fix to the EMITTED config shape reaches
@@ -104,6 +120,16 @@ export interface ProvisionCertOptions {
 }
 
 export interface SslProvider {
+  /** The provider handles issuance and renewal through its own API. DNS
+   * credentials and local Certbot hook scripts must not be required or sent. */
+  readonly certificateManagement?: "provider";
+  /** Resumable DNS-01 orders. Waiting for a person must not hold an executor,
+   * Certbot process, or deployment lock. Returned order material is private. */
+  dnsChallengeProvider?(): Promise<DnsCertificateProvider>;
+  /** Enable the current route with an already-validated certificate, without
+   * opening another ACME order. A readable PEM alone does not prove a failed
+   * vhost reload has recovered. Only providers that own the route implement it. */
+  activateCert?(domain: string): Promise<void>;
   /** Provision a new TLS certificate for a domain. `onLog`, when given, streams
    *  certbot's output line-by-line (powers the live-log verify modal). `force`
    *  bypasses the "cert already on disk" short-circuit and passes certbot
@@ -130,4 +156,16 @@ export interface SslProvider {
    * of mistaking a transient read failure for "no cert".
    */
   verifyCert(domain: string): Promise<SslResult>;
+}
+
+export interface DnsCertificateProvider {
+  readonly directoryUrl: string;
+  createAccountKey(): Promise<string>;
+  prepare(hostname: string, accountKey: string): Promise<{
+    record: { name: string; value: string };
+    expiresAt: string;
+    /** Opaque serialized order, CSR and key. Encrypt at rest; never return to a client. */
+    state: string;
+  }>;
+  complete(hostname: string, accountKey: string, state: string): Promise<ManualCert>;
 }

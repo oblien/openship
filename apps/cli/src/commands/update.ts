@@ -28,6 +28,7 @@
  * rebuilds the CLI + dashboard in place — a quick update with no release in the
  * loop. `--rebuild` forces it even when already at the remote tip.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Command, Option } from "commander";
 import { spawnSync } from "node:child_process";
 import { resolveCliUpdatePlan, cliInstallCommand, type CliPackageManager } from "@repo/core";
@@ -85,7 +86,9 @@ interface UpdateOpts {
 export async function verifyHostChannelAfterUpdate(): Promise<void> {
   if (isJsonMode()) return;
   const { verifyHostChannel } = await import("../lib/host-channel-preflight");
-  await verifyHostChannel().catch(() => {});
+  await verifyHostChannel().catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "cli/commands/update");
+  });
 }
 
 async function runReconcile(): Promise<boolean> {
@@ -241,6 +244,7 @@ async function runTarballUpdate(install: CliInstall, opts: UpdateOpts): Promise<
   try {
     runtime = (await ensureNodeRuntime((m) => info(m))).source;
   } catch (e) {
+    observeCaughtError(e, "cli/commands/update");
     info(`Keeping the current Node runtime (couldn't refresh it: ${(e as Error).message}).`);
   }
 

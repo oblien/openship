@@ -1,7 +1,7 @@
 {
   "checking": "Checking your DNS provider…",
   "noProviderTitle": "Set these records automatically",
-  "noProviderDesc": "Connect a DNS provider and Openship can add these records for you.",
+  "noProviderDesc": "Connect a DNS provider with access to this domain's zone, then review and apply its records.",
   "connect": "Connect a DNS provider",
   "unauthorizedTitle": "DNS provider needs reconnecting",
   "unauthorizedDesc": "Your saved token was rejected. Reconnect it to auto-configure DNS.",
@@ -25,5 +25,20 @@
   "outcomeFailed": "Failed",
   "resultDone": "DNS updated.",
   "resultPartial": "Some records need attention.",
-  "applyFailed": "Couldn't configure DNS."
+  "applyFailed": "Couldn't configure DNS.",
+  "preDeployHint": "Provider connected. Deploy first, then choose Auto-configure DNS in the project's domain settings.",
+  "currentValue": "Current value",
+  "desiredValue": "New value",
+  "checkAgain": "Check again",
+  "manualSetup": "Manual DNS setup",
+  "recordsFailed": "Couldn't load DNS records. Please retry.",
+  "connection": {
+    "description": "Connect once for this workspace. Review DNS changes before applying them.",
+    "provider": "DNS provider",
+    "connection": "Connection",
+    "newConnection": "Add a connection",
+    "createToken": "Create API token",
+    "adminRequired": "An owner or admin must connect the DNS provider. You can still add the records manually.",
+    "loadFailed": "Couldn't load DNS connections. Please retry."
+  }
 }

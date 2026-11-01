@@ -10,7 +10,8 @@
  * connection open; it lives outside this helper.
  */
 
-import { ImapFlow } from 'imapflow';
+import { ImapFlow, type ImapFlowOptions } from 'imapflow';
+import { classifyImapFailure } from './imap-errors';
 
 export interface ImapAuth {
   host: string;
@@ -19,8 +20,32 @@ export interface ImapAuth {
   pass: string;
 }
 
+/** All webmail connections use the same TLS policy, including mailbox IDLE. */
+export function createImapClient(
+  auth: ImapAuth,
+  options: Pick<ImapFlowOptions, 'socketTimeout' | 'disableAutoIdle' | 'maxIdleTime'> = {},
+): ImapFlow {
+  const client = new ImapFlow({
+    ...options,
+    host: auth.host,
+    port: auth.port,
+    secure: auth.port === 993,
+    doSTARTTLS: auth.port === 993 ? undefined : true,
+    auth: { user: auth.user, pass: auth.pass },
+    logger: false,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+  });
+  // ImapFlow can emit a pending AUTH error after close() has already rejected
+  // connect(). Callers attach their active error handler before connecting; this
+  // harmless final listener prevents a late event from crashing the process
+  // after that handler is removed. The closed, per-request client is GC-owned.
+  client.on('error', () => {});
+  return client;
+}
+
 /**
- * Operation budget for `withImap`'s inner `fn`. imapflow itself has socket
+ * Budget for connecting and running `withImap`'s `fn`. imapflow has socket
  * and greeting timeouts, but no per-command guard - a slow `SEARCH HEADER`
  * over a large mailbox can sit idle for minutes without surfacing an error.
  * 30 s covers the slowest legitimate full-mailbox scan on Dovecot without
@@ -83,12 +108,7 @@ export async function withImap<T>(
   const timeoutMs = options.timeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
   const label = options.label ?? 'imap';
   const startedAt = performance.now();
-  const client = new ImapFlow({
-    host: auth.host,
-    port: auth.port,
-    secure: auth.port === 993,
-    auth: { user: auth.user, pass: auth.pass },
-    logger: false,
+  const client = createImapClient(auth, {
     // socketTimeout is imapflow's idle-socket guard. Setting it to the
     // operation budget gives the wire layer the same ceiling as the
     // logical operation - a stuck socket bails out at the same point
@@ -96,14 +116,14 @@ export async function withImap<T>(
     socketTimeout: timeoutMs,
   });
 
-  const connectStart = performance.now();
-  await client.connect();
-  const connectMs = performance.now() - connectStart;
-  imapDebug(`${label}: connected`, { host: auth.host, user: auth.user, ms: Math.round(connectMs) });
-
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let didTimeout = false;
   let didError = false;
+  let connected = false;
+  let onError!: (error: Error) => void;
+  const connectionError = new Promise<never>((_, reject) => { onError = reject; });
+  // Socket errors can arrive as events instead of connect()/command rejections.
+  client.on('error', onError);
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutHandle = setTimeout(() => {
       didTimeout = true;
@@ -113,7 +133,10 @@ export async function withImap<T>(
 
   const fnStart = performance.now();
   try {
-    const result = await Promise.race([fn(client), timeoutPromise]);
+    await Promise.race([client.connect(), timeoutPromise, connectionError]);
+    connected = true;
+    imapDebug(`${label}: connected`, { host: auth.host, user: auth.user, ms: Math.round(performance.now() - startedAt) });
+    const result = await Promise.race([fn(client), timeoutPromise, connectionError]);
     imapDebug(`${label}: fn ok`, { ms: Math.round(performance.now() - fnStart) });
     return result;
   } catch (err: any) {
@@ -121,13 +144,15 @@ export async function withImap<T>(
     imapDebug(`${label}: fn failed`, {
       ms: Math.round(performance.now() - fnStart),
       timeout: didTimeout,
-      message: err?.message,
+      // AUTH errors can carry raw commands. Log only their category before
+      // connection succeeds, even when diagnostic timing is enabled.
+      ...(connected ? { message: err?.message } : { failure: classifyImapFailure(err) }),
     });
     // imapflow throws `new Error('Command failed')` for any NO/BAD response,
     // attaching the actual server text on `responseText` and the wire-format
     // command on `executedCommand`. Surface both so tRPC errors are
     // actionable instead of a bare "Command failed".
-    if (err && typeof err === 'object' && err.message === 'Command failed') {
+    if (connected && err && typeof err === 'object' && err.message === 'Command failed') {
       const detail = [err.responseText, err.executedCommand].filter(Boolean).join(' :: ');
       if (detail) err.message = `IMAP command failed: ${detail}`;
     }
@@ -157,6 +182,7 @@ export async function withImap<T>(
       try {
         await Promise.race([
           client.logout(),
+          connectionError,
           new Promise<void>((resolve) => {
             teardownTimer = setTimeout(resolve, TEARDOWN_TIMEOUT_MS);
           }),
@@ -173,13 +199,14 @@ export async function withImap<T>(
       }
       imapDebug(`${label}: torn down cleanly`, { total: Math.round(performance.now() - startedAt) });
     }
+    client.removeListener('error', onError);
   }
 }
 
 /**
  * Quick credential check: opens an IMAP connection and immediately
- * closes it. Returns true on successful AUTHENTICATE. Used by the
- * `/auth/login` endpoint.
+ * closes it. False means the server rejected the credentials. Connection,
+ * TLS and server failures throw so `/auth/sign-in` can report unavailability.
  */
 export async function probeImap(auth: ImapAuth): Promise<boolean> {
   try {
@@ -187,7 +214,8 @@ export async function probeImap(auth: ImapAuth): Promise<boolean> {
       // connection succeeded; nothing else to do.
     });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (classifyImapFailure(error) === 'credentials') return false;
+    throw error;
   }
 }

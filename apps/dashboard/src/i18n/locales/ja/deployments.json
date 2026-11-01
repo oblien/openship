@@ -32,7 +32,8 @@
       "total": "合計",
       "successful": "成功",
       "failed": "失敗",
-      "inProgress": "進行中"
+      "inProgress": "進行中",
+      "pageTitle": "このページ"
     },
     "autoDeploy": {
       "title": "自動デプロイ",
@@ -191,5 +192,75 @@
     "untouchedNote": "これらは稼働したままで、変更されません: {names}",
     "confirm": "ロールバック",
     "cancel": "キャンセル"
+  },
+  "loadFailed": "デプロイを読み込めませんでした。",
+  "retry": "再試行",
+  "pagination": {
+    "label": "デプロイ履歴のページ",
+    "previous": "前のページ",
+    "next": "次のページ",
+    "pageOf": "{page} / {total} ページ",
+    "range": "全 {total} 件中 {from}–{to} 件"
+  },
+  "resourceGuidance": {
+    "label": "デプロイのリソースガイド",
+    "reviewCapacity": "容量を確認",
+    "reviewTitle": "Cloudスペースの容量を確認",
+    "reviewHint": "まず使用量と設定済みの制限を確認してください。アップグレードは任意です。この画面を開いてもデプロイは変更・再試行されません。",
+    "slowTitle": "ビルドに時間がかかっています",
+    "slowDescription": "ダウンロード、ネットワーク、ビルドコマンドが遅い可能性があります。計算量の多いビルドには容量の追加が役立つ場合があります。まずログを確認してください。",
+    "titles": {
+      "container-oom": "コンテナのメモリが不足しました",
+      "memory-allocation": "メモリの割り当てに失敗しました",
+      "process-heap": "アプリのヒープ上限に達しました",
+      "storage-full": "ストレージの割り当てに失敗しました",
+      "storage-low": "ビルド用の空き容量が不足しています",
+      "process-killed": "ビルドプロセスが強制終了されました"
+    },
+    "causes": {
+      "container-oom": "Dockerがメモリ不足による終了を確認しました。再試行する前に、コンテナのメモリ制限とCloudスペースの容量を確認してください。",
+      "memory-allocation": "失敗したプロセスはメモリを割り当てられませんでした。上位プランを選ぶ前に、設定済みの制限と利用可能な容量を確認してください。",
+      "process-heap": "プロセスが自身のヒープ上限に達しました。実行環境の設定を確認してください。上位プランだけでは解決しない場合があります。",
+      "storage-full": "ディスク容量またはinodeを使い切りました。アプリのデータを保護しながら、使用量と未使用の成果物を確認してください。",
+      "storage-low": "Dockerのファイルシステムの空き容量または空きinodeが不足しています。使用量を確認するか、ストレージを増やしてください。",
+      "process-killed": "プロセスがSIGKILLを受信しました（終了コード137）。これだけではメモリ不足と断定できません。ログを確認してください。"
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "クラウドビルドキュー",
+    "title": "ビルド待機中",
+    "position": "ビルド待機中 · 順番 {position}",
+    "concurrency": "同時ビルド枠が空くのを待っています。",
+    "resources": "サーバーのCPUまたはメモリが空くのを待っています。",
+    "server": "サーバーがこのビルドを受け付けるのを待っています。",
+    "automaticStart": "自動的に開始されます。",
+    "allowance": "プランで許可されている同時ビルド数：{count}。",
+    "unlimited": "このプランには同時ビルド数の制限はありません。",
+    "active": "実行中のビルド数：{count}。",
+    "comparePlans": "プランを比較",
+    "optionalUpgrade": "アップグレードは任意です。そのまま待つこともできます。",
+    "compareConcurrency": "同時ビルド数を増やせるプランを比較できます。ビルドはキューで待機したままにできます。",
+    "compareResources": "CPUやメモリを増やせるプランを比較できます。サーバーのリソースが空くまで待つこともできます。"
+  },
+  "monitoring": {
+    "title": "デプロイ概要",
+    "scope": "選択したプロジェクトと検索 · UTC暦日 · 保持された履歴",
+    "period": "期間",
+    "days": "{count}日",
+    "refresh": "更新",
+    "attempts": "デプロイ試行",
+    "window": "選択した期間内",
+    "successRate": "成功率",
+    "rateHint": "成功 / (成功 + 失敗)。キャンセルを除外",
+    "failedHint": "一部失敗・ブロックされたリリースを含む",
+    "activeHint": "期間内の実行中または待機中の試行",
+    "unavailable": "概要を取得できません。再読み込みしてください。",
+    "trend": "日別の結果",
+    "avgBuild": "成功ビルドの平均",
+    "empty": "この期間のデプロイはありません。",
+    "projects": "プロジェクト別",
+    "projectHint": "失敗数、実行中の試行数の順で上位6件",
+    "failedShort": "失敗",
+    "history": "デプロイ履歴"
   }
 }

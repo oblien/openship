@@ -18,7 +18,8 @@
  * resolved in parallel). The Health tab refreshes on demand.
  */
 
-import { createPublicDnsResolver } from "../../../lib/public-dns";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { createPublicDnsResolver } from "@repo/platform/engine/lib/public-dns";
 
 /**
  * PUBLIC resolvers, not the system stub.
@@ -39,9 +40,9 @@ const resolveCname = publicResolver.resolveCname.bind(publicResolver);
 const resolveMx = publicResolver.resolveMx.bind(publicResolver);
 const resolveTxt = publicResolver.resolveTxt.bind(publicResolver);
 const reverse = publicResolver.reverse.bind(publicResolver);
-import { sshManager } from "../../../lib/ssh-manager";
-import { isSyntheticDnsAddress } from "../../../lib/dns-address";
-import { readState } from "../mail-state";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { isSyntheticDnsAddress } from "@repo/platform/engine/lib/dns-address";
+import { readState } from "@repo/platform/engine/modules/mail/mail-state";
 import { relayedDomainsFor, safeErrorMessage, mailHostname } from "@repo/core";
 
 export type DnsCheckStatus = "pass" | "warn" | "fail" | "unknown";
@@ -239,6 +240,7 @@ async function checkA(domain: string, exp?: ExpectedRecord): Promise<DnsCheck | 
           : "A record exists but no IPv4 addresses returned.",
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     return missing("a", "A record", name, "A", exp.value, err);
   }
 }
@@ -280,6 +282,7 @@ async function checkAaaa(domain: string, exp?: ExpectedRecord): Promise<DnsCheck
         : `AAAA returned ${ips.join(", ")} which doesn't match ${exp.value}.`,
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     // AAAA is recommended, not required → warn on NXDOMAIN.
     if (isNotFound(err)) {
       return {
@@ -332,6 +335,7 @@ async function checkMx(domain: string, exp?: ExpectedRecord): Promise<DnsCheck |
         : `MX records exist but none point at ${wanted}. Mail will be delivered elsewhere.`,
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     return missing("mx", "MX record", domain, "MX", exp.value, err);
   }
 }
@@ -442,6 +446,7 @@ async function checkSpf(
               : "SPF record exists but doesn't include `mx`. Mail from this server may fail SPF.",
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     return missing("spf", "SPF record", domain, "TXT", exp.value, err);
   }
 }
@@ -489,6 +494,7 @@ async function checkDkim(domain: string, exp?: ExpectedRecord): Promise<DnsCheck
         : "DKIM TXT exists but doesn't match the key generated at install. Rotate it or update the published record.",
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     return missing("dkim", "DKIM key", name, "TXT", exp.value.slice(0, 64) + "…", err);
   }
 }
@@ -547,6 +553,7 @@ async function checkDmarc(domain: string, exp?: ExpectedRecord): Promise<DnsChec
       message: "DMARC policy is published.",
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     return missing("dmarc", "DMARC policy", name, "TXT", exp.value, err);
   }
 }
@@ -601,6 +608,7 @@ async function checkPtr(
           : `PTR resolves to ${names.join(", ")} instead of ${expectedHost}. Gmail/Outlook may still reject your mail.`,
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     if (isNotFound(err)) {
       return {
         ...base,
@@ -686,6 +694,7 @@ async function checkExtra(exp: ExpectedRecord, idx: number): Promise<DnsCheck | 
           : "MAIL FROM TXT not published (recommended for alignment).",
     };
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/dns-scan.service");
     if (isNotFound(err)) {
       return {
         key, label, description, queriedName: exp.name, recordType: type,

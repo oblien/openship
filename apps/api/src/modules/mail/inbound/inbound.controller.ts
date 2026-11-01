@@ -18,6 +18,7 @@
  * rather than a rule that looks live and captures nothing.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { safeErrorMessage } from "@repo/core";
 import { repos, type MailInboundScope } from "@repo/db";
@@ -30,8 +31,8 @@ import {
   ForeignBccError,
   listEngineDomains,
   ruleDomain,
-} from "./capture";
-import { runInboundForServer } from "./read";
+} from "@repo/platform/engine/modules/mail/inbound/capture";
+import { runInboundForServer } from "@repo/platform/engine/modules/mail/inbound/read";
 
 const SCOPES: readonly MailInboundScope[] = ["mailbox", "domain", "all"];
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
@@ -134,7 +135,7 @@ async function releaseOrphanedDomains(serverId: string, candidates: string[]): P
     }
   }
   for (const d of candidates) {
-    if (!stillWanted.has(d)) await disarmDomain(serverId, d).catch(() => undefined);
+    if (!stillWanted.has(d)) await disarmDomain(serverId, d).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/inbound/inbound.controller"); return undefined; });
   }
 }
 
@@ -145,6 +146,7 @@ export async function listRulesHandler(c: Context) {
     const rules = await repos.mailInbound.listByServer(g.serverId);
     return c.json({ rules });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/inbound/inbound.controller");
     return errorJson(c, err);
   }
 }
@@ -156,7 +158,8 @@ export async function createRuleHandler(c: Context) {
   let body: Record<string, unknown>;
   try {
     body = (await c.req.json()) as Record<string, unknown>;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/mail/inbound/inbound.controller");
     return c.json({ error: "Invalid JSON body" }, 400);
   }
 
@@ -165,6 +168,7 @@ export async function createRuleHandler(c: Context) {
   try {
     ({ scope, target } = validateScope(String(body.scope ?? ""), body.target));
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/inbound/inbound.controller");
     return c.json({ error: safeErrorMessage(err) }, 400);
   }
 
@@ -198,6 +202,7 @@ export async function createRuleHandler(c: Context) {
     });
     return c.json({ rule }, 201);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/inbound/inbound.controller");
     return errorJson(c, err);
   }
 }
@@ -210,7 +215,8 @@ export async function updateRuleHandler(c: Context) {
   let body: Record<string, unknown>;
   try {
     body = (await c.req.json()) as Record<string, unknown>;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/mail/inbound/inbound.controller");
     return c.json({ error: "Invalid JSON body" }, 400);
   }
 
@@ -270,6 +276,7 @@ export async function updateRuleHandler(c: Context) {
 
     return c.json({ rule });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/inbound/inbound.controller");
     return errorJson(c, err);
   }
 }
@@ -293,6 +300,7 @@ export async function deleteRuleHandler(c: Context) {
     await releaseOrphanedDomains(g.serverId, covered);
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/inbound/inbound.controller");
     return errorJson(c, err);
   }
 }
@@ -313,6 +321,7 @@ export async function testRulesHandler(c: Context) {
     });
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/inbound/inbound.controller");
     return errorJson(c, err);
   }
 }

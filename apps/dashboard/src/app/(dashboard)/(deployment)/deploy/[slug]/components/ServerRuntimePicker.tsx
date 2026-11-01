@@ -1,38 +1,56 @@
 "use client";
 
-import React, { useMemo } from "react";
-import { ShieldCheck, Terminal, ShieldAlert, Server } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useEffect } from "react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import type { RuntimeMode } from "@/context/deployment/types";
+import { OptionCard } from "@/components/shared/OptionCard";
+import { usesServiceDeployment, type RuntimeMode } from "@/context/deployment/types";
 
-/**
- * Inline runtime-isolation picker for a self-hosted SERVER target — the
- * right-column "how it runs" panel, symmetric with CloudPowerPicker. Replaces
- * the old deploy-time modal: the choice is now a visible setting on the target
- * step, persisted to the project (see requestBuildAccess) so it sticks across
- * redeploys.
- *
- * Default: the RAM-aware recommendation (Sandboxed everywhere except <2 GB boxes
- * where the engine itself would contend for the app's memory). Applied
- * automatically only for a FRESH deploy — an existing project's saved choice is
- * hydrated into config.runtimeMode and respected, never overridden.
- */
+/** Connected and managed servers share this choice and its capacity-based default.
+ * An existing project or an explicit source/user choice always wins. */
 
 // Below this RAM the sandbox engine contends for memory with the app — on a
 // 512MB/1GB VPS that's a real problem. Above it Docker's overhead is
 // single-digit-% CPU + ~30-80MB RAM, negligible vs. the isolation upside.
 const TWO_GB = 2 * 1024 * 1024 * 1024;
 
-const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
+/** Keep the default active on both wizard views, including when the destination
+ * editor is closed. Monitoring and the choice have one owner above both views. */
+export function useServerRuntimeSelection({ enabled = true, memoryMb }: { enabled?: boolean; memoryMb?: number }) {
   const { config, updateConfig } = useDeployment();
-  const { t } = useI18n();
-  // Only stream the server's live stats while actually visible — the picker is
-  // now always mounted (inside the accordion) so the panel can animate its
-  // height, but we don't want a background stats stream when it's collapsed.
-  const { stats } = useMonitorStream(config.serverId ?? null, enabled);
+  // A managed server's purchased capacity is available before live monitoring.
+  const { stats } = useMonitorStream(config.serverId ?? null, enabled && !!config.serverId);
 
+  const totalMemory = memoryMb && memoryMb > 0 ? memoryMb * 1024 * 1024 : stats?.memTotal;
+  const memoryKnown = typeof totalMemory === "number" && Number.isFinite(totalMemory) && totalMemory > 0;
+  const lowRam = memoryKnown && totalMemory < TWO_GB;
+  const requiresDocker = config.projectType === "docker" || usesServiceDeployment(config) ||
+    (config.projectType === "monorepo" && config.serviceDeploymentMode !== "single");
+  const recommendedMode: RuntimeMode = lowRam && !requiresDocker ? "bare" : "docker";
+
+  useEffect(() => {
+    if (!enabled || !config.serverId || !memoryKnown || config.projectId || config.runtimeModeExplicit || requiresDocker) return;
+    if (config.runtimeMode !== recommendedMode) updateConfig({ runtimeMode: recommendedMode });
+  }, [enabled, config.serverId, config.projectId, config.runtimeModeExplicit, config.runtimeMode,
+    memoryKnown, recommendedMode, requiresDocker, updateConfig]);
+
+  return {
+    selected: config.runtimeMode,
+    recommendedMode,
+    lowRam,
+    ramGB: memoryKnown ? (totalMemory / (1024 * 1024 * 1024)).toFixed(1) : null,
+    select: (runtimeMode: RuntimeMode) => updateConfig({ runtimeMode, runtimeModeExplicit: true }),
+  };
+}
+
+export type ServerRuntimeSelection = ReturnType<typeof useServerRuntimeSelection>;
+
+const ServerRuntimePicker: React.FC<{ selection: ServerRuntimeSelection }> = ({ selection }) => {
+  const { t } = useI18n();
+  const { selected, recommendedMode, lowRam, ramGB, select } = selection;
   const runtimeOptions: Array<{
     value: RuntimeMode;
     label: string;
@@ -43,44 +61,22 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
       value: "docker",
       label: t.deploy.runtime.sandboxedLabel,
       description: t.deploy.runtime.sandboxedDesc,
-      icon: <ShieldCheck className="size-5" />,
+      icon: <UiIcon name="shield-check" className="size-5" />,
     },
     {
       value: "bare",
       label: t.deploy.runtime.directLabel,
       description: t.deploy.runtime.directDesc,
-      icon: <Terminal className="size-5" />,
+      icon: <UiIcon name="terminal" className="size-5" />,
     },
   ];
 
-  const lowRam = useMemo(() => (stats ? stats.memTotal < TWO_GB : false), [stats]);
-  // Sandbox is the default everywhere — the safe, isolated norm. On a very small
-  // box Direct uses less RAM, but that's surfaced as a caveat when the user
-  // actually picks Direct (below), not a silent default flip. Keeps the common
-  // case one obvious choice instead of a machine-dependent guess.
-  const recommendedMode: RuntimeMode = "docker";
-  const ramGB = stats ? (stats.memTotal / (1024 * 1024 * 1024)).toFixed(1) : null;
-  const selected = config.runtimeMode;
-
-  // NO auto-default effect here, deliberately.
-  //
-  // This used to apply `recommendedMode` from an effect gated on `if (!stats) return`
-  // — and `stats` only streams while this panel is `enabled` (expanded). So the
-  // "recommended" default landed only if the user opened Advanced: anyone who
-  // didn't got DEFAULT_CONFIG's value and a summary badge reading
-  // Direct/unsandboxed. The default now lives in DEFAULT_CONFIG.runtimeMode
-  // ("docker"), where it applies whether or not this component ever renders.
-  //
-  // The gate was also pointless: `recommendedMode` is a constant, so there was
-  // nothing to wait on. RAM only picks the caveat wording below.
-
   return (
-    // Header outside the cards to match CloudPowerPicker / the left column's
-    // heading rhythm, so the first card aligns across the grid row.
-    <div className="space-y-3">
+    // Runtime and resource controls share the destination page's section rhythm.
+    <div className="@container/runtime space-y-3">
       <div>
-        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <Server className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <UiIcon name="server" className="size-4 text-muted-foreground" />
           {t.deploy.runtime.heading}
         </h3>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -90,52 +86,31 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
-        {runtimeOptions.map((option) => {
-          const isSelected = selected === option.value;
-          const isRecommended = option.value === recommendedMode;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => updateConfig({ runtimeMode: option.value })}
-              className={`h-full w-full rounded-xl border p-4 text-start transition-all ${
-                isSelected
-                  ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                  : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <span className={isSelected ? "text-primary" : "text-muted-foreground"}>
-                  {option.icon}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className={`text-sm font-medium ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
-                      {option.label}
-                    </p>
-                    {isRecommended && (
-                      <span className="inline-flex items-center rounded-full bg-success-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-success">
-                        {t.deploy.runtime.recommended}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
-                    {option.description}
-                  </p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-1 items-stretch gap-3 @min-[24rem]/runtime:grid-cols-2">
+        {runtimeOptions.map(option => (
+          <OptionCard
+            key={option.value}
+            value={option.value}
+            selected={selected === option.value}
+            onSelect={() => select(option.value)}
+            icon={option.icon}
+            label={option.label}
+            description={option.description}
+            badge={option.value === recommendedMode && (
+              <span className="inline-flex items-center rounded-md bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success">
+                {t.deploy.runtime.recommended}
+              </span>
+            )}
+          />
+        ))}
       </div>
 
       {/* Security caveat — only when Direct is selected (don't preach when the
           safer option is already chosen). */}
       {selected === "bare" && (
         <div className="flex items-start gap-2.5 rounded-xl border border-warning-border bg-warning-bg px-3 py-2.5">
-          <ShieldAlert className="size-4 text-warning shrink-0 mt-0.5" />
-          <p className="text-[12px] leading-relaxed text-warning">
+          <UiIcon name="shield-alert" className="size-4 text-warning shrink-0 mt-0.5" />
+          <p className="text-xs leading-relaxed text-warning">
             {lowRam ? t.deploy.runtime.caveatLowRam : t.deploy.runtime.caveat}
           </p>
         </div>

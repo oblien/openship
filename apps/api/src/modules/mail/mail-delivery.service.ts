@@ -23,12 +23,13 @@
  * opinion and the rest of the queue is fine.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "@repo/adapters";
 import { relayedDomainsFor, safeErrorMessage } from "@repo/core";
 
-import { mailQueueProbeCommand, resolveMailEngine } from "./mail-engine";
-import { readState } from "./mail-state";
-import type { OutboundRelay } from "./mail-state";
+import { mailQueueProbeCommand, resolveMailEngine } from "@repo/platform/engine/modules/mail/mail-engine";
+import { readState } from "@repo/platform/engine/modules/mail/mail-state";
+import type { OutboundRelay } from "@repo/platform/engine/modules/mail/mail-state";
 
 /** How outbound mail leaves the box. */
 export type MailOutboundMode = "direct" | "relay";
@@ -120,26 +121,33 @@ const unread = { status: "unknown" as const, queued: 0, sampled: false, deferral
 export async function checkMailDelivery(exec: CommandExecutor): Promise<MailDeliveryHealth> {
   const relay = await readState(exec)
     .then((state) => (state?.outboundRelay?.enabled ? state.outboundRelay : undefined))
-    .catch(() => undefined);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail-delivery.service"); return undefined; });
   const base = describePath(relay);
 
-  const probe = await resolveMailEngine(exec).catch(() => null);
-  if (probe?.flavor === "none") {
+  let probe;
+  try {
+    probe = await resolveMailEngine(exec);
+  } catch (error) {
+    observeCaughtError(error, "api/modules/mail/mail-delivery.service");
+    return { ...base, ...unread, detail: firstLine(safeErrorMessage(error)) };
+  }
+  if (probe.flavor === "none") {
     return { ...base, ...unread, detail: "No mail engine on this server." };
   }
   // A stopped CONTAINER can't be exec'd into at all, so say that rather than
   // surfacing docker's "is not running" as if the queue itself were unreadable.
   // Not applied to the legacy host flavor: `postqueue` reads the spool directly
   // there, so a stopped Postfix still gives a truthful — and more useful — answer.
-  if (probe?.flavor === "container" && !probe.running) {
+  if (probe.flavor === "container" && !probe.running) {
     return { ...base, ...unread, detail: "The mail engine isn't running." };
   }
-  const flavor = probe?.flavor ?? "container";
+  const flavor = probe.flavor;
 
   let raw: string;
   try {
     raw = await exec.exec(mailQueueProbeCommand(flavor));
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/mail-delivery.service");
     return { ...base, ...unread, detail: firstLine(safeErrorMessage(err)) };
   }
 
@@ -147,7 +155,12 @@ export async function checkMailDelivery(exec: CommandExecutor): Promise<MailDeli
   if (queue === null) {
     return { ...base, ...unread, detail: firstLine(raw) };
   }
-  return { ...base, ...queue, status: gradeDelivery(queue, relay) };
+  return {
+    ...base,
+    ...queue,
+    deferrals: topDeferrals(queue.deferrals),
+    status: gradeDelivery(queue, relay),
+  };
 }
 
 /** Which send hop the state file describes — pure, so the UI shape is testable. */
@@ -241,10 +254,14 @@ export function parseMailQueue(raw: string): MailQueueReading | null {
   }
   const deferrals: MailDeferral[] = [...tally.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_DEFERRALS)
     .map(([reason, count]) => ({ kind: classifyReason(reason), count, reason }));
 
   return { queued, sampled, deferrals };
+}
+
+/** The deferral rows we report. `gradeDelivery` reads the uncapped list. */
+export function topDeferrals(deferrals: readonly MailDeferral[]): MailDeferral[] {
+  return deferrals.slice(0, MAX_DEFERRALS);
 }
 
 /**

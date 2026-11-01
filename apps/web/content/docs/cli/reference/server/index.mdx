@@ -1,0 +1,425 @@
+---
+title: server
+description: Commands, arguments, and options for openship server.
+cliGroup: openship server
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server
+
+Manage Cloud and self-hosted deployment servers
+
+```text
+openship server [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`managed`](/docs/cli/reference/server/managed#openship-server-managed) | Manage subscription-owned Cloud servers and connected Cloud destinations |
+| [`network`](/docs/cli/reference/server/network#openship-server-network) | Manage private networks and reviewed network operations |
+| [`cluster`](/docs/cli/reference/server/cluster#openship-server-cluster) | Manage compute clusters, scaling runtimes and replicated storage |
+| [`github`](/docs/cli/reference/server/github#openship-server-github) | Manage GitHub credentials on a deployment server |
+| [`tunnel`](/docs/cli/reference/server/tunnel#openship-server-tunnel) | Manage tunnels opened on the selected Openship instance (not this CLI machine) |
+| [`containers`](/docs/cli/reference/server/containers#openship-server-containers) | Inspect and update infrastructure containers through the engine |
+| [`swarm [options] <id>`](/docs/cli/reference/server#openship-server-swarm) | Inspect an existing Docker Swarm without changing its services |
+| [`connect-swarm [options] <id>`](/docs/cli/reference/server#openship-server-connect-swarm) | Use an existing Swarm manager for project deployments; preserves existing stacks |
+| [`destinations`](/docs/cli/reference/server#openship-server-destinations) | List deployment destinations and their supported capabilities |
+| [`get <id>`](/docs/cli/reference/server#openship-server-get) | Read server details, its managed plan and lifecycle progress |
+| [`reachability <id>`](/docs/cli/reference/server#openship-server-reachability) | Probe the controller's current connection to this server |
+| [`usage <id>`](/docs/cli/reference/server#openship-server-usage) | Read current resource use and project allocations |
+| [`infrastructure <id>`](/docs/cli/reference/server#openship-server-infrastructure) | Read network, compute-cluster and shared-storage membership |
+| [`deletion-preview <id>`](/docs/cli/reference/server#openship-server-deletion-preview) | Inspect workloads and retained data before removing a server |
+| [`scan-ports <id>`](/docs/cli/reference/server#openship-server-scan-ports) | Inspect listening ports on this server |
+| [`configure <id> <file>`](/docs/cli/reference/server#openship-server-configure) | Change a server's name or connection settings; omitted fields are preserved |
+| [`exec [options] <id> <command>`](/docs/cli/reference/server#openship-server-exec) | Execute a bounded command through the server's authorized connection |
+| [`network-settings`](/docs/cli/reference/server#openship-server-network-settings) | Inspect or change this server's Internet-access policy |
+| [`list\|ls`](/docs/cli/reference/server#openship-server-list) | List servers in the active organization |
+| [`add [options]`](/docs/cli/reference/server#openship-server-add) | Add a new server |
+| [`rm\|remove <id>`](/docs/cli/reference/server#openship-server-rm) | Delete a server |
+| [`test-connection\|test [options]`](/docs/cli/reference/server#openship-server-test-connection) | Test an SSH connection without saving it |
+| [`check [options] <serverId>`](/docs/cli/reference/server#openship-server-check) | Run component health checks against a saved server |
+| [`update [options] <serverId>`](/docs/cli/reference/server#openship-server-update) | Check for and apply native-module migrations (OpenResty, …) |
+| [`install [options] <serverId>`](/docs/cli/reference/server#openship-server-install) | Install components on a server |
+| [`install-session [options] [sessionId]`](/docs/cli/reference/server#openship-server-install-session) | Inspect a server installation session |
+| [`install-events [options] [sessionId]`](/docs/cli/reference/server#openship-server-install-events) | Reattach to installation logs and prompts without starting another install |
+| [`uninstall [options] <serverId> <component>`](/docs/cli/reference/server#openship-server-uninstall) | Remove a component through the server's shared installer |
+| [`install-respond [options] <sessionId>`](/docs/cli/reference/server#openship-server-install-respond) | Respond to an installation prompt |
+| [`rate-limit [options] <serverId>`](/docs/cli/reference/server#openship-server-rate-limit) | Read or update per-server OpenResty rate limiting |
+| [`monitor <serverId>`](/docs/cli/reference/server#openship-server-monitor) | Stream live system stats (SSE) |
+| [`ssh\|terminal [options] <serverId>`](/docs/cli/reference/server#openship-server-ssh) | Open a Cloud or self-hosted server terminal through the selected controller |
+
+## openship server add
+
+Add a new server
+
+```text
+openship server add [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--host <host>` | SSH host / IP |
+| `--name <name>` | Display name |
+| `--port <port>` | SSH port (default: "22") |
+| `--user <user>` | SSH user (default: "root") |
+| `--auth-method <method>` | Auth method (password\|key\|agent) |
+| `--password <password>` | SSH password (password auth) |
+| `--password-file <file>` | SSH password file on this machine, or - for stdin |
+| `--key-path <path>` | Private key path on the controller host |
+| `--private-key-file <file>` | Read an SSH key from this machine, or - for stdin |
+| `--key-passphrase <passphrase>` | Private key passphrase |
+| `--jump-host <host>` | SSH jump / bastion host |
+| `--ssh-transport <transport>` | SSH transport (direct\|cloudflare) |
+| `--ssh-args <args>` | SSH connection tuning arguments |
+
+## openship server check
+
+Run component health checks against a saved server
+
+```text
+openship server check [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-c, --component <name...>` | Limit to specific components |
+
+## openship server configure
+
+Change a server's name or connection settings; omitted fields are preserved
+
+```text
+openship server configure [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+| `file` | JSON patch with the fields to change |
+
+## openship server connect-swarm
+
+Use an existing Swarm manager for project deployments; preserves existing stacks
+
+```text
+openship server connect-swarm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Connected Swarm manager server ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Cluster display name |
+| `--request-id <uuid>` | Reuse after a lost response for an idempotent retry |
+
+## openship server deletion-preview
+
+Inspect workloads and retained data before removing a server
+
+```text
+openship server deletion-preview [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server destinations
+
+List deployment destinations and their supported capabilities
+
+```text
+openship server destinations [options]
+```
+
+## openship server exec
+
+Execute a bounded command through the server's authorized connection
+
+```text
+openship server exec [options] <id> <command>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+| `command` | Shell command to run on this server |
+
+| Option | Meaning |
+| --- | --- |
+| `--cwd <path>` | Remote working directory |
+| `--timeout <ms>` | Command deadline in milliseconds |
+| `--max-output <bytes>` | Maximum captured output |
+
+## openship server get
+
+Read server details, its managed plan and lifecycle progress
+
+```text
+openship server get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server infrastructure
+
+Read network, compute-cluster and shared-storage membership
+
+```text
+openship server infrastructure [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server install
+
+Install components on a server
+
+```text
+openship server install [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-c, --component <name...>` | Component names from server check (for example docker, git, edge, rsync) |
+| `--config <file>` | Installer configuration as JSON, or - for stdin |
+| `-y, --yes` | Confirm a reinstall or explicit edge takeover |
+| `--follow` | Stream install logs live (SSE) |
+
+## openship server install-events
+
+Reattach to installation logs and prompts without starting another install
+
+```text
+openship server install-events [options] [sessionId]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <serverId>` | Select the server's current installation |
+
+## openship server install-respond
+
+Respond to an installation prompt
+
+```text
+openship server install-respond [options] <sessionId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--action <action>` | Action id offered by the prompt |
+
+## openship server install-session
+
+Inspect a server installation session
+
+```text
+openship server install-session [options] [sessionId]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <serverId>` | Select the server's current installation |
+
+## openship server list
+
+List servers in the active organization
+
+```text
+openship server list|ls [options]
+```
+
+## openship server monitor
+
+Stream live system stats (SSE)
+
+```text
+openship server monitor [options] <serverId>
+```
+
+## openship server network-settings
+
+Inspect or change this server's Internet-access policy
+
+```text
+openship server network-settings [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <id>`](/docs/cli/reference/server#openship-server-network-settings-get) | Read Internet access and ingress ports |
+| [`set [options] <id> <file>`](/docs/cli/reference/server#openship-server-network-settings-set) | Apply a reviewed network policy, rejecting changes to stale state |
+
+## openship server network-settings get
+
+Read Internet access and ingress ports
+
+```text
+openship server network-settings get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server network-settings set
+
+Apply a reviewed network policy, rejecting changes to stale state
+
+```text
+openship server network-settings set [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+| `file` | JSON internetAccess, expectedInternetAccess and confirm fields |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm the policy change |
+
+## openship server rate-limit
+
+Read or update per-server OpenResty rate limiting
+
+```text
+openship server rate-limit [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--rps <n>` | Requests per second (0 removes the limit) |
+| `--burst <n>` | Burst allowance |
+| `--whitelist <cidr...>` | CIDRs exempt from limiting |
+
+## openship server reachability
+
+Probe the controller's current connection to this server
+
+```text
+openship server reachability [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server rm
+
+Delete a server
+
+```text
+openship server rm|remove [options] <id>
+```
+
+## openship server scan-ports
+
+Inspect listening ports on this server
+
+```text
+openship server scan-ports [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server ssh
+
+Open a Cloud or self-hosted server terminal through the selected controller
+
+```text
+openship server ssh|terminal [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--origin <url>` | Trusted dashboard origin (defaults to the saved context dashboard) |
+| `--timeout <ms>` | Maximum time to open the terminal (default: 30000) |
+
+## openship server swarm
+
+Inspect an existing Docker Swarm without changing its services
+
+```text
+openship server swarm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Connected server ID; use a Swarm manager for stack inventory |
+
+| Option | Meaning |
+| --- | --- |
+| `--details` | Include stacks, services, ports, mounts and nodes |
+
+## openship server test-connection
+
+Test an SSH connection without saving it
+
+```text
+openship server test-connection|test [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--host <host>` | SSH host / IP |
+| `--port <port>` | SSH port (default: "22") |
+| `--user <user>` | SSH user (default: "root") |
+| `--auth-method <method>` | Auth method (password\|key\|agent) |
+| `--password <password>` | SSH password |
+| `--password-file <file>` | SSH password file on this machine, or - for stdin |
+| `--key-path <path>` | Private key path on the controller host |
+| `--private-key-file <file>` | Read an SSH key from this machine, or - for stdin |
+| `--key-passphrase <passphrase>` | Private key passphrase |
+| `--jump-host <host>` | SSH jump / bastion host |
+| `--ssh-transport <transport>` | SSH transport (direct\|cloudflare) |
+| `--ssh-args <args>` | SSH connection tuning arguments |
+
+## openship server uninstall
+
+Remove a component through the server's shared installer
+
+```text
+openship server uninstall [options] <serverId> <component>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--config <file>` | Installer configuration as JSON, or - for stdin |
+| `-y, --yes` | Confirm component removal |
+
+## openship server update
+
+Check for and apply native-module migrations (OpenResty, …)
+
+```text
+openship server update [options] <serverId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-c, --component <name...>` | Limit to specific modules |
+| `--check` | Only report drift; don't apply |
+| `-y, --yes` | Confirm migrations that require consent |
+
+## openship server usage
+
+Read current resource use and project allocations
+
+```text
+openship server usage [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |

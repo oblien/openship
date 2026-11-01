@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Visitors-by-country choropleth plus a ranked list.
  *
@@ -18,7 +21,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Globe, Info, List } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { AnalyticsGeoResponse } from "@/hooks/useProjectEndpoints";
 import countryPaths from "./country-paths.json";
@@ -30,6 +32,7 @@ import { formatCount } from "./format";
 import { CountryDonut, type DonutSlice } from "./CountryDonut";
 import { CHART_TOOLTIP_STYLE } from "@/lib/chart-theme";
 import { LiveHitFeed, RippleLayer, countryCentre, type LiveHit } from "./LiveHits";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 
 const PATHS = (countryPaths as { paths: Record<string, string> }).paths;
 
@@ -217,7 +220,8 @@ function initialFeed(): boolean {
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem(FEED_KEY) === "1";
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/VisitorMap");
     return false;
   }
 }
@@ -250,6 +254,7 @@ interface Props {
     feed: LiveHit[];
     /** Set while connecting or when the edge refused; shown next to the switch. */
     status?: string | null;
+    onReconnect?: () => void;
   };
 }
 
@@ -324,7 +329,8 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
     setShowFeed(next);
     try {
       window.localStorage.setItem(FEED_KEY, next ? "1" : "0");
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/VisitorMap");
       /* private mode — applies for this session */
     }
   };
@@ -383,7 +389,8 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
     setColorMode(mode);
     try {
       window.localStorage.setItem(MODE_KEY, mode);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/VisitorMap");
       // Private mode / storage disabled. The choice still applies for this session.
     }
   };
@@ -480,17 +487,16 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Globe className="size-4 text-primary" />
+            <UiIcon name="globe" className="size-4 text-primary" />
             <h3 className="text-sm font-medium text-foreground">{m.visitorsTitle}</h3>
           </div>
-          {hasCountries && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {interpolate(m.visitorsSubtitle, {
+          <p className="mt-1 text-xs text-muted-foreground">
+            {hasCountries && <>{interpolate(m.visitorsSubtitle, {
                 total: formatCount(data?.total ?? 0),
                 countries: String(ranked.length),
-              })}
-            </p>
-          )}
+              })} · </>}
+            {m.dailyWindow}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {live && hasCountries && (
@@ -516,12 +522,12 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
                     Pulses only while streaming — a static dot next to the word "Live" is
                     indistinguishable from a working one. */}
                 <span className="relative flex size-1.5 shrink-0">
-                  {live.enabled && (
+                  {live.enabled && !live.status && (
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-info opacity-75" />
                   )}
                   <span
                     className={`relative inline-flex size-1.5 rounded-full ${
-                      live.enabled ? "bg-info" : "bg-muted-foreground/40"
+                      live.enabled && !live.status ? "bg-info" : "bg-muted-foreground/40"
                     }`}
                   />
                 </span>
@@ -548,7 +554,7 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <List className="size-3.5" />
+                  <UiIcon name="list" className="size-3.5" />
                 </button>
               )}
             </div>
@@ -597,12 +603,24 @@ export const VisitorMap: React.FC<Props> = ({ data, isLoading, domainSelector, l
         </div>
       </div>
 
+      {live?.enabled && live.status && (
+        <div className="mb-4">
+          <ConnectionNotice
+            title={live.status === "connecting" ? m.connecting : m.liveUnavailable}
+            message={m.liveUnavailableDescription}
+            onRetry={live.onReconnect}
+            retrying={live.status === "connecting"}
+            retryLabel={m.reconnect}
+          />
+        </div>
+      )}
+
       {/* An unresolvable edge and a quiet site both produce zero countries. Saying
           which is the difference between "nothing happened" and "something is
           broken" — the failure mode this whole surface existed with for months. */}
       {data && !data.geoAvailable ? (
         <div className="flex items-start gap-2 rounded-xl bg-muted/50 px-4 py-3">
-          <Info className="mt-0.5 size-4 shrink-0 text-warning" />
+          <UiIcon name="info" className="mt-0.5 size-4 shrink-0 text-warning" />
           <div>
             <p className="text-sm font-medium text-foreground">{m.geoUnavailableTitle}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{m.geoUnavailableBody}</p>

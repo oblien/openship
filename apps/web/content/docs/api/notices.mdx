@@ -1,0 +1,94 @@
+---
+title: Public notices
+description: Read installation announcements and publish them with operator authority.
+---
+
+Notices are installation-wide announcements. Reading active notices is public. Publishing, listing
+inactive notices, or deactivating a notice requires a separate [operator capability](/docs/api/sdk/operator).
+An organization owner role does not grant that capability.
+
+## Read active notices
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const { advisories } = await ship.notices.list();
+console.log(advisories);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/notices"
+```
+
+</Tab>
+</Tabs>
+
+The response contains active `advisories`, including a title, message, severity, and optional action or
+target. Scheduled start and end times determine when a notice appears.
+
+## Publish a notice
+
+The SDK example uses a configured `operator`, available to trusted installation code. The REST example
+uses the installation's internal operator token.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const notice = await operator.notices.create({
+  title: "Planned maintenance",
+  message: "Deployments will pause during maintenance.",
+  severity: "info",
+  startsAt: "2026-10-01T01:00:00Z",
+  endsAt: "2026-10-01T01:30:00Z",
+});
+console.log(notice.id);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/notices" \
+  -H "X-Internal-Token: $OPENSHIP_INTERNAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Planned maintenance","message":"Deployments will pause during maintenance.","severity":"info","startsAt":"2026-10-01T01:00:00Z","endsAt":"2026-10-01T01:30:00Z"}'
+```
+
+</Tab>
+</Tabs>
+
+| Field | Use |
+| --- | --- |
+| `title`, `message` | Required announcement text. |
+| `severity` | `critical`, `recommended`, or `info`. |
+| `startsAt`, `endsAt` | Optional ISO timestamps limiting visibility. |
+| `actionLabel`, `actionUrl` | Optional link shown with the notice. |
+| `targetType`, `targetId` | Optional platform, app, project, or mail target. |
+
+`operator.notices.listAll()` includes inactive notices. `operator.notices.remove(id)` deactivates a
+notice so it no longer appears in the active feed.
+
+## Operations
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read active public installation announcements. | `notices.list()` | `GET /api/notices`<br />`Handler authentication` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Publish an installation notice using operator authority. | `operator.notices.create(input)` | `POST /api/notices`<br />`Internal operator` |
+| Deactivate an installation notice using operator authority. | `operator.notices.remove(id)` | `DELETE /api/notices/:id`<br />`Internal operator` |
+| List all installation notices using operator authority. | `operator.notices.listAll()` | `GET /api/notices/all`<br />`Internal operator` |
+
+{/* api-operations:end */}

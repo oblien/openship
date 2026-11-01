@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import { useState } from "react";
 import { Link2, Check } from "lucide-react";
@@ -19,7 +21,8 @@ export function ShareButton({ slug, className = "" }: { slug: string; className?
       await navigator.clipboard.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
-    } catch {
+    } catch (error) {
+      reportCaughtError(error, "web/app/(site)/changelog/_components/share-button");
       window.location.href = `/changelog/${slug}`;
     }
   }

@@ -25,11 +25,11 @@ import { describe, expect, it } from "vitest";
  */
 const src = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-const buildService = src("../build.service.ts");
-const buildConfig = src("../build-config.ts");
-const pipeline = src("./pipeline.ts");
-const deployService = src("./deploy.service.ts");
-const orchestrator = src("../../migration/migration.orchestrator.ts");
+const buildService = src("../../../../../../packages/platform/src/engine/modules/deployments/build.service.ts");
+const buildConfig = src("../../../../../../packages/platform/src/engine/modules/deployments/build-config.ts");
+const pipeline = src("../../../../../../packages/platform/src/engine/modules/deployments/compose/pipeline.ts");
+const deployService = src("../../../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts");
+const orchestrator = src("../../../../../../packages/platform/src/engine/modules/migration/migration.orchestrator.ts");
 
 describe("strictScope reaches the compose deploy from the snapshot", () => {
   it("is persisted onto the snapshot, and only alongside a scope", () => {

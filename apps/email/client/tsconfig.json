@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "strict": true,
+    "allowJs": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
@@ -12,7 +13,7 @@
     "isolatedModules": true,
     "sourceMap": true,
     "lib": ["dom", "dom.iterable", "esnext"],
-    "types": ["node", "vite/client"],
+    "types": ["node", "vite/client", "bun"],
     "jsx": "react-jsx",
     "declaration": false,
     "declarationMap": false,

@@ -150,6 +150,5 @@ describe("deploymentDnsTargets", () => {
     );
     expect(installPage).toContain("appInstallDnsTargets(routes ?? [])");
     expect(installPage).toContain("<DnsRecordsModal");
-    expect(installPage).toContain("selfHosted && pendingDnsTargets.length > 0");
   });
 });

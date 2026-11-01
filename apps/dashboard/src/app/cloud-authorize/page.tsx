@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * /cloud-authorize — explicit consent screen for the self-hosted
  * "Connect to Openship Cloud" flow.
@@ -26,12 +29,12 @@
  *   /authorize, so we wrap manually.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, ServerIcon, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
 import { cloudApi } from "@/lib/api";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { CloudAuthorizationIdentity } from "@/components/cloud/CloudAuthorizationIdentity";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
@@ -124,11 +127,13 @@ function CloudAuthorizeInner() {
   // just confirm in-place — there's nothing to navigate to.
   const isDevice = searchParams.get("mode") === "device";
   const [submitting, setSubmitting] = useState(false);
+  const authorizationInFlight = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [deviceDone, setDeviceDone] = useState(false);
 
   const handleAuthorize = useCallback(async () => {
-    if (!validated.ok) return;
+    if (!validated.ok || authorizationInFlight.current) return;
+    authorizationInFlight.current = true;
     setSubmitError(null);
     setSubmitting(true);
     try {
@@ -143,11 +148,13 @@ function CloudAuthorizeInner() {
         // up. Show a clean confirmation — there's no redirect at all in this flow.
         setDeviceDone(true);
         setSubmitting(false);
+        authorizationInFlight.current = false;
         return;
       }
       if (!res.callbackUrl) {
         setSubmitError(m.authorizeError);
         setSubmitting(false);
+        authorizationInFlight.current = false;
         return;
       }
       // Hard navigate so the local instance receives the code via a
@@ -164,6 +171,7 @@ function CloudAuthorizeInner() {
       }
       setSubmitError(getApiErrorMessage(err, m.authorizeError));
       setSubmitting(false);
+      authorizationInFlight.current = false;
     }
   }, [validated, router, searchParams, m]);
 
@@ -172,7 +180,8 @@ function CloudAuthorizeInner() {
       try {
         window.close();
         return;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/cloud-authorize/page");
         /* user-gesture missing or blocked — fall through */
       }
     }
@@ -197,7 +206,7 @@ function CloudAuthorizeInner() {
       <AuthShell>
         <div className="flex flex-col items-center justify-center py-4 text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500/80 to-red-600 shadow-sm">
-            <AlertCircle className="size-7 text-white" />
+            <UiIcon name="alert-circle" className="size-7 text-white" />
           </div>
           <h1 className="text-lg font-semibold">{m.invalidTitle}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{validated.error}</p>
@@ -210,7 +219,7 @@ function CloudAuthorizeInner() {
     return (
       <AuthShell>
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </div>
       </AuthShell>
     );
@@ -221,7 +230,7 @@ function CloudAuthorizeInner() {
       <AuthShell>
         <div className="flex flex-col items-center justify-center py-4 text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/80 to-emerald-600 shadow-sm">
-            <CheckCircle2 className="size-7 text-white" />
+            <UiIcon name="check-circle" className="size-7 text-white" />
           </div>
           <h1 className="text-lg font-semibold">{m.deviceDoneTitle}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{m.deviceDoneBody}</p>
@@ -231,12 +240,12 @@ function CloudAuthorizeInner() {
   }
 
   return (
-    <AuthShell>
-      <div className="mb-6 text-center">
-        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/80 to-primary shadow-sm">
-          <ServerIcon className="size-7 text-primary-foreground" />
+    <AuthShell maxWidth="max-w-[460px]">
+      <div className="mb-7">
+        <div className="mb-5 flex size-12 items-center justify-center rounded-2xl bg-card">
+          <UiIcon name="server" className="size-6 text-foreground" />
         </div>
-        <h1 className="text-xl font-semibold">{m.title}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-foreground">{m.title}</h1>
         {/* Device/poll flow has no redirect host to name — the title alone is
             the ask; only the browser-redirect flow shows "…to <host>". */}
         {!isDevice && (
@@ -248,38 +257,43 @@ function CloudAuthorizeInner() {
         )}
       </div>
 
-      <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4">
-        <p className="text-sm font-medium text-foreground">{m.signedInAs}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{session.user.email}</p>
-      </div>
+      <CloudAuthorizationIdentity
+        session={session}
+        disabled={submitting}
+        loginUrl={`/login?returnTo=${encodeURIComponent(buildReturnTo(new URLSearchParams(searchParams.toString())))}`}
+      >
+        {(ready) => (
+          <>
+            {submitError && (
+              <div className="mb-4 rounded-xl bg-danger/10 p-3 text-sm text-danger" role="alert">
+                {submitError}
+              </div>
+            )}
 
-      {submitError && (
-        <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {submitError}
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <Button
-          className="w-full"
-          size="lg"
-          disabled={submitting}
-          onClick={() => {
-            void handleAuthorize();
-          }}
-        >
-          {submitting && <Loader2 className="me-2 size-4 animate-spin" />}
-          {submitting ? m.authorizing : m.authorize}
-        </Button>
-        <Button
-          variant="outline"
-          className="w-full"
-          disabled={submitting}
-          onClick={handleCancel}
-        >
-          {m.cancel}
-        </Button>
-      </div>
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                size="lg"
+                disabled={submitting || !ready}
+                onClick={() => {
+                  void handleAuthorize();
+                }}
+              >
+                {submitting && <UiIcon name="spinner" className="me-2 size-4 animate-spin" />}
+                {submitting ? m.authorizing : m.authorize}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={submitting}
+                onClick={handleCancel}
+              >
+                {m.cancel}
+              </Button>
+            </div>
+          </>
+        )}
+      </CloudAuthorizationIdentity>
     </AuthShell>
   );
 }
@@ -290,7 +304,7 @@ export default function CloudAuthorizePage() {
       fallback={
         <AuthShell>
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           </div>
         </AuthShell>
       }

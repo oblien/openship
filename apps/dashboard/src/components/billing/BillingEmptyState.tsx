@@ -1,0 +1,44 @@
+"use client";
+
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
+import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
+
+export function BillingEmptyState({ kind }: { kind: "usage" | "payment" | "topups" }) {
+  const { t } = useI18n();
+  const copy = t.billing.onboarding;
+  const { Icon, title, description } = {
+    usage: {
+      Icon: "chart-bar" as const,
+      title: copy.usageTitle,
+      description: copy.usageDescription,
+    },
+    payment: {
+      Icon: "credit-card" as const,
+      title: copy.paymentTitle,
+      description: copy.paymentDescription,
+    },
+    topups: {
+      Icon: "coins" as const,
+      title: copy.topupsTitle,
+      description: copy.topupsDescription,
+    },
+  }[kind];
+  return (
+    <section className="flex min-h-60 flex-col items-center justify-center rounded-2xl bg-card p-6 text-center">
+      <span className="mb-4 flex size-10 items-center justify-center rounded-2xl bg-muted/50 text-muted-foreground">
+        <UiIcon name={Icon} className="size-5" aria-hidden="true" />
+      </span>
+      <h2 className="text-base font-medium text-foreground">{title}</h2>
+      <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>
+      <Button asChild variant="secondary" className="mt-5">
+        <Link href="/billing/plans">
+          {copy.choosePlan}
+          <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" aria-hidden="true" />
+        </Link>
+      </Button>
+    </section>
+  );
+}

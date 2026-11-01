@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * useSystemPrepareModal — ONE reusable driver for any "prepare the system, with
  * consent" flow that streams over SSE and may block on a prompt: a `session`
@@ -18,12 +21,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, ShieldCheck, Copy, RefreshCw } from "lucide-react";
 import { useModal } from "@/context/ModalContext";
 import { PromptDetails } from "@/components/import-project/PromptDetails";
 import { InstallStepper } from "@/components/deploy/InstallStepper";
 import { getApiBaseUrl, domainsApi, projectsApi, systemApi } from "@/lib/api";
 import { canReportStreamEnd, reportLostStream } from "./prepare-stream-outcome";
+import { invalidateProjectCaches } from "./useProjectEndpoints";
+import { useI18n } from "@/components/i18n-provider";
+import { randomUUID } from "@/lib/random-uuid";
 
 interface StreamPrompt {
   promptId: string;
@@ -76,8 +81,14 @@ export interface SystemPrepareOptions {
   title?: string;
   /** Copy overrides for the non-prompt phases. */
   labels?: { working?: string; done?: string; failed?: string; close?: string };
+  /** Fired when the viewer starts an attempt, including an explicit Retry. */
+  onStart?: () => void;
+  /** The server-owned operation ID, for reconnecting to the same log. */
+  onSession?: (sessionId: string) => void;
   /** Fired once on successful completion. */
   onDone?: () => void;
+  /** Refresh saved state after success, partial failure, or a disconnected viewer. */
+  onSettled?: () => void;
   /**
    * Last-resort outcome read, for a stream that died WITHOUT a terminal event
    * (server closed early / connection dropped mid-run). The operation's real
@@ -97,7 +108,11 @@ export interface SystemPrepareOptions {
   attachUrl?: (sessionId: string) => string;
   /** Open straight into GET re-attach for this session (browser-refresh path). */
   initialAttachSessionId?: string;
+  /** A log viewer reconnects to its session; it must not start another operation. */
+  retryMode?: "restart" | "reattach";
 }
+
+export type SystemPreparePresenter = (opts: SystemPrepareOptions) => string;
 
 /**
  * Humanize the machine error codes the prepare endpoints return so a raw
@@ -117,13 +132,17 @@ function friendlyError(code: string | undefined, fallback: string): string {
   return (code && FRIENDLY_ERRORS[code]) || fallback;
 }
 
-/** Modal body — rendered as the global modal's `customContent`. */
-function PrepareStreamContent({
+/** Shared operation log, prompts and outcome for modal and inline surfaces. */
+export function PrepareStreamContent({
   opts,
   onClose,
+  inline = false,
+  closeDisabled = false,
 }: {
   opts: SystemPrepareOptions;
   onClose: () => void;
+  inline?: boolean;
+  closeDisabled?: boolean;
 }) {
   const [logs, setLogs] = useState<Array<{ message: string; level: string }>>([]);
   const [steps, setSteps] = useState<StreamStep[]>([]);
@@ -136,7 +155,8 @@ function PrepareStreamContent({
   /**
    * When set (mount re-attach via `initialAttachSessionId`, or a 409 handing
    * back the running session's id), the effect GETs the read-only attach stream
-   * instead of POSTing a fresh run. Retry clears it so "Try again" always POSTs.
+   * instead of POSTing a fresh run. Explicit operation retries may clear it;
+   * read-only log viewers keep it and only reconnect.
    */
   const attachSessionIdRef = useRef<string | null>(opts.initialAttachSessionId ?? null);
   /**
@@ -159,7 +179,8 @@ function PrepareStreamContent({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: sid, action }),
         });
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal");
         /* the stream reports the outcome */
       }
     },
@@ -171,16 +192,20 @@ function PrepareStreamContent({
    * happened; only fall back to "unknown" when even that can't answer. Either
    * way the log stays on screen — it's the only record of the run.
    */
-  const reportUnknownOutcome = useCallback(async () => {
-    const outcome = (await opts.resolveOutcome?.().catch(() => null)) ?? null;
-    terminalRef.current = true;
-    const report = reportLostStream(outcome);
-    setPhase(report.phase);
-    if (report.logLine) setLogs((p) => [...p, { message: report.logLine!, level: "info" }]);
-    if (report.error) setError(report.error);
-    if (report.phase === "completed") opts.onDone?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.resolveOutcome, opts.onDone]);
+  const reportUnknownOutcome = useCallback(
+    async (signal: AbortSignal) => {
+      const outcome = (await opts.resolveOutcome?.().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal"); return null; })) ?? null;
+      if (signal.aborted) return;
+      terminalRef.current = true;
+      const report = reportLostStream(outcome);
+      setPhase(report.phase);
+      if (report.logLine) setLogs((p) => [...p, { message: report.logLine!, level: "info" }]);
+      if (report.error) setError(report.error);
+      if (report.phase === "completed") opts.onDone?.();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [opts.resolveOutcome, opts.onDone],
+  );
 
   const retry = useCallback(() => {
     setLogs([]);
@@ -188,11 +213,10 @@ function PrepareStreamContent({
     setError(null);
     setPrompt(null);
     setPhase("running");
-    // "Try again" is an explicit re-run: drop any re-attach id so the effect
-    // POSTs fresh (install 409→re-attaches if still running; else a new run).
-    attachSessionIdRef.current = null;
+    // Only an explicit re-run can POST; reconnecting a log remains read-only.
+    if (opts.retryMode !== "reattach") attachSessionIdRef.current = null;
     setAttempt((n) => n + 1);
-  }, []);
+  }, [opts.retryMode]);
 
   useEffect(() => {
     // NO "started" ref-guard here: combined with the abort-on-cleanup below it
@@ -203,6 +227,7 @@ function PrepareStreamContent({
     // run aborts, the second run fetches fresh.
     const controller = new AbortController();
     terminalRef.current = false;
+    opts.onStart?.();
 
     // Read + dispatch the SSE frames off a streaming Response. Shared verbatim by
     // the POST (fresh run) and GET (re-attach) paths so both parse identically
@@ -211,42 +236,57 @@ function PrepareStreamContent({
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buffer.indexOf("\n\n")) !== -1) {
-          const frame = buffer.slice(0, nl);
-          buffer = buffer.slice(nl + 2);
-          const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
-          if (!dataLine) continue;
-          let json: {
-            type?: string;
-            sessionId?: string;
-            message?: string;
-            level?: string;
-            status?: Phase;
-            steps?: StreamStep[];
-          } & Partial<StreamPrompt>;
-          try {
-            json = JSON.parse(dataLine.slice(5).trim());
-          } catch {
-            continue;
-          }
-          if (json.type === "session" && json.sessionId) sessionIdRef.current = json.sessionId;
-          else if (json.type === "steps") setSteps(json.steps ?? []);
-          else if (json.type === "log")
-            setLogs((p) => [...p, { message: json.message ?? "", level: json.level ?? "info" }]);
-          else if (json.type === "prompt") setPrompt(json as StreamPrompt);
-          else if (json.type === "complete") {
-            terminalRef.current = true;
-            const ok = json.status === "completed";
-            setPhase(ok ? "completed" : "failed");
-            setPrompt(null);
-            if (ok) opts.onDone?.();
+      const cancel = () => {
+        void reader.cancel().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal");
+        });
+      };
+      controller.signal.addEventListener("abort", cancel, { once: true });
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done || controller.signal.aborted) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buffer.indexOf("\n\n")) !== -1) {
+            const frame = buffer.slice(0, nl);
+            buffer = buffer.slice(nl + 2);
+            const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
+            if (!dataLine) continue;
+            let json: {
+              type?: string;
+              sessionId?: string;
+              message?: string;
+              level?: string;
+              status?: Phase;
+              steps?: StreamStep[];
+            } & Partial<StreamPrompt>;
+            try {
+              json = JSON.parse(dataLine.slice(5).trim());
+            } catch {
+              continue;
+            }
+            if (json.type === "session" && json.sessionId) {
+              sessionIdRef.current = json.sessionId;
+              if (opts.attachUrl && opts.retryMode === "reattach")
+                attachSessionIdRef.current = json.sessionId;
+              opts.onSession?.(json.sessionId);
+            } else if (json.type === "steps") setSteps(json.steps ?? []);
+            else if (json.type === "log")
+              setLogs((p) => [...p, { message: json.message ?? "", level: json.level ?? "info" }]);
+            else if (json.type === "prompt") setPrompt(json as StreamPrompt);
+            else if (json.type === "complete") {
+              terminalRef.current = true;
+              const ok = json.status === "completed";
+              setPhase(ok ? "completed" : "failed");
+              setPrompt(null);
+              if (ok) opts.onDone?.();
+            }
           }
         }
+      } finally {
+        controller.signal.removeEventListener("abort", cancel);
+        reader.releaseLock();
       }
     };
 
@@ -284,7 +324,8 @@ function PrepareStreamContent({
             let sid: string | undefined;
             try {
               sid = (await res.json())?.sessionId;
-            } catch {
+            } catch (diagnosticFailure) {
+              observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal");
               /* fall through to the generic !res.ok handling below */
             }
             if (sid) {
@@ -295,6 +336,12 @@ function PrepareStreamContent({
           }
         }
 
+        if (controller.signal.aborted) {
+          await res.body?.cancel().catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal");
+          });
+          return;
+        }
         if (!res.ok || !res.body) {
           let code: string | undefined;
           let msg = res.statusText;
@@ -302,9 +349,11 @@ function PrepareStreamContent({
             const j = await res.json();
             code = j.error;
             msg = j.error || j.message || msg;
-          } catch {
+          } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal");
             /* keep statusText */
           }
+          if (controller.signal.aborted) return;
           setError(friendlyError(code, msg));
           setPhase("error");
           return;
@@ -315,18 +364,27 @@ function PrepareStreamContent({
         // crashed / the connection dropped mid-op). The operation's outcome is
         // usually still recorded server-side, so read it back rather than
         // telling the user to go and check for themselves.
-        if (canReportStreamEnd(terminalRef.current)) await reportUnknownOutcome();
+        if (!controller.signal.aborted && canReportStreamEnd(terminalRef.current)) {
+          await reportUnknownOutcome(controller.signal);
+        }
       } catch (e) {
+        observeCaughtError(e, "dashboard/hooks/useSystemPrepareModal");
         // A late failure AFTER the outcome is known is teardown noise — the
         // server already told us how it went, and overwriting that with a
         // network message would replace a real result with a lie.
-        if ((e as { name?: string })?.name !== "AbortError" && canReportStreamEnd(terminalRef.current)) {
+        if (
+          !controller.signal.aborted &&
+          (e as { name?: string })?.name !== "AbortError" &&
+          canReportStreamEnd(terminalRef.current)
+        ) {
           setLogs((p) => [
             ...p,
             { message: e instanceof Error ? e.message : String(e), level: "error" },
           ]);
-          await reportUnknownOutcome();
+          await reportUnknownOutcome(controller.signal);
         }
+      } finally {
+        opts.onSettled?.();
       }
     })();
     return () => controller.abort();
@@ -350,7 +408,8 @@ function PrepareStreamContent({
       await navigator.clipboard.writeText(logs.map((entry) => entry.message).join("\n"));
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal");
       /* clipboard denied — nothing useful to say */
     }
   };
@@ -377,7 +436,9 @@ function PrepareStreamContent({
             </div>
           ))
         ) : (
-          <div className="italic opacity-70">{phase === "running" ? "Connecting…" : "No output."}</div>
+          <div className="italic opacity-70">
+            {phase === "running" ? "Connecting…" : "No output."}
+          </div>
         )}
       </div>
       {logs.length > 0 && (
@@ -387,7 +448,7 @@ function PrepareStreamContent({
             onClick={() => void copyLog()}
             className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <Copy className="size-3" />
+            <UiIcon name="copy" className="size-3" />
             {copied ? "Copied" : "Copy log"}
           </button>
         </div>
@@ -402,9 +463,22 @@ function PrepareStreamContent({
     <div className="space-y-4 p-6">
       <div className="flex items-center gap-2.5">
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20">
-          <ShieldCheck className="size-[18px] text-primary" />
+          <UiIcon name="shield-check" className="size-[18px] text-primary" />
         </div>
-        <h2 className="text-base font-semibold text-foreground">{opts.title ?? "Prepare"}</h2>
+        <h2 className="flex-1 text-base font-semibold text-foreground">
+          {opts.title ?? "Prepare"}
+        </h2>
+        {inline && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close operation log"
+            disabled={closeDisabled}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <UiIcon name="close" className="size-4" />
+          </button>
+        )}
       </div>
 
       {prompt ? (
@@ -434,13 +508,17 @@ function PrepareStreamContent({
       ) : phase === "completed" ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-xl bg-success-bg px-4 py-3 text-sm text-success">
-            <CheckCircle2 className="size-5 shrink-0" />
+            <UiIcon name="check-circle" className="size-5 shrink-0" />
             <span className="font-medium">{l.done ?? "Done."}</span>
           </div>
           {stepBar}
           {logConsole}
           <div className="flex justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+            >
               {l.close ?? "Done"}
             </button>
           </div>
@@ -448,7 +526,7 @@ function PrepareStreamContent({
       ) : phase === "failed" || phase === "error" ? (
         <div className="space-y-3">
           <div className="flex items-start gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
             <span className="whitespace-pre-wrap">
               {error || l.failed || "Couldn't finish — nothing was disrupted."}
             </span>
@@ -461,10 +539,14 @@ function PrepareStreamContent({
               onClick={retry}
               className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              <RefreshCw className="size-3.5" />
-              Try again
+              <UiIcon name="refresh" className="size-3.5" />
+              {opts.retryMode === "reattach" ? "Reconnect" : "Try again"}
             </button>
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
               {l.close ?? "Close"}
             </button>
           </div>
@@ -472,7 +554,7 @@ function PrepareStreamContent({
       ) : (
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
             <span>{l.working ?? "Working…"}</span>
           </div>
           {stepBar}
@@ -483,11 +565,11 @@ function PrepareStreamContent({
   );
 }
 
-/** Generic: returns `prepare(opts)` — opens the consent/prepare flow in the
- *  global modal and returns the modal id. */
-export function useSystemPrepareModal() {
+/** Present the shared flow in a modal by default. A page can supply its own
+ *  presenter while retaining the same endpoints, prompts and outcome handling. */
+export function useSystemPrepareModal(present?: SystemPreparePresenter) {
   const { showModal, hideModal } = useModal();
-  return useCallback(
+  const openModal = useCallback(
     (opts: SystemPrepareOptions): string => {
       let id = "";
       id = showModal({
@@ -500,30 +582,45 @@ export function useSystemPrepareModal() {
     },
     [showModal, hideModal],
   );
+  return present ?? openModal;
 }
 
 /** Self-hosted domain verify with LIVE certbot logs — streams the standalone
  *  HTTP-01 run. No prompt (verify never asks for consent), so no respondUrl.
  *  `openVerifyModal(domainId, { hostname, onDone })`. */
-export function useVerifyModal() {
-  const prepare = useSystemPrepareModal();
+export function useVerifyModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   return useCallback(
-    (domainId: string, opts?: { hostname?: string; onDone?: () => void }): string =>
+    (
+      domainId: string,
+      opts?: {
+        hostname?: string;
+        onStart?: () => void;
+        onDone?: () => void;
+        onSettled?: () => void;
+      },
+    ): string =>
       prepare({
         streamUrl: `domains/${domainId}/verify/stream`,
         title: opts?.hostname ? `Verify ${opts.hostname}` : "Verify domain",
         labels: {
-          working: "Verifying — issuing the certificate…",
-          done: "Verified — certificate issued and SSL active.",
+          working: "Checking the domain and its HTTPS certificate…",
+          done: "Domain verification completed.",
           failed: "Couldn't verify — see the log above for the exact reason.",
         },
         onDone: opts?.onDone,
+        onStart: opts?.onStart,
+        onSettled: opts?.onSettled,
         // A dropped stream doesn't mean a dropped verify: certbot may well have
         // finished and the row already say so. Read it instead of handing the
         // operator a "check the domain's status" they can't act on.
         resolveOutcome: async () => {
           const domain = (await domainsApi.get(domainId)).data;
-          if (domain.verified) {
+          if (
+            domain.verified &&
+            (domain.sslStatus === "active" || domain.sslStatus === "external") &&
+            !domain.lastVerifyError
+          ) {
             return {
               ok: true,
               message: `${domain.hostname} is verified (SSL ${domain.sslStatus ?? "unknown"}) — the connection dropped after the run finished.`,
@@ -541,6 +638,38 @@ export function useVerifyModal() {
   );
 }
 
+/** Routing repairs can include SSH and certificate work. Keep their progress
+ * visible through the shared stream viewer instead of a short JSON timeout. */
+export function useRoutingRetryModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
+  const { t } = useI18n();
+  return useCallback(
+    (
+      projectId: string,
+      opts?: Pick<SystemPrepareOptions, "onDone" | "onSession"> & { attachSessionId?: string },
+    ): string =>
+      prepare({
+        streamUrl: `projects/${encodeURIComponent(projectId)}/routing/retry/stream?idempotencyKey=${randomUUID()}`,
+        attachUrl: (sessionId) =>
+          `projects/${encodeURIComponent(projectId)}/routing/retry/stream?sessionId=${encodeURIComponent(sessionId)}`,
+        initialAttachSessionId: opts?.attachSessionId,
+        retryMode: "reattach",
+        title: t.projects.routingRetry.retry,
+        labels: {
+          working: t.projects.routingRetry.retrying,
+          done: t.projects.routingRetry.success,
+          failed: t.projects.routingRetry.failed,
+        },
+        onDone: opts?.onDone,
+        onSession: opts?.onSession,
+        onSettled: () => invalidateProjectCaches(projectId),
+        // A dropped stream has no terminal result. Refresh the cards, but do not
+        // infer success from an old warning flag while the repair may still run.
+      }),
+    [prepare, t],
+  );
+}
+
 /** Managed-container converge (edge / mail) on one server — streams the
  *  rollback-guarded pull→recreate→verify with a step bar. Never prompts (neither
  *  intent asks for consent), so no respondUrl. Both this manual click and a
@@ -550,8 +679,8 @@ export function useVerifyModal() {
  *  `intent: "repair"` starts a STOPPED container instead of swapping its image —
  *  the recovery path for a mail engine, whose update is swap-only by design.
  *  `openContainerModal(serverId, "edge", { label, intent, onDone })`. */
-export function useContainerApplyModal() {
-  const prepare = useSystemPrepareModal();
+export function useContainerApplyModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   return useCallback(
     (
       serverId: string,
@@ -570,7 +699,7 @@ export function useContainerApplyModal() {
       // running (new image, or simply started) and the row already say so. Read it
       // back rather than reporting an unknown outcome for a run that finished.
       const resolveOutcome = async () => {
-        const list = await systemApi.listServerContainers(serverId).catch(() => null);
+        const list = await systemApi.listServerContainers(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal"); return null; });
         const row = list?.find((r) => r.component === component) ?? null;
         if (repair) {
           if (row && !row.detail?.down) {
@@ -636,8 +765,8 @@ export function useContainerApplyModal() {
  *  -f` first, so a stopped leftover is replaced cleanly). Body carries the
  *  target `{ serverId, components:["edge"] }` — the endpoint is shared, unlike
  *  the URL-scoped takeover/apply flows. `openEdgeInstallModal(serverId, { onDone })`. */
-export function useServerEdgeInstallModal() {
-  const prepare = useSystemPrepareModal();
+export function useServerEdgeInstallModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   return useCallback(
     (
       serverId: string,
@@ -667,7 +796,7 @@ export function useServerEdgeInstallModal() {
         // the edge row back rather than reporting an unknown outcome for an
         // install that actually finished. Present && not down == success.
         resolveOutcome: async () => {
-          const list = await systemApi.listServerContainers(serverId).catch(() => null);
+          const list = await systemApi.listServerContainers(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/hooks/useSystemPrepareModal"); return null; });
           const edge = list?.find((r) => r.component === "edge") ?? null;
           if (edge && !edge.detail?.down) {
             return {
@@ -694,42 +823,28 @@ export function useServerEdgeInstallModal() {
 
 /** Port-80/443 edge takeover — the first `useSystemPrepareModal` consumer.
  *  `openEdgeModal(projectId, { onDone })`. */
-export function useEdgeModal() {
-  const prepare = useSystemPrepareModal();
+export function useEdgeModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
+  const { t } = useI18n();
   return useCallback(
-    (projectId: string, opts?: { onDone?: () => void }): string =>
+    (
+      projectId: string,
+      opts?: Pick<SystemPrepareOptions, "onDone" | "onSettled">,
+    ): string =>
       prepare({
         streamUrl: `projects/${projectId}/routing/ensure-edge/stream`,
         respondUrl: `projects/${projectId}/routing/ensure-edge/respond`,
-        title: "Set up edge routing",
+        title: t.projectSettings.domains.edge.setUp,
         labels: {
-          working: "Preparing the server's edge…",
-          done: "Edge ready — your routes are live.",
-          failed: "Edge setup didn't finish — the app stays on its port; routing is flagged on this tab.",
+          working: t.projects.routingRetry.retrying,
+          done: t.projects.routingRetry.success,
+          failed: t.projects.routingRetry.failed,
         },
         onDone: opts?.onDone,
-        // Edge setup installs OpenResty and can take a takeover path, so it's the
-        // flow most likely to outlive its own connection. The result is readable
-        // from the server afterwards — ask, the way the verify modal does, rather
-        // than reporting an unknown outcome for an install that finished.
-        resolveOutcome: async () => {
-          const status = await projectsApi.getEdgeStatus(projectId);
-          if (status.ready) {
-            return {
-              ok: true,
-              message: "The server's edge is set up and owns ports 80/443 — the connection dropped after the run finished.",
-            };
-          }
-          return {
-            ok: false,
-            message:
-              status.reason ??
-              (status.reachable === false
-                ? "The server isn't reachable, so the edge couldn't be checked. The log above is what the run got through."
-                : `The edge is not set up yet${status.classification ? ` (ports 80/443: ${status.classification})` : ""}. The log above is what the run got through.`),
-          };
-        },
+        onSettled: opts?.onSettled,
+        // A ready proxy does not prove that route application or HTTPS finished.
+        // A lost terminal event stays unknown; onSettled refreshes canonical state.
       }),
-    [prepare],
+    [prepare, t],
   );
 }

@@ -1,3 +1,4 @@
+import { stubProtectedBuildWorker } from "../../test/fixtures/remote-build-worker";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,12 +54,15 @@ function buildConfig(sessionId: string): BuildConfig {
 }
 
 // Every test uses a DISTINCT session id on purpose: the cancellation registry and
-// the pending-cancel map are module-level (cancelBuildSession resolves a different
-// runtime instance than the one that built, so they have to be), and a pending
+// the pending-cancel map are module-level (recovery may resolve a different
+// runtime instance than the one that built), and a pending
 // entry outlives the test that recorded it. Reusing an id across tests would let
 // one test's cancel pre-abort another's build.
 describe("DockerRuntime build cancellation", () => {
   function runtimeWith(executor: CommandExecutor, extra?: Record<string, unknown>) {
+    const hostExec = executor.exec.bind(executor);
+    executor.exec = vi.fn(async (command, options) => command.includes("df -Pk")
+      ? "104857600 52428800\n100000\n" : hostExec(command, options));
     const verifyImageBuilt = vi.fn(async () => {});
     const cloneSourceOnRemote = vi.fn(async () => {});
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime &
@@ -68,6 +72,7 @@ describe("DockerRuntime build cancellation", () => {
       transport: { kind: "ssh", description: "test ssh" },
       systemManager: null,
       _docker: {
+        modem: { dial: (_options: unknown, callback: (error: unknown, data: unknown) => void) => callback(null, {}) },
         listContainers: vi.fn(async () => []),
       },
       cloneSourceOnRemote,
@@ -78,6 +83,7 @@ describe("DockerRuntime build cancellation", () => {
       verifyImageBuilt,
       ...extra,
     });
+    stubProtectedBuildWorker(runtime);
     return { runtime, verifyImageBuilt, cloneSourceOnRemote };
   }
 
@@ -139,6 +145,68 @@ describe("DockerRuntime build cancellation", () => {
     expect(verifyImageBuilt).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["ssh", "single"], ["ssh", "batch"],
+    ["cloud", "single"], ["cloud", "batch"],
+  ] as const)("interrupts %s %s source acquisition before an image build can start", async (transport, mode) => {
+    for (const source of ["git", "tarball"] as const) {
+      const sessionId = `cancel-source-${transport}-${mode}-${source}`;
+      let enteredSource!: () => void;
+      let finishSource!: () => void;
+      let sourceSignal: AbortSignal | undefined;
+      const started = new Promise<void>(resolve => { enteredSource = resolve; });
+      const pending = new Promise<void>(resolve => { finishSource = resolve; });
+      const executor = {
+        exec: vi.fn(async () => ""),
+        streamExec: vi.fn(async (_command, _onLog, opts) => {
+          sourceSignal = opts?.signal;
+          sourceSignal?.addEventListener("abort", finishSource, { once: true });
+          enteredSource();
+          await pending;
+          // SSH may close with a clean EOF after abort. The signal still wins.
+          return { code: 0, output: "" };
+        }),
+      } as unknown as CommandExecutor;
+      const { runtime, verifyImageBuilt } = runtimeWith(executor, {
+        transport: { kind: transport, description: transport },
+        cloneSourceOnRemote: (DockerRuntime.prototype as unknown as Record<string, unknown>).cloneSourceOnRemote,
+      });
+      const onResult = vi.fn();
+      const specs = (mode === "single" ? ["api"] : ["api", "web"]).map(serviceName => ({
+        config: {
+          ...buildConfig(`${sessionId}-${serviceName}`),
+          repoUrl: source === "tarball" ? "https://github.com/acme/app.git" : "https://example.com/app.git",
+        },
+        serviceName, logger: new BuildLogger(), onResult,
+      }));
+      const building = mode === "single"
+        ? runtime.build(specs[0]!.config).then(result => [{ serviceName: "api", result }])
+        : runtime.buildImages(specs, new BuildLogger());
+      try {
+        await started;
+        await runtime.cancelBuild(sessionId);
+        expect(sourceSignal?.aborted).toBe(true);
+        await expect(building).resolves.toEqual(specs.map(spec => ({
+          serviceName: spec.serviceName,
+          result: expect.objectContaining({ sessionId: spec.config.sessionId, status: "cancelled" }),
+        })));
+        // No fallback clone after a cancelled tarball, no checkout or image build.
+        expect(executor.streamExec).toHaveBeenCalledOnce();
+        expect(verifyImageBuilt).not.toHaveBeenCalled();
+        expect(onResult).toHaveBeenCalledTimes(mode === "batch" ? specs.length : 0);
+        if (source === "tarball") {
+          expect(executor.exec).toHaveBeenCalledWith(
+            expect.stringMatching(/rm -f.*\.opsh-src\.tar\.gz/),
+            { timeout: 10_000 },
+          );
+        }
+      } finally {
+        finishSource();
+        await building;
+      }
+    }
+  });
+
   it("kills orphaned remote processes under the session dir, including deleted cwds", async () => {
     const executor = {
       exec: vi.fn(async () => ""),
@@ -159,6 +227,29 @@ describe("DockerRuntime build cancellation", () => {
     expect(sweep).toContain(`'/tmp/openship-build-session-sweep'" (deleted)"`);
     // Compose services build in `<parent>-<serviceId>` dirs off the same cancel.
     expect(sweep).toContain(`'/tmp/openship-build-session-sweep'-*`);
+  });
+
+  it("leaves deployed containers with inherited image build labels to the deployment cleanup owner", async () => {
+    const remove = vi.fn(async () => undefined);
+    const getContainer = vi.fn(() => ({ remove }));
+    const executor = { exec: vi.fn(async () => "") } as unknown as CommandExecutor;
+    const { runtime } = runtimeWith(executor, {
+      _docker: {
+        listContainers: vi.fn(async () => [
+          { Id: "builder", Labels: { "openship.build": "cancel-owned-svc-api" } },
+          { Id: "application", Labels: {
+            "openship.build": "cancel-owned-svc-api", "openship.deployment": "deployment-current",
+          } },
+          { Id: "other-builder", Labels: { "openship.build": "unrelated-build" } },
+        ]),
+        getContainer,
+      },
+    });
+
+    await runtime.cancelBuild("cancel-owned");
+
+    expect(getContainer).toHaveBeenCalledExactlyOnceWith("builder");
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ force: true });
   });
 
   it("cancels every compose service build under the parent session id", async () => {
@@ -188,7 +279,7 @@ describe("DockerRuntime build cancellation", () => {
 
     const resultsPromise = buildRuntime.buildImages(specs, new BuildLogger());
     await buildStarted;
-    // The API cancels with the PARENT build-session id; the services registered
+    // The worker cancels with the PARENT build-session id; the services registered
     // under `<parent>-<serviceId>` have to be covered by it.
     await cancelRuntime.cancelBuild("parent-1");
 

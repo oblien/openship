@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Aliases tab - list + create/delete/toggle for vmail.forwardings rows with
  * is_alias = 1 (per-address forwards and domain catch-alls). Mailbox
@@ -13,7 +15,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Forward, Plus, Power, Trash2 } from "lucide-react";
 import {
   getApiErrorMessage,
   mailAdminApi,
@@ -164,7 +165,7 @@ export function AliasesTab({
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
           <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
-            <Forward className="size-4 text-muted-foreground" strokeWidth={2} />
+            <UiIcon name="forward" className="size-4 text-muted-foreground" />
           </div>
           <p className="text-sm font-medium text-foreground truncate font-mono">
             {r.isCatchAll ? `*@${r.address}` : r.address}
@@ -226,7 +227,7 @@ export function AliasesTab({
           disabled={domains.length === 0}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none shrink-0"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {t.emailsAdmin.aliases.addAlias}
         </button>
       </div>
@@ -269,14 +270,14 @@ export function AliasesTab({
                 label: row.active
                   ? t.emailsAdmin.aliases.deactivateAction
                   : t.emailsAdmin.aliases.activateAction,
-                icon: <Power className="size-4" />,
+                icon: <UiIcon name="power" className="size-4" />,
                 onClick: () => void toggleActive(row),
               },
               { id: "sep", divider: true },
               {
                 id: "delete",
                 label: t.emailsAdmin.aliases.deleteAction,
-                icon: <Trash2 className="size-4" />,
+                icon: <UiIcon name="trash" className="size-4" />,
                 variant: "danger",
                 onClick: () => openDelete(row),
               },
@@ -284,7 +285,7 @@ export function AliasesTab({
           />
         )}
         empty={{
-          icon: Forward,
+          icon: "forward",
           title: t.emailsAdmin.aliases.emptyTitle,
           description: interpolate(t.emailsAdmin.aliases.emptyDesc, { domain: activeDomain }),
           action: (
@@ -293,7 +294,7 @@ export function AliasesTab({
               disabled={domains.length === 0}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {t.emailsAdmin.aliases.addAlias}
             </button>
           ),

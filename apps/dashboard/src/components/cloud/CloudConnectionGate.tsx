@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * CloudConnectionGate — overlay shown on cloud-bound project pages
  * when the user's Openship Cloud session is missing.
@@ -19,7 +21,6 @@
  */
 
 import { ReactNode } from "react";
-import { Cloud, LinkIcon } from "lucide-react";
 import { useCloud } from "@/context/CloudContext";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -55,7 +56,7 @@ export default function CloudConnectionGate({ children }: Props) {
         <div className="max-w-md w-[90%] rounded-2xl border border-white/10 bg-neutral-950/90 backdrop-blur p-6 shadow-2xl">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-full bg-neutral-900 border border-white/10 grid place-items-center">
-              <Cloud className="w-5 h-5 text-neutral-300" />
+              <UiIcon name="cloud" className="w-5 h-5 text-neutral-300" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">{w.reconnect}</h3>
@@ -75,7 +76,7 @@ export default function CloudConnectionGate({ children }: Props) {
             disabled={cloud.connecting}
             className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-white text-black text-sm font-medium px-4 py-2.5 hover:bg-neutral-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
-            <LinkIcon className="w-4 h-4" />
+            <UiIcon name="link" className="w-4 h-4" />
             {cloud.connecting ? w.connecting : w.connect}
           </button>
 

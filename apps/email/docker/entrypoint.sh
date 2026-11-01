@@ -25,7 +25,11 @@
 #      (no network), hand the mount to the `clamav` user, and create clamd's socket
 #      directory. Without a database clamd exits 1, and amavis — whose only scanner
 #      it is — then defers every inbound message (issue #565).
-#   7. hand off to supervisord (the CMD).
+#   8. Amavis: drop leftover pid/lock/socket. `docker recreate` empties /run;
+#      `docker restart` keeps the writable layer, so Net::Server can abort-loop
+#      against a recycled PID (often now dovecot) and Postfix defers originating
+#      mail on 127.0.0.1:10026.
+#   9. hand off to supervisord (the CMD).
 #
 # Env (from ensure-container-mail.ts --env-file): FIRST_DOMAIN,
 # OPENSHIP_MAIL_DB_{HOST,PORT,NAME,USER}, plus iRedMail secrets
@@ -35,9 +39,8 @@ set -euo pipefail
 
 log() { echo "[openship-mail] $*"; }
 
-# No DB_HOST/DB_PORT here on purpose: db-bootstrap.sh reads the same two env vars and
-# owns every conversation with the sidecar, so duplicating them invites the two files
-# to disagree about where the database is.
+# db-bootstrap.sh reads OPENSHIP_MAIL_DB_HOST and OPENSHIP_MAIL_DB_PORT to wait for
+# and bootstrap the schema; step 3d reconciles that same port into daemon configs.
 FIRST_DOMAIN="${FIRST_DOMAIN:-}"
 SEED_DIR="/opt/openship-mail/seed"
 
@@ -52,7 +55,14 @@ seed() { # <seed-subdir> <target>
 seed postfix /etc/postfix
 seed dovecot /etc/dovecot
 seed amavis-confd /etc/amavis/conf.d
+
+# An older bind-mounted master.cf hides corrected image defaults (#392).
+bash /opt/openship-mail/postfix-filter-tls.sh
 mkdir -p /var/vmail /var/spool/postfix /var/lib/dkim /var/lib/clamav
+if getent passwd vmail >/dev/null 2>&1; then
+  chown -R vmail:vmail /var/vmail 2>/dev/null || true
+  chmod 750 /var/vmail 2>/dev/null || true
+fi
 
 # 2. Recreate the resolver view inside Postfix's persistent chroot on EVERY boot.
 # The iRedMail installer does this at image-build time, but /var/spool/postfix is
@@ -143,6 +153,15 @@ if [ -n "$FIRST_DOMAIN" ]; then
   esac
 fi
 
+# 3c. /etc/ssl is in the container layer. Restore the daemon certificate links
+#     on every boot so recreating the container retains the mounted TLS identity.
+bash /opt/openship-mail/reconcile-ssl.sh "$FIRST_DOMAIN"
+
+# 3d. Keep daemon SQL connections on the sidecar's selected host port. Only
+#     database connection fields are rewritten; mail listener ports stay intact.
+python3 /opt/openship-mail/reconcile-db-port.py "${OPENSHIP_MAIL_DB_PORT:-5432}"
+
+
 # 4. bootstrap the mail databases (idempotent; skips if the vmail schema exists).
 #
 # The wait for the sidecar lives INSIDE db-bootstrap.sh, which polls `SELECT 1` until
@@ -166,14 +185,25 @@ if ! bash /opt/openship-mail/db-bootstrap.sh; then
   exit 1
 fi
 
-# 5. pre-create the log files the fail2ban jails tail, so a jail never starts
-#    against a missing path (rsyslog populates them as the daemons log).
+# 5. fail2ban setup:
+#    a) pre-create the log files the fail2ban jails tail, so a jail never starts
+#       against a missing path (rsyslog populates them as the daemons log).
 mkdir -p /var/log/dovecot /var/log/iredapd /var/log/supervisor
 touch /var/log/mail.log \
       /var/log/dovecot/dovecot.log /var/log/dovecot/imap.log \
       /var/log/dovecot/pop3.log /var/log/dovecot/lda.log /var/log/dovecot/sieve.log \
       /var/log/iredapd/iredapd.log
 chown -R iredapd:iredapd /var/log/iredapd 2>/dev/null || true
+
+#    b) fix leading commas in jail port lists (e.g. `,,25,587,...` -> `25,587,...`)
+#       because HTTP/HTTPS ports are absent in the container image and cause
+#       nftables syntax errors when generating banning rules.
+sed -i -E 's/port=",,/port="/g' /etc/fail2ban/jail.d/*.local 2>/dev/null || true
+
+#    c) configure the helper's TCP endpoint AND credentials. A .pgpass entry
+#       alone cannot select a host/port. The dedicated files are also used by
+#       cron/manual invocations that do not inherit the container environment.
+python3 /opt/openship-mail/configure-fail2ban-db.py
 
 # 6. DKIM: reuse the key on the mount, else generate one (per domain).
 if [ -n "$FIRST_DOMAIN" ] && [ ! -s "/var/lib/dkim/${FIRST_DOMAIN}.pem" ]; then
@@ -211,6 +241,22 @@ if getent passwd clamav >/dev/null 2>&1; then
 else
   log "WARN: no clamav user in this image — ClamAV will not start"
 fi
+
+# 8. Amavis runtime files.
+#
+#    Amavis's Net::Server refuses to start if amavisd.pid exists and that PID is
+#    still alive — even when the process is something else. `/run` is empty on
+#    `docker recreate`, but `docker restart` keeps the writable layer, so a pid
+#    from the previous life can now belong to dovecot (PIDs recycle from 1).
+#    Supervisord then reports amavis STARTING/RUNNING while it abort-loops on
+#    "Pid_file already exists", and originating mail sits deferred with
+#    `connect to 127.0.0.1[127.0.0.1]:10026: Connection refused`.
+#
+#    This entrypoint is the first process in a fresh pid namespace, so those
+#    files cannot refer to a living amavis. Drop them unconditionally, then
+#    recreate the directory the way Debian's tmpfiles.d rule would under
+#    systemd (supervisord has no equivalent).
+bash /opt/openship-mail/prepare-amavis-runtime.sh
 
 log "starting supervisord"
 exec "$@"

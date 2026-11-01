@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "电子邮件",
+    "subtitle": "通过 Openship Webmail 使用现有邮箱。",
+    "connectTitle": "连接邮件服务器",
+    "description": "连接任意 IMAP/SMTP 服务器。邮箱和邮件收发仍由你的服务商管理。",
+    "connectAction": "连接现有邮件服务器",
+    "signInHint": "使用邮箱地址和邮箱密码登录 Webmail。",
+    "manageAction": "管理 Webmail 应用"
+  },
+  "cloudComingSoon": {
+    "title": "托管邮件",
+    "badge": "即将推出",
+    "description": "Openship Cloud 托管邮件即将推出。Cloud 服务器套餐用于托管应用，不会创建邮件服务器。",
+    "selfHosted": "您可以通过自托管 Openship 在自己的服务器上运行邮件服务。"
+  },
   "page": {
     "title": "邮件服务器",
     "subtitle": "几次点击即可搭建自托管邮件服务器",
@@ -132,7 +147,17 @@
     "hide": "隐藏",
     "reveal": "显示",
     "generateTitle": "生成一个强随机密码",
-    "generate": "生成"
+    "generate": "生成",
+    "relay": {
+      "toggle": "通过电子邮件提供商中继外发邮件",
+      "hint": "推荐。通过提供商的可信 IP 发送 — 新服务器 IP 通常位于黑名单中，且许多主机服务商阻止出站端口 25。接收仍在以此服务器上。",
+      "region": "区域",
+      "username": "SMTP 用户名",
+      "password": "SMTP 密码",
+      "perDomainNote": "适用于所有域。每个域的路由以及每个域的提供商 DKIM / MAIL FROM 记录在安装后于「发送」标签页中配置。"
+    },
+    "startFailed": "无法启动邮件引擎设置。",
+    "startFailedFallback": "无法连接以启动设置。请验证 SSH 访问并重试。"
   },
   "sidebar": {
     "portConflict": {

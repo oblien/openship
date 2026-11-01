@@ -123,6 +123,6 @@ describe(".dockerignore vs tracked source", () => {
     expect(isExcluded("apps/api/.env", p)).toBe(true);
     expect(isExcluded("apps/api/.env.local", p)).toBe(true);
     expect(isExcluded("apps/api/.env.example", p)).toBe(false);
-    expect(isExcluded("apps/api/src/config/env.ts", p)).toBe(false);
+    expect(isExcluded("packages/platform/src/engine/config/env.ts", p)).toBe(false);
   });
 });

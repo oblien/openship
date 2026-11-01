@@ -14,6 +14,7 @@
  * told to "connect as root" — the opposite of the fix, which the resolver already knew.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { answered, refused, type Answer } from "@repo/core";
 
 import type { CommandExecutor } from "../types";
@@ -183,6 +184,7 @@ export async function rootOrDegrade(
     // packages. Refusing here would take a working edge away from an openSUSE box.
     onRefusedHost: "proceed",
   }).catch((err: unknown) => {
+    observeCaughtError(err, "adapters/system/privilege");
     // Naming the work is the whole value of this line: the operator is reading a warning
     // about a host that answered nothing, and "could not measure privileges" alone doesn't
     // say which step is about to be degraded.

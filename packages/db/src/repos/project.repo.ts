@@ -1,13 +1,20 @@
-import { eq, and, isNull, isNotNull, inArray, desc, sql, type SQL } from "drizzle-orm";
-import { generateId } from "@repo/core";
-import type { Database } from "../client";
-import { project, projectGroup, envVar, deployment, service } from "../schema";
+import { eq, and, or, isNull, isNotNull, inArray, desc, sql, type SQL } from "drizzle-orm";
+import { generateId, ForbiddenError, UnauthorizedError, ConflictError, ValidationError, inspectCommandEnvironment, manualBuildCaches } from "@repo/core";
+import type { Database, DatabaseTransaction } from "../connection";
+import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
+import { project, projectGroup, envVar, deployment, service, domain } from "../schema";
 import { member } from "../schema/organization";
 // Cloning a project writes its group and service rows in the same transaction, so this repo
 // needs both insert types. Imported from their own repos (where they are already declared)
 // rather than re-derived here, so there is one definition of each row shape.
 import type { NewProjectGroup } from "./project-group.repo";
 import type { NewService } from "./service.repo";
+import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
+import { personalAccessToken } from "../schema/personal-access-token";
+import { assertCloudWorkspacePlacement } from "./cloud-workspace.repo";
+import { projectWorkspaceScope } from "./workspace-scope";
+import { assertProjectSwapResources } from "./service-swap-resources";
+import { assertProjectConfigurationWritable, withProjectConfigurationWrite } from "./project-work-admission";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -15,6 +22,12 @@ export type Project = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
 export type EnvVar = typeof envVar.$inferSelect;
 export type NewEnvVar = typeof envVar.$inferInsert;
+
+type EnvScopeEdit = {
+  serviceId?: string | null;
+  upserts: { key: string; value: string; isSecret?: boolean }[];
+  deletes: string[];
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -52,47 +65,92 @@ const boundServerId = sql<string>`coalesce(${project.serverId}, ${deployment.met
  * transaction as its upsert; createProjectRepo wraps it for ordinary callers.
  */
 export async function rebindGitHubInstallationRows(
-  db: Database,
+  db: DatabaseTransaction,
   organizationId: string,
   owner: string,
   installationId: number,
 ): Promise<{ projects: number; groups: number }> {
   const ownerKey = owner.toLowerCase();
   const updatedAt = new Date();
+  const projectPredicate = and(
+    eq(project.organizationId, organizationId), eq(project.gitProvider, "github"),
+    sql`lower(${project.gitOwner}) = ${ownerKey}`, isNull(project.deletedAt),
+  )!;
+  const groupPredicate = and(
+    eq(projectGroup.organizationId, organizationId), eq(projectGroup.gitProvider, "github"),
+    sql`lower(${projectGroup.gitOwner}) = ${ownerKey}`, isNull(projectGroup.deletedAt),
+  )!;
+  await assertProjectConfigurationWritable(db, or(projectPredicate,
+    inArray(project.groupId, db.select({ id: projectGroup.id }).from(projectGroup).where(groupPredicate)))!);
   const projects = await db
     .update(project)
     // The App's global webhook is now authoritative. Clearing legacy
     // per-repository hook metadata prevents the same push from being accepted a
     // second time through an old PAT/OAuth hook that may still exist at GitHub.
     .set({ installationId, webhookId: null, webhookSecret: null, updatedAt })
-    .where(
-      and(
-        eq(project.organizationId, organizationId),
-        eq(project.gitProvider, "github"),
-        sql`lower(${project.gitOwner}) = ${ownerKey}`,
-        isNull(project.deletedAt),
-      ),
-    )
+    .where(projectPredicate)
     .returning();
   const groups = await db
     .update(projectGroup)
     .set({ installationId, updatedAt })
-    .where(
-      and(
-        eq(projectGroup.organizationId, organizationId),
-        eq(projectGroup.gitProvider, "github"),
-        sql`lower(${projectGroup.gitOwner}) = ${ownerKey}`,
-        isNull(projectGroup.deletedAt),
-      ),
-    )
+    .where(groupPredicate)
     .returning();
   return { projects: projects.length, groups: groups.length };
 }
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
-export function createProjectRepo(db: Database) {
+export function createProjectRepo(db: Database, encryption: ConfigurationEncryption) {
+  const codec = createConfigurationSecrets(encryption);
+  async function environmentSnapshot(
+    connection: Database | DatabaseTransaction,
+    projectId: string,
+    environment: string,
+  ) {
+    const [vars, services] = await Promise.all([
+      connection.select().from(envVar).where(and(...envVarScope(projectId, environment))),
+      connection.select().from(service).where(eq(service.projectId, projectId)),
+    ]);
+    return { vars, services: services.map(codec.openService) };
+  }
+  async function mergeEnvVarScopes(
+    projectId: string,
+    environment: string,
+    edits: EnvScopeEdit[],
+    validate?: (snapshot: Awaited<ReturnType<typeof environmentSnapshot>>) => void,
+  ) {
+    await db.transaction(async (tx) => {
+      await assertProjectConfigurationWritable(tx, eq(project.id, projectId));
+      // Recheck the reviewed sources under the same configuration lock as the
+      // writes. A concurrent edit cannot partially update a shared value.
+      if (validate) validate(await environmentSnapshot(tx, projectId, environment));
+      for (const edit of edits) {
+        const affectedKeys = [...new Set([...edit.deletes, ...edit.upserts.map((row) => row.key)])];
+        if (!affectedKeys.length) continue;
+        await tx.delete(envVar).where(
+          and(
+            ...envVarScope(projectId, environment, edit.serviceId ?? null),
+            inArray(envVar.key, affectedKeys),
+          ),
+        );
+        if (edit.upserts.length) {
+          await tx.insert(envVar).values(edit.upserts.map((row) => ({
+            id: generateId("env"),
+            projectId,
+            environment,
+            serviceId: edit.serviceId ?? null,
+            key: row.key,
+            value: row.value,
+            isSecret: row.isSecret ?? false,
+          })));
+        }
+      }
+    });
+  }
   return {
+    environmentSnapshot: (projectId: string, environment: string) =>
+      environmentSnapshot(db, projectId, environment),
+    mergeEnvVarScopes,
     // ── Projects ───────────────────────────────────────────────────────
 
     async findById(id: string | null | undefined) {
@@ -159,11 +217,12 @@ export function createProjectRepo(db: Database) {
      * is reused while a differently-named install still creates a new instance
      * (multiple apps of the same type). Omit `slug` to match any draft of the type.
      */
-    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string) {
+    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string, workspaceId?: string | null) {
       return db.query.project.findFirst({
         where: and(
           eq(project.organizationId, organizationId),
           eq(project.appTemplateId, appTemplateId),
+          projectWorkspaceScope(workspaceId),
           isNull(project.activeDeploymentId),
           isNull(project.deletedAt),
           eq(project.environmentSlug, "production"),
@@ -283,18 +342,28 @@ export function createProjectRepo(db: Database) {
       return { rows, total: Number(total), page, perPage };
     },
 
+    /** Catalog apps on a particular server, scoped before returning any rows. */
+    async listAppsOnServer(organizationId: string, serverId: string, appTemplateId: string) {
+      return db.query.project.findMany({
+        where: and(eq(project.organizationId, organizationId), eq(project.serverId, serverId),
+          eq(project.appTemplateId, appTemplateId), eq(project.isApp, true),
+          isNull(project.deletedAt)),
+        orderBy: [desc(project.createdAt)],
+      });
+    },
+
     /**
      * Project counts for the dashboard home — total and with-an-active-
      * deployment, in one aggregate query instead of listing every row.
      */
-    async countByOrganization(organizationId: string): Promise<{ total: number; active: number }> {
+    async countByOrganization(organizationId: string, projectIds?: readonly string[]): Promise<{ total: number; active: number }> {
       const [row] = await db
         .select({
           total: sql<number>`count(*)::int`,
           active: sql<number>`count(*) filter (where ${project.activeDeploymentId} is not null)::int`,
         })
         .from(project)
-        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)));
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt), projectIds ? inArray(project.id, [...projectIds]) : undefined));
 
       return { total: Number(row?.total ?? 0), active: Number(row?.active ?? 0) };
     },
@@ -357,15 +426,51 @@ export function createProjectRepo(db: Database) {
       };
     },
 
-    async create(data: Omit<NewProject, "id"> & { id?: string }) {
+    async create(data: Omit<NewProject, "id"> & { id?: string }, access?: { tokenId: string }) {
       // `id` is normally generated, but re-import (recovering an Openship project
       // from a server's `.openship/manifest.json`) passes the ORIGINAL id so the
       // still-running containers' `openship.project` labels re-attach immediately.
       const { id: providedId, ...rest } = data;
       const id = providedId ?? generateId("proj");
       const row = { id, ...rest };
-      await db.insert(project).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
+      let inserted: Project;
+      if (access || row.workspaceId || row.serverId) {
+        // A create-only credential must acquire access in the same commit as
+        // its new project. A revoked/missing token rolls back the project too.
+        await db.transaction(async tx => {
+          await assertCloudWorkspacePlacement(tx, row);
+          if (access) {
+          const [token] = await tx.select().from(personalAccessToken)
+            .where(eq(personalAccessToken.id, access.tokenId)).for("update");
+          if (!token || token.revokedAt || (token.expiresAt && token.expiresAt.getTime() <= Date.now()))
+            throw new UnauthorizedError("Project creation credential is no longer valid");
+          if (token.readOnly || (token.organizationId && token.organizationId !== row.organizationId))
+            throw new ForbiddenError("Project creation credential cannot write to this organization");
+          }
+          [inserted] = await tx.insert(project).values(row).returning();
+          if (access) {
+          await tx.insert(personalAccessTokenGrant).values({
+            id: generateId("patgrant"), tokenId: access.tokenId,
+            resourceType: "project", resourceId: id,
+            permissionsJson: JSON.stringify(["read", "write", "admin"]),
+          });
+          }
+        });
+      } else {
+        [inserted] = await db.insert(project).values(row).returning();
+      }
+      return inserted!;
+    },
+
+    async listByWorkspace(workspaceId: string, organizationId: string) {
+      return db.select().from(project).where(and(eq(project.workspaceId, workspaceId), eq(project.organizationId, organizationId), isNull(project.deletedAt))).orderBy(project.createdAt, project.id);
+    },
+
+    async countGroupsForOrganization(organizationId: string, workspaceId?: string | null) {
+      const [row] = await db.select({ count: sql<number>`count(distinct ${project.groupId})::int` }).from(project).where(and(
+        eq(project.organizationId, organizationId), isNull(project.deletedAt), projectWorkspaceScope(workspaceId),
+      ));
+      return row?.count ?? 0;
     },
 
     /**
@@ -407,16 +512,18 @@ export function createProjectRepo(db: Database) {
       for (const svc of input.services) serviceIdBySourceId[svc.sourceId] = generateId("svc");
 
       const projectRow = { id: projectId, groupId, ...input.project };
+      let inserted: Project;
 
       await db.transaction(async (tx) => {
+        await assertCloudWorkspacePlacement(tx, projectRow);
         await tx.insert(projectGroup).values({ id: groupId, ...input.group });
-        await tx.insert(project).values(projectRow);
+        [inserted] = await tx.insert(project).values(projectRow).returning();
         if (input.services.length > 0) {
           await tx.insert(service).values(
             input.services.map((svc) => ({
               id: serviceIdBySourceId[svc.sourceId]!,
               projectId,
-              ...svc.row,
+              ...codec.sealService(svc.row),
             })),
           );
         }
@@ -453,16 +560,22 @@ export function createProjectRepo(db: Database) {
       });
 
       return {
-        project: { ...projectRow, createdAt: new Date(), updatedAt: new Date() } as Project,
+        project: inserted!,
         serviceIdBySourceId,
       };
     },
 
     async update(id: string, data: Partial<NewProject>) {
-      await db
-        .update(project)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(project.id, id));
+      await withProjectConfigurationWrite(db, eq(project.id, id), async (tx) => {
+        if (data.resources !== undefined) {
+          await assertProjectSwapResources(tx, eq(project.id, id), data.resources, codec);
+        }
+        if (data.workspaceId !== undefined) {
+          const current = await tx.query.project.findFirst({ where: eq(project.id, id) });
+          if (current && data.workspaceId !== current.workspaceId) throw new Error("Changing a project's Cloud workspace requires an explicit migration");
+        }
+        await tx.update(project).set({ ...data, updatedAt: new Date() }).where(eq(project.id, id));
+      });
     },
 
     /**
@@ -484,10 +597,13 @@ export function createProjectRepo(db: Database) {
     },
 
     async updateByApp(groupId: string, data: Partial<NewProject>) {
-      await db
-        .update(project)
-        .set({ ...data, updatedAt: new Date() })
-        .where(and(eq(project.groupId, groupId), isNull(project.deletedAt)));
+      const predicate = and(eq(project.groupId, groupId), isNull(project.deletedAt))!;
+      await withProjectConfigurationWrite(db, predicate, async (tx) => {
+        if (data.resources !== undefined) {
+          await assertProjectSwapResources(tx, predicate, data.resources, codec);
+        }
+        await tx.update(project).set({ ...data, updatedAt: new Date() }).where(predicate);
+      });
     },
 
     /** Update a source identity shared by every environment and its project_app
@@ -501,6 +617,11 @@ export function createProjectRepo(db: Database) {
     ) {
       const updatedAt = new Date();
       await db.transaction(async (tx) => {
+        const predicate = and(eq(project.groupId, groupId), isNull(project.deletedAt))!;
+        await assertProjectConfigurationWritable(tx, predicate);
+        if (projectData.resources !== undefined) {
+          await assertProjectSwapResources(tx, predicate, projectData.resources, codec);
+        }
         await tx
           .update(project)
           .set({ ...projectData, updatedAt })
@@ -529,6 +650,17 @@ export function createProjectRepo(db: Database) {
       );
     },
 
+    /** Retention observations must not invalidate a user's configuration revision. */
+    async updateRollbackCapacity(
+      id: string,
+      data: { snapshotSizeBytes: number; capacityMeasuredAt: Date },
+    ) {
+      await db.update(project).set({
+        snapshotSizeBytes: data.snapshotSizeBytes,
+        capacityMeasuredAt: data.capacityMeasuredAt,
+      }).where(eq(project.id, id));
+    },
+
     /** Update favicon cache metadata without touching the user-visible updatedAt field. */
     async updateFaviconCache(
       id: string,
@@ -550,10 +682,10 @@ export function createProjectRepo(db: Database) {
 
     /** Soft-delete a project */
     async softDelete(id: string) {
-      await db
+      await withProjectConfigurationWrite(db, eq(project.id, id), async (tx) => tx
         .update(project)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
-        .where(eq(project.id, id));
+        .where(eq(project.id, id)));
     },
 
     /**
@@ -573,24 +705,60 @@ export function createProjectRepo(db: Database) {
      * The caller owns the cross-process project-runtime advisory lock. That
      * lock—not this crash-prone boolean—is the concurrency owner, so an old
      * `true` left by a dead process is safely reclaimed here in Cloud and
-     * self-hosted modes alike. Returns false only when the live row is gone.
+     * self-hosted modes alike. A protected promotion also fences configuration
+     * writes and requires a receipt; false means its live source is unavailable.
      */
-    async claimDeletion(id: string): Promise<boolean> {
+    async claimDeletion(id: string, opts?: { protectConfiguration?: boolean }): Promise<boolean> {
       const rows = await db
         .update(project)
-        .set({ deletionInProgress: true, updatedAt: new Date() })
-        .where(and(eq(project.id, id), isNull(project.deletedAt)))
+        .set({
+          deletionInProgress: true,
+          updatedAt: new Date(),
+          ...(opts?.protectConfiguration && {
+            cloudPromotion: sql`jsonb_set(${project.cloudPromotion}, '{cleanupInProgress}', 'true'::jsonb)`,
+          }),
+        })
+        .where(and(eq(project.id, id), isNull(project.deletedAt), opts?.protectConfiguration ? isNotNull(project.cloudPromotion) : undefined))
         .returning();
       return rows.length > 0;
     },
 
-    /** Release the deletion-in-progress flag — call on every failure path so
-     *  ordinary project writes are admitted again after a partial teardown. */
+    /** Release a transient fence after preflight rejection or receipt-managed
+     * promotion cleanup. Ordinary partial deletion stays fenced. */
     async clearDeletionInProgress(id: string) {
       await db
         .update(project)
-        .set({ deletionInProgress: false, updatedAt: new Date() })
+        .set({
+          deletionInProgress: false,
+          lifecycleOperation: null,
+          cloudPromotion: sql`${project.cloudPromotion} - 'cleanupInProgress'`,
+          updatedAt: new Date(),
+        })
         .where(eq(project.id, id));
+    },
+
+    /** Workers have quiesced. Fence configuration before reading cleanup manifests. */
+    async beginDeletionCleanup(id: string): Promise<boolean> {
+      const rows = await db
+        .update(project)
+        .set({ lifecycleOperation: { kind: "delete", status: "running" }, updatedAt: new Date() })
+        .where(
+          and(eq(project.id, id), eq(project.deletionInProgress, true), isNull(project.deletedAt)),
+        )
+        .returning();
+      return rows.length > 0;
+    },
+
+    /** Caller holds the project runtime lock. A retry preserves this operation's fence. */
+    async markDeletionFailed(id: string, error: string) {
+      await db
+        .update(project)
+        .set({
+          deletionInProgress: true,
+          lifecycleOperation: { kind: "delete", status: "failed", error },
+          updatedAt: new Date(),
+        })
+        .where(and(eq(project.id, id), isNull(project.deletedAt)));
     },
 
     /**
@@ -599,9 +767,9 @@ export function createProjectRepo(db: Database) {
      * to that server — preferring the DURABLE `project.server_id` binding and
      * falling back to the active deployment's `meta.serverId` for legacy rows not
      * yet backfilled. Powers the "N projects" chip + Projects stat on the Servers
-     * list (and the container-issues classifier's absent-edge alarm).
+     * list. `withRoutes` limits the missing-edge alarm to projects with durable routes.
      */
-    async countActiveByServer(organizationId: string): Promise<Record<string, number>> {
+    async countActiveByServer(organizationId: string, opts: { withRoutes?: boolean } = {}): Promise<Record<string, number>> {
       const rows = await db
         .select({
           serverId: boundServerId,
@@ -614,6 +782,17 @@ export function createProjectRepo(db: Database) {
             eq(project.organizationId, organizationId),
             isNull(project.deletedAt),
             sql`${boundServerId} is not null`,
+            // Domain rows are the durable route inventory. Private services and
+            // workers do not require an edge merely because they are deployed.
+            opts.withRoutes ? sql`exists (
+              select 1 from ${domain}
+              left join ${service} on ${domain.serviceId} = ${service.id}
+              where ${domain.projectId} = ${project.id} and ${domain.status} <> 'removing'
+                and (${domain.targetPort} is not null or ${domain.targetPath} is not null
+                  or exists (select 1 from jsonb_array_elements(coalesce(${project.compositeRoutes}, '[]'::jsonb)) route
+                    where route->>'hostname' = ${domain.hostname}))
+                and (${domain.serviceId} is null or (${service.enabled} and ${service.exposed}))
+            )` : undefined,
           ),
         )
         .groupBy(boundServerId);
@@ -668,52 +847,20 @@ export function createProjectRepo(db: Database) {
      * that isn't a release going live.
      */
     async setActiveDeployment(projectId: string, deploymentId: string | null) {
-      await db
+      await withProjectConfigurationWrite(db, eq(project.id, projectId), async (tx) => tx
         .update(project)
         .set({
           activeDeploymentId: deploymentId,
           ...(deploymentId ? { disabledAt: null } : {}),
           updatedAt: new Date(),
         })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
-     * Bind a project to its Openship Cloud workspace. The unique
-     * partial index on `(cloud_workspace_id) WHERE NOT NULL` enforces
-     * one-project-per-workspace at the DB layer — a unique violation
-     * here means another project row already claims this workspace,
-     * which is a real drift bug the caller must surface.
-     *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test downstream; no separate deployTarget column.
-     */
-    async setCloudWorkspaceId(projectId: string, cloudWorkspaceId: string) {
-      await db
-        .update(project)
-        .set({
-          cloudWorkspaceId,
-          updatedAt: new Date(),
-        })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
-     * Clear the cloud workspace binding (detach). Leaves deployTarget
-     * untouched — the caller decides whether to demote to self-hosted
-     * or keep the project as "cloud but unbound" pending a fresh deploy.
-     */
-    async clearCloudWorkspaceId(projectId: string) {
-      await db
-        .update(project)
-        .set({ cloudWorkspaceId: null, updatedAt: new Date() })
-        .where(eq(project.id, projectId));
+        .where(eq(project.id, projectId)));
     },
 
     /**
      * List every cloud-bound project in an org. Used by the drift
      * endpoint to diff against Oblien's `workspaces.list`. A project
-     * is "cloud-bound" iff it has a non-null cloudWorkspaceId — that
+     * is "cloud-bound" iff it has a non-null workspaceId — that
      * column is the single source of truth, no separate deployTarget.
      *
      * Returns the minimal shape the diff needs — id, name, slug, and
@@ -726,13 +873,13 @@ export function createProjectRepo(db: Database) {
           id: project.id,
           name: project.name,
           slug: project.slug,
-          cloudWorkspaceId: project.cloudWorkspaceId,
+          workspaceId: project.workspaceId,
         })
         .from(project)
         .where(
           and(
             eq(project.organizationId, organizationId),
-            sql`${project.cloudWorkspaceId} IS NOT NULL`,
+            sql`${project.workspaceId} IS NOT NULL`,
             isNull(project.deletedAt),
           ),
         );
@@ -754,16 +901,18 @@ export function createProjectRepo(db: Database) {
     async setEnvVar(data: Omit<NewEnvVar, "id">) {
       const id = generateId("env");
       const row = { id, ...data };
-      await db.insert(envVar).values(row);
+      await withProjectConfigurationWrite(db, eq(project.id, data.projectId), async (tx) => tx.insert(envVar).values(row));
       return row;
     },
 
     async updateEnvVar(id: string, value: string) {
-      await db.update(envVar).set({ value, updatedAt: new Date() }).where(eq(envVar.id, id));
+      const predicate = inArray(project.id, db.select({ id: envVar.projectId }).from(envVar).where(eq(envVar.id, id)));
+      await withProjectConfigurationWrite(db, predicate, async (tx) => tx.update(envVar).set({ value, updatedAt: new Date() }).where(eq(envVar.id, id)));
     },
 
     async deleteEnvVar(id: string) {
-      await db.delete(envVar).where(eq(envVar.id, id));
+      const predicate = inArray(project.id, db.select({ id: envVar.projectId }).from(envVar).where(eq(envVar.id, id)));
+      await withProjectConfigurationWrite(db, predicate, async (tx) => tx.delete(envVar).where(eq(envVar.id, id)));
     },
 
     /**
@@ -780,6 +929,7 @@ export function createProjectRepo(db: Database) {
       serviceId?: string | null,
     ) {
       await db.transaction(async (tx) => {
+        await assertProjectConfigurationWritable(tx, eq(project.id, projectId));
         await tx
           .delete(envVar)
           .where(and(...envVarScope(projectId, environment, serviceId ?? null)));
@@ -814,32 +964,190 @@ export function createProjectRepo(db: Database) {
       deletes: string[],
       serviceId?: string | null,
     ) {
-      const affectedKeys = Array.from(new Set([...deletes, ...upserts.map((u) => u.key)]));
-      if (affectedKeys.length === 0) return;
+      if (!upserts.length && !deletes.length) return;
+      return mergeEnvVarScopes(projectId, environment, [{ serviceId, upserts, deletes }]);
+    },
 
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(envVar)
-          .where(
-            and(
-              ...envVarScope(projectId, environment, serviceId ?? null),
-              inArray(envVar.key, affectedKeys),
-            ),
-          );
-
-        if (upserts.length > 0) {
-          await tx.insert(envVar).values(
-            upserts.map((v) => ({
+    /** Commands and encrypted variables move together, under the configuration lock. */
+    async migrateCommandEnvironment(
+      projectId: string,
+      organizationId: string,
+      input: {
+        environment: string;
+        serviceId?: string;
+        commands: Partial<Record<"installCommand" | "buildCommand" | "startCommand", string>>;
+      },
+    ) {
+      return db.transaction(async (tx) => {
+        await assertProjectConfigurationWritable(
+          tx,
+          and(eq(project.id, projectId), eq(project.organizationId, organizationId))!,
+        );
+        const [owner] = await tx
+          .select({ id: project.id })
+          .from(project)
+          .where(and(eq(project.id, projectId), eq(project.organizationId, organizationId)));
+        if (!owner) throw new ForbiddenError("Project is unavailable");
+        const row = input.serviceId
+          ? (
+              await tx
+                .select()
+                .from(service)
+                .where(and(eq(service.id, input.serviceId), eq(service.projectId, projectId)))
+                .for("update")
+            )[0]
+          : (
+              await tx
+                .select()
+                .from(project)
+                .where(and(eq(project.id, projectId), eq(project.organizationId, organizationId)))
+                .for("update")
+            )[0];
+        if (!row) throw new ForbiddenError("Configuration is unavailable");
+        const update: Partial<Record<"installCommand" | "buildCommand" | "startCommand", string>> =
+          {};
+        const variables: Record<string, string> = {};
+        for (const field of ["installCommand", "buildCommand", "startCommand"] as const) {
+          if (input.commands[field] === undefined) continue;
+          if (row[field] !== input.commands[field])
+            throw new ConflictError("Commands changed. Reload before migrating variables.");
+          const parsed = inspectCommandEnvironment(row[field] ?? "");
+          if (!parsed.migratable)
+            throw new ValidationError(
+              `${field} contains shell expressions or has no literal variables to migrate`,
+            );
+          for (const [key, value] of Object.entries(parsed.variables)) {
+            if (Object.hasOwn(variables, key) && variables[key] !== value)
+              throw new ConflictError(
+                `Commands use different values for ${key}. Resolve the difference before migrating.`,
+              );
+            variables[key] = value;
+          }
+          update[field] = parsed.command;
+        }
+        if (!Object.keys(update).length) throw new ValidationError("Select a command to migrate");
+        const existing = await tx
+          .select()
+          .from(envVar)
+          .where(and(...envVarScope(projectId, input.environment, input.serviceId ?? null)));
+        const inherited = input.serviceId
+          ? await tx
+              .select()
+              .from(envVar)
+              .where(and(...envVarScope(projectId, input.environment, null)))
+          : [];
+        for (const [key, value] of Object.entries(variables)) {
+          const stored = existing.find((v) => v.key === key) ?? inherited.find((v) => v.key === key);
+          if (stored) {
+            if (encryption.decrypt(stored.value) !== value)
+              throw new ConflictError(
+                `Environment already has a different value for ${key}. Resolve the difference before migrating.`,
+              );
+            continue;
+          }
+          await tx
+            .insert(envVar)
+            .values({
               id: generateId("env"),
               projectId,
-              environment,
-              serviceId: serviceId ?? null,
-              key: v.key,
-              value: v.value,
-              isSecret: v.isSecret ?? false,
-            })),
-          );
+              serviceId: input.serviceId ?? null,
+              environment: input.environment,
+              key,
+              value: encryption.encrypt(value),
+              isSecret: true,
+            });
         }
+        if (input.serviceId)
+          await tx
+            .update(service)
+            .set({ ...update, updatedAt: new Date() })
+            .where(and(eq(service.id, input.serviceId), eq(service.projectId, projectId)));
+        else
+          await tx
+            .update(project)
+            .set({ ...update, updatedAt: new Date() })
+            .where(eq(project.id, projectId));
+        return { keys: Object.keys(variables), commands: update };
+      });
+    },
+
+    async buildCacheMigration(
+      projectId: string,
+      organizationId: string,
+      serviceId?: string,
+      remove?: string[],
+    ) {
+      return db.transaction(async (tx) => {
+        await assertProjectConfigurationWritable(tx, eq(project.id, projectId));
+        const [owner] = await tx
+          .select()
+          .from(project)
+          .where(and(eq(project.id, projectId), eq(project.organizationId, organizationId)));
+        if (!owner) throw new ForbiddenError("Project is unavailable");
+        const row = serviceId
+          ? (
+              await tx
+                .select()
+                .from(service)
+                .where(and(eq(service.id, serviceId), eq(service.projectId, projectId)))
+            )[0]
+          : owner;
+        if (!row) throw new ForbiddenError("Service is unavailable");
+        const candidates = manualBuildCaches(row);
+        const receipt = owner.buildCacheReceipts?.[serviceId ?? projectId];
+        const built = receipt
+          ? (
+              await tx
+                .select()
+                .from(deployment)
+                .where(
+                  and(eq(deployment.id, receipt.deploymentId), eq(deployment.projectId, projectId)),
+                )
+            )[0]
+          : null;
+        const canMigrate =
+          owner.runtimeMode !== "bare" &&
+          built?.status === "ready" &&
+          candidates.length > 0 &&
+          candidates.every((item) => receipt?.targets.includes(item.target));
+        if (remove?.length) {
+          if (!canMigrate || remove.some((spec) => !candidates.some((item) => item.spec === spec)))
+            throw new ConflictError(
+              "Deploy successfully with managed caches before removing these manual mounts. Reload if the configuration changed.",
+            );
+          const volumes = (row.volumes ?? []).filter((spec) => !remove.includes(spec));
+          if (serviceId)
+            await tx
+              .update(service)
+              .set({ volumes, updatedAt: new Date() })
+              .where(eq(service.id, serviceId));
+          else
+            await tx
+              .update(project)
+              .set({ volumes, updatedAt: new Date() })
+              .where(eq(project.id, projectId));
+        }
+        return {
+          candidates,
+          canMigrate: Boolean(canMigrate),
+          deploymentId: receipt?.deploymentId ?? null,
+          removed: remove ?? [],
+        };
+      });
+    },
+
+    async recordBuildCacheReceipt(
+      projectId: string,
+      scope: string,
+      receipt: { targets: string[]; deploymentId: string; completedAt: string; durationMs?: number },
+    ) {
+      await withProjectConfigurationWrite(db, eq(project.id, projectId), async (tx) => {
+        const [row] = await tx.select().from(project).where(eq(project.id, projectId));
+        if (row)
+          await tx
+            .update(project)
+            .set({ buildCacheReceipts: { ...row.buildCacheReceipts, [scope]: receipt } })
+            .where(eq(project.id, projectId));
       });
     },
 

@@ -1,0 +1,77 @@
+---
+title: Users and organizations
+description: Map your application users to Openship and keep each operation inside an authorized organization.
+---
+
+An organization is the resource boundary. A scope selects the organization and carries a verified user
+identity. Supplying an organization ID does not grant access to it.
+
+## Remote scopes
+
+```ts title="remote-scopes.mts"
+import type { OpenshipClient } from "openship";
+
+export async function listProjectsFor(client: OpenshipClient, organizationId: string) {
+  return client.scope(organizationId).projects.list();
+}
+```
+
+The API verifies the bearer credential and checks membership and grants. The client keeps the selected
+organization fixed across requests. [Compatible server support](/docs/api/sdk/compatibility#fixed-organization-scopes) is required.
+
+## Native identity adapter
+
+The host supplies `identity.resolve(assertion)`. Return a `VerifiedIdentity` only after authenticating
+the assertion; return `null` for an invalid or revoked session.
+
+The SDK calls this adapter again for each operation. It also rereads persisted memberships and grants.
+Removing a membership or revoking a host session invalidates an existing scope.
+
+| Value | Supplied by |
+| --- | --- |
+| Assertion | Your application, such as a session identifier. |
+| Verified user and session ID | Your trusted authentication adapter. |
+| Organization ID | Your application chooses from organizations the user may access. |
+| Roles and resource grants | Openship's persisted membership and permission model. |
+
+For verified PAT/OAuth identities, the adapter may supply `tokenScope` and credential restrictions.
+It must authenticate the credential before doing so. See [permissions](/docs/security/permissions).
+
+## Provision a customer workspace
+
+Enable `administration: true` for trusted host code. A namespace is a stable external key mapped to an
+Openship organization:
+
+```ts title="customer-workspace.mts"
+import type { OwnedShip } from "openship";
+
+export async function provisionCustomer(
+  ship: OwnedShip<string>,
+  subject: string,
+  email: string,
+) {
+  if (!ship.operator) throw new Error("Host administration is disabled");
+  const person = await ship.operator.ensureIdentity({ issuer: "my-product", subject, email });
+  const workspace = await ship.operator.ensureNamespace({
+    issuer: "my-product",
+    key: subject,
+    name: "Customer workspace",
+    ownerUserId: person.user.id,
+  });
+  return { person, organizationId: workspace.organizationId };
+}
+```
+
+Both mappings persist. Email equality alone does not link existing accounts; explicit account linking
+uses `userId`. Use `operator.setMembership()` to add or remove members. The final owner cannot be removed.
+
+After your adapter verifies the user's session, call
+`ship.scope({ identity: assertion, organizationId })`, then create or deploy projects through that scope.
+The scope contains no operator methods.
+
+## Background actions
+
+Some saved actions continue after the initiating request. They use persisted authority and must still
+pass current membership and credential checks. An external host session cannot be revalidated after
+restart unless your integration synchronizes its revocation with persisted authority. See
+[current background limits](/docs/api/sdk/compatibility#current-limits).

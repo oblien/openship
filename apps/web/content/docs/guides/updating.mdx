@@ -31,8 +31,6 @@ Open **Settings** and choose the **Instance** tab. Scroll to the **Updates** sec
 - A **View changelog & releases** link that opens the product changelog on the Openship website.
 - Toggles for **Automatic updates** (desktop only) and **Update & security notifications**.
 
-<Callout title="Screenshot">Settings → Instance tab, the **Updates** section showing the current version, the "Check now" button, and the toggles. *(screenshot pending)*</Callout>
-
 ## Updating
 
 How you update depends on how you run Openship. Pick your case.
@@ -43,6 +41,15 @@ How you update depends on how you run Openship. Pick your case.
 
 The desktop app updates itself — you just say yes.
 
+<Callout title="Desktop 0.8.0 and 0.8.1: manual update required once" type="warn">
+If the updater reports **"Redirect was cancelled"**, download the fixed **0.8.2 or
+newer** installer from [GitHub releases](https://github.com/oblien/openship/releases).
+Quit Openship and replace the application without deleting its application data.
+Your local projects, servers and settings are preserved. Critical advisories use
+the same downloader, so marking an update critical does not repair these older
+installed versions. Server/CLI updates are unaffected by this desktop bug.
+</Callout>
+
 <Steps>
 
 <Step>
@@ -51,8 +58,6 @@ The desktop app updates itself — you just say yes.
 
 When a new version is out, a notice slides in at the **top of the dashboard**: *"Openship _x.y.z_ is
 available."* It sits just above the page, so you don't have to go looking for it.
-
-<Callout title="Screenshot">The update notice at the top of the dashboard with an **Update now** button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -155,7 +160,7 @@ What it does **not** do is change versions on its own. It keeps running whatever
 after `openship update` you re-run `openship up` to restart it on the new release (and `openship stop` to
 take it down). See [Installation](/docs/getting-started/installation) for the full service commands.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“Could not reach GitHub to check for updates”" type="warn">
 Openship pulls updates straight from GitHub, so the check needs internet access — and GitHub limits how
@@ -183,7 +188,7 @@ The running server hasn't been restarted yet. On a self-hosted server, run `open
 the new version. On the desktop app, fully quit and reopen it if it didn't relaunch on its own.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Installation" href="/docs/getting-started/installation" description="Every way to install Openship — and the full openship up / stop service commands." />

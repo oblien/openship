@@ -66,7 +66,15 @@ export CMD_GEOIPLOOKUP6="$(which geoiplookup6 2>/dev/null)"
 # `dig`. Used to query reverse hostname.
 export CMD_DIG="/usr/bin/dig"
 
-if [ -f /root/.my.cnf-fail2ban ]; then
+if [ -f /etc/fail2ban/openship-postgresql.conf ]; then
+    # Containerized Openship uses a TCP sidecar. A password-file record does
+    # not select the endpoint; load the private connection written at boot.
+    # Keep this scoped to this helper, including cron/manual invocations.
+    unset PGPASSWORD PGHOSTADDR PGSERVICE PGSERVICEFILE
+    . /etc/fail2ban/openship-postgresql.conf || exit 1
+    export CMD_SQL="psql -X -w -v ON_ERROR_STOP=1 -U ${DB_USER} -d ${DB_NAME}"
+    export DB_TYPE="pgsql"
+elif [ -f /root/.my.cnf-fail2ban ]; then
     export CMD_SQL="mysql --defaults-file=/root/.my.cnf-fail2ban ${DB_NAME}"
     export DB_TYPE="mysql"
 elif [ -f /root/.my.cnf ]; then
@@ -85,7 +93,7 @@ else
         /var/postgresql; do
         if [ -f ${dir}/.pgpass ]; then
             export PGPASSFILE="${dir}/.pgpass"
-            export CMD_SQL="psql -U ${DB_USER} -d ${DB_NAME}"
+            export CMD_SQL="psql -X -w -v ON_ERROR_STOP=1 -U ${DB_USER} -d ${DB_NAME}"
             export DB_TYPE="pgsql"
             break
         fi
@@ -107,13 +115,13 @@ if [[ X"${_action}" == X'start' ]]; then
     if [[ X"${DB_TYPE}" == X'pgsql' ]]; then
         # CentOS 7 ships PostgreSQL-9.2 which doesn't support `ON CONFLICT DO NOTHING`,
         # so we query it first, insert it if not existing.
-        (${CMD_SQL} <<EOF
+        _existing="$(${CMD_SQL} <<EOF
 SELECT id FROM ${DB_TABLE_JAILS} WHERE name='${_jail}' LIMIT 1;
 EOF
-) | grep '1 row' &>/dev/null
+)" || exit $?
 
-        if [[ X"$?" != X'0' ]]; then
-            ${CMD_SQL} >/dev/null <<EOF
+        if ! printf '%s\n' "${_existing}" | grep '1 row' &>/dev/null; then
+            ${CMD_SQL} >/dev/null <<EOF || exit $?
 INSERT INTO ${DB_TABLE_JAILS} (name, enabled) VALUES ('${_jail}', 1);
 EOF
         fi
@@ -187,15 +195,15 @@ EOF
     else
         # CentOS 7 ships PostgreSQL-9.2 which doesn't support `ON CONFLICT DO NOTHING`,
         # so we query it first, insert it if not existing.
-        (${CMD_SQL} <<EOF
+        _existing="$(${CMD_SQL} <<EOF
 SELECT id FROM ${DB_TABLE_BANNED} WHERE ip='${_ip}' AND ports='${_ports}' AND protocol='${_protocol}' AND jail='${_jail}' LIMIT 1;
 EOF
-) | grep '1 row' &>/dev/null
+)" || exit $?
 
-        if [[ X"$?" == X'0' ]]; then
+        if printf '%s\n' "${_existing}" | grep '1 row' &>/dev/null; then
             echo "Already banned."
         else
-            ${CMD_SQL} >/dev/null <<EOF
+            ${CMD_SQL} >/dev/null <<EOF || exit $?
 INSERT INTO ${DB_TABLE_BANNED} (
         ip, ports, protocol, jail,
         hostname, country, rdns,
@@ -217,7 +225,7 @@ elif [[ X"${_action}" == X"unban" ]]; then
         echo "No IP address(es) specified."
     else
         for _ip in ${_ips}; do
-            ${CMD_SQL} >/dev/null <<EOF
+            ${CMD_SQL} >/dev/null <<EOF || exit $?
 DELETE FROM ${DB_TABLE_BANNED} WHERE ip='${_ip}';
 EOF
         done
@@ -229,7 +237,7 @@ elif [[ X"${_action}" == X'stop' ]] || [[ X"${_action}" == X"cleanup" ]]; then
     _jail="$2"
 
     if [[ X"${_jail}" != X'' ]]; then
-        ${CMD_SQL} >/dev/null <<EOF
+        ${CMD_SQL} >/dev/null <<EOF || exit $?
 DELETE FROM ${DB_TABLE_BANNED} WHERE jail='${_jail}';
 DELETE FROM ${DB_TABLE_JAILS} WHERE name='${_jail}';
 EOF
@@ -241,11 +249,13 @@ elif [[ X"${_action}" == X"unban_db" ]]; then
     tmp_file="$(mktemp)"
 
     # Exclude extra info on output, just leave jail/ip.
-    (${CMD_SQL} <<EOF
+    _pending="$(${CMD_SQL} <<EOF
 SELECT jail, ip FROM ${DB_TABLE_BANNED} WHERE remove=1;
 EOF
-) | grep -Ev '(jail.*ip|--|\(|^$)' | tr -d '|' >> ${tmp_file}
+)" || { rm -f "${tmp_file}"; exit 1; }
+    printf '%s\n' "${_pending}" | grep -Ev '(jail.*ip|--|\(|^$)' | tr -d '|' >> ${tmp_file}
 
+    _unban_failed=0
     while read jail ip; do
         # Avoid SQL injection: don't allow whitespace, ';', quotes in
         # jail name and IP address.
@@ -261,8 +271,13 @@ EOF
 
         # fail2ban-client returns number of processed rows on command line,
         # let's discard it to avoid noise/confusion.
-        fail2ban-client set ${jail} unbanip ${ip} >/dev/null
-        [[ X"$?" == X'0' ]] && echo "Unbanned ${ip} from jail [${jail}]."
-    done < ${tmp_file}
-    rm -f ${tmp_file} &>/dev/null
+        if fail2ban-client set ${jail} unbanip ${ip} >/dev/null; then
+            echo "Unbanned ${ip} from jail [${jail}]."
+        else
+            echo "Failed to unban ${ip} from jail [${jail}]." >&2
+            _unban_failed=1
+        fi
+    done < "${tmp_file}"
+    rm -f "${tmp_file}" &>/dev/null
+    exit "${_unban_failed}"
 fi

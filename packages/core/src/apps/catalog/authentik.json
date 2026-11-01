@@ -1,0 +1,279 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "authentik",
+  "name": "Authentik",
+  "description": "An identity provider for SSO, OAuth2, OpenID Connect, and SAML, with its server, worker, and PostgreSQL database.",
+  "kind": "template",
+  "logo": "authentik",
+  "category": "other",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "authentik-db",
+      "restart": "unless-stopped",
+      "image": "postgres:17.11-alpine",
+      "environment": {
+        "POSTGRES_USER": "postgres",
+        "POSTGRES_DB": "authentik"
+      },
+      "volumes": ["authentik_db_data:/var/lib/postgresql/data"],
+      "secretEnv": ["POSTGRES_PASSWORD", "OPENSHIP_APP_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "authentik-worker",
+      "restart": "unless-stopped",
+      "image": "ghcr.io/goauthentik/server:2026.8.3",
+      "environment": {
+        "AUTHENTIK_POSTGRESQL__HOST": "authentik-db",
+        "AUTHENTIK_POSTGRESQL__NAME": "authentik",
+        "AUTHENTIK_POSTGRESQL__USER": "authentik",
+        "AUTHENTIK_ERROR_REPORTING__ENABLED": "false"
+      },
+      "volumes": [
+        "authentik_data:/data",
+        "authentik_templates:/templates",
+        "authentik_certs:/certs"
+      ],
+      "dependsOn": ["authentik-db"],
+      "commandArgv": ["worker"],
+      "secretEnv": [
+        "AUTHENTIK_POSTGRESQL__PASSWORD",
+        "AUTHENTIK_SECRET_KEY",
+        "AUTHENTIK_BOOTSTRAP_PASSWORD"
+      ],
+      "healthcheck": {
+        "test": ["CMD", "ak", "healthcheck"],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 15,
+        "startPeriod": "120s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 1024,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "authentik",
+      "restart": "unless-stopped",
+      "image": "ghcr.io/goauthentik/server:2026.8.3",
+      "environment": {
+        "AUTHENTIK_POSTGRESQL__HOST": "authentik-db",
+        "AUTHENTIK_POSTGRESQL__NAME": "authentik",
+        "AUTHENTIK_POSTGRESQL__USER": "authentik",
+        "AUTHENTIK_ERROR_REPORTING__ENABLED": "false"
+      },
+      "volumes": ["authentik_data:/data", "authentik_templates:/templates"],
+      "exposedPort": 9000,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 9000
+        }
+      ],
+      "dependsOn": ["authentik-db", "authentik-worker"],
+      "commandArgv": ["server"],
+      "secretEnv": ["AUTHENTIK_POSTGRESQL__PASSWORD", "AUTHENTIK_SECRET_KEY"],
+      "healthcheck": {
+        "test": ["CMD", "ak", "healthcheck"],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 15,
+        "startPeriod": "120s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 1024,
+        "diskMb": 4096
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "service": "authentik-db",
+      "key": "POSTGRES_PASSWORD",
+      "label": "Database administrator password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "authentik",
+      "key": "AUTHENTIK_POSTGRESQL__PASSWORD",
+      "label": "Authentik database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "authentik-db"
+    },
+    {
+      "service": "authentik",
+      "key": "AUTHENTIK_SECRET_KEY",
+      "label": "Authentik signing secret",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "authentik-key"
+    },
+    {
+      "service": "authentik-worker",
+      "key": "AUTHENTIK_POSTGRESQL__PASSWORD",
+      "label": "Authentik database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "authentik-db"
+    },
+    {
+      "service": "authentik-worker",
+      "key": "AUTHENTIK_SECRET_KEY",
+      "label": "Authentik signing secret",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "authentik-key"
+    },
+    {
+      "service": "authentik-worker",
+      "key": "AUTHENTIK_BOOTSTRAP_PASSWORD",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "AUTHENTIK_BOOTSTRAP_EMAIL",
+      "service": "authentik-worker",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "service": "authentik-db",
+      "key": "OPENSHIP_APP_PASSWORD",
+      "label": "Application database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "authentik-db"
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Authentik",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Authentik",
+        "source": "publicUrl:authentik",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Admin username",
+        "source": "template:akadmin",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:authentik-worker:AUTHENTIK_BOOTSTRAP_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "authentik",
+      "port": 9000,
+      "label": "Authentik",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "authentik-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Single sign-on",
+        "description": "Configure OAuth2, OpenID Connect, and SAML providers."
+      },
+      {
+        "title": "Complete stack",
+        "description": "Includes the server, background worker, and private PostgreSQL database."
+      },
+      {
+        "title": "Generated administrator",
+        "description": "Bootstrap the admin account without leaving a public first-user setup page."
+      }
+    ],
+    "articleFile": "articles/authentik.md"
+  },
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "Setup",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "authentik-worker",
+          "key": "AUTHENTIK_BOOTSTRAP_EMAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+          "fullWidth": true
+        }
+      ]
+    }
+  ],
+  "repository": "https://github.com/goauthentik/authentik",
+  "minResources": {
+    "cpuCores": 2.0,
+    "memoryMb": 2560
+  },
+  "files": [
+    {
+      "service": "authentik-db",
+      "path": "/docker-entrypoint-initdb.d/openship-role.sh",
+      "content": "#!/bin/sh\nset -eu\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" --set app_password=\"$OPENSHIP_APP_PASSWORD\" <<'SQL'\nCREATE ROLE authentik WITH LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB PASSWORD :'app_password';\nALTER DATABASE authentik OWNER TO authentik;\nGRANT USAGE, CREATE ON SCHEMA public TO authentik;\nSQL\n"
+    }
+  ],
+  "tags": ["sso", "identity", "oauth", "oidc", "saml"]
+}

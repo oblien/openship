@@ -119,5 +119,21 @@
       "label": "Kafka UI",
       "kind": "http"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Event streaming",
+        "description": "Move events between application services."
+      },
+      {
+        "title": "KRaft broker",
+        "description": "Run without a separate ZooKeeper service."
+      },
+      {
+        "title": "Web console",
+        "description": "Kafbat UI provides topic and consumer-group views."
+      }
+    ]
+  }
 }

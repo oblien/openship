@@ -3,7 +3,7 @@
   "verified": true,
   "id": "directus",
   "name": "Directus",
-  "description": "Headless CMS with an instant REST + GraphQL API over your data. Sign in with the admin email and generated password below.",
+  "description": "A headless CMS with REST and GraphQL APIs over your data and a browser-based admin studio.",
   "repository": "https://github.com/directus/directus",
   "kind": "template",
   "logo": "directus",
@@ -126,5 +126,21 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Headless content",
+        "description": "Manage content separately from your frontend."
+      },
+      {
+        "title": "REST and GraphQL",
+        "description": "Access your data through application APIs."
+      },
+      {
+        "title": "Admin studio",
+        "description": "Give your team an interface for managing data."
+      }
+    ]
+  }
 }

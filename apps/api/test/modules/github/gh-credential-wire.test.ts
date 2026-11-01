@@ -14,11 +14,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const { resolveGitHubAuthMode } = vi.hoisted(() => ({ resolveGitHubAuthMode: vi.fn() }));
+const app = vi.hoisted(() => ({ home: vi.fn(), repos: vi.fn() }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   resolveGitHubAuthMode,
   getGitHubAuthMode: () => "gh-first",
-  getGitHubConnectionState: vi.fn(),
+  getGitHubConnectionState: vi.fn(async () => ({
+    sources: { openshipApp: { connected: false }, ghCli: { available: false } },
+    primary: null,
+  })),
   getInstallationId: vi.fn(),
   getInstallationToken: vi.fn(),
   getUserInstallations: vi.fn(),
@@ -26,21 +30,28 @@ vi.mock("../../../src/modules/github/github.auth", () => ({
   resolveInstallUrl: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/sources/app-source", () => ({
+  GitHubAppSource: class {
+    getHome() { return app.home(); }
+    listReposForOwner(owner?: string) { return app.repos(owner); }
+  },
+}));
+
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   listUserOwnedRepos: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.token", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.token", () => ({
   tokenFor: vi.fn(),
   canResolveTokenFor: vi.fn(),
 }));
 
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {},
   runtimeTarget: { id: "local" },
 }));
 
-import { LocalGitHubSource } from "../../../src/modules/github/sources/local-source";
+import { LocalGitHubSource } from "@repo/platform/engine/modules/github/sources/local-source";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as never;
 
@@ -50,6 +61,7 @@ function fakeGh(status: unknown) {
     status: vi.fn().mockResolvedValue(status),
     listAllRepos: vi.fn().mockResolvedValue([]),
     listOwners: vi.fn().mockResolvedValue([]),
+    listReposForOwner: vi.fn().mockResolvedValue([]),
     token: vi.fn(),
   } as never;
 }
@@ -67,6 +79,8 @@ beforeEach(() => {
   resolveGitHubAuthMode.mockReset();
   // "cli" → app() resolves to null, so both paths exercise the gh side alone.
   resolveGitHubAuthMode.mockResolvedValue("cli");
+  app.home.mockReset();
+  app.repos.mockReset();
 });
 
 describe("LocalGitHubSource — gh credential on the wire", () => {
@@ -144,6 +158,45 @@ describe("LocalGitHubSource — gh credential on the wire", () => {
   });
 
   describe("getHome (the library)", () => {
+    it("falls back to the cloud App and preserves rejected-token details (#944)", async () => {
+      resolveGitHubAuthMode.mockResolvedValue("cloud-app");
+      const repositories = [{ full_name: "acme/private-api", source: "app" }];
+      const accounts = [{ login: "acme", source: "app" }];
+      app.home.mockResolvedValue({
+        state: { primary: "openship-app", sources: { openshipApp: { connected: true, hasInstallations: true }, ghCli: { available: false } } },
+        accounts, repos: repositories,
+      });
+      app.repos.mockResolvedValue(repositories);
+      const gh: any = fakeGh({ available: false, method: "token", problem: "rejected" });
+      const src = new LocalGitHubSource(ctx, gh);
+
+      const home = await src.getHome();
+      expect(home).toMatchObject({ accounts, repos: repositories, state: {
+        primary: "openship-app",
+        sources: { ghCli: { available: false, method: "token", problem: "rejected" } },
+      } });
+      expect(await src.listReposForOwner("acme")).toEqual(repositories);
+      expect(app.repos).toHaveBeenCalledWith("acme");
+      expect(gh.listAllRepos).not.toHaveBeenCalled();
+      expect(gh.listOwners).not.toHaveBeenCalled();
+      expect(gh.listReposForOwner).not.toHaveBeenCalled();
+    });
+
+    it.each(["rejected", "unreachable"])("does not advertise a %s token as connected when there is no App", async (problem) => {
+      const gh: any = fakeGh({ available: false, method: "token", problem });
+      const home = await new LocalGitHubSource(ctx, gh).getHome();
+      expect(home.state.primary).toBeNull();
+      expect(home.state.sources.ghCli).toMatchObject({ available: false, problem });
+      expect(home.repos).toEqual([]);
+      expect(gh.listAllRepos).not.toHaveBeenCalled();
+    });
+
+    it("keeps a verified local identity free of cloud requests", async () => {
+      await new LocalGitHubSource(ctx, fakeGh(OK_TOKEN)).getHome();
+      expect(resolveGitHubAuthMode).not.toHaveBeenCalled();
+      expect(app.home).not.toHaveBeenCalled();
+    });
+
     it("carries the method, so the first-run consent gate sees the truth", async () => {
       // library/page.tsx gates the "may Openship use your host's gh login?"
       // prompt on method === "host-cli" (via `?? "host-cli"`), so dropping the

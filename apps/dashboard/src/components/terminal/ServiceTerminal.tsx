@@ -1,23 +1,16 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Interactive terminal surface for a single deployed service.
  *
  *   xterm.js (with stdin enabled)  ↔  usePtyConnection (WebSocket)
  *     ↔  /api/services/terminal/ws/:serviceId  ↔  Docker exec  OR  Oblien shell
  *
- * Sibling of <ServerTerminal>. The xterm + status banner + resize +
- * keystroke layers are functionally identical; the only thing that
- * varies is which transport the hook uses (server vs service ticket
- * endpoint and WS URL). Selection happens via `target: {kind, id}` on
- * usePtyConnection.
- *
- * NOTE: this file deliberately mirrors ServerTerminal.tsx rather than
- * extracting a shared base — keeping the working server terminal
- * untouched. Dedupe is a clean follow-up: extract <XtermSurface> taking
- * the PtyConnection object as a prop, then both wrappers shrink to ~50
- * lines. Doing it now would touch the working server terminal, so we
- * accept the duplication for one cycle.
+ * Authentication, session ownership and retries use the same PTY transport
+ * as the server terminal. A failed status check must not tear down this surface.
  */
 
 import {
@@ -29,8 +22,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { RotateCw } from "lucide-react";
+import { readTerminalTheme as themeFor, observeTerminalAppearance } from "@/lib/terminal-appearance";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
+import { Button } from "@/components/ui/button";
+import { useI18n, interpolate } from "@/components/i18n-provider";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 import type { TerminalErrorCode } from "@/lib/api";
 import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
 import "@xterm/xterm/css/xterm.css";
@@ -48,94 +44,12 @@ interface ServiceTerminalProps {
   visible?: boolean;
   resumeToken?: string | null;
   onResumeTokenChange?: (token: string | null) => void;
+  /** Refresh advisory service status after the runtime confirms a shell is open. */
+  onConnected?: () => void;
   theme?: TerminalTheme;
   className?: string;
   /** Titlebar label for the shared shell (usually the service name). */
   name?: string;
-}
-
-const darkTheme = {
-  background: "#0a0a0a",
-  foreground: "#e5e5e5",
-  cursor: "#ffffff",
-  cursorAccent: "#0a0a0a",
-  selectionBackground: "#3a3a3a",
-  black: "#000000",
-  red: "#cd3131",
-  green: "#0dbc79",
-  yellow: "#e5e510",
-  blue: "#2472c8",
-  magenta: "#bc3fbc",
-  cyan: "#11a8cd",
-  white: "#e5e5e5",
-  brightBlack: "#666666",
-  brightRed: "#f14c4c",
-  brightGreen: "#23d18b",
-  brightYellow: "#f5f543",
-  brightBlue: "#3b8eea",
-  brightMagenta: "#d670d6",
-  brightCyan: "#29b8db",
-  brightWhite: "#e5e5e5",
-};
-
-const lightTheme = {
-  background: "#ffffff",
-  foreground: "#1a1a1a",
-  cursor: "#000000",
-  cursorAccent: "#ffffff",
-  selectionBackground: "#d1d5da",
-  black: "#1a1a1a",
-  red: "#d73a49",
-  green: "#22863a",
-  yellow: "#b08800",
-  blue: "#0366d6",
-  magenta: "#6f42c1",
-  cyan: "#1b7c83",
-  white: "#6a737d",
-  brightBlack: "#959da5",
-  brightRed: "#cb2431",
-  brightGreen: "#22863a",
-  brightYellow: "#dbab09",
-  brightBlue: "#0366d6",
-  brightMagenta: "#6f42c1",
-  brightCyan: "#1b7c83",
-  brightWhite: "#1a1a1a",
-};
-
-function themeFor(mode: TerminalTheme) {
-  return mode === "light" ? lightTheme : darkTheme;
-}
-
-/** Error code → human label, service-flavored. The set of codes is
- *  the union of server-terminal codes + the service-specific ones
- *  emitted by the service-terminal controller. */
-function humanizeError(code: TerminalErrorCode | string): string {
-  switch (code) {
-    case "ssh_auth":
-      return "Authentication failed for this service terminal.";
-    case "ssh_connect":
-      return "Could not open a shell into the service. The container may have just restarted.";
-    case "server_not_found":
-      return "Service not found or you don't have access to it.";
-    case "not_deployed":
-      return "This service has not been deployed yet. Deploy it to open a terminal.";
-    case "not_supported":
-      return "Terminals aren't available for the runtime this service is deployed on.";
-    case "max_sessions":
-      return "Too many active terminal sessions. Close one and try again.";
-    case "idle_timeout":
-      return "Session ended due to inactivity.";
-    case "session_cap":
-      return "Session reached the maximum allowed duration.";
-    case "server_error":
-      return "Internal server error. Please try again.";
-    case "max_reconnects":
-      return "Couldn't reconnect after several attempts.";
-    case "transport":
-      return "Connection lost.";
-    default:
-      return code;
-  }
 }
 
 export const ServiceTerminal = forwardRef<
@@ -148,12 +62,16 @@ export const ServiceTerminal = forwardRef<
     visible = true,
     resumeToken: resumeTokenProp = null,
     onResumeTokenChange,
+    onConnected,
     theme = "dark",
     className = "",
-    name = "Terminal",
+    name,
   },
   ref,
 ) {
+  const { t } = useI18n();
+  const copy = t.projectDetail.services.connection;
+  const terminalName = name ?? copy.terminal;
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
   const fitAddonRef = useRef<any>(null);
@@ -165,10 +83,13 @@ export const ServiceTerminal = forwardRef<
     code: number | null;
     signal?: string;
   } | null>(null);
-  const [reconnectKey, setReconnectKey] = useState(0);
+  const [hasConnected, setHasConnected] = useState(false);
+  const [paused, setPaused] = useState(false);
 
   const onResumeTokenChangeRef = useRef(onResumeTokenChange);
   onResumeTokenChangeRef.current = onResumeTokenChange;
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
 
   const onBytes = useCallback((chunk: Uint8Array) => {
     const xterm = xtermRef.current;
@@ -179,7 +100,10 @@ export const ServiceTerminal = forwardRef<
   const onReady = useCallback(
     (info: { sessionId: string; resumeToken: string; resumed: boolean }) => {
       setExitInfo(null);
+      setHasConnected(true);
+      setPaused(false);
       onResumeTokenChangeRef.current?.(info.resumeToken);
+      onConnectedRef.current?.();
       const xterm = xtermRef.current;
       if (xterm) {
         setTimeout(() => {
@@ -206,7 +130,7 @@ export const ServiceTerminal = forwardRef<
 
   const pty = usePtyConnection({
     target: { kind: "service", id: serviceId },
-    enabled: enabled && reconnectKey >= 0,
+    enabled,
     onBytes,
     onReady,
     onExit,
@@ -219,6 +143,7 @@ export const ServiceTerminal = forwardRef<
     () => ({
       terminate: () => {
         pty.terminate();
+        setPaused(true);
         onResumeTokenChangeRef.current?.(null);
       },
     }),
@@ -243,7 +168,7 @@ export const ServiceTerminal = forwardRef<
           '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
         fontSize: 13,
         lineHeight: 1.15,
-        theme: themeFor(theme),
+        theme: themeFor(containerRef.current),
         cursorBlink: true,
         scrollback: 5000,
         allowProposedApi: true,
@@ -274,7 +199,8 @@ export const ServiceTerminal = forwardRef<
           if (!sel) return;
           try {
             void navigator.clipboard?.writeText?.(sel);
-          } catch {
+          } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
             /* no perms */
           }
         }, 150);
@@ -287,7 +213,8 @@ export const ServiceTerminal = forwardRef<
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         try {
           fitAddon.fit();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
           /* container not yet sized */
         }
         if (resizeTimer) clearTimeout(resizeTimer);
@@ -301,15 +228,18 @@ export const ServiceTerminal = forwardRef<
       const ro = new ResizeObserver(fit);
       ro.observe(containerRef.current);
       window.addEventListener("resize", fit);
+      const stopAppearance = observeTerminalAppearance(terminal, containerRef.current, fit);
 
       cleanup = () => {
         ro.disconnect();
         window.removeEventListener("resize", fit);
+        stopAppearance();
         if (resizeTimer) clearTimeout(resizeTimer);
         if (selectionTimer) clearTimeout(selectionTimer);
         try {
           terminal.dispose();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
           /* already disposed */
         }
         if (xtermRef.current === terminal) {
@@ -343,7 +273,8 @@ export const ServiceTerminal = forwardRef<
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
       try {
         fitAddon.fit();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
         /* not sized yet */
       }
       if (xterm.cols && xterm.rows) {
@@ -351,7 +282,8 @@ export const ServiceTerminal = forwardRef<
       }
       try {
         xterm.focus();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
         /* not focusable */
       }
     }, 30);
@@ -360,88 +292,119 @@ export const ServiceTerminal = forwardRef<
 
   useEffect(() => {
     const xterm = xtermRef.current;
-    if (xterm) xterm.options.theme = themeFor(theme);
+    if (xterm) xterm.options.theme = themeFor(containerRef.current);
   }, [theme]);
 
   const banner = useMemo(() => {
+    if (paused) {
+      return { title: copy.pausedTitle, message: copy.pausedHint, pending: false, warning: false };
+    }
     if (exitInfo) {
-      const exitCode = exitInfo.code ?? "?";
       return {
-        tone: "neutral" as const,
-        message: exitInfo.signal
-          ? `Session ended (signal ${exitInfo.signal}).`
-          : `Session ended (exit code ${exitCode}).`,
-        showReconnect: true,
+        title: copy.closedTitle,
+        message: copy.closedHint,
+        detail: exitInfo.signal
+          ? interpolate(copy.exitSignal, { signal: exitInfo.signal })
+          : exitInfo.code !== null ? interpolate(copy.exitCode, { code: String(exitInfo.code) }) : undefined,
+        pending: false,
+        warning: false,
+      };
+    }
+    // Backoff is part of reconnecting, even before the next handshake starts.
+    // A stale transport error must not obscure the automatic retry.
+    if ((pty.isConnecting || pty.reconnectAttempts > 0) && (!pty.lastError || pty.lastError === "transport")) {
+      return {
+        title: pty.reconnectAttempts > 0 ? copy.reconnectingTitle : copy.connectingTitle,
+        message: pty.reconnectAttempts > 0 ? copy.reconnectingHint : interpolate(copy.connectingHint, { name: terminalName }),
+        pending: true,
+        warning: false,
       };
     }
     if (pty.lastError) {
+      const messages: Record<string, string> = {
+        ssh_auth: copy.errors.auth,
+        ssh_connect: copy.errors.connect,
+        server_not_found: copy.errors.notFound,
+        not_deployed: copy.errors.notDeployed,
+        not_supported: copy.errors.notSupported,
+        max_sessions: copy.errors.maxSessions,
+        idle_timeout: copy.errors.idleTimeout,
+        session_cap: copy.errors.sessionCap,
+        server_error: copy.errors.server,
+        max_reconnects: copy.errors.maxReconnects,
+        transport: copy.errors.transport,
+        "4401": copy.errors.auth,
+        "4403": copy.errors.auth,
+        "4404": copy.errors.notFound,
+        "4429": copy.errors.maxSessions,
+      };
       return {
-        tone: "error" as const,
-        message: humanizeError(pty.lastError),
-        showReconnect:
-          pty.lastError !== "max_sessions" &&
-          pty.lastError !== "server_not_found" &&
-          pty.lastError !== "not_deployed" &&
-          pty.lastError !== "not_supported",
+        title: copy.errorTitle,
+        message: messages[pty.lastError] ?? copy.errors.server,
+        detail: pty.lastErrorMessage || undefined,
+        pending: false,
+        warning: true,
+        cannotRetry: pty.lastError === "not_supported",
       };
     }
-    if (pty.reconnectAttempts > 0 && pty.isConnecting) {
-      return {
-        tone: "info" as const,
-        message: `Reconnecting (attempt ${pty.reconnectAttempts})…`,
-        showReconnect: false,
-      };
-    }
-    if (pty.isConnecting) {
-      return {
-        tone: "info" as const,
-        message: "Connecting…",
-        showReconnect: false,
-      };
-    }
+    if (enabled && !pty.isConnected)
+      return { title: copy.connectingTitle, message: interpolate(copy.connectingHint, { name: terminalName }), pending: true, warning: false };
     return null;
-  }, [pty.lastError, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
+  }, [copy, terminalName, enabled, paused, pty.lastError, pty.lastErrorMessage, pty.isConnecting, pty.isConnected, pty.reconnectAttempts, exitInfo]);
 
   const handleReconnect = useCallback(() => {
     setExitInfo(null);
+    setPaused(false);
     pty.reconnect();
-    setReconnectKey((k) => k + 1);
   }, [pty]);
+
+  const notice = banner && (
+    <ConnectionNotice
+      title={banner.title}
+      message={banner.message}
+      detail={banner.detail}
+      retrying={banner.pending}
+      tone={banner.warning ? "warning" : "neutral"}
+      actions={banner.pending ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => { setPaused(true); pty.disconnect(); }}>
+          {copy.cancel}
+        </Button>
+      ) : !banner.cannotRetry ? (
+        <Button type="button" size="sm" onClick={handleReconnect}>
+          <UiIcon name="refresh" />
+          {copy.reconnect}
+        </Button>
+      ) : undefined}
+    />
+  );
 
   return (
     <TerminalCardShell
-      name={name}
+      name={terminalName}
       className={className}
       status={
-        banner?.showReconnect ? (
-          <button
-            type="button"
-            onClick={handleReconnect}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-          >
-            <RotateCw className="size-3" />
-            Reconnect
-          </button>
-        ) : undefined
-      }
-      overlay={
-        banner ? (
-          <span
-            className={
-              "text-xs " +
-              (banner.tone === "error" ? "text-danger" : "text-muted-foreground")
-            }
-          >
-            {banner.message}
+        pty.isConnected && !banner ? (
+          <span role="status" className="inline-flex items-center gap-2 text-xs text-success">
+            <span className="size-2 rounded-full border-2 border-success-solid" aria-hidden="true" />
+            {copy.connected}
           </span>
+        ) : banner?.pending && pty.reconnectAttempts > 0 ? (
+          <span className="text-xs text-muted-foreground">{interpolate(copy.attempt, { attempt: String(pty.reconnectAttempts) })}</span>
         ) : undefined
       }
+      notice={hasConnected ? notice : undefined}
     >
       <div
         ref={containerRef}
-        className="h-full w-full overflow-hidden rounded-lg"
+        className="h-full min-h-[320px] w-full overflow-hidden rounded-lg"
+        aria-hidden={!hasConnected && !!banner}
         style={{ fontSmooth: "antialiased", WebkitFontSmoothing: "antialiased" }}
       />
+      {!hasConnected && notice && (
+        <div className="absolute inset-0 flex items-center justify-center bg-card p-4">
+          <div className="w-full max-w-lg">{notice}</div>
+        </div>
+      )}
     </TerminalCardShell>
   );
 });

@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "E-mails",
+    "subtitle": "Utilisez vos boîtes mail existantes avec Openship Webmail.",
+    "connectTitle": "Connecter votre serveur mail",
+    "description": "Connectez tout serveur IMAP/SMTP. Vos boîtes mail et la livraison des messages restent chez votre fournisseur.",
+    "connectAction": "Connecter un serveur mail existant",
+    "signInHint": "Connectez-vous au webmail avec votre adresse e-mail et le mot de passe de votre boîte mail.",
+    "manageAction": "Gérer les applications webmail"
+  },
+  "cloudComingSoon": {
+    "title": "Messagerie gérée",
+    "badge": "Bientôt disponible",
+    "description": "La messagerie gérée sur Openship Cloud arrive bientôt. Les offres de serveurs Cloud hébergent des applications et ne créent pas de serveur de messagerie.",
+    "selfHosted": "La messagerie sur votre propre serveur est disponible avec une installation autohébergée d’Openship."
+  },
   "page": {
     "title": "Serveur de messagerie",
     "subtitle": "Configurez un serveur de messagerie auto-hébergé en quelques clics",
@@ -132,7 +147,17 @@
     "hide": "Masquer",
     "reveal": "Afficher",
     "generateTitle": "Générer un mot de passe aléatoire fort",
-    "generate": "Générer"
+    "generate": "Générer",
+    "relay": {
+      "toggle": "Relayer les e-mails sortants via un fournisseur d'e-mails",
+      "hint": "Recommandé. Envoi via les IP de confiance d'un fournisseur — les IP des nouveaux serveurs sont souvent sur liste noire et de nombreux hébergeurs bloquent le port 25 sortant. La réception reste sur ce serveur.",
+      "region": "Région",
+      "username": "Nom d'utilisateur SMTP",
+      "password": "Mot de passe SMTP",
+      "perDomainNote": "S'applique à tous les domaines. Le routage par domaine et les enregistrements DKIM / MAIL FROM du fournisseur pour chaque domaine sont configurés après l'installation dans l'onglet Envoi."
+    },
+    "startFailed": "Impossible de démarrer la configuration du moteur de messagerie.",
+    "startFailedFallback": "Impossible de se connecter pour démarrer la configuration. Vérifiez l'accès SSH et réessayez."
   },
   "sidebar": {
     "portConflict": {

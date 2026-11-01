@@ -52,8 +52,8 @@ import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
 
 const BASE_IMAGE = "busybox:latest";
-const TAG_V1 = "openship/e2e-rollback:v1";
-const TAG_V2 = "openship/e2e-rollback:v2";
+const TAG_V1 = "openship/e2e-rollback:bld_v1";
+const TAG_V2 = "openship/e2e-rollback:bld_v2";
 const APP_PORT = 80;
 
 /** A free loopback port, the way the allocator's callers use one: bind :0, read
@@ -93,7 +93,7 @@ describeDockerE2E("rollback against a real Docker daemon", () => {
   let contextDir = "";
 
   type Rollback = typeof import("../../src/modules/deployments/rollback");
-  type Planner = typeof import("../../src/modules/deployments/rollback/restore-plan");
+  type Planner = typeof import("@repo/platform/engine/modules/deployments/rollback/restore-plan");
   let rollback: Rollback;
   let planner: Planner;
 
@@ -151,7 +151,7 @@ describeDockerE2E("rollback against a real Docker daemon", () => {
     // The one seam: hand the orchestrator THIS runtime instead of building a
     // platform (which on Linux would provision OpenResty). Everything the
     // runtime then does hits the real daemon.
-    vi.doMock("../../src/lib/deployment-runtime", async (importOriginal) => {
+    vi.doMock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
@@ -159,8 +159,8 @@ describeDockerE2E("rollback against a real Docker daemon", () => {
       };
     });
 
-    rollback = await import("../../src/modules/deployments/rollback");
-    planner = await import("../../src/modules/deployments/rollback/restore-plan");
+    rollback = await import("@repo/platform/engine/modules/deployments/rollback/index");
+    planner = await import("@repo/platform/engine/modules/deployments/rollback/restore-plan");
     hostPort = await freePort();
     ready = true;
   }, 300_000);

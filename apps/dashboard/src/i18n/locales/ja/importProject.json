@@ -75,6 +75,9 @@
       "onFailureWarn": "デプロイは公開したまま、確認用にフラグを立てる",
       "onFailureFail": "デプロイを失敗させ、前のバージョンの配信を続ける"
     },
+    "runtimeVersionLabel": "ランタイムバージョン",
+    "runtimeVersionDefault": "デフォルト",
+    "runtimeVersionDesc": "選択したバージョンに対応するビルドと実行イメージを使用します。Openship が生成する Docker ビルドが必要です。",
     "buildImageLabel": "ビルドイメージ",
     "buildImageDesc": "クラウドまたはサーバービルド用のビルダーコンテナイメージ。検出されたベースイメージが正しくない場合は上書きしてください。",
     "productionPathsLabel": "本番パス",
@@ -105,7 +108,24 @@
     "modeWorker": "ワーカー",
     "modeStatic": "静的",
     "workerModeDesc": "ポートや公開URLを持たず継続的に実行 — キューコンシューマー、cron、ボットなど。",
-    "buildSettingsTitle": "ビルド設定"
+    "buildSettingsTitle": "ビルド設定",
+    "releaseTitle": "有効化前",
+    "releaseDescription": "ビルド後に実行する任意のコマンドです。失敗するとデプロイを停止します。Docker・Bareアプリのみ対応。",
+    "releaseCommand": "コマンド {number}",
+    "addReleaseCommand": "コマンドを追加",
+    "removeReleaseCommand": "コマンド {number} を削除",
+    "runtimeImageLabel": "実行イメージ",
+    "runtimeImageDesc": "Docker ビルド用の任意の本番ベースイメージです。ランタイムと生成レシピに対応する必要があります。空欄で既定値を使用します。",
+    "staticPathHint": "エッジから静的ファイルとして配信されます。プロセスとしては何も実行されません。",
+    "runtimeTitle": "ランタイム",
+    "runtimeDesc": "アプリを実行するイメージを選択します。イメージを更新しても、選択したバージョンと固定ダイジェストは保持されます。",
+    "runtimeBareDesc": "このアプリはサーバーで直接実行されます。インストール済みランタイムはサーバーで管理してください。",
+    "runtimeStaticDesc": "ビルドイメージが静的ファイルを準備します。デプロイ後にアプリのランタイムは実行されません。",
+    "runtimeDockerfileDesc": "ランタイムのイメージは Dockerfile で指定します。",
+    "runtimeServicesDesc": "各サービスのランタイムイメージは「サービス」で選択します。",
+    "runtimePrebuiltDesc": "選択したアプリのイメージにはランタイムが含まれています。",
+    "runtimeOverrideUnused": "これらの保存済み設定は、このデプロイには適用されません。保存する前にクリアしてください。",
+    "clearRuntimeOverrides": "保存済みの上書き設定をクリア"
   },
   "projectSettings": {
     "framework": "フレームワーク",
@@ -123,6 +143,7 @@
     "noneSet": "未設定",
     "pasteEnv": ".env を貼り付け",
     "uploadEnv": ".env をアップロード",
+    "downloadEnv": ".env をダウンロード",
     "edit": "編集",
     "cancel": "キャンセル",
     "saving": "保存中...",
@@ -144,6 +165,7 @@
       "interpolated": "補間済み"
     },
     "toast": {
+      "downloadFailed": "環境変数をダウンロードできませんでした。",
       "title": "環境変数",
       "added": "{count} 件追加",
       "updated": "{count} 件更新",
@@ -173,7 +195,9 @@
       "domainLabel": "ドメイン",
       "free": "無料",
       "custom": "カスタム",
-      "routingTrafficPrefix": "トラフィックのルーティング先ポート"
+      "routingTrafficPrefix": "トラフィックのルーティング先ポート",
+      "duplicateTitle": "重複したドメイン",
+      "duplicateDescription": "2 つのルートが同じドメインを指しています。各ルートが独自のドメインを持つように 1 つを変更してください:"
     },
     "shared": {
       "title": "共有環境",
@@ -205,9 +229,9 @@
       "volumes": "ボリューム",
       "statefulWarnPart1": "クラウド上のステートフルサービス: データはワークスペースの永続ディスクに保存され（再起動後も保持されます）が、",
       "statefulWarnBold": "リビルド間では引き継がれません",
-      "statefulWarnPart2": "（バックアップが有効な場合を除く）。Docker のボリュームマウントは適用されません。",
+      "statefulWarnPart2": "。ワークスペースを置き換える前に、データのバックアップと復元を明示的に行ってください。",
       "volumeHint": "名前付きボリュームまたはホストパス → コンテナパス。",
-      "volumeCloudNote": "クラウドではこれらのマウントは適用されません — データはワークスペースのディスクに保持されます（バックアップなしではリビルド間で保持されません）。",
+      "volumeCloudNote": "Openship Cloud は永続ボリュームのマウントに対応していません。ボリュームが必要なワークロードにはサーバーを選択してください。",
       "sourcePlaceholder": "ソース",
       "containerPathPlaceholder": "コンテナパス",
       "readOnlyMount": "読み取り専用マウント",
@@ -285,7 +309,51 @@
       "singleDesc": "1 つのサブアプリのビルドと起動コマンドを昇格させ、すべてのアプリのポートを 1 つのランタイムから公開します。"
     },
     "deploymentMode": "デプロイモード",
-    "deploymentModeDesc": "{mode} · アプリごとのランタイムと単一アプリの処理を切り替えます。"
+    "deploymentModeDesc": "{mode} · アプリごとのランタイムと単一アプリの処理を切り替えます。",
+    "selection": {
+      "title": "デプロイするアプリ",
+      "chooseApps": "アプリを選択",
+      "changeSelection": "選択を変更",
+      "selected": "{count} 件選択中",
+      "chooseHint": "実行するアプリを選択してください。CLI ツール、モバイルアプリ、共有パッケージは選択しなくても構いません。",
+      "applySelection": "選択したアプリを使用",
+      "manualReview": "設定を確認",
+      "detectedApp": "検出したアプリ",
+      "empty": "リポジトリからアプリを選択するか、フォルダーを追加してください。選択するまでデプロイされません。",
+      "addFromRepo": "リポジトリからアプリを追加",
+      "addMore": "追加する",
+      "cancel": "キャンセル",
+      "addApp": "アプリを追加",
+      "chooseFolder": "フォルダーを変更",
+      "useFolder": "このフォルダーを使用",
+      "folderHint": "アプリのフォルダーを選択してください。ビルド時にはリポジトリの共有パッケージとロックファイルにもアクセスできます。",
+      "appFolder": "アプリのフォルダー",
+      "invalidPath": "apps/web や . など、リポジトリからの相対パスを入力してください。",
+      "alreadyAdded": "このフォルダーは既に一覧にあります。「選択を変更」から追加してください。",
+      "browseError": "リポジトリのフォルダーを読み込めませんでした。",
+      "scanError": "このフォルダーを検査できませんでした。",
+      "composeFolder": "このフォルダーには Compose スタックがあります。Compose ファイルをプロジェクトとしてインポートしてください。",
+      "scanning": "検査中…",
+      "inspect": "フォルダーを検査",
+      "parentFolder": "親フォルダー",
+      "retry": "再試行",
+      "loadingFolders": "フォルダーを読み込み中…",
+      "noSubfolders": "サブフォルダーはありません。このフォルダーを選択できます。",
+      "reviewHint": "アプリを追加して、デプロイ前にフレームワーク、コマンド、環境変数を確認してください。",
+      "domains": "ドメイン",
+      "manage": "管理",
+      "domainNeeded": "ドメインが必要",
+      "viewAll": "{count} 件のドメインをすべて表示",
+      "domainHint": "これらのドメインはデプロイ時に適用されます。",
+      "privateHint": "選択したアプリに公開ドメインはありません。",
+      "done": "完了",
+      "private": "非公開",
+      "publicAccess": "公開アクセス",
+      "accessHint": "オフにすると、アプリはプロジェクト内からのみアクセスできます。",
+      "app": "アプリ",
+      "appLimit": "このプロジェクトには既に 50 件のアプリがあります。追加するには別のプロジェクトを作成してください。",
+      "folderMismatch": "このフォルダーは別のプロジェクト設定を参照しています。該当フォルダーを選択するか、openship.json を編集してください。"
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Cloud",
@@ -315,7 +383,7 @@
       "successful": "デプロイに成功しました",
       "deploying": "デプロイ中..."
     },
-    "visitSite": "サイトを開く",
+    "openSite": "サイトを開く",
     "warningTitle": "デプロイは完了しましたが、一部のサービスに対応が必要です。",
     "productionLogs": "本番ログ",
     "buildTerminal": "ビルドターミナル",
@@ -325,7 +393,7 @@
     "stopDeployment": "デプロイを停止",
     "redeploy": "再デプロイ",
     "goToProject": "プロジェクトへ移動",
-    "openDashboard": "ダッシュボードを開く",
+    "openProject": "プロジェクトを開く",
     "edit": "編集",
     "status": {
       "cancelled": "キャンセル済み",
@@ -342,7 +410,38 @@
     "detailFramework": "フレームワーク",
     "detailBranch": "ブランチ",
     "detailDomains": "ドメイン",
-    "detailDomain": "ドメイン"
+    "detailDomain": "ドメイン",
+    "portAdvisory": {
+      "loopbackTitle": "アプリがルーティングされたトラフィックを受信できません",
+      "loopbackNote": "デプロイは稼働中ですが、ルーティング先のポートを確認する必要があります。",
+      "loopbackBody": "ポート {port} はコンテナ内部からの接続のみを受け付けています。",
+      "loopbackBodyService": "サービス「{service}」はポート {port} でコンテナ内部からの接続のみを受け付けています。",
+      "loopbackHelp": "ルーティング先のアプリは 0.0.0.0 で接続を受け付けるよう設定して再デプロイするか、想定されたプロキシへルーティングしてください。",
+      "openSettings": "設定を開く",
+      "skipError": "この警告を非表示にできませんでした。もう一度お試しください。",
+      "title": "ポート不一致に関する通知",
+      "bannerTitle": "コンテナポートの不一致が検出されました",
+      "review": "ポートを確認",
+      "note": "エッジルーターはポート {port} を指していますが、アプリケーションはそこで応答しませんでした。",
+      "body": "ポート {port} で応答がありませんでした。アプリケーションが別のポートでリッスンしている場合は、以下で更新してください。",
+      "bodyService": "サービス「{service}」: ポート {port} で応答がありませんでした。別のポートでリッスンしている場合は、ここで正しいポートを設定してください。",
+      "newPortLabel": "正しいポート",
+      "changePort": "ポートを変更",
+      "skip": "スキップ",
+      "applied": "ポート {port} へのルーティングを更新しました。",
+      "changeError": "ポートを更新できませんでした。もう一度お試しください。"
+    }
+  },
+  "deploymentHealth": {
+    "recheck": "状態を再確認",
+    "checking": "確認中…",
+    "healthy": "サービスは正常です",
+    "atDeployment": "デプロイ時の警告",
+    "currentHealth": "現在のサービス状態",
+    "startupHint": "起動中なら、少し待ってから再確認してください。再起動やエラーが続く場合はログで原因を確認してください。",
+    "viewLogs": "ログを見る",
+    "unavailable": "状態を確認できませんでした。サーバーの接続が回復したら再確認してください。",
+    "historical": "このデプロイは現在稼働していません。プロジェクトを開いて現在のサービスを確認してください。"
   },
   "composeDeployment": {
     "title": {
@@ -416,12 +515,12 @@
     "rowType": "タイプ"
   },
   "configDiagnostics": {
-    "title": "このリポジトリの openship.json の一部が適用されませんでした",
-    "description": "以下に挙げた項目はスキップされ、ファイルの残りは適用されました。デプロイはそのまま続行します。",
+    "title": "リポジトリの一部のデプロイ設定が適用されませんでした",
+    "description": "デプロイ前に、以下のスキップされた設定を確認してください。",
     "titleWholeFile": "このリポジトリの openship.json は無視されました",
     "descriptionWholeFile": "内容は一切適用されていません。デプロイは Openship が検出した設定で続行します。",
     "refused": "拒否",
     "unrecognized": "未認識",
-    "hint": "次のデプロイの前に、リポジトリで `openship config validate` を実行してファイルを確認してください。"
+    "hint": "次のデプロイ前に、指定された設定ファイルを確認し、未対応の設定を更新してください。"
   }
 }

@@ -3,7 +3,7 @@ import {
   hasSourceBuildRecipe,
   isStaticService,
   resolveSubAppRecipe,
-} from "./deployable-service";
+} from "@repo/platform/engine/lib/deployable-service";
 
 /**
  * A static sub-app with NO build command must be deployable — WITHOUT loosening

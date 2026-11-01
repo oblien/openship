@@ -4,7 +4,7 @@ import {
   deploymentForcesImagePull,
   isPreparedLocalImage,
   isStaticHostArtifact,
-} from "./deploy.service";
+} from "@repo/platform/engine/modules/deployments/compose/deploy.service";
 
 const project = { id: "project-1", slug: "demo" };
 const service = {
@@ -47,6 +47,24 @@ describe("compose mutable-image pull intent", () => {
     expect(config("update").forcePull).toBe(true);
   });
 
+  it.each(["manual", "redeploy"])("re-pulls a mutable tag on %s, but reuses a digest-pinned image", (trigger) => {
+    // Pull-if-missing shipped the cached `:edge` on every manual redeploy; the
+    // workaround was `docker pull` over SSH.
+    expect(config(trigger).forcePull).toBe(true);
+    expect(deploymentForcesImagePull({ trigger } as never, undefined, "ghcr.io/acme/api:edge")).toBe(true);
+    expect(
+      deploymentForcesImagePull(
+        { trigger } as never,
+        undefined,
+        `ghcr.io/acme/api@sha256:${"a".repeat(64)}`,
+      ),
+    ).toBe(false);
+    // Rollbacks replay a release and never chase the tag.
+    expect(deploymentForcesImagePull({ trigger: "rollback" } as never, undefined, "ghcr.io/acme/api:edge")).toBe(false);
+    // Without a ref there is nothing mutable to refresh.
+    expect(deploymentForcesImagePull({ trigger } as never)).toBe(false);
+  });
+
   it("does not contact the registry again after the cohort was pre-pulled", () => {
     expect(
       createServiceRuntimeConfig({
@@ -59,6 +77,10 @@ describe("compose mutable-image pull intent", () => {
         imageAlreadyPrepared: true,
       }).forcePull,
     ).toBe(false);
+  });
+
+  it("never refreshes rollback artifacts even when their snapshot had a pull hint", () => {
+    expect(config("rollback", true).forcePull).toBe(false);
   });
 });
 

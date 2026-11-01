@@ -677,3 +677,30 @@ describe("runDeployPipeline bounds best-effort teardown (#629)", () => {
     expect(warns).toEqual([]);
   });
 });
+
+it.each([false, true])(
+  "Pages cutover preserves the old workload when publication fails=%s",
+  async (fail) => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      requireSuccessfulRoutes: true,
+      resolveRoute: async () => ({ staticRoot: "/owned/releases/new" }),
+    });
+    const result = await runDeployPipeline(
+      env,
+      makeInput({
+        domains: [{ hostname: "site.opsh.io", tls: true, targetPath: "/" }],
+        routing: {
+          registerRoute: async () => {
+            events.push("publish");
+            if (fail) throw new Error("Pages unavailable");
+          },
+        },
+      }),
+      fakeLogger(),
+    );
+    expect(result.status).toBe(fail ? "failed" : "ready");
+    expect(events).toEqual(fail ? ["activate", "publish"] : ["activate", "publish", "deactivate"]);
+  },
+);

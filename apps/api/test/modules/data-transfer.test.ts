@@ -8,15 +8,17 @@ import {
   hkdfSync,
 } from "node:crypto";
 import { db, eq, schema } from "@repo/db";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { env } from "@repo/platform/engine/config/env";
 
 // Skip the full zod-validated env (which refuses to load outside desktop mode
 // without INTERNAL_TOKEN); the crypto helpers only need BETTER_AUTH_SECRET.
-vi.mock("../../src/config/env", () => ({
-  env: { BETTER_AUTH_SECRET: "test-secret-for-data-transfer-unit-tests", CLOUD_MODE: false },
+vi.mock("@repo/platform/engine/config/env", async () => ({
+  env: { BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? (await import("@repo/db/encryption")).DEFAULT_ENCRYPTION_SECRET, CLOUD_MODE: false },
 }));
 
-import { decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "../../src/lib/encryption";
-import { encryptSecretField, decryptSecretField } from "../../src/lib/credential-encryption";
+import { closeEncryption, decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";
+import { encryptSecretField, decryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 import {
   sealSecretBundle,
   openSecretBundle,
@@ -29,6 +31,7 @@ import {
 } from "../../src/modules/system/data-transfer/secret-codec";
 import {
   SECRET_COLUMNS,
+  stripTransferSecrets,
   type SecretColumn,
 } from "../../src/modules/system/data-transfer/secret-registry";
 import {
@@ -136,7 +139,7 @@ describe("passphrase-crypto", () => {
     expect(() => openSecretBundle(sealed, "wrong")).toThrow(WrongPassphraseError);
   });
 
-  it("requires a transfer secret whenever the export contains credentials", () => {
+  it("requires a password when the export contains sealed credentials", () => {
     const sealed = sealSecretBundle(bundle, "correct horse");
     expect(() => openTransferSecrets(sealed)).toThrow(WrongPassphraseError);
     expect(openTransferSecrets(null)).toBeNull();
@@ -225,6 +228,18 @@ describe("one-time direct instance transfer", () => {
     await expect(sendDirectTransfer({ code: differentWorkerCode })).rejects.toThrow(
       "same instance",
     );
+  });
+
+  it("rejects project direct transfers before contacting the destination", async () => {
+    const fetchImpl = vi.fn();
+    await expect(
+      sendDirectTransfer({
+        code: "unused",
+        selection: { scope: "projects", projectIds: ["project_1"], history: [] },
+        fetchImpl,
+      }),
+    ).rejects.toThrow("download an export file");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("uses bounded chunks and safely retries an ambiguous finalization", async () => {
@@ -566,7 +581,7 @@ describe("one-time direct instance transfer", () => {
     const file = {
       kind: "openship-instance-export",
       envelopeVersion: 1,
-      dump: { scope: { kind: "instance" }, tables: {} },
+      dump: { formatVersion: 1, scope: { kind: "instance" }, tables: {} },
     } as unknown as DataTransferFile;
     await expect(
       importPreparedInstance({
@@ -600,55 +615,221 @@ describe("one-time direct instance transfer", () => {
   });
 });
 
+describe("two-factor account transfer", () => {
+  it.each([null, { version: 1, entries: [{ table: "two_factor", id: "factor", column: "secret", scheme: "better-auth", value: "seed" }] }] as const)(
+    "refuses an incomplete factor before changing the destination",
+    async (secrets) => {
+      const file: DataTransferFile = {
+        kind: "openship-instance-export", envelopeVersion: 4, createdAt: new Date().toISOString(),
+        sourceDriver: "pglite", secrets: null,
+        dump: {
+          formatVersion: 1, exportedAt: new Date().toISOString(), sourceDriver: "pglite", scope: { kind: "instance" },
+          tables: { user: [{ id: "protected-user", twoFactorEnabled: true }], two_factor: [{ id: "factor", userId: "protected-user", secret: "", backupCodes: "" }] },
+        },
+      };
+      await expect(importPreparedInstance({ file, mode: "wipe", secrets: secrets ? { version: 1, entries: [...secrets.entries] } : null }))
+        .rejects.toThrow("Include their credentials when exporting and importing");
+    },
+  );
+});
+
 describe("secret-codec round-trips (extract → seal → decrypt)", () => {
-  it("scalar", () => {
+  it("preserves the OIDC RSA identity while re-encrypting its private key for another instance", async () => {
+    const originalKey = env.BETTER_AUTH_SECRET;
+    const registered = SECRET_COLUMNS.find(
+      (entry) => entry.sqlName === "action_oidc_key" && entry.column === "privateKeyEnc",
+    )!;
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const pem = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+    const stored = encrypt(pem);
+    const entry = await extractPlaintext(registered, "https://ci.test/api/actions/oidc", stored);
+    const tables = {
+      action_oidc_key: [
+        {
+          id: "https://ci.test/api/actions/oidc",
+          kid: "original-key",
+          privateKeyEnc: stored,
+          publicKey: publicKey.export({ format: "jwk" }),
+        },
+      ],
+    };
+    stripTransferSecrets(tables);
+    expect(tables.action_oidc_key[0]!.privateKeyEnc).toBe("");
+    expect(JSON.stringify(tables)).not.toContain(pem);
+    expect(entry?.value).toBe(pem);
+    let restored: string;
+    try {
+      env.BETTER_AUTH_SECRET = "destination-oidc-signing-key-123456789";
+      closeEncryption();
+      restored = (await sealForInstance(registered, entry!)) as string;
+      expect(decrypt(restored)).toBe(pem);
+      expect(createPublicKey(decrypt(restored)).export({ format: "jwk" })).toEqual(
+        tables.action_oidc_key[0]!.publicKey,
+      );
+      expect(tables.action_oidc_key[0]!.kid).toBe("original-key");
+    } finally {
+      env.BETTER_AUTH_SECRET = originalKey;
+      closeEncryption();
+    }
+    expect(() => decrypt(restored)).toThrow();
+  });
+  it("redacts runner registration tokens and re-encrypts them for another instance", async () => {
+    const originalKey = env.BETTER_AUTH_SECRET;
+    const registered = SECRET_COLUMNS.find(
+      (entry) => entry.sqlName === "action_runner_session" && entry.column === "registration",
+    )!;
+    const token = "temporary-github-runner-registration";
+    const stored = encrypt(token);
+    const entry = await extractPlaintext(registered, "session", stored);
+    const tables = { action_runner_session: [{ id: "session", registration: stored }] };
+    stripTransferSecrets(tables);
+    expect(tables.action_runner_session[0]!.registration).toBeNull();
+    expect(entry?.value).toBe(token);
+    let restored: string;
+    try {
+      env.BETTER_AUTH_SECRET = "destination-runner-registration-key-123456789";
+      closeEncryption();
+      restored = await sealForInstance(registered, entry!) as string;
+      expect(decrypt(restored)).toBe(token);
+    } finally {
+      env.BETTER_AUTH_SECRET = originalKey;
+      closeEncryption();
+    }
+    expect(() => decrypt(restored)).toThrow();
+  });
+
+  it("protects repository grants during transfer with the same cipher as their writer", async () => {
+    const registered = SECRET_COLUMNS.find((entry) => entry.sqlName === "user_settings" && entry.column === "githubAuthorizationEncrypted")!;
+    const grant = JSON.stringify({ accessToken: "repository-access", refreshToken: "repository-refresh", accessExpiresAt: null, refreshExpiresAt: null });
+    const ciphertext = encrypt(grant);
+    const entry = await extractPlaintext(registered, "settings", ciphertext);
+    expect(entry?.value).toBe(grant);
+    expect(decrypt(await sealForInstance(registered, entry!) as string)).toBe(grant);
+    const { stripEncryptedInPlace } = await import("@repo/db");
+    const tables = { user_settings: [{ id: "settings", userId: "user", githubAuthorizationEncrypted: ciphertext }] };
+    stripEncryptedInPlace(tables);
+    expect(tables.user_settings[0]!.githubAuthorizationEncrypted).toBeNull();
+  });
+
+  it.each(["secret", "backupCodes"])("re-encrypts 2FA %s for a different installation", async (column) => {
+    const originalKey = env.BETTER_AUTH_SECRET;
+    const sourceKey = "source-instance-better-auth-secret-123456789";
+    const destinationKey = "destination-instance-better-auth-secret-123456789";
+    const registered = SECRET_COLUMNS.find(entry => entry.sqlName === "two_factor" && entry.column === column)!;
+    const plaintext = column === "secret" ? "authenticator-seed" : '["single-use-recovery"]';
+    try {
+      env.BETTER_AUTH_SECRET = sourceKey;
+      const stored = await symmetricEncrypt({ key: sourceKey, data: plaintext });
+      const entry = await extractPlaintext(registered, "factor", stored);
+      expect(entry?.value).toBe(plaintext);
+      env.BETTER_AUTH_SECRET = destinationKey;
+      const restored = await sealForInstance(registered, entry!) as string;
+      expect(restored).not.toBe(stored);
+      expect(await symmetricDecrypt({ key: destinationKey, data: restored })).toBe(plaintext);
+      await expect(symmetricDecrypt({ key: sourceKey, data: restored })).rejects.toThrow();
+    } finally {
+      env.BETTER_AUTH_SECRET = originalKey;
+    }
+  });
+
+  it.each(["secretEncrypted", "envValueEncrypted", "readEnvValueEncrypted"])(
+    "redacts and re-encrypts cluster database %s for another instance",
+    async (column) => {
+      const originalKey = env.BETTER_AUTH_SECRET;
+      const registered = SECRET_COLUMNS.find(
+        (entry) => entry.sqlName === "cluster_database" && entry.column === column,
+      )!;
+      const plaintext =
+        column === "secretEncrypted"
+          ? "database-password"
+          : "postgresql://app:password@database.private/app";
+      const stored = encrypt(plaintext);
+      const entry = await extractPlaintext(registered, "database", stored);
+      const tables = {
+        cluster_database: [{ id: "database", name: "Application database", [column]: stored }],
+      };
+      stripTransferSecrets(tables);
+      expect(tables.cluster_database[0]![column]).toBe(column === "secretEncrypted" ? "" : null);
+      expect(tables.cluster_database[0]!.name).toBe("Application database");
+      expect(JSON.stringify(tables)).not.toContain(stored);
+      expect(entry?.value).toBe(plaintext);
+      let restored: string;
+      try {
+        env.BETTER_AUTH_SECRET = "destination-database-reader-key-123456789";
+        closeEncryption();
+        restored = (await sealForInstance(registered, entry!)) as string;
+        expect(decrypt(restored)).toBe(plaintext);
+      } finally {
+        env.BETTER_AUTH_SECRET = originalKey;
+        closeEncryption();
+      }
+      expect(() => decrypt(restored)).toThrow();
+    },
+  );
+
+  it("scalar", async () => {
     const stored = encrypt("db-url");
-    const entry = extractPlaintext(spec("scalar", "value"), "id1", stored);
+    const entry = await extractPlaintext(spec("scalar", "value"), "id1", stored);
     expect(entry?.value).toBe("db-url");
-    const sealedCell = sealForInstance(spec("scalar", "value"), entry!) as string;
+    const sealedCell = await sealForInstance(spec("scalar", "value"), entry!) as string;
     expect(decrypt(sealedCell)).toBe("db-url");
   });
 
-  it("enc1 (ssh credential envelope)", () => {
+  it("enc1 (ssh credential envelope)", async () => {
     const stored = encryptSecretField("hunter2");
-    const entry = extractPlaintext(spec("enc1", "sshPassword"), "id1", stored);
+    const entry = await extractPlaintext(spec("enc1", "sshPassword"), "id1", stored);
     expect(entry?.value).toBe("hunter2");
-    const sealedCell = sealForInstance(spec("enc1", "sshPassword"), entry!) as string;
+    const sealedCell = await sealForInstance(spec("enc1", "sshPassword"), entry!) as string;
     expect(decryptSecretField(sealedCell)).toBe("hunter2");
   });
 
-  it("plaintext (tunnelToken)", () => {
-    const entry = extractPlaintext(spec("plaintext", "tunnelToken"), "id1", "raw-token");
+  it("plaintext (tunnelToken)", async () => {
+    const entry = await extractPlaintext(spec("plaintext", "tunnelToken"), "id1", "raw-token");
     expect(entry?.value).toBe("raw-token");
-    expect(sealForInstance(spec("plaintext", "tunnelToken"), entry!)).toBe("raw-token");
+    expect(await sealForInstance(spec("plaintext", "tunnelToken"), entry!)).toBe("raw-token");
   });
 
-  it("map (deployment.envVars)", () => {
+  it("map (deployment.envVars)", async () => {
     const stored = { A: encrypt("1"), B: encrypt("2") };
-    const entry = extractPlaintext(spec("map", "envVars"), "id1", stored);
+    const entry = await extractPlaintext(spec("map", "envVars"), "id1", stored);
     expect(entry?.map).toEqual({ A: "1", B: "2" });
-    const sealedCell = sealForInstance(spec("map", "envVars"), entry!) as Record<string, string>;
+    const sealedCell = await sealForInstance(spec("map", "envVars"), entry!) as Record<string, string>;
     expect(decrypt(sealedCell.A)).toBe("1");
     expect(decrypt(sealedCell.B)).toBe("2");
   });
 
-  it("notification-config: secret sub-fields travel, plaintext fields preserved", () => {
+  it("notification-config: secret sub-fields travel, plaintext fields preserved", async () => {
     const s = spec("notification-config", "config", ["hmacSecret", "webhookUrl"]);
     const stored = { url: "https://hook", channelName: "ops", hmacSecret: encrypt("sig") };
-    const entry = extractPlaintext(s, "id1", stored);
+    const entry = await extractPlaintext(s, "id1", stored);
     expect(entry?.config).toEqual({ hmacSecret: "sig" });
 
     // Re-hydration merges the secret back into the restored (scrubbed) config.
     const restored = { url: "https://hook", channelName: "ops" };
-    const sealedCell = sealForInstance(s, entry!, restored) as Record<string, unknown>;
+    const sealedCell = await sealForInstance(s, entry!, restored) as Record<string, unknown>;
     expect(sealedCell.url).toBe("https://hook");
     expect(sealedCell.channelName).toBe("ops");
     expect(decrypt(sealedCell.hmacSecret as string)).toBe("sig");
   });
 
-  it("returns null for empty/absent cells", () => {
-    expect(extractPlaintext(spec("scalar", "value"), "id1", null)).toBeNull();
-    expect(extractPlaintext(spec("scalar", "value"), "id1", "")).toBeNull();
+  it.each(["scalar", "enc1", "plaintext", "map", "notification-config", "json", "better-auth"] as const)(
+    "preserves explicit clears while leaving absent %s columns untouched",
+    async (scheme) => {
+      const column = spec(scheme, "value");
+      expect(await extractPlaintext(column, "id1", undefined)).toBeNull();
+      const cleared = await extractPlaintext(column, "id1", null);
+      expect(cleared).not.toBeNull();
+      expect(await sealForInstance(column, cleared!, { old: "stale" })).toBeNull();
+    },
+  );
+
+  it("restores empty values instead of keeping destination credentials", async () => {
+    const scalar = spec("scalar", "value");
+    expect(decrypt(await sealForInstance(scalar, (await extractPlaintext(scalar, "id1", ""))!) as string)).toBe("");
+    const credential = spec("enc1", "sshPassword");
+    expect(await sealForInstance(credential, (await extractPlaintext(credential, "id1", ""))!)).toBe("");
+    const map = spec("map", "envVars");
+    expect(await sealForInstance(map, (await extractPlaintext(map, "id1", {}))!)).toEqual({});
   });
 });
 

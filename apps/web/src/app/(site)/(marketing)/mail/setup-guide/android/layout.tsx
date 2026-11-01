@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import type { ReactNode } from "react";
 
 const TITLE = "Android Mail Setup";
@@ -6,7 +7,7 @@ const DESCRIPTION =
   "Add your Openship mailbox to the Gmail app on Android as a third-party IMAP account. Works on Android 12–15 across OEM skins.";
 const PATH = "/mail/setup-guide/android";
 
-export const metadata: Metadata = {
+const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
@@ -20,6 +21,13 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", title: `${TITLE} - Openship`, description: DESCRIPTION },
 };
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(metadata, parent);
+}
 
 export default function Layout({ children }: { children: ReactNode }) {
   return <>{children}</>;

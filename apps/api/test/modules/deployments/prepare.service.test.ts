@@ -4,15 +4,398 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  resolveFromReader,
   resolveProjectInfo,
   resolveProjectSourceEnv,
-} from "../../../src/modules/deployments/prepare.service";
+} from "@repo/platform/engine/modules/deployments/prepare.service";
 
 describe("resolveProjectInfo", () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  async function nativeServicesProject(compose: string) {
+    const path = await mkdtemp(join(tmpdir(), "openship-native-source-"));
+    tempDirs.push(path);
+    await Promise.all([
+      writeFile(
+        join(path, "package.json"),
+        JSON.stringify({ devDependencies: { vite: "^6.0.0" } }),
+      ),
+      writeFile(join(path, "vite.config.ts"), "export default {};\n"),
+      writeFile(join(path, "Dockerfile"), "FROM node:22-alpine\n"),
+      writeFile(
+        join(path, "openship.json"),
+        JSON.stringify({
+          services: [{ name: "production-web", image: "nginx:1.27" }],
+        }),
+      ),
+      writeFile(join(path, "compose.yaml"), compose),
+    ]);
+    return path;
+  }
+
+  it("inspects an explicitly selected root or unlisted folder without promoting another app", async () => {
+    const path = await mkdtemp(join(tmpdir(), "openship-selected-root-"));
+    tempDirs.push(path);
+    await mkdir(join(path, "apps/web"), { recursive: true });
+    await mkdir(join(path, "packages/job"), { recursive: true });
+    await writeFile(
+      join(path, "package.json"),
+      JSON.stringify({
+        name: "root",
+        scripts: { start: "node root.js" },
+        workspaces: ["apps/*", "packages/*"],
+      }),
+    );
+    await writeFile(
+      join(path, "apps/web/package.json"),
+      JSON.stringify({ scripts: { build: "vite build" }, devDependencies: { vite: "^6" } }),
+    );
+    await writeFile(
+      join(path, "packages/job/package.json"),
+      JSON.stringify({ scripts: { start: "node job.js" } }),
+    );
+    const root = await resolveProjectInfo({ source: "local", path, rootDirectory: "." });
+    expect(root.rootDirectory).toBe("./");
+    expect(root.startCommand).toContain("start");
+    expect(root.monorepoApps).toBeUndefined();
+    const manual = await resolveProjectInfo({
+      source: "local",
+      path,
+      rootDirectory: "packages/job",
+    });
+    expect(manual.rootDirectory).toBe("packages/job");
+    expect(manual.startCommand).toContain("start");
+    await expect(
+      resolveProjectInfo({ source: "local", path, rootDirectory: "missing" }),
+    ).rejects.toThrow(/selected app folder/);
+  });
+
+  it.each([true, false])("retains service swapDisabled=%s through source detection", async swapDisabled => {
+    const path = await mkdtemp(join(tmpdir(), "openship-swap-source-"));
+    tempDirs.push(path);
+    await writeFile(join(path, "openship.json"), JSON.stringify({
+      services: [{ name: "vault", image: "example/vault:1", resources: {
+        ...(swapDisabled ? { memoryMb: 1024 } : {}), swapDisabled,
+      } }],
+    }));
+    const detected = await resolveProjectInfo({ source: "local", path });
+    expect(detected.services?.[0]?.advanced?.resources?.swapDisabled).toBe(swapDisabled);
+  });
+
+  it("suggests framework roles without enabling them and respects an explicit opt-out", async () => {
+    const path = await mkdtemp(join(tmpdir(), "openship-role-suggestions-"));
+    tempDirs.push(path);
+    await writeFile(
+      join(path, "composer.json"),
+      JSON.stringify({
+        require: { "laravel/framework": "^12", "laravel/horizon": "^5" },
+      }),
+    );
+    await writeFile(join(path, "artisan"), "<?php\n");
+    const detected = await resolveProjectInfo({ source: "local", path });
+    expect(detected.rolePresets?.map((role) => role.name)).toEqual(["horizon", "scheduler"]);
+    expect(detected.roles).toBeUndefined();
+    expect(detected.rolePresets?.every((role) => !role.slot && !role.when && !role.unless)).toBe(
+      true,
+    );
+
+    await writeFile(join(path, "openship.json"), JSON.stringify({ roles: [] }));
+    const optedOut = await resolveProjectInfo({ source: "local", path });
+    expect(optedOut.roles).toEqual([]);
+    expect(optedOut.rolePresets).toBeUndefined();
+  });
+
+  it.each([".", "backend"])("does not suggest dev-only Horizon in %s (#1171)", async (directory) => {
+    const path = await mkdtemp(join(tmpdir(), "openship-php-production-roles-"));
+    tempDirs.push(path);
+    const selected = join(path, directory);
+    await mkdir(selected, { recursive: true });
+    await writeFile(
+      join(selected, "composer.json"),
+      JSON.stringify({
+        require: { "laravel/framework": "^12" },
+        "require-dev": { "laravel/horizon": "^5" },
+      }),
+    );
+    await writeFile(join(selected, "artisan"), "<?php\n");
+    const source = { source: "local" as const, path, rootDirectory: directory };
+    const detected = await resolveProjectInfo(source);
+    expect(detected.stack).toBe("laravel");
+    expect(detected.rolePresets?.map((role) => role.name)).toEqual(["queue", "scheduler"]);
+    expect(detected.roles).toBeUndefined();
+
+    // An operator with a custom image/install remains free to choose Horizon.
+    const roles = [{ name: "horizon", kind: "worker", command: "php artisan horizon" }];
+    await writeFile(join(selected, "openship.json"), JSON.stringify({ roles }));
+    const explicit = await resolveProjectInfo(source);
+    expect(explicit.roles).toEqual(expect.arrayContaining([expect.objectContaining(roles[0]!)]));
+    expect(explicit.rolePresets).toBeUndefined();
+  });
+
+  it("checks a preset's nested files in the selected application root", async () => {
+    const path = await mkdtemp(join(tmpdir(), "openship-rails-role-suggestions-"));
+    tempDirs.push(path);
+    const root = join(path, "backend");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(join(root, "Gemfile"), "gem 'rails'\ngem 'solid_queue'\n");
+    await writeFile(join(root, "bin", "jobs"), "#!/usr/bin/env ruby\n");
+    await writeFile(join(root, "bin", "rails"), "#!/usr/bin/env ruby\n");
+    const detected = await resolveProjectInfo({ source: "local", path, rootDirectory: "backend" });
+    expect(detected.rolePresets?.map((role) => role.name)).toEqual(["jobs"]);
+    expect(detected.roles).toBeUndefined();
+    await writeFile(join(root, "Gemfile"), "gem 'rails'\ngem 'solid_queue'\ngem 'sidekiq'\n");
+    const ambiguous = await resolveProjectInfo({ source: "local", path, rootDirectory: "backend" });
+    expect(ambiguous.rolePresets).toBeUndefined();
+  });
+
+  it("reads the listed Dockerfile path on case-sensitive sources", async () => {
+    const reads: string[] = [];
+    const info = await resolveFromReader(
+      {
+        listDirectory: async () => [{ name: "Dockerfile", type: "file" }],
+        readJson: async () => undefined,
+        listTree: async () => [],
+        readText: async (path) => {
+          reads.push(path);
+          return path === "Dockerfile" ? "FROM node:22-alpine\nEXPOSE 8080\n" : undefined;
+        },
+      },
+      {
+        name: "web",
+        full_name: "example/web",
+        owner: "example",
+        private: false,
+        default_branch: "main",
+      },
+      "main",
+    );
+    expect(info).toMatchObject({ stack: "docker", port: 8080, startCommand: "" });
+    expect(reads).toContain("Dockerfile");
+    expect(reads).not.toContain("dockerfile");
+  });
+
+  it.each(["./", "apps/web"])(
+    "uses Dockerfile runtime defaults at %s despite Bun/Next scripts",
+    async (rootDirectory) => {
+      const repo = await mkdtemp(join(tmpdir(), "openship-docker-runtime-"));
+      tempDirs.push(repo);
+      const root = join(repo, rootDirectory);
+      await mkdir(root, { recursive: true });
+      if (rootDirectory !== "./") {
+        await writeFile(
+          join(repo, "package.json"),
+          JSON.stringify({
+            private: true,
+            workspaces: ["apps/*"],
+            packageManager: "pnpm@10.0.0",
+          }),
+        );
+        await writeFile(join(repo, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      }
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({
+          name: "web",
+          dependencies: { next: "^16.0.0" },
+          scripts: {
+            build: "next build",
+            start: "node custom-server.js --port 20127",
+          },
+        }),
+      );
+      await writeFile(join(root, "bun.lock"), "{}");
+      await writeFile(
+        join(root, "next.config.mjs"),
+        "export default { output: 'standalone' };\n",
+      );
+      await writeFile(
+        join(root, "Dockerfile"),
+        'FROM node:22-alpine\nEXPOSE 20128\nENTRYPOINT ["/entrypoint.sh"]\nCMD ["node", "custom-server.js"]\n',
+      );
+
+      const info = await resolveProjectInfo({
+        source: "local",
+        path: repo,
+        rootDirectory,
+      });
+      expect(info).toMatchObject({
+        stack: "docker",
+        projectType: "docker",
+        port: 20128,
+        installCommand: "",
+        buildCommand: "",
+        startCommand: "",
+      });
+
+      // A declared override is intentional, even when it differs from image CMD.
+      await writeFile(
+        join(root, "openship.json"),
+        JSON.stringify({ startCommand: "node worker.js", port: 9000 }),
+      );
+      const overridden = await resolveProjectInfo({
+        source: "local",
+        path: repo,
+        rootDirectory,
+      });
+      expect(overridden).toMatchObject({
+        stack: "docker",
+        startCommand: "node worker.js",
+        port: 9000,
+      });
+    },
+  );
+
+  it.each(["public", "web-assets"])(
+    "keeps a Node server instead of promoting its %s assets",
+    async (assets) => {
+      const tempDir = await mkdtemp(join(tmpdir(), "openship-server-assets-"));
+      tempDirs.push(tempDir);
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({
+          scripts: { start: "node server.mjs" },
+          engines: { node: ">=24" },
+        }),
+      );
+      await writeFile(join(tempDir, "server.mjs"), "import { createServer } from 'node:http';\n");
+      await mkdir(join(tempDir, assets));
+      await writeFile(join(tempDir, assets, "index.html"), "<!doctype html><main>Application</main>");
+
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info).toMatchObject({
+        stack: "node",
+        rootDirectory: "./",
+        startCommand: "npm run start",
+      });
+      expect(info.monorepoApps).toBeUndefined();
+
+      // An explicit root selection remains authoritative for a separate static deploy.
+      const selected = await resolveProjectInfo({
+        source: "local",
+        path: tempDir,
+        rootDirectory: assets,
+      });
+      expect(selected).toMatchObject({ stack: "static", rootDirectory: assets, startCommand: "" });
+    },
+  );
+
+  it("keeps a Vite app's local-dev Compose separate unless explicitly selected (#959)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-app-with-compose-"));
+    tempDirs.push(tempDir);
+    await writeFile(join(tempDir, "package.json"), JSON.stringify({
+      name: "app", scripts: { build: "vite build" }, devDependencies: { vite: "^6.0.0" },
+    }));
+    await writeFile(join(tempDir, "vite.config.ts"), "export default {};\n");
+    await writeFile(join(tempDir, "docker-compose.yml"), [
+      "services:",
+      "  postgres:",
+      "    image: postgres:16-alpine",
+      "    environment:",
+      "      POSTGRES_PASSWORD: local-dev-only",
+    ].join("\n"));
+
+    const app = await resolveProjectInfo({ source: "local", path: tempDir });
+    expect(app.stack).toBe("vite");
+    expect(app.projectType).toBe("app");
+    expect(app.services).toBeUndefined();
+
+    const compose = await resolveProjectInfo({
+      source: "local", path: tempDir, composePath: "docker-compose.yml",
+    });
+    expect(compose.projectType).toBe("services");
+    expect(compose.services).toEqual([
+      expect.objectContaining({ name: "postgres", image: "postgres:16-alpine" }),
+    ]);
+  });
+
+  it("parses a Compose project's services when its root also looks like a Vite app (#1020)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-compose-behind-vite-"));
+    tempDirs.push(tempDir);
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({
+        name: "app",
+        scripts: { build: "vite build" },
+        devDependencies: { vite: "^6.0.0" },
+      }),
+    );
+    await writeFile(join(tempDir, "vite.config.ts"), "export default {};\n");
+    await writeFile(join(tempDir, "Dockerfile"), "FROM node:22-alpine\n");
+    await writeFile(
+      join(tempDir, "compose.yaml"),
+      [
+        "services:",
+        "  app:",
+        "    build: .",
+        "  caddy:",
+        "    image: caddy:2",
+        "  postgres:",
+        "    image: postgres:16-alpine",
+        "    volumes:",
+        "      - database:/var/lib/postgresql/data",
+        "volumes:",
+        "  database:",
+      ].join("\n"),
+    );
+
+    const scan = await resolveProjectInfo({ source: "local", path: tempDir });
+    expect(scan).toMatchObject({ stack: "docker-compose", projectType: "services" });
+    expect(scan.services?.map((service) => service.name)).toEqual(["app", "caddy", "postgres"]);
+    expect(scan.services?.find((service) => service.name === "postgres")).toMatchObject({
+      image: "postgres:16-alpine",
+      volumes: ["database:/var/lib/postgresql/data"],
+    });
+
+    const compose = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      expectCompose: true,
+    });
+    expect(compose.projectType).toBe("services");
+    expect(compose.services).toEqual(scan.services);
+  });
+
+  it.each([
+    {
+      name: "unsupported development networking",
+      compose: "services:\n  dev-db:\n    image: postgres:16\n    network_mode: host\n",
+    },
+    {
+      name: "required development credentials",
+      compose:
+        "services:\n  dev-db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: ${DEV_PASSWORD:?Set a local password}\n",
+    },
+  ])(
+    "keeps native services authoritative despite $name in an unused Compose file",
+    async ({ compose }) => {
+      const path = await nativeServicesProject(compose);
+      const initial = await resolveProjectInfo({ source: "local", path });
+      const redeploy = await resolveProjectInfo({ source: "local", path, expectCompose: true });
+
+      expect(redeploy.projectType).toBe("services");
+      expect(redeploy.services?.map((service) => service.name)).toEqual(["production-web"]);
+      expect(redeploy.services).toEqual(initial.services);
+      expect(redeploy.missingRequiredEnv).toBeUndefined();
+      expect(redeploy.unsupportedCompose).toBeUndefined();
+    },
+  );
+
+  it("still validates an explicitly selected Compose file when native services are present", async () => {
+    const path = await nativeServicesProject(
+      "services:\n  dev-db:\n    image: postgres:16\n    network_mode: host\n",
+    );
+    await expect(
+      resolveProjectInfo({
+        source: "local",
+        path,
+        composePath: "compose.yaml",
+        expectCompose: true,
+      }),
+    ).rejects.toThrow("network_mode: host is not supported");
   });
 
   it("reports a required Compose variable as a value to collect, not a load failure", async () => {
@@ -143,6 +526,156 @@ describe("resolveProjectInfo", () => {
       buildArgs: { SERVER_URL: null, PAYLOAD_SECRET: null, CHANNEL: "stable" },
       environment: { SERVER_URL: "https://runtime.example.com" },
     });
+  });
+
+  it("scans a subpath project's own openship.json when its rootDirectory is pinned", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-subpath-services-"));
+    tempDirs.push(tempDir);
+    await writeFile(
+      join(tempDir, "openship.json"),
+      JSON.stringify({
+        framework: "fastapi",
+        env: { ROOT_APP_ONLY: "not-for-go-api" },
+      }),
+    );
+    await mkdir(join(tempDir, "go-api"));
+    await writeFile(join(tempDir, "go-api", "Dockerfile"), "FROM golang:1.25-alpine\n");
+    await writeFile(
+      join(tempDir, "go-api", "openship.json"),
+      JSON.stringify({
+        framework: "docker-compose",
+        rootDirectory: "./",
+        env: { API_URL: "https://child.example.com" },
+        services: [{ name: "backend", build: "." }],
+      }),
+    );
+
+    expect((await resolveProjectInfo({ source: "local", path: tempDir })).services ?? []).toEqual(
+      [],
+    );
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      rootDirectory: "go-api",
+    });
+    expect(info.rootDirectory).toBe("go-api");
+    expect(info.services).toEqual([expect.objectContaining({ name: "backend", build: "." })]);
+    expect(info.openshipEnv).toEqual({ API_URL: "https://child.example.com" });
+    expect(info.rootEnv).toEqual({ API_URL: "https://child.example.com" });
+  });
+
+  describe("repository-root config for a saved subfolder", () => {
+    async function repoWithBuildDirectory() {
+      const path = await mkdtemp(join(tmpdir(), "openship-subfolder-config-"));
+      tempDirs.push(path);
+      await mkdir(join(path, "deploy"));
+      await writeFile(join(path, "deploy", "Dockerfile"), "FROM node:22-alpine\n");
+      return path;
+    }
+
+    it("retains native service definitions across an initial scan and refresh", async () => {
+      const path = await repoWithBuildDirectory();
+      await writeFile(
+        join(path, "openship.json"),
+        JSON.stringify({
+          rootDirectory: "deploy",
+          services: [{ name: "api", build: "." }],
+        }),
+      );
+
+      const initial = await resolveProjectInfo({ source: "local", path });
+      expect(initial.rootDirectory).toBe("deploy");
+      expect(initial.services).toEqual([expect.objectContaining({ name: "api", build: "." })]);
+
+      const refreshed = await resolveProjectInfo({
+        source: "local",
+        path,
+        rootDirectory: initial.rootDirectory,
+      });
+
+      expect(refreshed.rootDirectory).toBe("deploy");
+      expect(refreshed.projectType).toBe("services");
+      expect(refreshed.services).toEqual(initial.services);
+    });
+
+    it("retains env defaults and a declared Compose path across refreshes", async () => {
+      const path = await repoWithBuildDirectory();
+      await writeFile(
+        join(path, "openship.json"),
+        JSON.stringify({
+          composePath: "deploy/stack.yml",
+          env: { API_URL: "https://api.example.com" },
+        }),
+      );
+      await writeFile(join(path, "deploy", ".env"), "CHANNEL=stable\n");
+      await writeFile(
+        join(path, "deploy", "stack.yml"),
+        [
+          "services:",
+          "  api:",
+          "    build: .",
+          "    environment:",
+          "      API_URL: ${API_URL:?Set API_URL}",
+          "      CHANNEL: ${CHANNEL}",
+        ].join("\n"),
+      );
+
+      const initial = await resolveProjectInfo({ source: "local", path });
+      expect(initial.rootDirectory).toBe("deploy");
+      expect(initial.openshipEnv).toEqual({ API_URL: "https://api.example.com" });
+      expect(initial.services?.[0]?.environment).toEqual({
+        API_URL: "https://api.example.com",
+        CHANNEL: "stable",
+      });
+
+      for (const composePath of [undefined, initial.composePath]) {
+        const refreshed = await resolveProjectInfo({
+          source: "local",
+          path,
+          rootDirectory: initial.rootDirectory,
+          composePath,
+        });
+
+        expect(refreshed.rootDirectory).toBe("deploy");
+        expect(refreshed.composePath).toBe("deploy/stack.yml");
+        expect(refreshed.openshipEnv).toEqual(initial.openshipEnv);
+        expect(refreshed.services?.[0]?.environment).toEqual(initial.services?.[0]?.environment);
+        expect(refreshed.missingRequiredEnv).toBeUndefined();
+      }
+
+      const overridden = await resolveProjectInfo({
+        source: "local",
+        path,
+        rootDirectory: "deploy",
+        env: { API_URL: "https://operator.example.com" },
+      });
+      expect(overridden.services?.[0]?.environment).toEqual({
+        API_URL: "https://operator.example.com",
+        CHANNEL: "stable",
+      });
+    });
+
+    it.each(["{}", "", "{ broken json"])(
+      "does not inherit another app's config when the subfolder manifest contains %j",
+      async (content) => {
+        const path = await repoWithBuildDirectory();
+        await writeFile(
+          join(path, "openship.json"),
+          JSON.stringify({
+            env: { ROOT_APP_SECRET: "belongs-to-root-app" },
+            services: [{ name: "root-app", image: "nginx:alpine" }],
+          }),
+        );
+        await writeFile(join(path, "deploy", "openship.json"), content);
+
+        const info = await resolveProjectInfo({ source: "local", path, rootDirectory: "deploy" });
+
+        expect(info.rootDirectory).toBe("deploy");
+        expect(info.services).toBeUndefined();
+        expect(info.openshipEnv).toBeUndefined();
+        if (content === "{ broken json") expect(info.configDiagnostics?.wholeFile).toBe(true);
+      },
+    );
   });
 
   it("#795 retains a Compose build-arg template alongside openship.json env", async () => {
@@ -544,6 +1077,60 @@ describe("resolveProjectInfo", () => {
       expect(info.port).toBe(8080);
       expect(info.configDiagnostics?.errors.some((e) => e.startsWith("framework:"))).toBe(true);
       expect(info.configDiagnostics?.warnings).toEqual([]);
+    });
+
+    it("reports monorepo declarations that cannot be matched to discovered apps (#873)", async () => {
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          monorepo: {
+            apps: [{ name: "worker", rootDirectory: "private-path-SENTINEL" }],
+            workspace: { packageManager: "npm", prepareCommand: "secret-command-SENTINEL" },
+          },
+        }),
+      );
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info.monorepoApps).toBeUndefined();
+      expect(info.configDiagnostics?.warnings).toEqual([
+        expect.stringMatching(/^monorepo\.apps\[0\]:.*did not match/),
+        expect.stringMatching(/^monorepo\.workspace:.*no workspace was detected/),
+      ]);
+      expect(JSON.stringify(info.configDiagnostics)).not.toContain("SENTINEL");
+    });
+
+    it("applies matched workspace overrides and reports only the missing app (#873)", async () => {
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          monorepo: {
+            apps: [
+              { name: "web", rootDirectory: "./apps/web/", port: 8080 },
+              { name: "missing", rootDirectory: "apps/missing" },
+            ],
+          },
+        }),
+      );
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({ name: "workspace", workspaces: ["apps/*"] }),
+      );
+      for (const app of ["web", "admin"]) {
+        await mkdir(join(tempDir, "apps", app), { recursive: true });
+        await writeFile(
+          join(tempDir, "apps", app, "package.json"),
+          JSON.stringify({
+            name: app,
+            dependencies: { next: "^15.0.0" },
+            scripts: { build: "next build", start: "next start" },
+          }),
+        );
+        await writeFile(join(tempDir, "apps", app, "package-lock.json"), "{}");
+      }
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info.projectType).toBe("monorepo");
+      expect(info.monorepoApps).toHaveLength(2);
+      expect(info.monorepoApps?.find((app) => app.rootDirectory === "apps/web")?.port).toBe(8080);
+      expect(info.configDiagnostics?.warnings).toEqual([
+        expect.stringMatching(/^monorepo\.apps\[1\]:/),
+      ]);
     });
 
     it("reports an unrecognized top-level key as a warning, not an error", async () => {

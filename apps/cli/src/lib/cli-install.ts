@@ -10,6 +10,7 @@
  * (compose vs bare), which is a SERVICE dimension, orthogonal to how the CLI
  * binary itself was delivered. Parallels lib/source-install.ts.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -48,7 +49,8 @@ export function readCliInstall(): CliInstall | null {
   if (!existsSync(MARKER)) return null;
   try {
     return parseCliInstall(readFileSync(MARKER, "utf8"));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/cli-install");
     return null;
   }
 }

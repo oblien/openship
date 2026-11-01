@@ -1,9 +1,10 @@
 {
-  "available": true,
-  "verified": true,
+  "available": false,
+  "verified": false,
+  "unlisted": true,
   "id": "mindwire",
   "name": "MindWire",
-  "description": "Run coding-agent runtimes behind a self-hosted control plane. MindWire keeps the runtime private and gives you one console to manage agents, credentials, and sessions.",
+  "description": "Retired Console/runtime container template. Mindwire now distributes its runtime through GitHub Releases and provides a hosted account portal.",
   "repository": "https://github.com/oblien/mindwire",
   "kind": "template",
   "logo": "mindwire",
@@ -141,5 +142,22 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Agent control plane",
+        "description": "Manage coding-agent runtimes in one console."
+      },
+      {
+        "title": "Private runtime",
+        "description": "Keep the runtime behind the control plane."
+      },
+      {
+        "title": "Sessions and credentials",
+        "description": "Manage access and agent sessions in one place."
+      }
+    ],
+    "articleFile": "articles/mindwire.md"
+  }
 }

@@ -3,18 +3,14 @@
 /**
  * Update + advisory state for the dashboard (desktop AND self-hosted).
  *
- * Everything is PULLED from the public GitHub repo — the latest release + an
- * advisory manifest pinned to that release's tag (so unreleased commits to main
- * never reach clients). Nothing is pushed to the app. Pure resolution lives in
- * @repo/core; this hook only does I/O + persistence.
+ * The backend caches tagged releases and the separately signed security feed.
+ * Nothing in either feed executes remote instructions. Pure resolution lives
+ * in @repo/core; this hook only does I/O + preference persistence.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  RELEASES_LATEST_API,
-  advisoryManifestUrl,
-  changelogMarkdownUrl,
-  extractChangelogSection,
   parseManifest,
   resolveUpdateState,
   matchAdvisories,
@@ -22,14 +18,33 @@ import {
   compareSemver,
   type AdvisoryManifest,
   type LatestRelease,
+  type Advisory,
   type UpdateState,
 } from "@repo/core";
 import { useDeploymentInfo } from "@/hooks/useDeploymentInfo";
+import type { AdvisoryFeedResult, SecurityOverview } from "@repo/contracts";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { getApiRequestScopeVersion } from "@/lib/api/client";
+import { updatesApi } from "@/lib/api/updates";
 import { getRestApiBaseUrl } from "@/lib/api/urls";
 
 const LS_MUTED = "openship_update_muted";
 const LS_DISMISSED = "openship_dismissed_advisories";
 const LS_LAST_SEEN = "openship_last_seen_version";
+
+// The header and Settings can both consume this hook. A dismissal belongs to
+// the app session, so a remount or an in-flight refresh must not undo it.
+const EMPTY_DISMISSALS: ReadonlySet<string> = new Set();
+let sessionDismissals = EMPTY_DISMISSALS;
+const dismissalListeners = new Set<() => void>();
+const getSessionDismissals = () => sessionDismissals;
+const getServerDismissals = () => EMPTY_DISMISSALS;
+function subscribeDismissals(listener: () => void) {
+  dismissalListeners.add(listener);
+  return () => {
+    dismissalListeners.delete(listener);
+  };
+}
 
 function isDesktop(): boolean {
   return typeof window !== "undefined" && !!window.desktop?.isDesktop;
@@ -45,9 +60,22 @@ interface Prefs {
 async function getPrefs(): Promise<Prefs> {
   const cfg = isDesktop() ? window.desktop?.config : undefined;
   if (cfg) {
-    const notif = await cfg.get<boolean | undefined>("updateNotifications").catch(() => undefined);
-    const dismissed = (await cfg.get<string[] | undefined>("dismissedAdvisoryIds").catch(() => undefined)) ?? [];
-    const lastSeen = (await cfg.get<string | undefined>("lastSeenVersion").catch(() => undefined)) ?? null;
+    const notif = await cfg
+      .get<boolean | undefined>("updateNotifications")
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
+        return undefined;
+      });
+    const dismissed =
+      (await cfg.get<string[] | undefined>("dismissedAdvisoryIds").catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
+        return undefined;
+      })) ?? [];
+    const lastSeen =
+      (await cfg.get<string | undefined>("lastSeenVersion").catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
+        return undefined;
+      })) ?? null;
     return { muted: notif === false, dismissed, lastSeen };
   }
   let dismissed: string[] = [];
@@ -72,7 +100,11 @@ async function persistMuted(muted: boolean): Promise<void> {
 async function persistDismissed(id: string): Promise<void> {
   const cfg = isDesktop() ? window.desktop?.config : undefined;
   if (cfg) {
-    const cur = (await cfg.get<string[] | undefined>("dismissedAdvisoryIds").catch(() => undefined)) ?? [];
+    const cur =
+      (await cfg.get<string[] | undefined>("dismissedAdvisoryIds").catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
+        return undefined;
+      })) ?? [];
     if (!cur.includes(id)) await cfg.set("dismissedAdvisoryIds", [...cur, id]);
     return;
   }
@@ -91,57 +123,135 @@ async function persistLastSeen(version: string): Promise<void> {
   else localStorage.setItem(LS_LAST_SEEN, version);
 }
 
-// Session-scoped cache: fetch GitHub once per app session (GitHub rate-limits
-// unauthenticated calls to 60/hr/IP; navigation shouldn't re-hit it).
-let remoteCache: Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> | null = null;
-
-/** One uncached update read. Exported so the three-source failure isolation is testable. */
-export async function fetchRemoteUncached(
-  fetcher: typeof fetch = fetch,
-): Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> {
-  let latest: LatestRelease | null = null;
-  let manifest: AdvisoryManifest | null = null;
-  try {
-    const res = await fetcher(RELEASES_LATEST_API, {
-      headers: { Accept: "application/vnd.github+json" },
+// Public feed polling is shared on the backend. This response also contains
+// private workload matches: coalesce ONLY within the current account/workspace.
+let remoteCache: {
+  scope: string;
+  promise: Promise<AdvisoryFeedResult | null>;
+  checkedAt: number;
+  pending: boolean;
+} | null = null;
+function fetchRemote(scope: string): Promise<AdvisoryFeedResult | null> {
+  if (
+    remoteCache?.scope === scope &&
+    (remoteCache.pending || Date.now() - remoteCache.checkedAt < 5 * 60_000)
+  )
+    return remoteCache.promise;
+  const previous = remoteCache?.scope === scope ? remoteCache.promise : null;
+  const promise = updatesApi
+    .advisories()
+    .then(({ data }) => data)
+    .catch(async (error) => {
+      observeCaughtError(error, "dashboard/components/updates/useUpdates");
+      const cached = await previous;
+      if (!cached) return null;
+      // Keep a known warning visible offline, with refresh actions disabled.
+      return {
+        ...cached,
+        stale: true,
+        overview: cached.overview && {
+          ...cached.overview,
+          projects: cached.overview.projects.map((project) => ({
+            ...project,
+            feedStale: true,
+            findings: project.findings.map((finding) => ({ ...finding, canRefresh: false })),
+          })),
+        },
+      };
+    })
+    .finally(() => {
+      entry.pending = false;
+      entry.checkedAt = Date.now();
     });
-    if (res.ok) {
-      const data = (await res.json()) as { tag_name?: string };
-      const tag = data.tag_name ?? "";
-      if (tag) {
-        latest = { version: tag.replace(/^v/, ""), tag, notes: "" };
-        // Both documents are pinned to the release tag. Fetch independently:
-        // a missing changelog must not hide a critical advisory, and a missing
-        // advisory must not erase the release notes.
-        const [changelogResult, manifestResult] = await Promise.allSettled([
-          fetcher(changelogMarkdownUrl(tag)),
-          fetcher(advisoryManifestUrl(tag), { headers: { Accept: "application/json" } }),
-        ]);
-        if (changelogResult.status === "fulfilled" && changelogResult.value.ok) {
-          try {
-            latest.notes = extractChangelogSection(await changelogResult.value.text(), latest.version);
-          } catch {
-            /* malformed/unreadable changelog → keep notes empty */
-          }
-        }
-        if (manifestResult.status === "fulfilled" && manifestResult.value.ok) {
-          try {
-            manifest = parseManifest(await manifestResult.value.json());
-          } catch {
-            /* malformed/unreadable manifest → no advisories */
-          }
-        }
-      }
-    }
-  } catch {
-    /* offline / rate-limited → no update info */
-  }
-  return { latest, manifest };
+  const entry = { scope, checkedAt: 0, pending: true, promise };
+  remoteCache = entry;
+  return promise;
 }
 
-async function fetchRemote(): Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> {
-  remoteCache ??= fetchRemoteUncached();
-  return remoteCache;
+const refreshListeners = new Set<(resourceKey: string) => void>();
+const queuedRefreshes = new Set<string>();
+function refreshConsumers(resourceKey: string) {
+  if (queuedRefreshes.has(resourceKey)) return;
+  queuedRefreshes.add(resourceKey);
+  queueMicrotask(() => {
+    queuedRefreshes.delete(resourceKey);
+    const scope = `${resourceKey}:${getApiRequestScopeVersion()}`;
+    // Consent/check mutations must supersede reads started before the mutation.
+    // Keep the old snapshot only as an offline warning fallback.
+    if (remoteCache?.scope === scope)
+      remoteCache = { ...remoteCache, pending: false, checkedAt: 0 };
+    for (const listener of refreshListeners) listener(resourceKey);
+  });
+}
+
+const deploymentChecks = new Map<string, Promise<void>>();
+/** A successful deploy is a reason to recheck, never proof that an advisory is fixed. */
+export function refreshSecurityAfterDeployment(
+  resourceKey: string,
+  projectId: string,
+  deploymentId: string,
+): Promise<void> {
+  const version = getApiRequestScopeVersion();
+  const scope = `${resourceKey}:${version}`;
+  if (remoteCache?.scope !== scope) return Promise.resolve();
+  const key = `${scope}:${projectId}:${deploymentId}`;
+  const pending = deploymentChecks.get(key);
+  if (pending) return pending;
+  const snapshot = remoteCache.promise;
+  const current = () => version === getApiRequestScopeVersion() && remoteCache?.scope === scope;
+  const task = (async () => {
+    const feed = await snapshot;
+    if (!current()) return;
+    const project = feed?.overview.projects.find((item) => item.projectId === projectId);
+    if (!project || (!project.findings.length && project.checkedAt && !project.autoRefresh)) return;
+    if (project.deploymentId === deploymentId && project.checkedAt) return;
+    // This read reuses the backend's deployment-keyed inventory. Replays of a
+    // completed build do not rerun version commands on the same container.
+    const { data } = await updatesApi.security(projectId);
+    if (current() && data.projectId === projectId && data.deploymentId === deploymentId)
+      refreshConsumers(resourceKey);
+  })()
+    .catch((error) => {
+      observeCaughtError(error, "dashboard/components/updates/deployment-security-check");
+    })
+    .finally(() => {
+      deploymentChecks.delete(key);
+    });
+  deploymentChecks.set(key, task);
+  return task;
+}
+
+const EMPTY_OVERVIEW: SecurityOverview = { projects: [], pendingProjects: 0, unknownProjects: 0 };
+interface RuntimeAdvisory extends Advisory {
+  projects: SecurityOverview["projects"];
+}
+function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvisory[] {
+  const notices = new Map<string, RuntimeAdvisory>();
+  for (const project of overview.projects)
+    for (const finding of project.findings) {
+      const id = `runtime:${scope}:${finding.id}:${finding.revision}`;
+      const existing = notices.get(id);
+      if (existing) {
+        const affected = existing.projects.find((item) => item.projectId === project.projectId);
+        if (affected) affected.findings.push(finding);
+        else existing.projects.push({ ...project, findings: [finding] });
+        continue;
+      }
+      notices.set(id, {
+        id,
+        projects: [{ ...project, findings: [finding] }],
+        title: finding.title,
+        message: finding.message,
+        severity:
+          finding.severity === "critical" || finding.severity === "high"
+            ? "critical"
+            : "recommended",
+        announce: true,
+        affects: "*",
+        action: { kind: "open-url", label: "Read advisory", url: finding.url },
+      });
+    }
+  return [...notices.values()];
 }
 
 // The SaaS advisory source: operator-pushed platform notices from our own API
@@ -156,7 +266,8 @@ async function fetchNotices(): Promise<AdvisoryManifest> {
     });
     if (!res.ok) return { advisories: [] };
     return parseManifest(await res.json());
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
     return { advisories: [] };
   }
 }
@@ -169,6 +280,10 @@ export type UpdatePhase = "idle" | "downloading" | "installing" | "error";
 export interface UseUpdates {
   state: UpdateState | null;
   latest: LatestRelease | null;
+  securityOverview: SecurityOverview;
+  runtimeAdvisories: RuntimeAdvisory[];
+  /** null while loading; false when no trustworthy snapshot is available. */
+  securityAvailable: boolean | null;
   muted: boolean;
   desktop: boolean;
   /**
@@ -195,14 +310,34 @@ export interface UseUpdates {
   /** Error message when `updatePhase === "error"`. */
   updateError: string | null;
   reload: () => void;
-  /** Force a fresh GitHub check, bypassing the session cache. */
+  /** Refresh from the backend, preserving its GitHub cadence and backoff. */
   refresh: () => void;
 }
 
 export function useUpdates(): UseUpdates {
   const deployInfo = useDeploymentInfo();
-  const [state, setState] = useState<UpdateState | null>(null);
-  const [latest, setLatest] = useState<LatestRelease | null>(null);
+  const dismissed = useSyncExternalStore(
+    subscribeDismissals,
+    getSessionDismissals,
+    getServerDismissals,
+  );
+  const resourceKey = useCloudResourceKey();
+  const scope = `${resourceKey}:${getApiRequestScopeVersion()}`;
+  const identity = useRef(resourceKey);
+  identity.current = resourceKey;
+  const generation = useRef(0);
+  const [result, setResult] = useState<{
+    scope: string;
+    state: UpdateState;
+    latest: LatestRelease | null;
+    overview: SecurityOverview;
+    securityAvailable: boolean;
+  } | null>(null);
+  const currentResult = result?.scope === scope ? result : null;
+  const state = currentResult?.state ?? null;
+  const latest = currentResult?.latest ?? null;
+  const securityOverview = currentResult?.overview ?? EMPTY_OVERVIEW;
+  const runtimeAdvisories = runtimeNotices(securityOverview, resourceKey);
   const [muted, setMutedState] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
@@ -221,86 +356,123 @@ export function useUpdates(): UseUpdates {
       ? "selfhosted"
       : "cloud";
 
-  const load = useCallback(async () => {
-    // Desktop + self-hosted operators control their own install → the GitHub
-    // update + advisory feed below. The managed SaaS (cloud) has nothing to
-    // self-update, but still surfaces OPERATOR-pushed platform notices (partial
-    // outage, maintenance, advisories) through the SAME advisory banner —
-    // different source (our /api/notices), identical shape + dismissal rules.
-    const desktopOrSelfHosted = isDesktop() || deployInfo?.selfHosted === true;
-    if (!desktopOrSelfHosted) {
-      if (!deployInfo) return; // deploy info still loading — not yet known to be cloud
-      const [prefs, manifest] = await Promise.all([getPrefs(), fetchNotices()]);
+  const load = useCallback(
+    async () => {
+      if (!deployInfo && !isDesktop()) return;
+      const request = ++generation.current;
+      const requestScope = getApiRequestScopeVersion();
+      const requestKey = `${resourceKey}:${requestScope}`;
+      const isCurrent = () =>
+        request === generation.current &&
+        identity.current === resourceKey &&
+        requestScope === getApiRequestScopeVersion();
+      const current =
+        isDesktop() && window.desktop?.app
+          ? await window.desktop.app.version().catch((error) => {
+              observeCaughtError(error, "dashboard/components/updates/useUpdates");
+              return null;
+            })
+          : (deployInfo?.version ?? null);
+      if (!current || !isCurrent()) return;
+      const [prefs, remote, notices] = await Promise.all([
+        getPrefs(),
+        fetchRemote(requestKey),
+        fetchNotices(),
+      ]);
+      if (!isCurrent()) return;
+      setCurrentVersion(current);
       setMutedState(prefs.muted);
-      const advisories = matchAdvisories(deployInfo.version ?? "", manifest, mode)
-        .filter((a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)))
-        .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9));
-      setState({
-        currentVersion: deployInfo.version ?? "",
-        latestVersion: null,
-        updateAvailable: false,
-        advisories,
-        changelogUrl: "",
-        latestChangelogUrl: "",
+      // Managed Cloud never offers a control-plane update. Its customer workloads
+      // still receive the same verified runtime notices as self-hosted and Desktop.
+      const platformNotices: Advisory[] =
+        mode === "cloud"
+          ? []
+          : (remote?.security?.advisories ?? []).flatMap((notice) =>
+              notice.targets
+                .filter((target) => target.kind === "platform")
+                .map((target) => ({
+                  id: `security:${notice.id}:${notice.revision}`,
+                  title: notice.title,
+                  message: notice.message,
+                  severity:
+                    notice.severity === "critical" || notice.severity === "high"
+                      ? "critical"
+                      : "recommended",
+                  announce: true,
+                  affects: target.affected,
+                  action: { kind: "open-url", label: "Read advisory", url: notice.url },
+                })),
+            );
+      const base = resolveUpdateState({
+        currentVersion: current,
+        latestRelease: mode === "cloud" ? null : (remote?.release.latest ?? null),
+        manifest: {
+          advisories:
+            mode === "cloud"
+              ? []
+              : [...(remote?.release.manifest?.advisories ?? []), ...platformNotices],
+        },
+        dismissed: prefs.dismissed,
+        muted: prefs.muted,
+        mode,
       });
-      return;
-    }
-
-    let current: string | null = null;
-    if (isDesktop() && window.desktop?.app) {
-      current = await window.desktop.app.version().catch(() => null);
-    } else {
-      current = deployInfo?.version ?? null;
-    }
-    if (!current) return;
-    setCurrentVersion(current);
-
-    // Also pull operator-pushed platform notices here (not just on cloud) so a
-    // self-hosted/desktop operator sees danger/maintenance advisories through
-    // the SAME banner. Merge them with the GitHub release advisories.
-    const [prefs, remote, notices] = await Promise.all([
-      getPrefs(),
-      fetchRemote(),
-      fetchNotices().catch(() => ({ advisories: [] })),
-    ]);
-    setMutedState(prefs.muted);
-    setLatest(remote.latest);
-    const base = resolveUpdateState({
-      currentVersion: current,
-      latestRelease: remote.latest,
-      manifest: remote.manifest,
-      dismissed: prefs.dismissed,
-      muted: prefs.muted,
-      mode,
-    });
-    const noticeAdvisories = matchAdvisories(current, notices, mode).filter(
-      (a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)),
-    );
-    const advisories = [...base.advisories, ...noticeAdvisories]
-      .filter((a, i, arr) => arr.findIndex((b) => b.id === a.id) === i)
-      .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9));
-    setState({ ...base, advisories });
-
-    // "What's new": show once when the running version is newer than the last
-    // version we announced. First run (no record) just seeds the baseline.
-    if (prefs.lastSeen === null) {
-      await persistLastSeen(current);
-    } else if (compareSemver(current, prefs.lastSeen) > 0) {
-      setWhatsNewVersion(current);
-    }
-  }, [deployInfo?.version, deployInfo?.selfHosted, mode]);
+      const overview = remote?.overview ?? EMPTY_OVERVIEW;
+      // Runtime matches are already evaluated by the shared backend matcher;
+      // comparing them against the Openship version would hide affected apps.
+      const advisories = [
+        ...base.advisories,
+        ...matchAdvisories(current, notices, mode),
+        ...runtimeNotices(overview, resourceKey),
+      ]
+        .filter(
+          (a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)),
+        )
+        .filter((a, i, all) => all.findIndex((b) => b.id === a.id) === i)
+        .sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9));
+      setResult({
+        scope: requestKey,
+        state: { ...base, advisories },
+        latest: mode === "cloud" ? null : (remote?.release.latest ?? null),
+        overview,
+        securityAvailable: remote !== null,
+      });
+      if (mode !== "cloud") {
+        if (prefs.lastSeen === null) await persistLastSeen(current);
+        else if (compareSemver(current, prefs.lastSeen) > 0) setWhatsNewVersion(current);
+      }
+    },
+    [deployInfo?.version, deployInfo?.selfHosted, mode, resourceKey],
+  );
 
   useEffect(() => {
+    const onRefresh = (key: string) => {
+      if (key === resourceKey) void load();
+    };
+    refreshListeners.add(onRefresh);
     void load();
-  }, [load]);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void load();
+    }, 5 * 60_000);
+    return () => {
+      refreshListeners.delete(onRefresh);
+      generation.current++;
+      clearInterval(timer);
+    };
+  }, [load, resourceKey]);
 
   const dismissAdvisory = useCallback(
     (id: string) => {
       const adv = state?.advisories.find((a) => a.id === id);
-      setState((s) => (s ? { ...s, advisories: s.advisories.filter((a) => a.id !== id) } : s));
+      if (!adv || sessionDismissals.has(id)) return;
+      sessionDismissals = new Set([...sessionDismissals, id]);
+      for (const listener of dismissalListeners) listener();
       // Critical advisories are session-dismiss only (they resurface next launch
       // by design); everything else is remembered so it never nags again.
-      if (adv && adv.severity !== "critical") void persistDismissed(id);
+      // Keep the session choice even if the persistent store is unavailable.
+      if (adv.severity !== "critical")
+        void persistDismissed(id).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
+        });
     },
     [state],
   );
@@ -356,29 +528,34 @@ export function useUpdates(): UseUpdates {
     setUpdateError(null);
     setUpdateProgress(0);
     setUpdatePhase("downloading");
-    void Promise.resolve(u.start())
+    void Promise.resolve(u.check?.(true))
+      .then(() => u.start())
       .then((ok) => {
         if (ok === false) {
           setUpdatePhase("idle");
           void u.open?.();
         }
       })
-      .catch(() => setUpdatePhase("idle"));
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/updates/useUpdates");
+        return setUpdatePhase("idle");
+      });
   }, []);
 
-  // Force a fresh GitHub check (the session cache is otherwise reused). Also
-  // prime the desktop main process so its pending-update state — which the
-  // native wizard + install act on — re-checks in lockstep with the renderer,
-  // instead of only being set by the boot check.
+  // Concurrent consumers join the backend read. The native installer separately
+  // verifies the matching release artifact before installing it.
   const refresh = useCallback(() => {
-    remoteCache = null;
-    void window.desktop?.updates?.check?.();
-    void load();
-  }, [load]);
+    refreshConsumers(resourceKey);
+  }, [resourceKey]);
 
   return {
-    state,
+    state: state
+      ? { ...state, advisories: state.advisories.filter((a) => !dismissed.has(a.id)) }
+      : null,
     latest,
+    securityOverview,
+    securityAvailable: currentResult?.securityAvailable ?? null,
+    runtimeAdvisories,
     muted,
     desktop: isDesktop(),
     mode,

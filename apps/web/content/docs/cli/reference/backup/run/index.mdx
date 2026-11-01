@@ -1,0 +1,87 @@
+---
+title: backup run
+description: Commands, arguments, and options for openship backup run.
+cliGroup: openship backup run
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship backup run
+
+Backup runs (executions)
+
+```text
+openship backup run [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/backup/run#openship-backup-run-list) | List backup runs for a project |
+| [`get [options] <runId>`](/docs/cli/reference/backup/run#openship-backup-run-get) | Show one run (optionally stream it) |
+| [`protect [options] <runId>`](/docs/cli/reference/backup/run#openship-backup-run-protect) | Protect a run from retention pruning (or release it) |
+| [`restore [options] <runId>`](/docs/cli/reference/backup/run#openship-backup-run-restore) | Prepare a restore from a run (stages it; apply separately) |
+
+## openship backup run get
+
+Show one run (optionally stream it)
+
+```text
+openship backup run get [options] <runId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `runId` | Backup run ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--follow` | Stream progress to completion |
+
+## openship backup run list
+
+List backup runs for a project
+
+```text
+openship backup run list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project <id>` | Project ID |
+| `--service <id>` | Filter to a single service |
+| `--limit <n>` | Max rows (default 50) |
+
+## openship backup run protect
+
+Protect a run from retention pruning (or release it)
+
+```text
+openship backup run protect [options] <runId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `runId` | Backup run ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--until <iso>` | Protect until this ISO timestamp |
+| `--release` | Clear the protection so retention can prune it |
+
+## openship backup run restore
+
+Prepare a restore from a run (stages it; apply separately)
+
+```text
+openship backup run restore [options] <runId>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `runId` | Backup run ID to restore from |
+
+| Option | Meaning |
+| --- | --- |
+| `--mode <mode>` | in_place (default) or to_fork (default: "in_place") |
+| `--fork-server <id>` | Target mail server ID (required for --mode to_fork) |
+| `--follow` | Stream the preparation phase |

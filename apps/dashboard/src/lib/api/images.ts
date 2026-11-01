@@ -1,3 +1,4 @@
+import type { ComposeGpu } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
@@ -11,13 +12,18 @@ export interface ImageCatalogEntry {
   name?: string;
   /** Docker image string, e.g. "postgres:16-alpine" */
   image?: string;
+  /** Exact container argv required by this image's entrypoint. */
+  commandArgv?: string[];
+  supportsCloud?: boolean;
+  /** Optional NVIDIA device request for this exact catalog image. */
+  gpus?: ComposeGpu;
   /** URL to logo / icon */
   logo?: string;
   description?: string;
   category?: string;
   tags?: string[];
   ports?: number[];
-  defaultEnv?: Array<{ key: string; value?: string; description?: string }>;
+  defaultEnv?: Array<{ key: string; value?: string; description?: string; generate?: "secret" }>;
   /** Default named-volume mounts in `volume:container/path` form. Pre-seeded
    *  into the configure step so stateful services don't lose data on restart. */
   defaultVolumes?: string[];

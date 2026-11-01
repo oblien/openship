@@ -1,0 +1,144 @@
+{
+  "activity": {
+    "title": "Активность",
+    "thisWeek": "на этой неделе",
+    "deploymentSingular": "{count} деплой",
+    "deploymentPlural": "{count} деплоев"
+  },
+  "apiRequests": {
+    "title": "Запросы к API",
+    "last7Days": "За последние 7 дней",
+    "totalRequests": "Всего запросов",
+    "requestsTooltip": "{count} запросов"
+  },
+  "credits": {
+    "title": "Баланс кредитов",
+    "availableToUse": "Доступно для использования",
+    "spentThisMonth": "Потрачено в этом месяце",
+    "add": "Пополнить"
+  },
+  "deployments": {
+    "title": "Деплои",
+    "lastNDays": "за последние {period} дн.",
+    "deploymentSingular": "{count} деплой",
+    "deploymentPlural": "{count} деплоев"
+  },
+  "homeTip": {
+    "quickTip": "Совет",
+    "connectText": "Подключите репозиторий GitHub для автоматического деплоя при каждом пуше.",
+    "connectLabel": "Подключить GitHub",
+    "createText": "Создайте свой первый проект, чтобы начать деплой.",
+    "createLabel": "Новый проект",
+    "settingsText": "Настройте переменные окружения и собственные домены в настройках проекта.",
+    "settingsLabel": "Настройки проекта",
+    "connected": "Подключено",
+    "tips": {
+      "envVars": {
+        "text": "Добавляйте зашифрованные переменные окружения и секреты в любой проект.",
+        "label": "Открыть проекты"
+      },
+      "customDomain": {
+        "text": "Привяжите собственный домен к проекту — HTTPS настраивается автоматически.",
+        "label": "Открыть проекты"
+      },
+      "autoDeploy": {
+        "text": "Подключите GitHub для автодеплоя при каждом пуше без настройки CI.",
+        "label": "Открыть настройки Git"
+      },
+      "rollback": {
+        "text": "Откатывайтесь к любому предыдущему деплою в один клик.",
+        "label": "Посмотреть деплои"
+      },
+      "apps": {
+        "text": "Устанавливайте приложения для селф-хостинга вроде Gitea, n8n и Metabase в один клик.",
+        "label": "Каталог приложений"
+      },
+      "servers": {
+        "text": "Подключайте собственные серверы по SSH и деплойте на них отсюда.",
+        "label": "Управление серверами"
+      },
+      "jobs": {
+        "text": "Запускайте команды по расписанию cron — с повторами, логами в реальном времени и историей.",
+        "label": "Открыть задачи"
+      },
+      "backups": {
+        "text": "Настройте автоматическое резервное копирование для ваших баз данных и томов.",
+        "label": "Настроить бэкапы"
+      },
+      "mail": {
+        "text": "Запустите собственный почтовый сервер и веб-почту на своей инфраструктуре.",
+        "label": "Настроить почту"
+      },
+      "team": {
+        "text": "Приглашайте коллег и разграничивайте доступ к проектам.",
+        "label": "Управление командой"
+      }
+    }
+  },
+  "welcome": {
+    "title": "Запустите свой первый проект",
+    "subtitle": "Подключите репозиторий или начните с шаблона — Openship соберёт его, развернёт и предоставит рабочий URL за считанные минуты.",
+    "createProject": "Создать проект",
+    "importGithub": "Импортировать из GitHub",
+    "tipPrefix": "Подсказка: нажмите",
+    "tipSuffix": "для быстрого перехода"
+  },
+  "header": {
+    "goodMorning": "Доброе утро",
+    "goodAfternoon": "Добрый день",
+    "goodEvening": "Добрый вечер",
+    "greetingWithName": "{greeting}, {name}!",
+    "overview": "Обзор",
+    "subtitle": "Отслеживайте использование платформы и управляйте ресурсами",
+    "creditsBalance": "Баланс кредитов",
+    "topUp": "Пополнить"
+  },
+  "hero": {
+    "title": "Активность платформы",
+    "subtitle": "Использование токенов и запросы к API",
+    "tokens": "Токены",
+    "requests": "Запросы",
+    "lastNDays": "За последние {period} дн.",
+    "agents": "Агенты",
+    "environments": "Окружения",
+    "total": "Всего",
+    "production": "Продакшн",
+    "testing": "Тестирование",
+    "prodCount": "{count} прод",
+    "testCount": "{count} тест"
+  },
+  "projects": {
+    "title": "Проекты",
+    "activeDeployments": "Активные деплои",
+    "total": "Всего",
+    "live": "Работает",
+    "building": "Сборка",
+    "needAttentionSingular": "{count} проект требует внимания",
+    "needAttentionPlural": "{count} проектов требуют внимания"
+  },
+  "sandboxes": {
+    "title": "Песочницы",
+    "developmentEnvironments": "Окружения разработки",
+    "totalSandboxes": "Всего песочниц",
+    "active": "Активные",
+    "runningCount": "{count} запущено",
+    "stoppedCount": "{count} остановлено"
+  },
+  "stats": {
+    "creditsBalance": "Баланс кредитов",
+    "tokenUsage": "Использование токенов",
+    "thisMonth": "В этом месяце",
+    "apiRequests": "Запросы к API",
+    "last7Days": "За последние 7 дней",
+    "deployments": "Деплои",
+    "successfulCount": "{count} успешно",
+    "activeProjects": "Активные проекты",
+    "sandboxes": "Песочницы",
+    "activeCount": "{count} активно"
+  },
+  "tokenUsage": {
+    "title": "Использование токенов",
+    "lastNDays": "за последние {period} дн.",
+    "tokensTooltip": "{count} токенов"
+  }
+}

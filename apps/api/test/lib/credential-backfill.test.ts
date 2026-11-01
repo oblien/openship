@@ -16,7 +16,7 @@ const { dnsRepo, credRepo } = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({ repos: { dnsCredential: dnsRepo, credential: credRepo } }));
 
 const { decrypt } = vi.hoisted(() => ({ decrypt: vi.fn() }));
-vi.mock("../../src/lib/credential-encryption", () => ({
+vi.mock("@repo/platform/engine/lib/credential-encryption", () => ({
   encryptSecretField: (v: string | null | undefined) => (v ? `enc1:${v}` : null),
   decryptSecretField: decrypt,
 }));

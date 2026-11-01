@@ -6,6 +6,7 @@
  * through CommandExecutor (SSH or local).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor, LogEntry } from "../types";
 import type { InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
 import { MIN_DOCKER_VERSION, systemCatalog } from "./catalog";
@@ -35,7 +36,9 @@ function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
 async function execSafe(executor: CommandExecutor, cmd: string): Promise<void> {
   try {
     await executor.exec(cmd);
-  } catch {}
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/installer");
+  }
 }
 
 type ExecutorPrep =
@@ -190,7 +193,7 @@ export async function installDocker(
     onLog(log(`${present.message} — starting the Docker service`, "warn"));
     await executor
       .streamExec(service.value, onLog as (log: LogEntry) => void)
-      .catch(() => undefined);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/installer"); return undefined; });
     present = await probeDocker(executor);
     if (present.verdict === "ok") {
       onLog(log(`Docker ${present.version} is running`));
@@ -261,6 +264,7 @@ export async function installDocker(
     onLog(log(`Docker ${parsed} installed`));
     return { component: "docker", success: true, version: parsed };
   } catch (err) {
+    observeCaughtError(err, "adapters/system/installer");
     const msg = safeErrorMessage(err);
     onLog(log(`Docker installation failed: ${msg}`, "error"));
     return { component: "docker", success: false, error: msg };
@@ -315,6 +319,7 @@ async function installPackaged(
     onLog(log(`${label} ${parsed} installed${inside}`));
     return { component, success: true, version: parsed };
   } catch (err) {
+    observeCaughtError(err, "adapters/system/installer");
     const msg = safeErrorMessage(err);
     onLog(log(`${label} installation failed: ${msg}`, "error"));
     return { component, success: false, error: msg };
@@ -382,7 +387,7 @@ export async function installContainerEdge(
     }
     const version = await executor
       .exec(containerCommand(result.container, "openresty -v 2>&1"))
-      .catch(() => "");
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/installer"); return ""; });
     return {
       component: "edge",
       success: true,
@@ -420,6 +425,7 @@ export async function uninstallRsync(
     onLog(log("rsync removed"));
     return { component: "rsync", success: true };
   } catch (err) {
+    observeCaughtError(err, "adapters/system/installer");
     const msg = safeErrorMessage(err);
     return { component: "rsync", success: false, error: msg };
   }
@@ -435,7 +441,7 @@ export async function uninstallEdge(
 
   // `fresh`: we are about to REMOVE it, so a stale positive would `docker rm` a
   // name that no longer exists and report success over an untouched box.
-  const container = await resolveOurEdgeContainer(executor, { fresh: true }).catch(() => null);
+  const container = await resolveOurEdgeContainer(executor, { fresh: true }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/installer"); return null; });
   if (!container) {
     onLog(log("No edge container on this server — nothing to remove."));
     return { component: "edge", success: true };

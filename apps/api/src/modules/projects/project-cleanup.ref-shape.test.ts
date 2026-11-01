@@ -34,6 +34,8 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   /** The DockerRuntime every deployment resolves to. Assigned in beforeAll. */
   runtime: null as unknown,
+  localRuntime: { name: "bare" } as unknown,
+  baseTarget: "selfhosted",
   deployments: [] as Record<string, unknown>[],
   /** deployment id → its service_deployment rows. */
   serviceRows: {} as Record<string, Record<string, unknown>[]>,
@@ -43,7 +45,7 @@ const h = vi.hoisted(() => ({
   resolvedByDeployment: {} as Record<string, Record<string, unknown>>,
   resolveErrors: {} as Record<string, Error>,
   keep: { images: new Set<string>(), containers: new Set<string>() },
-  removeRoute: vi.fn(async () => {}),
+  removeRoute: vi.fn(async (_domain: string) => {}),
   releaseManagedHostnames: vi.fn(async () => ({ failures: [] as string[] })),
   convergeClaims: vi.fn(async () => ({
     released: 0,
@@ -51,6 +53,8 @@ const h = vi.hoisted(() => ({
   })),
   isReachable: vi.fn(async () => true),
   getServer: vi.fn(async () => null as Record<string, unknown> | null),
+  cloudBinding: undefined as Record<string, unknown> | undefined,
+  resolveCloudPlatform: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -62,10 +66,11 @@ vi.mock("@repo/db", () => ({
     deployment: { listByProject: vi.fn(async () => ({ rows: h.deployments })) },
     domain: { listByProject: vi.fn(async () => h.domains) },
     server: { getInOrganization: h.getServer },
+    cloudDockerWorkspace: { find: vi.fn(async () => undefined) },
   },
 }));
 
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: vi.fn(async (dep: { id: string }) =>
     h.resolveErrors[dep.id]
       ? Promise.reject(h.resolveErrors[dep.id])
@@ -74,41 +79,42 @@ vi.mock("../../lib/deployment-runtime", () => ({
         : { runtime: h.runtime },
   ),
   disposeRuntime: vi.fn(),
-  resolveDeploymentPlatform: vi.fn(async () => {
-    throw new Error("no cloud workspace in these fixtures");
-  }),
+  resolveDeploymentPlatform: h.resolveCloudPlatform,
 }));
 
-// `platform().runtime` must NOT be a DockerRuntime, or the local-host sweep adds a
-// second, unspied runtime that would talk to a real daemon.
-vi.mock("../../lib/controller-helpers", () => ({
-  platform: () => ({ runtime: { name: "bare" }, routing: { removeRoute: h.removeRoute } }),
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: h.baseTarget, runtime: h.localRuntime, routing: { removeRoute: h.removeRoute } }),
 }));
 
-vi.mock("./cleanup-keep-set", () => ({ computeCleanupKeepSet: vi.fn(async () => h.keep) }));
-vi.mock("../../lib/routing-domains", () => ({
+vi.mock("@repo/platform/engine/modules/projects/cleanup-keep-set", () => ({ computeCleanupKeepSet: vi.fn(async () => h.keep) }));
+vi.mock("@repo/platform/engine/lib/routing-domains", () => ({
   buildServiceRouteDomains: () => h.derivedServiceRoutes,
 }));
-vi.mock("../../lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   releaseManagedHostnames: h.releaseManagedHostnames,
 }));
-vi.mock("../../lib/server-reachability", () => ({
+vi.mock("@repo/platform/engine/lib/server-reachability", () => ({
   createReachabilityProbe: () => ({ isReachable: h.isReachable }),
 }));
-vi.mock("../../lib/cloud/transport", () => ({ resolveOrgCloudUserId: vi.fn(async () => null) }));
-vi.mock("../services/live-state", () => ({ resolveLiveServiceState: () => new Map() }));
-vi.mock("../deployments/pinned-host-ports", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/lib/cloud-docker-workspace", () => ({ cloudDockerWorkspaceForCleanup: vi.fn(async () => h.cloudBinding) }));
+vi.mock("@repo/platform/engine/modules/services/live-state", () => ({ resolveLiveServiceState: () => new Map() }));
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   convergeTargetHostPortClaims: h.convergeClaims,
 }));
 
-import { DockerRuntime } from "@repo/adapters";
+import { CloudDockerRuntime, CloudInfraProvider, DockerRuntime } from "@repo/adapters";
+import { cloudDockerProjectPaths } from "../../../../../packages/adapters/src/runtime/cloud/docker-paths";
+import { managedRoutingFixture } from "../../../../../packages/adapters/test/managed-routing-fixture";
+import { resolveDeploymentRuntime, disposeRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import {
   collectDeploymentManifest,
   collectProjectManifest,
   executeCleanup,
+  previewProjectDeletion,
   type CleanupManifest,
   type CleanupRouteContext,
-} from "./project-cleanup.service";
+} from "@repo/platform/engine/modules/projects/project-cleanup.service";
 
 /** A compose static sub-app's doc-root, as written into `service_deployment.image_ref`. */
 const STATIC_BUILD_DIR = "/opt/openship/static/.builds/bld_1-svc_1";
@@ -123,7 +129,7 @@ const project = {
   id: "p1",
   slug: "app",
   organizationId: "org1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   activeDeploymentId: null,
 };
 
@@ -159,11 +165,14 @@ beforeAll(async () => {
   vi.spyOn(docker, "inspectNamedVolumes").mockResolvedValue([]);
   vi.spyOn(docker, "listProjectContainerIds").mockResolvedValue([]);
   vi.spyOn(docker, "listAllContainers").mockResolvedValue([]);
+  vi.spyOn(docker, "listAllVolumes").mockResolvedValue([]);
   vi.spyOn(docker, "listProjectImages").mockResolvedValue([]);
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.localRuntime = { name: "bare" };
+  h.baseTarget = "selfhosted";
   h.deployments = [];
   h.serviceRows = {};
   h.projectServices = [];
@@ -174,6 +183,355 @@ beforeEach(() => {
   h.keep = { images: new Set<string>(), containers: new Set<string>() };
   h.isReachable.mockResolvedValue(true);
   h.getServer.mockResolvedValue(null);
+  h.cloudBinding = undefined;
+  h.resolveCloudPlatform.mockReset().mockRejectedValue(new Error("no cloud workspace in these fixtures"));
+});
+
+describe("Cloud Docker project teardown", () => {
+  const listRoutes = vi.fn(async () => ["app.opsh.io", "console.opsh.io"]);
+  const cleanupProject = vi.fn(async () => {});
+  const hostState = vi.fn(async () => "running");
+  const cloudDocker = Object.assign(Object.create(CloudDockerRuntime.prototype), {
+    name: "docker", projectId: "p1",
+    connection: { state: hostState },
+    supports: (cap: string) => ["projectContainerSweep", "hostContainerQuery"].includes(cap),
+    listProjectContainerIds: vi.fn(async () => []), listAllContainers: vi.fn(async () => []),
+    listAllVolumes: vi.fn(async (): Promise<Array<{ name: string; labels: Record<string, string> }>> => []),
+    listProjectImages: vi.fn(async () => []), inspectNamedVolumes: vi.fn(async () => ["project-data"]),
+    destroy: vi.fn(async () => {}), removeImage: vi.fn(async () => {}),
+    removeVolume: vi.fn(async () => {}), removeNetwork: vi.fn(async () => {}), cleanupProject,
+    removeProjectNetwork: vi.fn(async (slug: string) => cloudDocker.removeNetwork(slug)),
+  });
+  Object.defineProperty(cloudDocker, "docker", { value: { ping: vi.fn(async () => {}) } });
+  const routing = Object.assign(Object.create(CloudInfraProvider.prototype), {
+    listProjectRouteHostnames: listRoutes, removeRoute: h.removeRoute,
+    removeProjectRoute: async (domain: string) => { await h.removeRoute(domain); return "removed" as const; },
+  });
+  const ownedProject = { ...project, serverId: "managed-server", workspaceId: "owner-workspace" };
+
+  function managedRoutes() {
+    const fixture = managedRoutingFixture();
+    Object.assign(fixture.scope, {
+      projectId: project.id,
+      workspaceId: "shared-vm",
+      routeRoot: cloudDockerProjectPaths(project.id).routes,
+    });
+    h.resolveCloudPlatform.mockResolvedValue({
+      platform: { runtime: cloudDocker, routing: fixture.infra },
+    });
+    const addPage = (slug: string, owner: string) =>
+      fixture.records.set(slug, {
+        id: fixture.records.size + 1,
+        slug,
+        domain: "opsh.io",
+        namespace: fixture.namespace,
+        source_workspace_id: fixture.scope.workspaceId,
+        exported_path: `${cloudDockerProjectPaths(owner).routes}/${slug}`,
+      });
+    return { ...fixture, addPage };
+  }
+  beforeEach(() => {
+    h.cloudBinding = { ownerWorkspaceId: "owner-workspace", namespace: "org-ns", workspaceId: "shared-vm" };
+    h.deployments = [deployment({ containerId: "web-container", meta: { deployTarget: "cloud", runtimeMode: "docker",
+      managedServer: { projectId: "p1", workspaceId: "shared-vm", ownerWorkspaceId: "owner-workspace" } } })];
+    h.serviceRows.dep_1 = [serviceRow({ containerId: "web-container", imageRef: IMAGE_TAG })];
+    listRoutes.mockResolvedValue(["app.opsh.io", "console.opsh.io"]);
+    cleanupProject.mockResolvedValue();
+    hostState.mockReset().mockResolvedValue("running");
+    cloudDocker.listAllVolumes.mockReset().mockResolvedValue([]);
+    cloudDocker.removeNetwork.mockReset().mockResolvedValue();
+    cloudDocker.removeProjectNetwork.mockReset().mockImplementation(async (slug: string) => cloudDocker.removeNetwork(slug));
+    h.removeRoute.mockResolvedValue();
+    h.resolveCloudPlatform.mockResolvedValue({ platform: { runtime: cloudDocker, routing } });
+  });
+  it("removes only the project's containers, routes and storage while retaining its subscribed VM", async () => {
+    h.localRuntime = docker;
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    expect(manifest.resources.map(resource => resource.type)).toEqual(["container", "image", "route", "route", "volume", "network"]);
+    expect(resolveDeploymentRuntime).not.toHaveBeenCalled();
+    expect(cloudDocker.inspectNamedVolumes).toHaveBeenCalledWith("web-container");
+    expect((await executeCleanup(manifest)).failed).toEqual([]);
+    expect(cloudDocker.destroy).toHaveBeenCalledExactlyOnceWith("web-container");
+    expect(cloudDocker.removeVolume).toHaveBeenCalledExactlyOnceWith("project-data");
+    expect(cleanupProject).toHaveBeenCalledExactlyOnceWith("p1", { wipeVolumes: true });
+    expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+    expect(docker.listProjectContainerIds).not.toHaveBeenCalled();
+    expect(docker.listProjectImages).not.toHaveBeenCalled();
+  });
+  it("keeps the remaining project storage when a route cleanup fails", async () => {
+    h.removeRoute.mockRejectedValue(new Error("provider route removal unavailable"));
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    const result = await executeCleanup(manifest);
+    expect(result.failed).toContainEqual(expect.objectContaining({ ref: "app.opsh.io", type: "route" }));
+    expect(cloudDocker.removeVolume).not.toHaveBeenCalled();
+    expect(cleanupProject).not.toHaveBeenCalled();
+  });
+  it("deletes owned routes and storage while preserving stale service hostnames now owned by another project", async () => {
+    const fixture = managedRoutes();
+    fixture.addPage("old-app", project.id);
+    fixture.addPage("app", "active-project");
+    fixture.addPage("console", "active-project");
+    h.projectServices = [{ id: "svc_1", name: "web" }];
+    h.derivedServiceRoutes = [{ hostname: "app.opsh.io" }, { hostname: "console.opsh.io" }];
+
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    expect(
+      manifest.resources
+        .filter((resource) => resource.type === "route")
+        .map((resource) => resource.ref),
+    ).toEqual(["old-app.opsh.io", "app.opsh.io", "console.opsh.io"]);
+    expect((await executeCleanup(manifest)).failed).toEqual([]);
+
+    expect(fixture.pages.delete).toHaveBeenCalledExactlyOnceWith("old-app");
+    expect([...fixture.records.keys()]).toEqual(["app", "console"]);
+    expect(fixture.pages.get).toHaveBeenCalledWith("app");
+    expect(fixture.pages.get).toHaveBeenCalledWith("console");
+    expect(fixture.executor.rm).not.toHaveBeenCalled();
+    expect(cloudDocker.removeVolume).toHaveBeenCalledExactlyOnceWith("project-data");
+    expect(cloudDocker.removeNetwork).toHaveBeenCalledExactlyOnceWith(project.slug);
+    expect(cleanupProject).toHaveBeenCalledExactlyOnceWith(project.id, { wipeVolumes: true });
+    expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+  });
+  it("finishes abandoned project cleanup while preserving another project's routes and same-named network", async () => {
+    const fixture = managedRoutes();
+    fixture.addPage("app", "active-project");
+    h.projectServices = [{ id: "svc_1", name: "web" }];
+    h.derivedServiceRoutes = [{ hostname: "app.opsh.io" }];
+    h.deployments[0]!.containerId = null;
+    h.serviceRows.dep_1 = [serviceRow({ containerId: null, imageRef: null })];
+    const network = {
+      Id: "foreign-network-id",
+      Name: `openship-${project.slug}`,
+      Labels: { "openship.project": "another-project" },
+    };
+    const removeNetwork = vi.fn(async () => {});
+    const scopedRuntime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
+      projectId: project.id,
+      options: { provisionLock: { run: (work: () => Promise<unknown>) => work() } },
+    });
+    Object.defineProperty(scopedRuntime, "docker", {
+      value: {
+        getNetwork: vi.fn(() => ({ inspect: vi.fn(async () => network), remove: removeNetwork })),
+      },
+    });
+    cloudDocker.removeNetwork.mockImplementation((slug: string) =>
+      CloudDockerRuntime.prototype.removeNetwork.call(scopedRuntime, slug),
+    );
+    cloudDocker.removeProjectNetwork.mockImplementation((slug: string) =>
+      CloudDockerRuntime.prototype.removeProjectNetwork.call(scopedRuntime, slug),
+    );
+
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: false });
+    const result = await executeCleanup(manifest);
+
+    expect(result.failed).toEqual([]);
+    expect(fixture.records.has("app")).toBe(true);
+    expect(fixture.pages.delete).not.toHaveBeenCalled();
+    expect(removeNetwork).not.toHaveBeenCalled();
+    expect(cloudDocker.destroy).not.toHaveBeenCalled();
+    expect(cloudDocker.removeVolume).not.toHaveBeenCalled();
+    expect(cleanupProject).toHaveBeenCalledExactlyOnceWith(project.id, { wipeVolumes: false });
+    expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+  });
+  it.each(["unreadable", "ambiguous"])(
+    "blocks destructive storage cleanup when stale route ownership is %s",
+    async (failure) => {
+      vi.useFakeTimers();
+      try {
+        const fixture = managedRoutes();
+        fixture.addPage("app", "active-project");
+        h.projectServices = [{ id: "svc_1", name: "web" }];
+        h.derivedServiceRoutes = [{ hostname: "app.opsh.io" }];
+        const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+        if (failure === "unreadable") {
+          fixture.pages.get.mockRejectedValue(new Error("provider read unavailable"));
+        } else {
+          fixture.records.set("another-app", {
+            ...fixture.records.get("app"),
+            id: 2,
+            slug: "another-app",
+            custom_domain: "app.opsh.io",
+          });
+        }
+
+        const pending = executeCleanup(manifest);
+        await vi.runAllTimersAsync();
+        const result = await pending;
+
+        expect(result.failed).toContainEqual(
+          expect.objectContaining({
+            type: "route",
+            ref: "app.opsh.io",
+            error: expect.stringContaining(
+              failure === "unreadable" ? "provider read unavailable" : "ambiguous",
+            ),
+          }),
+        );
+        expect(fixture.pages.delete).not.toHaveBeenCalled();
+        expect(fixture.records.has("app")).toBe(true);
+        expect(cloudDocker.removeVolume).not.toHaveBeenCalled();
+        expect(cloudDocker.removeNetwork).not.toHaveBeenCalled();
+        expect(cleanupProject).not.toHaveBeenCalled();
+        expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("cleans a legacy physical target without releasing a hostname belonging to another Cloud project", async () => {
+    const fixture = managedRoutes();
+    fixture.addPage("app", "active-project");
+    h.projectServices = [{ id: "svc_1", name: "web" }];
+    h.derivedServiceRoutes = [{ hostname: "app.opsh.io" }];
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    const removeLegacyRoute = vi.fn(async () => {});
+    manifest.routeContexts = [
+      {
+        key: "legacy-host",
+        routing: { removeRoute: removeLegacyRoute } as never,
+        hostPortTarget: { targetKey: "local", legacyTargetKeys: [], stable: true },
+        serverId: "legacy-server",
+        runtimeMode: "docker",
+        edgeProxy: { listLoopbackUpstreamPortsStrict: vi.fn(async () => new Set<number>()) },
+      },
+    ];
+
+    expect((await executeCleanup(manifest)).failed).toEqual([]);
+
+    expect(removeLegacyRoute).toHaveBeenCalledExactlyOnceWith("app.opsh.io");
+    expect(fixture.pages.delete).not.toHaveBeenCalled();
+    expect(fixture.records.has("app")).toBe(true);
+    expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+    expect(cloudDocker.removeNetwork).toHaveBeenCalledExactlyOnceWith(project.slug);
+    expect(cleanupProject).toHaveBeenCalledExactlyOnceWith(project.id, { wipeVolumes: true });
+    expect(h.convergeClaims).toHaveBeenCalledOnce();
+  });
+  it("previews and optionally wipes only owned unattached volumes after a failed first deployment", async () => {
+    h.deployments[0]!.containerId = null;
+    h.serviceRows.dep_1 = [serviceRow({ containerId: null })];
+    h.projectServices = [{ id: "svc_1", name: "wordpress-db", image: "mariadb:11" }];
+    h.resolvedByDeployment.dep_1 = { runtime: cloudDocker };
+    cloudDocker.listAllVolumes.mockResolvedValue([
+      { name: "wordpress-data", labels: { "openship.project": "p1" } },
+      { name: "wordpress-db-data", labels: { "openship.project": "p1" } },
+      { name: "another-project-data", labels: { "openship.project": "p2" } },
+      { name: "unlabelled-data", labels: {} },
+    ]);
+    const preview = await previewProjectDeletion(ownedProject as never);
+    expect(preview.totalVolumes).toBe(2);
+    expect(preview.deploymentVolumes).toEqual(["wordpress-data", "wordpress-db-data"]);
+    cloudDocker.listAllVolumes.mockClear();
+    const retained = await collectProjectManifest(ownedProject as never);
+    expect(retained.resources.filter((resource) => resource.type === "volume")).toEqual([]);
+    expect(cloudDocker.listAllVolumes).not.toHaveBeenCalled();
+    const wiped = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    expect(
+      wiped.resources
+        .filter((resource) => resource.type === "volume")
+        .map((resource) => resource.ref),
+    ).toEqual(["wordpress-data", "wordpress-db-data"]);
+    expect((await executeCleanup(wiped)).failed).toEqual([]);
+    expect(cloudDocker.removeVolume.mock.calls.map(([name]: [string]) => name)).toEqual([
+      "wordpress-data",
+      "wordpress-db-data",
+    ]);
+  });
+  it("retains cleanup ownership when the unattached volume inventory cannot be read", async () => {
+    cloudDocker.listAllVolumes.mockRejectedValue(new Error("Docker inventory unavailable"));
+    await expect(
+      collectProjectManifest(ownedProject as never, { wipeVolumes: true }),
+    ).rejects.toThrow("inventory unavailable");
+    expect(cloudDocker.destroy).not.toHaveBeenCalled();
+    expect(cloudDocker.removeVolume).not.toHaveBeenCalled();
+  });
+  it("counts and cleans an owned volume once when both mounts and inventory report it", async () => {
+    h.projectServices = [{ id: "svc_1", name: "web", image: "test:1" }];
+    h.resolvedByDeployment.dep_1 = { runtime: cloudDocker };
+    cloudDocker.listAllVolumes.mockResolvedValue([
+      { name: "project-data", labels: { "openship.project": "p1" } },
+    ]);
+    const preview = await previewProjectDeletion(ownedProject as never);
+    expect(preview.totalVolumes).toBe(1);
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    expect(
+      manifest.resources
+        .filter((resource) => resource.type === "volume")
+        .map((resource) => resource.ref),
+    ).toEqual(["project-data"]);
+  });
+
+  it("cleans owned routes after the provider confirms its VM is gone without contacting Docker", async () => {
+    hostState.mockRejectedValue(Object.assign(new Error("Workspace not found"), { status: 404 }));
+    h.localRuntime = docker;
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    expect(manifest.resources.map(resource => resource.type)).toEqual(["route", "route"]);
+    expect(manifest.runtimes).toEqual([]);
+    expect(cloudDocker.docker.ping).not.toHaveBeenCalled();
+    expect(resolveDeploymentRuntime).not.toHaveBeenCalled();
+    expect((await executeCleanup(manifest)).failed).toEqual([]);
+    expect(h.removeRoute).toHaveBeenCalledWith("app.opsh.io");
+    expect(cloudDocker.destroy).not.toHaveBeenCalled();
+    expect(cleanupProject).not.toHaveBeenCalled();
+    expect(docker.listProjectContainerIds).not.toHaveBeenCalled();
+  });
+  it.each([403, 500, undefined])("retains ownership when the host read fails with %s", async status => {
+    hostState.mockRejectedValue(Object.assign(new Error("Provider unavailable"), { status }));
+    await expect(collectProjectManifest(ownedProject as never)).rejects.toThrow("could not confirm");
+    expect(cloudDocker.docker.ping).not.toHaveBeenCalled();
+    expect(h.removeRoute).not.toHaveBeenCalled();
+  });
+  it("does not mistake a Docker 404 for a deleted host", async () => {
+    vi.mocked(cloudDocker.docker.ping).mockRejectedValueOnce(Object.assign(new Error("Bridge unavailable"), { status: 404 }));
+    await expect(collectProjectManifest(ownedProject as never)).rejects.toThrow("could not confirm");
+    expect(h.removeRoute).not.toHaveBeenCalled();
+  });
+  it("fails before cleanup if a deployment claims another workspace", async () => {
+    h.deployments[0]!.meta = { managedServer: { projectId: "p1", workspaceId: "other-vm", ownerWorkspaceId: "owner-workspace" } };
+    await expect(collectProjectManifest(ownedProject as never)).rejects.toThrow("does not match");
+    expect(h.resolveCloudPlatform).not.toHaveBeenCalled();
+    expect(cloudDocker.destroy).not.toHaveBeenCalled();
+  });
+  it("keeps cleanup retryable when the provider route inventory cannot be confirmed", async () => {
+    listRoutes.mockRejectedValue(new Error("registry unavailable"));
+    await expect(collectProjectManifest(ownedProject as never)).rejects.toThrow("could not confirm");
+    expect(disposeRuntime).toHaveBeenCalledWith(cloudDocker);
+    expect(cloudDocker.destroy).not.toHaveBeenCalled();
+  });
+});
+
+it("does not sweep the control-plane daemon for a remote project without deployment history", async () => {
+  h.localRuntime = docker;
+  h.getServer.mockResolvedValue({ id: "ssh-server", sshHost: "remote.example.test", isLocal: false });
+  await collectProjectManifest({ ...project, serverId: "ssh-server" } as never);
+  expect(docker.listProjectContainerIds).not.toHaveBeenCalled();
+  expect(docker.listAllContainers).not.toHaveBeenCalled();
+  expect(docker.listProjectImages).not.toHaveBeenCalled();
+});
+
+it("still sweeps explicitly local projects without deployment history", async () => {
+  h.localRuntime = docker;
+  h.getServer.mockResolvedValue({ id: "local-server", isLocal: true });
+  await collectProjectManifest({ ...project, serverId: "local-server" } as never);
+  expect(h.getServer).toHaveBeenCalledWith("local-server", project.organizationId);
+  expect(docker.listProjectContainerIds).toHaveBeenCalledWith(project.id);
+  expect(docker.listProjectImages).toHaveBeenCalledWith(project.id);
+});
+
+it("never infers a control-plane Docker target for an unbound SaaS project", async () => {
+  h.localRuntime = docker;
+  h.baseTarget = "cloud";
+  await collectProjectManifest(project as never);
+  expect(docker.listProjectContainerIds).not.toHaveBeenCalled();
+});
+
+it("holds preview transports open until their volume inspections finish", async () => {
+  h.deployments = [deployment({ containerId: "container-with-volume" })];
+  vi.mocked(docker.inspectNamedVolumes).mockImplementationOnce(async () => {
+    expect(disposeRuntime).not.toHaveBeenCalled();
+    return ["persistent-data"];
+  });
+  expect((await previewProjectDeletion(project as never)).deploymentVolumes).toEqual(["persistent-data"]);
+  expect(disposeRuntime).toHaveBeenCalledWith(docker);
 });
 
 describe("collectProjectManifest — a ref is classified by its shape", () => {
@@ -244,6 +602,30 @@ describe("collectProjectManifest — a ref is classified by its shape", () => {
     expect(docker.inspectNamedVolumes).toHaveBeenCalledTimes(1);
     expect(docker.inspectNamedVolumes).toHaveBeenCalledWith("9f1c2b3a4d5e");
     expect(typesOf(manifest, STATIC_RELEASE_DIR)).toEqual(["artifact"]);
+  });
+
+  it("previews unattached self-hosted data volumes and wipes only this project's owned storage", async () => {
+    h.deployments = [deployment()];
+    const inventory = [
+      { name: "owned-image-data", labels: { "openship.project": "p1" } },
+      { name: "other-project-data", labels: { "openship.project": "p2" } },
+      { name: "unlabelled-data", labels: {} },
+    ] as Awaited<ReturnType<DockerRuntime["listAllVolumes"]>>;
+    vi.mocked(docker.listAllVolumes).mockResolvedValueOnce(inventory);
+    const preview = await previewProjectDeletion(project as never);
+    expect(preview.deploymentVolumes).toEqual(["owned-image-data"]);
+    expect(preview.totalVolumes).toBe(1);
+    expect((await collectProjectManifest(project as never)).resources.filter(r => r.type === "volume")).toEqual([]);
+    vi.mocked(docker.listAllVolumes).mockResolvedValueOnce(inventory);
+    const manifest = await collectProjectManifest(project as never, { wipeVolumes: true });
+    expect(manifest.resources.filter(r => r.type === "volume").map(r => r.ref)).toEqual(["owned-image-data"]);
+  });
+
+  it("blocks a requested self-hosted volume wipe when ownership inventory is unavailable", async () => {
+    h.deployments = [deployment()];
+    vi.mocked(docker.listAllVolumes).mockRejectedValueOnce(new Error("daemon unavailable"));
+    await expect(collectProjectManifest(project as never, { wipeVolumes: true }))
+      .rejects.toThrow("inspect managed project volumes failed");
   });
 
   it("fails closed when requested volume discovery cannot be completed", async () => {

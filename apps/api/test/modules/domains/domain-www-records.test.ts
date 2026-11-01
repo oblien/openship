@@ -31,13 +31,14 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
     ...actual,
     platform: () => ({
       target: platformTarget,
-      runtime: { verifyDomain: cloudVerifyDomain },
+      runtime: { name: "docker" },
+      routing: { verifyDomain: cloudVerifyDomain },
     }),
   };
 });
 
-vi.mock("../../../src/lib/server-target", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/server-target")>();
+vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/server-target")>();
   return {
     ...actual,
     resolveProjectServerHost: vi.fn().mockResolvedValue("203.0.113.10"),
@@ -47,7 +48,7 @@ vi.mock("../../../src/lib/server-target", async (importOriginal) => {
   };
 });
 
-const { previewRecords } = await import("../../../src/modules/domains/domain.service");
+const { previewRecords } = await import("@repo/platform/engine/modules/domains/domain.service");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -123,4 +124,29 @@ describe("previewRecords — cloud", () => {
     // Each hostname proves ownership with its OWN token.
     expect(records[3]!.value).not.toBe(records[1]!.value);
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return {
+    ...actual,
+    platform: () => ({
+      target: platformTarget,
+      runtime: { name: "docker" },
+      routing: { verifyDomain: cloudVerifyDomain },
+    }),
+  };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return {
+    ...actual,
+    platform: () => ({
+      target: platformTarget,
+      runtime: { name: "docker" },
+      routing: { verifyDomain: cloudVerifyDomain },
+    }),
+  };
 });

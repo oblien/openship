@@ -4,11 +4,16 @@ import { rateLimiter } from "../../middleware/rate-limiter";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudSessionAuth } from "./cloud-session-auth";
 import * as saas from "./cloud-saas.controller";
+import { cloudResourceProxy, cloudRouteRegistry } from "./cloud-resource.controller";
+import { Type } from "@sinclair/typebox";
+import { ManagedServerActivityInputSchema } from "@repo/contracts";
+import { authorizeCloudServer, cloudServerConnection, claimCloudServerActivity, releaseCloudServerActivity, cloudServerDeletion } from "./cloud-server.controller";
 
 /** SaaS-only cloud routes. */
 const r = secureRouter(new Hono(), {
   module: "cloud-saas",
   basePath: "/api/cloud",
+  mcpExcluded: "Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead.",
 });
 
 // PUBLIC handoff endpoints — arrive from browser redirects with signed tokens
@@ -31,6 +36,21 @@ r.public("get", "/connect-poll", { reason: "Device-flow poll - CLI retrieves its
 
 r.use("/token", cloudSessionAuth);
 r.post("/token", { tag: "cloud:write" }, saas.getToken);
+
+r.use("/servers/*", cloudSessionAuth);
+r.post("/servers/:id/authorize", { tag: "server:admin", readOnly: true }, authorizeCloudServer);
+r.post("/servers/:id/connection", {
+  tag: "server:admin",
+  rateLimit: "write-authed",
+  body: Type.Object({ work: Type.Boolean() }, { additionalProperties: false }),
+}, cloudServerConnection);
+r.post("/servers/:id/activity", { tag: "server:admin", body: ManagedServerActivityInputSchema }, claimCloudServerActivity);
+r.post("/servers/:id/activity/release", { tag: "server:admin", body: ManagedServerActivityInputSchema }, releaseCloudServerActivity);
+r.use("/server-deletions/*", cloudSessionAuth);
+r.get("/server-deletions/:id", {
+  tag: "billing:admin",
+  query: Type.Object({ operationId: Type.String({ minLength: 16, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }) }),
+}, cloudServerDeletion);
 
 r.use("/account", cloudSessionAuth);
 r.get("/account", { tag: "cloud:read" }, saas.account);
@@ -61,6 +81,11 @@ r.post("/pages/disable", { tag: "cloud:write" }, saas.pagesDisable);
 r.post("/pages/enable", { tag: "cloud:write" }, saas.pagesEnable);
 r.post("/pages/delete", { tag: "cloud:write" }, saas.pagesDelete);
 
+r.use("/resource-proxy", cloudSessionAuth, rateLimiter, bodyLimit({ maxSize: 256_000 }));
+r.post("/resource-proxy", { tag: "cloud:write" }, cloudResourceProxy);
+r.use("/route-registry", cloudSessionAuth);
+r.get("/route-registry", { tag: "cloud:read" }, cloudRouteRegistry);
+
 r.use("/send-invitation", cloudSessionAuth);
 r.post("/send-invitation", { tag: "cloud:write" }, saas.sendInvitation);
 
@@ -68,18 +93,22 @@ r.post("/send-invitation", { tag: "cloud:write" }, saas.sendInvitation);
 // Path B (org-scope) AND project transfer (project-scope). One pair
 // of endpoints handles both flows via the SubgraphScope discriminator.
 // Rate limit: defense against repeated junk ingest filling storage; bounded blast radius via remapOrgId but still operationally hostile
-r.use("/ingest-subgraph", rateLimiter);
 // 50MB body cap — subgraph dumps are bounded in practice (project/org scope, JSON rows);
 // reject oversized payloads BEFORE auth so DoS uploaders can't burn auth/DB cycles.
-r.use("/ingest-subgraph", bodyLimit({
-  maxSize: 50_000_000,
-  onError: (c) => c.json({
-    error: "Dump exceeds 50MB limit on this endpoint.",
-    code: "PAYLOAD_TOO_LARGE",
-  }, 413),
-}));
-r.use("/ingest-subgraph", cloudSessionAuth);
-r.post("/ingest-subgraph", { tag: "cloud:admin" }, saas.ingestSubgraphHandler);
+// The distinct promotion route fails closed on older Cloud versions that do
+// not persist receipts, while sharing the same ingest and authentication path.
+for (const [path, handler] of [
+  ["/ingest-subgraph", saas.ingestSubgraphHandler],
+  ["/promote-project", saas.promoteProjectHandler],
+] as const) {
+  r.use(path, rateLimiter);
+  r.use(path, bodyLimit({
+    maxSize: 50_000_000,
+    onError: (c) => c.json({ error: "Dump exceeds 50MB limit on this endpoint.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }));
+  r.use(path, cloudSessionAuth);
+  r.post(path, { tag: "cloud:admin" }, handler);
+}
 
 // Rate limit: throttle scope-enumeration / exfiltration attempts (a
 // compromised cloud session could otherwise loop over scopes to map

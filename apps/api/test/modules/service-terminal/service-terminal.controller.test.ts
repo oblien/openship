@@ -51,7 +51,7 @@ vi.mock("@repo/db", () => ({ repos: { serviceTerminalSession } }));
 vi.mock("../../../src/lib/ws", () => ({
   upgradeWebSocket: (fn: unknown) => fn,
 }));
-vi.mock("../../../src/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
@@ -59,6 +59,12 @@ import {
   teardown,
   type ConnState,
 } from "../../../src/modules/service-terminal/service-terminal.controller";
+import {
+  closeControllerServiceTerminals,
+  getServiceSessionByResumeToken,
+  registerServiceSession,
+} from "../../../src/lib/service-terminal-session-manager";
+import { drainBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 beforeEach(() => {
   serviceTerminalSession.reset();
@@ -103,6 +109,65 @@ function makeConnState(
 }
 
 describe("service-terminal.controller teardown", () => {
+  it("drains a parked shell's execution release and audit write before an instance handoff finishes", async () => {
+    const userId = "moving-instance-owner";
+    const { id: sessionId } = await serviceTerminalSession.open({
+      userId,
+      serviceId: "test-service",
+    });
+    const shell = fakeShell();
+    const state = makeConnState(userId, sessionId, shell);
+    let release!: () => void;
+    let persist!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const persisted = new Promise<void>((resolve) => {
+      persist = resolve;
+    });
+    const closeRow = serviceTerminalSession.close.getMockImplementation()!;
+    serviceTerminalSession.close.mockImplementationOnce(async (id, data) => {
+      await persisted;
+      await closeRow(id, data);
+    });
+    const session = registerServiceSession({
+      userId,
+      sessionId,
+      serviceId: "test-service",
+      shell,
+      release: () => released,
+      onTimeout: (_id, reason) => {
+        void teardown(state, reason, null, true, true);
+      },
+    });
+    await teardown(state, "client_close", null, false, false);
+    expect(session.parked).toBe(true);
+
+    closeControllerServiceTerminals();
+    let drained = false;
+    const draining = drainBackgroundWork().then(() => {
+      drained = true;
+    });
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(shell.close).toHaveBeenCalledOnce();
+      expect(getServiceSessionByResumeToken(session.resumeToken, userId)).toBeNull();
+      expect(drained).toBe(false);
+      release();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(drained).toBe(false);
+      expect(await serviceTerminalSession.countActiveByUser(userId)).toBe(1);
+      persist();
+      await draining;
+      expect(await serviceTerminalSession.countActiveByUser(userId)).toBe(0);
+      expect(state.ended).toBe(true);
+    } finally {
+      release();
+      persist();
+      await draining;
+    }
+  });
+
   it("closes the audit row when a parked session is later force-closed by timeout", async () => {
     const userId = `user_${Math.random().toString(36).slice(2)}`;
     const { id: sessionId } = await serviceTerminalSession.open({

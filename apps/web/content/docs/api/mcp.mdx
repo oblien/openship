@@ -1,6 +1,6 @@
 ---
-title: MCP API
-description: The Streamable-HTTP JSON-RPC endpoint that exposes Openship's API to AI clients as tools, re-authenticating every call.
+title: MCP
+description: Call Openship tools through Model Context Protocol.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,38 +10,20 @@ MCP-compatible client) drive Openship as a set of tools. Each tool maps onto a p
 and every call re-runs the full auth and permission stack — so an agent only ever sees and does what its
 token allows. For client setup (OAuth flow, config snippets), see the [MCP overview](/docs/mcp).
 
-<Callout title="Base path & auth">
-The endpoint lives at **`/api/mcp`** on your instance — e.g. `https://your-host/api/mcp`. It accepts
-**either** a personal access token (`Authorization: Bearer <token>`, created with
-[`openship token create`](/docs/cli/access)) **or** an OAuth 2.1 access token that an MCP client obtains for
-you. There is no separate MCP credential. See the [API overview](/docs/api) and
-[auth model](/docs/security/auth) for details.
-</Callout>
-
 Available on both self-hosted and Openship Cloud (mounted in the shared route set).
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/mcp` | public | Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`. |
-| `GET /api/mcp` | public | Returns `405` — this server never pushes messages, so there is no SSE stream to open. |
-
-Both routes are declared `public` (no auto-injected auth middleware): the `POST` handler authenticates the
-bearer credential itself, and each `tools/call` dispatches an internal request that re-authenticates through
-the real permission stack.
 
 ## How authentication works
 
 A missing or invalid bearer returns **`401`** with a `WWW-Authenticate` header pointing at
-`/.well-known/oauth-protected-resource`, so OAuth-2.1 MCP clients can discover the authorization server and
-start the PKCE flow. A valid credential resolves the caller's effective capability — this is used only to
+`/.well-known/oauth-protected-resource/api/mcp`, so OAuth-2.1 MCP clients can discover the authorization server and
+start the PKCE flow. Self-hosted clients using `/api/proxy/api/mcp` receive metadata for that path instead,
+with a matching resource identifier. A valid credential resolves the caller's effective capability — this is used only to
 **filter `tools/list`** so the endpoint doesn't advertise tools the token can't use.
 
 The capability is **not** the authorization gate. Every `tools/call` builds an internal HTTP request and
 dispatches it through the real Hono app, forwarding the caller's bearer, so routing, validation, auth, and
 the per-resource permission check all run exactly as they do over HTTP. A read-only token can only reach
-read tools; a scoped token stays confined to the projects, servers, and repositories it was granted.
+GET tools; a scoped token stays confined to the projects, servers, and repositories it was granted.
 
 The endpoint is rate-limited per-IP (the `mcp` policy: 300 requests/minute) because even an unauthenticated
 probe costs a credential lookup.
@@ -54,7 +36,7 @@ body returns `-32600`).
 <TypeTable
   type={{
     jsonrpc: { type: 'string', description: 'Protocol identifier. Must be "2.0".', required: true },
-    method: { type: 'string', description: 'One of: initialize, ping, tools/list, tools/call, notifications/initialized.', required: true },
+    method: { type: 'string', description: 'One of: initialize, ping, tools/list, tools/call, prompts/list, prompts/get, notifications/initialized.', required: true },
     id: { type: 'string | number', description: 'Request id, echoed back in the response. Omit entirely for a notification — the server replies 202 with no body.' },
     params: { type: 'object', description: 'Method arguments — e.g. { protocolVersion } for initialize, { name, arguments } for tools/call.' },
   }}
@@ -64,11 +46,11 @@ body returns `-32600`).
 
 | Method | Result |
 |---|---|
-| `initialize` | Negotiates the protocol version (default `2025-06-18`; also speaks `2025-03-26` and `2024-11-05`) and returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` and `serverInfo: { name: "openship", version: "1.0.0" }`. |
+| `initialize` | Negotiates the protocol version (default `2025-06-18`; also speaks `2025-03-26` and `2024-11-05`) and returns capabilities, server information, and instructions identifying the current workspace and how to select a destination. |
 | `ping` | Returns `{}`. |
 | `tools/list` | Returns the tools the caller's token can actually use (filtered by read-only flag, role, and grants). |
 | `tools/call` | Dispatches the named tool through the real API and returns its response as JSON text content. |
-| `prompts/list` | Returns the guided-flow catalog — one entry per multi-step workflow (`openship-overview`, `deploy-from-git`, `deploy-a-folder`, `install-catalog-app`). |
+| `prompts/list` | Returns the guided-flow catalog — one entry per multi-step workflow including deployment, clustering/scaling, backups and migration. |
 | `prompts/get` | Returns a named prompt's guidance as a user message, with tool references resolved to their live tool names and any `arguments` interpolated. |
 | `notifications/initialized` | Acknowledged only (notification, no reply → `202`). |
 
@@ -79,29 +61,111 @@ POST /api/mcp
 ```
 
 ```bash
-curl -s https://your-host/api/mcp \
+curl -s "$OPENSHIP_URL/api/mcp" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-```bash
-# Register the same endpoint with an MCP client (Claude Code):
-claude mcp add --transport http openship https://your-host/api/mcp \
-  --header "Authorization: Bearer $OPENSHIP_TOKEN"
-```
-
 The tool set is derived from Openship's permission-tagged routes that opt in with an `mcp` block; the
 credential/auth surfaces (`tokens`, `auth`, `mcp` itself) are never exposed.
 
+## Discover and select a workspace
+
+An Openship workspace or workgroup is an **organization** in the API. Call
+`get_permissions_workspaces` with `{}` to discover workspace names and IDs before creating an app or a
+Compose project. This tool is available to read-only and restricted credentials too.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": { "name": "get_permissions_workspaces", "arguments": {} }
+}
+```
+
+The response's `data` includes `currentOrganizationId`, `boundOrganizationId`, `canSwitchOrganization`,
+`readOnly`, and `workspaces`. Each workspace includes `organizationId`, `name`, `slug`, `isTeam`, and
+the effective `role`. Empty workspaces are included. An organization-bound credential only sees its
+own workspace; an unbound credential can discover its user's memberships. An explicitly fixed request
+scope returns only the selected workspace.
+
+Use the selected ID at the **top level** of every tool call in the flow:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "post_apps",
+    "arguments": {
+      "organizationId": "org_target",
+      "body": { "templateId": "redis", "name": "Cache" }
+    }
+  }
+}
+```
+
+The same `organizationId` argument applies to Compose scanning, `post_projects_ensure`, services,
+deployment, and status tools. It fixes that call's scope and does not persist a workspace switch.
+If the user has several available workspaces and has not specified a destination, the agent should ask
+which workspace to use before creating resources.
+
+Current PATs and OAuth connections are bound to the organization where they were authorized.
+`boundOrganizationId` identifies that boundary. Selecting another organization returns `TOKEN_ORG_SCOPE`;
+the user needs a token or authorization in the destination workspace. Invalid or inaccessible IDs fail
+instead of falling back to the default workspace.
+
+This ID selects a request scope; it does **not** transfer an existing app between organizations.
+`get_system_servers_destinations` lists authorized execution servers, a separate concept. Select a
+`serverId` when creating or importing a project; changing where it runs does not move its records to
+another Openship instance. Cross-organization app transfer is not currently exposed.
+
+## Deploy a desktop folder on Cloud
+
+Use the MCP connection on the machine that holds the source folder. A connected managed server lets
+that desktop instance build and run the app on Cloud while keeping its project records local:
+
+1. Discover the local `organizationId` with `get_permissions_workspaces` and pass it on every call.
+2. Call `get_system_servers_destinations` and select a managed server. If it is not connected, an
+   administrator can use `get_system_servers_managed_available` and
+   `post_system_servers_managed_connect`. Use the returned **local** `serverId`.
+3. Call `post_projects_import` with `body: { name, localPath, serverId }`. The path must be readable by
+   the desktop controller. For an existing project already assigned to that server, reuse its ID.
+4. Call `post_deployments_build_access` with `body: { projectId, buildStrategy: "server" }`, then poll
+   `get_deployments_by_id` and its logs. Source location and build location are separate: a local
+   folder can be built on a managed server. `buildStrategy: "local"` is not supported on managed servers.
+
+This flow requires project creation/write and destination server write permissions. It does not require
+`transfer_to_cloud` or access to the MCP client's OAuth bearer token.
+
+To manage projects whose records live in Cloud, authorize a separate MCP connection to
+`https://api.openship.io/api/mcp` and discover the Cloud organization there. A local credential cannot
+use the owner's Cloud account link to access those records. `CLOUD_SCOPE_UNAVAILABLE` also applies when
+`organizationId` is omitted; removing it does not widen the credential's permissions.
+
+A remote Cloud controller cannot read a folder on the MCP client's machine. Use a git repository or
+the [authenticated source upload flow](/docs/api/sources#upload-a-source-folder) through an SDK, CLI,
+or browser. A credential restricted to its own projects must create the project first and pass its
+`projectId` to the upload session and subsequent `ensure` call. An unbound upload session requires
+wildcard project write permission. OAuth tokens remain in the MCP client.
+
+Explicit project promotion is a separate configuration transfer. With receipt support on both
+instances, retrying after a lost response or failed local cleanup confirms the original import and
+retries teardown without importing again. A changed source, changed Cloud connection, or an older
+duplicate without a matching receipt stops cleanup and requires review of both copies. An older
+Cloud API without the promotion endpoint rejects the request before importing.
+
 ## Call a tool
 
-`params.name` is the tool name from `tools/list`; `params.arguments` carries any path parameters, an optional
-`query` object, an optional `body` object (for `POST`/`PUT`/`PATCH` tools), and an optional
-`organizationId` (sent as the `x-organization-id` header).
+`params.name` is the tool name from `tools/list`; `params.arguments` carries any path parameters, a
+`query` object and/or JSON `body` when declared by the tool’s schema (including guarded `DELETE` operations), and an optional
+`organizationId` (sent as `X-Organization-Id` together with `X-Openship-Scope: fixed`).
 
 ```bash
-curl -s https://your-host/api/mcp \
+curl -s "$OPENSHIP_URL/api/mcp" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
@@ -119,7 +183,7 @@ workflow, referencing the exact tool names to call in sequence. MCP clients surf
 starters, so they also serve as the discoverable entry points into a flow.
 
 ```bash
-curl -s https://your-host/api/mcp \
+curl -s "$OPENSHIP_URL/api/mcp" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":3,"method":"prompts/get",
@@ -132,11 +196,37 @@ curl -s https://your-host/api/mcp \
 | `deploy-from-git` | Connect/verify GitHub → pick a repo → detect the stack → create the project → deploy → watch. Optional `repo` / `branch` arguments. |
 | `deploy-a-folder` | The 4-step folder-upload flow, including the out-of-band tarball upload that is deliberately **not** an MCP tool (raw binary can't cross JSON-RPC). |
 | `install-catalog-app` | Browse the catalog → install → handle the `flowHref` that wizard apps (e.g. mail) return instead of installing in-band. |
+| `cluster-and-scale` | Private network → k3s → deploy → scale up/down → recover/clean up. Self-hosted. |
+| `cluster-database` | Create → observe → connect → PostgreSQL backup/restore-to-new → cleanup. Self-hosted. |
+| `backup-and-restore` | Destination/preflight → policy → run → prepare restore → explicit apply → verify. |
+| `migrate-docker-project` | Scan/map → preview → migrate → handle prompts/partial transfers → verify → explicit cutover. Self-hosted. |
 
-Prompt text resolves tool references against the live registry, so a renamed route never leaves a prompt
-pointing at a stale tool name.
+Every prompt starts with workspace discovery and selection guidance. Tool references resolve against
+the live registry, so a renamed route never leaves a prompt pointing at a stale tool name.
 
-## Errors you might see
+## Input and workflow contracts
+
+Use `tools/list` as the source of truth for required fields. Path parameters are top-level, nonempty
+strings. The exact values `.` and `..` are rejected so URL normalization cannot select a different
+route; names containing dots, such as `.github`, remain valid. Endpoint query parameters belong in
+`query`; payloads belong in `body`. Invalid or missing required arguments return
+`INVALID_TOOL_ARGUMENTS` before dispatch. Optional all-default bodies are sent as `{}`.
+Validation errors report field paths without echoing submitted values.
+
+A successful call may only have **accepted** asynchronous work. Follow the returned run/deployment/operation
+ID with the corresponding JSON status tool and inspect its final state. Live SSE streams and binary
+uploads stay on HTTP. The job output tool returns captured output; it does not open a live stream.
+
+Concurrency and recovery guards remain mandatory: `revision` for network/cluster configuration,
+`sequence` or `expectedSequence` for durable operations, and `expectedDeploymentId` plus
+`expectedUpdatedAt` for application scaling. Reuse an operation's `requestId` for the same intent after
+a lost response; re-read state before retrying a conflict.
+
+See the [generated tool catalog](/docs/api/mcp-tools) for descriptions, permissions, availability and
+intentional exclusions across every route. The [cluster/scaling guide](/docs/guides/mcp-clusters-and-scaling)
+covers the full lifecycle and its current limits. Policy-driven autoscaling is not implemented.
+
+## Errors
 
 <Callout title="401 — missing or invalid access token" type="error">
 No bearer, or one that's expired/revoked. The response carries a `WWW-Authenticate` header so OAuth clients
@@ -158,3 +248,14 @@ does not accept. `-32601` means the JSON-RPC method is unknown, and `-32602` mea
 `tools/list` succeeded but a specific `tools/call` reports `404` — that's the token's scope working as
 intended: it wasn't granted that project, server, or repository.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Returns `405` — this server never pushes messages, so there is no SSE stream to open. | `GET /api/mcp`<br />`Handler authentication` |
+| Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`. | `POST /api/mcp`<br />`Handler authentication` |
+
+{/* api-operations:end */}

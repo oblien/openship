@@ -1,23 +1,17 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Loader2,
-  Check,
-  ArrowRight,
-  ArrowLeft,
-  ExternalLink,
-  AlertTriangle,
-  SlidersHorizontal,
-  ChevronDown,
-  ChevronUp,
-  Square,
-  Ban,
-  Clock,
-} from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { INSTALL_PHASES, type InstallPhaseId, type InstallPhaseStatus } from "@repo/core";
 import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
+import { DeploymentLayout } from "@/components/import-project/DeploymentLayout";
+import { DeploymentLogsPanel } from "@/components/import-project/DeploymentLogsPanel";
+import { LogSnapshotTerminal } from "@/components/import-project/LogSnapshotTerminal";
+import { ServiceStatusIndicator } from "@/components/services/ServiceStatusBadge";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { InstallStepper, type StepItem, type StepStatus } from "@/components/deploy/InstallStepper";
 import { ConnectionCard } from "@/app/(dashboard)/projects/[id]/components/ConnectionCard";
@@ -155,11 +149,11 @@ function InstallProgressPanel({
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-foreground">
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+        <span className="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold text-foreground">
+          <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin text-primary" />
           <span className="truncate">{title}</span>
         </span>
-        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
           {percent}%
         </span>
       </div>
@@ -174,13 +168,13 @@ function InstallProgressPanel({
         </div>
       </div>
       {phaseLabel && (
-        <p className="mt-2.5 truncate text-[13px] font-medium text-foreground">{phaseLabel}</p>
+        <p className="mt-2.5 truncate text-sm font-medium text-foreground">{phaseLabel}</p>
       )}
-      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="min-w-0 truncate">{metaLine}</span>
         {elapsed && (
           <span className="inline-flex shrink-0 items-center gap-1 font-mono tabular-nums">
-            <Clock className="size-3" />
+            <UiIcon name="clock" className="size-3" />
             {elapsed}
           </span>
         )}
@@ -192,10 +186,8 @@ function InstallProgressPanel({
 /** The chosen-configuration read-out (destination, endpoints, settings). */
 function ConfigSummaryCard({ title, rows }: { title: string; rows: DeploySummaryRow[] }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-card p-5">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-        {title}
-      </h3>
+    <div className="rounded-2xl bg-card p-5">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <dl className="mt-3 space-y-2.5">
         {rows.map((r) => (
           <div key={r.id} className="flex items-baseline justify-between gap-3">
@@ -231,111 +223,26 @@ export function logLines(logs: string): string[] {
     .slice(-400);
 }
 
-/**
- * Live log panel — a clean, theme-aware monospace console (an elevated surface
- * that adapts to light/dark, not a hardcoded black box) with a titlebar, a
- * "live" pulse while streaming, and auto-scroll to the newest line. All colors
- * are semantic tokens.
- */
+/** Reuse the deployment console and its search/copy controls. The installer
+ * already owns the log stream, so the console only renders that snapshot. */
 function TerminalLogs({
   logs,
   live,
   label,
   emptyLabel,
-  noTopMargin,
 }: {
   logs: string;
   live: boolean;
   label: string;
-  /** Placeholder for a panel with no lines yet. The caller picks the wording,
-   *  because "waiting" is only true while something is still streaming — a
-   *  settled install saying "Waiting for output…" is a promise nothing will
-   *  keep. */
   emptyLabel: string;
-  /** Drop the default top margin — the two-column install layout spaces it. */
-  noTopMargin?: boolean;
 }) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const lines = useMemo(() => logLines(logs), [logs]);
-
-  useEffect(() => {
-    if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
-  }, [lines.length]);
-
   return (
-    <div
-      className={`${noTopMargin ? "" : "mt-5 "}overflow-hidden rounded-xl border border-border/60 bg-muted/40`}
+    <DeploymentLogsPanel
+      title={label}
+      summary={live ? <ServiceStatusIndicator status="deploying" /> : undefined}
     >
-      <div className="flex items-center gap-2 border-b border-border/50 px-3.5 py-2">
-        <span className="flex gap-1.5">
-          <span className="size-2.5 rounded-full bg-danger/60" />
-          <span className="size-2.5 rounded-full bg-warning/60" />
-          <span className="size-2.5 rounded-full bg-success/60" />
-        </span>
-        <span className="ms-1.5 font-mono text-[11px] tracking-wide text-muted-foreground">{label}</span>
-        {live && (
-          <span className="ms-auto inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-success">
-            <span className="size-1.5 animate-pulse rounded-full bg-success-solid" />
-            live
-          </span>
-        )}
-      </div>
-      <div
-        ref={boxRef}
-        className="max-h-72 overflow-auto p-3.5 font-mono text-[11.5px] leading-relaxed"
-      >
-        {lines.length === 0 ? (
-          <span className="text-muted-foreground/70">{emptyLabel}</span>
-        ) : (
-          lines.map((l, i) => (
-            <div key={i} className="flex gap-3">
-              <span className="select-none text-muted-foreground/40 tabular-nums">
-                {String(i + 1).padStart(3, " ")}
-              </span>
-              <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-foreground/80">{l}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Logs demoted to an on-demand detail: a Show/Hide toggle over the terminal
- *  panel, open by default so there's live feedback but foldable to keep the
- *  stepper the star. */
-function CollapsibleLogs({
-  logs,
-  live,
-  label,
-  emptyLabel,
-  showLabel,
-  hideLabel,
-}: {
-  logs: string;
-  live: boolean;
-  label: string;
-  emptyLabel: string;
-  showLabel: string;
-  hideLabel: string;
-}) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div>
-      <div className="mb-2 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-          {open ? hideLabel : showLabel}
-        </button>
-      </div>
-      {open && (
-        <TerminalLogs logs={logs} live={live} label={label} emptyLabel={emptyLabel} noTopMargin />
-      )}
-    </div>
+      <LogSnapshotTerminal logs={logs} emptyLabel={emptyLabel} />
+    </DeploymentLogsPanel>
   );
 }
 
@@ -354,16 +261,14 @@ function FirstLoginCard({
   firstLogin: { username?: string; password?: string; note?: string };
 }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-card p-5">
+    <div className="rounded-2xl bg-card p-5">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
         {firstLogin.username != null && firstLogin.username !== "" && (
           <div className="min-w-0">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {userLabel}
-            </label>
+            <label className="text-sm font-medium text-muted-foreground">{userLabel}</label>
             <div className="mt-2 flex min-h-11 items-center rounded-xl bg-muted px-3.5">
-              <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-foreground">
+              <code className="min-w-0 flex-1 truncate font-mono text-sm text-foreground">
                 {firstLogin.username}
               </code>
             </div>
@@ -371,11 +276,9 @@ function FirstLoginCard({
         )}
         {firstLogin.password != null && firstLogin.password !== "" && (
           <div className="min-w-0">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {passLabel}
-            </label>
+            <label className="text-sm font-medium text-muted-foreground">{passLabel}</label>
             <div className="mt-2 flex min-h-11 items-center rounded-xl bg-muted px-3.5">
-              <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-foreground">
+              <code className="min-w-0 flex-1 truncate font-mono text-sm text-foreground">
                 {firstLogin.password}
               </code>
             </div>
@@ -389,19 +292,9 @@ function FirstLoginCard({
   );
 }
 
-/**
- * The install progress view shared by the app wizards.
- *
- * Two shapes, chosen by whether `phases` is passed:
- *  - JSON-mapped install (app wizard): the project-detail layout — a fluid main
- *    column (phase stepper + demoted logs while installing; connection +
- *    first-login on the done screen; message + logs on failure/cancel) beside a
- *    fixed 340px sticky aside carrying the app summary, a status pill, and the
- *    phase's actions (Stop / Open app / Go to project). Mirrors the project page
- *    so the two read as one product.
- *  - Legacy (mail wizard, no `phases`): the original centered progress bar +
- *    terminal, left untouched.
- */
+/** App installs share the deployment layout and console while keeping their
+ * catalog-authored phases and connection details. The mail wizard supplies a
+ * numeric progress value instead of phase events and retains its compact layout. */
 export function CleanDeployProgressCard({
   appId,
   title,
@@ -416,6 +309,7 @@ export function CleanDeployProgressCard({
   onGoToProject,
   onViewBuild,
   onRetry,
+  recoveryAction,
   onStop,
   isStopping,
   cancelled,
@@ -442,6 +336,8 @@ export function CleanDeployProgressCard({
   onGoToProject: () => void;
   onViewBuild: () => void;
   onRetry: () => void;
+  /** Reopen actionable billing/capacity recovery without discarding the logs. */
+  recoveryAction?: { label: string; onClick: () => void; pending?: boolean };
   /** Cancel the in-flight install. Rendered as a Stop button while installing. */
   onStop?: () => void;
   /** The cancel request is in flight — disables Stop and shows a spinner. */
@@ -474,9 +370,8 @@ export function CleanDeployProgressCard({
 }) {
   const { t } = useI18n();
   const w = t.projectSettings.appInstall;
-  // Elapsed clock, ticked once in the parent because the progress panel renders
-  // twice (sticky aside + the mobile inline card). `now` stays null until an
-  // effect runs, so SSR emits no time rather than a frozen one.
+  // Keep the elapsed clock tied to the real installation start time.
+  // SSR omits it until the first client tick.
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     if (phase !== "installing") {
@@ -515,16 +410,16 @@ export function CleanDeployProgressCard({
   // Header status glyph — spinner while working, then a terminal-state mark.
   const statusIcon =
     phase === "installing" ? (
-      <Loader2 className="size-3.5 shrink-0 animate-spin" />
+      <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin" />
     ) : phase === "done" ? (
-      <Check className="size-3.5 shrink-0 text-success" />
+      <UiIcon name="check" className="size-3.5 shrink-0 text-success" />
     ) : cancelled ? (
-      <Ban className="size-3.5 shrink-0 text-muted-foreground" />
+      <UiIcon name="ban" className="size-3.5 shrink-0 text-muted-foreground" />
     ) : (
-      <AlertTriangle className="size-3.5 shrink-0 text-danger" />
+      <UiIcon name="warning" className="size-3.5 shrink-0 text-danger" />
     );
 
-  // ── Legacy mail wizard (no phase stepper): original centered layout, untouched.
+  // The mail wizard has no phase stream; retain its compact progress layout.
   if (!hasStepper) {
     return (
       <PageContainer outerClassName="pb-20">
@@ -551,25 +446,22 @@ export function CleanDeployProgressCard({
                 />
               </div>
               {logs != null && (
-                <TerminalLogs
-                  logs={logs}
-                  live
-                  label={w.deployLogs}
-                  emptyLabel={w.logsWaiting}
-                />
+                <TerminalLogs logs={logs} live label={t.importProject.composeDeployment.logsTitle} emptyLabel={w.logsWaiting} />
               )}
             </>
           )}
 
           {phase === "done" && (
             <div className="mt-6 space-y-4">
-              <div className="rounded-2xl border border-border/50 bg-card p-6">
+              <div className="rounded-2xl bg-card p-6">
                 <div className="flex size-10 items-center justify-center rounded-full bg-success-bg ring-4 ring-success/10">
-                  <Check className="size-5 text-success" />
+                  <UiIcon name="check" className="size-5 text-success" />
                 </div>
                 <h2 className="mt-4 text-base font-semibold text-foreground">{w.progressLive}</h2>
                 {liveHost && (
-                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground/70">{liveHost}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                    {liveHost}
+                  </p>
                 )}
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                   {liveUrl && (
@@ -579,7 +471,7 @@ export function CleanDeployProgressCard({
                       rel="noreferrer"
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                     >
-                      <ExternalLink className="size-4" /> {w.openApp}
+                      <UiIcon name="arrow-up-right" className="size-4" /> {w.openApp}
                     </a>
                   )}
                   <button
@@ -587,7 +479,7 @@ export function CleanDeployProgressCard({
                     onClick={onGoToProject}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
                   >
-                    {w.goToApp} <ArrowRight className="size-4 rtl:rotate-180" />
+                    {w.goToApp} <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                   </button>
                 </div>
               </div>
@@ -611,18 +503,20 @@ export function CleanDeployProgressCard({
           )}
 
           {phase === "error" && (
-            <div className="mt-6 rounded-2xl border border-border/50 bg-card p-6">
+            <div className="mt-6 rounded-2xl bg-card p-6">
               {/* Tone follows the verdict, so a caller that starts passing
                   `cancelled` can't get a danger disc over neutral copy. */}
               <div
                 className={`flex size-10 items-center justify-center rounded-full ${
-                  cancelled ? "bg-muted ring-4 ring-border/30" : "bg-danger-bg ring-4 ring-danger/10"
+                  cancelled
+                    ? "bg-muted ring-4 ring-border/30"
+                    : "bg-danger-bg ring-4 ring-danger/10"
                 }`}
               >
                 {cancelled ? (
-                  <Ban className="size-5 text-muted-foreground" />
+                  <UiIcon name="ban" className="size-5 text-muted-foreground" />
                 ) : (
-                  <AlertTriangle className="size-5 text-danger" />
+                  <UiIcon name="warning" className="size-5 text-danger" />
                 )}
               </div>
               <h2 className="mt-4 text-base font-semibold text-foreground">{settledHeading}</h2>
@@ -635,7 +529,7 @@ export function CleanDeployProgressCard({
                 <TerminalLogs
                   logs={logs}
                   live={false}
-                  label={w.deployLogs}
+                  label={t.importProject.composeDeployment.logsTitle}
                   emptyLabel={w.logsEmpty}
                 />
               )}
@@ -646,15 +540,20 @@ export function CleanDeployProgressCard({
                     onClick={onViewBuild}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
                   >
-                    <SlidersHorizontal className="size-4" /> {w.viewDetails}
+                    <UiIcon name="sliders" className="size-4" /> {w.viewDetails}
                   </button>
+                )}
+                {recoveryAction && !cancelled && (
+                  <Button type="button" disabled={recoveryAction.pending} onClick={recoveryAction.onClick}>
+                    {recoveryAction.label}
+                  </Button>
                 )}
                 <button
                   type="button"
                   onClick={onRetry}
                   className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <ArrowLeft className="size-4 rtl:rotate-180" /> {w.back}
+                  <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" /> {w.back}
                 </button>
               </div>
             </div>
@@ -739,7 +638,8 @@ export function CleanDeployProgressCard({
     if (s !== "done") return s;
     // The install never reached live, so the terminal phase is unreached, not done.
     if (row.id === "ready") return "stopped";
-    if (row.subs.some((x) => x === "failed" || x === "error")) return cancelled ? "stopped" : "failed";
+    if (row.subs.some((x) => x === "failed" || x === "error"))
+      return cancelled ? "stopped" : "failed";
     return s;
   };
   const settled = phase === "error";
@@ -755,7 +655,7 @@ export function CleanDeployProgressCard({
     status: p.status,
     children:
       p.id === "services" && serviceItems.length > 0 ? (
-        <InstallStepper steps={asSteps(serviceItems)} />
+        <InstallStepper steps={asSteps(serviceItems)} columns={2} />
       ) : p.id === "app-setup" && appSetupItems.length > 0 ? (
         <InstallStepper steps={asSteps(appSetupItems)} />
       ) : undefined,
@@ -766,36 +666,33 @@ export function CleanDeployProgressCard({
   // the terminal screen is better short than padded.
   const anyPhaseMoved = phaseRows.some((p) => p.status !== "pending");
 
-  // Aside status pill — theme tokens only, mirrors PROJECT_STATUS_META. Carries a
-  // glyph rather than a bare dot: a coloured dot beside a word the header already
-  // shows was decoration, and while installing the pill is replaced outright by
-  // the live progress panel below.
+  // Header status uses the same semantic tokens as the project overview.
   const pill =
     phase === "installing"
       ? {
           badge: "bg-info-bg text-info",
-          icon: <Loader2 className="size-3 shrink-0 animate-spin" />,
+          icon: <UiIcon name="spinner" className="size-3 shrink-0 animate-spin" />,
           label: w.statusInstalling,
         }
       : phase === "done"
         ? {
             badge: "bg-success-bg text-success",
-            icon: <Check className="size-3 shrink-0" />,
+            icon: <UiIcon name="check" className="size-3 shrink-0" />,
             label: w.statusLive,
           }
         : cancelled
           ? {
               badge: "bg-muted text-muted-foreground",
-              icon: <Ban className="size-3 shrink-0" />,
+              icon: <UiIcon name="ban" className="size-3 shrink-0" />,
               label: w.statusCancelled,
             }
           : {
               badge: "bg-danger-bg text-danger",
-              icon: <AlertTriangle className="size-3 shrink-0" />,
+              icon: <UiIcon name="warning" className="size-3 shrink-0" />,
               label: w.statusFailed,
             };
 
-  // Live install readout for the aside (and the mobile card): the stepper's own
+  // Live install readout for the aside: the stepper's own
   // completion as a bar, the phase in flight, its step counter + service tally.
   const servicesDone = serviceItems.filter((s) => s.status === "done").length;
   const metaLine = [
@@ -815,7 +712,7 @@ export function CleanDeployProgressCard({
   const progressPanel =
     phase === "installing" ? (
       <InstallProgressPanel
-        title={w.statusInstalling}
+        title={w.stepperTitle}
         percent={installProgressPercent(phaseRows)}
         phaseLabel={phaseLabel}
         metaLine={metaLine}
@@ -875,250 +772,185 @@ export function CleanDeployProgressCard({
           .join(" · ")
       : "";
 
-  const btnPrimary =
-    "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90";
-  const btnSecondary =
-    "inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50";
-  const btnGhost =
-    "inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground";
-
   const openHref = liveUrl ? (liveUrl.startsWith("http") ? liveUrl : `https://${liveUrl}`) : null;
-
-  // Phase actions — rendered once in the aside (desktop) and once in an inline
-  // card (mobile, where the aside is hidden). Same handlers in both places.
-  const actions =
-    phase === "installing" ? (
-      onStop ? (
-        <button
-          type="button"
-          onClick={onStop}
-          disabled={isStopping}
-          className={`inline-flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
-            isStopping
-              ? "cursor-not-allowed border-border bg-muted text-muted-foreground"
-              : "border-danger/20 bg-danger-bg text-danger hover:bg-danger/15"
-          }`}
-        >
-          {isStopping ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
-          {isStopping ? w.stopping : w.stopInstall}
-        </button>
-      ) : null
-    ) : phase === "done" ? (
-      <>
-        {openHref && (
-          <a href={openHref} target="_blank" rel="noreferrer" className={btnPrimary}>
-            <ExternalLink className="size-4" /> {w.openApp}
-          </a>
-        )}
-        <button type="button" onClick={onGoToProject} className={btnSecondary}>
-          {w.goToApp} <ArrowRight className="size-4 rtl:rotate-180" />
-        </button>
-      </>
-    ) : (
-      <>
-        {deploymentId && (
-          <button type="button" onClick={onViewBuild} className={btnSecondary}>
-            <SlidersHorizontal className="size-4" /> {w.viewDetails}
-          </button>
-        )}
-        <button type="button" onClick={onRetry} className={btnGhost}>
-          <ArrowLeft className="size-4 rtl:rotate-180" /> {cancelled ? w.startOver : w.back}
-        </button>
-      </>
-    );
-
   const hasConnectSurface =
     !!connect?.projectId || !!(firstLogin && (firstLogin.username || firstLogin.password));
+  const showSteps = phase === "installing" || (phase === "error" && anyPhaseMoved);
 
-  const mainContent =
-    phase === "installing" ? (
-      <>
-        <div className="rounded-2xl border border-border/50 bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground">{w.stepperTitle}</h2>
-          <div className="mt-4">
-            <InstallStepper steps={stepItems} />
-          </div>
-        </div>
-        <CollapsibleLogs
-          logs={logs ?? ""}
-          live
-          label={w.deployLogs}
-          emptyLabel={w.logsWaiting}
-          showLabel={w.showLogs}
-          hideLabel={w.hideLogs}
-        />
-      </>
-    ) : phase === "done" ? (
-      hasConnectSurface ? (
-        <>
-          {firstLogin && (firstLogin.username || firstLogin.password) && (
-            <FirstLoginCard
-              title={w.firstLoginTitle}
-              userLabel={w.firstLoginUser}
-              passLabel={w.firstLoginPassword}
-              firstLogin={firstLogin}
-            />
-          )}
-          {connect?.projectId && (
-            <ConnectionCard
-              projectId={connect.projectId}
-              appTemplateId={connect.appTemplateId}
-              serverId={connect.serverId}
-              deployTarget={connect.deployTarget}
-            />
-          )}
-        </>
-      ) : (
-        // Nothing to connect (e.g. an app with no connection block) — a compact
-        // confirmation so the main column isn't empty.
-        <div className="rounded-2xl border border-border/50 bg-card p-6">
-          <div className="flex size-10 items-center justify-center rounded-full bg-success-bg ring-4 ring-success/10">
-            <Check className="size-5 text-success" />
-          </div>
-          <h2 className="mt-4 text-base font-semibold text-foreground">{w.progressLive}</h2>
-          {liveHost && (
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground/70">{liveHost}</p>
-          )}
-        </div>
-      )
-    ) : (
-      <>
-        <div className="rounded-2xl border border-border/50 bg-card p-6">
-          <div
-            className={`flex size-10 items-center justify-center rounded-full ${
-              cancelled ? "bg-muted ring-4 ring-border/30" : "bg-danger-bg ring-4 ring-danger/10"
-            }`}
-          >
-            {cancelled ? (
-              <Ban className="size-5 text-muted-foreground" />
-            ) : (
-              <AlertTriangle className="size-5 text-danger" />
-            )}
-          </div>
-          <h2 className="mt-4 text-base font-semibold text-foreground">{settledHeading}</h2>
-          {settledDetail && (
-            <p className="mt-1 text-sm text-muted-foreground">{settledDetail}</p>
-          )}
-          {settledBody && (
-            <p
-              className={`text-[13px] leading-relaxed text-muted-foreground/80 ${
-                settledDetail ? "mt-2" : "mt-1"
-              }`}
-            >
-              {settledBody}
-            </p>
-          )}
-          {stoppedAtLine && (
-            <p className="mt-4 border-t border-border/40 pt-3 text-xs text-muted-foreground">
-              {stoppedAtLine}
-            </p>
-          )}
-        </div>
-        {/* How far it got. This is the checklist the install was already showing
-            when it stopped — dropping it on the terminal screen threw away the one
-            thing that says WHERE it stopped, at the moment that matters most. */}
-        {anyPhaseMoved && (
-          <div className="rounded-2xl border border-border/50 bg-card p-5">
-            <h2 className="text-sm font-semibold text-foreground">{w.stepperTitle}</h2>
-            <div className="mt-4">
-              <InstallStepper steps={stepItems} />
-            </div>
-          </div>
-        )}
-        {/* Mounted only when there is something to read — see `logLines`. */}
-        {logs != null && logLines(logs).length > 0 && (
-          <TerminalLogs
-            logs={logs}
-            live={false}
-            label={w.deployLogs}
-            emptyLabel={w.logsEmpty}
-          />
-        )}
-      </>
-    );
+  const stepper = showSteps ? (
+    <section className="rounded-2xl bg-card p-5">
+      {progressPanel ?? <h2 className="text-sm font-semibold text-foreground">{w.stepperTitle}</h2>}
+      <div className="mt-5 max-h-96 overflow-y-auto">
+        <InstallStepper steps={stepItems} />
+      </div>
+    </section>
+  ) : null;
+  const details = (
+    <div className="space-y-4">
+      {summaryRows.length > 0 && <ConfigSummaryCard title={w.summaryTitle} rows={summaryRows} />}
+      {deploymentId && (
+        <Button type="button" variant="ghost" onClick={onViewBuild} className="w-full">
+          {w.viewDetails}
+          <UiIcon name="arrow-up-right" aria-hidden className="size-3.5" />
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <PageContainer outerClassName="pb-20">
-      {/* Header — project-detail treatment (breadcrumb + 2xl title + status). */}
-      <div className="mb-6">
-        <div className="mb-2 flex items-center space-x-2 text-sm text-muted-foreground rtl:space-x-reverse">
-          <a href="/apps/new" className="font-medium transition-colors hover:text-foreground">
+      <header className="mb-6 space-y-4">
+        <nav
+          aria-label={w.breadcrumbApps}
+          className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground"
+        >
+          <Link
+            href="/apps/new"
+            className="inline-flex shrink-0 items-center gap-1.5 transition-colors hover:text-foreground"
+          >
+            <UiIcon name="arrow-left" aria-hidden className="size-4 rtl:rotate-180" />
             {w.breadcrumbApps}
-          </a>
-          <span>/</span>
-          <span className="truncate font-medium text-foreground">{title}</span>
-        </div>
-        <div className="flex min-w-0 items-center gap-4">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-muted/60">
-            <AppLogo appId={appId} className="size-7 object-contain" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-2xl font-semibold text-foreground">{title}</h1>
-            <p className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
-              {statusIcon}
-              <span className="truncate">{statusLine}</span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
-        {/* MAIN — the substance for the current phase. The aside is desktop-only,
-            so its progress panel, actions and config read-out are mirrored here
-            for narrow viewports. */}
-        <div className="min-w-0 space-y-6">
-          {mainContent}
-          {(progressPanel || actions) && (
-            <div className="space-y-3 rounded-2xl border border-border/50 bg-card p-4 lg:hidden">
-              {progressPanel}
-              {actions && <div className="space-y-2">{actions}</div>}
-            </div>
+          </Link>
+          {deploymentId && (
+            <>
+              <span aria-hidden className="text-border">
+                /
+              </span>
+              <span aria-current="page" className="truncate font-mono text-xs" title={deploymentId}>
+                {deploymentId}
+              </span>
+            </>
           )}
-          {summaryRows.length > 0 && (
-            <div className="lg:hidden">
-              <ConfigSummaryCard title={w.summaryTitle} rows={summaryRows} />
+        </nav>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-1 basis-72 items-center gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-card">
+              <AppLogo appId={appId} className="size-7 object-contain" />
             </div>
-          )}
-        </div>
-
-        {/* ASIDE — sticky summary + status + phase actions (desktop only). */}
-        <div className="hidden lg:block">
-          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-            <div className="rounded-2xl border border-border/50 bg-card p-5">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/50 bg-muted/40">
-                  <AppLogo appId={appId} className="size-5 object-contain" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-                    {w.appEyebrow}
-                  </p>
-                  <h3 className="truncate text-base font-semibold text-foreground">{title}</h3>
-                </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="min-w-0 break-words text-2xl font-medium text-foreground">
+                  {title}
+                </h1>
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${pill.badge}`}
+                >
+                  {pill.icon}
+                  {pill.label}
+                </span>
               </div>
-              {/* Installing → the live progress readout; settled → the status
-                  pill, which now carries a real verdict rather than a dot. */}
-              <div className="mt-4">
-                {progressPanel ?? (
-                  <span
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${pill.badge}`}
-                  >
-                    {pill.icon}
-                    {pill.label}
-                  </span>
-                )}
-              </div>
-              {phase === "done" && liveHost && (
-                <p className="mt-3 break-all font-mono text-xs text-muted-foreground/70">{liveHost}</p>
+              {description && (
+                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
               )}
-              {actions && <div className="mt-4 space-y-2">{actions}</div>}
             </div>
-            {summaryRows.length > 0 && (
-              <ConfigSummaryCard title={w.summaryTitle} rows={summaryRows} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {phase === "error" && !cancelled && recoveryAction && (
+              <Button type="button" disabled={recoveryAction.pending} onClick={recoveryAction.onClick}>
+                {recoveryAction.label}
+              </Button>
+            )}
+            {phase === "error" && (
+              <Button type="button" variant="ghost" onClick={onRetry}>
+                <UiIcon name="arrow-left" aria-hidden className="size-4 rtl:rotate-180" />
+                {cancelled ? w.startOver : w.back}
+              </Button>
+            )}
+            {deploymentId && (
+              <Button type="button" variant="secondary" onClick={onGoToProject}>
+                {w.goToApp}
+                <UiIcon name="arrow-right" aria-hidden className="size-4 rtl:rotate-180" />
+              </Button>
+            )}
+            {phase === "done" && openHref && (
+              <Button asChild>
+                <a href={openHref} target="_blank" rel="noreferrer">
+                  {w.openApp}
+                  <UiIcon name="arrow-up-right" aria-hidden className="size-3.5" />
+                </a>
+              </Button>
+            )}
+            {phase === "installing" && onStop && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onStop}
+                disabled={isStopping}
+                className="text-danger"
+              >
+                <UiIcon
+                  name={isStopping ? "spinner" : "square"}
+                  aria-hidden
+                  className={`size-4 ${isStopping ? "motion-safe:animate-spin" : ""}`}
+                />
+                {isStopping ? w.stopping : w.stopInstall}
+              </Button>
             )}
           </div>
         </div>
-      </div>
+      </header>
+
+      <DeploymentLayout navigation={stepper ?? details} details={stepper ? details : null}>
+        {phase === "error" && (
+          <section className="space-y-3 rounded-2xl bg-card p-5">
+            <h2
+              className={`text-base font-semibold ${cancelled ? "text-foreground" : "text-danger"}`}
+            >
+              {settledHeading}
+            </h2>
+            {settledDetail && (
+              <p className="break-words text-sm leading-relaxed text-muted-foreground">
+                {settledDetail}
+              </p>
+            )}
+            {settledBody && (
+              <p className="text-sm leading-relaxed text-muted-foreground">{settledBody}</p>
+            )}
+            {stoppedAtLine && <p className="text-xs text-muted-foreground">{stoppedAtLine}</p>}
+          </section>
+        )}
+        {(phase === "installing" || (phase === "error" && logs && logLines(logs).length > 0)) && (
+          <TerminalLogs
+            logs={logs ?? ""}
+            live={phase === "installing"}
+            label={t.importProject.composeDeployment.logsTitle}
+            emptyLabel={phase === "installing" ? w.logsWaiting : w.logsEmpty}
+          />
+        )}
+        {phase === "done" && (
+          <>
+            {firstLogin && (firstLogin.username || firstLogin.password) && (
+              <FirstLoginCard
+                title={w.firstLoginTitle}
+                userLabel={w.firstLoginUser}
+                passLabel={w.firstLoginPassword}
+                firstLogin={firstLogin}
+              />
+            )}
+            {connect?.projectId && (
+              <ConnectionCard
+                projectId={connect.projectId}
+                appTemplateId={connect.appTemplateId}
+                serverId={connect.serverId}
+                deployTarget={connect.deployTarget}
+              />
+            )}
+            {!hasConnectSurface && (
+              <section className="space-y-2 rounded-2xl bg-card p-5">
+                <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                  <UiIcon name="check-circle" aria-hidden className="size-5 text-success" />
+                  {w.progressLive}
+                </h2>
+                {liveHost && (
+                  <p dir="ltr" className="break-all font-mono text-sm text-muted-foreground">
+                    {liveHost}
+                  </p>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </DeploymentLayout>
     </PageContainer>
   );
 }

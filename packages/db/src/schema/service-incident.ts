@@ -64,6 +64,12 @@ export const serviceIncident = pgTable(
     serviceName: text("service_name").notNull(),
     serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
     containerId: text("container_id"),
+    /** Active release and its stored container hint at the last fault observation.
+     * The live matcher can discover a recreated container without updating that
+     * hint. Keep both so reads can recognize it without reviving incidents after
+     * a release switch or an in-place service replacement. Null on legacy rows. */
+    deploymentId: text("deployment_id"),
+    trackedContainerId: text("tracked_container_id"),
     /** unhealthy | crash_loop | down | server_unreachable (severity order). */
     kind: text("kind").$type<IncidentKind>().notNull(),
     /** open | resolved */

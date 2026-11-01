@@ -6,7 +6,7 @@ import {
   railwayMetadataParser,
   renderMetadataParser,
 } from "@repo/core";
-import { detectStack, type RepoFile } from "../../src/lib/stack-detector";
+import { detectStack, type RepoFile } from "@repo/platform/engine/lib/stack-detector";
 
 function files(...names: string[]): RepoFile[] {
   return names.map((name) =>

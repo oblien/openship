@@ -21,6 +21,7 @@
  * moves, so a process pinning a core looks idle.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor, ResourceUsage } from "../../types";
 import { sq } from "../build-pipeline";
 
@@ -48,7 +49,7 @@ export const ZERO_USAGE: ResourceUsage = {
  * has to know the field count before it knows which layout it's reading, and a
  * 5-field `ps` line read as a 6-field one silently yields zeros.
  *
- * A one-liner rather than several round trips because on a remote host each `exec`
+ * One shell command rather than several round trips because on a remote host each `exec`
  * is an SSH round trip, and the two CPU samples must be a known interval apart —
  * splitting them across calls makes the interval whatever the network felt like.
  *
@@ -94,7 +95,7 @@ function buildProbe(pid: number, cgroupCandidates: string[]): string {
     `  X=$(ps -o rss=,%cpu= -p "$P" 2>/dev/null | awk '{print ($1*1024)" "$2}')`,
     `  echo "ps \${X:-0 0}"`,
     `fi`,
-  ].join("; ");
+  ].join("\n");
 }
 
 interface ProbeResult extends ResourceUsage {
@@ -163,7 +164,8 @@ export async function sampleBareUsage(
     const out = await executor.exec(buildProbe(pid, cgroupCandidates));
     const { source: _source, ...usage } = parseProbe(out);
     return usage;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/usage");
     return { ...ZERO_USAGE };
   }
 }

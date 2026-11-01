@@ -17,6 +17,9 @@
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist .turbo node_modules"
   },
+  "dependencies": {
+    "@repo/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22.13.0",
     "tsup": "^8.5.1",

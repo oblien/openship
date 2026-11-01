@@ -1,16 +1,17 @@
 {
   "page": {
     "title": "Yeni Proje",
-    "subtitle": "Bir depoyu içe aktarın, bir URL yapıştırın veya bir şablondan başlayın",
+    "subtitle": "Bir uygulama dağıtın veya kendi projenizi içe aktarın.",
     "tabs": {
       "folder": "Klasör",
       "github": "GitHub",
-      "url": "Git URL'si",
-      "template": "Şablon"
+      "templates": "Şablonlar",
+      "gitUrl": "Git adresi"
     }
   },
   "connect": {
     "connectGithub": "GitHub'a Bağlan",
+    "deployApp": "Uygulama dağıt",
     "manageInSettings": "Ayarlarda Yönet",
     "terminal": {
       "title": "GitHub'a Bağlan",
@@ -21,7 +22,9 @@
       "title": "Bu kodu GitHub üzerinde girin",
       "goToPrefix": "Adrese gidin: ",
       "goToSuffix": "ve yukarıdaki kodu girin.",
-      "waiting": "Yetkilendirme bekleniyor…"
+      "waiting": "Yetkilendirme bekleniyor…",
+      "openGithub": "GitHub'ı Aç",
+      "copyCode": "Kopyalamak için tıklayın"
     },
     "default": {
       "title": "Dağıtım yapmak için GitHub'a bağlanın",
@@ -35,7 +38,33 @@
       "ghCli": "gh CLI ile giriş yapın",
       "ghCliDesc": "Makinenizin GitHub girişini kullanın. Bulut gerekmez.",
       "useGhCli": "gh CLI Kullan",
-      "connecting": "Bağlanılıyor…"
+      "connecting": "Bağlanılıyor…",
+      "manual": "Manuel GitHub bağlantısı",
+      "manualDesc": "Ayarlar'da yapılandırın — kendi GitHub App/OAuth uygulamanız veya bu örneğin gh CLI'si. Openship hesabı gerekmez.",
+      "manualCta": "Ayarlar'da yapılandırın",
+      "byoc": "SSH anahtarı veya erişim belirteci",
+      "byocDesc": "Kendi kimlik bilgilerinizi getirin — sunucu başına bir dağıtım anahtarı veya bir belirteç. Oturum açma gerekmez.",
+      "byocCta": "Yapılandır"
+    },
+    "installationPicker": {
+      "title": "GitHub erişimini seçin",
+      "description": "Bu çalışma alanı için mevcut bir App kurulumunu seçin.",
+      "sharedHint": "Diğer Openship bağlantılarınız korunur.",
+      "connect": "Bu hesabı kullan",
+      "connected": "Zaten bağlı",
+      "installAnother": "Başka bir GitHub hesabına yükle",
+      "failed": "Bu kurulum bağlanamadı.",
+      "tryAgain": "Yeniden başla",
+      "successTitle": "GitHub bağlandı",
+      "successDescription": "Depolara erişim hazır. Openship’e dönebilirsiniz.",
+      "errorTitle": "GitHub bağlantısı ilgilenmenizi gerektiriyor",
+      "returnToApp": "Kütüphaneye dön"
+    },
+    "token": {
+      "title": "GitHub belirteci ile bağlanın",
+      "connect": "Bağlan",
+      "create": "GitHub'da bir belirteç oluşturun",
+      "failed": "Belirteç kaydedilemedi."
     }
   },
   "folderUpload": {
@@ -115,8 +144,6 @@
     "noMatchingDesc": "Farklı bir arama terimi deneyin veya filtrelerinizi ayarlayın",
     "noReposDesc": "Bu hesabın henüz hiç deposu yok",
     "privateBadge": "Özel",
-    "localOnly": "Yalnızca yerel",
-    "localOnlyTooltip": "Openship Uygulaması {owner} hesabında kurulu değil. Yalnızca yerel derleme yapılabilir — uzak dağıtımları etkinleştirmek için uygulamayı bu hesaba kurun.",
     "repoCountSingular": "{count} depo",
     "repoCountPlural": "{count} depo",
     "matching": "\"{query}\" ile eşleşen",
@@ -150,13 +177,84 @@
     "checking": "Kontrol ediliyor…",
     "notConnectedManage": "Bağlı değil — Ayarlar kısmında yönetin",
     "optional": "İsteğe bağlı",
-    "footnote": "gh CLI üzerinden yerel kütüphane; uzak dağıtımlar kısa ömürlü jetonlar kullanır —",
-    "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin"
+    "footnote": "Depoları görüntülemek ve dağıtmak için kullanılan GitHub bağlantılarını yönetin.",
+    "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin",
+    "methodToken": "GitHub belirteci",
+    "methodDevice": "GitHub ile oturum açma"
   },
   "urlImport": {
     "invalidUrl": "Geçerli bir GitHub depo URL'si girin",
     "title": "Git URL'sinden İçe Aktar",
     "description": "İçe aktarmak için herkese açık bir depo URL'si yapıştırın. GitHub bağlantısı gerekmez.",
     "importButton": "Depoyu İçe Aktar"
+  },
+  "ghCliConsent": {
+    "title": "Depolarınız okunsun mu?",
+    "body": "OpenShip, zaten oturum açmış olduğunuz gh CLI'yi kullanarak GitHub depolarınızı listeleyebilir.",
+    "bodyWithLogin": "OpenShip, @{login} olarak oturum açtığınız gh CLI'yi kullanarak GitHub depolarınızı listeleyebilir.",
+    "pointNoCloud": "Buluta hiçbir şey gönderilmez — liste bu makineden asla ayrılmaz.",
+    "pointDesktopOnly": "Yalnızca masaüstü uygulamasında yerel gh kimlik doğrulamanızı kullanarak çalışır.",
+    "pointReadOnly": "Salt okunur: dağıtmak için birini seçebilmeniz amacıyla depoları listeler.",
+    "allow": "İzin ver"
+  },
+  "customAppModal": {
+    "title": "Özel uygulama ekle",
+    "description": "Bir uygulama tanımı (JSON) yükleyin. Kataloğunuza eklenir ve doğrulanmamış olarak işaretlenir.",
+    "howToWrite": "Nasıl yazılır",
+    "dropPrefix": "Buraya",
+    "dropSuffix": "bırakın veya",
+    "browse": "göz atın",
+    "validDefinition": "Geçerli uygulama tanımı —",
+    "unverifiedTitle": "Doğrulanmadı.",
+    "unverifiedBody": "Bu, resmi ve incelenmiş bir uygulama yerine sağladığınız imajları dağıtır. Tanımı inceleyin ve yalnızca güvendiğiniz uygulamaları ekleyin.",
+    "cancel": "İptal",
+    "addApp": "Uygulama ekle",
+    "invalidJson": "Bu dosya geçerli bir JSON değil.",
+    "invalidDefinition": "Bu geçerli bir uygulama tanımı değil — gerekli alanları ve referansları kontrol edin.",
+    "onlyTemplateSupported": "Yalnızca şablon uygulamaları eklenebilir (akış uygulamaları desteklenmez).",
+    "addedToast": "\"{name}\" kataloğunuza eklendi.",
+    "failedToast": "Uygulama eklenemedi."
+  },
+  "catalog": {
+    "apps": {
+      "mail": "Kendi alan adınızda kendi e-postanız — tek sunucuda SMTP/IMAP, posta kutuları ve webmail. Veya mevcut kutularınızı koruyup yalnızca webmail çalıştırın.",
+      "supabase": "Tamamen kendi sunucunuzda barındırılan Supabase — tek API ağ geçidi arkasında Postgres, Auth, REST, Realtime, Depolama ve Studio.",
+      "mongodb": "Mongo Express web yönetim paneline sahip MongoDB belge veritabanı.",
+      "convex": "Kalıcı veri hacmine sahip, kendi sunucunuzda çalışan Convex reaktif arka uç ve kontrol paneli.",
+      "n8n": "İş akışı otomasyonu — görsel bir düzenleyiciyle uygulamaları ve API'leri birbirine bağlayın.",
+      "ghost": "Odaklanmış düzenleyici ve kendi veritabanınızla bloglar, bültenler ve üyelik siteleri yayınlama platformu.",
+      "directus": "Verileriniz üzerinde REST ve GraphQL API'leri ile tarayıcı tabanlı yönetim stüdyosu sunan headless CMS.",
+      "nocodb": "SQL destekli verilerle çalışmak için Airtable tarzı elektronik tablo arayüzü.",
+      "metabase": "Mevcut verileriniz üzerinde iş zekası, sorgular ve görsel panolar.",
+      "grafana": "Kendi altyapınızda metrikleriniz ve günlükleriniz için panolar ve görselleştirme.",
+      "gitea": "Depolar, sorunlar ve çekme istekleriyle hafif Git barındırma.",
+      "code-server": "Kendi sunucunuzdaki bir çalışma alanına bağlı olarak tarayıcınızda çalışan VS Code.",
+      "uptime-kuma": "Hizmetleriniz için durum sayfaları ve uyarılar sunan çalışma süresi izleme aracı.",
+      "vaultwarden": "Bitwarden istemcileriyle uyumlu, hafif ve kendi sunucunuzda barındırılan parola yöneticisi.",
+      "freshrss": "Abonelikleri düzenlemek için tarayıcı arayüzüne sahip kendi RSS ve Atom akış okuyucunuz.",
+      "stirling-pdf": "Kendi altyapınızda PDF dosyalarını bölün, birleştirin, dönüştürün, OCR uygulayın ve düzenleyin.",
+      "it-tools": "Hesap oluşturmaya gerek kalmadan geliştiriciler ve sistem yöneticileri için tarayıcı tabanlı araç seti.",
+      "excalidraw": "Çizimler ve diyagramlar için sanal beyaz tahta. Durumsuz — çizimler tarayıcınıza kaydedilir.",
+      "buzz": "İnsanlar ve yapay zeka ajanlarının işbirliği yaptığı çalışma alanı — tek denetim kaydında sohbet, kod, inceleme ve akışlar.",
+      "minio": "Web konsoluna sahip S3 uyumlu nesne depolama — herhangi bir S3 istemcisini yönlendirin veya doğrudan proje yüklemelerine bağlayın.",
+      "kafka": "Kafbat Kafka UI web konsolu ile Apache Kafka olay akışı aracısı (KRaft modu).",
+      "qdrant": "Yapay zeka araması, RAG ve gömmeler için yerleşik web arayüzlü yüksek performanslı vektör veritabanı.",
+      "meilisearch": "Yazım hatalarına toleranslı yıldırım hızında arama motoru. Belgelerinizi milisaniyeler içinde dizine ekleyin ve arayın.",
+      "neon": "Postgres dallanması ve konsol içeren topluluk destekli kendi sunucunuzda barındırılan Neon.",
+      "posthog": "Kendi sunucunuzda çalışan ürün analitiği, oturum tekrarı ve özellik bayrakları paketi.",
+      "redis": "Önbellekleme, oturumlar ve kuyruklar için bellek içi veri deposu — dahili RedisInsight ile Valkey (Redis çatalı).",
+      "umami": "Gizlilik dostu, çerezsiz web analitiği — Google Analytics'e açık kaynaklı alternatif.",
+      "webmail": "Kendi alan adınızda herhangi bir IMAP/SMTP kutusuna bağlanabilen hızlı webmail istemcisi.",
+      "clickhouse": "Sorgular ve şema taraması için CH-UI konsoluna sahip analitik sütun tabanlı SQL veritabanı.",
+      "mindwire": "Özel bir kontrol düzlemi arkasında kodlama ajanı çalışma zamanlarını çalıştırın ve yönetin.",
+      "pocketbase": "Kimlik doğrulama, gerçek zamanlı SQLite, dosya depolama ve yönetim paneli içeren kompakt arka uç.",
+      "authentik": "SSO, OAuth2, OpenID Connect ve SAML için sunucu, çalışan ve PostgreSQL içeren kimlik sağlayıcı.",
+      "mariadb": "Tablolar ve sorgular için hafif Adminer paneline sahip MySQL uyumlu veritabanı.",
+      "nextcloud": "Nextcloud Admin, MariaDB ve Redis ile özel dosya senkronizasyonu ve paylaşımı.",
+      "odoo": "PostgreSQL ve hazır yönetici hesabıyla CRM, satış ve envanter iş uygulamaları paketi.",
+      "postgresql": "Tarayıcı tabanlı yönetim ve SQL sorguları için pgAdmin içeren kalıcı PostgreSQL veritabanı.",
+      "rabbitmq": "Kuyruklar ve bağlantılar için resmi yönetim paneline sahip kalıcı mesaj kuyruğu aracısı.",
+      "wordpress": "WordPress Admin, özel MariaDB ve kalıcı depolama ile web siteleri, bloglar ve mağazalar yayınlayın."
+    }
   }
 }

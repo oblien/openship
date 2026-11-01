@@ -75,6 +75,9 @@
       "onFailureWarn": "Mantener el despliegue activo y marcarlo para revisión",
       "onFailureFail": "Hacer fallar el despliegue y mantener sirviendo la versión anterior"
     },
+    "runtimeVersionLabel": "Versión del entorno de ejecución",
+    "runtimeVersionDefault": "Predeterminada",
+    "runtimeVersionDesc": "Usa imágenes de compilación y ejecución compatibles con la versión seleccionada. Requiere una compilación Docker generada por Openship.",
     "buildImageLabel": "Imagen de compilación",
     "buildImageDesc": "Imagen del contenedor compilador para compilaciones en la nube o en el servidor. Sobrescríbela cuando la imagen base detectada sea incorrecta.",
     "productionPathsLabel": "Rutas de producción",
@@ -105,7 +108,24 @@
     "modeWorker": "Worker",
     "modeStatic": "Estático",
     "workerModeDesc": "Se ejecuta de forma continua sin puerto ni URL pública: un consumidor de cola, cron o bot.",
-    "buildSettingsTitle": "Configuración de compilación"
+    "buildSettingsTitle": "Configuración de compilación",
+    "releaseTitle": "Antes de activar",
+    "releaseDescription": "Comandos opcionales después del build. Un fallo detiene el despliegue. Solo para apps Docker y Bare.",
+    "releaseCommand": "Comando {number}",
+    "addReleaseCommand": "Añadir comando",
+    "removeReleaseCommand": "Eliminar comando {number}",
+    "runtimeImageLabel": "Imagen de ejecución",
+    "runtimeImageDesc": "Imagen base de producción opcional para Docker. Debe ser compatible con el entorno y la receta generada; deja el campo vacío para usar el valor predeterminado.",
+    "staticPathHint": "Servido como archivos estáticos desde el borde: no se ejecuta ningún proceso.",
+    "runtimeTitle": "Entorno de ejecución",
+    "runtimeDesc": "Elige la imagen que ejecuta tu app. Actualizar las imágenes conserva la versión y los digests fijados.",
+    "runtimeBareDesc": "Esta app se ejecuta directamente en su servidor. Gestiona allí el entorno instalado.",
+    "runtimeStaticDesc": "La imagen de compilación prepara los archivos estáticos. Tras el despliegue no se ejecuta ningún entorno de aplicación.",
+    "runtimeDockerfileDesc": "Tu Dockerfile determina la imagen de ejecución.",
+    "runtimeServicesDesc": "Elige las imágenes de ejecución de cada servicio en Servicios.",
+    "runtimePrebuiltDesc": "La imagen de aplicación seleccionada incluye su entorno de ejecución.",
+    "runtimeOverrideUnused": "Estas opciones guardadas no se aplican a este despliegue. Bórralas antes de guardar.",
+    "clearRuntimeOverrides": "Borrar opciones guardadas"
   },
   "projectSettings": {
     "framework": "Framework",
@@ -123,6 +143,7 @@
     "noneSet": "Ninguna establecida",
     "pasteEnv": "Pegar .env",
     "uploadEnv": "Subir .env",
+    "downloadEnv": "Descargar .env",
     "edit": "Editar",
     "cancel": "Cancelar",
     "saving": "Guardando...",
@@ -144,6 +165,7 @@
       "interpolated": "Interpolada"
     },
     "toast": {
+      "downloadFailed": "No se pudieron descargar las variables de entorno.",
       "title": "Variables de entorno",
       "added": "{count} añadidas",
       "updated": "{count} actualizadas",
@@ -173,7 +195,9 @@
       "domainLabel": "Dominio",
       "free": "Gratuito",
       "custom": "Personalizado",
-      "routingTrafficPrefix": "Enrutando el tráfico al puerto"
+      "routingTrafficPrefix": "Enrutando el tráfico al puerto",
+      "duplicateTitle": "Dominio duplicado",
+      "duplicateDescription": "Dos rutas apuntan al mismo dominio: cambie una para que cada ruta tenga el suyo propio:"
     },
     "shared": {
       "title": "Entorno compartido",
@@ -205,9 +229,9 @@
       "volumes": "Volúmenes",
       "statefulWarnPart1": "Servicio con estado en la nube: los datos residen en el disco persistente del espacio de trabajo (sobreviven a los reinicios) pero ",
       "statefulWarnBold": "no se conservan entre recompilaciones",
-      "statefulWarnPart2": " a menos que las copias de seguridad estén habilitadas. Los montajes de volúmenes de Docker no se aplican.",
+      "statefulWarnPart2": ". Realiza una copia y restaura los datos explícitamente antes de reemplazar el espacio de trabajo.",
       "volumeHint": "Volumen con nombre o ruta del host → ruta del contenedor.",
-      "volumeCloudNote": "En la nube estos montajes no se aplican: los datos persisten en el disco del espacio de trabajo (no entre recompilaciones sin copias de seguridad).",
+      "volumeCloudNote": "Openship Cloud no admite montajes de volúmenes persistentes. Elige un servidor para cargas que necesiten volúmenes.",
       "sourcePlaceholder": "Origen",
       "containerPathPlaceholder": "Ruta del contenedor",
       "readOnlyMount": "Montaje de solo lectura",
@@ -285,7 +309,51 @@
       "singleDesc": "Promociona la compilación y el comando de inicio de una subaplicación, y expón el puerto de cada aplicación desde un único tiempo de ejecución."
     },
     "deploymentMode": "Modo de despliegue",
-    "deploymentModeDesc": "{mode} · Alterna entre tiempos de ejecución por aplicación y la gestión de aplicación única."
+    "deploymentModeDesc": "{mode} · Alterna entre tiempos de ejecución por aplicación y la gestión de aplicación única.",
+    "selection": {
+      "title": "Apps para desplegar",
+      "chooseApps": "Elegir apps",
+      "changeSelection": "Cambiar selección",
+      "selected": "{count} seleccionadas",
+      "chooseHint": "Elige las apps que quieras ejecutar. Las herramientas CLI, apps móviles y paquetes compartidos pueden quedar sin seleccionar.",
+      "applySelection": "Usar apps seleccionadas",
+      "manualReview": "Revisar configuración",
+      "detectedApp": "App detectada",
+      "empty": "Elige apps de este repositorio o añade una carpeta. No se desplegará nada hasta que lo selecciones.",
+      "addFromRepo": "Añadir app del repositorio",
+      "addMore": "Añadir más",
+      "cancel": "Cancelar",
+      "addApp": "Añadir app",
+      "chooseFolder": "Cambiar carpeta",
+      "useFolder": "Usar esta carpeta",
+      "folderHint": "Elige la carpeta de la app. Las compilaciones conservan el acceso a los paquetes compartidos y archivos de bloqueo del repositorio.",
+      "appFolder": "Carpeta de la app",
+      "invalidPath": "Introduce una carpeta relativa al repositorio, como apps/web o .",
+      "alreadyAdded": "Esta carpeta ya está en la lista. Usa Cambiar selección para incluirla.",
+      "browseError": "No se pudieron cargar las carpetas del repositorio.",
+      "scanError": "No se pudo inspeccionar esta carpeta.",
+      "composeFolder": "Esta carpeta define un conjunto de servicios Compose. Importa ese archivo Compose como un proyecto.",
+      "scanning": "Inspeccionando…",
+      "inspect": "Inspeccionar carpeta",
+      "parentFolder": "Carpeta superior",
+      "retry": "Reintentar",
+      "loadingFolders": "Cargando carpetas…",
+      "noSubfolders": "No hay subcarpetas. Puedes elegir esta carpeta.",
+      "reviewHint": "Añade esta app para revisar su framework, comandos y entorno antes de desplegar.",
+      "domains": "Dominios",
+      "manage": "Gestionar",
+      "domainNeeded": "Dominio necesario",
+      "viewAll": "Ver los {count} dominios",
+      "domainHint": "Estos dominios se aplicarán al desplegar.",
+      "privateHint": "Las apps seleccionadas no tienen dominios públicos.",
+      "done": "Listo",
+      "private": "Privada",
+      "publicAccess": "Acceso público",
+      "accessHint": "Desactívalo para que la app solo sea accesible dentro del proyecto.",
+      "app": "App",
+      "appLimit": "Este proyecto ya tiene 50 apps. Crea otro proyecto para añadir más.",
+      "folderMismatch": "Esta carpeta apunta a la configuración de otro proyecto. Selecciona esa carpeta o edita su openship.json."
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Cloud",
@@ -315,7 +383,7 @@
       "successful": "Despliegue exitoso",
       "deploying": "Desplegando..."
     },
-    "visitSite": "Visitar el sitio",
+    "openSite": "Abrir sitio",
     "warningTitle": "El despliegue finalizó, pero algunos servicios aún necesitan atención.",
     "productionLogs": "Registros de producción",
     "buildTerminal": "Terminal de compilación",
@@ -325,7 +393,7 @@
     "stopDeployment": "Detener despliegue",
     "redeploy": "Redesplegar",
     "goToProject": "Ir al proyecto",
-    "openDashboard": "Abrir panel",
+    "openProject": "Abrir proyecto",
     "edit": "Editar",
     "status": {
       "cancelled": "Cancelado",
@@ -342,7 +410,38 @@
     "detailFramework": "Framework",
     "detailBranch": "Rama",
     "detailDomains": "Dominios",
-    "detailDomain": "Dominio"
+    "detailDomain": "Dominio",
+    "portAdvisory": {
+      "loopbackTitle": "La app no puede recibir tráfico enrutado",
+      "loopbackNote": "El despliegue está en ejecución, pero un puerto enrutado requiere atención.",
+      "loopbackBody": "El puerto {port} solo escucha dentro del contenedor.",
+      "loopbackBodyService": "El servicio \"{service}\" solo escucha dentro del contenedor en el puerto {port}.",
+      "loopbackHelp": "Para una app que recibe tráfico enrutado, escucha en 0.0.0.0 y vuelve a desplegar, o dirige el tráfico a su proxy previsto.",
+      "openSettings": "Abrir ajustes",
+      "skipError": "No se pudo descartar este aviso. Inténtalo de nuevo.",
+      "title": "Aviso de discrepancia de puertos",
+      "bannerTitle": "Discrepancia de puerto de contenedor detectada",
+      "review": "Revisar puerto",
+      "note": "El enrutador perimetral apunta al puerto {port}, pero su aplicación no respondió allí.",
+      "body": "Nada respondió en el puerto {port}. Si su aplicación escucha en un puerto diferente, actualícelo a continuación.",
+      "bodyService": "Servicio \"{service}\": nada respondió en el puerto {port}. Si escucha en otro puerto, configure el correcto aquí.",
+      "newPortLabel": "Puerto correcto",
+      "changePort": "Cambiar puerto",
+      "skip": "Omitir",
+      "applied": "Enrutamiento actualizado al puerto {port}.",
+      "changeError": "No se pudo actualizar el puerto. Inténtalo de nuevo."
+    }
+  },
+  "deploymentHealth": {
+    "recheck": "Comprobar salud",
+    "checking": "Comprobando…",
+    "healthy": "Los servicios están sanos",
+    "atDeployment": "Aviso registrado al desplegar",
+    "currentHealth": "Estado actual de los servicios",
+    "startupHint": "Si la app sigue iniciándose, espera y vuelve a comprobar. Si se reinicia o muestra un error, consulta los registros para encontrar la causa.",
+    "viewLogs": "Ver registros",
+    "unavailable": "No se pudo verificar la salud. Reintenta cuando el servidor sea accesible.",
+    "historical": "Este despliegue ya no está activo. Abre el proyecto para ver sus servicios actuales."
   },
   "composeDeployment": {
     "title": {
@@ -416,12 +515,12 @@
     "rowType": "Tipo"
   },
   "configDiagnostics": {
-    "title": "Parte del openship.json de este repositorio no se aplicó",
-    "description": "Se omitieron los campos que aparecen abajo; el resto del archivo sí se aplicó. El despliegue continuará.",
+    "title": "No se aplicaron algunos ajustes de despliegue del repositorio",
+    "description": "Revisa los ajustes omitidos antes de desplegar.",
     "titleWholeFile": "Se ignoró el openship.json de este repositorio",
     "descriptionWholeFile": "No se aplicó nada del archivo. El despliegue continuará con los ajustes que Openship detectó.",
     "refused": "Rechazado",
     "unrecognized": "No reconocido",
-    "hint": "Ejecuta `openship config validate` en el repositorio para revisar el archivo antes del próximo despliegue."
+    "hint": "Revisa los archivos de configuración indicados y actualiza los ajustes no compatibles antes del próximo despliegue."
   }
 }

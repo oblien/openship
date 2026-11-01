@@ -9,7 +9,8 @@
       "dns": "DNS",
       "health": "Estado",
       "backup": "Copia de seguridad",
-      "advanced": "Avanzado"
+      "advanced": "Avanzado",
+      "aliases": "Alias"
     },
     "ariaLabel": "Secciones de administración de correo"
   },
@@ -22,7 +23,7 @@
     "edit": "Editar",
     "emptyTitle": "Aún no hay reglas de notificación",
     "emptyBody": "Añade una regla para recibir un aviso en Slack, Telegram, Discord o un webhook cuando llegue correo a un buzón o a un dominio de este servidor.",
-    "noChannels": "Aún no tienes canales de notificación verificados. Añade y verifica uno en Ajustes → Notificaciones y luego vuelve aquí para crear una regla.",
+    "noChannels": "Añade y verifica un canal en Monitorización → Notificaciones y vuelve para crear una regla.",
     "addChannel": "Añadir un canal de notificación",
     "manageChannels": "Gestionar canales",
     "fieldName": "Nombre",
@@ -66,7 +67,73 @@
     "confirmDelete": "¿Eliminar la regla «{name}»? La captura se detiene para su dirección salvo que otra regla siga necesitándola."
   },
   "sending": {
-    "testLiveNote": "Envía por la ruta activa ahora, no por los cambios sin guardar de arriba."
+    "testLiveNote": "Envía por la ruta activa ahora, no por los cambios sin guardar de arriba.",
+    "title": "Envío saliente",
+    "subtitle": "La recepción permanece en este servidor. Elige cómo sale el correo saliente.",
+    "modeDirectTitle": "Entrega directa",
+    "modeDirectDesc": "Este servidor entrega el correo saliente por sí mismo. Es simple, pero las IP de nuevos VPS a menudo están en listas de bloqueo y muchos proveedores bloquean el puerto saliente 25 — el correo podría terminar en spam o fallar.",
+    "modeRelayTitle": "Retransmisión a través de un proveedor",
+    "modeRelayDesc": "Envía el correo saliente a un smarthost — SES, SendGrid, Mailgun, Postmark, Resend o cualquier servidor SMTP. La mejor entregabilidad. Tu bandeja de entrada y todos los registros DNS de recepción se mantienen exactamente iguales.",
+    "pathTitle": "Ruta de salida",
+    "setUpRelay": "Configurar un relay",
+    "directActive": "El correo saliente sale directamente de este servidor. Nada que configurar — elige un relay arriba si la entregabilidad se convierte en un problema.",
+    "switchToDirect": "Cambiar a entrega directa",
+    "switchToDirectHint": "Elimina el smarthost y sus credenciales guardadas, y retira el include SPF del relay de tu DNS. El correo saliente volverá a enviarse directamente al servidor de cada destinatario.",
+    "statusOn": "Relay activo",
+    "statusOff": "Entrega directa (predeterminado)",
+    "sendersTitle": "¿Qué remitentes usan el relay?",
+    "scopeAll": "Todos los remitentes",
+    "scopeSelected": "Remitentes seleccionados",
+    "scopeAllHint": "Todos los dominios en este servidor envían mediante el relay.",
+    "scopeSelectedHint": "Solo los remitentes elegidos usan el relay; el resto continúa con entrega directa.",
+    "sendersDomains": "Dominios completos",
+    "sendersAddresses": "Remitentes individuales",
+    "sendersAddressesHint": "Retransmite un único buzón sin retransmitir todo el dominio — contacto@ejemplo.com puede enviar a través de tu proveedor mientras sigue recibiendo por IMAP aquí.",
+    "senderPlaceholder": "contacto@ejemplo.com",
+    "addSender": "Añadir",
+    "removeSender": "Eliminar",
+    "senderInvalid": "Introduce una dirección simple como contacto@ejemplo.com — sin nombre visible.",
+    "noSenders": "Elige al menos un dominio o dirección de remitente para el relay.",
+    "noDomains": "Aún no se han encontrado dominios en este servidor.",
+    "credentialsTitle": "Proveedor y credenciales",
+    "provider": "Proveedor",
+    "regionFor": "Región de {provider}",
+    "host": "Host SMTP",
+    "port": "Puerto",
+    "username": "Usuario SMTP",
+    "password": "Contraseña SMTP",
+    "passwordKeep": "Dejar en blanco para conservar la contraseña actual",
+    "port465Blocked": "El puerto 465 (TLS implícito) es una configuración a nivel de servidor, por lo que no puede usarse cuando solo algunos remitentes usan el relay. Usa el puerto STARTTLS del proveedor — normalmente 587.",
+    "spfIncludeLabel": "Include de SPF",
+    "spfIncludeHint": "Pega el mecanismo include: que tu proveedor te indica publicar. Si se deja en blanco no modificaremos tu registro SPF — pero el correo retransmitido por un host no listado en SPF fallará en SPF.",
+    "spfNone": "Ninguno",
+    "mailFromDomain": "Dominio MAIL FROM personalizado",
+    "mailFromHint": "Opcional. Un subdominio como bounce.ejemplo.com para alineación de SPF/rebotes. Configúralo también en el proveedor.",
+    "identityTitle": "Identidad de {provider} por dominio",
+    "identityHint": "{provider} verifica cada dominio remitente por separado. Pega los registros de cada dominio retransmitido (opcional — amavis ya firma, por lo que DMARC se alinea sin ellos, pero el proveedor necesita el dominio verificado antes de permitir enviar).",
+    "identityPrimary": "Principal",
+    "dkimRecords": "Registros DKIM de {provider}",
+    "dkimRecordsHint": "Pega los registros CNAME que muestra tu proveedor (SES: consola → Identidades verificadas → tu dominio → DKIM). Los mostramos y verificamos en la pestaña DNS.",
+    "dkimName": "Nombre CNAME",
+    "dkimValue": "Valor CNAME",
+    "summaryTitle": "Resumen",
+    "summaryTarget": "Smarthost",
+    "summarySenders": "Remitentes",
+    "summaryUpdated": "Última actualización",
+    "guidanceTitle": "Antes de que esto funcione",
+    "guidanceVerify": "Verifica tu dominio en la consola de Amazon SES.",
+    "guidanceSandbox": "Solicita acceso a producción — SES comienza en un entorno sandbox que solo envía a direcciones verificadas.",
+    "guidanceCreds": "Utiliza credenciales SMTP de SES (un usuario IAM de SMTP), no tus claves de acceso de AWS.",
+    "guidanceDns": "Publica los registros DNS en la pestaña DNS y luego vuelve a escanear para confirmar.",
+    "guidanceSystem": "El correo del sistema (restablecimientos de contraseña, invitaciones, notificaciones) también se envía a través de este relay — a menos que hayas configurado un remitente independiente en Configuración → Email.",
+    "save": "Habilitar relay",
+    "update": "Guardar cambios",
+    "disable": "Deshabilitar relay",
+    "saved": "Relay de salida actualizado.",
+    "disabled": "Relay deshabilitado — regreso a la entrega directa.",
+    "saveFailed": "No se pudo actualizar el relay.",
+    "disableFailed": "No se pudo deshabilitar el relay.",
+    "dnsHint": "Los registros de envío del proveedor ahora aparecen en la pestaña DNS. Publica y verifícalos para una entregabilidad completa."
   },
   "overview": {
     "mailServer": "Servidor de correo",
@@ -98,7 +165,9 @@
     "quickActions": "Acciones rápidas",
     "addMailbox": "Añadir un buzón",
     "addDomain": "Añadir un dominio",
-    "reviewDns": "Revisar registros DNS"
+    "reviewDns": "Revisar registros DNS",
+    "legacyWebmail": "Desplegado por una versión anterior de Openship — se puede reemplazar con la app de webmail, que se actualiza con tus versiones.",
+    "upgradeWebmail": "Reemplazar webmail"
   },
   "webmail": {
     "title": "Webmail",
@@ -300,8 +369,19 @@
       "notListeningHint": "Ningún proceso escucha en este puerto.",
       "notExposedHint": "Solo escucha en loopback; los clientes remotos no pueden conectar.",
       "unknownHint": "No se pudo verificar el acceso público.",
-      "ports": { "smtp": "SMTP entrante", "smtps": "Envío SMTP (TLS)", "submission": "Envío SMTP (STARTTLS)", "imaps": "Acceso IMAP (TLS)" },
-      "status": { "reachable": "Accesible", "blocked": "Bloqueado", "not_listening": "Sin escucha", "not_exposed": "No expuesto", "unknown": "Desconocido" }
+      "ports": {
+        "smtp": "SMTP entrante",
+        "smtps": "Envío SMTP (TLS)",
+        "submission": "Envío SMTP (STARTTLS)",
+        "imaps": "Acceso IMAP (TLS)"
+      },
+      "status": {
+        "reachable": "Accesible",
+        "blocked": "Bloqueado",
+        "not_listening": "Sin escucha",
+        "not_exposed": "No expuesto",
+        "unknown": "Desconocido"
+      }
     },
     "delivery": {
       "title": "Envío saliente",
@@ -411,7 +491,8 @@
       "partSignatures": "{names} no está en ejecución - las firmas de virus ya no se actualizan, así que el correo se analiza con un conjunto de firmas desactualizándose",
       "partAdvisory": "{names} no está en ejecución",
       "almostSubQueueOne": "{count} mensaje está esperando para salir; consulta Envío saliente más abajo.",
-      "almostSubQueueOther": "{count} mensajes están esperando para salir; consulta Envío saliente más abajo."
+      "almostSubQueueOther": "{count} mensajes están esperando para salir; consulta Envío saliente más abajo.",
+      "partCertificate": "El certificado de correo requiere atención"
     },
     "time": {
       "secondsAgo": "hace {n}s",
@@ -647,5 +728,74 @@
     "loadingLogs": "Cargando registros…",
     "noLogLines": "Aún no hay líneas de registro para este componente.",
     "rowActions": "Acciones para {name}"
+  },
+  "certificate": {
+    "title": "Certificado de correo",
+    "manage": "Gestionar certificado",
+    "check": "Comprobar certificado",
+    "checking": "Comprobando…",
+    "renew": "Renovar certificado",
+    "renewing": "Renovando…",
+    "autoRenew": "Renovación automática",
+    "autoRenewHint": "Renovar antes de que caduque y recargar los servicios de correo.",
+    "desktopHint": "Mantén Openship abierto para renovar automáticamente.",
+    "jobDisabled": "La tarea compartida de renovación SSL está desactivada.",
+    "manageJob": "Abrir tarea de renovación",
+    "failed": "No se pudo actualizar el certificado de correo.",
+    "notChecked": "Sin comprobar",
+    "expires": "Caduca el {date}",
+    "checked": "Comprobado: {time}",
+    "status": {
+      "ok": "Válido",
+      "warn": "Renovación pendiente",
+      "fail": "Requiere atención",
+      "unknown": "Sin verificar"
+    }
+  },
+  "aliases": {
+    "heading": "Alias",
+    "description": "Reenvía correo de una dirección a otra, o captura cualquier dirección no coincidente en un dominio. Activo en el momento en que guardas, sin necesidad de reiniciar.",
+    "addAlias": "Añadir alias",
+    "domainLabel": "Dominio",
+    "loading": "Cargando…",
+    "activeCount": "{active} de {total} activos",
+    "colSource": "Origen",
+    "colDestination": "Reenvía a",
+    "colType": "Tipo",
+    "colStatus": "Estado",
+    "typeAlias": "Alias",
+    "typeCatchAll": "Catch-all",
+    "active": "Activo",
+    "disabled": "Desactivado",
+    "activateAction": "Activar",
+    "deactivateAction": "Desactivar",
+    "deleteAction": "Eliminar",
+    "loadDomainsFailed": "Error al cargar los dominios",
+    "loadFailed": "Error al cargar los alias",
+    "emptyTitle": "Aún no hay alias",
+    "emptyDesc": "Reenvía una dirección o configura un catch-all para {domain}.",
+    "create": {
+      "title": "Nuevo alias · {domain}",
+      "description": "Crea una fila en la tabla de reenvío del servidor de correo. Postfix la lee en directo — no se necesita reiniciar.",
+      "submit": "Crear alias",
+      "submitting": "Creando…",
+      "catchAllLabel": "Catch-all para este dominio",
+      "catchAllHint": "Reenvía todas las direcciones en {domain} que no coincidan con un buzón real ni con otro alias. Reemplaza cualquier catch-all existente para este dominio.",
+      "localPartLabel": "Parte local",
+      "localPartHint": "La parte antes de @. En minúsculas y alfanumérica.",
+      "destinationLabel": "Reenvía a",
+      "destinationHint": "Cualquier dirección de correo válida: un buzón en este servidor o externa (p. ej. Gmail)."
+    },
+    "deleteForm": {
+      "title": "¿Eliminar este alias?",
+      "sourceCatchAll": "Catch-all para {domain}",
+      "description": "Elimina la fila de reenvío de inmediato. El correo enviado a {source} será rebotado o pasará a la siguiente regla coincidente, con efecto a partir del siguiente mensaje.",
+      "submit": "Eliminar alias",
+      "submitting": "Eliminando…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} es un buzón real — crear un alias aquí redirigiría su correo. Edita o elimina el buzón en su lugar.",
+      "alreadyExists": "Ese reenvío exacto ya existe."
+    }
   }
 }

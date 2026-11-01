@@ -10,16 +10,17 @@
   },
   "page": {
     "title": "新規プロジェクト",
-    "subtitle": "リポジトリをインポートするか、URL を貼り付けるか、テンプレートから始めましょう",
+    "subtitle": "アプリをデプロイするか、自分のプロジェクトをインポートします。",
     "tabs": {
       "folder": "フォルダ",
       "github": "GitHub",
-      "url": "Git URL",
-      "template": "テンプレート"
+      "templates": "テンプレート",
+      "gitUrl": "GitのURL"
     }
   },
   "connect": {
     "connectGithub": "GitHub に接続",
+    "deployApp": "アプリをデプロイ",
     "manageInSettings": "設定で管理",
     "terminal": {
       "title": "GitHub に接続",
@@ -30,7 +31,9 @@
       "title": "このコードを GitHub で入力してください",
       "goToPrefix": "次のページへ移動",
       "goToSuffix": "して、上記のコードを入力してください。",
-      "waiting": "認証を待機しています…"
+      "waiting": "認証を待機しています…",
+      "openGithub": "GitHub を開く",
+      "copyCode": "クリックしてコピー"
     },
     "default": {
       "title": "デプロイするには GitHub に接続",
@@ -44,7 +47,33 @@
       "ghCli": "gh CLI でログイン",
       "ghCliDesc": "お使いのマシンの GitHub ログインを使用します。クラウドは不要です。",
       "useGhCli": "gh CLI を使う",
-      "connecting": "接続中…"
+      "connecting": "接続中…",
+      "manual": "手動 GitHub 接続",
+      "manualDesc": "設定でセットアップ — 独自の GitHub App/OAuth、またはこのインスタンスの gh CLI。Openship アカウントは不要です。",
+      "manualCta": "設定でセットアップ",
+      "byoc": "SSH キーまたはアクセストークン",
+      "byocDesc": "独自の認証情報を使用 — サーバーごとのデプロイキーまたはトークン。サインインは不要です。",
+      "byocCta": "セットアップ"
+    },
+    "installationPicker": {
+      "title": "GitHubへのアクセスを選択",
+      "description": "このワークスペースで使用する既存のAppインストールを選択してください。",
+      "sharedHint": "他のOpenship接続はそのまま維持されます。",
+      "connect": "このアカウントを使用",
+      "connected": "接続済み",
+      "installAnother": "別のGitHubアカウントにインストール",
+      "failed": "このインストールを接続できませんでした。",
+      "tryAgain": "やり直す",
+      "successTitle": "GitHubに接続しました",
+      "successDescription": "リポジトリへのアクセスが準備できました。Openshipに戻れます。",
+      "errorTitle": "GitHub接続の確認が必要です",
+      "returnToApp": "ライブラリに戻る"
+    },
+    "token": {
+      "title": "GitHub トークンで接続",
+      "connect": "接続",
+      "create": "GitHub でトークンを作成",
+      "failed": "トークンを保存できませんでした。"
     }
   },
   "folderUpload": {
@@ -124,8 +153,6 @@
     "noMatchingDesc": "別の検索語を試すか、フィルターを調整してください",
     "noReposDesc": "このアカウントにはまだリポジトリがありません",
     "privateBadge": "非公開",
-    "localOnly": "ローカルのみ",
-    "localOnlyTooltip": "Openship App が {owner} にインストールされていません。ローカルビルドのみ利用可能です。リモートデプロイを有効にするには、このオーナーに App をインストールしてください。",
     "repoCountSingular": "{count} 件のリポジトリ",
     "repoCountPlural": "{count} 件のリポジトリ",
     "matching": "\"{query}\" に一致",
@@ -159,13 +186,75 @@
     "checking": "確認中…",
     "notConnectedManage": "未接続 — 設定で管理",
     "optional": "任意",
-    "footnote": "gh CLI 経由のローカルライブラリ。リモートデプロイには短命トークンを使用します —",
-    "manageGithubSettings": "設定で GitHub を管理"
+    "footnote": "リポジトリの閲覧とデプロイに使用するGitHub接続を管理します。",
+    "manageGithubSettings": "設定で GitHub を管理",
+    "methodToken": "GitHub トークン",
+    "methodDevice": "GitHub サインイン"
   },
   "urlImport": {
     "invalidUrl": "有効な GitHub リポジトリ URL を入力してください",
     "title": "Git URL からインポート",
     "description": "インポートするには公開リポジトリの URL を貼り付けてください。GitHub 接続は不要です。",
     "importButton": "リポジトリをインポート"
+  },
+  "customAppModal": {
+    "title": "カスタムアプリを追加",
+    "description": "アプリ定義（JSON）をアップロードします。カタログに追加され、未検証としてマークされます。",
+    "howToWrite": "作成方法",
+    "dropPrefix": "ここに",
+    "dropSuffix": "をドロップするか、",
+    "browse": "参照",
+    "validDefinition": "有効なアプリ定義 —",
+    "unverifiedTitle": "未検証。",
+    "unverifiedBody": "公式のレビュー済みアプリではなく、指定したイメージがデプロイされます。定義を確認し、信頼できるアプリのみを追加してください。",
+    "cancel": "キャンセル",
+    "addApp": "アプリを追加",
+    "invalidJson": "そのファイルは有効なJSONではありません。",
+    "invalidDefinition": "有効なアプリ定義ではありません。必須フィールドと参照を確認してください。",
+    "onlyTemplateSupported": "テンプレートアプリのみ追加できます（フローアプリはサポートされていません）。",
+    "addedToast": "「{name}」をカタログに追加しました。",
+    "failedToast": "アプリを追加できませんでした。"
+  },
+  "catalog": {
+    "apps": {
+      "mail": "独自ドメインでのメール環境 — 1台のサーバーでSMTP/IMAP、メールボックス、Webメールを運用。既存メールボックスのままWebメールのみ利用も可能。",
+      "supabase": "完全セルフホスト可能なSupabase — Postgres、認証、REST、リアルタイム、ストレージ、Studioを1つのAPIゲートウェイで提供。",
+      "mongodb": "Mongo Express Web管理UIを備えたMongoDBドキュメントデータベース。",
+      "convex": "永続データボリュームを備えたセルフホスト型Convexリアクティブバックエンド＋ダッシュボード。",
+      "n8n": "ワークフロー自動化 — ビジュアルエディタでアプリやAPIを連携。",
+      "ghost": "専用エディタと専用データベースを備えたブログ、ニュースレター、会員サイト向け配信プラットフォーム。",
+      "directus": "RESTおよびGraphQL APIとブラウザベースの管理スタジオを備えたヘッドレスCMS。",
+      "nocodb": "SQLデータベースを直感的に操作できるAirtable風のスプレッドシートUI。",
+      "metabase": "既存のデータに対して質問を作成し可視化できるビジネスインテリジェンスとダッシュボード。",
+      "grafana": "自社インフラ上でメトリクスやログを可視化するダッシュボード。",
+      "gitea": "リポジトリ、イシュー、プルリクエストを備えた軽量Gitホスティング。",
+      "code-server": "ブラウザ上で動作し、自社サーバー上のワークスペースに接続するVS Code。",
+      "uptime-kuma": "ステータスページとアラート通知を備えた稼働状況監視ツール。",
+      "vaultwarden": "Bitwardenクライアントと互換性のある軽量セルフホスト型パスワードマネージャー。",
+      "freshrss": "フィードを整理・閲覧できるブラウザUI付きの専用RSS/Atomリーダー。",
+      "stirling-pdf": "独自のインフラ上でPDFの分割、結合、変換、OCR、編集を実行。",
+      "it-tools": "アカウント不要でブラウザから即座に使える開発者・システム管理者向けユーティリティ集。",
+      "excalidraw": "スケッチや図を作成できる仮想ホワイトボード。ステートレスでブラウザ内に保存。",
+      "buzz": "人間とAIエージェントが協調してチャット、コード作成、レビューを行うワークスペース。",
+      "minio": "Webコンソール付きのS3互換オブジェクトストレージ — S3クライアントや他プロジェクトのアップロード先に指定可能。",
+      "kafka": "Kafbat Kafka UIコンソールを備えたApache Kafkaイベントストリーミングブローカー（KRaftモード）。",
+      "qdrant": "AI検索、RAG、埋め込みベクトル検索に対応した高性能ベクトルデータベース。",
+      "meilisearch": "タイポに強く超高速な検索エンジン。数ミリ秒でドキュメントを検索。",
+      "neon": "Postgresブランチ機能とコンソールを備えたコミュニティ版セルフホストNeon。",
+      "posthog": "セルフホスト環境でプロダクト分析、セッションリプレイ、機能フラグを利用できるスタック。",
+      "redis": "キャッシュ、セッション、キュー向けのインメモリデータストアValkey（Redisフォーク、RedisInsight同梱）。",
+      "umami": "Cookie不使用でプライバシーに配慮したGoogle Analytics代替Webアクセス解析。",
+      "webmail": "独自ドメイン上で軽快に動作するWebメールクライアント。外部にデータを保存しません。",
+      "clickhouse": "クエリ実行とスキーマ閲覧が可能なCH-UIコンソール付きカラム型分析SQLデータベース。",
+      "mindwire": "プライベートな制御プレーン配下でコーディングエージェントのランタイムを管理。",
+      "pocketbase": "認証、リアルタイムSQLite、ファイルストレージ、管理画面を1つに統合したコンパクトなバックエンド。",
+      "authentik": "SSO、OAuth2、OpenID Connect、SAMLに対応した統合認証基盤。",
+      "mariadb": "テーブル操作やエクスポートが可能なAdminer付きMySQL互換データベース。",
+      "nextcloud": "Nextcloud Admin、MariaDB、Redisを備えたプライベートファイル同期・共有環境。",
+      "odoo": "PostgreSQLと管理者アカウントを備えたCRM、販売、在庫管理等のビジネスアプリ群。",
+      "postgresql": "ブラウザからSQLクエリを実行できるpgAdmin付き永続PostgreSQLデータベース。",
+      "rabbitmq": "キュー、エクスチェンジ、接続を管理できる公式ダッシュボード付きメッセージブローカー。",
+      "wordpress": "WordPress Admin、専用MariaDB、永続ストレージを備えたWebサイト・ブログ構築環境。"
+    }
   }
 }

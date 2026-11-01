@@ -7,13 +7,14 @@
  * different moments. Fetching them separately would also mean N docker-stats calls
  * per tick over one SSH connection.
  *
- * Framing mirrors useMonitorStream (fetch + AbortController + a manual frame
- * buffer) rather than EventSource, because EventSource cannot send credentials or
- * custom headers through the dashboard's API proxy.
+ * Uses the shared authenticated SSE transport, including cancellation and deadlines.
+ * A failed observation keeps its last sample and offers a manual, read-only reconnect.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiBaseUrl } from "@/lib/api";
+import { getActiveOrganizationId, getApiBaseUrl, getApiErrorMessage } from "@/lib/api/client";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { useSSEStream, type SSEMessage } from "./useSSEStream";
 import { endpoints } from "@/lib/api/endpoints";
 
 export interface ResourceUsage {
@@ -52,6 +53,7 @@ export interface ProjectUsage {
 export interface UseProjectUsageStreamReturn {
   usage: ProjectUsage | null;
   isConnected: boolean;
+  isConnecting: boolean;
   error: string | null;
   reconnect: () => void;
   disconnect: () => void;
@@ -61,121 +63,159 @@ export function useProjectUsageStream(
   projectId: string | null | undefined,
   enabled = true,
 ): UseProjectUsageStreamReturn {
-  const [usage, setUsage] = useState<ProjectUsage | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const bufferRef = useRef("");
+  const scope = useCloudResourceKey();
+  const key = projectId ? `${scope}\0${projectId}` : null;
+  const keyRef = useRef(key);
+  keyRef.current = key;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
-
-  const disconnect = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setIsConnected(false);
+  const [sample, setSample] = useState<{ key: string; usage: ProjectUsage } | null>(null);
+  const [connection, setConnection] = useState<{
+    key: string;
+    connected: boolean;
+    connecting: boolean;
+    error: string | null;
+  } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const ownerRef = useRef<{
+    key: string;
+    active: boolean;
+    connecting: boolean;
+    answered: boolean;
+  } | null>(null);
+  const currentOwner = useCallback(() => {
+    const owner = ownerRef.current;
+    return enabledRef.current && owner?.active && owner.key === keyRef.current ? owner : null;
   }, []);
-
-  const connect = useCallback(async () => {
-    if (!projectId) {
-      setUsage(null);
-      setError(null);
-      setIsConnected(false);
-      return;
-    }
-
-    disconnect();
-    const abort = new AbortController();
-    abortRef.current = abort;
-    bufferRef.current = "";
-
-    const url = `${getApiBaseUrl()}${endpoints.analytics.usageStream}?${new URLSearchParams({ projectId })}`;
-
-    try {
-      const res = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "text/event-stream" },
-        signal: abort.signal,
+  const onError = useCallback(
+    (error: Error) => {
+      const owner = currentOwner();
+      if (!owner) return;
+      owner.connecting = false;
+      setConnection({
+        key: owner.key,
+        connected: false,
+        connecting: false,
+        error: getApiErrorMessage(error),
       });
-
-      // 404 here is a STATE, not a fault: no active deployment, or a runtime that
-      // can't measure usage. Surface its message instead of "Connection failed",
-      // and don't retry — reconnecting won't create a deployment.
-      if (res.status === 404) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? "No active deployment");
-        return;
-      }
-      if (!res.ok || !res.body) {
-        setError(`Connection failed (${res.status})`);
-        return;
-      }
-
-      setIsConnected(true);
-      setError(null);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        // Frames can split across chunks anywhere, so keep the tail until the next
-        // read completes it.
-        const buffer = bufferRef.current + decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        bufferRef.current = parts.pop() || "";
-
-        for (const part of parts) {
-          if (!part.trim()) continue;
-          let eventType = "";
-          let dataStr = "";
-          for (const line of part.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("event:")) eventType = trimmed.slice(6).trim();
-            else if (trimmed.startsWith("data:")) dataStr = trimmed.slice(5).trim();
-          }
-          if (!dataStr) continue;
-          try {
-            if (eventType === "usage") {
-              setUsage(JSON.parse(dataStr) as ProjectUsage);
-              setError(null);
-            } else if (eventType === "error") {
-              setError((JSON.parse(dataStr) as { error?: string }).error || "Unknown error");
-            }
-            // `ping` (the streamSSE keep-alive) falls through — nothing to do.
-          } catch {
-            // Skip malformed events rather than tearing down a working stream.
-          }
+    },
+    [currentOwner],
+  );
+  const stream = useSSEStream({
+    autoWriteToTerminal: false,
+    onConnect: useCallback(() => {
+      const owner = currentOwner();
+      if (!owner) return;
+      setConnection((previous) => ({
+        key: owner.key,
+        connected: true,
+        connecting: true,
+        error: previous?.key === owner.key ? previous.error : null,
+      }));
+    }, [currentOwner]),
+    onDisconnect: useCallback(() => {
+      const owner = currentOwner();
+      if (!owner) return;
+      owner.connecting = false;
+      setConnection((previous) => ({
+        key: owner.key,
+        connected: false,
+        connecting: false,
+        error:
+          (previous?.key === owner.key ? previous.error : null) ??
+          "Live monitoring disconnected. Retry to reconnect.",
+      }));
+    }, [currentOwner]),
+    onError,
+    onRawMessage: useCallback(
+      (message: SSEMessage) => {
+        const owner = currentOwner();
+        if (!owner || (message.type !== "usage" && message.type !== "error")) return;
+        owner.answered = true;
+        owner.connecting = false;
+        if (message.type === "usage") {
+          setSample({ key: owner.key, usage: message as unknown as ProjectUsage });
         }
-      }
-    } catch (err) {
-      if (abort.signal.aborted) return;
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (!abort.signal.aborted) setIsConnected(false);
-    }
-  }, [disconnect, projectId]);
-
-  const reconnect = useCallback(() => {
-    if (enabledRef.current) void connect();
-  }, [connect]);
+        setConnection({
+          key: owner.key,
+          connected: true,
+          connecting: false,
+          error:
+            message.type === "error"
+              ? typeof message.error === "string"
+                ? message.error
+                : "Live monitoring is unavailable."
+              : null,
+        });
+      },
+      [currentOwner],
+    ),
+  });
+  const connect = stream.connect;
+  const close = stream.disconnect;
 
   useEffect(() => {
-    if (!enabled) {
-      disconnect();
-      return;
-    }
-    // Small delay avoids a double-connect from React StrictMode's remount.
-    const id = setTimeout(() => void connect(), 50);
+    if (!key || !projectId || !enabled) return;
+    const owner = { key, active: true, connecting: true, answered: false };
+    ownerRef.current = owner;
+    setConnection((previous) => ({
+      key,
+      connected: false,
+      connecting: true,
+      error: previous?.key === key ? previous.error : null,
+    }));
+    let firstSample: ReturnType<typeof setTimeout> | undefined;
+    // StrictMode's first mount must not open an extra monitoring subscription.
+    const start = setTimeout(() => {
+      if (!owner.active) return;
+      firstSample = setTimeout(() => {
+        if (!owner.active || owner.answered) return;
+        onError(new Error("Loading resource usage timed out. Retry to reconnect."));
+        close();
+      }, 60_000);
+      const organizationId = getActiveOrganizationId();
+      void connect(
+        `${getApiBaseUrl()}${endpoints.analytics.usageStream}?${new URLSearchParams({ projectId })}`,
+        {
+          headers: {
+            Accept: "text/event-stream",
+            ...(organizationId ? { "X-Organization-Id": organizationId } : {}),
+          },
+          connectTimeoutMs: 15_000,
+          idleTimeoutMs: 60_000,
+        },
+      ).finally(() => clearTimeout(firstSample));
+    }, 50);
     return () => {
-      clearTimeout(id);
-      disconnect();
+      owner.active = false;
+      clearTimeout(start);
+      clearTimeout(firstSample);
+      close();
     };
-  }, [enabled, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, projectId, enabled, attempt, connect, close, onError]);
 
-  return { usage, isConnected, error, reconnect, disconnect };
+  const disconnect = useCallback(() => {
+    if (ownerRef.current) {
+      ownerRef.current.active = false;
+      ownerRef.current.connecting = false;
+    }
+    close();
+    setConnection((previous) =>
+      previous ? { ...previous, connected: false, connecting: false } : null,
+    );
+  }, [close]);
+  const reconnect = useCallback(() => {
+    if (!enabledRef.current || !keyRef.current || ownerRef.current?.connecting) return;
+    if (ownerRef.current) ownerRef.current.connecting = true;
+    setAttempt((value) => value + 1);
+  }, []);
+
+  return {
+    usage: sample?.key === key ? sample.usage : null,
+    isConnected: enabled && connection?.key === key && connection.connected,
+    isConnecting: enabled && !!key && (connection?.key === key ? connection.connecting : true),
+    error: connection?.key === key ? connection.error : null,
+    reconnect,
+    disconnect,
+  };
 }

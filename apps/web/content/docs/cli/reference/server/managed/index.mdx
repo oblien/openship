@@ -1,0 +1,199 @@
+---
+title: server managed
+description: Commands, arguments, and options for openship server managed.
+cliGroup: openship server managed
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server managed
+
+Manage subscription-owned Cloud servers and connected Cloud destinations
+
+```text
+openship server managed [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`outbound`](/docs/cli/reference/server/managed#openship-server-managed-outbound) | Inspect and configure a managed server's outbound connection |
+| [`list\|ls`](/docs/cli/reference/server/managed#openship-server-managed-list) | List managed servers visible to this connection |
+| [`available`](/docs/cli/reference/server/managed#openship-server-managed-available) | List Cloud servers available to link to this installation |
+| [`connect <id>`](/docs/cli/reference/server/managed#openship-server-managed-connect) | Connect an existing Cloud server using the verified installation binding |
+| [`create [options] <name>`](/docs/cli/reference/server/managed#openship-server-managed-create) | Create a managed server entry; use billing subscription create to purchase its plan |
+| [`ensure <id>`](/docs/cli/reference/server/managed#openship-server-managed-ensure) | Ensure this subscribed server is provisioned through its lifecycle worker |
+| [`resize-preview <id>`](/docs/cli/reference/server/managed#openship-server-managed-resize-preview) | Inspect pending capacity changes, their revision and affected projects |
+| [`resize [options] <id>`](/docs/cli/reference/server/managed#openship-server-managed-resize) | Apply the exact reviewed capacity revision through the existing server worker |
+| [`retry <id>`](/docs/cli/reference/server/managed#openship-server-managed-retry) | Retry the existing lifecycle operation without replacing its retained disk |
+| [`remove\|rm [options] <id>`](/docs/cli/reference/server/managed#openship-server-managed-remove) | Request managed server deletion through its guarded lifecycle workflow |
+
+## openship server managed available
+
+List Cloud servers available to link to this installation
+
+```text
+openship server managed available [options]
+```
+
+## openship server managed connect
+
+Connect an existing Cloud server using the verified installation binding
+
+```text
+openship server managed connect [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Authorized Cloud server ID |
+
+## openship server managed create
+
+Create a managed server entry; use billing subscription create to purchase its plan
+
+```text
+openship server managed create [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | New managed server name |
+
+| Option | Meaning |
+| --- | --- |
+| `--idempotency-key <key>` | Reuse this server entry after an uncertain create response |
+
+## openship server managed ensure
+
+Ensure this subscribed server is provisioned through its lifecycle worker
+
+```text
+openship server managed ensure [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Managed server ID |
+
+## openship server managed list
+
+List managed servers visible to this connection
+
+```text
+openship server managed list|ls [options]
+```
+
+## openship server managed outbound
+
+Inspect and configure a managed server's outbound connection
+
+```text
+openship server managed outbound [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <id>`](/docs/cli/reference/server/managed#openship-server-managed-outbound-get) | Read the current outbound IP, proxy metadata and revision without credentials |
+| [`options <id>`](/docs/cli/reference/server/managed#openship-server-managed-outbound-options) | List available managed outbound IPs and countries |
+| [`set [options] <id> <file>`](/docs/cli/reference/server/managed#openship-server-managed-outbound-set) | Apply an outbound connection change for all projects on this server |
+
+## openship server managed outbound get
+
+Read the current outbound IP, proxy metadata and revision without credentials
+
+```text
+openship server managed outbound get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server managed outbound options
+
+List available managed outbound IPs and countries
+
+```text
+openship server managed outbound options [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server managed outbound set
+
+Apply an outbound connection change for all projects on this server
+
+```text
+openship server managed outbound set [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+| `file` | Reviewed JSON with mode, expectedRevision, confirm and ip or proxy; - reads stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm the reviewed outbound change |
+
+## openship server managed remove
+
+Request managed server deletion through its guarded lifecycle workflow
+
+```text
+openship server managed remove|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Managed server ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--idempotency-key <key>` | Stable key for this deletion |
+| `-y, --yes` | Confirm server deletion |
+
+## openship server managed resize
+
+Apply the exact reviewed capacity revision through the existing server worker
+
+```text
+openship server managed resize [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Managed server ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--revision <hash>` | Revision from resize-preview |
+| `--idempotency-key <key>` | Stable key for this resize |
+| `--confirm-restart` | Acknowledge the affected-project restarts |
+| `-y, --yes` | Confirm this resize |
+
+## openship server managed resize-preview
+
+Inspect pending capacity changes, their revision and affected projects
+
+```text
+openship server managed resize-preview [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Managed server ID |
+
+## openship server managed retry
+
+Retry the existing lifecycle operation without replacing its retained disk
+
+```text
+openship server managed retry [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Managed server ID |

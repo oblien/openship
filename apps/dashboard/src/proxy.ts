@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PRODUCT_VIEW_COOKIE, PRODUCT_VIEW_HEADER } from "@/lib/product-view";
+import { authContinuationHref } from "@/lib/cloud-auth";
 
 // Cookie presence only — never proof of a valid session. Server-side
 // `getSession()` in (dashboard) layout is the real authoritative
@@ -7,7 +8,9 @@ import { PRODUCT_VIEW_COOKIE, PRODUCT_VIEW_HEADER } from "@/lib/product-view";
 // case to skip the layout fetch.
 
 const PUBLIC_ROUTES = [
+  "/r/",
   "/login",
+  "/two-factor",
   "/register",
   "/forgot-password",
   "/reset-password",
@@ -16,16 +19,21 @@ const PUBLIC_ROUTES = [
   // without a session or the middleware turns the useful error back into a
   // silent login redirect.
   "/auth/error",
+  // Callback pages report OAuth errors or call the authenticated API to finish
+  // installation. They must render even if the popup has no dashboard cookie;
+  // redirecting to login loses the callback query and leaves the opener waiting.
+  "/auth/callback/",
   "/authorize",
   "/onboarding",
   // The MCP OAuth consent page. It must reach its own render even without a
   // session cookie, because it sends the user to /login with a `returnTo` that
-  // comes BACK here and resumes the client's authorize. This middleware's
-  // redirect uses `from`, which nothing reads (getPostAuthRedirect only honors
-  // `returnTo`/`callback`), so intercepting it stranded the user on `/` and the
-  // MCP client's flow never completed.
+  // comes BACK here and resumes the client's authorize. The consent page owns
+  // the complete authorize query and the login handoff.
   "/mcp/authorize",
   "/accept-invite",
+  // This route validates the session itself and preserves the organization
+  // through login; the generic redirect below would discard the billing link.
+  "/cloud-billing",
 ];
 
 const SESSION_COOKIE_SUFFIX = ".session_token";
@@ -45,8 +53,7 @@ export function proxy(req: NextRequest) {
   const hasCookie = req.cookies.getAll().some((c) => c.name.endsWith(SESSION_COOKIE_SUFFIX));
 
   if (!hasCookie && !isPublic) {
-    const url = new URL("/login", req.url);
-    url.searchParams.set("from", pathname);
+    const url = new URL(authContinuationHref("/login", `${pathname}${search}`), req.url);
     return NextResponse.redirect(url);
   }
 

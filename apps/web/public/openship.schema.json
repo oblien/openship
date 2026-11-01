@@ -7,11 +7,39 @@
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string" },
+    "autoDeployPaths": {
+      "type": "object",
+      "description": "Push-only repo-relative path overrides. include replaces automatic workspace selection; exclude removes matching changes. Root build configuration and forced deploys always run.",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": "Repo-relative paths supporting * and **."
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": "Repo-relative paths supporting * and **."
+        }
+      }
+    },
 
     "framework": {
       "description": "Stack/framework slug. Overrides auto-detection.",
       "enum": [
         "nextjs",
+        "farmjs",
         "nuxt",
         "sveltekit",
         "remix",
@@ -94,6 +122,11 @@
       "description": "Command that starts the server in production.",
       "type": "string"
     },
+    "releaseCommands": {
+      "description": "Commands run ONCE per deploy, after the build and before the new version goes live, typically database migrations. A non-zero exit fails the deploy and the previous version keeps serving. On Docker they run in a throwaway container, so only effects outside it persist: the database, or a mounted volume. Warm caches in the start command instead. Laravel: [\"php artisan migrate --force\"]. Rails: [\"bundle exec rails db:prepare\"]. Single-app projects only for now. Omit for no release phase (the default).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "outputDirectory": {
       "description": "Directory the build writes to (e.g. \".next\", \"dist\").",
       "type": "string"
@@ -101,6 +134,18 @@
     "buildImage": {
       "description": "Docker image used for the build (e.g. \"node:22\").",
       "type": "string"
+    },
+    "runtimeVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?![\\s\\S])",
+      "maxLength": 32,
+      "description": "Runtime version. Supported versions and matching images depend on the selected stack; omission preserves detected defaults."
+    },
+    "runtimeImage": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Optional production base image for generated Docker builds. It must satisfy the selected runtime and recipe; omit for the managed default."
     },
     "productionPaths": {
       "description": "Paths shipped to the runtime as the production artifact.",
@@ -126,6 +171,10 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 65535
+    },
+    "optimize": {
+      "description": "Laravel only. Opt-in cache warming for the web role (default false). true prefixes the web command with \"php artisan optimize && \" to warm Laravel's config/route/event/view caches. Web role only; an absent or false flag keeps the web command byte-identical. Warms per-request throughput, not cold start. Runs at startup only — config:cache freezes the env present when it runs, so never place it in buildCommand or releaseCommands.",
+      "type": "boolean"
     },
 
     "env": {
@@ -297,14 +346,15 @@
             }
           },
           "resources": {
-            "description": "Per-service cpu/memory caps, overriding the top-level resources field by field. Parity with compose mem_limit / deploy.resources.limits, which Openship also reads off the compose file. 0 = no limit.",
+            "description": "Per-service cpu/memory caps, overriding the top-level resources field by field. Parity with compose mem_limit / deploy.resources.limits, which Openship also reads off the compose file. 0 = no limit. swapDisabled runs the container without swap and requires a positive memory limit (own or inherited).",
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "tier": { "enum": ["unlimited", "micro", "low", "medium", "high"] },
               "cpuCores": { "type": "number", "minimum": 0, "maximum": 1024 },
               "memoryMb": { "type": "integer", "minimum": 0, "maximum": 4194304 },
-              "diskMb": { "type": "integer", "minimum": 0, "maximum": 204800 }
+              "diskMb": { "type": "integer", "minimum": 0, "maximum": 204800 },
+              "swapDisabled": { "type": "boolean" }
             }
           }
         }
@@ -337,6 +387,7 @@
               "framework": {
                 "enum": [
                   "nextjs",
+                  "farmjs",
                   "nuxt",
                   "sveltekit",
                   "remix",

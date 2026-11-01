@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { mapComposeService } from "../../src/commands/service";
+import { mapComposeService } from "../../../../packages/sdk/src/compose";
 
 /**
  * `openship service sync` maps `docker compose config --format json` to the sync

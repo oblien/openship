@@ -55,6 +55,10 @@
     "appsEmptyDesc": "ワンクリックで完全セルフホスト — データベース、自動化、アナリティクス、パスワード管理などを自分のサーバーで実行できます。"
   },
   "nav": {
+    "affiliates": "報酬",
+    "resources": "クラウドスペース",
+    "support": "サポート",
+    "scale": "スケーリング",
     "home": "ホーム",
     "new-project": "新規プロジェクト",
     "projects": "プロジェクト",
@@ -73,6 +77,7 @@
     "addMailbox": "メールボックスを追加",
     "webmail": "ウェブメール",
     "sections": {
+      "help": "ヘルプ",
       "main": "メイン",
       "settings": "設定",
       "infrastructure": "インフラストラクチャ",
@@ -82,7 +87,9 @@
       "account": "アカウント"
     },
     "apps": "アプリ",
-    "jobs": "ジョブ"
+    "jobs": "ジョブ",
+    "workspaces": "ワークスペース",
+    "actions": "アクション"
   },
   "sidebar": {
     "expand": "サイドバーを展開",
@@ -126,7 +133,27 @@
         "analytics": "アナリティクス",
         "automation": "自動化",
         "mail": "メール",
-        "other": "ツール"
+        "other": "ツール",
+        "ai": "AI・モデル"
+      },
+      "addCustom": "カスタムを追加",
+      "howToAddApp": "アプリを追加する方法",
+      "removeCustomApp": "カスタムアプリを削除",
+      "needsUpdateDesc": "このアプリをインストールするにはOpenshipインスタンスを更新してください。",
+      "needsUpdateBadge": "要更新",
+      "needsVersionBadge": "v{version} が必要",
+      "removedToast": "「{name}」を削除しました。",
+      "removeFailedToast": "アプリを削除できませんでした。",
+      "gpu": {
+        "recommended": "GPU推奨",
+        "required": "NVIDIA GPUが必要",
+        "mode": "処理方式",
+        "cpu": "CPUのみ",
+        "nvidia": "NVIDIA GPUを使用",
+        "hint": "NVIDIAモードには、サーバー上の対応ドライバーとNVIDIA Container Toolkitが必要です。",
+        "cloudUnsupported": "このアプリはセルフホスト専用です。接続済みのセルフホストサーバーを選択してください。",
+        "selfHostedOnly": "セルフホスト専用",
+        "noGpu": "GPUが検出されません。NVIDIAドライバーとContainer Toolkitを確認するか、CPUを選択してください。"
       }
     },
     "projects": {

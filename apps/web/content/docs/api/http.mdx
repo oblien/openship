@@ -1,0 +1,124 @@
+---
+title: HTTP basics
+description: Authentication, organization scope, responses, errors, rate limits, and streams.
+---
+
+REST requests use your installation's URL plus `/api`. Authenticate scripts with a personal access
+token. [Create a token](/docs/api/tokens) or use the [CLI login guide](/docs/cli/access).
+
+```bash
+curl "$OPENSHIP_URL/api/projects" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+Use `Content-Type: application/json` for JSON bodies. Send only the fields you are changing in a partial
+update. The [resource pages](/docs/api) document request fields and the equivalent SDK calls.
+
+## Authentication
+
+A request proves who it is in exactly one of four ways. Openship checks for a `Bearer` token first, then a
+session cookie, then the loopback fallback (only if that mode is enabled).
+
+| Method | What you send | Who uses it |
+|---|---|---|
+| **Personal access token** | `Authorization: Bearer opsh_pat_…` | CLI, scripts, server-to-server |
+| **Session cookie** | httpOnly cookie set at login | The dashboard, in a browser |
+| **MCP OAuth** | An OAuth 2.1 access token bound at consent | AI agents connecting to `/api/mcp` |
+| **Zero-auth loopback** | Nothing (request from `127.0.0.1`) | Desktop app / opt-in single-user instance |
+
+```bash
+curl https://your-host/api/projects \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+<Callout title="Bearer is for non-browser clients only" type="info">
+A `Bearer` token presented from a browser-trusted origin is rejected (`BEARER_NOT_ALLOWED_FROM_BROWSER`), so an
+exfiltrated session token can't be replayed past the httpOnly cookie. A token can be **org-scoped** (rejects a
+mismatched `X-Organization-Id` with `TOKEN_ORG_SCOPE`) and **read-only** (rejects mutations with
+`TOKEN_READ_ONLY`). MCP OAuth discovery is served at the origin root:
+`/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`.
+</Callout>
+
+
+## Permissions
+
+Authenticated application routes declare a permission tag of the form
+`resource:action` — `project:read`, `domain:write`, `deployment:admin` — and sub-resources add a middle segment
+(`project:service:write`). Shared operations also enforce access for native SDK callers. The action usually lines up with the HTTP method: `read` (GET one), `write`
+(POST/PUT/PATCH), `admin` (DELETE and destructive), `list` (GET a collection).
+
+Access is decided **per organization**. Openship resolves which org you mean from the `X-Organization-Id`
+header (falling back to your session default), then checks your role there — `owner`, `admin`, `member`, or
+`restricted` (grant-only). The operation tables list the declared route permission. Shared operations also check resource ownership,
+current membership, token restrictions, and any additional administrative requirements. See
+[Permissions & roles](/docs/security/permissions) for the full model.
+
+
+## Rate limits
+
+The whole `/api` surface is rate-limited. Unauthenticated requests fall under a per-IP default; authenticated
+requests get a more generous per-user budget. Some route groups carry a tighter or looser named policy. Limits
+are per rolling minute.
+
+| Policy | Limit | Keyed by | Applies to |
+|---|---|---|---|
+| `default-anon` | 300 / min | IP | Any unauthenticated route |
+| `default-authed` | 3000 / min | user | Any authenticated route |
+| `auth-tight` | 10 / min | IP | `POST /api/auth/*` (login, signup, reset) and self-host invite signup |
+| `mcp` | 300 / min | IP | `/api/mcp` (tool-call bursts) |
+| `webhook-ingress` | 120 / min | source IP | Inbound webhook deliveries |
+| `billing-portal` | 20 / min | org | Stripe portal / checkout creation |
+
+Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. `/api/health` is
+never limited (load balancers and SSR poll it). On a self-hosted instance with neither `TRUST_PROXY` nor
+`OPENSHIP_PUBLIC_URL` set, requests arriving over loopback skip the ordinary limits — the `auth-tight` login
+gate always enforces.
+
+<Callout title="429 — Too many requests" type="warn">
+When a bucket is exhausted the request gets a `429` with body `{"error":"Too many requests"}` plus a
+`Retry-After` header (seconds). Back off until the window resets rather than retrying immediately.
+</Callout>
+
+
+## Error shape
+
+Errors come back as JSON with a stable shape: a human `error` message and, for typed failures, a machine
+`code`. Validation failures add a field-level `details` map.
+
+```json
+{ "error": "This access token is read-only", "code": "TOKEN_READ_ONLY" }
+```
+
+| Status | Typical `code` | Meaning |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | Request body failed the schema — see `details` for the offending fields. |
+| `401` | `INVALID_TOKEN`, `BEARER_NOT_ALLOWED_FROM_BROWSER` | Not authenticated, or a bad/expired token (plain `Unauthorized` when no session at all). |
+| `403` | `TOKEN_ORG_SCOPE`, `TOKEN_READ_ONLY` | Authenticated but not allowed — wrong org, read-only token, or your role/grants deny the action. |
+| `404` | — | Resource doesn't exist, or isn't in your organization (IDOR-safe). |
+| `409` | — | Conflict with current state (e.g. a delete already in progress). |
+| `429` | — | Rate-limited (see above). |
+| `503` | `AUTH_UNAVAILABLE` | The auth backend is unreachable — retry; never treated as "no session". |
+| `500` | — | Unhandled server error (`{"error":"Internal server error"}`, no code). |
+
+
+## Fixed organization scope
+
+Send both `X-Organization-Id: org_123` and `X-Openship-Scope: fixed` to require that exact organization.
+Authentication and grants still apply. A token bound to a different organization is rejected.
+The remote SDK sends these headers when configured with `organizationId`; it first checks API capability
+support. See [scope compatibility](/docs/api/sdk/compatibility#fixed-organization-scopes).
+
+## Streams and retries
+
+Endpoints marked as streams return Server-Sent Events, not a single JSON object. Use `curl -N` or an SSE
+client, and close the connection when done. SDK stream methods return async iterables and accept an abort
+signal. [Deployment progress](/docs/api/deployments#read-progress-events) shows both interfaces.
+
+A dropped connection does not prove a mutation failed. Inspect the resource or run status before retrying
+a create, deploy, or restore. The SDK does not automatically retry mutations.
+
+## Availability
+
+Self-hosted routes are not mounted on the Cloud API. A named SDK method can still require a configured
+provider, host capability, or operator authority. HTTP-only rows have no named native operation; a remote
+client can use its [HTTP transport](/docs/api/sdk/utilities#http-transport) where authentication permits it.

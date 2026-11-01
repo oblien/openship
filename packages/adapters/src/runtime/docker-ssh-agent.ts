@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import net from "node:net";
 import type { Duplex } from "node:stream";
 
@@ -14,6 +15,7 @@ import {
 import type { SshConfig, CommandExecutor } from "../types";
 import type { DockerConnectionOptions } from "./docker-transport";
 import { safeErrorMessage, withTimeout } from "@repo/core";
+import { SystemSshExecutor } from "../system/system-ssh-executor";
 
 const DEFAULT_REMOTE_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
 const resolvedDockerSocketPathCache = new WeakMap<DockerConnectionOptions, Promise<string>>();
@@ -51,6 +53,10 @@ function toSshConfig(opts: DockerConnectionOptions): SshConfig {
     privateKey: opts.privateKey,
     privateKeyPassphrase: opts.privateKeyPassphrase,
     sshAgent: opts.sshAgent,
+    sshTransport: opts.sshTransport,
+    sshJumpHost: opts.sshJumpHost,
+    sshArgs: opts.sshArgs,
+    useSystemSsh: opts.useSystemSsh,
   };
 }
 
@@ -118,6 +124,12 @@ async function discoverRemoteDockerSocketPaths(opts: DockerConnectionOptions): P
     return discoverRemoteDockerSocketPathsWithExecutor(opts.executor);
   }
 
+  if (opts.useSystemSsh) {
+    const executor = new SystemSshExecutor(toSshConfig(opts));
+    try { return await discoverRemoteDockerSocketPathsWithExecutor(executor); }
+    finally { await executor.dispose(); }
+  }
+
   let conn: StreamLocalCapableClient | null = null;
 
   try {
@@ -149,7 +161,8 @@ async function resolveRemoteDockerSocketPath(opts: DockerConnectionOptions): Pro
   // below, and a concurrent caller holding this same promise still gets the default.
   const pendingPath = discoverRemoteDockerSocketPaths(opts).then(
     (paths) => paths[0] ?? DEFAULT_REMOTE_DOCKER_SOCKET_PATH,
-    () => {
+    (diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/docker-ssh-agent");
       resolvedDockerSocketPathCache.delete(opts);
       return DEFAULT_REMOTE_DOCKER_SOCKET_PATH;
     },
@@ -188,11 +201,13 @@ async function openStreamlocalUpstream(opts: DockerConnectionOptions): Promise<D
     return opts.executor.forwardUnixSocket(socketPath);
   }
 
+  if (opts.useSystemSsh) throw new Error("This connection uses Docker's OpenSSH command transport.");
+
   const client: StreamLocalCapableClient = await connectSshClient(toSshConfig(opts));
   try {
     const channel = await openSshUnixSocket(client, socketPath);
     channel.once("close", () => client.end());
-    channel.on("error", () => client.end());
+    channel.on("error", (eventDiagnosticError: unknown) => { observeCaughtError(eventDiagnosticError, "adapters/runtime/docker-ssh-agent"); return client.end(); });
     return channel;
   } catch (error) {
     client.end();
@@ -228,7 +243,8 @@ function respondBadGateway(client: net.Socket, reason: string): void {
         "\r\n" +
         body,
     );
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/runtime/docker-ssh-agent");
     // Peer already gone — nothing to tell anyone.
     client.destroy();
   }
@@ -258,7 +274,7 @@ function pipeThrough(
   // but this file documents three Bun-only stream divergences and an unanswered request
   // hanging is worse than a duplicate attempt — `respondBadGateway` is idempotent
   // (`writableEnded` short-circuits it), so the `close` path staying as-is costs nothing.
-  upstream.on("error", () => {
+  upstream.on("error", (eventDiagnosticError: unknown) => { observeCaughtError(eventDiagnosticError, "adapters/runtime/docker-ssh-agent");
     if (!answered) respondBadGateway(client, handoff.unansweredReason());
     upstream.destroy();
   });
@@ -365,9 +381,9 @@ function sentence(text: string): string {
 }
 
 /** The message dockerode's caller ends up reading. `cause` is the part we actually know. */
-function bridgeFailureReason(opts: DockerConnectionOptions, cause: string): string {
+function bridgeFailureReason(opts: DockerConnectionOptions, cause: string, dockerHint = true): string {
   const host = opts.host?.trim() || "the remote host";
-  return `Could not reach the Docker daemon on ${host} over SSH: ${sentence(cause)} ${BRIDGE_FAILURE_HINT}`;
+  return `Could not reach the Docker daemon on ${host} over SSH: ${sentence(cause)}${dockerHint ? ` ${BRIDGE_FAILURE_HINT}` : ""}`;
 }
 
 /**
@@ -538,6 +554,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
   // Dedicated SSH client for the ephemeral dial-stdio path (no pooled executor).
   // Reused across channels for the bridge's lifetime; closed in close().
   let dialClient: StreamLocalCapableClient | null = null;
+  let systemExecutor: SystemSshExecutor | null = null;
   // Set once a streamlocal channel opens but proves dead (see `bridgeClient`):
   // some sshd/ssh2 combinations only reliably service the FIRST channel on a
   // connection, so once the pooled one has shown that, every dial-stdio channel
@@ -557,6 +574,10 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     // attached it; any other executor implementation gets its error floor here.
     if (!forceEphemeral && opts.executor?.openDockerDialStdio) {
       return attachDialStdioDiagnostics(await opts.executor.openDockerDialStdio());
+    }
+    if (opts.useSystemSsh) {
+      systemExecutor ??= new SystemSshExecutor(toSshConfig(opts));
+      return systemExecutor.openDockerDialStdio();
     }
     // Ephemeral path: one dedicated SSH client, channel-multiplexed. Reset the
     // handle if the connection drops so the next call reconnects.
@@ -652,11 +673,12 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
           resolve(ok);
         };
         stream.once("data", () => settle(true)); // any byte back = data flows
-        stream.once("error", () => settle(false));
+        stream.once("error", (eventDiagnosticError: unknown) => { observeCaughtError(eventDiagnosticError, "adapters/runtime/docker-ssh-agent"); return settle(false); });
         stream.once("close", () => settle(false));
         try {
           stream.write("GET /_ping HTTP/1.0\r\nHost: localhost\r\n\r\n");
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/docker-ssh-agent");
           settle(false);
         }
       });
@@ -664,13 +686,13 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
         console.log(`[docker-ssh] upstream=streamlocal (${opts.host ?? "?"})`);
         return "streamlocal";
       }
-      console.warn(
+      errorDiagnostics.warn("adapters/runtime/docker-ssh-agent",
         `[docker-ssh] upstream=dial-stdio (${opts.host ?? "?"}) — streamlocal opened but no data flowed (Bun/ssh2)`,
       );
       return "dialstdio";
     } catch (err) {
-      console.warn(
-        `[docker-ssh] upstream=dial-stdio (${opts.host ?? "?"}) — streamlocal unavailable: ${safeErrorMessage(err)}`,
+      errorDiagnostics.warn("adapters/runtime/docker-ssh-agent",
+        `[docker-ssh] upstream=dial-stdio (${opts.host ?? "?"}) — streamlocal unavailable: ${safeErrorMessage(err)}`, err,
       );
       return "dialstdio";
     } finally {
@@ -691,7 +713,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     client: net.Socket,
     reason: string,
   ): Promise<void> => {
-    console.warn(
+    errorDiagnostics.warn("adapters/runtime/docker-ssh-agent",
       `[docker-ssh] streamlocal unusable (${opts.host ?? "?"}): ${reason} — ` +
         "downgrading this bridge to dial-stdio (fresh connection) and replaying the buffered request.",
     );
@@ -731,6 +753,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
           `channel open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
         );
       } catch (err) {
+        observeCaughtError(err, "adapters/runtime/docker-ssh-agent");
         await downgradeToDialStdio(capture, client, safeErrorMessage(err));
         return;
       }
@@ -775,10 +798,12 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
           : "channel opened but no data flowed",
       );
     } catch (err) {
-      console.warn(
-        `[docker-ssh] bridge client failed (${opts.host ?? "?"}): ${safeErrorMessage(err)}`,
+      errorDiagnostics.warn("adapters/runtime/docker-ssh-agent",
+        `[docker-ssh] bridge client failed (${opts.host ?? "?"}): ${safeErrorMessage(err)}`, err,
       );
-      capture.fail(bridgeFailureReason(opts, safeErrorMessage(err)));
+      // No Docker response was obtained. An SSH connection/authentication failure
+      // already explains the problem; it is not evidence of a missing daemon.
+      capture.fail(bridgeFailureReason(opts, safeErrorMessage(err), false));
     }
   };
 
@@ -791,7 +816,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     // destroy — in that gap would be an unhandled 'error' event that crashes the
     // whole API process; one dead Docker request must never do that. Real
     // teardown still flows through close/pipeThrough; this only stops the throw.
-    client.on("error", () => {});
+    client.on("error", (eventDiagnosticError: unknown) => { observeCaughtError(eventDiagnosticError, "adapters/runtime/docker-ssh-agent"); });
     client.once("close", () => clients.delete(client));
     void bridgeClient(client);
   });
@@ -800,7 +825,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
   // permanent floor an accept-time error (EMFILE/ENFILE under fd pressure) would be
   // an unhandled 'error' event and crash the process. Log and keep serving.
   server.on("error", (err) => {
-    console.warn(
+    errorDiagnostics.warn("adapters/runtime/docker-ssh-agent",
       `[docker-ssh] bridge listener error (${opts.host ?? "?"}): ${safeErrorMessage(err)}`,
     );
   });
@@ -831,6 +856,8 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
       clients.clear();
       dialClient?.end();
       dialClient = null;
+      void systemExecutor?.dispose();
+      systemExecutor = null;
       server.close();
     },
   };

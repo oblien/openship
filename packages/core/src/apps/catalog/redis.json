@@ -175,5 +175,22 @@
         "internal"
       ]
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Redis compatibility",
+        "description": "Use your existing Redis-compatible clients."
+      },
+      {
+        "title": "In-memory workloads",
+        "description": "Support caches, sessions, rate limits, and queues."
+      },
+      {
+        "title": "RedisInsight",
+        "description": "The included browser UI connects to the instance."
+      }
+    ],
+    "articleFile": "articles/redis.md"
+  }
 }

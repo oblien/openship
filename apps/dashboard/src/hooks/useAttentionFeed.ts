@@ -1,10 +1,13 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { systemApi } from "@/lib/api";
+import { getActiveOrganizationId } from "@/lib/api/client";
 import { issuesApi, type SystemIssue } from "@/lib/api/issues";
 import { useIssueActions } from "@/components/issues/useIssueActions";
+import { usePlatform } from "@/context/PlatformContext";
 import { infraScanStale, markInfraScanned } from "@/lib/infra-autoscan";
 import { hide as hideCard, isHidden, type AttentionCardKey } from "@/lib/attention-hide";
 
@@ -22,44 +25,54 @@ import { hide as hideCard, isHidden, type AttentionCardKey } from "@/lib/attenti
  * and self-expiring; see {@link isHidden} for why it can't bury a new problem.
  */
 export function useAttentionFeed() {
+  const { selfHosted } = usePlatform();
   const [issues, setIssues] = useState<SystemIssue[] | null>(null);
 
   const load = useCallback(async () => {
+    const organizationId = getActiveOrganizationId();
     try {
       const res = await issuesApi.list();
-      setIssues(res?.data ?? []);
-    } catch {
-      setIssues([]); // fail-soft → the column falls back to the product tip
+      if (organizationId === getActiveOrganizationId()) setIssues(res?.data ?? []);
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/hooks/useAttentionFeed");
+      // A failed refresh must not hide a deployment that is still updating.
+      if (organizationId === getActiveOrganizationId()) setIssues((previous) => previous ?? []);
     }
   }, []);
 
-  const { busyId, resolve, infraFix } = useIssueActions(load);
+  const { busyIds, resolve, infraFix, issues: visibleIssues } = useIssueActions(load, undefined, issues ?? undefined);
 
   const autoScanRan = useRef(false);
   useEffect(() => {
+    if (!selfHosted) {
+      void load();
+      return;
+    }
     // When auto-scan is on and the shared cache is stale, run ONE detect-only scan
     // first so the feed reflects live drift, then read it. Otherwise read straight
     // from the cache the scheduled jobs maintain. The localStorage throttle plus this
     // ref keep it to one probe per window, shared with the Infrastructure tab, even
     // under StrictMode's double-mount.
     void (async () => {
-      const on = await systemApi.getInfraAutoScan().catch(() => false);
+      const on = await systemApi.getInfraAutoScan().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/hooks/useAttentionFeed"); return false; });
       if (on && !autoScanRan.current && infraScanStale()) {
         autoScanRan.current = true;
         markInfraScanned();
-        await systemApi.scanAllContainers().catch(() => {});
+        await systemApi.scanAllContainers().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/hooks/useAttentionFeed");
+        });
       }
       void load();
     })();
-  }, [load]);
+  }, [load, selfHosted]);
 
   const { broken, behind } = useMemo(() => {
-    const rows = issues ?? [];
+    const rows = visibleIssues;
     return {
       broken: rows.filter((i) => i.severity !== "advisory"),
       behind: rows.filter((i) => i.severity === "advisory"),
     };
-  }, [issues]);
+  }, [visibleIssues]);
 
   // Which cards the operator has hidden, re-derived from storage every time the feed
   // changes rather than remembered here: a hide is only valid for the exact set it was
@@ -94,15 +107,12 @@ export function useAttentionFeed() {
     showBroken,
     showBehind,
     /**
-     * 0, 1 or 2 — how many cards the attention slot will actually render, hides
-     * included. The home column spends this as a budget, dropping its least urgent
-     * card per alert panel (Activity at 1, Apps at 2). Counting hidden panels as
-     * absent is deliberate: hiding one hands that space straight back, which is the
-     * trade the operator made by hiding it.
+     * Number of visible attention panels, excluding those the operator hid.
+     * Home uses this to give alerts priority over Activity and Quick Tip.
      */
     cards: (showBroken ? 1 : 0) + (showBehind ? 1 : 0),
     hide,
-    busyId,
+    busyIds,
     resolve,
     infraFix,
   };

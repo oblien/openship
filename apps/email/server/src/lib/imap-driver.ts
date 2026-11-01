@@ -19,6 +19,7 @@
  */
 
 import { TextDecoder } from 'node:util';
+import type { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { sanitizeMailHtml } from './sanitize';
 import { withImap, type ImapAuth } from './imap';
@@ -89,7 +90,7 @@ const FOLDER_MAP: Record<FolderSlug, string> = {
 // keywords are case-insensitive but Dovecot normalizes on read.
 export const SNOOZE_KEYWORD = '$Snoozed';
 
-function folderToMailbox(folder: FolderSlug): string {
+export function folderToMailbox(folder: FolderSlug): string {
   return FOLDER_MAP[folder] ?? 'INBOX';
 }
 
@@ -847,10 +848,35 @@ export interface UidHint {
  */
 function normalizeMessageId(id: string | null | undefined): string {
   if (!id) return '';
-  let s = id.trim();
-  if (s.startsWith('<')) s = s.slice(1);
-  if (s.endsWith('>')) s = s.slice(0, -1);
-  return s.trim();
+  let value = id.trim();
+  if (value.startsWith('<') && value.endsWith('>')) value = value.slice(1, -1);
+  return value.trim();
+}
+
+async function resolveMessageUids(
+  client: Pick<ImapFlow, 'search' | 'fetch'>,
+  id: string,
+): Promise<number[] | null> {
+  const uidMatch = /^uid:(\d+)$/.exec(id);
+  if (uidMatch) return [Number(uidMatch[1])];
+
+  // Query-state decodes URLs before dispatching actions. Message-IDs can
+  // contain literal percent escapes, including %3C...%3E, so guessing an
+  // additional URL-decoded interpretation could select a different email.
+  const expectedId = normalizeMessageId(id);
+  // An empty HEADER search matches every message with that header. IMAP
+  // also matches substrings and ignores case; verify every candidate UID.
+  if (!expectedId) return null;
+  const uids = await client.search({ header: { 'message-id': expectedId } }, { uid: true });
+  if (!Array.isArray(uids) || uids.length === 0) return null;
+  const matches: number[] = [];
+  for await (const message of client.fetch(uids, { envelope: true }, { uid: true })) {
+    if (normalizeMessageId(message.envelope?.messageId) === expectedId) {
+      matches.push(message.uid);
+    }
+  }
+  // Drain FETCH before issuing another IMAP command on this connection.
+  return matches.length > 0 ? matches : null;
 }
 
 const GET_THREAD_DEBUG = process.env.IMAP_DEBUG === '1';
@@ -937,9 +963,10 @@ export async function getThread(
             );
             const validCandidate =
               candidate && typeof candidate === 'object' ? candidate : null;
-            const matchedMsgId = validCandidate
-              ? normalizeMessageId(validCandidate.envelope?.messageId) === normalizedId
-              : false;
+            const matchedMsgId =
+              validCandidate && normalizedId
+                ? normalizeMessageId(validCandidate.envelope?.messageId) === normalizedId
+                : false;
             gtDebug('hint: fetchOne', {
               ms: Math.round(performance.now() - t1),
               found: !!validCandidate,
@@ -956,21 +983,13 @@ export async function getThread(
         // mailbox checking headers; expensive on large mailboxes without
         // FTS, which is why the hint path above exists.
         //
-        // We search BOTH the bracketed and unbracketed form so the lookup
-        // doesn't depend on which form the IMAP server stores internally
-        // (Dovecot keeps brackets, some servers strip them).
+        // The shared resolver checks exact envelope IDs after SEARCH so
+        // substring/case matches cannot select a different message.
         if (!msg) {
           const t0 = performance.now();
-          let searchRaw = await client.search({ header: { 'message-id': id } }, { uid: true });
-          let search: number[] = Array.isArray(searchRaw) ? searchRaw : [];
-          if (search.length === 0 && normalizedId !== id) {
-            // Retry without angle brackets - some servers strip them in the
-            // header index even though the envelope keeps them.
-            searchRaw = await client.search({ header: { 'message-id': normalizedId } }, { uid: true });
-            search = Array.isArray(searchRaw) ? searchRaw : [];
-          }
-          gtDebug('slow: search', { ms: Math.round(performance.now() - t0), hits: search.length });
-          if (search.length > 0) {
+          const search = await resolveMessageUids(client, id);
+          gtDebug('slow: search', { ms: Math.round(performance.now() - t0), hits: search?.length ?? 0 });
+          if (search && search.length > 0) {
             const uid = search[search.length - 1];
             const t1 = performance.now();
             msg = await client.fetchOne(
@@ -1171,10 +1190,7 @@ async function modifyFlag(
             const exists = await client.fetchOne(uidHandle, { uid: true }, { uid: true });
             found = exists ? [Number(uidHandle)] : undefined;
           } else {
-            const search = await client.search(
-              { header: { 'message-id': id } },
-              { uid: true },
-            );
+            const search = await resolveMessageUids(client, id);
             found = search && search.length > 0 ? search : undefined;
           }
           if (found && found.length > 0) {
@@ -1242,27 +1258,20 @@ export async function setImportant(
 export async function deleteThreads(auth: ImapAuth, input: FlagInput): Promise<void> {
   if (input.ids.length === 0) return;
   const sourceMailbox = folderToMailbox(input.folder ?? 'inbox');
-  const uidOnly = (id: string) => {
-    const m = /^uid:(\d+)$/.exec(id);
-    return m ? [Number(m[1])] : null;
-  };
   await withImap(auth, async (client) => {
     const lock = await client.getMailboxLock(sourceMailbox);
     try {
       for (const id of input.ids) {
-        let found = uidOnly(id);
-        if (!found) {
-          const search = await client.search(
-            { header: { 'message-id': id } },
-            { uid: true },
-          );
-          found = search && search.length > 0 ? search : null;
-        }
-        if (!found) continue;
+        const found = await resolveMessageUids(client, id);
+        if (!found) throw new Error(`Message not found for deletion: ${id}`);
         if (sourceMailbox === 'Trash') {
-          await client.messageDelete(found, { uid: true });
+          if (!(await client.messageDelete(found, { uid: true }))) {
+            throw new Error(`IMAP refused message deletion: ${id}`);
+          }
         } else {
-          await client.messageMove(found, 'Trash', { uid: true });
+          if (!(await client.messageMove(found, 'Trash', { uid: true }))) {
+            throw new Error(`IMAP refused move to Trash: ${id}`);
+          }
         }
       }
     } finally {
@@ -1298,28 +1307,43 @@ export async function modifyLabels(
   input: { ids: string[]; folder?: FolderSlug; addLabels?: string[]; removeLabels?: string[] },
 ): Promise<void> {
   const mailbox = folderToMailbox(input.folder ?? 'inbox');
-  const uidOnly = (id: string) => {
-    const m = /^uid:(\d+)$/.exec(id);
-    return m ? [Number(m[1])] : null;
-  };
+  // The client sends Gmail labels, where INBOX and SPAM are folders. On IMAP
+  // they're mailboxes, so move the message instead of storing a keyword.
+  // Removing one without adding a label is Gmail's archive.
+  const add = input.addLabels ?? [];
+  const remove = input.removeLabels ?? [];
+  let moveTo: string | null = null;
+  if (add.includes('SPAM')) {
+    moveTo = 'Junk';
+  } else if (add.includes('INBOX')) {
+    moveTo = 'INBOX';
+  } else if (add.length === 0 && (remove.includes('INBOX') || remove.includes('SPAM'))) {
+    moveTo = 'Archive';
+  }
   await withImap(auth, async (client) => {
+    // Dovecot doesn't auto-create Archive. CREATE on an existing mailbox
+    // returns ALREADYEXISTS, which imapflow resolves as `created: false`.
+    if (moveTo === 'Archive') await client.mailboxCreate('Archive');
     const lock = await client.getMailboxLock(mailbox);
     try {
       for (const id of input.ids) {
-        let found = uidOnly(id);
-        if (!found) {
-          const search = await client.search(
-            { header: { 'message-id': id } },
-            { uid: true },
-          );
-          found = search && search.length > 0 ? search : null;
+        const found = await resolveMessageUids(client, id);
+        if (!found) throw new Error(`Message not found for labels: ${id}`);
+        if (moveTo) {
+          if (moveTo !== mailbox && !(await client.messageMove(found, moveTo, { uid: true }))) {
+            throw new Error(`IMAP refused move to ${moveTo}: ${id}`);
+          }
+          continue;
         }
-        if (!found) continue;
         if (input.addLabels && input.addLabels.length > 0) {
-          await client.messageFlagsAdd(found, input.addLabels, { uid: true });
+          if (!(await client.messageFlagsAdd(found, input.addLabels, { uid: true }))) {
+            throw new Error(`IMAP refused label addition: ${id}`);
+          }
         }
         if (input.removeLabels && input.removeLabels.length > 0) {
-          await client.messageFlagsRemove(found, input.removeLabels, { uid: true });
+          if (!(await client.messageFlagsRemove(found, input.removeLabels, { uid: true }))) {
+            throw new Error(`IMAP refused label removal: ${id}`);
+          }
         }
       }
     } finally {

@@ -22,14 +22,34 @@
       "description": "A simpleicons slug, or an id mapped to a vendored SVG in the dashboard.",
       "type": "string"
     },
+    "gpu": {
+      "enum": [
+        "recommended",
+        "required"
+      ],
+      "description": "NVIDIA GPU placement. GPU services default to required. Requires schemaVersion 2."
+    },
+    "supportsCloud": {
+      "type": "boolean",
+      "description": "False: self-hosted only; default true. Requires schemaVersion 2."
+    },
     "category": {
       "description": "Catalog grouping.",
-      "enum": ["backend", "database", "cms", "mail", "analytics", "automation", "other"]
+      "enum": ["backend", "database", "cms", "mail", "analytics", "automation", "ai", "other"]
     },
     "tags": {
       "description": "Free-form keywords used for catalog search.",
       "type": "array",
       "items": { "type": "string" }
+    },
+    "marketplace": {
+      "description": "Optional public features and Markdown article. Editorial only; does not change deployment.",
+      "type": "object",
+      "properties": {
+        "features": { "type": "array", "items": { "type": "object", "required": ["title"], "properties": { "title": { "type": "string", "minLength": 1 }, "description": { "type": "string" } } } },
+        "article": { "type": "string", "maxLength": 200000, "description": "Inline Markdown. Raw HTML is displayed as text." },
+        "articleFile": { "type": "string", "pattern": "^articles/[a-z0-9][a-z0-9-]*\\.md$", "description": "Authoring only: Markdown file compiled into catalog.json by gen-catalog." }
+      }
     },
     "framework": {
       "description": "Stack slug for the created project. Usually \"docker-compose\" for template apps.",
@@ -55,6 +75,21 @@
       "description": "The curated settings form. A field with installStep:true is also collected in the install wizard.",
       "type": "array",
       "items": { "$ref": "#/definitions/settingGroup" }
+    },
+    "installLayout": {
+      "description": "Optional install-form presentation. Omit to keep the separate name card and one-column settings card.",
+      "type": "object",
+      "required": ["settings"],
+      "properties": {
+        "settings": {
+          "description": "single combines the project name and install fields in one card; split puts them in adjacent cards that stack on narrow containers; grouped preserves settings group headings with a separate name card.",
+          "enum": ["single", "split", "grouped"]
+        },
+        "columns": {
+          "description": "Default field columns when space allows. Narrow containers stack; group columns override this in grouped mode.",
+          "enum": [1, 2]
+        }
+      }
     },
     "prepare": {
       "description": "Commands run inside a service container after start. Must be re-run safe.",
@@ -143,6 +178,58 @@
   },
 
   "definitions": {
+    "gpuRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": {
+          "const": "nvidia"
+        },
+        "count": {
+          "oneOf": [
+            {
+              "const": "all"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64
+            }
+          ]
+        },
+        "deviceIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string"
+          }
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "not": {
+        "required": [
+          "count",
+          "deviceIds"
+        ]
+      }
+    },
+
     "localized": {
       "description": "A plain string, or an inline per-locale map such as { \"en\": \"…\", \"ar\": \"…\" }.",
       "oneOf": [
@@ -156,6 +243,26 @@
       "required": ["name"],
       "oneOf": [{ "required": ["image"] }, { "required": ["build"] }],
       "properties": {
+        "gpus": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/gpuRequest"
+            },
+            {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/definitions/gpuRequest"
+              }
+            }
+          ]
+        },
+        "shmSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776,
+          "description": "Private /dev/shm bytes; no host IPC. Requires schemaVersion 2."
+        },
         "name": {
           "description": "Service name, and its hostname on the project network. Other services reach it at this exact name.",
           "type": "string"
@@ -163,6 +270,37 @@
         "image": {
           "description": "Container image to pull. Pin a version — unpinned tags are rejected in review. Exactly one of image|build per service.",
           "type": "string"
+        },
+        "replacesImages": {
+          "description": "Exact retired image names eligible for explicit operator-reviewed repair. Never automatically applied to installed services.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "replacesBuilds": {
+          "description": "SHA-256 fingerprints of exact retired inline recipes eligible for explicit operator-reviewed conversion to this image and its runtime setup files. Never automatically applied.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "entrypointArgv": {
+          "description": "Exact image entrypoint override. Requires Openship 0.9.2 or newer. An empty array clears the image default.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "commandArgv": {
+          "description": "Exact container command arguments, without a shell wrapper. Can invoke a mounted startup script through its interpreter.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "resources": {
+          "description": "Advisory sizing recommendation. Never copied into installed container limits; explicit user settings remain independent.",
+          "type": "object",
+          "required": ["cpuCores", "memoryMb", "diskMb"],
+          "additionalProperties": false,
+          "properties": {
+            "cpuCores": { "type": "number", "minimum": 0.25 },
+            "memoryMb": { "type": "integer", "minimum": 128 },
+            "diskMb": { "type": "integer", "minimum": 64 }
+          }
         },
         "build": {
           "description": "Inline Docker build context — build the service image instead of pulling it (a base image needing extra packages + a provisioning ENTRYPOINT). Mutually exclusive with image. Built on the deploy host via the normal build pipeline.",
@@ -293,6 +431,10 @@
         "id": { "description": "Stable group id.", "type": "string" },
         "label": { "description": "Group heading.", "type": "string" },
         "description": { "description": "Group help text.", "type": "string" },
+        "columns": {
+          "description": "Field columns when space allows, in installed settings and grouped installs. Narrow containers always stack.",
+          "enum": [1, 2]
+        },
         "fields": { "type": "array", "items": { "$ref": "#/definitions/settingField" } }
       }
     },
@@ -333,6 +475,7 @@
         "patternError": { "description": "Message shown when pattern fails.", "type": "string" },
         "default": { "description": "Prefilled value.", "type": "string" },
         "placeholder": { "description": "Input placeholder.", "type": "string" },
+        "fullWidth": { "description": "Span the whole row in a two-column form.", "type": "boolean" },
         "secret": { "description": "Store encrypted and mask on display.", "type": "boolean" },
         "trueValue": {
           "description": "For type:\"boolean\" — env value written when on, e.g. \"1\" or \"yes\".",
@@ -521,11 +664,11 @@
           "type": "boolean"
         },
         "scope": {
-          "description": "Declares reachability intent.",
+          "description": "Declares reachability intent. Defaults to public for HTTP and internal for TCP.",
           "enum": ["public", "internal", "local"]
         },
         "defaultMode": {
-          "description": "Preselected exposure.",
+          "description": "Preselected routing mode, constrained by allowedModes. Defaults follow kind and scope, independently of the deployment target.",
           "enum": ["domain", "port", "publish", "internal"]
         },
         "allowedModes": {
@@ -579,6 +722,7 @@
           "description": "Env key the chosen connection is written to.",
           "type": "string"
         },
+        "bundleId": { "type": "string", "minLength": 1, "description": "Match a specific provides bundle; requires schemaVersion 2." },
         "category": {
           "description": "Restrict candidate sources to this category.",
           "type": "string"

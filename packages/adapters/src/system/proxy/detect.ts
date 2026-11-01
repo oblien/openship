@@ -7,6 +7,7 @@
  * read-only; acting on the result requires an explicit, user-accepted EdgePolicy.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { AppError, shellQuote } from "@repo/core";
 import type { CommandExecutor } from "../../types";
 import {
@@ -22,8 +23,10 @@ import {
   isOurEdgeContainer,
   mayStopUnitForEdgeTakeover,
   resolveContainerPublishingPort,
-  stopContainerDurably,
+  prepareContainerStop,
+  type PortContainer,
 } from "../port-owner";
+import { assertNoSwarmEdge, swarmEdgePorts } from "./swarm";
 import { tryExec } from "../probe-exec";
 import type {
   SystemLog,
@@ -140,7 +143,7 @@ export async function sanitizeEdgeVhosts(
     `  fi;`,
     `done`,
   ].join(" ");
-  const out = await executor.exec(script).catch(() => "");
+  const out = await executor.exec(script).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/detect"); return ""; });
   for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const [action, file] = [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)];
     if (action === "dropped-catchall") {
@@ -391,11 +394,11 @@ async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string 
 async function detectDockerOnPort(
   executor: CommandExecutor,
   port: number,
-): Promise<{ id: string; name: string; image: string } | null> {
+): Promise<PortContainer | null> {
   const onPort = await resolveContainerPublishingPort(executor, port);
   const container =
     onPort.kind === "one" ? onPort.container : onPort.kind === "ambiguous" ? onPort.containers[0] : null;
-  return container ? { id: container.id, name: container.name, image: container.image } : null;
+  return container ?? null;
 }
 
 /** `nginx: worker process` / `openresty: worker process …` (the child that shows
@@ -493,11 +496,14 @@ async function probeEdgePort(
   // `bind() to 0.0.0.0:80 failed (98: Address already in use)` while every surface
   // reported the edge installed and running.
   const managedByOpenship =
-    isOurEdgeContainer(docker?.name, docker?.image) ||
-    (ours.containerRunning && !foreignDockerProxy);
+    !docker?.swarmService &&
+    !cgroupContainer?.swarmService &&
+    (isOurEdgeContainer(docker?.name, docker?.image) ||
+      (ours.containerRunning && !foreignDockerProxy));
 
   return {
     port,
+    swarmService: docker?.swarmService ?? cgroupContainer?.swarmService,
     pid: listener?.pid ?? undefined,
     command: docker
       ? `docker container ${docker.name} (${docker.image})`
@@ -518,6 +524,7 @@ async function probeEdgePort(
 
 /** Detect and classify what owns ports 80/443. Read-only. */
 export async function probeEdge(executor: CommandExecutor): Promise<EdgeStatus> {
+  const swarmPorts = await swarmEdgePorts(executor);
   // ONE "ours" signal: a HEALTHY edge CONTAINER (the self-takeover lock).
   //
   // The health gate is load-bearing, not defensive: a crash-looping edge is still
@@ -531,6 +538,15 @@ export async function probeEdge(executor: CommandExecutor): Promise<EdgeStatus> 
 
   const occupants: EdgeOccupant[] = [];
   for (const port of EDGE_PORTS) {
+    if (swarmPorts.has(port)) {
+      occupants.push({
+        port,
+        swarmService: swarmPorts.get(port),
+        command: `Swarm service ${swarmPorts.get(port)}`,
+        managedByOpenship: false,
+      });
+      continue;
+    }
     const occ = await probeEdgePort(executor, port, { containerRunning });
     if (occ) occupants.push(occ);
   }
@@ -583,7 +599,7 @@ export function stopTargetsForStatus(status: EdgeStatus): EdgeStopTarget[] {
       // there is nothing here to stop, and freeEdgeTargets reports the port still bound
       // rather than claiming a takeover that did not happen.
       pid: o.dockerPublished && !o.containerName && !o.containerId ? undefined : o.pid,
-      container: o.containerName ?? o.containerId,
+      container: o.containerId ?? o.containerName,
       // Prefer the proxy kind over the raw cmdline — `nginx (PID 123)` reads
       // better in "Stopping …" than `nginx: master process /usr/sbin/nginx …`.
       label: o.proxy && o.pid ? `${o.proxy} (PID ${o.pid})` : o.command,
@@ -622,13 +638,32 @@ export async function freeEdgeTargets(
   // Per-port budget for the socket to drain. The caller owns this: an interactive
   // takeover can afford to wait, a per-deploy re-ensure can't sit for half a minute
   // on two ports it already expects to be free.
-  opts: { timeoutMs?: number } = {},
+  opts: {
+    timeoutMs?: number;
+    /** Record recovery only after every owner is validated, before the first stop. */
+    beforeStop?: () => Promise<void>;
+  } = {},
 ): Promise<EdgeFreeResult> {
+  // Validate the whole batch before stopping its first owner. Fresh mesh inspection
+  // also protects old/client-supplied policies that have no Swarm ownership marker.
+  const swarmPorts = await swarmEdgePorts(executor);
+  assertNoSwarmEdge({
+    occupants: [...swarmPorts].map(([port, swarmService]) => ({
+      port,
+      swarmService,
+      managedByOpenship: false,
+    })),
+  });
+  const stops = new Map<string, () => Promise<void>>();
+  for (const target of targets)
+    if (target.container && !stops.has(target.container))
+      stops.set(target.container, await prepareContainerStop(executor, target.container));
+  await opts.beforeStop?.();
   for (const t of targets) {
     const where = t.port ? ` (port ${t.port})` : "";
     if (t.container) {
       onLog(`Stopping container ${t.container}${where}...`, "warn");
-      await stopContainerDurably(executor, t.container);
+      await stops.get(t.container)!();
     } else if (t.unit && mayStopUnitForEdgeTakeover(t.unit)) {
       onLog(`Stopping & disabling service ${t.unit}${where}...`, "warn");
       await tryExec(

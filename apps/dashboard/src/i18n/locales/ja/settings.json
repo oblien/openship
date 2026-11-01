@@ -1,4 +1,67 @@
 {
+  "appearance": {
+    "title": "外観",
+    "description": "テーマを選択するか、デバイスの外観設定に合わせます。変更はすぐに適用されます。",
+    "themes": {
+      "light": "ライト",
+      "dim": "ディム",
+      "dark": "ダーク",
+      "system": "システム"
+    },
+    "editor": {
+      "description": "個人用テーマ、ライブプレビュー、持ち運べるJSON。",
+      "newTheme": "新しいテーマ",
+      "duplicate": "複製",
+      "reset": "リセット",
+      "saved": "保存済み",
+      "preview": "ライブプレビュー",
+      "unsaved": "未保存の変更をプレビュー中。",
+      "invalid": "保存前に強調表示された値を修正してください。",
+      "retry": "再試行",
+      "name": "テーマ名",
+      "base": "ベーステーマ",
+      "tokens": "デザイントークン",
+      "search": "トークンを検索…",
+      "typography": "タイポグラフィ",
+      "interfaceFont": "UIフォント",
+      "monoFont": "等幅フォント",
+      "fontSize": "UI文字サイズ",
+      "monoSize": "等幅文字サイズ",
+      "lineHeight": "行の高さ",
+      "weight": "文字の太さ",
+      "uploadFont": "WOFF2をアップロード",
+      "export": "テーマをダウンロード",
+      "exportAll": "すべてダウンロード",
+      "json": "テーマのJSONを貼り付け",
+      "url": "テーマJSONのURL",
+      "loadUrl": "URLを読み込む",
+      "selectFile": "JSONをアップロード",
+      "importHint": "テーマまたはライブラリを読み込み、保存して変更を適用します。",
+      "fontHint": "WOFF2フォントはテーマに含まれます。各フォントは最大256 KiBです。",
+      "personal": "変更はこのアカウントにのみ適用されます。",
+      "presets": "プリセット",
+      "discard": "破棄",
+      "color": "色",
+      "systemFont": "システムフォント",
+      "serifFont": "セリフ体",
+      "systemMono": "システム等幅",
+      "workspace": "ワークスペース",
+      "active": "稼働中",
+      "queued": "待機中",
+      "failed": "失敗",
+      "groups": {
+        "surfaces": "サーフェス",
+        "text": "文字",
+        "controls": "コントロール",
+        "status": "ステータス",
+        "effects": "効果",
+        "scales": "階調"
+      },
+      "libraryLimit": "別のテーマを追加する前にカスタムテーマを削除してください。"
+    },
+    "customize": "カスタマイズ",
+    "backToGeneral": "一般設定に戻る"
+  },
   "language": {
     "title": "言語",
     "description": "ダッシュボード全体で使用する言語を選択します。"
@@ -48,6 +111,7 @@
     "title": "設定",
     "tabs": {
       "general": "一般",
+      "security": "セキュリティ",
       "git": "Git",
       "tokens": "API トークン",
       "mcp": "MCP",
@@ -56,10 +120,13 @@
       "credentials": "認証情報",
       "cloud": "クラウド",
       "infrastructure": "インフラ",
-      "instance": "インスタンス"
+      "instance": "インスタンス",
+      "email": "メール",
+      "systemSender": "システム送信者"
     }
   },
   "github": {
+    "tokenCreate": "トークンを作成",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "接続済み · インストールはまだありません",
@@ -103,8 +170,49 @@
       "optionalSuffix": "このマシン上で実行すると、App のインストール範囲外のリポジトリのローカルビルド用クローンが有効になります。リモートデプロイは常に App 経由でルーティングされます。",
       "disconnectPrefix": "切断するには、次を実行してください:",
       "disconnectSuffix": "ターミナルで実行します。",
-      "use": "gh CLI を使用"
-    }
+      "use": "gh CLI を使用",
+      "login": "GitHub でログイン",
+      "deviceHint": "このワンタイムコードを GitHub で入力して、このインスタンスを承認してください:",
+      "waiting": "認証を待機中 — 自動的に更新されます。",
+      "tokenAltPrefix": "トークンをお使いですか？ 個人用アクセストークンを追加してください:",
+      "tokenAltLink": "クローン認証情報",
+      "forwardOnNote": "転送が有効です — gh CLI はリモートサーバーのクローンも認証します。あなたの ID はクローンごとに SSH 経由でトンネリングされ、サーバーには何も保存されません。",
+      "forwardOffHint": "現在はローカルビルドのみです。「ビルドサーバーに git ID を転送する」をオンにすると、リモートサーバーのデプロイにも gh CLI を使用できます。",
+      "manageForward": "転送を管理",
+      "disconnectBody": "Openship はこのインスタンスからこの認証情報を削除し、クローンへの使用を停止します。GitHub で取り消すまで GitHub 上では有効なままです。いつでも再接続できます。",
+      "recheck": "再確認"
+    },
+    "replaceToken": "GitHubトークンを置き換える",
+    "clearToken": "保存済みトークンを削除",
+    "tokenEditorDescription": "GitHubの個人アクセストークンを使用して、リポジトリの閲覧やこのインスタンスでのビルドを行います。",
+    "methodTokenDesc": "GitHubトークンを使用して、リポジトリの閲覧やローカルビルドを行います。",
+    "activeVia": "{method} 経由で接続中",
+    "pickMethod": "Openship がリポジトリにアクセスする方法を選択してください。",
+    "methodDevice": "GitHub サインイン",
+    "methodApp": "GitHub App",
+    "methodAppDesc": "ローカルおよびリモートデプロイ用の、スコープ制限された短期間のインストールトークン。",
+    "methodSshDesc": "各サーバーにデプロイキーを登録します（「サーバー」→「GitHub」）。",
+    "signIn": "GitHub でサインイン",
+    "signInDesc": "デバイスコードを使用したブラウザサインイン。登録不要で、サーバーへの SSH も不要です。",
+    "changeMethod": "方法を変更",
+    "otherMethods": "その他の方法",
+    "openGithub": "GitHub を開く",
+    "copyCode": "クリックしてコピー",
+    "tokenConnect": "接続",
+    "tokenGhHint": "既にサーバー上でログイン済み:",
+    "tokenSaveFailed": "トークンを保存できませんでした。",
+    "forwardOffHint": "ローカルビルドのみ。「ビルドサーバーに git ID を転送する」をオンにすると、リモートサーバーのデプロイにも使用できます。",
+    "remoteCredentialHint": "このホスト上で実行されるリポジトリ閲覧およびビルドに使用されます。リモートサーバー上でビルドするデプロイではそのサーバー自身の認証情報が使用されます — サーバーごとにデプロイキーまたはトークンを追加してください。",
+    "methodToken": "GitHub トークン",
+    "methodHostCli": "このホスト上の gh CLI",
+    "manageTokensOnGithub": "GitHub でトークンを管理",
+    "manageAccessOnGithub": "GitHub でアクセス権を管理",
+    "disconnectScopeNote": "切断すると、Openship からこの認証情報が削除され、クローンへの使用が停止されます。GitHub 上で取り消すまでは有効なままです。",
+    "credentialRejected": "GitHub は保存された {method} を拒否しました。",
+    "credentialRejectedImpact": "取り消されたか、有効期限が切れたか、必要なスコープが失われました。これを使用してクローンするデプロイは、以下で再接続するまで失敗し続けます。",
+    "credentialUnreachable": "保存された {method} を確認するために GitHub に接続できませんでした。",
+    "credentialUnreachableImpact": "これは通常、認証情報の問題ではなくネットワークの問題です — Openship は引き続きこれを使用します。GitHub に接続できない場合、再接続しても解決しません。",
+    "credentialCheckedAt": "最終確認 {time}"
   },
   "deployDefaults": {
     "title": "デプロイのデフォルト",
@@ -219,9 +327,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub クローン認証情報",
-    "description": "GitHub App がインストールされていない場合に、プライベートリポジトリのクローンに使用する個人用トークン",
+    "description": "プライベートリポジトリへの個人アクセス。",
     "loading": "読み込み中…",
-    "intro": "GitHub の個人用アクセストークン（クラシックまたはファイングレインド）を貼り付けてください。クローンモジュールはこれを 2 番目に優先される認証情報として使用します - プロジェクトごとの上書きの後、GitHub App のインストールトークンの前です。",
+    "intro": "プロジェクト固有のトークンが優先されます。有効にすると、このトークンは GitHub App の認証情報より先に使用されます。無効にしてもトークンは保存されたままです。",
     "placeholder": "ghp_… または github_pat_…",
     "showToken": "トークンを表示",
     "hideToken": "トークンを非表示",
@@ -233,8 +341,12 @@
     "justNow": "たった今",
     "replace": "置き換え",
     "clear": "クリア",
-    "useAsDefault": "デフォルトのクローントークンとして使用",
-    "useAsDefaultDesc": "オンにすると、クローンモジュールはこのトークンをチェーンの 2 番目の階層（プロジェクトごとの上書きの後）として使用します。オフにすると、トークンは保存されますが使用されません - 特定のデプロイでのみ有効にしたい場合に便利です。",
+    "useAsDefault": "デフォルトで使用",
+    "useAsDefaultDesc": "プロジェクトに固有のトークンがない場合に使用します。",
+    "tokenLabel": "個人用アクセストークン",
+    "helpTitle": "トークンの権限と使い方",
+    "forwardGitLabel": "ローカルの GitHub アクセスを転送",
+    "forwardGitDesc": "ローカルの GitHub ログインを SSH 経由でリモートのビルドサーバーと共有します。",
     "toast": {
       "pasteFirst": "保存する前にトークンを貼り付けてください",
       "notLikeToken": "これは GitHub トークンには見えません。確かであればそのまま保存してください。",
@@ -243,7 +355,8 @@
       "cleared": "クローントークンをクリアしました",
       "clearFailed": "トークンのクリアに失敗しました",
       "updateDefaultFailed": "デフォルトの更新に失敗しました"
-    }
+    },
+    "forwardGitFailed": "Git 転送の更新に失敗しました"
   },
   "tokens": {
     "title": "個人用アクセストークン",
@@ -290,7 +403,9 @@
       "revoked": "\"{name}\" を取り消しました",
       "revokeFailed": "トークンの取り消しに失敗しました",
       "loadFailed": "トークンの読み込みに失敗しました"
-    }
+    },
+    "callsOne": " · 1 件の呼び出し",
+    "callsMany": " · {count} 件の呼び出し"
   },
   "mcp": {
     "title": "MCP",
@@ -319,13 +434,30 @@
     "allResources": "すべてのリソース",
     "resourcesOne": "{count} 件のリソース",
     "resourcesMany": "{count} 件のリソース",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "{date} に認可済み",
     "lastUsedSuffix": " · 最終使用 {date}",
     "toast": {
       "disconnected": "MCP クライアントを切断しました",
       "disconnectFailed": "切断に失敗しました"
-    }
+    },
+    "callsOne": " · 1 件の呼び出し",
+    "callsMany": " · {count} 件の呼び出し",
+    "editAccess": "アクセス権を編集",
+    "viewActivity": "アクティビティ",
+    "editScopeTitle": "{client} のアクセス権",
+    "editScopeSubtitle": "変更はエージェントの次のリクエスト時に適用されます — 再接続は不要です。",
+    "editScopeOrg": "{org} 内",
+    "wasNResourcesOne": "現在 1 つのリソース",
+    "wasNResourcesMany": "現在 {count} 個のリソース",
+    "saveScope": "アクセス権を保存",
+    "scopeSaved": "アクセス権を更新しました",
+    "scopeSaveFailed": "アクセス権を更新できませんでした",
+    "loadScopeFailed": "このクライアントのアクセス権を読み込めませんでした",
+    "scopeGrantRejected": "{resource} へのアクセス権を付与できなくなったため削除されました。続行するには再度保存してください。",
+    "confirmWidenTitle": "すべての制限を解除します",
+    "confirmWidenBody": "エージェントは直ちにあなたの全権限で動作します。確認するにはもう一度押してください。",
+    "confirmWidenAction": "すべての制限を解除"
   },
   "team": {
     "heading": "チーム",
@@ -375,7 +507,31 @@
       "deleteBody": "このワークスペースとその中のすべてを完全に削除します。",
       "leaveBody": "このワークスペースから退出します — 戻るには新しい招待が必要です。",
       "deleteConfirm": "このワークスペースを削除しますか？プロジェクト、メンバー、設定が全員から削除されます。元に戻せません。",
-      "leaveConfirm": "このワークスペースから退出しますか？再度招待されるまでアクセスできなくなります。"
+      "leaveConfirm": "このワークスペースから退出しますか？再度招待されるまでアクセスできなくなります。",
+      "manage": {
+        "title": "ワークスペースの管理",
+        "sectionBody": "このワークスペースの名前変更、プロジェクトの一時停止、または削除を行います。",
+        "nameLabel": "ワークスペース名",
+        "rename": "名前変更",
+        "projects": "プロジェクト ({count})",
+        "noProjects": "このワークスペースにはプロジェクトがありません。",
+        "running": "実行中",
+        "stopped": "停止中",
+        "pauseTitle": "すべて一時停止",
+        "pauseBody": "すべてのプロジェクトを停止しますが、ワークスペースは保持します — いつでも再開できます。",
+        "pauseButton": "すべてのプロジェクトを停止",
+        "deleteTitle": "ワークスペースを削除",
+        "deleteBody": "すべての {count} 個のプロジェクト（コンテナとルート）を破棄し、ワークスペースを削除します。ボリュームデータは復旧可能な状態で残ります。元に戻すことはできません。",
+        "confirmLabel": "確認のため「{name}」と入力してください",
+        "deleting": "削除中…",
+        "deletingProject": "{name} を削除中…",
+        "deletingWorkspace": "ワークスペースを削除中…",
+        "toastRenamed": "ワークスペース名を変更しました",
+        "toastRenameFailed": "ワークスペース名を変更できませんでした",
+        "toastPaused": "{count} 件のプロジェクトを停止しました",
+        "toastPauseFailed": "一部のプロジェクトを停止できませんでした",
+        "toastProjectFailed": "{name} を削除できませんでした"
+      }
     },
     "toast": {
       "teamNameRequired": "チーム名は必須です",
@@ -393,6 +549,17 @@
       "deleted": "ワークスペースを削除しました",
       "leaveFailed": "ワークスペースから退出できませんでした",
       "left": "ワークスペースから退出しました"
+    },
+    "reachability": {
+      "description": "チームメンバーがこのワークスペースにアクセスするには公開 URL が必要です。",
+      "notInstalledTitle": "Openship に公開アドレスを設定",
+      "notInstalledBody": "Openship はまだ公開 URL で設定されていません。公開アドレスを指定してデプロイし（例: `openship up --public-url …`）、ここにドメインを追加してチームメンバーがアクセスできるようにしてください。",
+      "noDomainTitle": "Openship にドメインを追加",
+      "noDomainBody": "チームメンバーがこのワークスペースにアクセスできるように Openship アプリにドメインを追加してください — 稼働すると招待機能が自動的に有効になります。",
+      "addDomain": "ドメインを追加",
+      "pendingTitle": "ドメインの設定を完了してください",
+      "pendingBody": "Openship ドメインは検証待機中です (DNS / SSL)。稼働すると招待機能が有効になります。",
+      "viewDomain": "ドメインを表示"
     }
   },
   "inviteMember": {
@@ -423,7 +590,27 @@
       "invitationLinkCreated": "招待リンクを作成しました — 保留中の招待からコピーしてください",
       "personalOrgBlocked": "個人用ワークスペースではメンバーを招待できません。まずチーム組織を作成してから招待を送信してください。",
       "updateMailSourceFailed": "メールソースの更新に失敗しました"
-    }
+    },
+    "delivery": "送信方法",
+    "emailDelivery": "メール",
+    "linkDelivery": "リンクをコピー",
+    "emailDeliveryHint": "このインスタンスに設定されたメールサービスで送信します。",
+    "linkDeliveryHint": "この相手に直接共有するリンクを作成します。",
+    "checkingEmail": "メール送信を確認中…",
+    "emailUnavailable": "メール送信が未設定です。リンクを共有できます。",
+    "linkReady": "招待リンクを作成しました",
+    "emailSent": "招待メールを送信しました",
+    "recipientHint": "この招待を承認できるのは {email} のみです。",
+    "invitationLink": "招待リンク",
+    "manageLinkHint": "保留中の招待から、このリンクを管理または取り消せます。",
+    "mailReady": "準備完了",
+    "mailNotSetUp": "未設定",
+    "cloudReady": "接続済み",
+    "cloudNotReady": "未接続",
+    "noMailSystem": "メールシステムが設定されていないため、招待は送信されません。",
+    "setUpEmail": "メールを設定 →",
+    "cloudNotConnected": "Openship Cloud が接続されていないため、招待を送信できません。",
+    "connectCloud": "Openship Cloud を接続 →"
   },
   "teamWorkspace": {
     "title": "チームワークスペース",
@@ -451,9 +638,88 @@
     "toast": {
       "disconnected": "Openship Cloud から切断しました",
       "disconnectFailed": "切断に失敗しました"
+    },
+    "pitch": {
+      "title": "Openship Cloud を追加",
+      "body": "すべてのプロジェクトが自動 SSL 付きの無料 .{domain} ドメインを取得できます（DNS や証明書の設定は不要）。独自のサーバーも現在とまったく同様に機能し続けます。",
+      "perkDomain": "すべてのプロジェクトで無料の .{domain} ドメイン + 自動 SSL",
+      "perkDeploy": "マネージドクラウドにデプロイ、または独自のサーバーをそのまま利用",
+      "perkServices": "ワンクリックでプロビジョニングされるマネージド Postgres、Redis など",
+      "perkGithub": "独自のアプリを登録することなく GitHub に接続",
+      "noLockIn": "接続は無料。データ等の移行は発生せず、いつでも切断できます。",
+      "viewPricing": "料金プランを見る"
+    },
+    "connectModal": {
+      "title": "Openship Cloud に接続",
+      "requiresConnection": "{feature} には Openship Cloud の接続が必要です。アカウントを接続してロック解除:",
+      "features": {
+        "deployments": "クラウドデプロイ",
+        "infra": "マネージドインフラ",
+        "ssl": "自動SSLとドメイン",
+        "cdn": "グローバルCDN"
+      },
+      "connect": "Openship Cloud に接続",
+      "waitingSignIn": "サインイン待機中…",
+      "maybeLater": "後で"
     }
   },
   "instance": {
+    "location": {
+      "title": "インスタンスの場所",
+      "thisDesktop": "このコンピューター",
+      "thisServer": "このサーバー",
+      "desktopHint": "既存のインスタンスのデータを使うには接続し、常時稼働させるには Openship をサーバーへ移動してください。",
+      "serverHint": "ジョブ、Webhook、チームのアクセスはここで管理されます。",
+      "remoteHint": "リモートインスタンスの最新データを使用しています。",
+      "retiredHint": "このサーバーはプロジェクトを管理していません。再び使うには、ここにインスタンスを移動してください。",
+      "moveToServer": "サーバーに移動",
+      "moveToAnotherServer": "別のサーバーに移動",
+      "moveToDesktop": "Desktopに移動",
+      "returnToDesktop": "Desktopに戻す",
+      "previousServer": "以前のサーバーに移動",
+      "connectExisting": "既存のインスタンスに接続",
+      "reconnect": "再接続",
+      "pairDesktop": "Desktopを接続",
+      "receiveInstance": "ここにインスタンスを移動",
+      "disconnect": "ローカルインスタンスに戻る",
+      "moreOptions": "その他のインスタンス操作",
+      "memberTitle": "DesktopからOpenshipを使う",
+      "memberHint": "ここでのアクセス権限を使ってDesktopを接続します。",
+      "loading": "インスタンスを読み込み中…",
+      "sendHint": "移動コードを作成し、Desktopのインスタンス設定のその他の操作から「{action}」を選択してください。Desktopが引き継ぎを完了するまで、管理はここで行われます。",
+      "connectHint": "インスタンスのアドレスでサインインするか、そのインスタンス設定の「{action}」からコードを取得してください。接続中はローカルインスタンスが一時停止します。",
+      "secureAccount": "インスタンスを保護",
+      "reviewMove": "移動内容を確認",
+      "accountHint": "移動後のログインに使うメールアドレスとパスワードを設定します。転送を開始する前に、移動先をもう一度確認します。",
+      "backToDestination": "移動先に戻る",
+      "continueSetup": "続ける",
+      "pairHint": "別のDesktopから、このインスタンスの最新データを現在の権限で利用できます。データは移動しません。",
+      "pairOwnDevice": "このコードはあなたのアカウントでログインします。他の人を招待するには「チーム」を使ってください。",
+      "teamAccessTitle": "チーム招待を有効にする",
+      "teamAccessHint": "チームへの招待には、アクセス可能なインスタンスが必要です。Openshipに公開アドレスを設定するか、常時稼働するサーバーに移動してください。",
+      "adminRequired": "インスタンス管理者に設定を依頼してください。",
+      "webhookAccessHint": "GitHubがデプロイイベントを送信するには、アクセス可能なOpenship APIが必要です。このインスタンスを常時稼働するサーバーに移動するか、APIに公開アドレスを設定してください。"
+    },
+    "transfer": {
+      "installOnServer": "新規インストール",
+      "existingInstance": "既存のインスタンス",
+      "destinationCodeHint": "移動先で「設定 → インスタンス → {more} → {receive}」を開きます。「{create}」を選んで置き換えを確認し、受信コードをここにコピーしてください。",
+      "destinationCodeLabel": "移動先の受信コード",
+      "receiveDescription": "別のインスタンスのデータをここに移動します。復旧用スナップショットを保存してから、現在のデータを置き換えます。",
+      "pasteMoveCode": "移動コードを貼り付け",
+      "createReceiveCode": "受信コードを作成",
+      "sourceCodeHint": "移動元のサーバーで「設定 → インスタンス → {send} → {create}」を開きます。Desktop をここに移動する場合は、代わりに「{receive}」を選んでください。",
+      "sourceCodeLabel": "移動元の移動コード",
+      "createMoveCode": "移動コードを作成",
+      "connectionCode": "接続コード",
+      "moveCode": "移動コード",
+      "receiveCode": "受信コード",
+      "connectionCodeHint": "もう一台の Desktop で「設定 → インスタンス → {connect}」を開き、「{useCode}」を選んでください。",
+      "moveCodeHint": "受信側の Desktop で「設定 → インスタンス → {more} → {receive}」を開きます。「{paste}」を選んでこのコードを貼り付けてください。",
+      "receiveCodeHint": "移動元で「設定 → インスタンス → {move}」または「{another}」を開き、「{existing}」を選びます。ここで作成した受信コードを貼り付けてください。",
+      "codeExpiry": "10 分後に失効します。このコードは他人に共有しないでください。",
+      "replaceDestinationConfirmation": "すべてのワークスペース、ユーザー、認証情報を移動先に転送します。復旧用スナップショットを保存してから、移動先の既存データを置き換えます。"
+    },
     "title": "インスタンス",
     "descDesktop": "デスクトップアプリ",
     "descCloud": "クラウド",
@@ -466,11 +732,37 @@
     "authCloud": "クラウド認証",
     "authLocal": "ローカル認証",
     "localUser": "ローカルユーザー",
-    "change": "変更"
+    "change": "変更",
+    "connection": {
+      "title": "インスタンスに接続",
+      "description": "アドレスを入力して、自分のアカウントでログインします。",
+      "address": "インスタンスURL",
+      "addressHint": "チームの招待リンクも使用できます。接続中はローカルインスタンスが一時停止します。",
+      "codeTitle": "接続コードを使用",
+      "codeDescription": "別の端末でログイン済みの場合、そのインスタンスで「設定 → インスタンス → {action}」を開いてください。",
+      "codeLabel": "接続コード",
+      "codeHint": "自分のアカウントのコードを使用してください。有効期限は10分で、本人としてログインします。",
+      "continue": "ログインに進む",
+      "connectCode": "このDesktopを接続",
+      "connecting": "接続中…",
+      "useCode": "代わりに接続コードを使用",
+      "useAddress": "インスタンスURLを使用",
+      "invalidAddress": "認証情報や追加パラメーターを含まない、HTTPSのインスタンスURLまたは招待リンクを入力してください。",
+      "invitationTitle": "この招待を開く",
+      "invitationDescription": "{instance} に接続し、参加する前にワークスペースとロールを確認します。",
+      "reviewInvitation": "招待を確認",
+      "invitationHint": "接続中はローカルインスタンスが一時停止します。データは移動しません。"
+    },
+    "recovery": {
+      "title": "あなたのOpenshipインスタンス",
+      "subtitle": "プロジェクトの管理を続けるには、移行を完了するか再接続してください。",
+      "checkConnection": "接続を確認",
+      "signInRemote": "リモートインスタンスにサインイン"
+    }
   },
   "upgradeAuth": {
     "title": "パスワードを追加",
-    "description": "このゼロ認証インスタンスを、実際のメールアドレス + パスワードによるログインに昇格させます。プロジェクトと履歴はそのまま保持されます。",
+    "description": "メールアドレスとパスワードを設定してOpenshipへのアクセスを保護します。プロジェクトと履歴は保持されます。",
     "close": "閉じる",
     "name": "名前",
     "namePlaceholder": "山田 太郎",
@@ -488,9 +780,29 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "配信履歴",
+      "description": "すべてのチャンネルの配信履歴。",
+      "page": "ページ {page}",
+      "refresh": "更新",
+      "loading": "配信を読み込み中…",
+      "error": "配信履歴を読み込めませんでした。更新して再試行してください。",
+      "empty": "最近の配信はありません。",
+      "attempts": "試行回数: {count}",
+      "errorDetails": "エラーの詳細",
+      "unknownCategory": "不明なイベント",
+      "unknownChannel": "不明なチャンネル",
+      "status": {
+        "sent": "送信済み",
+        "queued": "待機中",
+        "sending": "送信中",
+        "failed": "失敗",
+        "seen": "確認済み"
+      }
+    },
     "channels": {
       "title": "配信チャンネル",
-      "description": "通知の送信先です。検証済みのチャンネルは到達可能で、未検証のものはスキップされます。",
+      "description": "有効かつ検証済みのチャネルはアラートを受信できます。テストを送信して配信を確認してください。",
       "empty": "チャンネルはまだありません。通知の受信を開始するには追加してください。",
       "verified": "検証済み",
       "unverified": "未検証",
@@ -500,7 +812,11 @@
       "addChannel": "チャンネルを追加",
       "confirmDelete": "このチャンネルを削除しますか？これを使用しているサブスクリプションは停止します。",
       "channelRemoved": "チャンネルを削除しました",
-      "channelAdded": "チャンネルを追加しました"
+      "channelAdded": "チャンネルを追加しました",
+      "enabled": "有効",
+      "disabled": "無効",
+      "edit": "編集",
+      "updated": "チャネルを更新しました"
     },
     "describe": {
       "slackWebhook": "Slack Webhook",
@@ -529,7 +845,22 @@
       "telegramHint": "@BotFather でボットを作成し、返信を許可するためにボットにメッセージを送る（またはグループに追加する）必要があります。",
       "adding": "追加中…",
       "addChannel": "チャンネルを追加",
-      "labelRequired": "ラベルは必須です"
+      "labelRequired": "ラベルは必須です",
+      "channelType": "チャネルの種類",
+      "labels": {
+        "name": "名前",
+        "address": "メールアドレス",
+        "url": "Webhook の URL",
+        "botToken": "ボットトークン",
+        "chatId": "チャットID"
+      },
+      "saving": "保存中…",
+      "editHint": "認証情報を空欄にすると保存済みのシークレットを保持します。送信先の変更後は再テストが必要です。",
+      "signingSecret": "署名シークレット",
+      "secretHint": "Webhookの署名を検証するため、このシークレットを今コピーしてください。表示されるのは一度だけです。",
+      "noEmailTransport": "このインスタンスにはメールサーバーが設定されていないため、メール通知は送信されません。",
+      "setUpSmtp": "SMTP を設定 →",
+      "otherAddress": "その他のアドレス…"
     },
     "subscriptions": {
       "title": "通知を受け取る対象",
@@ -538,13 +869,173 @@
       "allTab": "すべて",
       "eventHeader": "イベント",
       "cellAria": "{channel} 経由の {category}",
-      "notifyMe": "通知"
+      "notifyMe": "通知",
+      "search": "アラートを検索",
+      "noResults": "一致するアラートはありません。"
     },
     "orgDefaults": {
       "title": "組織のデフォルト",
-      "description": "新しいメンバーがこの組織に参加したときに適用されるデフォルトです。メンバーはチャンネルごとに上書きできます。",
+      "description": "メンバーがアラートについて明示的に選択していない場合、組織の既定値が適用されます。メンバーは自分の設定で上書きできます。",
       "notifyAria": "{category} で通知",
       "nChannels": "{n} 個のチャネル"
+    },
+    "overview": {
+      "title": "通知",
+      "description": "チャネルはアカウントに属し、組織間で共有されます。アラート設定と既定値は現在の組織に適用されます。",
+      "ready": "{total} チャネル中 {count} 件が利用可能",
+      "preferences": "アラート設定",
+      "configuration": "チャンネルとアラート",
+      "retry": "再試行"
+    },
+    "groups": {
+      "deployment": "デプロイ",
+      "app_health": "アプリの健全性",
+      "backups": "バックアップ",
+      "jobs": "ジョブ",
+      "actions": "アクション",
+      "domains": "ドメインと SSL",
+      "members": "メンバー",
+      "mail": "メール",
+      "billing": "請求",
+      "security": "セキュリティ"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "デプロイ失敗",
+        "description": "ビルドまたはデプロイでエラーが発生しました。エラーメッセージとログを送信します。"
+      },
+      "deploy.succeeded": {
+        "label": "デプロイ成功",
+        "description": "本番環境へのデプロイが成功するたびに通知します。既定ではオフです。"
+      },
+      "deploy.cancelled": {
+        "label": "デプロイキャンセル",
+        "description": "実行中のデプロイがあなたまたは他のメンバーによってキャンセルされました。"
+      },
+      "service.down": {
+        "label": "アプリ停止",
+        "description": "実行中であるべきコンテナが停止またはメモリ不足 (OOM) で終了しました。"
+      },
+      "service.crash_loop": {
+        "label": "アプリクラッシュループ",
+        "description": "コンテナが再起動を繰り返しています。"
+      },
+      "service.unhealthy": {
+        "label": "アプリ異常",
+        "description": "コンテナは起動していますがヘルスチェックに失敗しています。"
+      },
+      "service.recovered": {
+        "label": "アプリ復旧",
+        "description": "障害が解消され、コンテナが再び健全な状態に戻りました。"
+      },
+      "server.unreachable": {
+        "label": "サーバー到達不能",
+        "description": "サーバーの Docker デーモンに接続できません。"
+      },
+      "backup.failed": {
+        "label": "バックアップ失敗",
+        "description": "定期または手動バックアップの実行でエラーが発生しました。"
+      },
+      "backup.succeeded": {
+        "label": "バックアップ成功",
+        "description": "各バックアップが成功したとき。"
+      },
+      "backup.restore_completed": {
+        "label": "復元完了",
+        "description": "復元が完了（または失敗）しました。"
+      },
+      "job.run.failed": {
+        "label": "ジョブ失敗",
+        "description": "定期または手動ジョブの実行でエラーが発生しました。"
+      },
+      "job.run.succeeded": {
+        "label": "ジョブ成功",
+        "description": "各ジョブの実行が成功したとき。"
+      },
+      "job.run.started": {
+        "label": "ジョブ開始",
+        "description": "ジョブの実行が開始されました。"
+      },
+      "action.run.failed": {
+        "label": "アクション失敗",
+        "description": "GitHub Actions ワークフローの実行が失敗またはキャンセルされました。"
+      },
+      "action.run.succeeded": {
+        "label": "アクション成功",
+        "description": "GitHub Actions ワークフローの各実行が成功したとき。"
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL 証明書の期限切れ間近",
+        "description": "ドメインの証明書を更新できず、有効期限が近づいています。"
+      },
+      "member.invited": {
+        "label": "メンバー招待",
+        "description": "組織に新しいメンバーが招待されました。"
+      },
+      "member.joined": {
+        "label": "メンバー参加",
+        "description": "メンバーが招待を承認して参加しました。"
+      },
+      "member.removed": {
+        "label": "メンバー削除",
+        "description": "メンバーが組織を退出したか削除されました。"
+      },
+      "mail.dns_unverified": {
+        "label": "メールの DNS 未確認",
+        "description": "メールドメインの DNS レコードが不足または正しくありません。"
+      },
+      "mail.queue_backed_up": {
+        "label": "メールキュー滞留",
+        "description": "送信メールキューが異常に増加しているか再試行しています。"
+      },
+      "billing.quota_warning": {
+        "label": "クォータ警告",
+        "description": "リソース制限または利用上限に近づいています。"
+      },
+      "billing.invoice_paid": {
+        "label": "請求書支払い完了",
+        "description": "サブスクリプションの請求書が正常に支払われました。"
+      },
+      "billing.payment_failed": {
+        "label": "支払い失敗",
+        "description": "サブスクリプションの支払いに失敗しました。"
+      },
+      "domain.expiring": {
+        "label": "SSL証明書の有効期限切れ間近",
+        "description": "日次チェック — カスタムドメイン証明書の有効期限が7日未満で、更新処理がホストに接続できない場合に通知します。"
+      },
+      "domain.verification_failed": {
+        "label": "ドメイン検証失敗",
+        "description": "ドメインの初期設定時にDNSチェックに合格しませんでした。"
+      },
+      "member.added": {
+        "label": "新しいメンバーが参加しました",
+        "description": "招待が承認され、新しいメンバーがこの組織に参加しました。"
+      },
+      "invitation.sent": {
+        "label": "招待状を送信しました",
+        "description": "管理者が新しいメンバーに招待を送信しました。セキュリティシグナルとして役立ちます。"
+      },
+      "mail.inbound_received": {
+        "label": "監視対象アドレスにメールが到着",
+        "description": "通知ルールのいずれかが監視しているメールボックスまたはドメインにメッセージが届きました。"
+      },
+      "action.run.cancelled": {
+        "label": "ワークフローがキャンセルされました",
+        "description": "Actions ワークフローの実行がキャンセルされました。"
+      },
+      "billing.alert": {
+        "label": "請求アラート",
+        "description": "支払いの失敗、プラン制限への到達、または請求書の期限超過。常に請求管理者に通知します。"
+      },
+      "quota.warning": {
+        "label": "クォータ警告",
+        "description": "プランの制限（ストレージ、デプロイ、メンバー）に近づいています。エラーが発生する前の事前通知です。"
+      },
+      "security.advisory": {
+        "label": "セキュリティ情報",
+        "description": "Openship またはデプロイ済みサービスに影響するセキュリティ情報です。原因と利用可能な更新を含みます。"
+      }
     }
   },
   "audit": {
@@ -587,7 +1078,9 @@
       "today": "今日",
       "last7": "過去 7 日間",
       "last30": "過去 30 日間",
-      "last90": "過去 90 日間"
+      "last90": "過去 90 日間",
+      "anyAgent": "任意のエージェント",
+      "agentCalls": "{count} 件のイベント"
     },
     "tabs": {
       "all": "すべて"
@@ -611,7 +1104,190 @@
       "when": "日時",
       "cameFrom": "経路",
       "technical": "技術的な詳細",
-      "eventType": "イベントタイプ"
+      "eventType": "イベントタイプ",
+      "viaAgent": "エージェント"
+    },
+    "categories": {
+      "deployments": "デプロイ",
+      "apps": "アプリとサービス",
+      "domains": "ドメインと SSL",
+      "servers": "サーバー",
+      "members": "メンバーとアクセス",
+      "agent": "AI エージェント",
+      "security": "セキュリティ",
+      "billing": "請求",
+      "system": "システム"
+    },
+    "events": {
+      "server:write": {
+        "action": "サーバーを変更しました",
+        "label": "サーバー変更"
+      },
+      "server:admin": {
+        "action": "サーバーで管理者アクションを実行しました",
+        "label": "サーバー管理者操作"
+      },
+      "server:add": {
+        "action": "サーバーを追加しました",
+        "label": "サーバー追加"
+      },
+      "server:remove": {
+        "action": "サーバーを削除しました",
+        "label": "サーバー削除"
+      },
+      "settings:write": {
+        "action": "設定を変更しました",
+        "label": "設定変更"
+      },
+      "settings:admin": {
+        "action": "設定で管理者アクションを実行しました",
+        "label": "設定管理者操作"
+      },
+      "project:create": {
+        "action": "作成しました",
+        "label": "プロジェクト作成"
+      },
+      "project:write": {
+        "action": "変更しました",
+        "label": "プロジェクト変更"
+      },
+      "project:delete": {
+        "action": "削除しました",
+        "label": "プロジェクト削除"
+      },
+      "deployment:start": {
+        "action": "デプロイを開始しました",
+        "label": "デプロイ開始"
+      },
+      "deployment:success": {
+        "action": "デプロイしました",
+        "label": "デプロイ成功"
+      },
+      "deployment:failed": {
+        "action": "デプロイに失敗しました",
+        "label": "デプロイ失敗"
+      },
+      "deployment:cancelled": {
+        "action": "デプロイをキャンセルしました",
+        "label": "デプロイキャンセル"
+      },
+      "domain:add": {
+        "action": "ドメインを追加しました",
+        "label": "ドメイン追加"
+      },
+      "domain:remove": {
+        "action": "ドメインを削除しました",
+        "label": "ドメイン削除"
+      },
+      "domain:verify": {
+        "action": "ドメインを検証しました",
+        "label": "ドメイン検証"
+      },
+      "member:add": {
+        "action": "追加しました",
+        "label": "メンバー追加"
+      },
+      "member:remove": {
+        "action": "削除しました",
+        "label": "メンバー削除"
+      },
+      "terminal:write": {
+        "action": "ターミナルを開きました：",
+        "label": "ターミナルセッション開始"
+      },
+      "deployment:write": {
+        "action": "のデプロイを開始しました:",
+        "actionWithoutResource": "デプロイを開始しました",
+        "label": "デプロイアクション",
+        "description": "デプロイエンドポイントが呼び出されました（開始、再試行、ロールバック、昇格）。"
+      },
+      "deployment:admin": {
+        "action": "のデプロイで管理者アクションを実行しました:",
+        "actionWithoutResource": "デプロイで管理者アクションを実行しました",
+        "label": "デプロイ管理者アクション",
+        "description": "デプロイで管理者アクションが呼び出されました。"
+      },
+      "job:write": {
+        "action": "ジョブを変更しました",
+        "actionWithoutResource": "ジョブを変更しました",
+        "label": "ジョブ変更",
+        "description": "スケジュールまたはカスタムジョブが作成、編集、実行、または削除されました。"
+      },
+      "notification_default.updated": {
+        "action": "の通知デフォルトを変更しました",
+        "actionWithoutResource": "通知デフォルトを変更しました",
+        "label": "通知デフォルト変更",
+        "description": "組織のデフォルトの通知ルーティングが更新されました。"
+      },
+      "notification_channel.created": {
+        "action": "通知チャンネルを追加しました",
+        "actionWithoutResource": "通知チャンネルを追加しました",
+        "label": "通知チャンネル追加"
+      },
+      "notification_channel.updated": {
+        "action": "通知チャンネルを更新しました",
+        "actionWithoutResource": "通知チャンネルを更新しました",
+        "label": "通知チャンネル更新"
+      },
+      "notification_channel.deleted": {
+        "action": "通知チャンネルを削除しました",
+        "actionWithoutResource": "通知チャンネルを削除しました",
+        "label": "通知チャンネル削除"
+      },
+      "notification_subscription.updated": {
+        "action": "への通知先設定を変更しました",
+        "actionWithoutResource": "通知ルーティングを変更しました",
+        "label": "通知ルーティング変更"
+      },
+      "notification_subscription.deleted": {
+        "action": "への通知を停止しました",
+        "actionWithoutResource": "通知を停止しました",
+        "label": "通知停止"
+      },
+      "notification_delivery.seen": {
+        "action": "既読にしました",
+        "actionWithoutResource": "既読にしました",
+        "label": "アラートを既読に設定"
+      },
+      "notifications:write": {
+        "action": "通知を変更しました",
+        "actionWithoutResource": "通知を変更しました",
+        "label": "通知変更"
+      },
+      "notifications:admin": {
+        "action": "通知の管理者アクションを実行しました",
+        "actionWithoutResource": "通知の管理者アクションを実行しました",
+        "label": "通知管理者アクション"
+      },
+      "job_run.started": {
+        "action": "ジョブを開始しました",
+        "actionWithoutResource": "ジョブを開始しました",
+        "label": "ジョブ開始"
+      },
+      "job_run.succeeded": {
+        "action": "ジョブを正常に実行しました",
+        "actionWithoutResource": "ジョブを正常に実行しました",
+        "label": "ジョブ成功"
+      },
+      "job_run.failed": {
+        "action": "失敗したジョブを実行しました",
+        "actionWithoutResource": "失敗したジョブを実行しました",
+        "label": "ジョブ失敗"
+      },
+      "issues.history.clear": {
+        "action": "解決済みの監視履歴を消去しました",
+        "actionWithoutResource": "解決済みの監視履歴を消去しました",
+        "label": "監視履歴を消去"
+      }
+    },
+    "resourceLabels": {
+      "project": "アプリ",
+      "service": "サービス",
+      "container": "コンテナ",
+      "deployment": "デプロイ",
+      "domain": "ドメイン",
+      "server": "サーバー",
+      "settings": "設定"
     }
   },
   "updates": {
@@ -713,7 +1389,43 @@
       "rowsRestored": "{count} 行を復元しました",
       "secretsRestored": "{count} 件のシークレットを復元しました",
       "secretsNotRestored": "シークレットは復元されませんでした（パスフレーズなし / 誤り） — 認証情報を再入力してください"
-    }
+    },
+    "backupTitle": "バックアップと復元",
+    "backupDesc": "ファイルをエクスポートするか、既存のバックアップを復元します。",
+    "backupWarning": "アーカイブファイルには Openship データベースと資格情報が含まれます。Docker ボリュームの内容はサーバーに残ります。サービスデータにはプロジェクトバックアップを使用してください。",
+    "exportInstanceTitle": "インスタンスまたはプロジェクトのエクスポート",
+    "exportInstanceDesc": "完全なインスタンスまたは選択したプロジェクトを、環境と依存関係を含めてエクスポートします。",
+    "exportProjectTitle": "プロジェクトのエクスポート",
+    "exportProjectDesc": "すべてのプロジェクト設定、環境変数、資格情報を JSON 形式でダウンロードします。",
+    "exportProjectIntro": "すべての環境、サービス、デプロイ履歴、アナリティクス、接続、ドメイン、バックアップ設定、環境変数、キーが含まれます。JSON ファイルは暗号化されておらず、パスワードなしでインポートできます。",
+    "exportProjectReconnection": "移行先で既存のワークロードに再接続するには、同じサーバーまたは OpenShip Cloud アカウントが必要です。",
+    "exportInstanceIntro": "コントロールプレーン（環境変数、サーバーキー、資格情報、構成、履歴）をエクスポートします。",
+    "scopeLabel": "エクスポート範囲",
+    "scopeInstance": "インスタンス全体",
+    "scopeProjects": "選択したプロジェクトと環境",
+    "recordsAcrossEnvsIncluded": "{envs} 個の環境にわたる {count} 件のレコードが含まれています。",
+    "checkingExport": "エクスポート内容を確認中…",
+    "downloadExport": "エクスポートをダウンロード",
+    "downloadAgain": "再ダウンロード",
+    "exporting": "エクスポート中…",
+    "exportDownloaded": "エクスポートが完了しました",
+    "exportCompleteToast": "エクスポートをダウンロードしました。移行先の「設定 → インスタンス」からインポートしてください。",
+    "optSecretsLabel": "環境変数、キー、資格情報",
+    "optSecretsDesc": "サーバーキー、インライン Compose 構成、シークレットファイルを含む読み取り可能な JSON として含まれます。",
+    "optLinkedAppsLabel": "連携アプリ",
+    "optLinkedAppsDesc": "選択対象に必要なデータベースおよびストレージプロジェクトを含めます。",
+    "optServersLabel": "関連セルフホストサーバー（推奨）",
+    "optServersDesc": "サーバー接続と Git キーを含めます。インポート時に一致する既存サーバーを再利用できます。",
+    "optDomainsLabel": "ドメインとルーティング",
+    "optBackupsLabel": "バックアップ構成",
+    "optBackupsDesc": "ポリシーと送信先。バックアップデータはストレージに残ります。",
+    "optIntegrationsLabel": "共有連携",
+    "optIntegrationsDesc": "Git プロバイダーアプリ、レジストリログイン、ワークスペース DNS 資格情報。",
+    "historyOptionsSummary": "履歴オプション · {total} 件中 {count} 件が含まれています",
+    "recordsSelected": "{count} 件のレコードが選択されました。",
+    "recordsAcrossEnvsSelected": "{envs} 個の環境にわたる {count} 件のレコードが選択されました。",
+    "selectAtLeastOne": "少なくとも 1 つのプロジェクトまたは環境を選択してください。",
+    "cloudNotice": "移行先のワークスペースが同じ Openship Cloud アカウントに接続されるまで、Cloud プロジェクトは動作しません。"
   },
   "migrate": {
     "chooseTitle": "マルチユーザーモードに移行",
@@ -886,6 +1598,188 @@
       "deleteFailed": "認証情報を削除できませんでした",
       "verifyOk": "プロバイダーが認証情報を受け入れました",
       "verifyFailed": "プロバイダーが認証情報を拒否しました"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "コンテナレジストリ",
+        "summary": "デプロイ時にレジストリからプライベートイメージを取得します。",
+        "selector": {
+          "label": "レジストリホスト",
+          "help": "イメージ参照に表示されるホスト — ghcr.io、registry.example.com:5000、またはDocker Hubのdocker.io。"
+        },
+        "fields": {
+          "username": {
+            "label": "ユーザー名"
+          },
+          "secret": {
+            "label": "パスワードまたはアクセストークン",
+            "help": "アカウントのパスワードよりも、読み取り専用スコープのトークンを推奨します。"
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "カスタムドメインに必要なDNSレコードを手動で貼り付ける代わりに、Openshipが自動登録します。",
+        "fields": {
+          "apiToken": {
+            "label": "APIトークン",
+            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。"
+          }
+        }
+      }
     }
+  },
+  "accountSecurity": {
+    "title": "二要素認証",
+    "description": "認証アプリとリカバリーコードでアカウントを保護します。",
+    "enabled": "有効",
+    "notEnabled": "未設定",
+    "loginHint": "パスワード、ソーシャルアカウント、パスキーでのログイン後に、追加の認証が必要です。",
+    "passwordNeeded": "二要素認証を管理するにはパスワードを追加してください。ソーシャルログインも引き続き利用できます。",
+    "passwordHint": "認証アプリを設定するため、パスワードを確認してください。",
+    "enable": "二要素認証を設定",
+    "disable": "二要素認証を無効化",
+    "disableHint": "二要素認証を無効にするにはパスワードを確認してください。リカバリーコードも使えなくなります。",
+    "regenerate": "コードを再発行",
+    "regenerateHint": "パスワードを確認してください。新しいコードはすべての古いコードに置き換わります。",
+    "recoveryCodes": "リカバリーコード",
+    "password": "現在のパスワード",
+    "newPassword": "新しいパスワード",
+    "confirmPassword": "パスワードを確認",
+    "passwordMismatch": "パスワードが一致しません。",
+    "addPassword": "パスワードを追加",
+    "passwordAdded": "パスワードを追加しました。二要素認証を設定できます。",
+    "continue": "次へ",
+    "verify": "確認して有効化",
+    "cancel": "キャンセル",
+    "done": "完了",
+    "retry": "再試行",
+    "loading": "アカウントのセキュリティを読み込み中…",
+    "loadFailed": "アカウントのセキュリティを読み込めませんでした。再試行してください。",
+    "failed": "アカウントのセキュリティを更新できませんでした。再試行してください。",
+    "enabledMessage": "二要素認証を有効にしました。",
+    "disabledMessage": "二要素認証を無効にしました。",
+    "scanHint": "認証アプリでこのコードを読み取り、表示された6桁のコードを入力してください。認証後に設定が完了します。",
+    "scanTitle": "認証アプリ設定用QRコード",
+    "manualKey": "または設定キーを手動で入力",
+    "copyKey": "設定キーをコピー",
+    "code": "認証コード",
+    "saveCodes": "リカバリーコードを保存",
+    "codesHint": "安全な場所に保管してください。各コードは認証アプリの代わりに1回だけ使えます。再発行すると古いコードはすべて無効になります。",
+    "copyCodes": "コードをコピー",
+    "download": "ダウンロード",
+    "savedCodes": "リカバリーコードを保存しました",
+    "copied": "コピーしました。",
+    "copyFailed": "コピーできませんでした。テキストを選択して手動でコピーしてください。",
+    "passkeysTitle": "パスキー",
+    "passkeysDescription": "指紋、顔、端末のPIN、またはセキュリティキーでログインします。",
+    "passkeyName": "パスキー名",
+    "passkeyPlaceholder": "例：自分のノートパソコン",
+    "passkeyDefault": "パスキー",
+    "passkeyAdd": "パスキーを追加",
+    "passkeyUnsupported": "パスキーを追加・使用するには、対応ブラウザーでHTTPS（またはlocalhost）経由でこの画面を開いてください。保存済みパスキーの管理はここでも可能です。",
+    "passkeysEmpty": "パスキーはまだありません。",
+    "passkeyAdded": "パスキーを追加しました。",
+    "passkeyRemoved": "パスキーを削除しました。",
+    "passkeyFailed": "パスキーを更新できませんでした。再試行してください。セッションが期限切れの場合は、先にログインし直してください。",
+    "synced": "同期済みパスキー",
+    "deviceBound": "端末固有のパスキー",
+    "removeNamed": "{name}を削除",
+    "remove": "削除",
+    "removeConfirm": "このパスキーではログインできなくなります。他のログイン方法を確保してください。"
+  },
+  "preferences": {
+    "title": "環境設定",
+    "description": "このブラウザの個人表示設定 — サーバーには何も送信されません。",
+    "demoMode": {
+      "title": "デモモード",
+      "description": "画面共有や録画時にIPアドレス、ホスト名、環境変数の値をぼかします。"
+    }
+  },
+  "productView": {
+    "title": "インターフェース",
+    "description": "このダッシュボードに表示するコントロールプレーン。",
+    "platformLabel": "フルプラットフォーム",
+    "platformDesc": "プロジェクト、アプリ、デプロイ、サーバー — この環境の全機能。",
+    "mailLabel": "メールのみ",
+    "mailDesc": "サイドバーのメール管理画面: ドメイン、メールボックス、DNS、キュー、ログ。",
+    "instanceDefault": "このインスタンスのデフォルトは {mode} です。",
+    "useDefault": "インスタンスのデフォルトを使用"
+  },
+  "mailMode": {
+    "title": "プロダクトモード",
+    "description": "このインスタンスの表示モード。ここでの全ユーザーのデフォルトとなります（各ユーザーは「設定」→「一般」で個別に変更可能）。",
+    "platformLabel": "フルプラットフォーム",
+    "platformDesc": "プロジェクト、アプリ、デプロイ、サーバー — この環境の全機能。",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "インスタンスを Openship Mail としてブランド化し、サイドバーをメール管理画面にします。",
+    "savedOverridden": "保存しました。個人の表示設定は変更されません（「設定」→「一般」で選択済み）。",
+    "errorToast": "プロダクトモードを変更できませんでした。",
+    "envNote": "このインスタンスは環境変数の OPENSHIP_PRODUCT=mail に従っています。ここでモードを選択すると上書きされます。"
+  },
+  "email": {
+    "title": "メール (SMTP)",
+    "description": "このインスタンスがメール送信に使用する SMTP サービス",
+    "intro": "パスワードリセット、メール確認、チームへの招待、通知に使用されます。任意のプロバイダー（Amazon SES、Gmail、Mailgun、企業リレーなど）の SMTP 認証情報（ホスト、ポート、ユーザー名、パスワード）を貼り付けるだけです。サーバーのセットアップは不要で、Openship が直接接続します。パスワードは暗号化され、再表示されることはありません。",
+    "loading": "読み込み中…",
+    "configuredBadge": "設定済み",
+    "notConfigured": "まだ設定されていません — 下記に SMTP 認証情報を入力するまで、パスワードリセット、招待、メール通知は無効のままです。",
+    "providerLabel": "プロバイダー",
+    "hostLabel": "SMTP ホスト",
+    "hostPlaceholder": "smtp.example.com",
+    "portLabel": "ポート",
+    "userLabel": "ユーザー名",
+    "userPlaceholder": "user@example.com",
+    "passwordLabel": "パスワード",
+    "passwordPlaceholder": "SMTP パスワードまたはアプリキー",
+    "passwordKeepPlaceholder": "•••••••• (現在のパスワードを保持する場合は空欄)",
+    "fromLabel": "送信元アドレス (From)",
+    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromHint": "任意。デフォルトはユーザー名です。",
+    "fromHintRequired": "必須 — ユーザー名がメールアドレス形式ではないため、受信者に実際の送信元アドレスが必要です。",
+    "fromRequired": "送信元アドレスを入力してください — このプロバイダーのユーザー名はメールアドレスではないため、送信者になれません。",
+    "fromInvalid": "送信元アドレスには有効なメールアドレスを含める必要があります（例: 名前 <you@example.com>）。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "SMTP 設定を保存しました",
+    "saveFailed": "SMTP 設定を保存できませんでした",
+    "hostRequired": "SMTP ホストを入力してください。",
+    "portInvalid": "ポートは 1 から 65535 の間の数値である必要があります。",
+    "testTitle": "テストメールを送信",
+    "testPlaceholder": "you@example.com",
+    "sendTest": "テスト送信",
+    "sending": "送信中…",
+    "testSent": "テストメールを送信しました — 受信トレイを確認してください。",
+    "testFailed": "テストに失敗しました",
+    "saveFirst": "テストメールを送信する前に SMTP 設定を保存してください。",
+    "disable": "SMTP を無効化してクリア",
+    "disabled": "SMTP を無効化しました",
+    "toastTitle": "メール"
+  },
+  "edgeOrphans": {
+    "title": "未追跡のエッジルート",
+    "description": "このマシンが現在も配信しているが、Openship に記録がないホスト名",
+    "scan": "スキャン",
+    "scanning": "スキャン中…",
+    "allClear": "エッジが配信しているすべてのホスト名が把握されています。",
+    "comparedTo": "{count} 件の追跡対象ホスト名と比較済み。",
+    "unavailable": "エッジを確認できませんでした",
+    "explain": "「Openship からのみ削除」でプロジェクトを削除した場合、そのルートは意図的に実行されたまま残ります。残されたアプリルートはコンテナが削除されると 502 を返しますが、残された静的 (STATIC) ルートは古いファイルを 200 で配信し続けます（そのホスト名がその後別のプロジェクトに割り当てられた場合でも同様です）。",
+    "kindStatic": "静的ファイル",
+    "kindProxy": "アプリルート",
+    "staticWarning": "現在もファイルを配信しています。今日もリクエストに応答しています。",
+    "proxyWarning": "おそらく既に存在しないアップストリームを指しています。",
+    "servingFrom": "配信元",
+    "proxyingTo": "プロキシ先",
+    "alsoAnswers": "次の応答も行っています",
+    "stopServing": "配信を停止",
+    "stopping": "停止中…",
+    "stopped": "{hostname} の配信を停止しました。",
+    "stopFailed": "{hostname} の配信を停止できませんでした",
+    "confirmTitle": "{hostname} の配信を停止しますか？",
+    "confirmBody": "これにより、このホスト名のエッジ設定のみが削除されます。ビルドされたファイルはディスク上に残り、サーバー上の他のものには影響しません。後でプロジェクトがこのホスト名にデプロイされた場合、独自のルートが作成されます。",
+    "confirmCta": "配信を停止",
+    "cancel": "キャンセル",
+    "noReverseProxy": "このマシンでリバースプロキシが検出されませんでした。"
   }
 }

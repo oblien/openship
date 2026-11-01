@@ -47,7 +47,7 @@ vi.mock("@repo/db", () => {
   return { db, schema };
 });
 
-import { provisionUserWithCredential } from "@/lib/provision-user";
+import { provisionUserWithCredential } from "@repo/platform/engine/lib/provision-user";
 
 beforeEach(() => {
   h.committed = [];

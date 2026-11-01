@@ -129,15 +129,15 @@ export function parseVercelConfig(raw: string): VercelConfig | null {
   // `null` file would throw and crash the metadata pipeline (cf. railway.ts).
   if (typeof parsed !== "object" || parsed === null) return null;
   const cfg: VercelConfig = {};
-  const installCommand = trimmed(parsed.installCommand);
-  const buildCommand = trimmed(parsed.buildCommand);
+  const installCommand = typeof parsed.installCommand === "string" ? parsed.installCommand.trim() : undefined;
+  const buildCommand = typeof parsed.buildCommand === "string" ? parsed.buildCommand.trim() : undefined;
   const outputDirectory = trimmed(parsed.outputDirectory);
   const framework = trimmed(parsed.framework)?.toLowerCase();
   const rewrites = parseRewrites(parsed.rewrites);
   const redirects = parseRedirects(parsed.redirects);
   const headers = parseHeaders(parsed.headers);
-  if (installCommand) cfg.installCommand = installCommand;
-  if (buildCommand) cfg.buildCommand = buildCommand;
+  if (installCommand !== undefined) cfg.installCommand = installCommand;
+  if (buildCommand !== undefined) cfg.buildCommand = buildCommand;
   if (outputDirectory) cfg.outputDirectory = outputDirectory;
   if (framework) cfg.framework = framework;
   if (rewrites) cfg.rewrites = rewrites;
@@ -146,6 +146,69 @@ export function parseVercelConfig(raw: string): VercelConfig | null {
   if (typeof parsed.cleanUrls === "boolean") cfg.cleanUrls = parsed.cleanUrls;
   if (typeof parsed.trailingSlash === "boolean") cfg.trailingSlash = parsed.trailingSlash;
   return cfg;
+}
+
+/** Bounded, value-free diagnostics: never echo repository values or secrets. */
+export function vercelCompatibilityWarnings(raw: string): string[] {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return ["vercel.json is not valid JSON; its settings were not imported."];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return ["vercel.json must contain an object; its settings were not imported."];
+  const warnings: string[] = [];
+  for (const key of [
+    "functions",
+    "builds",
+    "routes",
+    "regions",
+    "crons",
+    "env",
+    "build",
+    "fluid",
+  ] as const) {
+    if (!(key in parsed)) continue;
+    warnings.push(
+      `vercel.json ${key} is not implemented by Openship; configure its equivalent explicitly before deploying.`,
+    );
+  }
+  for (const key of ["rewrites", "redirects", "headers"] as const) {
+    const rules = parsed[key];
+    if (
+      Array.isArray(rules) &&
+      rules.some((rule) => rule && typeof rule === "object" && isConditional(rule))
+    )
+      warnings.push(
+        `vercel.json ${key}: conditional has/missing rules are not supported and were not imported.`,
+      );
+  }
+  const recognized = new Set([
+    "$schema",
+    "version",
+    "name",
+    "framework",
+    "installCommand",
+    "buildCommand",
+    "outputDirectory",
+    "rewrites",
+    "redirects",
+    "headers",
+    "cleanUrls",
+    "trailingSlash",
+    "functions",
+    "builds",
+    "routes",
+    "regions",
+    "crons",
+    "env",
+    "build",
+    "fluid",
+  ]);
+  if (Object.keys(parsed).some((key) => !recognized.has(key)))
+    warnings.push("vercel.json contains additional directives that Openship does not implement.");
+  return warnings;
 }
 
 /**
@@ -188,8 +251,8 @@ export const vercelMetadataParser: MetadataParser = {
     const routing = buildRoutingConfig(cfg);
 
     const metadata: DeploymentMetadata = { source: "vercel" };
-    if (cfg.installCommand) metadata.installCommand = cfg.installCommand;
-    if (cfg.buildCommand) metadata.buildCommand = cfg.buildCommand;
+    if (cfg.installCommand !== undefined) metadata.installCommand = cfg.installCommand;
+    if (cfg.buildCommand !== undefined) metadata.buildCommand = cfg.buildCommand;
     if (cfg.outputDirectory) metadata.outputDirectory = cfg.outputDirectory;
     if (framework) metadata.framework = framework;
     if (cfg.rewrites) metadata.rewrites = cfg.rewrites;
@@ -198,7 +261,7 @@ export const vercelMetadataParser: MetadataParser = {
 
     // Nothing actionable → behave as "no metadata" so callers can skip.
     const hasSignal =
-      cfg.installCommand || cfg.buildCommand || cfg.outputDirectory || framework || routing;
+      cfg.installCommand !== undefined || cfg.buildCommand !== undefined || cfg.outputDirectory || framework || routing;
     return hasSignal ? metadata : null;
   },
 };

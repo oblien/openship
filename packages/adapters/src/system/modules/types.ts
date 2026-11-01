@@ -11,6 +11,7 @@
  * at the apply layer, stamp-last so a crash resumes rather than lands "current".
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { FAMILY_BY_DISTRO, type DistroFamily } from "@repo/core";
 
 /** Apply tier. `auto` converges with no operator click (additive/safe changes);
@@ -152,7 +153,8 @@ function shown(value: unknown): string {
   if (value === undefined) return "undefined";
   try {
     return JSON.stringify(value) ?? String(value);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/modules/types");
     return String(value);
   }
 }

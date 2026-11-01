@@ -15,6 +15,25 @@ import { sql } from "drizzle-orm";
 import { organization } from "./organization";
 import { project } from "./project";
 import { servers } from "./servers";
+import type { ExecutionAuthority } from "@repo/core";
+
+/** Only execution identity and storage settings; never SSH credentials or env values. */
+export interface DockerMigrationRecovery {
+  authority?: ExecutionAuthority;
+  worker?: "initial" | "resume" | "cutover";
+  cancelRequested?: boolean;
+  transferRunTag?: string | null;
+  createdProjectId?: string;
+  sourceRunningContainerIds?: Record<string, string>;
+  targetRunningContainerIds?: string[];
+  targetPaths?: string[];
+  sourceProject?: {
+    serverId: string | null;
+    workspaceId: string | null;
+    activeDeploymentId: string | null;
+    services: Array<{ id: string; volumes: string[] | null; namespaceVolumes: boolean }>;
+  };
+}
 
 export const dockerMigrationRun = pgTable(
   "docker_migration_run",
@@ -75,6 +94,8 @@ export const dockerMigrationRun = pgTable(
     /** Snapshot of the sanitized start input, so a `partial` run can be resumed
      *  and a `failed` run can be re-opened pre-filled (edit & retry). */
     inputSnapshot: jsonb("input_snapshot").$type<Record<string, unknown> | null>(),
+    /** Durable checkpoints shared by rollback, resume and replica-safe recovery. */
+    recovery: jsonb("recovery").$type<DockerMigrationRecovery>().notNull().default({}),
     /** Volume names this run WROTE on the TARGET (cross-server). After a failed
      *  deploy the rollback leaves these copies behind (never wipes data blindly);
      *  the user can opt to remove them so a retry starts clean instead of hitting

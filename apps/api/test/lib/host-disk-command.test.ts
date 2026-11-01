@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { errorReporter, type ErrorEvent } from "@repo/core/diagnostics";
+
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({ cacheStore: async () => ({ get: async () => undefined }) }));
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({ resolveServerExecutor: async () => { throw new Error("host unreachable"); } }));
+vi.mock("@repo/platform/engine/lib/server-execution", () => ({ withServerExecution: vi.fn() }));
 
 /**
  * The disk probe is the one place in the capacity path that shells out (free
@@ -12,7 +18,7 @@ import { fileURLToPath } from "node:url";
  * proving anything about the real command string.
  */
 const src = readFileSync(
-  fileURLToPath(new URL("../../src/lib/host-disk.ts", import.meta.url)),
+  fileURLToPath(new URL("../../../../packages/platform/src/engine/lib/host-disk.ts", import.meta.url)),
   "utf8",
 );
 
@@ -32,7 +38,8 @@ describe("host-disk probe", () => {
 
   it("execs exactly one command, and only that constant", () => {
     const execCalls = [...src.matchAll(/\.exec\(([^)]*)\)/g)].map((m) => m[1].trim());
-    expect(execCalls).toEqual(["DISK_COMMAND"]);
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]).toMatch(/^DISK_COMMAND(?:, \{ timeout: \d+_?\d* \})?$/);
   });
 
   it("gates on CLOUD_MODE before resolving any executor", () => {
@@ -44,7 +51,34 @@ describe("host-disk probe", () => {
     expect(execAt).toBeGreaterThan(guardAt);
   });
 
-  it("never throws — an unreachable host reports unknown", () => {
-    expect(src).toMatch(/catch\s*\{\s*return\s*\{\s*\.\.\.UNKNOWN_DISK\s*\}/);
+  it("reports an unreachable host while still returning unknown disk capacity", async () => {
+    const events: ErrorEvent[] = [];
+    await errorReporter.flush();
+    errorReporter.setEnabled(true);
+    errorReporter.setSink(batch => { events.push(...batch); });
+    const { getHostDisk, UNKNOWN_DISK } = await import("@repo/platform/engine/lib/host-disk");
+    await expect(getHostDisk("server-a", "org-a")).resolves.toEqual(UNKNOWN_DISK);
+    await errorReporter.flush();
+    expect(events.some(event => event.error.message === "host unreachable")).toBe(true);
   });
+});
+
+it("measures fresh storage through the verified runtime connection without re-resolving its server alias", async () => {
+  const { getHostDisk } = await import("@repo/platform/engine/lib/host-disk");
+  const exec = vi
+    .fn()
+    .mockResolvedValueOnce("26214400 1048576")
+    .mockResolvedValueOnce("26214400 6291456");
+  const executor = { exec } as never;
+  expect(await getHostDisk("repointed-alias", "org-a", { executor })).toEqual({
+    totalBytes: 25 * 1024 ** 3,
+    freeBytes: 1024 ** 3,
+  });
+  expect(await getHostDisk("repointed-alias", "org-a", { executor })).toEqual({
+    totalBytes: 25 * 1024 ** 3,
+    freeBytes: 6 * 1024 ** 3,
+  });
+  expect(exec).toHaveBeenCalledTimes(2);
+  for (const [command] of exec.mock.calls)
+    expect(command).not.toContain("repointed-alias");
 });

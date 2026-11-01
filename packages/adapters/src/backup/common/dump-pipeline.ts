@@ -45,6 +45,7 @@
  * and get their exit status directly.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { PayloadCompression } from "@repo/core";
 
 import type { BackupExecutor, ServiceHandle } from "../types";
@@ -147,7 +148,7 @@ export async function detectDumpCodec(
     // specifically because the probe is best-effort by contract: any real problem
     // exec-ing in this container resurfaces one call later on the dump itself, with
     // the dump's own message rather than the probe's.
-    stdout.on("error", () => {});
+    stdout.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/backup/common/dump-pipeline"); });
     // Await the exit AND let the (tiny) output drain — awaitExit can settle before
     // the PassThrough has delivered its buffered chunk.
     const exit = await awaitExit;
@@ -155,7 +156,8 @@ export async function detectDumpCodec(
     if (exit.code !== 0) return "none";
     const answer = Buffer.concat(chunks).toString("utf8").trim();
     return answer === "zstd" || answer === "gzip" ? answer : "none";
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/backup/common/dump-pipeline");
     return "none";
   }
 }

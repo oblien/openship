@@ -51,7 +51,7 @@ export default function DocsRootLayout({ children }: { children: ReactNode }) {
         githubUrl="https://github.com/oblien/openship"
         links={[
           { text: "Changelog", url: "/changelog" },
-          { text: "Resources", url: "/resources" },
+          { text: "Blog", url: "/blog" },
         ]}
       >
         {children}

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { exec, spawn } from "node:child_process";
 import {
   access,
@@ -50,7 +51,7 @@ export class LocalExecutor implements CommandExecutor {
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
-    opts?: { signal?: AbortSignal },
+    opts?: { signal?: AbortSignal; killProcessTree?: boolean },
   ): Promise<{ code: number; output: string }> {
     return new Promise((resolve) => {
       // Already told to stop before we even spawned (a stream torn down immediately).
@@ -59,9 +60,11 @@ export class LocalExecutor implements CommandExecutor {
         return;
       }
 
+      const killProcessTree = opts?.killProcessTree === true && process.platform !== "win32";
       const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
         stdio: ["ignore", "pipe", "pipe"],
         env: getLocalExecEnv(),
+        detached: killProcessTree,
       });
 
       // Raw passthrough: forward the untouched byte stream (rawData = base64)
@@ -90,15 +93,30 @@ export class LocalExecutor implements CommandExecutor {
       // transport only ends on the edge closing or on this kill; without it a torn-down
       // browser stream leaves the curl draining the edge's shared queue.
       const signal = opts?.signal;
-      const onAbort = () => {
+      let killTimer: ReturnType<typeof setTimeout> | undefined;
+      const kill = (sig: NodeJS.Signals) => {
         try {
-          child.kill("SIGTERM");
-        } catch {
-          /* already gone */
+          if (killProcessTree && child.pid) process.kill(-child.pid, sig);
+          else child.kill(sig);
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/local-executor"); /* process already exited */ }
+      };
+      const onAbort = () => {
+        kill("SIGTERM");
+        if (killProcessTree) {
+          killTimer = setTimeout(() => kill("SIGKILL"), 1_000);
+          killTimer.unref?.();
         }
       };
       signal?.addEventListener("abort", onAbort, { once: true });
-      const cleanup = () => signal?.removeEventListener("abort", onAbort);
+      if (signal?.aborted) onAbort();
+      const cleanup = () => {
+        signal?.removeEventListener("abort", onAbort);
+        if (killTimer) clearTimeout(killTimer);
+        // The shell can exit before a grandchild that redirected its stdio.
+        // Reap the remaining group before reporting cancellation complete.
+        if (signal?.aborted && killProcessTree) kill("SIGKILL");
+      };
 
       child.stdout.on("data", (data: Buffer) => onChunk(data, "info"));
       child.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
@@ -108,7 +126,7 @@ export class LocalExecutor implements CommandExecutor {
         resolve({ code: code ?? 1, output: chunks.join("") });
       });
 
-      child.on("error", (err) => {
+      child.on("error", (err) => { observeCaughtError(err, "adapters/system/local-executor");
         cleanup();
         onLog(logEntry(`Process error: ${err.message}`, "error"));
         resolve({ code: 1, output: err.message });
@@ -147,7 +165,8 @@ export class LocalExecutor implements CommandExecutor {
     try {
       await access(path);
       return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/local-executor");
       return false;
     }
   }
@@ -159,7 +178,8 @@ export class LocalExecutor implements CommandExecutor {
   async rm(path: string): Promise<void> {
     try {
       await fsRm(path, { recursive: true, force: true });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/local-executor");
       // Already gone
     }
   }

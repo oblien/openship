@@ -9,8 +9,9 @@
  * `../mail.routes.ts` behind `localOnly` + `authMiddleware`.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import { env } from "../../../config";
+import { env } from "@repo/platform/engine/config/index";
 import { repos } from "@repo/db";
 import { getRequestContext, type RequestContext } from "../../../lib/request-context";
 import { permission } from "../../../lib/permission";
@@ -26,7 +27,7 @@ import {
   listDomains,
   updateDomain,
   validateDomain,
-} from "./domains.service";
+} from "@repo/platform/engine/modules/mail/admin/domains.service";
 import {
   createMailbox,
   hardDeleteMailbox,
@@ -37,11 +38,11 @@ import {
   PlatformMailboxProtectedError,
   softDeleteMailbox,
   updateMailbox,
-} from "./mailboxes.service";
+} from "@repo/platform/engine/modules/mail/admin/mailboxes.service";
 import {
   ensureOpenshipPlatformMailbox,
   PlatformMailboxError,
-} from "./platform-mailbox.service";
+} from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
 import {
   createAlias,
   deleteAlias,
@@ -67,7 +68,7 @@ import {
   acknowledgeDomainDns,
   getDomainDnsState,
   listPendingDomainDns,
-} from "./domain-dns.service";
+} from "@repo/platform/engine/modules/mail/admin/domain-dns.service";
 import {
   applyMailDomainDns,
   planMailDomainDns,
@@ -77,11 +78,11 @@ import {
   disableOutboundRelay,
   getOutboundRelay,
   type ConfigureRelayInput,
-} from "./outbound-relay.service";
-import { sshManager } from "../../../lib/ssh-manager";
-import { decrypt } from "../../../lib/encryption";
-import { readState } from "../mail-state";
-import { invalidatePlatformTransport } from "../../../lib/mail";
+} from "@repo/platform/engine/modules/mail/admin/outbound-relay.service";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { decrypt } from "@repo/platform/engine/lib/encryption";
+import { readState } from "@repo/platform/engine/modules/mail/mail-state";
+import { invalidatePlatformTransport } from "@repo/platform/engine/lib/mail";
 
 /**
  * Org-scoped guard: confirms the path's :serverId belongs to the caller's
@@ -108,6 +109,7 @@ export async function listDomainsHandler(c: Context) {
     const rows = await listDomains(serverId);
     return c.json({ domains: rows });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -128,6 +130,7 @@ export async function getDomainHandler(c: Context) {
     if (!row) return c.json({ error: "Domain not found" }, 404);
     return c.json({ domain: row });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -141,7 +144,7 @@ export async function createDomainHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   try {
     const { row, dnsWarning } = await createDomain(serverId, {
       domain: String(body.domain ?? ""),
@@ -152,6 +155,7 @@ export async function createDomainHandler(c: Context) {
     });
     return c.json({ domain: row, dnsWarning }, 201);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof DomainExistsError) {
       return c.json({ error: err.message }, 409);
     }
@@ -170,7 +174,7 @@ export async function updateDomainHandler(c: Context) {
   }
   const domain = c.req.param("domain");
   if (!domain) return c.json({ error: "domain required" }, 400);
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   try {
     const row = await updateDomain(serverId, domain, {
       description: body.description != null ? String(body.description) : undefined,
@@ -181,6 +185,7 @@ export async function updateDomainHandler(c: Context) {
     });
     return c.json({ domain: row });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof DomainNotFoundError) {
       return c.json({ error: err.message }, 404);
     }
@@ -204,6 +209,7 @@ export async function deleteDomainHandler(c: Context) {
     await deleteDomain(serverId, domain, { cascade });
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof DomainHasDependentsError) {
       return c.json(
         { error: err.message, dependents: err.dependents },
@@ -240,6 +246,7 @@ export async function getDomainDnsHandler(c: Context) {
     }
     return c.json({ domain: domain.toLowerCase(), ...state });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -264,6 +271,7 @@ export async function acknowledgeDomainDnsHandler(c: Context) {
     await acknowledgeDomainDns(serverId, domain.toLowerCase());
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -290,6 +298,7 @@ export async function pendingDomainDnsHandler(c: Context) {
       pending: pending.map(({ domain, state }) => ({ domain, ...state })),
     });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -313,6 +322,7 @@ export async function planDomainDnsHandler(c: Context) {
     const plan = await planMailDomainDns(ctx.organizationId, serverId, domain.toLowerCase());
     return c.json({ data: plan });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -336,6 +346,7 @@ export async function applyDomainDnsHandler(c: Context) {
     const result = await applyMailDomainDns(ctx.organizationId, serverId, domain.toLowerCase());
     return c.json({ data: result });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -356,6 +367,7 @@ export async function getOutboundRelayHandler(c: Context) {
     const relay = await sshManager.withExecutor(serverId, (exec) => getOutboundRelay(exec));
     return c.json({ relay });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -374,7 +386,7 @@ export async function putOutboundRelayHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({} as Record<string, unknown>); });
   // Unknown ids become `custom`, which requires an explicit host — so a bad id
   // fails validation loudly instead of quietly relaying somewhere unintended.
   const provider = isRelayProviderId(body.provider) ? body.provider : "custom";
@@ -388,7 +400,8 @@ export async function putOutboundRelayHandler(c: Context) {
       const state = await sshManager.withExecutor(serverId, (exec) => readState(exec));
       const enc = state?.outboundRelay?.passwordEncrypted;
       if (enc) password = decrypt(enc);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller");
       /* fall through to the required-password error below */
     }
     if (!password) {
@@ -446,6 +459,7 @@ export async function putOutboundRelayHandler(c: Context) {
     const relay = await sshManager.withExecutor(serverId, (exec) => getOutboundRelay(exec));
     return c.json({ relay });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -464,6 +478,7 @@ export async function deleteOutboundRelayHandler(c: Context) {
     await sshManager.withExecutor(serverId, (exec) => disableOutboundRelay(exec));
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -484,6 +499,7 @@ export async function domainDependentsHandler(c: Context) {
     const deps = await countDomainDependents(serverId, domain);
     return c.json(deps);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -505,6 +521,7 @@ export async function listMailboxesHandler(c: Context) {
     const rows = await listMailboxes(serverId, domain);
     return c.json({ mailboxes: rows });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -525,6 +542,7 @@ export async function getMailboxHandler(c: Context) {
     if (!row) return c.json({ error: "Mailbox not found" }, 404);
     return c.json({ mailbox: row });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -538,7 +556,7 @@ export async function createMailboxHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   try {
     const row = await createMailbox(serverId, {
       localPart: String(body.localPart ?? ""),
@@ -549,6 +567,7 @@ export async function createMailboxHandler(c: Context) {
     });
     return c.json({ mailbox: row }, 201);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof MailboxExistsError || err instanceof PlatformMailboxProtectedError) {
       return c.json({ error: err.message }, 409);
     }
@@ -567,7 +586,7 @@ export async function updateMailboxHandler(c: Context) {
   }
   const email = c.req.param("email");
   if (!email) return c.json({ error: "email required" }, 400);
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   try {
     const row = await updateMailbox(serverId, email, {
       name: body.name != null ? String(body.name) : undefined,
@@ -577,6 +596,7 @@ export async function updateMailboxHandler(c: Context) {
     });
     return c.json({ mailbox: row });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof MailboxNotFoundError) {
       return c.json({ error: err.message }, 404);
     }
@@ -613,6 +633,7 @@ export async function rotatePlatformMailboxHandler(c: Context) {
     invalidatePlatformTransport(serverId);
     return c.json({ ok: true, email: creds.email, rotated: creds.rotated });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof PlatformMailboxError) {
       return c.json({ error: err.message }, 409);
     }
@@ -641,6 +662,7 @@ export async function deleteMailboxHandler(c: Context) {
     }
     return c.json({ ok: true, mode: hard ? "hard" : "soft" });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof MailboxNotFoundError) {
       return c.json({ error: err.message }, 404);
     }
@@ -668,6 +690,7 @@ export async function listAliasesHandler(c: Context) {
     const rows = await listAliases(serverId, domain);
     return c.json({ aliases: rows });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -681,7 +704,7 @@ export async function createAliasHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   try {
     const row = await createAlias(serverId, {
       domain: String(body.domain ?? ""),
@@ -691,6 +714,7 @@ export async function createAliasHandler(c: Context) {
     });
     return c.json({ alias: row }, 201);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof AliasExistsError) {
       return c.json({ error: err.message }, 409);
     }
@@ -715,7 +739,7 @@ export async function updateAliasHandler(c: Context) {
   if (!idParam || !Number.isInteger(id)) {
     return c.json({ error: "id must be an integer" }, 400);
   }
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   if (body.active == null) {
     return c.json({ error: "active is required" }, 400);
   }
@@ -723,6 +747,7 @@ export async function updateAliasHandler(c: Context) {
     const row = await updateAliasActive(serverId, id, Boolean(body.active));
     return c.json({ alias: row });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof AliasNotFoundError) {
       return c.json({ error: err.message }, 404);
     }
@@ -748,6 +773,7 @@ export async function deleteAliasHandler(c: Context) {
     await deleteAlias(serverId, id);
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof AliasNotFoundError) {
       return c.json({ error: err.message }, 404);
     }
@@ -770,6 +796,7 @@ export async function getStatsHandler(c: Context) {
     const stats = await getMailServerStats(serverId);
     return c.json(stats);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -785,7 +812,7 @@ export async function sendTestEmailHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
   try {
     const result = await sendTestEmail(serverId, {
       to: String(body.to ?? ""),
@@ -796,6 +823,7 @@ export async function sendTestEmailHandler(c: Context) {
     });
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof TestEmailError) {
       return c.json({ error: err.message }, 400);
     }
@@ -821,6 +849,7 @@ export async function getDnsScanHandler(c: Context) {
     const result = await scanDns(serverId, domain);
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -844,6 +873,7 @@ export async function runComponentActionHandler(c: Context) {
     const result = await runComponentAction(serverId, key, action);
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof UnknownComponentError) {
       return c.json({ error: err.message }, 400);
     }
@@ -864,6 +894,7 @@ export async function restartAllComponentsHandler(c: Context) {
     const result = await restartAllComponents(serverId);
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }
@@ -885,6 +916,7 @@ export async function getComponentLogsHandler(c: Context) {
     const result = await getComponentLogs(serverId, key, requested);
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof UnknownComponentError) {
       return c.json({ error: err.message }, 400);
     }
@@ -912,6 +944,6 @@ function errorJson(c: Context, err: unknown) {
   // errors that were never caught, so every mail-admin 500 left the API log with
   // nothing but hono's `--> … 500` (the second half of GH-562). The AppError branch
   // above logs through `handleApiError`, so no path logs twice.
-  console.error(`[MAIL ADMIN ERROR] ${requestTag(c)}`, err);
+  errorDiagnostics.error("api/modules/mail/admin/admin.controller", `[MAIL ADMIN ERROR] ${requestTag(c)}`, err);
   return c.json({ error: message }, 500);
 }

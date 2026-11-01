@@ -7,6 +7,7 @@
  * Provides real-time log lines and component progress updates.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/lib/api";
 import { systemApi } from "@/lib/api";
@@ -161,7 +162,9 @@ export function useSetupStream(
         try {
           const json = await response.json();
           errMsg = json.error || json.message || errMsg;
-        } catch {}
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/hooks/useSetupStream");
+        }
         throw new Error(errMsg);
       }
 
@@ -181,6 +184,7 @@ export function useSetupStream(
 
       setIsConnected(false);
     } catch (err: any) {
+      observeCaughtError(err, "dashboard/hooks/useSetupStream");
       if (err.name === "AbortError") {
         setIsConnected(false);
       } else {
@@ -219,6 +223,7 @@ export function useSetupStream(
     try {
       await systemApi.respondInstall(action);
     } catch (err: any) {
+      observeCaughtError(err, "dashboard/hooks/useSetupStream");
       callbacksRef.current.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
   }, []);

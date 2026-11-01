@@ -127,7 +127,7 @@ export default function HomeContent() {
           transition={{ duration: 0.5, delay: 0.6 }}
           className="mb-6 lg:hidden"
         >
-          <Link href="/docs/install">
+          <Link href="/docs/getting-started/quickstart">
             <Button>Install Openship</Button>
           </Link>
         </motion.div>

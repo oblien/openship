@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { organizationInviteEmail, resetPasswordOtpEmail } from "../../src/lib/email-templates";
+import { organizationInviteEmail, resetPasswordOtpEmail } from "@repo/platform/engine/lib/email-templates";
 
 describe("email-templates — HTML injection is neutralized", () => {
   it("escapes attacker-controlled org name and inviter name in the invite HTML", () => {

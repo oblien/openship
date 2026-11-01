@@ -1,40 +1,50 @@
 "use client";
 
-import React, { useState } from "react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useId, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Link2, ArrowRight } from "lucide-react";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import { useI18n } from "@/components/i18n-provider";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
-export function UrlImport() {
+export function UrlImport({ header }: { header?: React.ReactNode }) {
   const { t } = useI18n();
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
+  const errorId = useId();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const match = url.match(
-      /(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/.]+)/
-    );
-    if (!match) {
+    try {
+      const parsed = new URL(url.trim());
+      const parts = parsed.pathname.replace(/\/+$/, "").slice(1).split("/");
+      const [owner, rawRepo] = parts;
+      const repo = rawRepo?.replace(/\.git$/, "");
+      if (
+        !["https:", "http:"].includes(parsed.protocol) ||
+        !["github.com", "www.github.com"].includes(parsed.hostname) ||
+        parsed.username || parsed.password || parsed.port ||
+        parts.length !== 2 || !owner || !repo ||
+        !/^[a-zA-Z0-9-]+$/.test(owner) || !/^[a-zA-Z0-9_.-]+$/.test(repo)
+      ) throw new Error("Invalid repository URL");
+      router.push(`/deploy/${encodeRepoSlug(owner, repo)}`);
+    } catch {
       setError(t.library.urlImport.invalidUrl);
-      return;
     }
-
-    const [, owner, repo] = match;
-    const slug = encodeRepoSlug(owner!, repo!);
-    router.push(`/deploy/${slug}`);
   };
 
   return (
     <div className="bg-card rounded-2xl border border-border/50">
+      {header}
       <div className="p-8">
         <div className="max-w-lg mx-auto">
           <div className="w-14 h-14 rounded-2xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-4">
-            <Link2 className="size-7 text-muted-foreground" />
+            <UiIcon name="link" className="size-7 text-muted-foreground" />
           </div>
           <h3 className="text-base font-semibold text-foreground text-center mb-1.5">
             {t.library.urlImport.title}
@@ -45,29 +55,30 @@ export function UrlImport() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <input
+              <Input
                 type="url"
+                variant="filled"
+                autoFocus
+                aria-label={t.library.urlImport.title}
+                aria-invalid={!!error}
+                aria-describedby={error ? errorId : undefined}
                 value={url}
                 onChange={(e) => { setUrl(e.target.value); setError(""); }}
                 placeholder="https://github.com/username/repository"
-                className={`w-full px-4 py-3 bg-background border rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 transition-all ${
-                  error
-                    ? "border-danger-border focus:ring-danger-border"
-                    : "border-border/50 focus:ring-primary/20"
-                }`}
+                className={error ? "ring-2 ring-danger-border" : undefined}
               />
               {error && (
-                <p className="text-xs text-danger mt-1.5">{error}</p>
+                <p id={errorId} role="alert" className="text-xs text-danger mt-1.5">{error}</p>
               )}
             </div>
-            <button
+            <Button
               type="submit"
               disabled={!url.trim()}
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-foreground text-background text-sm font-medium rounded-xl hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full h-11"
             >
               {t.library.urlImport.importButton}
-              <ArrowRight className="size-4 rtl:rotate-180" />
-            </button>
+              <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
+            </Button>
           </form>
         </div>
       </div>

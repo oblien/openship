@@ -6,7 +6,7 @@ import {
   checkMailPortReachability,
   clearMailPortReachabilityCache,
   mailReachabilityFailureMessage,
-} from "../../../src/modules/mail/mail-port-reachability.service";
+} from "@repo/platform/engine/modules/mail/mail-port-reachability.service";
 
 const executor = {} as never;
 

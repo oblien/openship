@@ -2,7 +2,7 @@
   "available": true,
   "id": "stirling-pdf",
   "name": "Stirling PDF",
-  "description": "Split, merge, convert, OCR and edit PDFs locally. Sign in with the admin account below.",
+  "description": "Split, merge, convert, OCR, and edit PDFs on infrastructure you control.",
   "kind": "template",
   "logo": "stirling-pdf",
   "category": "other",
@@ -78,5 +78,21 @@
       "note": "Seeding these two values is what prevents Stirling from creating its documented admin/stirling account. The password above works as-is."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "PDF tools",
+        "description": "Split, merge, convert, and edit documents."
+      },
+      {
+        "title": "OCR",
+        "description": "Make scanned documents searchable."
+      },
+      {
+        "title": "Local processing",
+        "description": "Run document tools on your infrastructure."
+      }
+    ]
+  }
 }

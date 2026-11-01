@@ -1,4 +1,67 @@
 {
+  "appearance": {
+    "title": "المظهر",
+    "description": "اختر مظهرًا أو اتبع إعدادات جهازك. تُطبّق التغييرات فورًا.",
+    "themes": {
+      "light": "فاتح",
+      "dim": "خافت",
+      "dark": "داكن",
+      "system": "النظام"
+    },
+    "editor": {
+      "description": "سمات شخصية ومعاينة مباشرة وملفات JSON قابلة للنقل.",
+      "newTheme": "سمة جديدة",
+      "duplicate": "نسخ",
+      "reset": "إعادة ضبط",
+      "saved": "تم الحفظ",
+      "preview": "معاينة مباشرة",
+      "unsaved": "معاينة تغييرات غير محفوظة.",
+      "invalid": "صحح القيم المحددة قبل الحفظ.",
+      "retry": "حاول مجددًا",
+      "name": "اسم السمة",
+      "base": "السمة الأساسية",
+      "tokens": "رموز التصميم",
+      "search": "ابحث عن رمز…",
+      "typography": "الخطوط",
+      "interfaceFont": "خط الواجهة",
+      "monoFont": "خط ثابت العرض",
+      "fontSize": "حجم خط الواجهة",
+      "monoSize": "حجم الخط الثابت",
+      "lineHeight": "ارتفاع السطر",
+      "weight": "وزن الخط",
+      "uploadFont": "رفع WOFF2",
+      "export": "تنزيل السمة",
+      "exportAll": "تنزيل الكل",
+      "json": "ألصق JSON السمة",
+      "url": "رابط JSON السمة",
+      "loadUrl": "تحميل الرابط",
+      "selectFile": "رفع JSON",
+      "importHint": "استورد سمة أو مكتبة، ثم احفظ للاحتفاظ بالتغييرات.",
+      "fontHint": "تنتقل خطوط WOFF2 مع السمة. الحد الأقصى 256 KiB لكل خط.",
+      "personal": "تطبق التغييرات على هذا الحساب فقط.",
+      "presets": "سمات جاهزة",
+      "discard": "تجاهل",
+      "color": "اللون",
+      "systemFont": "خط النظام",
+      "serifFont": "خط بتذييل",
+      "systemMono": "خط النظام الثابت",
+      "workspace": "مساحة عملك",
+      "active": "نشط",
+      "queued": "في الانتظار",
+      "failed": "فشل",
+      "groups": {
+        "surfaces": "الأسطح",
+        "text": "النص",
+        "controls": "عناصر التحكم",
+        "status": "الحالات",
+        "effects": "التأثيرات",
+        "scales": "درجات اللون"
+      },
+      "libraryLimit": "احذف سمة مخصصة قبل إضافة سمة أخرى."
+    },
+    "customize": "تخصيص",
+    "backToGeneral": "العودة إلى الإعدادات العامة"
+  },
   "language": {
     "title": "اللغة",
     "description": "اختر اللغة المستخدمة في لوحة التحكم."
@@ -48,6 +111,7 @@
     "title": "الإعدادات",
     "tabs": {
       "general": "عام",
+      "security": "الأمان",
       "git": "Git",
       "tokens": "رموز واجهة البرمجة",
       "mcp": "MCP",
@@ -56,10 +120,13 @@
       "credentials": "بيانات الاعتماد",
       "cloud": "السحابة",
       "infrastructure": "البنية التحتية",
-      "instance": "النسخة"
+      "instance": "النسخة",
+      "systemSender": "مرسل النظام",
+      "email": "البريد الإلكتروني"
     }
   },
   "github": {
+    "tokenCreate": "إنشاء رمز",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "متصل · لا توجد عمليات تثبيت بعد",
@@ -103,8 +170,49 @@
       "optionalSuffix": "على هذا الجهاز لتمكين استنساخ البناء المحلي للمستودعات خارج عمليات تثبيت تطبيقك. تمر عمليات النشر البعيدة دائمًا عبر التطبيق.",
       "disconnectPrefix": "لقطع الاتصال، شغّل",
       "disconnectSuffix": "في طرفيتك.",
-      "use": "استخدام gh CLI"
-    }
+      "use": "استخدام gh CLI",
+      "login": "تسجيل الدخول باستخدام GitHub",
+      "deviceHint": "أدخل هذا الرمز لمرة واحدة في GitHub لتفويض هذا المثيل:",
+      "waiting": "في انتظار التفويض — يتم التحديث تلقائياً.",
+      "tokenAltPrefix": "هل تفضل استخدام رمز؟ أضف رمز وصول شخصي تحت",
+      "tokenAltLink": "بيانات اعتماد الاستنساخ.",
+      "forwardOnNote": "إعادة التوجيه مفعلة — يقوم gh CLI أيضاً بمصادقة استنساخ الخادم البعيد. يتم نفق هويتك عبر SSH لكل عملية استنساخ؛ ولا يتم تخزين أي شيء على الخادم.",
+      "forwardOffHint": "عمليات البناء المحلية فقط في الوقت الحالي. قم بتشغيل \"إعادة توجيه هوية git الخاصة بي إلى خوادم البناء\" لاستخدام gh CLI لعمليات نشر الخادم البعيد أيضاً.",
+      "manageForward": "إدارة إعادة التوجيه",
+      "disconnectBody": "سيقوم Openship بإزالة بيانات الاعتماد هذه من هذا المثيل والتوقف عن استخدامها لعمليات الاستنساخ. تظل صالحة في GitHub حتى تقوم بإلغائها هناك. يمكنك إعادة الاتصال في أي وقت.",
+      "recheck": "تحقق مرة أخرى"
+    },
+    "replaceToken": "استبدال رمز GitHub",
+    "clearToken": "مسح الرمز المحفوظ",
+    "tokenEditorDescription": "استخدم رمز وصول شخصي من GitHub لتصفح المستودعات والبناء على هذا المثيل.",
+    "methodTokenDesc": "استخدم رمز GitHub لتصفح المستودعات والبناء محليًا.",
+    "activeVia": "متصل عبر {method}",
+    "pickMethod": "اختر كيف يصل Openship إلى مستودعاتك.",
+    "methodDevice": "تسجيل الدخول عبر GitHub",
+    "methodApp": "تطبيق GitHub",
+    "methodAppDesc": "رموز تثبيت محددة النطاق وقصيرة الأجل لعمليات النشر المحلية والبعيدة.",
+    "methodSshDesc": "إرفاق مفتاح نشر بكل خادم (الخوادم ← GitHub).",
+    "signIn": "تسجيل الدخول باستخدام GitHub",
+    "signInDesc": "تسجيل الدخول عبر المتصفح باستخدام رمز الجهاز. لا شيء للتسجيل، ولا حاجة لـ SSH في الخادم.",
+    "changeMethod": "تغيير الطريقة",
+    "otherMethods": "طرق أخرى",
+    "openGithub": "فتح GitHub",
+    "copyCode": "انقر للنسخ",
+    "tokenConnect": "اتصال",
+    "tokenGhHint": "تم تسجيل الدخول بالفعل على الخادم باستخدام",
+    "tokenSaveFailed": "تعذر حفظ الرمز.",
+    "forwardOffHint": "عمليات البناء المحلية فقط. قم بتشغيل \"إعادة توجيه هوية git الخاصة بي إلى خوادم البناء\" لاستخدامها في عمليات نشر الخادم البعيد أيضاً.",
+    "remoteCredentialHint": "تُستخدم لتصفح المستودعات وعمليات البناء التي تعمل على هذا المضيف. تستخدم عمليات النشر التي تبني على خادم بعيد بيانات اعتماد ذلك الخادم الخاصة — أضف مفتاح نشر أو رمز لكل خادم.",
+    "methodToken": "رمز GitHub",
+    "methodHostCli": "gh CLI على هذا المضيف",
+    "manageTokensOnGithub": "إدارة الرموز على GitHub",
+    "manageAccessOnGithub": "إدارة الوصول على GitHub",
+    "disconnectScopeNote": "يؤدي قطع الاتصال إلى إزالة بيانات الاعتماد هذه من Openship والتوقف عن استخدامها لعمليات الاستنساخ. تظل صالحة في GitHub حتى تقوم بإلغائها هناك.",
+    "credentialRejected": "رفض GitHub الـ {method} المخزن.",
+    "credentialRejectedImpact": "تم إلغاؤه أو انتهت صلاحيته أو فقد نطاقاً مطلوباً. ستستمر عمليات النشر التي تستنسخ باستخدامه في الفشل حتى تعيد الاتصال أدناه.",
+    "credentialUnreachable": "تعذر الوصول إلى GitHub للتحقق من الـ {method} المخزن.",
+    "credentialUnreachableImpact": "عادةً ما تكون هذه مشكلة في الشبكة وليست بيانات اعتماد غير صالحة — يستمر Openship في استخدامها. لن تساعد إعادة الاتصال إذا كان GitHub غير متاح.",
+    "credentialCheckedAt": "آخر فحص: {time}"
   },
   "deployDefaults": {
     "title": "إعدادات النشر الافتراضية",
@@ -219,9 +327,9 @@
   },
   "cloneCredentials": {
     "title": "بيانات اعتماد استنساخ GitHub",
-    "description": "رمز شخصي يُستخدم لاستنساخ المستودعات الخاصة عندما لا يكون تطبيق GitHub مثبَّتًا",
+    "description": "وصول شخصي إلى المستودعات الخاصة.",
     "loading": "جارٍ التحميل…",
-    "intro": "الصق رمز وصول شخصيًا من GitHub (كلاسيكي أو دقيق النطاق). تستخدمه وحدة الاستنساخ كبيان اعتماد بالأولوية الثانية - بعد أي تجاوز خاص بالمشروع، وقبل رمز تثبيت تطبيق GitHub.",
+    "intro": "لرموز المشاريع الأولوية. عند التفعيل، يُستخدم هذا الرمز قبل بيانات اعتماد تطبيق GitHub. إيقاف استخدامه لا يحذف الرمز المحفوظ.",
     "placeholder": "ghp_… أو github_pat_…",
     "showToken": "إظهار الرمز",
     "hideToken": "إخفاء الرمز",
@@ -233,8 +341,12 @@
     "justNow": "الآن",
     "replace": "استبدال",
     "clear": "مسح",
-    "useAsDefault": "استخدامه كرمز استنساخ افتراضي",
-    "useAsDefaultDesc": "عند التفعيل، تستخدم وحدة الاستنساخ هذا الرمز كطبقة ثانية في السلسلة (بعد التجاوزات الخاصة بالمشروع). عند الإيقاف، يُخزَّن الرمز لكنه لا يُستخدم - مفيد إذا أردت تفعيله فقط لعمليات نشر محدّدة.",
+    "useAsDefault": "الاستخدام افتراضيًا",
+    "useAsDefaultDesc": "استخدام هذا الرمز إذا لم يكن للمشروع رمز خاص به.",
+    "tokenLabel": "رمز وصول شخصي",
+    "helpTitle": "صلاحيات الرمز واستخدامه",
+    "forwardGitLabel": "تمرير وصول GitHub المحلي",
+    "forwardGitDesc": "مشاركة تسجيل دخول GitHub المحلي مع خوادم البناء البعيدة عبر SSH.",
     "toast": {
       "pasteFirst": "الصق رمزًا قبل الحفظ",
       "notLikeToken": "لا يبدو هذا كرمز GitHub. احفظه على أي حال إن كنت متأكدًا.",
@@ -243,7 +355,8 @@
       "cleared": "تم مسح رمز الاستنساخ",
       "clearFailed": "تعذّر مسح الرمز",
       "updateDefaultFailed": "تعذّر تحديث الافتراضي"
-    }
+    },
+    "forwardGitFailed": "فشل تحديث إعادة توجيه git"
   },
   "tokens": {
     "title": "رموز الوصول الشخصية",
@@ -290,7 +403,9 @@
       "revoked": "تم إبطال \"{name}\"",
       "revokeFailed": "تعذّر إبطال الرمز",
       "loadFailed": "تعذّر تحميل الرموز"
-    }
+    },
+    "callsOne": " · استدعاء واحد",
+    "callsMany": " · {count} استدعاءات"
   },
   "mcp": {
     "title": "MCP",
@@ -319,13 +434,30 @@
     "allResources": "جميع الموارد",
     "resourcesOne": "مورد واحد",
     "resourcesMany": "{count} موارد",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "تم التفويض {date}",
     "lastUsedSuffix": " · آخر استخدام {date}",
     "toast": {
       "disconnected": "تم قطع اتصال عميل MCP",
       "disconnectFailed": "تعذّر قطع الاتصال"
-    }
+    },
+    "callsOne": " · استدعاء واحد",
+    "callsMany": " · {count} استدعاءات",
+    "editAccess": "تعديل الوصول",
+    "viewActivity": "النشاط",
+    "editScopeTitle": "وصول {client}",
+    "editScopeSubtitle": "تسري التغييرات عند طلب العميل التالي — لا يحتاج إلى إعادة الاتصال.",
+    "editScopeOrg": "في {org}",
+    "wasNResourcesOne": "حالياً مورد واحد",
+    "wasNResourcesMany": "حالياً {count} موارد",
+    "saveScope": "حفظ الوصول",
+    "scopeSaved": "تم تحديث الوصول",
+    "scopeSaveFailed": "تعذر تحديث الوصول",
+    "loadScopeFailed": "تعذر تحميل وصول هذا العميل",
+    "scopeGrantRejected": "لم يعد بإمكانك منح {resource}، لذا تمت إزالته. احفظ مرة أخرى للمتابعة.",
+    "confirmWidenTitle": "هذا يزيل كل القيود",
+    "confirmWidenBody": "سيتصرف الوكيل بكامل صلاحياتك، ويسري ذلك فوراً. اضغط مرة أخرى للتأكيد.",
+    "confirmWidenAction": "إزالة جميع القيود"
   },
   "team": {
     "heading": "الفريق",
@@ -361,8 +493,8 @@
       "saveLabel": "حفظ الوصول"
     },
     "serverAccessWarning": {
-      "title": "منح وصول كامل إلى الخادم؟",
-      "body": "سيحصل {member} على تحكم كامل في {scope} — كل عملية نشر وبياناتها، وجميع التطبيقات التي تعمل عليه، والأسرار ومتغيرات البيئة المخزّنة، والوصول إلى الطرفية، وأي تكاملات مرتبطة (مثل رموز GitHub ومفاتيح النشر المخزّنة له). سيتمكن من إدارة هذه الموارد أو حذفها.",
+      "title": "منح وصول كامل للخادم؟",
+      "body": "سيحصل {member} على تحكم كامل في {scope} — كل نشر وبياناته، وجميع التطبيقات التي تعمل عليه، والأسرار ومتغيرات البيئة المخزنة، والوصول إلى الطرفية، وأي عمليات تكامل متصلة (مثل رموز GitHub ومفاتيح النشر المحفوظة له). سيكون بمقدوره إدارة هذه الموارد أو حذفها.",
       "scopeAllServers": "جميع الخوادم في هذه المؤسسة",
       "scopeThisServer": "هذا الخادم",
       "scopeCount": "{count} خوادم",
@@ -375,7 +507,31 @@
       "deleteBody": "إزالة مساحة العمل هذه وكل ما فيها نهائيًا.",
       "leaveBody": "غادر مساحة العمل هذه — ستحتاج إلى دعوة جديدة للعودة.",
       "deleteConfirm": "حذف مساحة العمل هذه؟ ستُزال مشاريعها وأعضاؤها وإعداداتها للجميع. لا يمكن التراجع عن ذلك.",
-      "leaveConfirm": "مغادرة مساحة العمل هذه؟ ستفقد الوصول حتى تتم دعوتك مجددًا."
+      "leaveConfirm": "مغادرة مساحة العمل هذه؟ ستفقد الوصول حتى تتم دعوتك مجددًا.",
+      "manage": {
+        "title": "إدارة مساحة العمل",
+        "sectionBody": "أعد تسمية مساحة العمل هذه، أو أوقف مشاريعها مؤقتاً، أو احذفها.",
+        "nameLabel": "اسم مساحة العمل",
+        "rename": "إعادة التسمية",
+        "projects": "المشاريع ({count})",
+        "noProjects": "لا توجد مشاريع في مساحة العمل هذه.",
+        "running": "قيد التشغيل",
+        "stopped": "متوقف",
+        "pauseTitle": "إيقاف كل شيء مؤقتاً",
+        "pauseBody": "إيقاف كل مشروع مع الاحتفاظ بمساحة العمل — استأنف في أي وقت.",
+        "pauseButton": "إيقاف جميع المشاريع",
+        "deleteTitle": "حذف مساحة العمل",
+        "deleteBody": "يقوم بإزالة جميع المشاريع الـ {count} (الحاويات والمسارات) وحذف مساحة العمل. تظل بيانات وحدة التخزين قابلة للاسترداد. لا يمكن التراجع عن هذا الإجراء.",
+        "confirmLabel": "اكتب “{name}” للتأكيد",
+        "deleting": "جارٍ الحذف…",
+        "deletingProject": "جارٍ إزالة {name}…",
+        "deletingWorkspace": "جارٍ إزالة مساحة العمل…",
+        "toastRenamed": "تمت إعادة تسمية مساحة العمل",
+        "toastRenameFailed": "تعذر إعادة تسمية مساحة العمل",
+        "toastPaused": "تم إيقاف {count} مشاريع",
+        "toastPauseFailed": "تعذر إيقاف بعض المشاريع",
+        "toastProjectFailed": "تعذر إزالة {name}"
+      }
     },
     "toast": {
       "teamNameRequired": "اسم الفريق مطلوب",
@@ -393,6 +549,17 @@
       "deleted": "تم حذف مساحة العمل",
       "leaveFailed": "تعذّرت مغادرة مساحة العمل",
       "left": "تمت مغادرة مساحة العمل"
+    },
+    "reachability": {
+      "description": "يحتاج زملاء الفريق إلى عنوان URL عام للوصول إلى مساحة العمل هذه.",
+      "notInstalledTitle": "امنح Openship عنواناً عاماً",
+      "notInstalledBody": "لم يتم إعداد Openship بعنوان URL عام بعد. قم بنشره بعنوان عام (مثل `openship up --public-url …`)، ثم أضف نطاقاً هنا حتى يتمكن زملاء الفريق من الوصول إليه.",
+      "noDomainTitle": "أضف نطاقاً إلى Openship",
+      "noDomainBody": "أضف نطاقاً إلى تطبيق Openship حتى يتمكن أعضاء الفريق من الوصول إلى مساحة العمل هذه — يتم تشغيل الدعوات تلقائياً بمجرد تشغيلها.",
+      "addDomain": "إضافة نطاق",
+      "pendingTitle": "إنهاء إعداد النطاق",
+      "pendingBody": "نطاق Openship الخاص بك في انتظار التحقق (DNS / SSL). يتم تشغيل الدعوات بمجرد تشغيله.",
+      "viewDomain": "عرض النطاق"
     }
   },
   "inviteMember": {
@@ -423,7 +590,27 @@
       "invitationLinkCreated": "تم إنشاء رابط الدعوة — انسخه من الدعوات المعلّقة",
       "personalOrgBlocked": "لا يمكن دعوة الأعضاء من مساحة العمل الشخصية. أنشئ مؤسسة فريق أولاً، ثم أرسل الدعوات.",
       "updateMailSourceFailed": "تعذّر تحديث مصدر البريد"
-    }
+    },
+    "delivery": "طريقة الإرسال",
+    "emailDelivery": "البريد الإلكتروني",
+    "linkDelivery": "نسخ الرابط",
+    "emailDeliveryHint": "يُرسل عبر خدمة البريد الإلكتروني المهيأة لهذا المثيل.",
+    "linkDeliveryHint": "أنشئ رابطًا لمشاركته مباشرة مع هذا الشخص.",
+    "checkingEmail": "جارٍ التحقق من خدمة البريد…",
+    "emailUnavailable": "لم تُهيأ خدمة البريد الإلكتروني. يمكنك مشاركة رابط.",
+    "linkReady": "الدعوة جاهزة للمشاركة",
+    "emailSent": "أُرسلت الدعوة بالبريد",
+    "recipientHint": "يمكن لصاحب البريد {email} فقط قبول هذه الدعوة.",
+    "invitationLink": "رابط الدعوة",
+    "manageLinkHint": "يمكنك إدارة الرابط أو إلغاؤه من الدعوات المعلقة.",
+    "mailReady": "جاهز",
+    "mailNotSetUp": "غير معد",
+    "cloudReady": "متصل",
+    "cloudNotReady": "غير متصل",
+    "noMailSystem": "لم يتم إعداد نظام بريد إلكتروني، لذلك لن يتم تسليم الدعوة.",
+    "setUpEmail": "إعداد البريد الإلكتروني ←",
+    "cloudNotConnected": "Openship Cloud غير متصل، لذا لا يمكنه إرسال الدعوة.",
+    "connectCloud": "ربط Openship Cloud ←"
   },
   "teamWorkspace": {
     "title": "مساحة عمل الفريق",
@@ -451,9 +638,88 @@
     "toast": {
       "disconnected": "تم قطع الاتصال بـ Openship Cloud",
       "disconnectFailed": "تعذّر قطع الاتصال"
+    },
+    "pitch": {
+      "title": "إضافة Openship Cloud",
+      "body": "يحصل كل مشروع على نطاق .{domain} مجاني مع SSL تلقائي — بدون DNS، وبدون شهادات. تستمر خوادمك الخاصة في العمل تماماً كما هي الآن.",
+      "perkDomain": "نطاق .{domain} مجاني + SSL تلقائي في كل مشروع",
+      "perkDeploy": "النشر على سحابة مدارة، أو البقاء على خوادمك الخاصة",
+      "perkServices": "Postgres وRedis مدارة والمزيد، يتم توفيرها بنقرة واحدة",
+      "perkGithub": "GitHub متصل دون تسجيل تطبيقك الخاص",
+      "noLockIn": "الاتصال مجاني. لا شيء ينتقل، ويمكنك قطع الاتصال في أي وقت.",
+      "viewPricing": "عرض الأسعار"
+    },
+    "connectModal": {
+      "title": "ربط Openship Cloud",
+      "requiresConnection": "تتطلب {feature} الاتصال بـ Openship Cloud. اربط حسابك للوصول إلى:",
+      "features": {
+        "deployments": "عمليات النشر السحابية",
+        "infra": "بنية تحتية مدارة",
+        "ssl": "شهادات SSL ونطاقات تلقائية",
+        "cdn": "شبكة توصيل محتوى عالمية"
+      },
+      "connect": "الاتصال بـ Openship Cloud",
+      "waitingSignIn": "في انتظار تسجيل الدخول…",
+      "maybeLater": "ربما لاحقاً"
     }
   },
   "instance": {
+    "location": {
+      "title": "موقع المثيل",
+      "thisDesktop": "هذا الكمبيوتر",
+      "thisServer": "هذا الخادم",
+      "desktopHint": "اتصل لاستخدام بيانات نسخة موجودة، أو انقل Openship إلى خادم ليبقى متاحاً.",
+      "serverHint": "تُدار المهام والويب هوك ووصول الفريق من هنا.",
+      "remoteHint": "أنت تستخدم البيانات المباشرة للمثيل البعيد.",
+      "retiredHint": "لم يعد هذا الخادم يدير المشاريع. انقل مثيلًا إليه لاستخدامه مجددًا.",
+      "moveToServer": "نقل إلى خادم",
+      "moveToAnotherServer": "نقل إلى خادم آخر",
+      "moveToDesktop": "نقل إلى Desktop",
+      "returnToDesktop": "إعادة النقل إلى Desktop",
+      "previousServer": "نقل إلى الخادم السابق",
+      "connectExisting": "الاتصال بمثيل موجود",
+      "reconnect": "إعادة الاتصال",
+      "pairDesktop": "ربط تطبيق Desktop",
+      "receiveInstance": "نقل مثيل إلى هنا",
+      "disconnect": "العودة إلى المثيل المحلي",
+      "moreOptions": "خيارات المثيل الأخرى",
+      "memberTitle": "استخدم Openship من Desktop",
+      "memberHint": "اربط تطبيق Desktop بنفس صلاحيات الوصول المتاحة لك هنا.",
+      "loading": "جارٍ تحميل المثيل…",
+      "sendHint": "أنشئ رمز نقل، ثم اختر «{action}» من الخيارات الأخرى في إعدادات المثيل في Desktop. تبقى الإدارة هنا حتى يُكمل Desktop النقل.",
+      "connectHint": "سجّل الدخول عبر عنوان المثيل، أو استخدم «{action}» في إعدادات المثيل للحصول على رمز. يتوقف المثيل المحلي مؤقتًا أثناء الاتصال.",
+      "secureAccount": "أمّن نسختك",
+      "reviewMove": "راجع عملية النقل",
+      "accountHint": "أضف بريدًا إلكترونيًا وكلمة مرور لتسجيل الدخول بعد النقل. ستراجع الوجهة مرة أخرى قبل بدء النقل.",
+      "backToDestination": "العودة إلى الوجهة",
+      "continueSetup": "متابعة",
+      "pairHint": "استخدم تطبيق سطح المكتب على جهازك الآخر مع البيانات الحالية لهذه النسخة وصلاحياتك الحالية. لن تُنقل أي بيانات.",
+      "pairOwnDevice": "يسجّل هذا الرمز الدخول بحسابك. استخدم الفريق لدعوة شخص آخر.",
+      "teamAccessTitle": "تفعيل دعوات الفريق",
+      "teamAccessHint": "تحتاج دعوات الفريق إلى نسخة يمكن الوصول إليها. أضف عنوانًا عامًا إلى Openship أو انقله إلى خادم يعمل باستمرار.",
+      "adminRequired": "اطلب من مسؤول النسخة إعداد ذلك.",
+      "webhookAccessHint": "يحتاج GitHub إلى واجهة Openship API يمكن الوصول إليها لإرسال أحداث النشر. انقل هذه النسخة إلى خادم يعمل باستمرار أو أضف عنوانًا عامًا لواجهة API."
+    },
+    "transfer": {
+      "installOnServer": "تثبيت جديد",
+      "existingInstance": "نسخة موجودة",
+      "destinationCodeHint": "في الوجهة، افتح الإعدادات ← النسخة ← {more} ← {receive}. اختر {create}، وأكّد الاستبدال، ثم انسخ رمز الاستقبال هنا.",
+      "destinationCodeLabel": "رمز الاستقبال من الوجهة",
+      "receiveDescription": "انقل بيانات نسخة أخرى إلى هنا. تُستبدل بياناتك الحالية بعد حفظ نسخة استرداد.",
+      "pasteMoveCode": "لصق رمز نقل",
+      "createReceiveCode": "إنشاء رمز استقبال",
+      "sourceCodeHint": "على الخادم المصدر، افتح الإعدادات ← النسخة ← {send} ← {create}. لنقل نسخة سطح المكتب إلى هنا، اختر {receive} بدلاً من ذلك.",
+      "sourceCodeLabel": "رمز النقل من المصدر",
+      "createMoveCode": "إنشاء رمز نقل",
+      "connectionCode": "رمز اتصال",
+      "moveCode": "رمز نقل",
+      "receiveCode": "رمز استقبال",
+      "connectionCodeHint": "على جهازك الآخر، افتح الإعدادات ← النسخة ← {connect}، ثم اختر {useCode}.",
+      "moveCodeHint": "على جهاز سطح المكتب المستقبِل، افتح الإعدادات ← النسخة ← {more} ← {receive}. اختر {paste} والصق هذا الرمز.",
+      "receiveCodeHint": "في المصدر، افتح الإعدادات ← النسخة ← {move} أو {another}، ثم {existing}. الصق رمز الاستقبال الذي أنشأته هنا.",
+      "codeExpiry": "تنتهي صلاحيته بعد 10 دقائق. احتفظ بهذا الرمز سرياً.",
+      "replaceDestinationConfirmation": "نقل جميع مساحات العمل والمستخدمين وبيانات الاعتماد إلى الوجهة. تُستبدل بياناتها الحالية بعد حفظ نسخة استرداد."
+    },
     "title": "النسخة",
     "descDesktop": "تطبيق سطح المكتب",
     "descCloud": "السحابة",
@@ -466,11 +732,37 @@
     "authCloud": "مصادقة سحابية",
     "authLocal": "مصادقة محلية",
     "localUser": "مستخدم محلي",
-    "change": "تغيير"
+    "change": "تغيير",
+    "connection": {
+      "title": "الاتصال بمثيل",
+      "description": "أدخل عنوانه، ثم سجّل الدخول بحسابك.",
+      "address": "رابط المثيل",
+      "addressHint": "يمكنك أيضًا لصق رابط دعوة الفريق. يتوقف المثيل المحلي مؤقتًا أثناء الاتصال.",
+      "codeTitle": "استخدام رمز اتصال",
+      "codeDescription": "سجّلت الدخول على جهاز آخر؟ افتح الإعدادات ← المثيل ← {action} هناك.",
+      "codeLabel": "رمز الاتصال",
+      "codeHint": "استخدم رمزًا من حسابك. تنتهي صلاحيته بعد 10 دقائق ويسجّل الدخول باسمك.",
+      "continue": "المتابعة لتسجيل الدخول",
+      "connectCode": "توصيل هذا الجهاز",
+      "connecting": "جارٍ الاتصال…",
+      "useCode": "استخدام رمز اتصال بدلًا من ذلك",
+      "useAddress": "استخدام رابط المثيل",
+      "invalidAddress": "أدخل رابط HTTPS للمثيل أو الدعوة، دون بيانات دخول أو معاملات إضافية.",
+      "invitationTitle": "فتح هذه الدعوة",
+      "invitationDescription": "اتصل بـ {instance}، ثم راجع مساحة العمل والدور قبل الانضمام.",
+      "reviewInvitation": "مراجعة الدعوة",
+      "invitationHint": "تتوقف نسختك المحلية مؤقتًا أثناء الاتصال. لا يتم نقل أي بيانات."
+    },
+    "recovery": {
+      "title": "نسخة Openship الخاصة بك",
+      "subtitle": "أكمل النقل أو أعد الاتصال لمواصلة إدارة مشاريعك.",
+      "checkConnection": "التحقق من الاتصال",
+      "signInRemote": "تسجيل الدخول إلى النسخة البعيدة"
+    }
   },
   "upgradeAuth": {
     "title": "إضافة كلمة مرور",
-    "description": "رقِّ هذه النسخة من وضع بلا مصادقة إلى تسجيل دخول حقيقي بالبريد الإلكتروني وكلمة المرور. تبقى مشاريعك وسِجلّك سليمة.",
+    "description": "عيّن بريدًا إلكترونيًا وكلمة مرور لحماية الوصول إلى Openship. ستبقى مشاريعك وسجلاتك كما هي.",
     "close": "إغلاق",
     "name": "الاسم",
     "namePlaceholder": "Jane Doe",
@@ -488,9 +780,29 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "سجل الإشعارات",
+      "description": "عمليات التسليم عبر جميع القنوات.",
+      "page": "الصفحة {page}",
+      "refresh": "تحديث",
+      "loading": "جارٍ تحميل عمليات الإرسال…",
+      "error": "تعذّر تحميل سجل الإرسال. حدّث للمحاولة مجددًا.",
+      "empty": "لا توجد عمليات إرسال حديثة.",
+      "attempts": "المحاولات: {count}",
+      "errorDetails": "تفاصيل الخطأ",
+      "unknownCategory": "حدث غير معروف",
+      "unknownChannel": "قناة غير معروفة",
+      "status": {
+        "sent": "تم الإرسال",
+        "queued": "في الانتظار",
+        "sending": "جارٍ الإرسال",
+        "failed": "فشل",
+        "seen": "تمت المشاهدة"
+      }
+    },
     "channels": {
       "title": "قنوات التسليم",
-      "description": "إلى أين تذهب إشعاراتك. القنوات المؤكَّدة قابلة للوصول؛ وتُتجاوَز غير المؤكَّدة.",
+      "description": "يمكن للقنوات المفعّلة والمتحقَّق منها تلقي التنبيهات. أرسل اختبارًا للتحقق من التسليم.",
       "empty": "لا توجد قنوات بعد. أضف واحدة لبدء تلقّي الإشعارات.",
       "verified": "مؤكَّدة",
       "unverified": "غير مؤكَّدة",
@@ -500,11 +812,15 @@
       "addChannel": "إضافة قناة",
       "confirmDelete": "حذف هذه القناة؟ ستتوقف الاشتراكات التي تستخدمها.",
       "channelRemoved": "تمت إزالة القناة",
-      "channelAdded": "تمت إضافة القناة"
+      "channelAdded": "تمت إضافة القناة",
+      "enabled": "مفعّل",
+      "disabled": "معطّل",
+      "edit": "تعديل",
+      "updated": "تم تحديث القناة"
     },
     "describe": {
       "slackWebhook": "‏Webhook الخاص بـ Slack",
-      "discordWebhook": "Discord webhook",
+      "discordWebhook": "خطاف ويب Discord",
       "msteamsWebhook": "‏Webhook الخاص بـ Microsoft Teams",
       "inApp": "أيقونة الجرس في لوحة التحكم"
     },
@@ -529,7 +845,22 @@
       "telegramHint": "‏أنشئ بوتًا عبر @BotFather، ثم أرسل إليه رسالة (أو أضِفه إلى مجموعتك) حتى يُسمح له بالرد.",
       "adding": "جارٍ الإضافة…",
       "addChannel": "إضافة قناة",
-      "labelRequired": "التسمية مطلوبة"
+      "labelRequired": "التسمية مطلوبة",
+      "channelType": "نوع القناة",
+      "labels": {
+        "name": "الاسم",
+        "address": "عنوان البريد الإلكتروني",
+        "url": "رابط Webhook",
+        "botToken": "رمز البوت",
+        "chatId": "معرّف المحادثة"
+      },
+      "saving": "جارٍ الحفظ…",
+      "editHint": "اترك حقول بيانات الاعتماد فارغة للاحتفاظ بالأسرار المخزنة. تغيير الوجهة يتطلب اختبارًا جديدًا للتحقق من التسليم.",
+      "signingSecret": "سر التوقيع",
+      "secretHint": "انسخ هذا السر الآن للتحقق من توقيعات Webhook. يُعرض مرة واحدة فقط.",
+      "noEmailTransport": "لم يتم إعداد خادم بريد إلكتروني على هذا المثيل، لذا لن يتم تسليم إشعارات البريد الإلكتروني.",
+      "setUpSmtp": "إعداد SMTP ←",
+      "otherAddress": "عنوان آخر…"
     },
     "subscriptions": {
       "title": "ما الذي تريد أن تُشعَر به",
@@ -538,13 +869,173 @@
       "allTab": "الكل",
       "eventHeader": "الحدث",
       "cellAria": "{category} عبر {channel}",
-      "notifyMe": "إشعاري"
+      "notifyMe": "إشعاري",
+      "search": "البحث في التنبيهات",
+      "noResults": "لا توجد تنبيهات مطابقة."
     },
     "orgDefaults": {
       "title": "الإعدادات الافتراضية للمؤسسة",
-      "description": "إعدادات افتراضية تُطبَّق عند انضمام عضو جديد إلى هذه المؤسسة. يمكن للأعضاء تجاوزها لكل قناة.",
+      "description": "تُطبّق إعدادات المؤسسة الافتراضية عندما لا يحدد العضو اختياره لتنبيه معيّن. ويمكن للأعضاء تجاوزها بتفضيلاتهم الخاصة.",
       "notifyAria": "الإشعار عند {category}",
       "nChannels": "{n} قنوات"
+    },
+    "overview": {
+      "title": "الإشعارات",
+      "description": "القنوات تابعة لحسابك ومشتركة بين المؤسسات. تفضيلات التنبيهات والإعدادات الافتراضية تخص المؤسسة النشطة.",
+      "ready": "{count} من {total} قنوات جاهزة",
+      "preferences": "تفضيلات التنبيهات",
+      "configuration": "القنوات والتنبيهات",
+      "retry": "إعادة المحاولة"
+    },
+    "groups": {
+      "deployment": "النشر",
+      "app_health": "صحة التطبيق",
+      "backups": "النسخ الاحتياطية",
+      "jobs": "المهام",
+      "actions": "الإجراءات",
+      "domains": "النطاقات وSSL",
+      "members": "الأعضاء",
+      "mail": "البريد",
+      "billing": "الفواتير",
+      "security": "الأمان"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "فشل النشر",
+        "description": "حدث خطأ أثناء البناء أو النشر. نرسل رسالة الخطأ ومقتطفاً من السجلات."
+      },
+      "deploy.succeeded": {
+        "label": "نجح النشر",
+        "description": "كل عملية نشر ناجحة للإنتاج. معطل افتراضياً."
+      },
+      "deploy.cancelled": {
+        "label": "تم إلغاء النشر",
+        "description": "تم إلغاء عملية نشر قيد التشغيل بواسطتك أو بواسطة عضو آخر."
+      },
+      "service.down": {
+        "label": "توقف التطبيق",
+        "description": "حاوية يجب أن تعمل توقفت أو تم إنهاؤها بسبب نفاد الذاكرة (OOM)."
+      },
+      "service.crash_loop": {
+        "label": "حلقة تعطل التطبيق",
+        "description": "الحاوية تستمر في إعادة التشغيل المتكرر."
+      },
+      "service.unhealthy": {
+        "label": "التطبيق غير سليم",
+        "description": "الحاوية تعمل ولكن فحص الصحة الخاص بها يفشل."
+      },
+      "service.recovered": {
+        "label": "تعافى التطبيق",
+        "description": "انتهى الانقطاع وأصبحت الحاوية سليمة مرة أخرى."
+      },
+      "server.unreachable": {
+        "label": "الخادم غير قابل للوصول",
+        "description": "تعذر الوصول إلى برنامج Docker على الخادم."
+      },
+      "backup.failed": {
+        "label": "فشل النسخ الاحتياطي",
+        "description": "حدث خطأ في تشغيل النسخ الاحتياطي المجدول أو اليدوي."
+      },
+      "backup.succeeded": {
+        "label": "نجح النسخ الاحتياطي",
+        "description": "كل عملية نسخ احتياطي ناجحة."
+      },
+      "backup.restore_completed": {
+        "label": "اكتملت الاستعادة",
+        "description": "انتهت عملية الاستعادة (أو فشلت)."
+      },
+      "job.run.failed": {
+        "label": "فشلت المهمة",
+        "description": "حدث خطأ في تشغيل مهمة مجدولة أو يدوية."
+      },
+      "job.run.succeeded": {
+        "label": "نجحت المهمة",
+        "description": "كل تشغيل ناجح للمهمة."
+      },
+      "job.run.started": {
+        "label": "بدأت المهمة",
+        "description": "بدأت المهمة في العمل."
+      },
+      "action.run.failed": {
+        "label": "فشل الإجراء",
+        "description": "حدث خطأ أثناء تشغيل سير عمل GitHub Actions أو تم إلغاؤه."
+      },
+      "action.run.succeeded": {
+        "label": "نجح الإجراء",
+        "description": "كل تشغيل ناجح لسير عمل GitHub Actions."
+      },
+      "domain.ssl_expiring": {
+        "label": "شهادة SSL توشك على الانتهاء",
+        "description": "تعذر تجديد شهادة النطاق وتوشك صلاحيتها على الانتهاء."
+      },
+      "member.invited": {
+        "label": "تمت دعوة عضو",
+        "description": "تمت دعوة عضو جديد إلى مؤسستك."
+      },
+      "member.joined": {
+        "label": "انضم عضو",
+        "description": "قبل عضو الدعوة وانضم إلى المؤسسة."
+      },
+      "member.removed": {
+        "label": "تمت إزالة عضو",
+        "description": "غادر عضو المؤسسة أو تمت إزالته."
+      },
+      "mail.dns_unverified": {
+        "label": "نطاق البريد غير موثق",
+        "description": "يحتوي نطاق البريد على سجلات DNS مفقودة أو غير صحيحة."
+      },
+      "mail.queue_backed_up": {
+        "label": "تراكم في قائمة انتظار البريد",
+        "description": "قائمة انتظار تسليم البريد الصادر مرتفعة بشكل غير معتاد."
+      },
+      "billing.quota_warning": {
+        "label": "تحذير الحصة",
+        "description": "الاقتراب من حدود استخدام الموارد أو حد الإنفاق."
+      },
+      "billing.invoice_paid": {
+        "label": "تم دفع الفاتورة",
+        "description": "تم دفع فاتورة الاشتراك بنجاح."
+      },
+      "billing.payment_failed": {
+        "label": "فشلت عملية الدفع",
+        "description": "فشلت عملية دفع الاشتراك وتحتاج إلى اهتمام."
+      },
+      "domain.expiring": {
+        "label": "شهادة SSL على وشك الانتهاء",
+        "description": "فحص يومي — يتم تشغيله عندما يتبقى أقل من 7 أيام على أي من شهادات النطاق المخصص ولا يمكن لخدمة التجديد الوصول إلى المضيف."
+      },
+      "domain.verification_failed": {
+        "label": "فشل التحقق من النطاق",
+        "description": "لم ينجح فحص DNS أثناء الإعداد الأولي للنطاق."
+      },
+      "member.added": {
+        "label": "انضم عضو جديد",
+        "description": "قبل شخص ما دعوة وانضم إلى هذه المؤسسة."
+      },
+      "invitation.sent": {
+        "label": "تم إرسال الدعوات",
+        "description": "أرسل المسؤول دعوة (دعوات) لأعضاء جدد. مفيد كإشارة أمان."
+      },
+      "mail.inbound_received": {
+        "label": "وصل بريد إلى عنوان مراقب",
+        "description": "وصلت رسالة إلى صندوق بريد أو نطاق تراقبه إحدى قواعد الإشعارات الخاصة بك."
+      },
+      "action.run.cancelled": {
+        "label": "تم إلغاء سير العمل",
+        "description": "تم إلغاء تشغيل سير عمل Actions."
+      },
+      "billing.alert": {
+        "label": "تنبيه الفوترة",
+        "description": "فشل الدفع أو تم الوصول إلى حد الخطة أو تأخرت الفاتورة. يقوم دائمًا بإخطار مسؤولي الفوترة."
+      },
+      "quota.warning": {
+        "label": "تحذير الحصة",
+        "description": "أنت تقترب من حد الخطة (التخزين، عمليات النشر، الأعضاء). تنبيه مسبق قبل بدء حدوث الأخطاء."
+      },
+      "security.advisory": {
+        "label": "تنبيهات الأمان",
+        "description": "تنبيه أمني منشور يؤثر على Openship أو خدمة منشورة، مع السبب والتحديث المتاح."
+      }
     }
   },
   "audit": {
@@ -587,7 +1078,9 @@
       "today": "اليوم",
       "last7": "آخر 7 أيام",
       "last30": "آخر 30 يومًا",
-      "last90": "آخر 90 يومًا"
+      "last90": "آخر 90 يومًا",
+      "anyAgent": "أي وكيل",
+      "agentCalls": "{count} أحداث"
     },
     "tabs": {
       "all": "الكل"
@@ -611,7 +1104,190 @@
       "when": "الوقت",
       "cameFrom": "المصدر",
       "technical": "التفاصيل التقنية",
-      "eventType": "نوع الحدث"
+      "eventType": "نوع الحدث",
+      "viaAgent": "وكيل"
+    },
+    "categories": {
+      "deployments": "عمليات النشر",
+      "apps": "التطبيقات والخدمات",
+      "domains": "النطاقات وSSL",
+      "servers": "الخوادم",
+      "members": "الأعضاء والوصول",
+      "agent": "وكلاء الذكاء الاصطناعي",
+      "security": "الأمان",
+      "billing": "الفواتير",
+      "system": "النظام"
+    },
+    "events": {
+      "server:write": {
+        "action": "قام بتغيير الخادم",
+        "label": "تم تغيير الخادم"
+      },
+      "server:admin": {
+        "action": "نفّذ إجراء مسؤول على الخادم",
+        "label": "إجراء مسؤول الخادم"
+      },
+      "server:add": {
+        "action": "أضاف الخادم",
+        "label": "تمت إضافة الخادم"
+      },
+      "server:remove": {
+        "action": "أزال الخادم",
+        "label": "تمت إزالة الخادم"
+      },
+      "settings:write": {
+        "action": "قام بتغيير الإعدادات",
+        "label": "تم تغيير الإعدادات"
+      },
+      "settings:admin": {
+        "action": "نفّذ إجراء مسؤول على الإعدادات",
+        "label": "إجراء مسؤول الإعدادات"
+      },
+      "project:create": {
+        "action": "أنشأ",
+        "label": "تم إنشاء المشروع"
+      },
+      "project:write": {
+        "action": "قام بتعديل",
+        "label": "تم تعديل المشروع"
+      },
+      "project:delete": {
+        "action": "حذف",
+        "label": "تم حذف المشروع"
+      },
+      "deployment:start": {
+        "action": "بدأ نشر",
+        "label": "بدء النشر"
+      },
+      "deployment:success": {
+        "action": "قام بنشر",
+        "label": "تم النشر بنجاح"
+      },
+      "deployment:failed": {
+        "action": "فشل في نشر",
+        "label": "فشل النشر"
+      },
+      "deployment:cancelled": {
+        "action": "ألغى نشر",
+        "label": "تم إلغاء النشر"
+      },
+      "domain:add": {
+        "action": "أضاف النطاق",
+        "label": "تمت إضافة النطاق"
+      },
+      "domain:remove": {
+        "action": "أزال النطاق",
+        "label": "تمت إزالة النطاق"
+      },
+      "domain:verify": {
+        "action": "تحقق من النطاق",
+        "label": "تم التحقق من النطاق"
+      },
+      "member:add": {
+        "action": "أضاف",
+        "label": "تمت إضافة عضو"
+      },
+      "member:remove": {
+        "action": "أزال",
+        "label": "تمت إزالة عضو"
+      },
+      "terminal:write": {
+        "action": "فتح جلسة طرفية على",
+        "label": "تم فتح جلسة طرفية"
+      },
+      "deployment:write": {
+        "action": "بدأ عملية نشر لـ",
+        "actionWithoutResource": "بدأ عملية نشر",
+        "label": "إجراء النشر",
+        "description": "تم استدعاء نقطة نهاية النشر — بدء، إعادة محاولة، استرجاع أو ترقية."
+      },
+      "deployment:admin": {
+        "action": "نفّذ إجراء مسؤول على نشر",
+        "actionWithoutResource": "نفّذ إجراء مسؤول على النشر",
+        "label": "إجراء مسؤول النشر",
+        "description": "تم استدعاء إجراء إداري على عملية نشر."
+      },
+      "job:write": {
+        "action": "غيّر المهمة",
+        "actionWithoutResource": "غيّر المهمة",
+        "label": "تم تغيير المهمة",
+        "description": "تم إنشاء مهمة مجدولة أو مخصصة أو تعديلها أو تشغيلها أو حذفها."
+      },
+      "notification_default.updated": {
+        "action": "غيّر الإعدادات الافتراضية للإشعارات لـ",
+        "actionWithoutResource": "غيّر الإعدادات الافتراضية للإشعارات",
+        "label": "تم تغيير الإعدادات الافتراضية للإشعارات",
+        "description": "تم تحديث توجيه الإشعارات الافتراضي للمؤسسة."
+      },
+      "notification_channel.created": {
+        "action": "أضاف قناة الإشعارات",
+        "actionWithoutResource": "أضاف قناة الإشعارات",
+        "label": "تمت إضافة قناة الإشعارات"
+      },
+      "notification_channel.updated": {
+        "action": "حدّث قناة الإشعارات",
+        "actionWithoutResource": "حدّث قناة الإشعارات",
+        "label": "تم تحديث قناة الإشعارات"
+      },
+      "notification_channel.deleted": {
+        "action": "أزال قناة الإشعارات",
+        "actionWithoutResource": "أزال قناة الإشعارات",
+        "label": "تمت إزالة قناة الإشعارات"
+      },
+      "notification_subscription.updated": {
+        "action": "غيّر ما يتم إرساله إلى",
+        "actionWithoutResource": "غيّر توجيه الإشعارات",
+        "label": "تم تغيير توجيه الإشعارات"
+      },
+      "notification_subscription.deleted": {
+        "action": "أوقف الإشعارات لـ",
+        "actionWithoutResource": "أوقف الإشعارات",
+        "label": "تم إيقاف الإشعارات"
+      },
+      "notification_delivery.seen": {
+        "action": "حدد كمقروء",
+        "actionWithoutResource": "حدد كمقروء",
+        "label": "تم تحديد التنبيه كمقروء"
+      },
+      "notifications:write": {
+        "action": "غيّر الإشعارات",
+        "actionWithoutResource": "غيّر الإشعارات",
+        "label": "تم تغيير الإشعارات"
+      },
+      "notifications:admin": {
+        "action": "نفّذ إجراء مسؤول على الإشعارات",
+        "actionWithoutResource": "نفّذ إجراء مسؤول على الإشعارات",
+        "label": "إجراء مسؤول على الإشعارات"
+      },
+      "job_run.started": {
+        "action": "بدأ المهمة",
+        "actionWithoutResource": "بدأ المهمة",
+        "label": "بدأت المهمة"
+      },
+      "job_run.succeeded": {
+        "action": "شغّل المهمة بنجاح",
+        "actionWithoutResource": "شغّل المهمة بنجاح",
+        "label": "نجحت المهمة"
+      },
+      "job_run.failed": {
+        "action": "شغّل المهمة الفاشلة",
+        "actionWithoutResource": "شغّل المهمة الفاشلة",
+        "label": "فشلت المهمة"
+      },
+      "issues.history.clear": {
+        "action": "مسح سجل المراقبة المحلول",
+        "actionWithoutResource": "مسح سجل المراقبة المحلول",
+        "label": "تم مسح سجل المراقبة"
+      }
+    },
+    "resourceLabels": {
+      "project": "تطبيق",
+      "service": "خدمة",
+      "container": "حاوية",
+      "deployment": "نشر",
+      "domain": "نطاق",
+      "server": "خادم",
+      "settings": "إعدادات"
     }
   },
   "updates": {
@@ -713,7 +1389,43 @@
       "rowsRestored": "تمت استعادة {count} صفوف",
       "secretsRestored": "تمت استعادة {count} أسرار",
       "secretsNotRestored": "لم تُستعَد الأسرار (عبارة مرور مفقودة/غير صحيحة) — أعِد إدخال بيانات الاعتماد"
-    }
+    },
+    "backupTitle": "النسخ الاحتياطي والاسترداد",
+    "backupDesc": "تصدير ملف أو استعادة نسخة احتياطية موجودة.",
+    "backupWarning": "تتضمن ملفات الأرشيف قاعدة بيانات Openship وبيانات الاعتماد. تظل محتويات وحدات تخزين Docker على خوادمها؛ استخدم النسخ الاحتياطية للمشروع لبيانات الخدمة.",
+    "exportInstanceTitle": "تصدير المثيل أو المشاريع",
+    "exportInstanceDesc": "اختر مثيلًا كاملاً أو مشاريع محددة مع بيئاتها وتبعياتها.",
+    "exportProjectTitle": "تصدير المشروع",
+    "exportProjectDesc": "تنزيل جميع إعدادات المشروع وقيم البيئة وبيانات الاعتماد بصيغة JSON.",
+    "exportProjectIntro": "يشمل جميع البيئات والخدمات وسجل النشر والتحليلات والاتصالات والمجالات والنسخ الاحتياطي والمفاتيح. ملف JSON غير مشفر ويتم استيراده بدون كلمة مرور.",
+    "exportProjectReconnection": "تحتاج الوجهة إلى نفس الخوادم أو حساب OpenShip Cloud لإعادة الاتصال بأحمال العمل الحالية.",
+    "exportInstanceIntro": "تصدير لوحة التحكم بما في ذلك قيم البيئة ومفاتيح الخادم والتكوين والسجل. ملف JSON غير مشفر.",
+    "scopeLabel": "نطاق التصدير",
+    "scopeInstance": "المثيل بأكمله",
+    "scopeProjects": "المشاريع والبيئات المحددة",
+    "recordsAcrossEnvsIncluded": "تم تضمين {count} سجل عبر {envs} بيئات.",
+    "checkingExport": "جارٍ فحص محتويات التصدير…",
+    "downloadExport": "تنزيل التصدير",
+    "downloadAgain": "تنزيل مرة أخرى",
+    "exporting": "جارٍ التصدير…",
+    "exportDownloaded": "تم تنزيل التصدير",
+    "exportCompleteToast": "تم تنزيل التصدير. قم باستيراده من الإعدادات ← المثيل في لوحة التحكم المستهدفة.",
+    "optSecretsLabel": "قيم البيئة والمفاتيح وبيانات الاعتماد",
+    "optSecretsDesc": "مضمنة كملف JSON قابل للقراءة، مع مفاتيح الخادم وتكوين Compose والملفات السرية.",
+    "optLinkedAppsLabel": "التطبيقات المرتبطة",
+    "optLinkedAppsDesc": "تضمين مشاريع قواعد البيانات والتخزين المطلوبة للاختيار.",
+    "optServersLabel": "الخوادم المستضافة ذاتيًا ذات الصلة (موصى به)",
+    "optServersDesc": "تضمين اتصالات الخادم ومفاتيح Git الخاصة بها. يمكن إعادة استخدام الخوادم المطابقة.",
+    "optDomainsLabel": "النطاقات والتوجيه",
+    "optBackupsLabel": "تكوين النسخ الاحتياطي",
+    "optBackupsDesc": "السياسات والوجهات؛ تبقى بيانات النسخ الاحتياطي في وحدة التخزين الخاصة بها.",
+    "optIntegrationsLabel": "عمليات التكامل المشتركة",
+    "optIntegrationsDesc": "تطبيقات مزود Git وعمليات تسجيل الدخول إلى السجل وبيانات اعتماد DNS.",
+    "historyOptionsSummary": "خيارات السجل · تم تضمين {count} من {total}",
+    "recordsSelected": "تم تحديد {count} سجل.",
+    "recordsAcrossEnvsSelected": "تم تحديد {count} سجل عبر {envs} بيئات.",
+    "selectAtLeastOne": "حدد مشروعًا أو بيئة واحدة على الأقل.",
+    "cloudNotice": "لن تعمل مشاريع Cloud حتى يتم ربط مساحة العمل الوجهة بنفس حساب Openship Cloud."
   },
   "migrate": {
     "chooseTitle": "الانتقال إلى وضع تعدّد المستخدمين",
@@ -886,6 +1598,188 @@
       "deleteFailed": "تعذّر حذف بيانات الاعتماد",
       "verifyOk": "قَبِل المزوّد بيانات الاعتماد",
       "verifyFailed": "رفض المزوّد بيانات الاعتماد"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "سجل الحاويات",
+        "summary": "سحب الصور الخاصة من السجل أثناء عمليات النشر.",
+        "selector": {
+          "label": "مضيف السجل",
+          "help": "المضيف كما يظهر في مرجع الصورة — ghcr.io، registry.example.com:5000، أو docker.io لـ Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "اسم المستخدم"
+          },
+          "secret": {
+            "label": "كلمة المرور أو رمز الوصول",
+            "help": "يفضل استخدام رمز وصول للقراءة فقط بدلاً من كلمة مرور الحساب."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "دع Openship يكتب سجلات DNS التي يحتاجها النطاق المخصص بدلاً من لصقها يدوياً.",
+        "fields": {
+          "apiToken": {
+            "label": "رمز API",
+            "help": "رمز وصول مع صلاحيات Zone:Read و DNS:Edit على النطاقات التي تريد إدارتها بواسطة Openship."
+          }
+        }
+      }
     }
+  },
+  "accountSecurity": {
+    "title": "المصادقة الثنائية",
+    "description": "احمِ حسابك بتطبيق مصادقة ورموز استرداد.",
+    "enabled": "مفعّلة",
+    "notEnabled": "غير مفعّلة",
+    "loginHint": "يلزم عامل ثانٍ بعد تسجيل الدخول بكلمة مرور أو حساب اجتماعي أو مفتاح مرور.",
+    "passwordNeeded": "أضف كلمة مرور لإدارة المصادقة الثنائية. سيظل تسجيل الدخول بحسابك الاجتماعي متاحًا.",
+    "passwordHint": "أكّد كلمة مرورك لإعداد تطبيق المصادقة.",
+    "enable": "إعداد المصادقة الثنائية",
+    "disable": "إيقاف المصادقة الثنائية",
+    "disableHint": "أكّد كلمة مرورك لإيقاف المصادقة الثنائية. لن تعمل رموز الاسترداد بعدها.",
+    "regenerate": "استبدال رموز الاسترداد",
+    "regenerateHint": "أكّد كلمة مرورك. ستحل الرموز الجديدة محل جميع رموزك القديمة.",
+    "recoveryCodes": "رموز الاسترداد",
+    "password": "كلمة المرور الحالية",
+    "newPassword": "كلمة مرور جديدة",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "passwordMismatch": "كلمتا المرور غير متطابقتين.",
+    "addPassword": "إضافة كلمة مرور",
+    "passwordAdded": "تمت إضافة كلمة المرور. يمكنك الآن إعداد المصادقة الثنائية.",
+    "continue": "متابعة",
+    "verify": "التحقق والتفعيل",
+    "cancel": "إلغاء",
+    "done": "تم",
+    "retry": "المحاولة مجددًا",
+    "loading": "جارٍ تحميل أمان الحساب…",
+    "loadFailed": "تعذّر تحميل أمان الحساب. حاول مجددًا.",
+    "failed": "تعذّر تحديث أمان الحساب. حاول مجددًا.",
+    "enabledMessage": "تم تفعيل المصادقة الثنائية.",
+    "disabledMessage": "تم إيقاف المصادقة الثنائية.",
+    "scanHint": "امسح هذا الرمز بتطبيق المصادقة ثم أدخل الرمز المكوّن من ستة أرقام. لا يكتمل الإعداد إلا بعد التحقق.",
+    "scanTitle": "رمز QR لإعداد تطبيق المصادقة",
+    "manualKey": "أو أدخل مفتاح الإعداد يدويًا",
+    "copyKey": "نسخ مفتاح الإعداد",
+    "code": "رمز المصادقة",
+    "saveCodes": "احفظ رموز الاسترداد",
+    "codesHint": "احتفظ بها في مكان آمن. يمكن استخدام كل رمز بدلًا من تطبيق المصادقة مرة واحدة. استبدال الرموز يُبطل جميع الرموز السابقة.",
+    "copyCodes": "نسخ الرموز",
+    "download": "تنزيل",
+    "savedCodes": "لقد حفظت رموز الاسترداد",
+    "copied": "تم النسخ.",
+    "copyFailed": "تعذّر النسخ. حدّد النص وانسخه يدويًا.",
+    "passkeysTitle": "مفاتيح المرور",
+    "passkeysDescription": "سجّل الدخول ببصمتك أو وجهك أو رمز جهازك أو مفتاح أمان.",
+    "passkeyName": "اسم مفتاح المرور",
+    "passkeyPlaceholder": "مثلًا، حاسوبي المحمول",
+    "passkeyDefault": "مفتاح مرور",
+    "passkeyAdd": "إضافة مفتاح مرور",
+    "passkeyUnsupported": "لإضافة مفتاح مرور أو استخدامه، افتح لوحة التحكم عبر HTTPS (أو localhost) بمتصفح يدعم مفاتيح المرور. يمكنك إدارة المفاتيح المحفوظة هنا.",
+    "passkeysEmpty": "لم تتم إضافة مفاتيح مرور بعد.",
+    "passkeyAdded": "تمت إضافة مفتاح المرور.",
+    "passkeyRemoved": "تم حذف مفتاح المرور.",
+    "passkeyFailed": "تعذّر تحديث مفتاح المرور. حاول مجددًا. إذا انتهت جلستك، سجّل الدخول مرة أخرى أولًا.",
+    "synced": "مفتاح مرور متزامن",
+    "deviceBound": "مفتاح مرور مرتبط بالجهاز",
+    "removeNamed": "حذف {name}",
+    "remove": "حذف",
+    "removeConfirm": "لن تتمكن من تسجيل الدخول بهذا المفتاح. تأكّد من توفر طريقة أخرى لتسجيل الدخول."
+  },
+  "preferences": {
+    "title": "التفضيلات",
+    "description": "تفضيلات العرض الشخصية لهذا المتصفح — لا يتم إرسال أي شيء إلى الخادم.",
+    "demoMode": {
+      "title": "وضع العرض التوضيحي",
+      "description": "تمويه عناوين IP والمضيفين وقيم البيئة أثناء مشاركة الشاشة والتسجيل."
+    }
+  },
+  "productView": {
+    "title": "الواجهة",
+    "description": "أي لوحة تحكم تعرضها لك لوحة المعلومات هذه.",
+    "platformLabel": "منصة كاملة",
+    "platformDesc": "المشاريع والتطبيقات وعمليات النشر والخوادم — كل ما يمكن لهذا التثبيت القيام به.",
+    "mailLabel": "البريد فقط",
+    "mailDesc": "لوحة التحكم في البريد في الشريط الجانبي: النطاقات، صناديق البريد، DNS، قائمة الانتظار، السجلات.",
+    "instanceDefault": "يتم تعيين هذا المثيل افتراضياً على وضع {mode}.",
+    "useDefault": "استخدام الإعداد الافتراضي للمثيل"
+  },
+  "mailMode": {
+    "title": "وضع المنتج",
+    "description": "ما يقدم هذا المثيل نفسه كـ. هذا هو الإعداد الافتراضي للجميع هنا — لا يزال بإمكان كل مستخدم اختيار عرضه الخاص تحت الإعدادات ← عام.",
+    "platformLabel": "منصة كاملة",
+    "platformDesc": "المشاريع والتطبيقات وعمليات النشر والخوادم — كل ما يمكن لهذا التثبيت القيام به.",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "يعيّن العلامة التجارية للمثيل كـ Openship Mail ويجعل الشريط الجانبي لوحة التحكم في البريد.",
+    "savedOverridden": "تم الحفظ. لم يتغير عرضك الشخصي — لقد اخترته في الإعدادات ← عام.",
+    "errorToast": "تعذر تغيير وضع المنتج.",
+    "envNote": "يتبع هذا المثيل OPENSHIP_PRODUCT=mail من البيئة. يؤدي اختيار وضع هنا إلى تجاوزه."
+  },
+  "email": {
+    "title": "البريد الإلكتروني (SMTP)",
+    "description": "خدمة SMTP التي يرسل هذا المثيل البريد من خلالها",
+    "intro": "تُستخدم لإعادة تعيين كلمة المرور والتحقق من البريد الإلكتروني ودعوات الفريق والإشعارات. ما عليك سوى لصق بيانات اعتماد SMTP من أي مزود — Amazon SES أو Gmail أو Mailgun أو مرحل الشركة — المضيف والمنفذ واسم المستخدم وكلمة المرور. لا يوجد خادم لإعداده؛ يتصل Openship به مباشرة. يتم تشفير كلمة المرور ولا تظهر مرة أخرى أبداً.",
+    "loading": "جارٍ التحميل…",
+    "configuredBadge": "مكوّن",
+    "notConfigured": "لم يتم الإعداد بعد — تظل عمليات إعادة تعيين كلمة المرور والدعوات وإشعارات البريد الإلكتروني متوقفة حتى تدخل بيانات اعتماد SMTP أدناه.",
+    "providerLabel": "المزود",
+    "hostLabel": "مضيف SMTP",
+    "hostPlaceholder": "smtp.example.com",
+    "portLabel": "المنفذ",
+    "userLabel": "اسم المستخدم",
+    "userPlaceholder": "user@example.com",
+    "passwordLabel": "كلمة المرور",
+    "passwordPlaceholder": "كلمة مرور SMTP أو مفتاح التطبيق",
+    "passwordKeepPlaceholder": "•••••••• (اتركه فارغاً للاحتفاظ بالحالية)",
+    "fromLabel": "عنوان المرسل (From)",
+    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromHint": "اختياري. الإعداد الافتراضي هو اسم المستخدم.",
+    "fromHintRequired": "مطلوب — اسم المستخدم الخاص بك ليس بريداً إلكترونياً، لذا يحتاج المستلمون إلى عنوان مرسل حقيقي.",
+    "fromRequired": "أدخل عنوان المرسل — اسم المستخدم لهذا المزود ليس بريداً إلكترونياً، لذا لا يمكن أن يكون هو المرسل.",
+    "fromInvalid": "يجب أن يحتوي عنوان المرسل على بريد إلكتروني صالح (مثل الاسم <you@example.com>).",
+    "save": "حفظ",
+    "saving": "جارٍ الحفظ…",
+    "saved": "تم حفظ إعدادات SMTP",
+    "saveFailed": "تعذر حفظ إعدادات SMTP",
+    "hostRequired": "أدخل مضيف SMTP.",
+    "portInvalid": "يجب أن يكون المنفذ رقماً بين 1 و 65535.",
+    "testTitle": "إرسال بريد إلكتروني تجريبي",
+    "testPlaceholder": "you@example.com",
+    "sendTest": "إرسال اختبار",
+    "sending": "جارٍ الإرسال…",
+    "testSent": "تم إرسال البريد الإلكتروني التجريبي — تحقق من صندوق الوارد.",
+    "testFailed": "فشل الاختبار",
+    "saveFirst": "احفظ إعدادات SMTP قبل إرسال اختبار.",
+    "disable": "تعطيل ومسح SMTP",
+    "disabled": "تم تعطيل SMTP",
+    "toastTitle": "البريد الإلكتروني"
+  },
+  "edgeOrphans": {
+    "title": "مسارات الـ edge غير المتعقبة",
+    "description": "أسماء المضيفين التي لا يزال هذا الجهاز يخدمها ولكن ليس لدى Openship سجل لها",
+    "scan": "فحص",
+    "scanning": "جارٍ الفحص…",
+    "allClear": "تم احتساب كل اسم مضيف يخدمه الـ edge.",
+    "comparedTo": "تمت المقارنة مع {count} أسماء مضيفين متعقبة.",
+    "unavailable": "تعذر التحقق من الـ edge",
+    "explain": "إزالة مشروع باستخدام \"إزالة من Openship فقط\" يترك مساره قيد التشغيل عن قصد. يُرجع مسار التطبيق المتبقي رمز 502 بمجرد اختفاء حاويته، لكن المسار الثابت المتبقي يستمر في تقديم الملفات القديمة برمز 200 — حتى على اسم مضيف تم منحه منذ ذلك الحين لمشروع آخر.",
+    "kindStatic": "ملفات ثابتة",
+    "kindProxy": "مسار التطبيق",
+    "staticWarning": "لا يزال يخدم الملفات. يجيب على الطلبات اليوم.",
+    "proxyWarning": "يشير إلى upstream ربما اختفى.",
+    "servingFrom": "يخدم من",
+    "proxyingTo": "إعادة توجيه البروكسي إلى",
+    "alsoAnswers": "يجيب أيضاً لـ",
+    "stopServing": "إيقاف الخدمة",
+    "stopping": "جارٍ الإيقاف…",
+    "stopped": "لم يعد يتم خدمة {hostname}.",
+    "stopFailed": "تعذر إيقاف خدمة {hostname}",
+    "confirmTitle": "إيقاف خدمة {hostname}؟",
+    "confirmBody": "يؤدي هذا إلى إزالة تكوين الـ edge لاسم المضيف هذا فقط. تظل الملفات المبنية على القرص، ولا يتم المساس بأي شيء آخر على الخادم. إذا تم نشر مشروع لاحقاً على اسم المضيف هذا، فسيقوم بإنشاء مساره الخاص.",
+    "confirmCta": "إيقاف الخدمة",
+    "cancel": "إلغاء",
+    "noReverseProxy": "لم يتم اكتشاف وكيل عكسي على هذا الجهاز."
   }
 }

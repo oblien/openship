@@ -16,20 +16,45 @@
  * cannot serve both, and the old one installed nothing on whichever it guessed against.
  */
 
-import { answered, refused, shellQuote, type Answer } from "@repo/core";
+import {
+  answered,
+  refused,
+  shellQuote,
+  IPTABLES_PROBES,
+  PACKAGE_MANAGER_DEFAULTS,
+  type Answer,
+} from "@repo/core";
 
 import type { EnvironmentProfile } from "../system/environment";
 import { envOps, hostRefusal, opScript, type EnvOps, type Op } from "../system/environment-ops";
-import type {
-  ToolchainCheckEntry,
-  ToolchainInstallPlan,
-  ToolStep,
-  ToolStepUser,
-} from "./types";
+import type { ToolchainCheckEntry, ToolchainInstallPlan, ToolStep, ToolStepUser } from "./types";
 
 // ─── Check recipes ───────────────────────────────────────────────────────────
 
 const CHECKS = {
+  "iscsi-tools": {
+    label: "iSCSI tools",
+    versionCommand: "iscsiadm --version",
+    parseVersion: (output: string) =>
+      output.match(/([0-9]+\.[0-9]+(?:\.[0-9]+)?)/)?.[1] ?? output.trim(),
+    missingMessage: "iSCSI tools are required for replicated volumes",
+    installable: true,
+  },
+  "nfs-client": {
+    label: "NFS client",
+    versionCommand: "mount.nfs -V",
+    parseVersion: (output: string) =>
+      output.match(/([0-9]+\.[0-9]+(?:\.[0-9]+)?)/)?.[1] ?? output.trim(),
+    missingMessage: "The NFS client is required for shared volumes",
+    installable: true,
+  },
+  curl: {
+    label: "curl",
+    versionCommand: "curl --version",
+    parseVersion: (output: string) => output.match(/^curl ([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "curl is not installed",
+    installable: true,
+  },
   node: {
     label: "Node.js",
     versionCommand: "node --version",
@@ -79,6 +104,28 @@ const CHECKS = {
     versionCommand: "python3 --version",
     parseVersion: (output: string) => output.match(/Python (\S+)/)?.[1] ?? output.trim(),
     missingMessage: "Python 3 is not installed",
+    installable: true,
+  },
+  iproute2: {
+    label: "iproute2",
+    versionCommand: "ip -Version",
+    parseVersion: (output: string) => output.match(/iproute2[,-]([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "iproute2 is not installed",
+    installable: true,
+  },
+  iptables: {
+    label: "iptables",
+    versionCommand: IPTABLES_PROBES.version,
+    parseVersion: (output: string) => output.match(/iptables v([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "iptables is required to enforce private connection policies on this host",
+    installable: true,
+  },
+  "wireguard-tools": {
+    label: "WireGuard tools",
+    versionCommand: "wg --version",
+    parseVersion: (output: string) =>
+      output.match(/wireguard-tools v([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "WireGuard tools are not installed",
     installable: true,
   },
   pip: {
@@ -258,7 +305,7 @@ const NODE_LTS_MAJOR = 22;
 
 /** Pinned so a toolchain install is reproducible across hosts. */
 const GO_VERSION = "1.22.5";
-const BUN_VERSION = "1.2.0";
+const BUN_VERSION = PACKAGE_MANAGER_DEFAULTS.bun;
 const DOTNET_CHANNEL = "8.0";
 
 /**
@@ -438,6 +485,11 @@ const RECIPES: Record<InstallableTool, ToolRecipe> = {
           ),
   },
 
+  curl: {
+    verify: "curl --version",
+    steps: (ops) => asRoot(ops.pkgInstall(["curl", "ca-certificates"])),
+  },
+
   python3: {
     verify: "python3 --version",
     steps: (ops) =>
@@ -450,6 +502,88 @@ const RECIPES: Record<InstallableTool, ToolRecipe> = {
           apk: answered(["python3", "py3-pip"]),
           brew: answered(["python3"]),
         }),
+      ),
+  },
+
+  "iscsi-tools": {
+    verify: "iscsiadm --version",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["open-iscsi"]),
+            dnf: answered(["iscsi-initiator-utils"]),
+            yum: answered(["iscsi-initiator-utils"]),
+            apk: answered(["open-iscsi"]),
+            brew: refused("Replicated storage requires Linux."),
+          },
+          { installRecommends: false },
+        ),
+      ),
+  },
+  "nfs-client": {
+    verify: "mount.nfs -V",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["nfs-common"]),
+            dnf: answered(["nfs-utils"]),
+            yum: answered(["nfs-utils"]),
+            apk: answered(["nfs-utils"]),
+            brew: refused("Shared cluster storage requires Linux."),
+          },
+          { installRecommends: false },
+        ),
+      ),
+  },
+  iproute2: {
+    verify: "ip -Version",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["iproute2"]),
+            dnf: answered(["iproute"]),
+            yum: answered(["iproute"]),
+            apk: answered(["iproute2"]),
+            brew: refused("iproute2 requires Linux. Choose a Linux server for managed networking."),
+          },
+          { installRecommends: false },
+        ),
+      ),
+  },
+  "wireguard-tools": {
+    verify: "wg --version",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["wireguard-tools"]),
+            dnf: answered(["wireguard-tools"]),
+            yum: answered(["wireguard-tools"]),
+            apk: answered(["wireguard-tools"]),
+            brew: refused("Managed WireGuard networking requires Linux. Choose a Linux server."),
+          },
+          { installRecommends: false },
+        ),
+      ),
+  },
+
+  iptables: {
+    verify: IPTABLES_PROBES.version,
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["iptables"]),
+            dnf: answered(["iptables"]),
+            yum: answered(["iptables"]),
+            apk: answered(["iptables"]),
+            brew: refused("Private connection policies require Linux."),
+          },
+          { installRecommends: false },
+        ),
       ),
   },
 

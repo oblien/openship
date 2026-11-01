@@ -103,13 +103,21 @@ vi.mock("@repo/db", () => ({
     backupRestore: { findById: vi.fn(async () => null) },
   },
 }));
-vi.mock("../../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
 import {
   authorizeMcpClient,
   disconnectMcpClient,
   getMcpClient,
-} from "../../../src/modules/tokens/token.controller";
+} from "@repo/platform/engine/modules/tokens/token.service";
+
+async function serviceReply(work: Promise<unknown>): Promise<Reply> {
+  try { return { body: { data: await work as never }, status: 200 }; }
+  catch (error) {
+    const e = error as { message: string; code?: string; statusCode?: number };
+    return { body: { error: e.message, code: e.code }, status: e.statusCode ?? 500 };
+  }
+}
 
 interface Reply {
   body: { data?: Record<string, unknown>; error?: string; code?: string };
@@ -161,20 +169,17 @@ function request(body: unknown, params: Record<string, string> = {}): { c: Conte
 
 async function authorize(body: unknown): Promise<Reply> {
   const { c, reply } = request(body);
-  await authorizeMcpClient(c);
-  return reply();
+  return serviceReply(authorizeMcpClient(c.get("ctx"), body as never));
 }
 
 async function read(clientId: string): Promise<Reply> {
   const { c, reply } = request({}, { clientId });
-  await getMcpClient(c);
-  return reply();
+  return serviceReply(getMcpClient(c.get("ctx"), clientId));
 }
 
 async function disconnect(clientId: string): Promise<Reply> {
   const { c, reply } = request({}, { clientId });
-  await disconnectMcpClient(c);
-  return reply();
+  return serviceReply(disconnectMcpClient(c.get("ctx"), clientId));
 }
 
 function connect(over: Partial<NonNullable<typeof mocks.state.binding>> = {}) {

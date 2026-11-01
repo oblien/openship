@@ -1,155 +1,204 @@
-/**
- * Hook for streaming live server stats via SSE.
- *
- * Connects to GET /system/monitor/stream and receives real-time
- * CPU, memory, disk, uptime, and load average updates every ~3s.
- */
+"use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiBaseUrl } from "@/lib/api";
+import { parseSSE } from "@repo/core";
+import { ResourceUsageSampleSchema, parseInput, type ResourceUsageSample } from "@repo/contracts";
+import {
+  ApiError,
+  getActiveOrganizationId,
+  getApiBaseUrl,
+  getApiErrorMessage,
+} from "@/lib/api/client";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { endpoints } from "@/lib/api/endpoints";
 import type { ServerStats } from "@/lib/api/system";
 
 export interface UseMonitorStreamReturn {
-  /** Current stats (null until first data received) */
   stats: ServerStats | null;
-  /** Connection state */
+  usage: ResourceUsageSample | null;
+  history: ResourceUsageSample[];
+  paused: boolean;
   isConnected: boolean;
-  /** Error (if any) */
   error: string | null;
-  /** Manually reconnect */
   reconnect: () => void;
-  /** Disconnect */
   disconnect: () => void;
 }
 
+/** One cancellable SSE connection per selected server. Reads never start it. */
 export function useMonitorStream(
   serverId: string | null,
-  /** Set to false to disable streaming (e.g. when tab is not visible) */
   enabled = true,
+  format: "stats" | "usage" = "stats",
 ): UseMonitorStreamReturn {
-  const [stats, setStats] = useState<ServerStats | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const scope = useCloudResourceKey();
+  const resourceKey = `${scope}\0${serverId ?? ""}\0${format}`;
+  const [visible, setVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
+  const [usageSamples, setUsageSamples] = useState<{
+    key: string;
+    history: ResourceUsageSample[];
+  } | null>(null);
+  const active = enabled && (format !== "usage" || visible);
+  useEffect(() => {
+    if (format !== "usage") return;
+    const update = () => setVisible(document.visibilityState !== "hidden");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [format]);
+  const [sample, setSample] = useState<{ key: string; stats: ServerStats } | null>(null);
+  const [connection, setConnection] = useState<{
+    key: string;
+    error: string | null;
+    connected: boolean;
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const bufferRef = useRef("");
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
+  const targetRef = useRef(resourceKey);
+  targetRef.current = resourceKey;
+  const enabledRef = useRef(active);
+  enabledRef.current = active;
 
   const disconnect = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setIsConnected(false);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setConnection((current) => (current ? { ...current, connected: false } : null));
   }, []);
 
   const connect = useCallback(async () => {
-    if (!serverId) {
-      setStats(null);
-      setError(null);
-      setIsConnected(false);
-      return;
-    }
-
     disconnect();
+    if (!serverId || !enabledRef.current) return;
 
     const abort = new AbortController();
     abortRef.current = abort;
-    bufferRef.current = "";
-
-    const baseUrl = getApiBaseUrl();
+    const current = () =>
+      !abort.signal.aborted && abortRef.current === abort && targetRef.current === resourceKey;
+    setConnection({ key: resourceKey, connected: false, error: null });
     const params = new URLSearchParams({ serverId });
-    const url = `${baseUrl}${endpoints.system.monitorStream}?${params.toString()}`;
-
+    if (format === "usage") params.set("format", format);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      if (format !== "usage") return;
+      clearTimeout(deadline);
+      deadline = setTimeout(() => {
+        if (!current()) return;
+        setConnection({
+          key: resourceKey,
+          connected: false,
+          error: "Live usage is delayed. Retry to reconnect.",
+        });
+        abort.abort();
+      }, 45_000);
+    };
+    arm();
+    const organizationId = getActiveOrganizationId();
+    let streamError: string | null = null;
     try {
-      const res = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "text/event-stream" },
-        signal: abort.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        setError(`Connection failed (${res.status})`);
+      const response = await fetch(
+        `${getApiBaseUrl()}${endpoints.system.monitorStream}?${params}`,
+        {
+          credentials: "include",
+          headers: {
+            Accept: "text/event-stream",
+            ...(organizationId ? { "X-Organization-Id": organizationId } : {}),
+          },
+          signal: abort.signal,
+        },
+      );
+      if (!current()) {
+        await response.body?.cancel();
         return;
       }
+      if (!response.ok)
+        throw new ApiError(
+          response.status,
+          response.statusText,
+          await response.json().catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "dashboard/hooks/useMonitorStream");
+            return null;
+          }),
+        );
+      if (
+        !response.body ||
+        (format === "usage" && !response.headers.get("content-type")?.includes("text/event-stream"))
+      )
+        throw new Error("Live monitoring is unavailable. Retry to reconnect.");
+      setConnection({ key: resourceKey, connected: format === "stats", error: null });
 
-      setIsConnected(true);
-      setError(null);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const buffer = bufferRef.current + chunk;
-        const parts = buffer.split("\n\n");
-        bufferRef.current = parts.pop() || "";
-
-        for (const part of parts) {
-          if (!part.trim()) continue;
-
-          let eventType = "";
-          let dataStr = "";
-
-          for (const line of part.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("event:")) {
-              eventType = trimmed.substring(6).trim();
-            } else if (trimmed.startsWith("data:")) {
-              dataStr = trimmed.substring(5).trim();
-            }
-          }
-
-          if (!dataStr) continue;
-
-          try {
-            if (eventType === "stats") {
-              const parsed = JSON.parse(dataStr) as ServerStats;
-              setStats(parsed);
-              setError(null);
-            } else if (eventType === "error") {
-              const parsed = JSON.parse(dataStr);
-              setError(parsed.error || "Unknown error");
-            }
-          } catch {
-            // Skip malformed events
-          }
+      for await (const event of parseSSE(response.body)) {
+        if (!current()) return;
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          continue;
+        }
+        if (event.event === "usage" && format === "usage") {
+          const sample = parseInput(ResourceUsageSampleSchema, data);
+          if (!Number.isFinite(Date.parse(sample.measuredAt)))
+            throw new Error("Invalid live usage sample");
+          setUsageSamples((previous) => ({
+            key: resourceKey,
+            history: [...(previous?.key === resourceKey ? previous.history : []), sample].slice(
+              -60,
+            ),
+          }));
+          arm();
+          streamError = null;
+          setConnection({ key: resourceKey, connected: true, error: null });
+        } else if (event.event === "stats" && format === "stats") {
+          setSample({ key: resourceKey, stats: data as ServerStats });
+          streamError = null;
+          setConnection({ key: resourceKey, connected: true, error: null });
+        } else if (event.event === "error") {
+          streamError =
+            typeof data?.error === "string" ? data.error : "Live monitoring is unavailable.";
+          setConnection({ key: resourceKey, connected: false, error: streamError });
+          if (format === "usage") break;
         }
       }
-    } catch (err) {
-      if (abort.signal.aborted) return;
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      if (current())
+        setConnection({
+          key: resourceKey,
+          connected: false,
+          error: streamError ?? "Live monitoring disconnected. Retry to reconnect.",
+        });
+    } catch (error) {
+      if (current())
+        setConnection({ key: resourceKey, connected: false, error: getApiErrorMessage(error) });
     } finally {
-      if (!abort.signal.aborted) {
-        setIsConnected(false);
-      }
+      clearTimeout(deadline);
+      abort.abort();
+      if (abortRef.current === abort) abortRef.current = null;
     }
-  }, [disconnect, serverId]);
+  }, [disconnect, serverId, format, resourceKey]);
 
   const reconnect = useCallback(() => {
-    if (enabledRef.current) void connect();
+    void connect();
   }, [connect]);
-
   useEffect(() => {
-    if (!enabled) {
+    if (!active) {
       disconnect();
       return;
     }
-
-    // Small delay avoids double-connect from React StrictMode remount
-    const id = setTimeout(() => void connect(), 50);
+    // Avoid opening two connections during StrictMode's mount check.
+    const timer = setTimeout(() => void connect(), 50);
     return () => {
-      clearTimeout(id);
+      clearTimeout(timer);
       disconnect();
     };
-  }, [enabled, serverId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connect, disconnect, active]);
 
-  return { stats, isConnected, error, reconnect, disconnect };
+  const history = usageSamples?.key === resourceKey ? usageSamples.history : [];
+  return {
+    usage: history.at(-1) ?? null,
+    history,
+    paused: enabled && format === "usage" && !visible,
+    stats: sample?.key === resourceKey ? sample.stats : null,
+    isConnected: active && connection?.key === resourceKey && connection.connected,
+    error: connection?.key === resourceKey ? connection.error : null,
+    reconnect,
+    disconnect,
+  };
 }

@@ -13,6 +13,7 @@
  * `doctor`, `reset-admin` and the control panel find the running instance, which is
  * why EVERY install mode (bare + compose) resolves through here.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -53,7 +54,8 @@ export function saveInstanceUrl(publicUrl: string | undefined | null): void {
   try {
     if (!existsSync(OS_DIR)) mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
     writeFileSync(INSTANCE_FILE, JSON.stringify({ publicUrl: publicUrl ?? null }));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/ports");
     // best-effort
   }
 }
@@ -97,7 +99,8 @@ function saveStoredPorts(api: number, dashboard: number): void {
   try {
     if (!existsSync(OS_DIR)) mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
     writeFileSync(PORTS_FILE, JSON.stringify({ api, dashboard }));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/ports");
     // best-effort — resolution still works without persistence.
   }
 }

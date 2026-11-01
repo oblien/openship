@@ -1,0 +1,291 @@
+{
+  "cloudSubtitle": "Comandos programados y bajo demanda en tus servidores gestionados.",
+  "create": {
+    "commandHint": "Se ejecuta en cada servidor seleccionado. Usa docker run --rm para una tarea en un contenedor.",
+    "cloudServersHint": "Usa un servidor existente o añade un servidor dedicado con su propia suscripción.",
+    "cloudUsageHint": "Las tareas comparten la capacidad y la cuota de uso del servidor seleccionado. Su plan debe estar activo para ejecutarlas.",
+    "addDedicatedServer": "Añadir un servidor dedicado",
+    "title": "Nueva tarea",
+    "name": "Nombre",
+    "namePlaceholder": "Vacuum nocturno de BD",
+    "server": "Servidor",
+    "servers": "Servidores",
+    "noServers": "Aún no hay servidores conectados — añade uno primero.",
+    "command": "Comando",
+    "commandPlaceholder": "pg_dump ... > /backups/copia.sql",
+    "scheduleType": "Cuándo ejecutar",
+    "scheduleTypes": {
+      "recurring": "Según programación",
+      "once": "Una sola vez",
+      "manual": "Manual"
+    },
+    "sections": {
+      "basics": "Básico",
+      "schedule": "Programación",
+      "servers": "Servidores de destino",
+      "reliability": "Fiabilidad",
+      "environment": "Entorno",
+      "triggers": "Dependencias y desencadenadores",
+      "notifications": "Notificaciones"
+    },
+    "schedule": "Programación (cron)",
+    "runAt": "Ejecutar en",
+    "manualHint": "Se ejecuta solo cuando se desencadena — Ejecutar ahora, una dependencia o un evento.",
+    "timeout": "Tiempo de espera (s)",
+    "retryAttempts": "Intentos máximos",
+    "retryBackoff": "Intervalo entre reintentos (s)",
+    "advanced": "Avanzado",
+    "env": "Variables de entorno",
+    "addVar": "Añadir variable",
+    "secrets": "Secretos",
+    "addSecret": "Añadir secreto",
+    "replaceSecrets": "Reemplazar secretos",
+    "secretsSet": "secreto(s) configurado(s)",
+    "noSecrets": "No hay secretos configurados.",
+    "dependencies": "Ejecutar después de",
+    "dependenciesHint": "Esta tarea se ejecuta después de que las tareas seleccionadas se completen con éxito.",
+    "triggers": "Desencadenadores de eventos",
+    "notifications": "Notificaciones",
+    "noChannels": "Aún no hay canales de notificación — añade uno en Monitorización → Notificaciones.",
+    "notificationsHint": "Invalida la configuración global de notificaciones para esta tarea.",
+    "submit": "Crear tarea",
+    "creating": "Guardando…",
+    "cancel": "Cancelar",
+    "needServer": "Conecta un servidor primero",
+    "pasteEnv": "Pegar .env",
+    "uploadEnv": "Subir .env",
+    "envPasteEmpty": "No se encontraron variables",
+    "comingSoon": "Próximamente",
+    "setupChannel": "Configurar un canal",
+    "customTriggerSoon": "Desencadenador personalizado",
+    "docsLink": "Más información sobre tareas",
+    "docsBody": "Programaciones, reintentos, secretos y notificaciones",
+    "summary": {
+      "title": "Resumen",
+      "command": "Comando",
+      "schedule": "Programación",
+      "targets": "Destinos",
+      "retry": "Reintentos",
+      "timeout": "Tiempo de espera",
+      "notify": "Notificaciones",
+      "none": "—",
+      "retryOff": "Desactivados"
+    }
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "Comprobaciones de despliegue de GitHub",
+    "cloud:workspace-recovery": "Operaciones de espacio de trabajo Cloud",
+    "ssl:renew": "Renovación de certificados SSL",
+    "projects:orphan-gc": "Limpieza de recursos huérfanos",
+    "images:gc": "Limpieza de artefactos de despliegue",
+    "domains:verify-pending": "Verificar dominios personalizados",
+    "updates:scan": "Búsqueda de actualizaciones",
+    "backups:retention-prune": "Purga de copias de seguridad expiradas",
+    "backups:stale-sweep": "Conciliación de copias pendientes",
+    "prune:audit": "Depurar registro de auditoría",
+    "prune:incidents": "Depurar historial de incidentes",
+    "sampler:resources": "Muestreo de uso de recursos",
+    "system:analytics-scraper": "Recopilador de analítica",
+    "build-cache:gc": "Limpieza de caché de compilación",
+    "cloud:https-health": "Salud de HTTPS en la nube",
+    "system:server-modules": "Escaneo de módulos del servidor",
+    "system:server-containers": "Escaneo de contenedores del servidor",
+    "system:health-watch": "Monitoreo de estado",
+    "jobs:due-once": "Ejecutar tareas puntuales pendientes",
+    "edge:verify": "Verificación de proxy perimetral",
+    "audit:retention-prune": "Depuración de registros de auditoría",
+    "retention-prune-daily": "Depuración de copias de seguridad antiguas",
+    "backups:stale-run-sweep": "Reconciliación de copias bloqueadas",
+    "domains:check-https": "Estado de HTTPS en la nube",
+    "analytics:scrape": "Recopilación de analítica de tráfico",
+    "resources:sample": "Muestreo de uso de recursos",
+    "analytics:retention-prune": "Depuración de analítica de tráfico",
+    "resources:retention-prune": "Depuración de uso de recursos",
+    "migrations:recover": "Recuperación de migraciones",
+    "deployments:cloud-build-queue": "Cola de compilación en la nube",
+    "deployments:cloud-build-recovery": "Recuperación de compilaciones en la nube",
+    "deployments:reconcile": "Reconciliación de despliegues",
+    "permissions:pending-grant-prune": "Depuración de invitaciones pendientes",
+    "github:webhook-event-prune": "Depuración de webhooks de GitHub",
+    "edge:target-verify": "Verificación de dominios gratuitos",
+    "modules:scan": "Escaneo de módulos del servidor",
+    "infra:scan": "Escaneo de contenedores gestionados",
+    "mail:inbound-watch": "Reglas de correo entrante",
+    "mail:inbound-reconcile": "Reconciliación de reglas de correo",
+    "services:health-watch": "Monitoreo de estado de contenedores",
+    "incidents:prune": "Depuración de historial de incidentes",
+    "jobs:oneshot": "Despachador de trabajos únicos",
+    "Audit log prune": "Depuración de registros de auditoría",
+    "Backup in-flight stale reconciliation": "Reconciliación de copias bloqueadas",
+    "Backup retention prune": "Depuración de copias de seguridad antiguas",
+    "Cloud HTTPS health": "Estado de HTTPS en la nube",
+    "Cloud workspace operations": "Operaciones de espacio de trabajo en la nube",
+    "Container health watch": "Monitoreo de estado de contenedores",
+    "Deployment artifact cleanup": "Limpieza de artefactos de despliegue",
+    "Deployment reconcile": "Reconciliación de despliegues",
+    "GitHub deployment Checks": "Comprobaciones de despliegue de GitHub",
+    "GitHub webhook event prune": "Depuración de webhooks de GitHub",
+    "Incident history prune": "Depuración de historial de incidentes",
+    "Managed-container update scan": "Escaneo de contenedores gestionados",
+    "Migration recovery": "Recuperación de migraciones",
+    "Native-module update scan": "Escaneo de módulos del servidor",
+    "Notification rule capture drift": "Reconciliación de reglas de correo",
+    "Notification rules": "Reglas de correo entrante",
+    "One-time job dispatcher": "Despachador de trabajos únicos",
+    "Orphaned resource cleanup": "Limpieza de recursos huérfanos",
+    "Pending grant prune": "Depuración de invitaciones pendientes",
+    "Resource usage prune": "Depuración de uso de recursos",
+    "Resource usage sampling": "Muestreo de uso de recursos",
+    "SSL certificate renewal": "Renovación de certificados SSL",
+    "Traffic analytics collection": "Recopilación de analítica de tráfico",
+    "Traffic analytics prune": "Depuración de analítica de tráfico",
+    "Update scan": "Escaneo de actualizaciones",
+    "Free-domain target verification": "Verificación de dominios gratuitos",
+    "Domain DNS verification": "Verificación DNS de dominio"
+  },
+  "backups": {
+    "section": "Programaciones de copias de seguridad",
+    "sectionDesc": "Copias de seguridad automáticas programadas por proyecto o servicio. Se gestionan en la pestaña Copias de seguridad de cada proyecto.",
+    "projectDefault": "Predeterminado del proyecto",
+    "mailServer": "Servidor de correo",
+    "manage": "Gestionar en Copias de seguridad",
+    "badge": "Copia de seguridad",
+    "never": "Nunca ejecutado",
+    "status": {
+      "succeeded": "Completado",
+      "failed": "Fallido",
+      "cancelled": "Cancelado",
+      "running": "En ejecución"
+    }
+  },
+  "title": "Tareas",
+  "subtitle": "Mantenimiento integrado y comandos personalizados ejecutados en tus servidores.",
+  "empty": "Aún no hay tareas programadas.",
+  "searchPlaceholder": "Buscar tareas…",
+  "noResults": "Ninguna tarea coincide con tus filtros.",
+  "overview": {
+    "title": "De un vistazo",
+    "subtitle": "Tareas en esta instancia",
+    "all": "Todas las tareas",
+    "running": "En ejecución",
+    "failed": "Fallidas",
+    "scheduled": "Programadas",
+    "disabled": "Desactivadas"
+  },
+  "loadFailed": "Error al cargar las tareas.",
+  "kind": {
+    "system": "Sistema",
+    "custom": "Personalizadas"
+  },
+  "fields": {
+    "schedule": "Programación",
+    "nextRun": "Próxima ejecución",
+    "lastRun": "Última ejecución",
+    "never": "Nunca ejecutado",
+    "notScheduled": "No programado"
+  },
+  "status": {
+    "success": "Éxito",
+    "failed": "Fallido",
+    "running": "En ejecución"
+  },
+  "actions": {
+    "run": "Ejecutar ahora",
+    "running": "Ejecutando…",
+    "edit": "Editar programación",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "enable": "Activar",
+    "disable": "Desactivar",
+    "viewLogs": "Registros"
+  },
+  "cronHint": "Cron estándar de 5 campos (minuto hora día mes día_de_la_semana), UTC.",
+  "toast": {
+    "ran": "{label} iniciada.",
+    "ranFailed": "Error al ejecutar {label}.",
+    "saved": "Programación actualizada para {label}.",
+    "saved2": "Tarea actualizada.",
+    "saveFailed": "Error al actualizar {label}.",
+    "enabled": "{label} activada.",
+    "disabled": "{label} desactivada.",
+    "toggleFailed": "Error al actualizar {label}.",
+    "title": "Tareas",
+    "created": "Tarea creada.",
+    "createFailed": "Error al crear la tarea.",
+    "deleted": "Tarea eliminada.",
+    "deleteFailed": "Error al eliminar la tarea."
+  },
+  "newJob": "Nueva tarea",
+  "sections": {
+    "system": "Tareas del sistema",
+    "systemDesc": "Mantenimiento integrado en esta instancia.",
+    "custom": "Tareas personalizadas",
+    "customDesc": "Comandos que ejecutas en tus servidores según una programación."
+  },
+  "customEmpty": {
+    "title": "Aún no hay tareas personalizadas",
+    "desc": "Ejecuta un comando en uno de tus servidores — según una programación, una sola vez o ante un evento — con reintentos, secretos, registros en directo y notificaciones.",
+    "cta": "Crear tarea",
+    "docs": "Documentación"
+  },
+  "edit": {
+    "title": "Editar tarea",
+    "action": "Editar",
+    "save": "Guardar cambios"
+  },
+  "detail": {
+    "back": "Volver a tareas",
+    "tabs": {
+      "overview": "Resumen",
+      "runs": "Ejecuciones"
+    },
+    "servers": "Servidores",
+    "retry": "Reintento",
+    "retryValue": "{n} intentos, intervalo de {s}s",
+    "notifyValue": "{c} canal(es) en {s}",
+    "onceAt": "Una vez a las",
+    "noRuns": "Aún no hay ejecuciones."
+  },
+  "delete": {
+    "action": "Eliminar",
+    "confirm": "¿Eliminar esta tarea?",
+    "deleting": "Eliminando…"
+  },
+  "logs": {
+    "title": "Registros de ejecución",
+    "streaming": "Transmitiendo…",
+    "empty": "Aún no hay salida.",
+    "close": "Cerrar",
+    "exit": "Código de salida {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Despliegue exitoso",
+      "description": "Un despliegue a producción finalizó correctamente."
+    },
+    "deployment.failed": {
+      "label": "Error en el despliegue",
+      "description": "La compilación o el despliegue fallaron."
+    },
+    "backup_run.succeeded": {
+      "label": "Copia de seguridad completada",
+      "description": "Una copia de seguridad programada o manual se completó."
+    },
+    "backup_run.failed": {
+      "label": "Error en copia de seguridad",
+      "description": "Falló la ejecución de la copia de seguridad."
+    },
+    "backup_restore.completed": {
+      "label": "Restauración completada",
+      "description": "Finalizó una restauración."
+    },
+    "ssl.renewal_failed": {
+      "label": "Error de renovación SSL",
+      "description": "No se pudo renovar el certificado."
+    },
+    "domain.verification_failed": {
+      "label": "Error de verificación de dominio",
+      "description": "Falló la comprobación de DNS del dominio."
+    }
+  }
+}

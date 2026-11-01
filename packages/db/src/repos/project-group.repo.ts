@@ -1,8 +1,9 @@
 import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { projectGroup } from "../schema";
+import { project, projectGroup } from "../schema";
 import { member } from "../schema/organization";
+import { withProjectConfigurationWrite } from "./project-work-admission";
 
 export type ProjectGroup = typeof projectGroup.$inferSelect;
 export type NewProjectGroup = typeof projectGroup.$inferInsert;
@@ -79,17 +80,17 @@ export function createProjectGroupRepo(db: Database) {
     },
 
     async update(id: string, data: Partial<NewProjectGroup>) {
-      await db
+      await withProjectConfigurationWrite(db, eq(project.groupId, id), async (tx) => tx
         .update(projectGroup)
         .set({ ...data, updatedAt: new Date() })
-        .where(eq(projectGroup.id, id));
+        .where(eq(projectGroup.id, id)));
     },
 
     async softDelete(id: string) {
-      await db
+      await withProjectConfigurationWrite(db, eq(project.groupId, id), async (tx) => tx
         .update(projectGroup)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
-        .where(eq(projectGroup.id, id));
+        .where(eq(projectGroup.id, id)));
     },
   };
 }

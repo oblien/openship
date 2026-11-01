@@ -1,0 +1,105 @@
+name: Scaling E2E
+
+on:
+  workflow_call: {}
+  workflow_dispatch:
+    inputs:
+      journey:
+        description: Whole scaling check to run
+        type: choice
+        default: all
+        options: [all, application, storage, databases]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  scaling:
+    name: Scaling journey (${{ matrix.journey }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON('{"application":30,"storage":80,"databases":105}')[matrix.journey] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # A direct manual run may select one whole check. Release callers have
+        # no journey input and always require all three checks.
+        journey: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.journey && inputs.journey != 'all' && format('["{0}"]', inputs.journey) || '["application","storage","databases"]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Reuse a verified successful job
+        id: resume
+        uses: ./.github/actions/release-resume
+        with:
+          scope: ${{ matrix.journey }}
+          job-name: Scaling journey (${{ matrix.journey }})
+          workflow: .github/workflows/scaling-e2e.yml
+          job-id: scaling
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.resume.outputs.reused != 'true'
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@v6
+        if: steps.resume.outputs.reused != 'true'
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - name: Install dependencies
+        if: steps.resume.outputs.reused != 'true'
+        run: bun install --frozen-lockfile
+      - name: Typecheck scaling tests and their production dependencies
+        if: steps.resume.outputs.reused != 'true'
+        working-directory: apps/api
+        run: bunx tsc --noEmit -p tsconfig.scaling-e2e.json
+      - name: Check Docker
+        if: steps.resume.outputs.reused != 'true'
+        run: docker info
+      - name: Check hardware virtualization for independent storage hosts
+        if: steps.resume.outputs.reused != 'true' && matrix.journey == 'storage'
+        run: |
+          sudo python3 - <<'PY'
+          import fcntl
+          import os
+          with open('/dev/kvm', 'rb+') as kvm:
+              assert fcntl.ioctl(kvm, 0xAE00, 0) == 12, 'KVM API is unavailable'
+              vm = fcntl.ioctl(kvm, 0xAE01, 0)
+              os.close(vm)
+          print('KVM can create independent Linux storage hosts.')
+          PY
+      - name: Disable swap on the disposable Kubernetes host
+        if: steps.resume.outputs.reused != 'true' && matrix.journey != 'storage'
+        # Container journeys share the runner's kernel; storage uses independent
+        # VM kernels. Keep production swap guards intact. Never change swap from
+        # the local test harness or on a user's server.
+        run: |
+          sudo swapoff -a
+          test "$(wc -l < /proc/swaps)" -eq 1
+      - name: Make room for disposable cluster hosts
+        if: steps.resume.outputs.reused != 'true' && (matrix.journey != 'application')
+        # These are unused SDKs on the disposable GitHub runner. Do not copy
+        # this cleanup into the local test harness or prune arbitrary volumes.
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h / /var/lib/docker
+      - name: Run the real scaling journey
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          RUN_DOCKER_E2E: "1"
+          E2E_SCOPE: scaling-${{ matrix.journey }}
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/openship-scaling"
+          bun run --cwd apps/api test:e2e 2>&1 | tee "$RUNNER_TEMP/openship-scaling/output.log"
+      - name: Save diagnostics
+        if: steps.resume.outputs.reused != 'true' && (always())
+        uses: actions/upload-artifact@v7
+        with:
+          name: scaling-e2e-${{ matrix.journey }}-diagnostics
+          path: ${{ runner.temp }}/openship-scaling
+          if-no-files-found: ignore
+          retention-days: 7

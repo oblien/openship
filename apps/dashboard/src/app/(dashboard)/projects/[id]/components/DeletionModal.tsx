@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { AlertTriangle, Database, HardDrive, Loader2, Unplug } from "lucide-react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+import React, { useEffect, useId, useState } from "react";
 import { projectsApi } from "@/lib/api";
 import { connectionsApi, type ConnectionConsumer } from "@/lib/api/connections";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 interface Props {
   isOpen: boolean;
@@ -33,7 +35,10 @@ interface Preview {
   totalVolumes: number;
 }
 
-export const DeletionModal = ({
+export const DeletionModal = (props: Props) =>
+  props.isOpen ? <DeletionModalContent {...props} /> : null;
+
+const DeletionModalContent = ({
   isOpen,
   onClose,
   onConfirm,
@@ -42,6 +47,8 @@ export const DeletionModal = ({
   selfHosted,
 }: Props) => {
   const { t } = useI18n();
+  const titleId = useId();
+  const { dialog, onKeyDown } = useDialogFocus(onClose);
   const [inputValue, setInputValue] = useState("");
   const [wipeVolumes, setWipeVolumes] = useState(false);
   // Record-only ("soft") delete: keep the workload + data on the server, drop
@@ -76,7 +83,8 @@ export const DeletionModal = ({
       .then((res) => {
         if (!cancelled) setLinkedProjects(res?.data ?? []);
       })
-      .catch(() => { /* informational — a failed read just hides the notice */ });
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/DeletionModal"); /* informational — a failed read just hides the notice */ });
     projectsApi
       .deletionPreview(projectId)
       .then((res) => {
@@ -91,7 +99,8 @@ export const DeletionModal = ({
           });
         }
       })
-      .catch(() => { /* preview is informational - silent on failure */ })
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/DeletionModal"); /* preview is informational - silent on failure */ })
       .finally(() => { if (!cancelled) setPreviewLoading(false); });
     return () => { cancelled = true; };
   }, [isOpen, projectId]);
@@ -113,7 +122,7 @@ export const DeletionModal = ({
   // caller's static signal when given (so an imported/unreachable-server project
   // still shows it), else fall back to the live preview.
   const canRecordOnly = selfHosted ?? (!previewLoading && !!preview?.selfHosted);
-  const showWipeBlock = !previewLoading && preview?.selfHosted && hasVolumes && !recordOnly;
+  const showWipeBlock = !previewLoading && hasVolumes && !recordOnly;
 
   const handleConfirm = () => {
     if (isConfirmDisabled) return;
@@ -126,18 +135,29 @@ export const DeletionModal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={dialog}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
         className="border border-border/60 rounded-2xl max-w-lg w-full shadow-xl overflow-hidden"
         style={{ backgroundColor: "var(--th-card-bg-solid, var(--card))" }}
       >
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border/40">
           <div className="size-9 rounded-xl bg-warning-bg border border-warning-border flex items-center justify-center shrink-0">
-            <AlertTriangle className="size-[18px] text-warning" />
+            <UiIcon name="warning" className="size-[18px] text-warning" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold text-foreground">{t.projectSettings.deletion.title}</h3>
+            <h3 id={titleId} className="text-[15px] font-semibold text-foreground">{t.projectSettings.deletion.title}</h3>
             <p className="text-xs text-muted-foreground mt-0.5 truncate">
               {recordOnly
                 ? t.projectSettings.deletion.recordOnlyReversible
@@ -157,7 +177,7 @@ export const DeletionModal = ({
           {linkedGroups.size > 0 && (
             <div className="rounded-xl border border-info-border bg-info-bg px-3 py-3">
               <div className="flex items-center gap-2">
-                <Unplug className="size-3.5 text-info shrink-0" />
+                <UiIcon name="unplug" className="size-3.5 text-info shrink-0" />
                 <span className="text-sm font-medium text-foreground">
                   {interpolate(
                     linkedGroups.size === 1
@@ -221,7 +241,7 @@ export const DeletionModal = ({
           {/* Wipe-volumes block - only shows when there's actual data on disk */}
           {previewLoading ? (
             <div className="flex items-center gap-2 rounded-xl border border-border/30 bg-muted/10 px-3 py-2.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
               {t.projectSettings.deletion.scanning}
             </div>
           ) : showWipeBlock ? (
@@ -236,7 +256,7 @@ export const DeletionModal = ({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <HardDrive className="size-3.5 text-muted-foreground" />
+                    <UiIcon name="hard-drive" className="size-3.5 text-muted-foreground" />
                     <span className="text-sm font-medium text-foreground">
                       {interpolate(preview!.totalVolumes === 1 ? t.projectSettings.deletion.wipeLabelOne : t.projectSettings.deletion.wipeLabelOther, { count: String(preview!.totalVolumes) })}
                     </span>
@@ -254,7 +274,7 @@ export const DeletionModal = ({
                 <ul className="border-t border-border/40 divide-y divide-border/30">
                   {servicesWithVolumes.map((s) => (
                     <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
-                      <Database className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <UiIcon name="database" className="size-3.5 text-muted-foreground/70 shrink-0" />
                       <span className="text-[13px] font-medium text-foreground truncate flex-1">
                         {s.name}
                       </span>
@@ -265,7 +285,7 @@ export const DeletionModal = ({
                   ))}
                   {preview!.deploymentVolumes.length > 0 && (
                     <li className="flex items-center gap-3 px-3 py-2.5">
-                      <Database className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <UiIcon name="database" className="size-3.5 text-muted-foreground/70 shrink-0" />
                       <span className="text-[13px] font-medium text-foreground truncate flex-1">
                         {t.projectSettings.deletion.appData}
                       </span>

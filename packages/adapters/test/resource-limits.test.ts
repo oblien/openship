@@ -49,6 +49,26 @@ describe("dockerResourceLimits", () => {
       NanoCpus: 1_000_000_000,
     });
   });
+
+  it("pins MemorySwap to Memory to disable swap", () => {
+    expect(dockerResourceLimits({ memoryMb: 1024, swapDisabled: true })).toEqual({
+      Memory: 1_073_741_824,
+      MemorySwap: 1_073_741_824,
+    });
+  });
+
+  it("refuses to disable swap without a positive memory limit", () => {
+    expect(() => dockerResourceLimits({ swapDisabled: true })).toThrow(
+      /positive memory limit/,
+    );
+    expect(() => dockerResourceLimits({ memoryMb: 0, swapDisabled: true })).toThrow(
+      /positive memory limit/,
+    );
+  });
+
+  it("leaves swap alone when the service did not opt in", () => {
+    expect(dockerResourceLimits({ memoryMb: 1024 })).toEqual({ Memory: 1_073_741_824 });
+  });
 });
 
 // A self-hosted BUILD stays uncapped by default — a production build routinely
@@ -113,10 +133,43 @@ describe("inspectResourceLimits", () => {
     ).toEqual({ cpuCores: 2 });
   });
 
+  it("detects disabled swap from the live HostConfig", () => {
+    expect(inspectResourceLimits({ Memory: 1_073_741_824, MemorySwap: 1_073_741_824 })).toEqual({
+      memoryMb: 1024,
+      swapDisabled: true,
+    });
+  });
+
+  it("does not mistake Docker's default swap allowance for disabled swap", () => {
+    expect(inspectResourceLimits({ Memory: 1_073_741_824, MemorySwap: 0 })).toEqual({
+      memoryMb: 1024,
+    });
+    expect(inspectResourceLimits({ Memory: 1_073_741_824, MemorySwap: 2_147_483_648 })).toEqual({
+      memoryMb: 1024,
+    });
+    expect(inspectResourceLimits({ Memory: 1_073_741_824, MemorySwap: -1 })).toEqual({
+      memoryMb: 1024,
+    });
+  });
+
   it("round-trips through dockerResourceLimits", () => {
     const original = { cpuCores: 1.5, memoryMb: 3072, diskMb: 0 };
     const applied = dockerResourceLimits(original);
     expect(inspectResourceLimits(applied)).toEqual({ cpuCores: 1.5, memoryMb: 3072 });
+  });
+
+  it("round-trips a swap-disabled container", () => {
+    const applied = dockerResourceLimits({
+      cpuCores: 1.5,
+      memoryMb: 3072,
+      diskMb: 0,
+      swapDisabled: true,
+    });
+    expect(inspectResourceLimits(applied)).toEqual({
+      cpuCores: 1.5,
+      memoryMb: 3072,
+      swapDisabled: true,
+    });
   });
 });
 
@@ -133,5 +186,11 @@ describe("describeResourceLimits", () => {
     expect(describeResourceLimits({ memoryMb: 512 })).toBe("512 MB");
     expect(describeResourceLimits({ memoryMb: 1536 })).toBe("1.5 GB");
     expect(describeResourceLimits({ cpuCores: 0.5 })).toBe("0.5 vCPU");
+  });
+
+  it("calls out a swap-disabled container in the deploy log", () => {
+    expect(describeResourceLimits({ memoryMb: 512, swapDisabled: true })).toBe(
+      "512 MB · swap disabled",
+    );
   });
 });

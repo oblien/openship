@@ -6,18 +6,9 @@
  * subject id (IP / userId / orgId / global), and delegates to
  * `rateLimit()`. The store + algorithm live in `lib/rate-limit`.
  *
- * Two entry points:
- *
- *   1. `rateLimiterFor(policyId)` — returns a Hono middleware bound to
- *      one policy. Use this when you want to slap a limit on a single
- *      route without going through `secureRouter`.
- *
- *   2. `globalAnonLimiter` — the default middleware mounted on the
- *      whole `/api` tree. Enforces the `default-anon` policy by IP for
- *      every request that doesn't have a more specific per-route
- *      policy set on the spec. Routes with `rateLimit` in their spec
- *      override this default via `c.set("rateLimitPolicy", ...)` in
- *      secureRouter.
+ * `rateLimiterFor` binds a per-route policy; `authRouteLimiter` selects the
+ * policy for Better Auth's raw routes. `floodGuard` runs before authentication
+ * using an independent coarse per-IP bucket on standalone installations.
  *
  * The old in-memory Map + bypass-by-path string match are gone — every
  * route has an explicit policy (default or named) and SaaS multi-
@@ -26,13 +17,18 @@
 
 import type { Context, Next, MiddlewareHandler } from "hono";
 import { isLoopbackPeer, peerAddress } from "./loopback-peer";
-import { rateLimit, type PolicyId } from "../lib/rate-limit";
+import { rateLimit, type PolicyId, type RateLimitSubject, type RateLimitResult } from "../lib/rate-limit";
 import { POLICIES } from "../lib/rate-limit/policies";
+import { webhookSubject } from "../lib/rate-limit/webhook-subject";
 import { getRequestContext } from "../lib/request-context";
-import { env } from "../config";
+import { env } from "@repo/platform/engine/config/index";
 
-function resolveSubjectId(c: Context, subject: "ip" | "user" | "org" | "global"): string | null {
+function resolveSubjectId(c: Context, subject: RateLimitSubject): string | null {
   if (subject === "global") return "global";
+  if (subject === "webhook") {
+    const ip = resolveSubjectId(c, "ip");
+    return ip ? webhookSubject(c, ip) : null;
+  }
   if (subject === "ip") {
     const ip = c.var.clientIp;
     if (ip) return ip;
@@ -45,6 +41,7 @@ function resolveSubjectId(c: Context, subject: "ip" | "user" | "org" | "global")
     const ctx = getRequestContext(c);
     return subject === "user" ? ctx.userId : ctx.organizationId;
   } catch {
+    // diagnostics-ignore: missing context is the supported pre-auth IP fallback, not an authorization failure.
     // Pre-auth or auth-missing route — fall back to IP. The policy
     // SHOULD use ip for unauthed routes; this fallback is a safety net.
     const ip = c.var.clientIp;
@@ -52,6 +49,14 @@ function resolveSubjectId(c: Context, subject: "ip" | "user" | "org" | "global")
     const peer = peerAddress(c);
     return peer && isLoopbackPeer(peer) ? peer : null;
   }
+}
+
+function rejectLimit(c: Context, limit: number, result: RateLimitResult): Response {
+  c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
+  c.header("X-RateLimit-Limit", String(limit));
+  c.header("X-RateLimit-Remaining", "0");
+  c.header("X-RateLimit-Reset", String(Math.ceil((Date.now() + result.resetMs) / 1000)));
+  return c.json({ error: "Too many requests" }, 429);
 }
 
 async function enforce(c: Context, policyId: PolicyId): Promise<Response | null> {
@@ -70,7 +75,7 @@ async function enforce(c: Context, policyId: PolicyId): Promise<Response | null>
   // buckets under one loopback key when no client IP is trustable).
   const isAuthGate = policyId === "auth-tight" || policyId === "auth-loose";
   if (
-    !isAuthGate &&
+    !isAuthGate && policyId !== "diagnostics" &&
     !env.TRUST_PROXY &&
     !env.OPENSHIP_PUBLIC_URL &&
     isLoopbackPeer(peerAddress(c))
@@ -83,13 +88,13 @@ async function enforce(c: Context, policyId: PolicyId): Promise<Response | null>
   if (!subjectId) {
     return c.json({ error: "Missing client IP — request must come through the proxy" }, 400);
   }
+  if (policyId === "webhook-ingress") {
+    const ceiling = await rateLimit({ policy: "webhook-flood", subjectId: resolveSubjectId(c, "ip")! });
+    if (!ceiling.allowed) return rejectLimit(c, POLICIES["webhook-flood"].limit, ceiling);
+  }
   const result = await rateLimit({ policy: policyId, subjectId });
   if (!result.allowed) {
-    c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
-    c.header("X-RateLimit-Limit", String(policy.limit));
-    c.header("X-RateLimit-Remaining", "0");
-    c.header("X-RateLimit-Reset", String(Math.ceil((Date.now() + result.resetMs) / 1000)));
-    return c.json({ error: "Too many requests" }, 429);
+    return rejectLimit(c, policy.limit, result);
   }
   c.header("X-RateLimit-Limit", String(policy.limit));
   c.header("X-RateLimit-Remaining", String(result.remaining));
@@ -113,6 +118,22 @@ export function rateLimiterFor(policyId: PolicyId): MiddlewareHandler {
 }
 
 /**
+ * Bound pre-auth work before a session lookup. This independent bucket must
+ * not mark a route policy as applied or suppress its authoritative limit.
+ * Cloud mode and explicit edge trust delegate the coarse ceiling upstream;
+ * per-route auth/user limits remain active in both modes.
+ */
+export async function floodGuard(c: Context, next: Next): Promise<void | Response> {
+  if (env.CLOUD_MODE || env.OPENSHIP_TRUST_EDGE || c.req.path.startsWith("/api/health")) {
+    await next();
+    return;
+  }
+  const rejected = await enforce(c, "flood-ip");
+  if (rejected) return rejected;
+  await next();
+}
+
+/**
  * The Better Auth tree is a raw Hono catch-all rather than a secureRouter, so
  * its one limiter must choose a policy centrally. POSTs are credential writes;
  * the public invitation preview is also tight because its path contains a
@@ -133,12 +154,10 @@ export const authRouteLimiter: MiddlewareHandler = async (c, next) => {
 };
 
 /**
- * Global default rate-limiter mounted on `/api`. Routes that set
- * `rateLimit: <policyId>` on their secureRouter spec inject their
- * own per-route limiter via the `requestPolicy` context key — when
- * present, the global limiter defers to it (the per-route limiter has
- * already run upstream). Otherwise this default enforces `default-anon`
- * for unauthed traffic and `default-authed` for authed traffic.
+ * Default limiter for raw cloud routes outside secureRouter. If a preceding
+ * middleware already applied a route policy, leave that policy authoritative.
+ * Otherwise choose the anonymous or authenticated default from the context.
+ * This adapter must not be mounted before secureRouter authentication.
  */
 export async function rateLimiter(c: Context, next: Next): Promise<void | Response> {
   // Health/bootstrap endpoints are NEVER rate-limited. The dashboard MUST
@@ -166,7 +185,7 @@ export async function rateLimiter(c: Context, next: Next): Promise<void | Respon
     getRequestContext(c);
     policy = "default-authed";
   } catch {
-    /* no ctx — anon route */
+    // diagnostics-ignore: public routes intentionally have no authenticated context.
   }
   const rejected = await enforce(c, policy);
   if (rejected) return rejected;

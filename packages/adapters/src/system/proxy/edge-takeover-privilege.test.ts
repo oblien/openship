@@ -22,10 +22,10 @@ import type { EdgeStatus, InstallerConfig, SystemLog } from "../types";
  */
 const h = vi.hoisted(() => ({
   probeEdge: vi.fn(),
-  freeEdgeTargets: vi.fn(async (_executor: CommandExecutor, ..._rest: unknown[]) => ({
-    freed: true,
-    stillBound: [] as number[],
-  })),
+  freeEdgeTargets: vi.fn(async (...args: Parameters<typeof import("./detect").freeEdgeTargets>) => {
+    await args[3]?.beforeStop?.();
+    return { freed: true, stillBound: [] as number[] };
+  }),
   importSites: vi.fn(async () => ({ proxy: "nginx", sites: [], warnings: [] })),
 }));
 
@@ -98,7 +98,7 @@ const noop = () => {};
 
 describe("beginEdgeTakeover privilege", () => {
   it("elevates the stop that frees 80/443", async () => {
-    h.freeEdgeTargets.mockResolvedValue({ freed: true, stillBound: [] });
+    h.freeEdgeTargets.mockResolvedValueOnce({ freed: true, stillBound: [] });
     const { executor, commands } = host(NON_ROOT_SUDO);
 
     await beginEdgeTakeover(executor, STATUS, noop);
@@ -172,7 +172,7 @@ describe("rollback privilege", () => {
 describe("ensureEdgeClear privilege", () => {
   it("blames the privilege refusal, not a mystery port holder, when the login can't elevate", async () => {
     h.probeEdge.mockResolvedValue(STATUS);
-    h.freeEdgeTargets.mockResolvedValue({ freed: false, stillBound: [80] });
+    h.freeEdgeTargets.mockResolvedValueOnce({ freed: false, stillBound: [80] });
     const { executor } = host(NON_ROOT_NO_SUDO);
 
     const err = (await ensureEdgeClear(executor, TAKEOVER, noop).catch((e: unknown) => e)) as {
@@ -194,7 +194,7 @@ describe("ensureEdgeClear privilege", () => {
   // does mean something else holds it.
   it("keeps the generic advice when the stop ran as root and the port stayed bound", async () => {
     h.probeEdge.mockResolvedValue(STATUS);
-    h.freeEdgeTargets.mockResolvedValue({ freed: false, stillBound: [80, 443] });
+    h.freeEdgeTargets.mockResolvedValueOnce({ freed: false, stillBound: [80, 443] });
     const { executor } = host(ROOT);
 
     const err = (await ensureEdgeClear(executor, TAKEOVER, noop).catch((e: unknown) => e)) as {

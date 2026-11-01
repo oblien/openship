@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ENV_MASK } from "@repo/platform/engine/lib/secret-env";
 
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const serviceRepo = vi.hoisted(() => ({
@@ -9,7 +10,10 @@ const serviceRepo = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
 }));
-const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
+const deploymentRepo = vi.hoisted(() => ({
+  findById: vi.fn(),
+  listPendingRoleHandovers: async () => [],
+}));
 const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn() }));
 const freeGate = vi.hoisted(() => ({ assertFreeEndpointsAllowed: vi.fn() }));
 
@@ -27,14 +31,14 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/free-domain-guard", () => freeGate);
+vi.mock("@repo/platform/engine/lib/free-domain-guard", () => freeGate);
 
 const domainService = vi.hoisted(() => ({
   ensurePendingServiceDomain: vi.fn(),
   removeServiceDomain: vi.fn(),
   reuseServerCertForDomain: vi.fn(),
 }));
-vi.mock("../../../src/modules/domains/domain.service", () => domainService);
+vi.mock("@repo/platform/engine/modules/domains/domain.service", () => domainService);
 
 /**
  * The route-reconcile block is where a bad routing patch does its REAL damage —
@@ -44,8 +48,8 @@ vi.mock("../../../src/modules/domains/domain.service", () => domainService);
  * assertion below passes vacuously against code that never executed.
  */
 const reconcileProjectRoutes = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/route-apply.service", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/route-apply.service")>();
+vi.mock("@repo/platform/engine/lib/route-apply.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/route-apply.service")>();
   return { ...actual, reconcileProjectRoutes };
 });
 vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
@@ -57,7 +61,7 @@ import {
   acceptServiceDrift,
   createService,
   updateService,
-} from "../../../src/modules/services/service.service";
+} from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", slug: "acme" };
@@ -369,6 +373,41 @@ describe("service routing patch", () => {
     );
   });
 
+  it("restores masked build args and their interpolation provenance on an unrelated edit", async () => {
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      buildArgs: { TOKEN: "stored-secret", REF: "${BUILD_REF}", REMOVED: "old" },
+      advanced: { buildArgTemplateKeys: ["REF"], readiness: { enabled: true } },
+    });
+    await updateService(ctx, project.id, "svc_1", {
+      buildArgs: { TOKEN: ENV_MASK, REF: ENV_MASK, INHERITED: null, EMPTY: "", GHOST: ENV_MASK },
+      restart: "always",
+    } as never);
+    expect(writtenPatch().buildArgs).toEqual({
+      TOKEN: "stored-secret",
+      REF: "${BUILD_REF}",
+      INHERITED: null,
+      EMPTY: "",
+    });
+    expect(writtenPatch().advanced).toEqual({
+      buildArgTemplateKeys: ["REF"],
+      readiness: { enabled: true },
+    });
+  });
+
+  it("drops source-less masks on create and masks the returned build args", async () => {
+    const response = await createService(ctx, project.id, {
+      name: "api",
+      build: ".",
+      buildArgs: { TOKEN: "new-secret", GHOST: ENV_MASK, INHERITED: null },
+    } as never);
+    expect(serviceRepo.create.mock.calls.at(-1)?.[0].buildArgs).toEqual({
+      TOKEN: "new-secret",
+      INHERITED: null,
+    });
+    expect(response?.buildArgs).toEqual({ TOKEN: ENV_MASK, INHERITED: null });
+  });
+
   it("makes a manual image update literal without dropping other advanced config", async () => {
     serviceRepo.findById.mockResolvedValue({
       ...multiRouteService(),
@@ -502,4 +541,15 @@ describe("service routing patch", () => {
       expect(serviceRepo.update).toHaveBeenCalled();
     });
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });

@@ -55,6 +55,10 @@
     "appsEmptyDesc": "En un clic, entièrement auto-hébergé — bases de données, automatisation, analytique, coffres de mots de passe et plus encore, sur vos propres serveurs."
   },
   "nav": {
+    "affiliates": "Gagner",
+    "resources": "Espaces Cloud",
+    "support": "Assistance",
+    "scale": "Mise à l’échelle",
     "home": "Accueil",
     "new-project": "Nouveau projet",
     "projects": "Projets",
@@ -73,6 +77,7 @@
     "addMailbox": "Ajouter une boîte aux lettres",
     "webmail": "Webmail",
     "sections": {
+      "help": "Aide",
       "main": "Principal",
       "settings": "Paramètres",
       "infrastructure": "Infrastructure",
@@ -82,7 +87,9 @@
       "account": "Compte"
     },
     "apps": "Applications",
-    "jobs": "Tâches"
+    "jobs": "Tâches",
+    "workspaces": "Espaces de travail",
+    "actions": "Actions"
   },
   "sidebar": {
     "expand": "Développer la barre latérale",
@@ -180,14 +187,34 @@
         "analytics": "Analytique",
         "automation": "Automatisation",
         "mail": "Messagerie",
-        "other": "Outils"
+        "other": "Outils",
+        "ai": "IA et modèles"
       },
       "installing": "Installation…",
       "install": "Installer",
       "cancel": "Annuler",
       "nameLabel": "Nom",
       "configTitle": "Configurer {app}",
-      "comingSoon": "Bientôt disponible"
+      "comingSoon": "Bientôt disponible",
+      "addCustom": "Ajouter personnalisée",
+      "howToAddApp": "Comment ajouter une application",
+      "removeCustomApp": "Supprimer l'application personnalisée",
+      "needsUpdateDesc": "Mettez à jour votre instance Openship pour installer cette application.",
+      "needsUpdateBadge": "Mise à jour requise",
+      "needsVersionBadge": "Nécessite la v{version}",
+      "removedToast": "« {name} » a été supprimé.",
+      "removeFailedToast": "Impossible de supprimer l'application.",
+      "gpu": {
+        "recommended": "GPU recommandé",
+        "required": "GPU NVIDIA requis",
+        "mode": "Calcul",
+        "cpu": "CPU uniquement",
+        "nvidia": "GPU NVIDIA",
+        "hint": "Le mode NVIDIA nécessite un pilote compatible et NVIDIA Container Toolkit sur votre serveur.",
+        "cloudUnsupported": "Cette application nécessite un serveur autohébergé. Choisissez un serveur connecté.",
+        "selfHostedOnly": "Autohébergement uniquement",
+        "noGpu": "Aucun GPU détecté. Vérifiez le pilote NVIDIA et Container Toolkit ou choisissez CPU."
+      }
     }
   },
   "quickLinks": {

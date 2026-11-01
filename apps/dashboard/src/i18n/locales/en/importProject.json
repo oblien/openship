@@ -75,6 +75,9 @@
       "onFailureWarn": "Keep the deploy live and flag it for review",
       "onFailureFail": "Fail the deploy and keep the previous version serving"
     },
+    "runtimeVersionLabel": "Runtime version",
+    "runtimeVersionDefault": "Default",
+    "runtimeVersionDesc": "Uses matching build and runtime images for the selected version. Requires an Openship-generated Docker build.",
     "buildImageLabel": "Build Image",
     "buildImageDesc": "Builder container image for cloud or server builds. Override it when the detected base image is wrong.",
     "productionPathsLabel": "Production Paths",
@@ -106,7 +109,23 @@
     "modeWorker": "Worker",
     "modeStatic": "Static",
     "workerModeDesc": "Runs continuously with no port or public URL — a queue consumer, cron, or bot.",
-    "buildSettingsTitle": "Build Settings"
+    "buildSettingsTitle": "Build Settings",
+    "releaseTitle": "Before activation",
+    "releaseDescription": "Optional commands after build. Failure stops deployment. Docker and Bare apps only.",
+    "releaseCommand": "Command {number}",
+    "addReleaseCommand": "Add command",
+    "removeReleaseCommand": "Remove command {number}",
+    "runtimeImageLabel": "Runtime image",
+    "runtimeImageDesc": "Optional production base image for Docker builds. It must match the selected runtime and generated recipe; leave blank for the managed default.",
+    "runtimeTitle": "Runtime",
+    "runtimeDesc": "Choose the image that runs your app. Refreshing images keeps your selected version and digest pins.",
+    "runtimeBareDesc": "This app runs directly on its server. Manage the installed runtime there.",
+    "runtimeStaticDesc": "The build image prepares your static files. No application runtime runs after deployment.",
+    "runtimeDockerfileDesc": "Your Dockerfile chooses the runtime image.",
+    "runtimeServicesDesc": "Choose runtime images for each service in Services.",
+    "runtimePrebuiltDesc": "The selected application image includes its runtime.",
+    "runtimeOverrideUnused": "These saved overrides do not apply to this deployment. Clear them before saving.",
+    "clearRuntimeOverrides": "Clear saved overrides"
   },
   "projectSettings": {
     "framework": "Framework",
@@ -124,6 +143,7 @@
     "noneSet": "None set",
     "pasteEnv": "Paste .env",
     "uploadEnv": "Upload .env",
+    "downloadEnv": "Download .env",
     "edit": "Edit",
     "cancel": "Cancel",
     "saving": "Saving...",
@@ -145,6 +165,7 @@
       "interpolated": "Interpolated"
     },
     "toast": {
+      "downloadFailed": "Couldn’t download environment variables.",
       "title": "Environment Variables",
       "added": "{count} added",
       "updated": "{count} updated",
@@ -208,9 +229,9 @@
       "volumes": "Volumes",
       "statefulWarnPart1": "Stateful service on cloud: data lives on the workspace's persistent disk (survives restarts) but is ",
       "statefulWarnBold": "not carried across rebuilds",
-      "statefulWarnPart2": " unless backups are enabled. Docker volume mounts don't apply.",
+      "statefulWarnPart2": ". Back up and restore data explicitly before replacing the workspace.",
       "volumeHint": "Named volume or host path → container path.",
-      "volumeCloudNote": "On cloud these mounts don't apply — data persists on the workspace's disk (not across rebuilds without backups).",
+      "volumeCloudNote": "Persistent volume mounts are not supported on Openship Cloud. Choose a server for workloads that require volumes.",
       "sourcePlaceholder": "Source",
       "containerPathPlaceholder": "Container path",
       "readOnlyMount": "Read-only mount",
@@ -288,7 +309,51 @@
       "singleDesc": "Promote one sub-app's build + start command, expose every app's port from one runtime."
     },
     "deploymentMode": "Deployment mode",
-    "deploymentModeDesc": "{mode} · Switch between per-app runtimes and single-app handling."
+    "deploymentModeDesc": "{mode} · Switch between per-app runtimes and single-app handling.",
+    "selection": {
+      "title": "Apps to deploy",
+      "chooseApps": "Choose apps",
+      "changeSelection": "Change selection",
+      "selected": "{count} selected",
+      "chooseHint": "Select the apps you want to run. Command-line tools, mobile apps and shared packages can stay unselected.",
+      "applySelection": "Use selected apps",
+      "manualReview": "Review setup",
+      "detectedApp": "Detected app",
+      "empty": "Choose apps from this repository, or add a folder. Nothing will deploy until you select it.",
+      "addFromRepo": "Add app from repository",
+      "addMore": "Add more",
+      "cancel": "Cancel",
+      "addApp": "Add app",
+      "chooseFolder": "Change folder",
+      "useFolder": "Use this folder",
+      "folderHint": "Choose the app folder. Builds keep access to the repository's shared packages and lockfiles.",
+      "appFolder": "App folder",
+      "invalidPath": "Enter a folder relative to the repository, such as apps/web or .",
+      "alreadyAdded": "This folder is already in the app list. Use Change selection to include it.",
+      "browseError": "Could not load repository folders.",
+      "scanError": "Could not inspect this folder.",
+      "composeFolder": "This folder defines a Compose stack. Import that Compose file as a project instead.",
+      "scanning": "Inspecting…",
+      "inspect": "Inspect folder",
+      "parentFolder": "Parent folder",
+      "retry": "Try again",
+      "loadingFolders": "Loading folders…",
+      "noSubfolders": "No subfolders here. You can select this folder.",
+      "reviewHint": "Add this app to review its framework, commands and environment before deploying.",
+      "domains": "Domains",
+      "manage": "Manage",
+      "domainNeeded": "Domain needed",
+      "viewAll": "View all {count} domains",
+      "domainHint": "These domains will be applied when you deploy.",
+      "privateHint": "Selected apps have no public domains.",
+      "done": "Done",
+      "private": "Private",
+      "publicAccess": "Public access",
+      "accessHint": "Turn off to keep this app reachable only inside the project.",
+      "app": "App",
+      "appLimit": "This project already has 50 apps. Create another project to add more.",
+      "folderMismatch": "This folder redirects to a different project configuration. Select that folder or edit its openship.json."
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Cloud",
@@ -322,7 +387,14 @@
       "changePort": "Change port",
       "skip": "Skip",
       "applied": "Routing updated to port {port}.",
-      "changeError": "Couldn't update the port. Please try again."
+      "changeError": "Couldn't update the port. Please try again.",
+      "loopbackTitle": "The app cannot receive routed traffic",
+      "loopbackNote": "The deployment is running, but a routed port needs attention.",
+      "loopbackBody": "Port {port} only listens inside the container.",
+      "loopbackBodyService": "Service \"{service}\" only listens inside the container on port {port}.",
+      "loopbackHelp": "For a routed app, listen on 0.0.0.0 and redeploy, or route to its intended proxy.",
+      "openSettings": "Open settings",
+      "skipError": "Couldn't dismiss this warning. Please try again."
     },
     "title": {
       "cancelled": "Deployment Cancelled",
@@ -331,7 +403,7 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying..."
     },
-    "visitSite": "Visit Site",
+    "openSite": "Open site",
     "warningTitle": "Deployment finished, but some services still need attention.",
     "productionLogs": "Production Logs",
     "buildTerminal": "Build Terminal",
@@ -341,7 +413,7 @@
     "stopDeployment": "Stop Deployment",
     "redeploy": "Redeploy",
     "goToProject": "Go to project",
-    "openDashboard": "Open Dashboard",
+    "openProject": "Open project",
     "edit": "Edit",
     "status": {
       "cancelled": "Cancelled",
@@ -359,6 +431,17 @@
     "detailBranch": "Branch",
     "detailDomains": "Domains",
     "detailDomain": "Domain"
+  },
+  "deploymentHealth": {
+    "recheck": "Recheck health",
+    "checking": "Checking…",
+    "healthy": "Services are healthy",
+    "atDeployment": "Warning recorded at deployment",
+    "currentHealth": "Current service status",
+    "startupHint": "If the app is still starting, wait a moment and recheck. If it keeps restarting or reports an error, open its logs to find the cause.",
+    "viewLogs": "View logs",
+    "unavailable": "Current health could not be verified. Recheck when the server is reachable.",
+    "historical": "This is no longer the active deployment. Open the project to check its current services."
   },
   "composeDeployment": {
     "title": {
@@ -432,12 +515,12 @@
     "rowType": "Type"
   },
   "configDiagnostics": {
-    "title": "Some of this repo's openship.json was not applied",
-    "description": "The fields listed below were skipped; the rest of the file was applied. The deploy will still run.",
+    "title": "Some repository deployment settings were not applied",
+    "description": "Review the skipped settings below before deploying.",
     "titleWholeFile": "This repo's openship.json was ignored",
     "descriptionWholeFile": "None of it was applied. The deploy will still run, using the settings Openship detected.",
     "refused": "Refused",
     "unrecognized": "Not recognized",
-    "hint": "Run `openship config validate` in the repo to check the file before your next deploy."
+    "hint": "Check the named configuration files and update any unsupported settings before your next deploy."
   }
 }

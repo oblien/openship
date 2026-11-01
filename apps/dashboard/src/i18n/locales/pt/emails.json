@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "E-mails",
+    "subtitle": "Use suas caixas de correio existentes com o Openship Webmail.",
+    "connectTitle": "Conecte seu servidor de e-mail",
+    "description": "Conecte qualquer servidor IMAP/SMTP. Suas caixas de correio e a entrega das mensagens continuam com seu provedor.",
+    "connectAction": "Conectar servidor existente",
+    "signInHint": "Entre no webmail com o endereço de e-mail e a senha da sua caixa de correio.",
+    "manageAction": "Gerenciar aplicativos de webmail"
+  },
+  "cloudComingSoon": {
+    "title": "Email gerido",
+    "badge": "Em breve",
+    "description": "O email gerido no Openship Cloud estará disponível em breve. Os planos de servidores Cloud alojam aplicações e não criam um servidor de email.",
+    "selfHosted": "Pode alojar email no seu próprio servidor com uma instalação autoalojada do Openship."
+  },
   "page": {
     "title": "Servidor de Email",
     "subtitle": "Configure um servidor de email auto-hospedado com alguns cliques",
@@ -132,7 +147,17 @@
     "hide": "Ocultar",
     "reveal": "Mostrar",
     "generateTitle": "Gerar uma palavra-passe aleatória forte",
-    "generate": "Gerar"
+    "generate": "Gerar",
+    "relay": {
+      "toggle": "Retransmitir e-mails de saída através de um provedor de e-mail",
+      "hint": "Recomendado. Envie através de IPs confiáveis de um provedor — IPs de novos servidores costumam estar em listas de bloqueio e muitos hosts bloqueiam a porta 25 de saída. O recebimento permanece neste servidor.",
+      "region": "Região",
+      "username": "Nome de usuário SMTP",
+      "password": "Senha SMTP",
+      "perDomainNote": "Aplica-se a todos os domínios. O roteamento por domínio e os registros DKIM / MAIL FROM do provedor para cada domínio são configurados após a instalação na aba Envio."
+    },
+    "startFailed": "Não foi possível iniciar a configuração do motor de e-mail.",
+    "startFailedFallback": "Não foi possível conectar para iniciar a configuração. Verifique o acesso SSH e tente novamente."
   },
   "sidebar": {
     "portConflict": {

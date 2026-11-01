@@ -14,8 +14,8 @@
  * then an authenticated `echo ok` through the same pooled executor the install
  * drives) rather than inventing a second notion of "server is usable".
  */
-import { runConnectivityCheck } from "../../lib/connectivity";
-import "../../lib/connectivity-checks"; // registers the ssh-server check used below
+import { runConnectivityCheck } from "@repo/platform/engine/lib/connectivity";
+import "@repo/platform/engine/lib/connectivity-checks"; // registers the ssh-server check used below
 import type { ConnectivityCode } from "@repo/core";
 
 export interface MailSetupPreflightFailure {

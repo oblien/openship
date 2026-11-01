@@ -11,6 +11,7 @@
  * dashboard branching on deploy mode.
  */
 import { Hono } from "hono";
+import { IssueCollectionSchemas, IssueJobSchemas } from "@repo/contracts";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./issues.controller";
 
@@ -27,6 +28,7 @@ r.get(
       description:
         "THE place to answer \"what is broken right now?\" across the whole installation — start here before per-project tools. One org-wide feed that merges every check Openship already runs: container health incidents (unhealthy / crash_loop / down, plus a server-level `server_unreachable` row when a whole box is offline), managed edge/mail container state, deploy blockers and held prompts, partial-release decisions, unsynced routing, port advisories, unverified domains, certificate errors, and available updates. Each item carries `severity` (`outage` = not being served right now, `action_required`, `advisory`), a `target` with a dashboard href, and `resolveWith` — concrete {method, path} calls that fix it, callable as-is. Items whose fix is a managed container carry `infraFix` instead (a UI flow, not an API call). `?status=resolved` returns incident HISTORY (the only source with a lifecycle; up to 30 days), so a resolved-tab absence never means \"nothing else ever broke\". Infrastructure rows require server read access and are absent in cloud mode.",
     },
+    query: IssueCollectionSchemas.list.input,
   },
   ctrl.listIssues,
 );
@@ -43,11 +45,16 @@ r.get(
   ctrl.issuesSummary,
 );
 
+r.delete("/history", {
+  tag: "project:admin", collection: true, localOnly: true,
+  auditHandledByOperation: true,
+  mcp: { description: "Clear resolved monitoring incident history in the caller's organization. Requires an organization owner/admin with unrestricted access. Preserves open incidents, other organizations and incidents resolving after the server-side cutoff. Does not clear audit logs, notifications or workloads." },
+}, ctrl.clearHistory);
+
 r.get(
   "/health",
   {
     tag: "project:list",
-    localOnly: true,
     mcp: {
       description:
         "Latest health-watch snapshot for every expected workload in the organization. Cached only: this read performs no Docker polling. Includes healthy, unhealthy, crash-looping, down and unknown states plus watcher enabled status.",
@@ -62,10 +69,9 @@ r.post(
     tag: "project:list",
     readOnly: true,
     collection: true,
-    localOnly: true,
     mcp: {
       description:
-        "Check the current container state of every deployed workload in the caller's organization. Reuses the health watch scanner and refreshes only its in-memory snapshots: it does not enable a job, update incident history, send alerts, or start Docker event subscriptions. Available on desktop and self-hosted runtimes while Openship is running.",
+        "Check the current container state of every deployed workload in the caller's organization, including managed Cloud servers. Reuses the health watch scanner and refreshes only its in-memory snapshots: it does not enable a job, update incident history, send alerts, or start Docker event subscriptions.",
     },
   },
   ctrl.scanCurrentHealth,
@@ -81,11 +87,14 @@ r.post(
   "/rescan",
   {
     tag: "job:write",
+    body: IssueJobSchemas.rescan.input,
+    bodyValidatedByOperation: true,
+    auditHandledByOperation: true,
     collection: true,
     localOnly: true,
     mcp: {
       description:
-        "Run the checkers behind GET /issues immediately (health watch, managed-container scan, pending domain verification, update scan) instead of waiting for their schedules, then re-read GET /issues. Returns which jobs ran, which were skipped as not applicable to this platform, and which failed. Adds no new probing — these are the same scheduled jobs, recorded in the jobs history as manual runs. Self-hosted only.",
+        "Run the checkers behind GET /issues immediately instead of waiting for their schedules, then re-read GET /issues. Send {healthOnly:true} to recheck container/server health without running component updates or domain reconciliation. Returns a scan session with stages; GET /issues/rescan/status follows its completion. These are the existing scheduled jobs, recorded in job history as manual runs. Self-hosted only and requires an instance administrator.",
     },
   },
   ctrl.rescanIssues,
@@ -93,7 +102,7 @@ r.post(
 
 r.get(
   "/rescan/status",
-  { tag: "job:read", localOnly: true },
+  { tag: "job:read", localOnly: true, mcp: { description: "Read the current or most recent issue-rescan session, including stage status, errors and completion. Start once with the rescan tool, then poll this tool instead of launching repeated scans." } },
   ctrl.rescanStatus,
 );
 

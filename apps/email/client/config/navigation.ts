@@ -187,7 +187,6 @@ export const navigationConfig: Record<string, NavConfig> = {
             title: m['navigation.settings.signatures'](),
             url: '/settings/signatures',
             icon: MessageSquareIcon,
-            disabled: true,
           },
           {
             title: m['navigation.settings.shortcuts'](),

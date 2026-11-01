@@ -25,7 +25,7 @@ vi.mock("node:child_process", () => ({
     // Fresh install: no pre-existing postgres volume, so the password-reconcile
     // path (which would add its own `up -d --wait postgres`) stays out of the
     // pull/build sequence these tests pin.
-    if (cmd === "docker" && args[0] === "volume") return { status: 1, stdout: "", stderr: "" };
+    if (cmd === "docker" && args[0] === "volume") return { status: 1, stdout: "", stderr: `Error: No such volume: ${args[2]}` };
     return { status: 0, stdout: "", stderr: "" };
   },
 }));

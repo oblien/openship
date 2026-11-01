@@ -22,12 +22,12 @@ import { endpoints } from "./endpoints";
 // The protocol prefix MUST match the constant in the API controller
 // (apps/api/src/modules/terminal/terminal.controller.ts). The server
 // echoes the same subprotocol back so the browser accepts the upgrade.
-export const TERMINAL_SUBPROTOCOL_PREFIX = "openship.terminal.v1+";
+export { TERMINAL_SUBPROTOCOL_PREFIX } from "@repo/contracts";
 // Optional second subprotocol carrying a resume token. Presented by
 // the client to reattach to a parked session (page reload, network
 // blip). The server validates ownership + freshness and either
 // reattaches or replies with error code "resume_failed".
-export const TERMINAL_RESUME_SUBPROTOCOL_PREFIX = "openship.terminal.resume+";
+export { TERMINAL_RESUME_SUBPROTOCOL_PREFIX } from "@repo/contracts";
 
 // ─── Wire-level control messages (server → client) ──────────────────────────
 

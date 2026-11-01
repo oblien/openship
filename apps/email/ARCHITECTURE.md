@@ -46,6 +46,26 @@ themselves separately.
 
 ## Database topology - one host, four DBs
 
+Container installs publish the mail database only on host loopback. New setups try
+port 5432, then the first free port in 5433–5460 if 5432 is occupied. To select a
+specific port, set `OPENSHIP_MAIL_DB_PORT` in the API process environment before
+running mail setup. The value must be a decimal port from 1 to 65535; an occupied
+explicit port stops setup with an error.
+
+The selected port is saved with the mail engine configuration and reused when
+recreating a missing engine. Existing installations keep their retained port;
+changing the API setting does not move a running database. Start-only repairs read
+the existing container binding. Inside the PostgreSQL container the port remains
+5432, and the mail daemons use the selected host port.
+
+At container boot, fail2ban receives its own root-readable PostgreSQL connection
+settings and password file in `/etc/fail2ban/openship-postgresql.{conf,pgpass}`.
+Its database helper reads these files for the selected TCP host and port, including
+direct or scheduled invocations without the container environment. Other users'
+`.pgpass` files are preserved. SQL failures return an error instead of reporting a
+successful ban. This repair ships in the mail engine image; existing installations
+receive it when that image is updated and the engine container is recreated.
+
 ```
 openship Postgres ($DATABASE_URL)                 ← unrelated to mail
 └── schema "public"

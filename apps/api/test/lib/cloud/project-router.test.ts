@@ -15,20 +15,23 @@ vi.mock("@repo/db", () => ({
     domain: { findById: vi.fn() },
   },
 }));
-vi.mock("../../../src/config", () => ({ env: { CLOUD_MODE: false } }));
-vi.mock("../../../src/lib/request-context", () => ({ getRequestContext: vi.fn() }));
-vi.mock("../../../src/lib/cloud/transport", () => ({
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/lib/authorization", () => ({ authorization: { authorize: vi.fn() } }));
+vi.mock("../../../src/lib/request-context", () => ({ getRequestContext: vi.fn(() => ({ organizationId: "org1", scopeMode: "resource" })) }));
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({
   cloudFetchAsOrgOwner: vi.fn(),
   resolveOrgCloudUserId: vi.fn(),
 }));
 
-import { resolveProjectSource, proxyToSaaS } from "../../../src/lib/cloud/project-router";
+import { resolveProjectSource, proxyToSaaS, cloudProjectProxyByQuery } from "../../../src/lib/cloud/project-router";
+import { authorization } from "@repo/platform/engine/lib/authorization";
 import { repos } from "@repo/db";
-import { env } from "../../../src/config";
+import { env } from "@repo/platform/engine/config/index";
+import { getRequestContext } from "../../../src/lib/request-context";
 import {
   cloudFetchAsOrgOwner,
   resolveOrgCloudUserId,
-} from "../../../src/lib/cloud/transport";
+} from "@repo/platform/engine/lib/cloud/transport";
 
 function fakeCtx(opts: {
   url?: string;
@@ -41,9 +44,11 @@ function fakeCtx(opts: {
     req: {
       url: opts.url ?? "http://localhost/api/projects/p1",
       method: opts.method ?? "GET",
+      query: (name: string) => new URL(opts.url ?? "http://localhost/api/projects/p1").searchParams.get(name) ?? undefined,
       header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
       text: async () => opts.body ?? "",
     },
+    set: vi.fn(),
     json: (obj: unknown, status?: number) =>
       new Response(JSON.stringify(obj), {
         status: status ?? 200,
@@ -64,10 +69,20 @@ describe("resolveProjectSource", () => {
     expect(repos.project.findById).not.toHaveBeenCalled();
   });
 
-  it("honors the X-Project-Source: cloud hint without a DB read", async () => {
+  it("resolves a Cloud hint through the same authority check", async () => {
     const c = fakeCtx({ headers: { "x-project-source": "cloud" } });
+    vi.mocked(repos.project.findById).mockResolvedValue(undefined);
+    vi.mocked(resolveOrgCloudUserId).mockResolvedValue("owner1");
     expect(await resolveProjectSource(c, "p1", "org1")).toBe("cloud");
-    expect(repos.project.findById).not.toHaveBeenCalled();
+    expect(repos.project.findById).toHaveBeenCalledWith("p1");
+  });
+
+  it("never overrides a local record or DB failure with a Cloud hint", async () => {
+    const c = fakeCtx({ headers: { "x-project-source": "cloud" } });
+    vi.mocked(repos.project.findById).mockResolvedValue({ id: "p1" } as never);
+    expect(await resolveProjectSource(c, "p1", "org1")).toBe("local");
+    vi.mocked(repos.project.findById).mockRejectedValue(new Error("DB offline"));
+    await expect(resolveProjectSource(c, "p1", "org1")).rejects.toThrow("DB offline");
   });
 
   it("honors the local hint", async () => {
@@ -95,8 +110,24 @@ describe("resolveProjectSource", () => {
 
 describe("proxyToSaaS", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     (env as { CLOUD_MODE: boolean }).CLOUD_MODE = false;
+  });
+
+  it("refuses fixed tenant forwarding before acquiring or sending an owner credential", async () => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ organizationId: "org1", scopeMode: "fixed" } as never);
+    await expect(proxyToSaaS(fakeCtx({}), "org1")).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(cloudFetchAsOrgOwner).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { credential: { organizationId: "org1", readOnly: false } },
+    { tokenScope: { tokenId: "restricted-token" } },
+  ])("refuses credential-scoped forwarding even without a fixed request: %j", async restriction => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ organizationId: "org1", scopeMode: "resource", ...restriction } as never);
+    vi.mocked(cloudFetchAsOrgOwner).mockResolvedValue(Response.json({ ok: true }));
+    await expect(proxyToSaaS(fakeCtx({}), "org1")).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(cloudFetchAsOrgOwner).not.toHaveBeenCalled();
   });
 
   it("forwards method/path/body but NEVER an identity header", async () => {
@@ -142,5 +173,30 @@ describe("proxyToSaaS", () => {
     expect(res.status).toBe(503);
     const body = (await res.json()) as { code?: string };
     expect(body.code).toBe("CLOUD_UNREACHABLE");
+  });
+});
+
+describe("deployment collection gateway capability", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (env as { CLOUD_MODE: boolean }).CLOUD_MODE = false;
+  });
+  it("keeps the checked deployment capability when the project collection passes through the gateway", async () => {
+    vi.mocked(authorization.authorize).mockResolvedValue({ organizationId: "org1" } as never);
+    vi.mocked(repos.project.findById).mockResolvedValue({ id: "p1", organizationId: "org1" } as never);
+    const next = vi.fn();
+    await cloudProjectProxyByQuery(fakeCtx({ url: "http://localhost/api/deployments?projectId=p1" }), next, "deployments:read");
+    expect(authorization.authorize).toHaveBeenCalledWith(expect.anything(), { resourceType: "project", resourceId: "p1", action: "read", capability: "deployments:read" });
+    expect(next).toHaveBeenCalledOnce();
+  });
+  it("never uses an owner's Cloud credential for a locally scoped capability token", async () => {
+    vi.mocked(authorization.authorize).mockResolvedValue({ organizationId: "org1", scopeMode: "fixed", tokenScope: { tokenId: "token" }, role: "restricted" } as never);
+    vi.mocked(getRequestContext).mockReturnValue({ organizationId: "org1", scopeMode: "fixed", tokenScope: { tokenId: "token" }, role: "restricted" } as never);
+    vi.mocked(repos.project.findById).mockResolvedValue(undefined);
+    vi.mocked(resolveOrgCloudUserId).mockResolvedValue("owner1");
+    const next = vi.fn();
+    await expect(cloudProjectProxyByQuery(fakeCtx({ url: "http://localhost/api/deployments?projectId=p1" }), next, "deployments:read")).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(cloudFetchAsOrgOwner).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 });

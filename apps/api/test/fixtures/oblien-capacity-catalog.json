@@ -1,0 +1,134 @@
+{
+  "success": true,
+  "currency": "usd",
+  "billingModes": [
+    "payg",
+    "monthly"
+  ],
+  "tariffId": "workspace-capacity-2026-10-v1",
+  "tariff": {
+    "id": "workspace-capacity-2026-10-v1",
+    "currency": "usd",
+    "creditsPerDollar": 100,
+    "monthly": {
+      "vcpuCents": 600,
+      "memoryGiBCents": 100,
+      "diskGiBCents": 5,
+      "minimumCents": 500
+    },
+    "paygCapPercent": 125,
+    "usage": {
+      "activeVcpuHourCents": 3,
+      "reservedGiBHourCents": 0.8,
+      "retainedGiBMonthCents": 5,
+      "monthHours": 720
+    },
+    "network": {
+      "managedProxyGiBCents": 10,
+      "minimumTopupCents": 500
+    },
+    "requiredMeterVersion": 3,
+    "terms": {
+      "cpuClass": "shared",
+      "networkIncluded": false,
+      "backupsIncluded": false,
+      "autoRenewDefault": false,
+      "calendar": "subscription_anniversary",
+      "expiryGraceHours": 0,
+      "retainedAfterExpiryDays": 30,
+      "automaticDeletion": false,
+      "retentionBilling": "storage_until_deleted"
+    }
+  },
+  "paymentSources": {
+    "payg": [
+      "wallet"
+    ],
+    "monthly": [
+      "wallet",
+      "stripe"
+    ]
+  },
+  "presets": [
+    {
+      "id": "micro",
+      "capacity": {
+        "vcpus": 0.5,
+        "memoryMb": 512,
+        "diskGb": 10,
+        "workspaces": 4
+      },
+      "monthlyAmount": 500,
+      "paygCapAmount": 625,
+      "resourceLimits": {
+        "max_workspaces": 4,
+        "max_vcpus": 1,
+        "max_ram_mb": 512,
+        "max_disk_gb": 10,
+        "max_total_vcpus": 0.5,
+        "max_total_ram_mb": 512,
+        "max_total_disk_gb": 10
+      }
+    },
+    {
+      "id": "small",
+      "capacity": {
+        "vcpus": 1,
+        "memoryMb": 1024,
+        "diskGb": 20,
+        "workspaces": 8
+      },
+      "monthlyAmount": 800,
+      "paygCapAmount": 1000,
+      "resourceLimits": {
+        "max_workspaces": 8,
+        "max_vcpus": 1,
+        "max_ram_mb": 1024,
+        "max_disk_gb": 20,
+        "max_total_vcpus": 1,
+        "max_total_ram_mb": 1024,
+        "max_total_disk_gb": 20
+      }
+    },
+    {
+      "id": "medium",
+      "capacity": {
+        "vcpus": 2,
+        "memoryMb": 4096,
+        "diskGb": 40,
+        "workspaces": 12
+      },
+      "monthlyAmount": 1800,
+      "paygCapAmount": 2250,
+      "resourceLimits": {
+        "max_workspaces": 12,
+        "max_vcpus": 2,
+        "max_ram_mb": 4096,
+        "max_disk_gb": 40,
+        "max_total_vcpus": 2,
+        "max_total_ram_mb": 4096,
+        "max_total_disk_gb": 40
+      }
+    },
+    {
+      "id": "large",
+      "capacity": {
+        "vcpus": 4,
+        "memoryMb": 8192,
+        "diskGb": 80,
+        "workspaces": 24
+      },
+      "monthlyAmount": 3600,
+      "paygCapAmount": 4500,
+      "resourceLimits": {
+        "max_workspaces": 24,
+        "max_vcpus": 4,
+        "max_ram_mb": 8192,
+        "max_disk_gb": 80,
+        "max_total_vcpus": 4,
+        "max_total_ram_mb": 8192,
+        "max_total_disk_gb": 80
+      }
+    }
+  ]
+}

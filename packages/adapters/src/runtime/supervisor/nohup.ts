@@ -14,13 +14,15 @@
  * Good enough for: development, macOS desktop, CI environments.
  */
 
-import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../../types";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage, RuntimeLogStreamOptions } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
 import { sampleBareUsage, ZERO_USAGE } from "./usage";
 import { sq, parseLogLevel } from "../build-pipeline";
 import { portOccupantDetails, probeListeningPort } from "../port-conflict";
 import { execReliable } from "../../system/remote-journal";
 import { DeployError } from "@repo/core";
+import { ensureOwnedDir } from "../../system/elevated-executor";
 
 export class NohupSupervisor implements ProcessSupervisor {
   readonly name = "nohup";
@@ -49,15 +51,15 @@ export class NohupSupervisor implements ProcessSupervisor {
   private async readPid(id: string): Promise<number | null> {
     try {
       const content = await this.executor.readFile(this.pidFile(id));
-      const pid = parseInt(content.trim(), 10);
-      return isNaN(pid) ? null : pid;
-    } catch {
+      const pid = Number(content.trim());
+      return Number.isSafeInteger(pid) && pid > 1 ? pid : null;
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup");
       return null;
     }
   }
 
   private async writePid(id: string, pid: number): Promise<void> {
-    await this.executor.mkdir(`${this.workDir}/.pids`);
     await this.executor.writeFile(this.pidFile(id), String(pid));
   }
 
@@ -69,7 +71,8 @@ export class NohupSupervisor implements ProcessSupervisor {
     try {
       await this.executor.exec(`kill -0 ${pid} 2>/dev/null`);
       return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup");
       return false;
     }
   }
@@ -80,13 +83,13 @@ export class NohupSupervisor implements ProcessSupervisor {
     try {
       const content = await this.executor.readFile(this.artifactFile(id));
       return content.trim() || null;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup");
       return null;
     }
   }
 
   private async writeArtifactPath(id: string, path: string): Promise<void> {
-    await this.executor.mkdir(`${this.workDir}/.artifacts`);
     await this.executor.writeFile(this.artifactFile(id), path);
   }
 
@@ -97,7 +100,9 @@ export class NohupSupervisor implements ProcessSupervisor {
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   async deploy(opts: SupervisorDeployOpts): Promise<void> {
-    await this.executor.mkdir(`${this.workDir}/.logs`);
+    for (const directory of [".logs", ".pids", ".artifacts"]) {
+      await ensureOwnedDir(this.executor, `${this.workDir}/${directory}`);
+    }
 
     const envExports = Object.entries(opts.env)
       .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
@@ -141,7 +146,8 @@ export class NohupSupervisor implements ProcessSupervisor {
       try {
         const tail = await this.executor.exec(`tail -n 10 ${sq(logPath)}`);
         hint = tail.trim();
-      } catch { /* log may not exist yet */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup"); /* log may not exist yet */ }
 
       // Detect EADDRINUSE - another process is holding the port
       if (hint.includes("EADDRINUSE")) {
@@ -166,27 +172,61 @@ export class NohupSupervisor implements ProcessSupervisor {
     const pid = await this.readPid(deploymentId);
     if (!pid) return;
 
-    if (await this.isAlive(pid)) {
-      // Kill entire process group (PGID = leader PID from setsid)
-      await this.executor.exec(`kill -- -${pid} 2>/dev/null || kill ${pid} 2>/dev/null || true`);
-
-      // Wait up to 10s for graceful shutdown
-      const deadline = Date.now() + 10_000;
-      while (Date.now() < deadline && (await this.isAlive(pid))) {
-        await new Promise((r) => setTimeout(r, 500));
+    // Without setsid (notably on macOS), the shell shares its caller's group.
+    // Capture descendants before signalling it: killing only the shell leaves
+    // npm/node children alive and still holding the application's port. Retain
+    // those PIDs through reparenting, and include children forked during shutdown.
+    const tracked = new Set([pid]);
+    let ownsGroup = false;
+    const readRunning = async () => {
+      const output = await this.executor.exec("ps -e -o pid=,ppid=,pgid=,stat=");
+      const rows = output.split("\n").flatMap(line => {
+        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)$/);
+        return match ? [{ pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), state: match[4]! }] : [];
+      });
+      if (!rows.length) throw new Error("Could not inspect supervised process tree");
+      ownsGroup ||= rows.some(row => row.pid === pid && row.group === pid);
+      if (ownsGroup) for (const row of rows) if (row.group === pid) tracked.add(row.pid);
+      let previousSize: number;
+      do {
+        previousSize = tracked.size;
+        for (const row of rows) if (tracked.has(row.parent)) tracked.add(row.pid);
+      } while (tracked.size !== previousSize);
+      // Zombies have already released their sockets; only their parent can reap them.
+      return rows.filter(row => tracked.has(row.pid) && !row.state.startsWith("Z"));
+    };
+    let running = await readRunning();
+    const signal = async (name: "TERM" | "KILL") => {
+      const targets = running.filter(row => !ownsGroup || row.group !== pid).map(row => row.pid);
+      if (ownsGroup && running.some(row => row.group === pid)) targets.unshift(-pid);
+      if (targets.length) await this.executor.exec(`kill -${name} -- ${targets.join(" ")} 2>/dev/null || true`);
+    };
+    const waitForExit = async (timeoutMs: number) => {
+      const deadline = Date.now() + timeoutMs;
+      while (running.length && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        running = await readRunning();
       }
+    };
 
-      // SIGKILL if still alive
-      if (await this.isAlive(pid)) {
-        await this.executor.exec(`kill -9 -- -${pid} 2>/dev/null || kill -9 ${pid} 2>/dev/null || true`);
-      }
+    await signal("TERM");
+    await waitForExit(10_000);
+    if (running.length) {
+      await signal("KILL");
+      await waitForExit(2_000);
     }
+    if (running.length) throw new Error(`Supervised processes did not stop: ${running.map(row => row.pid).join(", ")}`);
+    await this.removePid(deploymentId);
   }
 
   async start(_deploymentId: string): Promise<void> {
     throw new Error(
       "Nohup processes cannot be started after stopping. Trigger a new deployment.",
     );
+  }
+
+  async canStart(_deploymentId: string): Promise<boolean> {
+    return false;
   }
 
   async restart(deploymentId: string): Promise<void> {
@@ -241,7 +281,8 @@ export class NohupSupervisor implements ProcessSupervisor {
           message: line,
           level: parseLogLevel(line),
         }));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup");
       return [];
     }
   }
@@ -249,7 +290,7 @@ export class NohupSupervisor implements ProcessSupervisor {
   async streamLogs(
     deploymentId: string,
     onLog: LogCallback,
-    opts?: { tail?: number },
+    opts?: RuntimeLogStreamOptions,
   ): Promise<() => void> {
     const logPath = this.logFile(deploymentId);
     const tailN = opts?.tail ?? 100;
@@ -257,7 +298,7 @@ export class NohupSupervisor implements ProcessSupervisor {
     let stopped = false;
     // An adopted deployment has no supervisor log at all, and an empty viewer
     // gives the operator nothing to act on — say so once, up front.
-    if (!(await this.executor.exists(logPath).catch(() => true))) {
+    if (!(await this.executor.exists(logPath).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup"); return true; }))) {
       onLog({
         timestamp: new Date().toISOString(),
         message:
@@ -282,11 +323,23 @@ export class NohupSupervisor implements ProcessSupervisor {
         if (!stopped) onLog({ ...entry, message: entry.message + "\r\n" });
       },
     );
-    promise.catch(() => {});
+    void promise.then(
+      (result) => {
+        if (!stopped) opts?.onEnd?.(result.code === 0
+          ? undefined
+          : new Error(`Log reader exited with code ${result.code}`));
+      },
+      (error) => {
+        observeCaughtError(error, "adapters/runtime/supervisor/nohup");
+        if (!stopped) opts?.onEnd?.(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
 
     return () => {
       stopped = true;
-      this.executor.exec(`pkill -f ${sq(`tail.*${logPath}`)} 2>/dev/null || true`).catch(() => {});
+      this.executor.exec(`pkill -f ${sq(`tail.*${logPath}`)} 2>/dev/null || true`).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/nohup");
+      });
     };
   }
 }

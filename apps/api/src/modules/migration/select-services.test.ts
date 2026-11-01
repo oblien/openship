@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { perService, selectDiscoveredServices, serviceUid } from "./select-services";
-import type { DiscoveredService } from "./docker-reconcile";
+import { perService, selectDiscoveredServices, serviceUid } from "@repo/platform/engine/modules/migration/select-services";
+import type { DiscoveredService } from "@repo/platform/engine/modules/migration/docker-reconcile";
 
 /**
  * GH-584: migrating a foreign compose stack failed with `already managed here by

@@ -1,0 +1,233 @@
+---
+title: Updates
+description: Inspect available project updates and apply them through the deployment workflow.
+---
+
+Updates compare a project's deployed version with its upstream source. Listing does not redeploy anything.
+Only projects visible to the caller are included.
+
+## Security advisories
+
+Security checks are notice-only by default. The public feed is signed and contains
+declarative image/runtime targets, never shell commands. Inventory stays in your
+Openship installation. Existing verified notification channels receive matching
+security alerts by default; Settings → Notifications controls each channel.
+
+```ts
+// Global feed and affected apps, restricted to the current workspace and grants.
+// This read uses current cached observations; it never runs container commands.
+const feed = await ship.updates.advisories();
+console.log(feed.overview.projects, feed.overview.pendingProjects, feed.overview.unknownProjects);
+const security = await ship.updates.security("proj_123");
+console.log(security.findings, security.unknownServices, security.feedStale);
+
+// Explicitly refresh local observations without deploying.
+await ship.updates.checkSecurity("proj_123");
+
+// After reviewing the finding, use the ordinary deployment/health-check flow.
+const finding = security.findings.find((item) => item.canRefresh);
+if (finding && security.deploymentId && !security.feedStale) {
+  await ship.updates.applySecurity("proj_123", {
+    advisoryId: finding.id,
+    deploymentId: security.deploymentId,
+    serviceId: finding.serviceId,
+  });
+}
+```
+
+The backend checks the signed advisory again and rejects a changed active
+deployment. Refresh preserves configured versions and pins: a Dockerfile or image
+pinned to a vulnerable version needs a configuration edit. A successful build
+does not by itself prove that a vulnerability is fixed.
+
+An optional project policy permits only verified fixes for mutable image-service
+tags. It requires a confirmed affected digest and a signed replacement digest,
+unchanged deployed configuration, continuing project-write permission and health
+checks. Source builds and runtime-version-only notices remain manual.
+
+```ts
+// Explicit opt-in; never enabled by an advisory or a release update.
+await ship.updates.securityPolicy("proj_123", { autoRefresh: true });
+// Stop future automatic refreshes. Cancel an already executing deployment separately.
+await ship.updates.securityPolicy("proj_123", { autoRefresh: false });
+```
+
+The shared backend cache polls each public GitHub feed every five minutes with a
+usable GitHub credential, or hourly without one, using conditional requests and
+rate-limit backoff. Checks run only while Openship is running. Missing inventory
+is reported as unknown rather than safe.
+
+Openship reuses existing deployed image digests and keeps one current runtime
+observation per project. New or changed runtime advisory rules, a deployment
+change, an explicit check, or patch admission refresh that observation. Ordinary
+page reads and feed-signature renewals reuse it; there is no timed container scan.
+Only runtime families named in the feed are probed, without downloading images. An unchanged image tag is not proof of an
+unchanged runtime: after a deployment, evidence is collected again. A tag alone
+only produces a possible match; a confirmed match requires an affected digest or
+observed runtime version. This is advisory matching, not a full package or
+application-dependency vulnerability scanner.
+
+Cloud control-plane updates remain operator-managed. Customer application images
+and runtimes, including connected servers, still receive these scoped alerts;
+automatic application changes remain off by default. See the public
+[advisory policy and publishing guide](https://github.com/oblien/openship/blob/main/docs/security-advisories.md)
+for coverage, signatures, automatic-update limits and source metadata.
+
+## Find available updates
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const updates = await ship.updates.list({ behindOnly: true });
+console.log(updates);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/updates?behind=1" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+The SDK's `behindOnly` boolean maps to REST's `behind=1` filter. Omit it to include projects that are
+already current or do not support upstream comparison.
+
+## Refresh upstream information
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const scan = await ship.updates.scan();
+console.log(scan.scanned, scan.supported);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/updates/scan" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+The scan returns `scanned` and `supported` counts. Upstream results are cached; the deployed side is read
+from current project state when updates are listed.
+
+## Apply an update
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const submitted = await ship.updates.apply("proj_123");
+console.log(submitted.deployment_id, submitted.project_id);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/updates/proj_123/apply" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+Applying uses the existing deployment workflow with an update trigger. It returns deployment and project
+IDs, not proof that the new version is ready. [Follow the deployment](/docs/api/deployments#wait-decisions-and-cancellation)
+and handle its final outcome.
+
+## Refresh images and redeploy
+
+Use this operation after an image publisher releases a runtime fix under an existing tag. It refreshes
+the configured images, rebuilds source services with fresh base images, and deploys through the normal
+health checks and rollback policy. It keeps the deployed Git commit or release version instead of
+shipping newer application code. No prior update scan is required.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+// Omit serviceIds to update all eligible services in the project.
+const submitted = await ship.updates.updateRuntime("proj_123", {
+  serviceIds: ["svc_web"],
+});
+if (submitted.awaiting_actions) {
+  console.log(submitted.action_request_id);
+} else {
+  console.log(submitted.deployment_id);
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/updates/proj_123/runtime" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"serviceIds":["svc_web"]}'
+```
+
+</Tab>
+</Tabs>
+
+The action preserves configured tags and digest pins. A pinned image cannot acquire a fix published
+under a different digest: edit its image reference first. Rebuilding a source app refreshes its
+builder and production bases; clearing the layer cache is not required to fetch a fresh base.
+The image publisher must have shipped the fix before this action can install it. Follow the deployment
+and verify the runtime version inside the running service before treating a security update as complete.
+
+Source updates require a confirmed deployed Git revision. Local uploads, inline template builds and
+source images carried from another deployment or replayed by rollback/migration are refused rather
+than rebuilt against an uncertain revision. Deploy those source services explicitly to establish their
+baseline first. Image-only services can still be updated independently with `serviceIds`.
+For a standalone image-release application with added sidecars, select sidecar services explicitly;
+updating the main release image and those services together is not supported by this operation.
+
+## Check image and base-image digests
+
+```ts
+const status = await ship.updates.checkRuntime("proj_123", { serviceIds: ["svc_web"] });
+for (const image of status.images) {
+  console.log(image.ref, image.currentDigest, image.latestDigest, image.status);
+}
+```
+
+REST uses `POST /api/updates/:projectId/runtime/check` with the same optional `serviceIds` body.
+This operation requires project read access and does not deploy. It uses the shared registry resolver,
+with a fresh check of each tracked tag. Source builds record the digests selected for supported literal
+Dockerfile bases; older builds and dynamic expressions remain `unknown` until a baseline is available.
+Missing credentials, unreachable registries and missing deployed digests also remain `unknown`.
+
+Image states are `update_available`, `current`, `pinned` and `unknown`. The response contains
+`checkedAt` and `images`; it does not inspect an interpreter or execute commands inside the app.
+A changed digest describes image content, not a security remediation guarantee.
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List update status; behindOnly filters to available updates. | `updates.list(input?)` | `GET /api/updates`<br />`updates:read` |
+| Refresh the organization’s update scan. | `updates.scan()` | `POST /api/updates/scan`<br />`updates:write` |
+| Apply an available update to the specified project ID. | `updates.apply(id)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
+| Refresh configured runtime images and rebuild selected services at the deployed source version. | `updates.updateRuntime(id, input?)` | `POST /api/updates/:projectId/runtime`<br />`project:write` |
+| Compare deployed image and recorded base-image digests with the registry. | `updates.checkRuntime(id, input?)` | `POST /api/updates/:projectId/runtime/check`<br />`project:read` |
+| Read the shared release/security feeds and authorized workspace findings from current cached observations. | `updates.advisories()` | `GET /api/updates/advisories`<br />`updates:read` |
+| Refresh isolated runtime observations and match current verified advisories. | `updates.checkSecurity(id)` | `POST /api/updates/:projectId/security/check`<br />`project:read` |
+| Match public security advisories against scoped deployment evidence. | `updates.security(id)` | `GET /api/updates/:projectId/security`<br />`project:read` |
+| Opt in or out of automatic verified image patches; disabled by default. | `updates.securityPolicy(id, input)` | `PUT /api/updates/:projectId/security/policy`<br />`project:write` |
+| Refresh an affected runtime after checking the advisory and active deployment. | `updates.applySecurity(id, input)` | `POST /api/updates/:projectId/security/apply`<br />`project:write` |
+
+{/* api-operations:end */}

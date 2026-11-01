@@ -15,10 +15,10 @@ import { readFileSync } from "node:fs";
  * exercised by `docker-inspect` behaviour; what matters here is that this caller uses it, and
  * that the label set — not the scan option — remains the ownership check.
  */
-const move = readFileSync(new URL("./project-move.ts", import.meta.url), "utf8");
-const inspect = readFileSync(new URL("./docker-inspect.service.ts", import.meta.url), "utf8");
+const move = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/migration/project-move.ts", import.meta.url), "utf8");
+const inspect = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/migration/docker-inspect.service.ts", import.meta.url), "utf8");
 const orchestrator = readFileSync(
-  new URL("./migration.orchestrator.ts", import.meta.url),
+  new URL("../../../../../packages/platform/src/engine/modules/migration/migration.orchestrator.ts", import.meta.url),
   "utf8",
 );
 
@@ -50,7 +50,7 @@ describe("the workload is resolved from the label set, then scanned", () => {
 
 describe("the scan honours the scope where it is cheap to honour", () => {
   it("narrows the container list before the ownership split and the inspect fan-out", () => {
-    const listing = inspect.indexOf("const containers = scoped");
+    const listing = inspect.indexOf("const selected = scoped");
     expect(listing).toBeGreaterThan(-1);
     // Before the split (`isOpenshipOwned`) and therefore before `inspectContainer`.
     expect(listing).toBeLessThan(inspect.indexOf("const isOpenshipOwned"));
@@ -67,7 +67,7 @@ describe("the scan honours the scope where it is cheap to honour", () => {
   });
 
   it("skips the whole-box manifest prune when scoped", () => {
-    expect(inspect).toContain("if (!scoped) {");
+    expect(inspect).toContain('if (!scoped && sourceServer.purpose !== "migration_source") {');
   });
 });
 

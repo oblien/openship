@@ -18,18 +18,22 @@ export function IssueGroup({
   scope,
   issues,
   standAlone,
-  busyId,
+  busyIds,
   onResolve,
   onInfraFix,
+  onRecheck,
+  rechecking,
 }: {
   scope: IssueScope;
   issues: SystemIssue[];
   /** True when nothing louder than an advisory is anywhere on the page — an
    *  advisory panel then wears amber instead of the muted surface. */
   standAlone: boolean;
-  busyId: string | null;
+  busyIds: ReadonlySet<string>;
   onResolve: (issue: SystemIssue) => void;
   onInfraFix: (issue: SystemIssue) => void;
+  onRecheck?: () => void;
+  rechecking?: boolean;
 }) {
   const { t } = useI18n();
   const c = t.issues;
@@ -38,6 +42,7 @@ export function IssueGroup({
   return (
     <AlertPanel
       tone={panelTone(issues[0]!.severity, standAlone)}
+      density="comfortable"
       icon={SCOPE_ICON[scope]}
       title={c.scopes[scope]}
       subtitle={c.scopeSubtitles[scope]}
@@ -48,9 +53,12 @@ export function IssueGroup({
           <IssueRow
             key={issue.id}
             issue={issue}
-            busy={busyId === issue.id}
+            density="comfortable"
+            busy={busyIds?.has(issue.id) ?? false}
             onResolve={onResolve}
             onInfraFix={onInfraFix}
+            onRecheck={onRecheck}
+            rechecking={rechecking}
           />
         ))}
       </ul>

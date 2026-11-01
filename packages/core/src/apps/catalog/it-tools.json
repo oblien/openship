@@ -2,7 +2,7 @@
   "available": true,
   "id": "it-tools",
   "name": "IT-Tools",
-  "description": "A handy collection of developer and sysadmin utilities. No login, no setup.",
+  "description": "A browser-based collection of developer and sysadmin utilities, with no account setup.",
   "kind": "template",
   "logo": "it-tools",
   "category": "other",
@@ -44,5 +44,21 @@
       "note": "Nothing to log into and nothing persisted — every tool runs in your browser. Anyone who can reach this URL can use it, so keep it internal if that matters."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Developer utilities",
+        "description": "Keep useful engineering tools in one place."
+      },
+      {
+        "title": "Browser interface",
+        "description": "No separate desktop installation is needed."
+      },
+      {
+        "title": "Simple setup",
+        "description": "The app does not require account setup."
+      }
+    ]
+  }
 }

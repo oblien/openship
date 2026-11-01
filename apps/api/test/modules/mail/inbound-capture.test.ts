@@ -5,7 +5,7 @@ import {
   collectorMailbox,
   generateToken,
   tokenFromBcc,
-} from "../../../src/modules/mail/inbound/capture";
+} from "@repo/platform/engine/modules/mail/inbound/capture";
 
 /**
  * The pure half of arming. Two of these are load-bearing beyond tidiness:

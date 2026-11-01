@@ -87,8 +87,13 @@ describe("ensureEdge (single edge-prepare orchestrator)", () => {
       [],
       [],
     );
-    const res = await ensureEdge(exec, async () => { throw migrate; }, { onLog });
+    const res = await ensureEdge(exec, async () => { throw migrate; }, {
+      onLog, edgeImage: "ghcr.io/oblien/openship-edge:v0.7.2",
+    });
     expect(res).toEqual({ migrated: true, ok: true, registered: ["a.example.com"] });
+    expect(h.runEdgeTakeover).toHaveBeenCalledWith(exec, expect.objectContaining({
+      edgeImage: "ghcr.io/oblien/openship-edge:v0.7.2",
+    }), onLog);
   });
 
   it("a non-migrate error from install is rethrown (not swallowed)", async () => {

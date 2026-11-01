@@ -1,0 +1,708 @@
+{
+  "deployment.failed": {
+    "action": "dağıtılamadı:",
+    "label": "Dağıtım başarısız",
+    "description": "Dağıtım sağlıklı bir duruma ulaşmadan önce hata verdi."
+  },
+  "deployment.cancelled": {
+    "action": "dağıtımını iptal etti:",
+    "label": "Dağıtım iptal edildi",
+    "description": "Bir dağıtım tamamlanmadan önce durduruldu."
+  },
+  "deployment:write": {
+    "action": "için bir dağıtım başlattı:",
+    "actionWithoutResource": "bir dağıtım başlattı",
+    "label": "Dağıtım eylemi",
+    "description": "Bir dağıtım uç noktası çağrıldı — başlatma, yeniden deneme, geri alma veya yükseltme."
+  },
+  "deployment:admin": {
+    "action": "dağıtımında bir yönetici eylemi gerçekleştirdi:",
+    "actionWithoutResource": "dağıtımda bir yönetici eylemi gerçekleştirdi",
+    "label": "Dağıtım yönetici eylemi",
+    "description": "Bir dağıtım üzerinde yönetici eylemi çağrıldı."
+  },
+  "project.created": {
+    "label": "Uygulama oluşturuldu",
+    "action": "oluşturdu",
+    "description": "Yeni bir uygulama ve yapılandırması oluşturuldu."
+  },
+  "project.updated": {
+    "label": "Uygulama güncellendi",
+    "action": "güncelledi",
+    "description": "Ayarlar, servisler, ortam değişkenleri veya yönlendirme değiştirildi."
+  },
+  "project.deleted": {
+    "label": "Uygulama silindi",
+    "action": "sildi",
+    "description": "Uygulama ve iş yükleri silindi."
+  },
+  "project.deletion.rejected": {
+    "label": "Uygulama silme reddedildi",
+    "action": "silmeye çalıştı",
+    "description": "Silme işlemi reddedildi — bazı kaynaklar hâlâ bu uygulamaya bağlı."
+  },
+  "project.deletion.failed": {
+    "label": "Uygulama silme başarısız",
+    "action": "silinemedi",
+    "description": "Temizleme tamamlanmadı, bu nedenle uygulama kaydı güvenli bir yeniden deneme için korundu."
+  },
+  "project.build_cache.cleared": {
+    "label": "Derleme önbelleği temizlendi",
+    "action": "için Docker derleme önbelleğini temizledi",
+    "description": "Kullanılmayan derleme önbelleği uygulamanın Docker ana makinesinden kaldırıldı."
+  },
+  "project:write": {
+    "action": "değiştirdi",
+    "label": "Proje değiştirildi",
+    "description": "Uygulama yazma uç noktası çağrıldı."
+  },
+  "job:write": {
+    "action": "görevi değiştirdi",
+    "actionWithoutResource": "görevi değiştirdi",
+    "label": "Görev değiştirildi",
+    "description": "Zamanlanmış veya özel bir görev oluşturuldu, düzenlendi, çalıştırıldı veya kaldırıldı."
+  },
+  "job_run.started": {
+    "action": "görevi başlattı",
+    "actionWithoutResource": "görevi başlattı",
+    "label": "Görev başlatıldı"
+  },
+  "job_run.succeeded": {
+    "action": "görevi başarıyla çalıştırdı",
+    "actionWithoutResource": "görevi başarıyla çalıştırdı",
+    "label": "Görev başarılı oldu"
+  },
+  "job_run.failed": {
+    "action": "başarısız olan görevi çalıştırdı",
+    "actionWithoutResource": "başarısız olan görevi çalıştırdı",
+    "label": "Görev başarısız oldu"
+  },
+  "service.down": {
+    "label": "Uygulama kapandı",
+    "action": "çevrimdışı olduğunu bildirdi",
+    "description": "Çalışması gereken bir kapsayıcı kapandı."
+  },
+  "service.crash_loop": {
+    "label": "Uygulama çökme döngüsünde",
+    "action": "çökme döngüsünde olduğunu bildirdi",
+    "description": "Bir kapsayıcı ayakta kalmak yerine sürekli yeniden başlıyor."
+  },
+  "service.unhealthy": {
+    "label": "Uygulama sağlıksız",
+    "action": "sağlık kontrolünün başarısız olduğunu bildirdi",
+    "description": "Kapsayıcı çalışıyor ancak kendi sağlık kontrolü başarısız oluyor."
+  },
+  "service.recovered": {
+    "label": "Uygulama kurtarıldı",
+    "action": "kurtarıldığını bildirdi",
+    "description": "Kesinti sona erdi ve kapsayıcı yeniden sağlıklı durumda."
+  },
+  "server:write": {
+    "action": "sunucuyu değiştirdi",
+    "label": "Sunucu değiştirildi"
+  },
+  "server:admin": {
+    "action": "sunucuda yönetici işlemi gerçekleştirdi",
+    "label": "Sunucu yönetici eylemi",
+    "description": "Yıkıcı bir sunucu işlemi çağrıldı (silme veya bileşen kurulumu)."
+  },
+  "terminal:write": {
+    "action": "uçbirim açtı:",
+    "label": "Uçbirim oturumu açıldı",
+    "description": "Sunucuda etkileşimli bir kabuk oturumu başlatıldı."
+  },
+  "settings:write": {
+    "action": "ayarları değiştirdi",
+    "label": "Ayarlar değiştirildi"
+  },
+  "settings:admin": {
+    "action": "ayarlarda yönetici işlemi gerçekleştirdi",
+    "label": "Ayarlar yönetici eylemi",
+    "description": "Yıkıcı bir sistem ayarı işlemi çağrıldı."
+  },
+  "notification_channel.created": {
+    "action": "bildirim kanalını ekledi",
+    "actionWithoutResource": "bildirim kanalını ekledi",
+    "label": "Bildirim kanalı eklendi"
+  },
+  "notification_channel.updated": {
+    "action": "bildirim kanalını güncelledi",
+    "actionWithoutResource": "bildirim kanalını güncelledi",
+    "label": "Bildirim kanalı güncellendi"
+  },
+  "notification_channel.deleted": {
+    "action": "bildirim kanalını kaldırdı",
+    "actionWithoutResource": "bildirim kanalını kaldırdı",
+    "label": "Bildirim kanalı kaldırıldı"
+  },
+  "notification_subscription.updated": {
+    "action": "adresine gönderilen bildirimleri değiştirdi",
+    "actionWithoutResource": "bildirim yönlendirmesini değiştirdi",
+    "label": "Bildirim yönlendirmesi değiştirildi"
+  },
+  "notification_subscription.deleted": {
+    "action": "için bildirimleri durdurdu",
+    "actionWithoutResource": "bildirimleri durdurdu",
+    "label": "Bildirimler durduruldu"
+  },
+  "notification_default.updated": {
+    "action": "için varsayılan bildirim ayarlarını değiştirdi",
+    "actionWithoutResource": "varsayılan bildirim ayarlarını değiştirdi",
+    "label": "Varsayılan bildirim ayarları değiştirildi",
+    "description": "Kuruluş için varsayılan bildirim yönlendirmesi güncellendi."
+  },
+  "notification_delivery.seen": {
+    "action": "görüldü olarak işaretledi",
+    "actionWithoutResource": "görüldü olarak işaretledi",
+    "label": "Uyarı görüldü olarak işaretlendi"
+  },
+  "notifications:write": {
+    "action": "bildirimleri değiştirdi",
+    "actionWithoutResource": "bildirimleri değiştirdi",
+    "label": "Bildirimler değiştirildi"
+  },
+  "notifications:admin": {
+    "action": "bildirimler üzerinde bir yönetici işlemi gerçekleştirdi",
+    "actionWithoutResource": "bildirimler üzerinde bir yönetici işlemi gerçekleştirdi",
+    "label": "Bildirimler yönetici işlemi"
+  },
+  "deployment.succeeded": {
+    "label": "Dağıtım başarılı",
+    "action": "dağıttı",
+    "description": "Dağıtım başarıyla tamamlandı ve trafiğe hizmet veriyor."
+  },
+  "deployment.no_changes": {
+    "label": "Dağıtılacak değişiklik yok",
+    "action": "dağıtılacak değişiklik bulamadı",
+    "description": "Tüm servisler zaten güncel olduğundan mevcut sürüm yayında kaldı."
+  },
+  "project:admin": {
+    "label": "Uygulama yönetici işlemi",
+    "action": "uygulama üzerinde yönetici işlemi çalıştırdı",
+    "description": "Yıkıcı bir uygulama işlemi tetiklendi (silme veya aktarım)."
+  },
+  "project:service:write": {
+    "label": "Servis değiştirildi",
+    "action": "servisi değiştirdi",
+    "description": "Bir servis oluşturuldu, güncellendi, başlatıldı, durduruldu veya yeniden başlatıldı."
+  },
+  "project:service:admin": {
+    "label": "Servis yönetici işlemi",
+    "action": "servis üzerinde yönetici işlemi çalıştırdı"
+  },
+  "service.exec": {
+    "label": "Serviste komut çalıştırıldı",
+    "action": "serviste komut çalıştırdı",
+    "description": "Servis kapsayıcısında bir kabuk komutu çalıştırıldı."
+  },
+  "domain.added": {
+    "label": "Alan adı eklendi",
+    "action": "alan adını ekledi"
+  },
+  "domain.removed": {
+    "label": "Alan adı kaldırıldı",
+    "action": "alan adını kaldırdı"
+  },
+  "domain.verified": {
+    "label": "Alan adı doğrulandı",
+    "action": "alan adını doğruladı",
+    "description": "DNS kayıtları doğrulandı ve sertifika başarıyla oluşturuldu."
+  },
+  "domain.verification_failed": {
+    "label": "Alan adı doğrulama başarısız",
+    "action": "alan adını doğrulayamadı",
+    "description": "DNS denetimi veya sertifika oluşturma başarısız oldu."
+  },
+  "domain.verify_failed": {
+    "label": "Alan adı doğrulama başarısız",
+    "action": "alan adını doğrulayamadı",
+    "description": "DNS denetimi veya sertifika oluşturma başarısız oldu."
+  },
+  "domain.set_primary": {
+    "label": "Birincil alan adı ayarlandı",
+    "action": "birincil alan adı olarak ayarladı",
+    "description": "Diğer alan adlarına gelen trafik bu alan adına yönlendirilecektir."
+  },
+  "domain.dns_provisioned": {
+    "label": "DNS otomatik yapılandırıldı",
+    "action": "DNS yapılandırdı",
+    "description": "DNS kayıtları bağlı sağlayıcı üzerinden oluşturuldu."
+  },
+  "domain.cert_uploaded": {
+    "label": "Özel sertifika yüklendi",
+    "action": "özel sertifika yükledi",
+    "description": "Otomatik Let's Encrypt yerine özel bir SSL sertifikası yüklendi."
+  },
+  "ssl.renewal_failed": {
+    "label": "SSL yenileme başarısız",
+    "action": "SSL yenileyemedi",
+    "description": "Otomatik sertifika yenileme başarısız oldu."
+  },
+  "credential.created": {
+    "label": "Kimlik bilgisi oluşturuldu",
+    "action": "kimlik bilgisi ekledi",
+    "description": "Kayıt anahtarı, sağlayıcı belirteci veya SSH anahtarı kaydedildi."
+  },
+  "credential.updated": {
+    "label": "Kimlik bilgisi güncellendi",
+    "action": "kimlik bilgisini güncelledi",
+    "description": "Kayıtlı kimlik bilgileri düzenlendi."
+  },
+  "credential.deleted": {
+    "label": "Kimlik bilgisi silindi",
+    "action": "kimlik bilgisini sildi",
+    "description": "Kayıtlı kimlik bilgileri kaldırıldı."
+  },
+  "credential.verified": {
+    "label": "Kimlik bilgisi doğrulandı",
+    "action": "kimlik bilgisini doğruladı",
+    "description": "Kimlik bilgileri uzak servise karşı başarıyla doğrulandı."
+  },
+  "dns_credential.connected": {
+    "label": "DNS sağlayıcısı bağlandı",
+    "action": "DNS sağlayıcısını bağladı",
+    "description": "Otomatik alan adı yönetimi için DNS kimlik bilgileri yapılandırıldı."
+  },
+  "dns_credential.disconnected": {
+    "label": "DNS sağlayıcısı bağlantısı kesildi",
+    "action": "DNS sağlayıcısının bağlantısını kesti",
+    "description": "DNS API erişimi kaldırıldı; mevcut DNS kayıtları korundu."
+  },
+  "domain:write": {
+    "label": "Alan adı değiştirildi",
+    "action": "alan adını değiştirdi",
+    "description": "Alan adı uç noktası çağrıldı — ekleme, doğrulama veya servise yönlendirme."
+  },
+  "domain:admin": {
+    "label": "Alan adı yönetici işlemi",
+    "action": "alan adı üzerinde yönetici işlemi çalıştırdı"
+  },
+  "server.added": {
+    "label": "Sunucu eklendi",
+    "action": "sunucuyu ekledi"
+  },
+  "server.updated": {
+    "label": "Sunucu güncellendi",
+    "action": "sunucuyu güncelledi"
+  },
+  "server.removed": {
+    "label": "Sunucu kaldırıldı",
+    "action": "sunucuyu kaldırdı"
+  },
+  "server.removal.rejected": {
+    "label": "Sunucu silme reddedildi",
+    "action": "sunucuyu silmeye çalıştı",
+    "description": "Sunucu üzerinde hâlâ çalışan iş yükleri olduğu için kaldırılamaz."
+  },
+  "server.exec": {
+    "label": "Sunucuda komut çalıştırıldı",
+    "action": "sunucuda komut çalıştırdı",
+    "description": "Ana makinede bir kabuk komutu çalıştırıldı."
+  },
+  "server.unreachable": {
+    "label": "Sunucuya ulaşılamıyor",
+    "action": "sunucuya ulaşılamadığını bildirdi",
+    "description": "Openship bu sunucuya SSH bağlantısı kuramadı."
+  },
+  "server.reachable": {
+    "label": "Sunucu yeniden erişilebilir",
+    "action": "sunucunun yeniden erişilebilir olduğunu bildirdi"
+  },
+  "migration.source_connected": {
+    "label": "Taşıma kaynağı bağlandı",
+    "action": "taşıma kaynağını bağladı",
+    "description": "Projeleri içe aktarmak için harici bir SSH sunucusu bağlandı."
+  },
+  "migration.source_disconnected": {
+    "label": "Taşıma kaynağı bağlantısı kesildi",
+    "action": "taşıma kaynağının bağlantısını kesti",
+    "description": "Kayıtlı taşıma bağlantısı kaldırıldı."
+  },
+  "mail_server:write": {
+    "label": "Posta sunucusu değiştirildi",
+    "action": "posta sunucusunu değiştirdi",
+    "description": "Posta sunucusu işlemi tetiklendi."
+  },
+  "mail_server:admin": {
+    "label": "Posta sunucusu yönetici işlemi",
+    "action": "posta sunucusu üzerinde yönetici işlemi çalıştırdı"
+  },
+  "mail.inbound_received": {
+    "label": "Gelen e-posta alındı",
+    "action": "bildirim kuralına uyan e-posta aldı",
+    "actionWithoutResource": "e-posta aldı"
+  },
+  "identity.provisioned": {
+    "label": "Kimlik sağlandı",
+    "action": "kimliği sağladı",
+    "description": "Güvenilir bir ana makine harici bir kimliği bir Openship kullanıcısıyla eşledi."
+  },
+  "organization.created": {
+    "label": "Organizasyon oluşturuldu",
+    "action": "organizasyonu oluşturdu"
+  },
+  "organization.deleted": {
+    "label": "Organizasyon silindi",
+    "action": "organizasyonu sildi"
+  },
+  "organization.deletion.blocked": {
+    "label": "Organizasyon silme engellendi",
+    "action": "organizasyonu silmeye çalıştı",
+    "description": "Silme reddedildi — hâlâ bağlı etkin kaynaklar veya faturalandırma mevcut."
+  },
+  "member.added": {
+    "label": "Üye eklendi",
+    "action": "ekledi"
+  },
+  "member.removed": {
+    "label": "Üye kaldırıldı",
+    "action": "kaldırdı"
+  },
+  "member.role_changed": {
+    "label": "Üye rolü değiştirildi",
+    "action": "rolünü değiştirdi",
+    "actionWithoutResource": "rolü değiştirdi"
+  },
+  "member.updated": {
+    "label": "Üyelik güncellendi",
+    "action": "üyeliğini değiştirdi",
+    "actionWithoutResource": "üyeliği değiştirdi",
+    "description": "Güvenilir bir ana makine organizasyon üyeliğini ekledi, değiştirdi veya kaldırdı."
+  },
+  "member.joined": {
+    "label": "Üye katıldı",
+    "action": "katıldı",
+    "description": "Davet edilen kullanıcı kabul etti ve erişim kazandı."
+  },
+  "member.invited": {
+    "label": "Üye davet edildi",
+    "action": "davet etti"
+  },
+  "member.removal.grant_cleanup_failed": {
+    "label": "Kaldırılan üyenin yetkileri temizlenemedi",
+    "action": "kalan yetkilerle kaldırdı",
+    "description": "Üye kaldırıldı ancak yetkileri kaldı — lütfen manuel olarak inceleyin."
+  },
+  "member.removal.subscription_cleanup_failed": {
+    "label": "Kaldırılan üyenin aboneliği temizlenemedi",
+    "action": "kalan abonelikle kaldırdı",
+    "description": "Üye kaldırıldı ancak bağlı bir abonelik kaldı — faturalandırmayı inceleyin."
+  },
+  "invitation.created": {
+    "label": "Davet oluşturuldu",
+    "action": "davet etti"
+  },
+  "invitation.sent": {
+    "label": "Bekleyen yetkilerle davet gönderildi",
+    "action": "bekleyen yetkilerle davet etti",
+    "description": "Yetkiler sıraya alındı ve davetli katıldığı anda geçerli olacaktır."
+  },
+  "invitation.resent": {
+    "label": "Davet yenilendi",
+    "action": "daveti yeniledi",
+    "description": "Davetin geçerlilik süresi ve anahtarı yenilendi."
+  },
+  "invitation.accepted": {
+    "label": "Davet kabul edildi",
+    "action": "davetini kabul etti",
+    "actionWithoutResource": "daveti kabul etti"
+  },
+  "invitation.rejected": {
+    "label": "Davet reddedildi",
+    "action": "davetini reddetti",
+    "actionWithoutResource": "daveti reddetti"
+  },
+  "invitation.cancelled": {
+    "label": "Davet iptal edildi",
+    "action": "daveti iptal etti"
+  },
+  "team.created": {
+    "label": "Takım oluşturuldu",
+    "action": "takımı oluşturdu"
+  },
+  "grant.granted": {
+    "label": "Yetki verildi",
+    "action": "yetki verdi"
+  },
+  "grant.revoked": {
+    "label": "Yetki geri alındı",
+    "action": "yetkisini geri aldı",
+    "actionWithoutResource": "yetkiyi geri aldı"
+  },
+  "grant.replaced": {
+    "label": "Yetki değiştirildi",
+    "action": "yetkilerini değiştirdi",
+    "actionWithoutResource": "yetkileri değiştirdi",
+    "description": "Mevcut bir yetki farklı bir kapsamla güncellendi."
+  },
+  "grant.materialized": {
+    "label": "Bekleyen yetki uygulandı",
+    "action": "bekleyen yetkilerini aldı",
+    "description": "Bir davete eklenen yetki, davetli katıldığında uygulandı."
+  },
+  "permissions:write": {
+    "label": "Yetkiler değiştirildi",
+    "action": "yetkilerini değiştirdi",
+    "actionWithoutResource": "yetkileri değiştirdi"
+  },
+  "permissions:admin": {
+    "label": "Yetki yönetici işlemi",
+    "action": "yetkiler üzerinde yönetici işlemi çalıştırdı"
+  },
+  "mcp.authorized": {
+    "label": "MCP istemcisi yetkilendirildi",
+    "action": "MCP istemcisini yetkilendirdi",
+    "description": "Bir yapay zeka asistanı bağlandı ve çalışması için bir kapsam verildi."
+  },
+  "mcp.scope_changed": {
+    "label": "MCP erişimi değiştirildi",
+    "action": "MCP istemcisinin erişimini değiştirdi",
+    "description": "Bağlı asistanın kapsamı düzenlendi. Bir sonraki istekte geçerli olur."
+  },
+  "mcp.disconnected": {
+    "label": "MCP istemcisi bağlantısı kesildi",
+    "action": "MCP istemcisinin bağlantısını kesti",
+    "description": "Bağlı asistanın belirteçleri ve izinleri iptal edildi."
+  },
+  "mcp.tool_called": {
+    "label": "Yapay zeka araç çağrısı",
+    "action": "MCP aracını çalıştırdı",
+    "description": "MCP istemcisi tarafından bir Openship aracı çalıştırıldı."
+  },
+  "admin.bootstrapped": {
+    "label": "İlk yönetici hesabı oluşturuldu",
+    "action": "ilk yönetici hesabını oluşturdu",
+    "description": "Örneğin ilk sahibi oluşturuldu."
+  },
+  "admin.password_reset": {
+    "label": "Yönetici şifresi sıfırlandı",
+    "action": "yönetici şifresini sıfırladı"
+  },
+  "auth-mode-changed": {
+    "label": "Oturum açma modu değiştirildi",
+    "action": "oturum açma modunu değiştirdi",
+    "description": "Örnek tek kullanıcı ile tam kimlik doğrulama arasında geçiş yaptı."
+  },
+  "instance.data.exported": {
+    "label": "Örnek verileri dışa aktarıldı",
+    "action": "tüm örnek verilerini dışa aktardı",
+    "description": "Bu örnekten tam bir veritabanı dökümü alındı."
+  },
+  "instance.data.receive_code_created": {
+    "label": "Veri aktarım alma kodu oluşturuldu",
+    "action": "doğrudan veri aktarım alma kodu oluşturdu",
+    "description": "Doğrudan örnek verilerini almak için kısa süreli bir kod oluşturuldu."
+  },
+  "instance.data.sent": {
+    "label": "Örnek verileri gönderildi",
+    "action": "örnek verilerini başka bir örneğe gönderdi",
+    "description": "Seçilen örnek verileri doğrudan başka bir örneğe aktarıldı."
+  },
+  "instance.data.imported": {
+    "label": "Örnek verileri içe aktarıldı",
+    "action": "örnek verilerini içe aktardı",
+    "description": "Başka bir örnekten alınan veritabanı dökümü yüklendi."
+  },
+  "instance.move_requested": {
+    "label": "Kontrol düzlemi taşıma talep edildi",
+    "action": "başka bir örneğe kontrol düzlemi taşıma talep etti",
+    "description": "Bir yönetici verilerin ve kontrolün aktarılmasını talep etti."
+  },
+  "instance.server_move_requested": {
+    "label": "Sunucuya kontrol düzlemi taşıma talep edildi",
+    "action": "bir sunucuya kontrol düzlemi taşıma talep etti",
+    "description": "Bir yönetici seçilen sunucuda barındırılan bir kontrol düzlemi talep etti."
+  },
+  "audit.disabled": {
+    "label": "Etkinlik kaydı kapatıldı",
+    "action": "etkinlik kaydını kapattı",
+    "description": "Kayıt yeniden açılana kadar başka işlem kaydedilmeyecektir."
+  },
+  "audit.enabled": {
+    "label": "Etkinlik kaydı açıldı",
+    "action": "etkinlik kaydını açtı"
+  },
+  "audit.retention_changed": {
+    "label": "Etkinlik saklama süresi değiştirildi",
+    "action": "etkinlik saklama süresini değiştirdi"
+  },
+  "audit:write": {
+    "label": "Etkinlik ayarları değiştirildi",
+    "action": "etkinlik ayarlarını değiştirdi"
+  },
+  "billing.hard_cap_tripped": {
+    "label": "Harcama üst sınırına ulaşıldı",
+    "action": "harcama üst sınırına ulaştı",
+    "description": "Bulut kaynakları duraklatılmış olabilir — faturalandırmayı inceleyin."
+  },
+  "billing.credit_low": {
+    "label": "Bulut kredisi azalıyor",
+    "action": "kredi sınırına yaklaştı",
+    "description": "İş yükleri kesintiye uğramadan önce kalan bakiyeyi inceleyin."
+  },
+  "billing.credit_exhausted": {
+    "label": "Krediler tükendi",
+    "action": "kredilerini tüketti",
+    "description": "Yükleme yapılana veya aylık sıfırlamaya kadar kullanım duraklatıldı."
+  },
+  "billing.credit_restored": {
+    "label": "Krediler geri yüklendi",
+    "action": "kredilerini geri yükledi",
+    "actionWithoutResource": "kredileri geri yükledi"
+  },
+  "billing.anniversary_reset": {
+    "label": "Aylık krediler sıfırlandı",
+    "action": "aylık kredilerini sıfırladı",
+    "actionWithoutResource": "aylık kredileri sıfırladı"
+  },
+  "quota.threshold_fired": {
+    "label": "Kullanım eşiği aşıldı",
+    "action": "kullanım eşiğini aştı",
+    "actionWithoutResource": "kullanım eşiğini aştı"
+  },
+  "billing:write": {
+    "label": "Faturalandırma işlemi",
+    "action": "faturalandırmayı değiştirdi",
+    "description": "Bir faturalandırma işlemi tetiklendi."
+  },
+  "billing:admin": {
+    "label": "Faturalandırma yönetici işlemi",
+    "action": "faturalandırma üzerinde yönetici işlemi çalıştırdı",
+    "description": "Yıkıcı bir faturalandırma işlemi tetiklendi."
+  },
+  "settings.updated": {
+    "label": "Ayarlar güncellendi",
+    "action": "ayarları güncelledi"
+  },
+  "updates:write": {
+    "label": "Sistem güncellemesi",
+    "action": "güncellemeleri denetledi veya uyguladı",
+    "description": "Openship bileşenlerinin güncellemesi başlatıldı."
+  },
+  "cloud.disconnect": {
+    "label": "Bulut bağlantısı kesildi",
+    "action": "bulut entegrasyonu bağlantısını kesti"
+  },
+  "cloud:write": {
+    "label": "Bulut işlemi",
+    "action": "bulut entegrasyonunu değiştirdi",
+    "description": "Bulut uç noktası çağrıldı."
+  },
+  "cloud:admin": {
+    "label": "Bulut yönetici işlemi",
+    "action": "bulut üzerinde yönetici işlemi çalıştırdı"
+  },
+  "github.install": {
+    "label": "GitHub Uygulaması yüklendi",
+    "action": "GitHub Uygulamasını yükledi"
+  },
+  "github.source.created": {
+    "label": "GitHub kaynağı eklendi",
+    "action": "GitHub deposunu ekledi",
+    "description": "Proje kaynağı olarak bir GitHub deposu eklendi."
+  },
+  "github.source.updated": {
+    "label": "GitHub kaynağı güncellendi",
+    "action": "GitHub deposunu güncelledi",
+    "description": "GitHub kaynağının yapılandırması değiştirildi."
+  },
+  "github.source.verified": {
+    "label": "GitHub kaynağı doğrulandı",
+    "action": "GitHub erişimini doğruladı"
+  },
+  "github.source.defaulted": {
+    "label": "Varsayılan GitHub kaynağı ayarlandı",
+    "action": "varsayılan depo olarak ayarladı"
+  },
+  "github.source.deleted": {
+    "label": "GitHub kaynağı kaldırıldı",
+    "action": "GitHub kaynağını kaldırdı",
+    "description": "GitHub deposuyla olan bağlantı kaldırıldı."
+  },
+  "github.connect": {
+    "label": "GitHub hesabı bağlandı",
+    "action": "GitHub hesabını bağladı"
+  },
+  "github.installation.claim": {
+    "label": "GitHub kurulumu sahiplenildi",
+    "action": "GitHub kurulumunu bağladı"
+  },
+  "github.disconnect": {
+    "label": "GitHub hesabı bağlantısı kesildi",
+    "action": "GitHub hesabının bağlantısını kesti"
+  },
+  "github.repo.create": {
+    "label": "GitHub deposu oluşturuldu",
+    "action": "GitHub üzerinde depo oluşturdu"
+  },
+  "github.repo.delete": {
+    "label": "GitHub deposu silindi",
+    "action": "GitHub üzerindeki depoyu sildi"
+  },
+  "github.webhook.register": {
+    "label": "GitHub web kancası kaydedildi",
+    "action": "GitHub web kancası kaydetti"
+  },
+  "github.webhook.delete": {
+    "label": "GitHub web kancası silindi",
+    "action": "GitHub web kancasını sildi"
+  },
+  "github.instance_token.set": {
+    "label": "GitHub örnek belirteci ayarlandı",
+    "action": "GitHub örnek belirtecini ayarladı",
+    "description": "Örnek için özel bir GitHub Uygulaması belirteci ayarlandı."
+  },
+  "github:write": {
+    "label": "GitHub işlemi",
+    "action": "GitHub entegrasyonunu değiştirdi"
+  },
+  "github:admin": {
+    "label": "GitHub yönetici işlemi",
+    "action": "GitHub üzerinde yönetici işlemi çalıştırdı"
+  },
+  "backup_run.succeeded": {
+    "label": "Yedekleme başarılı",
+    "action": "yedeklemeyi başarıyla oluşturdu"
+  },
+  "backup_run.failed": {
+    "label": "Yedekleme başarısız",
+    "action": "yedek oluşturulamadı"
+  },
+  "backup_restore.completed": {
+    "label": "Yedekten geri yükleme tamamlandı",
+    "action": "yedekten başarıyla geri yükledi"
+  },
+  "backup_restore.failed": {
+    "label": "Yedekten geri yükleme başarısız",
+    "action": "yedekten geri yükleyemedi"
+  },
+  "backup.webhook.fired": {
+    "label": "Yedekleme web kancası tetiklendi",
+    "action": "yedekleme web kancasını tetikledi"
+  },
+  "backup.webhook.disabled": {
+    "label": "Yedekleme web kancası devre dışı bırakıldı",
+    "action": "yedekleme web kancasını devre dışı bıraktı",
+    "description": "Web kancası tekrarlanan teslimat hatalarından sonra devre dışı bırakıldı."
+  },
+  "backup_destination:write": {
+    "label": "Yedekleme hedefi değiştirildi",
+    "action": "yedekleme hedefini değiştirdi"
+  },
+  "backup_destination:admin": {
+    "label": "Yedekleme hedefi yönetici işlemi",
+    "action": "yedekleme hedefi üzerinde yönetici işlemi çalıştırdı"
+  },
+  "backup_destination:backup_policy:write": {
+    "label": "Yedekleme politikası değiştirildi",
+    "action": "yedekleme politikasını değiştirdi"
+  },
+  "backup_destination:backup_run:write": {
+    "label": "Yedekleme çalışması değiştirildi",
+    "action": "yedekleme çalışmasını değiştirdi"
+  },
+  "backup_destination:backup_restore:write": {
+    "label": "Yedekten geri yükleme değiştirildi",
+    "action": "yedekten geri yüklemeyi değiştirdi"
+  }
+}

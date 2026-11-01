@@ -1,6 +1,7 @@
 "use client";
 
-import { BadgeCheck } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { BadgeTooltip } from "./BadgeTooltip";
 
 /**
@@ -23,10 +24,10 @@ export function VerifiedBadge({
   return (
     <BadgeTooltip
       className={className}
-      trigger={<BadgeCheck className={`${iconClassName} text-info`} aria-label="Verified app" />}
+      trigger={<UiIcon name="verified" className={`${iconClassName} text-info`} aria-label="Verified app" />}
       title={
         <>
-          <BadgeCheck className="size-3.5 text-info" /> Verified app
+          <UiIcon name="verified" className="size-3.5 text-info" /> Verified app
         </>
       }
     >

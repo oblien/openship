@@ -14,6 +14,14 @@ import {
  * surfaces.
  */
 describe("compose command drift stability (#332)", () => {
+  it("keeps host mappings in specs and explicitly removes deleted source mappings", () => {
+    const stored = { advanced: { extraHosts: { mail: "host-gateway" }, readiness: { enabled: true } } };
+    expect(toComposeSpec(stored).advanced?.extraHosts).toEqual({ mail: "host-gateway" });
+    const patch = composeWritePatch({ name: "web", advanced: {} }, stored, true);
+    expect(patch.advanced?.extraHosts).toBeUndefined();
+    expect(patch.advanced?.readiness).toEqual({ enabled: true });
+    expect(composeSpecsEqual(toComposeSpec(stored), toComposeSpec({ advanced: { extraHosts: { mail: "127.0.0.1" } } }))).toBe(false);
+  });
   it("legacy text command ≡ re-parsed command+argv (no phantom drift)", () => {
     const legacy = toComposeSpec({ command: "serve --host 0.0.0.0" }); // argv null → derived
     const reparsed = toComposeSpec({
@@ -257,6 +265,43 @@ describe("composeWritePatch — entrypoint is compose-owned (#575)", () => {
   });
 });
 
+/**
+ * `gpus` is COMPOSE-OWNED like `entrypoint`: deleting the GPU reservation from the file must release
+ * the card. If it were not swept, a service stays pinned to a GPU its compose file no longer asks for,
+ * and the operator has no field in the UI to clear it.
+ */
+describe("composeWritePatch — gpus is compose-owned", () => {
+  const stored = { advanced: { gpus: { driver: "nvidia", count: "all" as const } } };
+  const fromFile = true;
+
+  it("drops the GPU when the file no longer asks for one", () => {
+    const patch = composeWritePatch({ name: "worker", advanced: {} }, stored, fromFile);
+    expect(patch.advanced?.gpus).toBeUndefined();
+  });
+
+  it("applies the GPU the file declares", () => {
+    const patch = composeWritePatch(
+      { name: "worker", advanced: { gpus: { driver: "nvidia", count: 2 } } },
+      {},
+      fromFile,
+    );
+    expect(patch.advanced?.gpus).toEqual({ driver: "nvidia", count: 2 });
+  });
+
+  it("keeps it when the writer is a frozen snapshot that is not speaking for the file", () => {
+    const patch = composeWritePatch({ name: "worker", advanced: {} }, stored);
+    expect(patch.advanced?.gpus).toEqual({ driver: "nvidia", count: "all" });
+  });
+});
+
+it("clears legacy GPU runtime only when the Compose source owns the update", () => {
+  const stored = { advanced: { runtime: "nvidia" as const, monitoringEnabled: true } };
+  expect(composeWritePatch({ name: "app" }, stored, true).advanced).toEqual({
+    monitoringEnabled: true,
+  });
+  expect(composeWritePatch({ name: "app" }, stored).advanced.runtime).toBe("nvidia");
+});
+
 describe("compose environment templates (#673)", () => {
   it("persists the raw expression instead of its scan-time partial value", () => {
     const spec = toComposeSpec({
@@ -290,5 +335,24 @@ describe("compose environment templates (#673)", () => {
     );
 
     expect(patch.advanced.environmentTemplateKeys).toEqual(["DATABASE_URL"]);
+  });
+});
+
+
+describe("environment provenance across writers (#893)", () => {
+  it("persists template metadata even when a parser supplies only the expression map", () => {
+    const patch = composeWritePatch({
+      name: "api", environment: { MY_VAR: "A" },
+      environmentTemplates: { MY_VAR: "${MY_VAR}" },
+    });
+    expect(patch.environment).toEqual({ MY_VAR: "${MY_VAR}" });
+    expect(patch.advanced.environmentTemplateKeys).toEqual(["MY_VAR"]);
+  });
+
+  it("clears explicit edits only when a source sync owns the whole configuration", () => {
+    const stored = { advanced: { environmentOverrideKeys: ["MY_VAR"], readiness: { enabled: true } } };
+    const parsed = { name: "api", environment: { MY_VAR: "literal" } };
+    expect(composeWritePatch(parsed, stored).advanced.environmentOverrideKeys).toEqual(["MY_VAR"]);
+    expect(composeWritePatch(parsed, stored, true).advanced).toEqual({ readiness: { enabled: true } });
   });
 });

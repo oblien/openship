@@ -1,0 +1,22 @@
+---
+title: reset-admin-password
+description: Commands, arguments, and options for openship reset-admin-password.
+cliGroup: openship reset-admin-password
+---
+
+See the [CLI overview](/docs/cli) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship reset-admin-password
+
+Reset the local admin login on THIS machine (no sign-in required)
+
+```text
+openship reset-admin-password [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--port <port>` | API port of the running service (default: the port this install resolved to, else 4000) |
+| `--email <email>` | Also set the admin email |
+| `--name <name>` | Also set the admin display name |
+| `--password <password>` | New password (prompted if omitted) |

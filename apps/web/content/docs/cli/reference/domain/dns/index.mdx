@@ -1,0 +1,53 @@
+---
+title: domain dns
+description: Commands, arguments, and options for openship domain dns.
+cliGroup: openship domain dns
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship domain dns
+
+Plan and apply provider-managed DNS records
+
+```text
+openship domain dns [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`plan [options] <id>`](/docs/cli/reference/domain/dns#openship-domain-dns-plan) | Preview DNS record changes without applying them |
+| [`apply [options] <id>`](/docs/cli/reference/domain/dns#openship-domain-dns-apply) | Apply DNS records through the shared provider workflow |
+| [`challenge`](/docs/cli/reference/domain/dns/challenge#openship-domain-dns-challenge) | Manage a DNS certificate challenge |
+
+## openship domain dns apply
+
+Apply DNS records through the shared provider workflow
+
+```text
+openship domain dns apply [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Target server ID |
+
+## openship domain dns plan
+
+Preview DNS record changes without applying them
+
+```text
+openship domain dns plan [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Target server ID |

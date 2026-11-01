@@ -14,17 +14,22 @@
  *     NanoCpus is the real quota (the `--cpus` flag).
  */
 
-import { hasCpuLimit, hasMemoryLimit, formatCpuCores, formatMemoryMb } from "@repo/core";
+import { validateSwapDisabled, hasCpuLimit, hasMemoryLimit, formatCpuCores, formatMemoryMb } from "@repo/core";
 import type { ResourceConfig } from "../types";
 
 export interface DockerResourceLimits {
   Memory?: number;
   NanoCpus?: number;
+  /** Docker disables swap only when MemorySwap === Memory (both in bytes). */
+  MemorySwap?: number;
 }
+
+export { validateSwapDisabled } from "@repo/core";
 
 export function dockerResourceLimits(
   resources?: Partial<ResourceConfig> | null,
 ): DockerResourceLimits {
+  validateSwapDisabled(resources);
   const limits: DockerResourceLimits = {};
   if (hasMemoryLimit(resources)) {
     limits.Memory = Math.round(resources!.memoryMb! * 1024 * 1024);
@@ -32,6 +37,12 @@ export function dockerResourceLimits(
   if (hasCpuLimit(resources)) {
     // Docker's floor is 1e6 (0.001 cores); anything below is rejected outright.
     limits.NanoCpus = Math.max(1_000_000, Math.round(resources!.cpuCores! * 1_000_000_000));
+  }
+  // `MemorySwap` defaults to twice Memory, i.e. swap is still allowed. Equality
+  // is the ONLY portable way to disable it (`MemorySwappiness` is not the same
+  // thing, and `-1` means unlimited swap).
+  if (resources?.swapDisabled === true) {
+    limits.MemorySwap = limits.Memory;
   }
   return limits;
 }
@@ -83,14 +94,28 @@ export function dockerBuildResourceLimits(
  */
 export function inspectResourceLimits(
   hostConfig:
-    | { Memory?: number; NanoCpus?: number; CpuQuota?: number; CpuPeriod?: number }
+    | {
+        Memory?: number;
+        MemorySwap?: number;
+        NanoCpus?: number;
+        CpuQuota?: number;
+        CpuPeriod?: number;
+      }
     | undefined
     | null,
-): { cpuCores?: number; memoryMb?: number } | undefined {
+): { cpuCores?: number; memoryMb?: number; swapDisabled?: boolean } | undefined {
   if (!hostConfig) return undefined;
   const memoryMb =
     typeof hostConfig.Memory === "number" && hostConfig.Memory > 0
       ? Math.round(hostConfig.Memory / (1024 * 1024))
+      : undefined;
+  // Docker reports the EFFECTIVE setting here, so this also recognizes a
+  // container an operator started by hand with `--memory-swap == --memory`.
+  const swapDisabled =
+    memoryMb !== undefined &&
+    typeof hostConfig.MemorySwap === "number" &&
+    hostConfig.MemorySwap === hostConfig.Memory
+      ? true
       : undefined;
 
   let cpuCores: number | undefined;
@@ -112,6 +137,7 @@ export function inspectResourceLimits(
   return {
     ...(cpuCores !== undefined && { cpuCores }),
     ...(memoryMb !== undefined && { memoryMb }),
+    ...(swapDisabled && { swapDisabled }),
   };
 }
 
@@ -123,5 +149,6 @@ export function describeResourceLimits(resources?: Partial<ResourceConfig> | nul
     hasCpuLimit(resources) ? formatCpuCores(resources!.cpuCores!) : null,
     hasMemoryLimit(resources) ? formatMemoryMb(resources!.memoryMb!) : null,
   ].filter(Boolean);
+  if (resources?.swapDisabled === true && hasMemoryLimit(resources)) parts.push("swap disabled");
   return parts.length ? parts.join(" · ") : "no limits (machine capacity)";
 }

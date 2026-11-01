@@ -27,6 +27,21 @@ const INSTALLED: MailViewInput = {
 const at = (patch: Partial<MailViewInput>) => resolveMailView({ ...INSTALLED, ...patch });
 
 describe("resolveMailView", () => {
+  it("shows unavailable status instead of setup after a failed first read", () => {
+    expect(at({ hasStatus: false, hasStarted: false, statusUnavailable: true })).toBe("unavailable");
+    expect(at({ hasServer: false, hasStatus: false, hasStarted: false, serverCount: 0, statusUnavailable: true })).toBe("unavailable");
+  });
+
+  it("retains the last known admin view when its status cannot be refreshed", () => {
+    expect(at({ statusUnavailable: true })).toBe("admin");
+  });
+
+  it("never abandons an active setup or DNS hold because a status read failed", () => {
+    expect(at({ statusUnavailable: true, running: true })).toBe("progress");
+    expect(at({ statusUnavailable: true, gatesActive: true })).toBe("progress");
+    expect(at({ statusUnavailable: true, hasStatus: false, forceWizard: true })).toBe("unavailable");
+  });
+
   it("shows the admin panel for a registered mail server", () => {
     expect(at({})).toBe("admin");
   });

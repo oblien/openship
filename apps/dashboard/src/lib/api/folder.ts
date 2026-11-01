@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { api, getApiBaseUrl } from "./client";
 import { endpoints } from "./endpoints";
 import type { ScanProjectResponse } from "./projects";
@@ -29,31 +30,24 @@ export interface UploadTarget {
 }
 
 export interface FolderSession {
+  workspaceId?: string;
   success: boolean;
   sessionId: string;
   expiresAt: number;
   upload: UploadTarget;
 }
 
-export type FolderScanResponse = ScanProjectResponse & { sessionId: string };
+export type FolderScanResponse = ScanProjectResponse & { sessionId: string; workspaceId?: string; serverId?: string };
 
 export const folderApi = {
   /** Open an upload session; server returns an opaque upload target. */
-  createSession: (body: { stack?: string; packageManager?: string; name?: string }) =>
+  createSession: (body: { serverId?: string; stack?: string; packageManager?: string; name?: string }) =>
     api.post<FolderSession>(endpoints.projects.folderSession, body),
 
   /** Authoritative framework detection on the uploaded source (fallback path;
    *  the UI normally seeds from the user-picked stack instead). */
-  scan: (sessionId: string) =>
-    api.post<FolderScanResponse>(endpoints.projects.folderScan(sessionId), {}),
-
-  /** #336: real (unmasked) values for ONE service's named env keys. Write-gated
-   *  (project:write) on the API, which rejects an empty `keys`. */
-  reveal: (sessionId: string, service: string, keys: string[]) =>
-    api.post<{ success: boolean; environment: Record<string, string> }>(
-      endpoints.projects.folderEnvReveal(sessionId),
-      { service, keys },
-    ),
+  scan: (sessionId: string, options: { includeEnv?: boolean } = {}) =>
+    api.post<FolderScanResponse>(endpoints.projects.folderScan(sessionId), options),
 
   /** Upload the gzipped tarball to the session's target. Destination-agnostic. */
   async upload(session: FolderSession, gz: Blob): Promise<void> {
@@ -70,7 +64,7 @@ export const folderApi = {
       credentials: withCredentials ? "include" : "omit",
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      const detail = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/api/folder"); return ""; });
       throw new Error(`Upload failed (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}`);
     }
   },

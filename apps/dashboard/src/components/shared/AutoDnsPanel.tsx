@@ -1,8 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * On-demand DNS auto-configure — the button that writes a domain's records
- * through a connected provider (Settings→DNS) instead of asking the operator to
+ * through a connected provider instead of asking the operator to
  * paste them. Shared by the deployment domain flow and the mail admin DNS tab.
  *
  * Nothing is written until the operator presses. `plan` is a read-only dry-run
@@ -14,25 +16,14 @@
  * fixtures); `AutoDnsPanel` wraps it with the `useAutoDns` fetching hook.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  Globe,
-  Loader2,
-  RefreshCcw,
-  ShieldCheck,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { getApiErrorMessage } from "@/lib/api";
-import type {
-  DnsPlanResult,
-  DnsProvisionResult,
-  RecordPlanAction,
-} from "@/lib/api/dns";
+import { Button } from "@/components/ui/button";
+import { DnsProviderConnectModal } from "@/components/domains/DnsProviderConnectModal";
+import { useModal } from "@/context/ModalContext";
+import { getApiErrorMessage } from "@/lib/api/client";
+import type { DnsPlanResult, DnsProvisionResult, RecordPlanAction } from "@/lib/api/dns";
 
 /* ── Hook ──────────────────────────────────────────────────────────── */
 
@@ -53,8 +44,9 @@ export interface UseAutoDns {
  */
 export function useAutoDns(
   planFn: () => Promise<DnsPlanResult>,
-  applyFn: () => Promise<DnsProvisionResult>,
+  applyFn: (() => Promise<DnsProvisionResult>) | undefined,
   reloadKey?: string,
+  refreshKey?: number,
 ): UseAutoDns {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -64,6 +56,23 @@ export function useAutoDns(
   const [result, setResult] = useState<DnsProvisionResult | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const busy = useRef(false);
+  const scope = useRef<object | null>(null);
+
+  useEffect(() => {
+    scope.current = {};
+    busy.current = false;
+    setPlan(null);
+    setApplying(false);
+    return () => {
+      scope.current = null;
+    };
+  }, [reloadKey]);
+
+  useEffect(() => {
+    setResult(null);
+    setApplyError(null);
+  }, [reloadKey, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +83,10 @@ export function useAutoDns(
         if (!cancelled) setPlan(p);
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(getApiErrorMessage(err, t.autoDns.unavailableDesc));
+        if (!cancelled) {
+          setPlan(null);
+          setLoadError(getApiErrorMessage(err, t.autoDns.unavailableDesc));
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -84,7 +96,7 @@ export function useAutoDns(
     };
     // planFn is a fresh closure each render; the panel keys re-fetch on reloadKey/nonce.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadKey, nonce]);
+  }, [reloadKey, refreshKey, nonce]);
 
   const reload = useCallback(() => {
     setResult(null);
@@ -93,21 +105,29 @@ export function useAutoDns(
   }, []);
 
   const apply = useCallback(() => {
+    if (!scope.current || busy.current || loading || !applyFn || plan?.status !== "matched") return;
+    busy.current = true;
+    const activeScope = scope.current;
     setApplying(true);
     setApplyError(null);
     applyFn()
       .then((r) => {
+        if (scope.current !== activeScope) return;
         setResult(r);
         // Re-plan so the rows show the post-apply truth (in-sync, or the
         // conflict that survived) without a manual refresh.
         setNonce((n) => n + 1);
       })
       .catch((err) => {
-        setApplyError(getApiErrorMessage(err, t.autoDns.applyFailed));
+        if (scope.current === activeScope)
+          setApplyError(getApiErrorMessage(err, t.autoDns.applyFailed));
       })
-      .finally(() => setApplying(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyFn]);
+      .finally(() => {
+        if (scope.current !== activeScope) return;
+        busy.current = false;
+        setApplying(false);
+      });
+  }, [applyFn, loading, plan, t.autoDns.applyFailed]);
 
   return { loading, plan, loadError, applying, result, applyError, apply, reload };
 }
@@ -154,6 +174,9 @@ export interface AutoDnsViewProps {
   applyError: string | null;
   onApply: () => void;
   onReload: () => void;
+  onConnect: () => void;
+  /** New domains can connect a provider, but records are applied once saved. */
+  canConfigure?: boolean;
 }
 
 export function AutoDnsView({
@@ -165,16 +188,18 @@ export function AutoDnsView({
   applyError,
   onApply,
   onReload,
+  onConnect,
+  canConfigure = true,
 }: AutoDnsViewProps) {
   const { t } = useI18n();
   const c = t.autoDns;
 
-  const shell = "rounded-xl border border-border bg-card p-4";
+  const shell = "rounded-xl bg-card p-4";
 
   if (loading && !plan) {
     return (
       <div className={`${shell} flex items-center gap-2`}>
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
         <span className="text-sm text-muted-foreground">{c.checking}</span>
       </div>
     );
@@ -199,20 +224,22 @@ export function AutoDnsView({
       <div className={shell}>
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Globe className="size-4 text-muted-foreground" strokeWidth={2} />
+            <UiIcon name="globe" className="size-4 text-muted-foreground" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">{c.noProviderTitle}</p>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               {c.noProviderDesc}
             </p>
-            <Link
-              href="/settings?tab=dns"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-3"
+              disabled={loading}
+              onClick={onConnect}
             >
               {c.connect}
-              <ArrowRight className="size-3" />
-            </Link>
+            </Button>
           </div>
         </div>
       </div>
@@ -222,17 +249,16 @@ export function AutoDnsView({
   if (plan.status === "unauthorized") {
     return (
       <div className={shell}>
-        <Notice
-          title={c.unauthorizedTitle}
-          desc={plan.reason || c.unauthorizedDesc}
-        />
-        <Link
-          href="/settings?tab=dns"
-          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+        <Notice title={c.unauthorizedTitle} desc={plan.reason || c.unauthorizedDesc} />
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-3"
+          disabled={loading}
+          onClick={onConnect}
         >
           {c.reconnect}
-          <ArrowRight className="size-3" />
-        </Link>
+        </Button>
       </div>
     );
   }
@@ -240,10 +266,7 @@ export function AutoDnsView({
   if (plan.status === "unavailable") {
     return (
       <div className={shell}>
-        <Notice
-          title={c.unavailableTitle}
-          desc={plan.reason || c.unavailableDesc}
-        />
+        <Notice title={c.unavailableTitle} desc={plan.reason || c.unavailableDesc} />
         <div className="mt-3">
           <RetryButton onClick={onReload} label={c.retry} />
         </div>
@@ -255,12 +278,12 @@ export function AutoDnsView({
   const records = plan.records;
   const allInSync = records.length > 0 && records.every((r) => r.action === "in-sync");
   const writable = records.filter((r) => WRITABLE.includes(r.action));
-  const canApply = writable.length > 0 && !applying;
+  const canApply = canConfigure && writable.length > 0 && !applying && !loading;
 
   return (
-    <div className={shell}>
+    <div className={shell} aria-busy={loading || applying}>
       <div className="flex items-center gap-2">
-        <ShieldCheck className="size-4 text-success" strokeWidth={2} />
+        <UiIcon name="shield-check" className="size-4 text-success" />
         <p className="text-sm font-medium text-foreground">
           {interpolate(c.managedBy, {
             provider: displayProvider(plan.provider),
@@ -268,6 +291,8 @@ export function AutoDnsView({
           })}
         </p>
       </div>
+
+      {!canConfigure && <p className="mt-2 text-xs text-muted-foreground">{c.preDeployHint}</p>}
 
       {/* Before apply: the plan. After apply: the outcome log. */}
       {result ? (
@@ -279,16 +304,12 @@ export function AutoDnsView({
             >
               <div className="min-w-0">
                 <p className="truncate font-mono text-xs text-foreground">{r.name}</p>
-                {r.error && (
-                  <p className="mt-0.5 text-[11px] leading-snug text-danger">{r.error}</p>
-                )}
+                {r.error && <p className="mt-0.5 text-xs text-danger break-words">{r.error}</p>}
               </div>
               <span className="flex items-center gap-2 shrink-0">
-                <span className="font-mono text-[10px] uppercase text-muted-foreground/70">
-                  {r.type}
-                </span>
+                <span className="font-mono text-xs uppercase text-muted-foreground">{r.type}</span>
                 <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${outcomeBadgeClass(r.outcome)}`}
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${outcomeBadgeClass(r.outcome)}`}
                 >
                   {r.outcome === "applied"
                     ? c.outcomeApplied
@@ -303,27 +324,40 @@ export function AutoDnsView({
       ) : (
         <ul className="mt-3 space-y-1.5">
           {records.map((r, i) => (
-            <li
-              key={`${r.type}-${r.name}-${i}`}
-              className="rounded-lg bg-muted/40 px-3 py-2"
-            >
+            <li key={`${r.type}-${r.name}-${i}`} className="rounded-lg bg-muted/40 px-3 py-2">
               <div className="flex items-center justify-between gap-3">
                 <p className="truncate font-mono text-xs text-foreground">{r.name}</p>
                 <span className="flex items-center gap-2 shrink-0">
-                  <span className="font-mono text-[10px] uppercase text-muted-foreground/70">
+                  <span className="font-mono text-xs uppercase text-muted-foreground">
                     {r.type}
                   </span>
                   <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${actionBadgeClass(r.action)}`}
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${actionBadgeClass(r.action)}`}
                   >
                     {actionLabel(r.action, c)}
                   </span>
                 </span>
               </div>
+              {WRITABLE.includes(r.action) && (
+                <dl className="mt-2 space-y-1 text-xs">
+                  {r.current !== undefined && (
+                    <div>
+                      <dt className="text-muted-foreground">{c.currentValue}</dt>
+                      <dd className="break-all font-mono text-foreground" dir="ltr">
+                        {r.current}
+                      </dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt className="text-muted-foreground">{c.desiredValue}</dt>
+                    <dd className="break-all font-mono text-foreground" dir="ltr">
+                      {r.desired}
+                    </dd>
+                  </div>
+                </dl>
+              )}
               {r.action === "conflict" && (
-                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {c.conflictNote}
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{c.conflictNote}</p>
               )}
             </li>
           ))}
@@ -331,30 +365,46 @@ export function AutoDnsView({
       )}
 
       {applyError && (
-        <p className="mt-2 text-xs text-danger">{applyError}</p>
+        <p role="alert" className="mt-2 text-sm text-danger break-words">
+          {applyError}
+        </p>
+      )}
+      {result?.reason && (
+        <p role="status" className="mt-2 text-sm text-muted-foreground break-words">
+          {result.reason}
+        </p>
       )}
 
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         {allInSync ? (
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-            <CheckCircle2 className="size-3.5" />
+            <UiIcon name="check-circle" className="size-3.5" />
             {c.allInPlace}
           </span>
-        ) : writable.length > 0 ? (
-          <button
-            type="button"
-            onClick={onApply}
-            disabled={!canApply}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
+        ) : canConfigure && writable.length > 0 ? (
+          <Button type="button" onClick={onApply} disabled={!canApply}>
             {applying ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
             ) : (
-              <ShieldCheck className="size-3.5" />
+              <UiIcon name="shield-check" className="size-3.5" />
             )}
             {applying ? c.applying : result ? c.reapply : c.apply}
-          </button>
+          </Button>
         ) : null}
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={loading || applying}
+          onClick={onReload}
+        >
+          <UiIcon
+            name={loading ? "spinner" : "refresh"}
+            className={`size-3.5${loading ? " animate-spin" : ""}`}
+          />
+          {c.checkAgain}
+        </Button>
 
         {result && !applying && (
           <span className="text-xs text-muted-foreground">
@@ -388,13 +438,11 @@ function Notice({ title, desc }: { title: string; desc?: string }) {
   return (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning-bg">
-        <AlertTriangle className="size-4 text-warning" strokeWidth={2} />
+        <UiIcon name="warning" className="size-4 text-warning" />
       </span>
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">{title}</p>
-        {desc && (
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{desc}</p>
-        )}
+        {desc && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{desc}</p>}
       </div>
     </div>
   );
@@ -402,14 +450,10 @@ function Notice({ title, desc }: { title: string; desc?: string }) {
 
 function RetryButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
-    >
-      <RefreshCcw className="size-3" />
+    <Button type="button" onClick={onClick} variant="secondary">
+      <UiIcon name="refresh" className="size-3" />
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -417,13 +461,54 @@ function RetryButton({ onClick, label }: { onClick: () => void; label: string })
 
 export interface AutoDnsPanelProps {
   plan: () => Promise<DnsPlanResult>;
-  apply: () => Promise<DnsProvisionResult>;
+  apply?: () => Promise<DnsProvisionResult>;
   /** Re-plan when this changes (e.g. the selected mail domain). */
   reloadKey?: string;
+  /** Refresh the plan without resetting an in-flight write for this domain. */
+  refreshKey?: number;
+  hostname?: string;
+  onConnected?: () => void;
+  onApplyingChange?: (hostname: string, applying: boolean) => void;
 }
 
-export function AutoDnsPanel({ plan, apply, reloadKey }: AutoDnsPanelProps) {
-  const s = useAutoDns(plan, apply, reloadKey);
+export function AutoDnsPanel({
+  plan,
+  apply,
+  reloadKey,
+  refreshKey,
+  hostname,
+  onConnected,
+  onApplyingChange,
+}: AutoDnsPanelProps) {
+  const s = useAutoDns(plan, apply, reloadKey, refreshKey);
+  const { showModal, hideModal } = useModal();
+  useEffect(() => {
+    if (hostname) onApplyingChange?.(hostname, s.applying);
+    return () => {
+      if (hostname) onApplyingChange?.(hostname, false);
+    };
+  }, [hostname, onApplyingChange, s.applying]);
+  const connect = () => {
+    let id = "";
+    id = showModal({
+      width: "100%",
+      maxWidth: "520px",
+      showCloseButton: false,
+      closable: false,
+      customContent: (
+        <DnsProviderConnectModal
+          hostname={hostname}
+          reconnect={s.plan?.status === "unauthorized"}
+          onClose={() => hideModal(id)}
+          onConnected={() => {
+            hideModal(id);
+            s.reload();
+            onConnected?.();
+          }}
+        />
+      ),
+    });
+  };
   return (
     <AutoDnsView
       loading={s.loading}
@@ -434,6 +519,8 @@ export function AutoDnsPanel({ plan, apply, reloadKey }: AutoDnsPanelProps) {
       applyError={s.applyError}
       onApply={s.apply}
       onReload={s.reload}
+      onConnect={connect}
+      canConfigure={!!apply}
     />
   );
 }

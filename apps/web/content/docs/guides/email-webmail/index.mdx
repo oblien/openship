@@ -1,6 +1,6 @@
 ---
 title: Email & webmail
-description: Run your own self-hosted mail server and a webmail app with Openship — provision it, manage domains and mailboxes, and put an inbox in the browser.
+description: Connect existing IMAP/SMTP mailboxes through webmail on Cloud, or run and manage your own mail server with Desktop and self-hosted Openship.
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
@@ -19,11 +19,26 @@ This is a big, hands-on feature, so this guide stays at the map level: what each
 go through them. The fiddly bits — the exact DNS records and the reverse-DNS setup — are called out where they
 happen, because the wizard walks you through those live.
 
-<Callout title="Self-hosted only" type="warn">
-Email lives entirely in **self-hosted Openship**. The **Emails** item only appears in the sidebar when you're
-running Openship on your own infrastructure — it isn't part of the managed cloud. If you don't see it, you're
-on a hosted plan. See [Installation](/docs/getting-started/installation) to self-host.
+<Callout title="Cloud webmail and self-hosted mail servers">
+**Emails** is available on Cloud, Desktop and self-hosted Openship. On Cloud, it connects your existing
+IMAP/SMTP mailboxes through the webmail app. **Managed email is coming soon**: Cloud application plans
+do not provision SMTP/IMAP servers or mailboxes. Mail-server setup and administration remain available
+through Desktop and self-hosted Openship. See [Installation](/docs/getting-started/installation).
 </Callout>
+
+## Connect existing mailboxes on Cloud
+
+Open **Emails → Connect existing mail server**. The standard webmail app installer asks for your
+IMAP and SMTP hosts, the managed server that will run the client, and its public route. You can configure
+ports in the backend's advanced fields; IMAP and SMTP connections require TLS. Confirming installation
+deploys the webmail app through the normal application pipeline.
+
+Sign in to the deployed webmail with your mailbox email address and password. Your existing provider
+keeps the mailboxes and mail delivery; Openship hosts the browser client. Manage that client through
+**Apps** or its project page, including domains, settings, logs and redeployment. This flow does not
+install a new mail server, change MX records or create a mailbox at your provider.
+
+The remaining steps in this guide apply to mail-server setup on Desktop and self-hosted instances.
 
 <Callout title="What you need first">
 - Openship running self-hosted, with at least one **connected server** (a clean Ubuntu or Debian machine is
@@ -53,8 +68,6 @@ In the sidebar, click **Emails**. With no mail server set up yet, you land strai
 Setup** form. If you already run **several** mail servers, you'll see a list of them first — click **Add mail
 server** to start another. (With a single existing server, Openship opens it straight to its admin panel; use
 the **Add mail server** button there to set up another.)
-
-<Callout title="Screenshot">The **Emails** page showing the "Mail Server Setup" form (server picker, Domain field, Admin Password field). *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -101,8 +114,6 @@ record (things like MX, SPF, DKIM, and DMARC) — each with a **Copy value** but
 Go to wherever your domain's DNS is managed, add each record, and come back. Then click **I've set the records
 - continue**.
 
-<Callout title="Screenshot">The DNS hold banner on the Emails page: the "Publish DNS records" heading with a card per record and copy buttons. *(screenshot pending)*</Callout>
-
 <Callout title="Why this matters" type="info">
 Email delivery breaks without these records — they're how Gmail and Outlook decide your mail is real and not
 spam. If you host DNS at a supported provider, the banner also offers **Auto-configure DNS**, which pushes the
@@ -120,8 +131,6 @@ your **VPS provider's panel** (Hostinger, DigitalOcean, AWS, and so on), **not**
 
 The banner shows your server's IP address and the value to point it at (`mail.yourdomain`). Set it there, wait
 a few minutes for it to take effect, then click **I've set the PTRs - continue**.
-
-<Callout title="Screenshot">The PTR hold banner showing the server IP, the target `mail.<domain>` value, and the "I've set the PTRs - continue" button. *(screenshot pending)*</Callout>
 
 <Callout title="Reverse DNS in one line" type="info">
 Normal DNS turns a name into an IP address; reverse DNS (a **PTR** record) turns the IP back into a name. Big
@@ -170,8 +179,6 @@ server. It's organized into tabs:
 - **Advanced** — the IMAP/SMTP connection settings for wiring up a mail app by hand, plus power-user actions
   like restarting the stack or re-running the wizard.
 
-<Callout title="Screenshot">The mail admin panel on the Emails page: the tab bar (Overview, Domains, Mailboxes, Aliases, Notifications, Sending, DNS, Health, Backup, Advanced) with the Overview tab open. *(screenshot pending)*</Callout>
-
 <Callout title="Adding a second domain" type="info">
 When you add a domain under the **Domains** tab, Openship generates its DNS records (including a fresh DKIM
 key). Publish those at your DNS provider — the **DNS** tab shows them and can verify them — before you rely on
@@ -201,14 +208,13 @@ On the admin panel's **Overview** tab, find the mail server card and click **Dep
 Two choices:
 
 - **Deploy to** — where the webmail app should run. You can put it on **this mail server**, on **another one of
-  your servers**, or (where offered) on the managed **Opshcloud** option.
+  your servers**, or on one of your managed **Openship Cloud servers**. The shared server picker connects a
+  selected Cloud server when needed. Redeploying an existing webmail starts with its saved destination.
 - **Domain** — the web address people will open to reach the inbox. It defaults to `mail.yourdomain`. Whatever
   you pick, its DNS must point at the deploy target — the on-screen hint tells you what's expected for the
   option you chose.
 
-The summary panel on the right restates your target and domain.
-
-<Callout title="Screenshot">The "Deploy webmail" screen: the "Deploy to" option cards, the Domain field, and the summary panel with the "Deploy webmail" button. *(screenshot pending)*</Callout>
+The summary panel on the right shows the webmail address and the mail server it connects to.
 
 </Step>
 
@@ -231,10 +237,11 @@ before the button does anything: the old webmail's project, container and sign-i
 domains and every message stay on the mail server, untouched — everyone just signs in to the new inbox again.
 </Callout>
 
-## Prefer the terminal?
+## CLI
 
-The provisioning flow works from the CLI too (webmail deploy is dashboard-only for now). Every `mail` command
-is self-hosted only.
+The provisioning flow works from the CLI too. `openship mail webmail` exposes the same deployment workflow;
+see the [mail command reference](/docs/cli/reference/mail#openship-mail-webmail) for its options. Every `mail`
+command addresses a self-hosted Openship instance, which can deploy the webmail app to a connected Cloud server.
 
 ```bash
 # Start the install on a server for your domain (streams live)
@@ -261,7 +268,30 @@ When the install pauses, the CLI prints the exact `--start-step` number to resum
 `mail setup` command and it picks up right where it left off.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
+
+<Callout title="Webmail opens, but sign-in cannot reach the mail server" type="warn">
+Webmail connects to IMAP from the server running the webmail app. A mailbox working in Gmail or another
+client does not prove that this server can reach it. For an Openship-managed mail server, the app settings
+should use `mail.<install-domain>` on IMAP port **993** and SMTP port **465**, even for mailboxes on additional
+domains or when outgoing mail uses a relay. The webmail address may be different from this backend hostname.
+
+When webmail runs on the mail server itself, Openship maps this backend hostname to Docker's
+`host-gateway` in the service configuration. This avoids a host DNS resolver returning a loopback
+address inside the container while preserving the hostname used to verify the mail certificate.
+The mapping is saved for redeploy and rollback. Cloud and other-server webmail use the mail server's
+ordinary DNS address; external-backend settings are left as supplied.
+Both IMAP and SMTP honor the container's hostname mappings; SMTP still requires verified TLS before
+sending credentials. Existing installs need the updated control plane and webmail image, then
+**Mail → Deploy webmail** once to save the mapping. Later project redeploys reuse it.
+
+Connection failures and invalid or expired certificates show a mail-server connection error. “Invalid email
+or password” is reserved for a credential rejection from IMAP. Check the webmail host's DNS and network path,
+the mail server's client ports, and its certificate; keep TLS verification enabled. After changing a mailbox
+password or backend setting, sign in again to refresh the saved session credentials.
+Sign-in has a 40-second browser deadline covering verification and session confirmation. If the
+connection stalls, the form shows “Sign in timed out” and allows another attempt.
+</Callout>
 
 <Callout title="I don't see an “Emails” item in the sidebar" type="warn">
 Email is self-hosted only. It appears when Openship is running on your own infrastructure. On a managed/cloud
@@ -298,7 +328,7 @@ DNS changes can take a few minutes (sometimes longer) to spread. Give it time, t
 tab. Double-check you pasted the value exactly and added it to the right domain.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Custom domains" href="/docs/guides/custom-domains" description="How DNS and automatic HTTPS work for your apps — useful background for the mail DNS steps." />

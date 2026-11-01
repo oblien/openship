@@ -32,7 +32,7 @@ import {
   forgetMailEngine,
   requireMailEngine,
   resolveMailEngine,
-} from "../../../src/modules/mail/mail-engine";
+} from "@repo/platform/engine/modules/mail/mail-engine";
 
 const CONTAINER = {
   flavor: "container" as const,

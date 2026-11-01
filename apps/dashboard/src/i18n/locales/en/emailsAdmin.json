@@ -23,7 +23,7 @@
     "edit": "Edit",
     "emptyTitle": "No notification rules yet",
     "emptyBody": "Add a rule to be notified in Slack, Telegram, Discord or a webhook when mail arrives at a mailbox or domain on this server.",
-    "noChannels": "You have no verified notification channels yet. Add and verify one in Settings → Notifications, then come back to create a rule.",
+    "noChannels": "Add and verify a channel in Monitoring → Notifications, then return to create a rule.",
     "addChannel": "Add a notification channel",
     "manageChannels": "Manage channels",
     "fieldName": "Name",
@@ -537,7 +537,8 @@
       "partSignatures": "{names} not running - virus signatures are no longer being updated, so mail is scanned against an ageing signature set",
       "partAdvisory": "{names} not running",
       "almostSubQueueOne": "{count} message is waiting to go out - see Outbound delivery below.",
-      "almostSubQueueOther": "{count} messages are waiting to go out - see Outbound delivery below."
+      "almostSubQueueOther": "{count} messages are waiting to go out - see Outbound delivery below.",
+      "partCertificate": "Mail certificate needs attention"
     },
     "time": {
       "secondsAgo": "{n}s ago",
@@ -773,5 +774,28 @@
     "loadingLogs": "Loading logs…",
     "noLogLines": "No log lines for this component yet.",
     "rowActions": "Actions for {name}"
+  },
+  "certificate": {
+    "title": "Mail certificate",
+    "manage": "Manage certificate",
+    "check": "Check certificate",
+    "checking": "Checking…",
+    "renew": "Renew certificate",
+    "renewing": "Renewing…",
+    "autoRenew": "Automatic renewal",
+    "autoRenewHint": "Renew before expiry and reload the mail services.",
+    "desktopHint": "Keep Openship running to renew automatically.",
+    "jobDisabled": "The shared SSL renewal job is disabled.",
+    "manageJob": "Open renewal job",
+    "failed": "Could not update the mail certificate.",
+    "notChecked": "Not checked",
+    "expires": "Expires {date}",
+    "checked": "Checked {time}",
+    "status": {
+      "ok": "Valid",
+      "warn": "Renewal due",
+      "fail": "Needs attention",
+      "unknown": "Unverified"
+    }
   }
 }

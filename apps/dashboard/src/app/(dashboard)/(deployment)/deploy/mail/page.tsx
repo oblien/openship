@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Webmail deploy screen - opinionated picker that hands off to the standard
  * build session UI.
@@ -20,35 +22,35 @@
  * Deploy into Replace - the operator confirms by pressing that, not a dialog.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Globe,
-  Inbox,
-  Loader2,
-  RefreshCw,
-  Server,
-  TriangleAlert,
-} from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { OptionCard } from "../[slug]/components/DeployTargetStep";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { AppDestinationPicker, type AppDestination } from "@/components/deploy/AppDestinationPicker";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import {
   mailApi,
   type MailSetupStatus,
-  type WebmailTargetOption,
 } from "@/lib/api";
 import { getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { mailHostname } from "@repo/core";
+import { usePlatform } from "@/context/PlatformContext";
+import { canManageMailServers } from "@/lib/mail-availability";
+import { CloudMailClient } from "@/app/(dashboard)/emails/_components/cloud-mail-client";
 
 /** The API's code for "this webmail predates the catalog app". */
 const LEGACY_WEBMAIL_CODE = "LEGACY_WEBMAIL";
 
 export default function DeployMailPage() {
+  const platform = usePlatform();
+  if (!canManageMailServers(platform)) return <CloudMailClient />;
+  return <DeployMailInner />;
+}
+
+function DeployMailInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const toast = useToast();
@@ -58,28 +60,34 @@ export default function DeployMailPage() {
 
   const [status, setStatus] = useState<MailSetupStatus | null>(null);
   const [bootReady, setBootReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [domain, setDomain] = useState("");
-  // selectedKey is `${kind}:${serverId}` so we can distinguish "opshcloud"
-  // (serverId is "") from a self-hosted server even when the latter is empty
-  // for some reason - keys never collide across kinds.
-  const [selectedKey, setSelectedKey] = useState("");
-  const [targets, setTargets] = useState<WebmailTargetOption[]>([]);
+  const [destination, setDestination] = useState<AppDestination | null>(null);
+  const [destinationReady, setDestinationReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submitPending = useRef(false);
   // Armed from the mail status (the normal path), or by a 409 LEGACY_WEBMAIL on a
   // stale page - either way the operator sees the notice before the button acts.
   const [replacing, setReplacing] = useState(false);
+  const [reconnectProjectId, setReconnectProjectId] = useState("");
 
   useEffect(() => {
+    setBootReady(false);
+    setBootError(null);
+    setStatus(null);
+    setDestination(null);
+    setDestinationReady(false);
+    setDomain("");
+    setReplacing(false);
+    setReconnectProjectId("");
     if (!mailServerId) {
       setBootReady(true);
       return;
     }
     let cancelled = false;
-    Promise.all([
-      mailApi.getStatus(mailServerId).catch(() => null),
-      mailApi.webmail.listTargets(mailServerId).catch(() => ({ options: [] })),
-    ]).then(([st, tg]) => {
+    mailApi.getStatus(mailServerId).then((st) => {
       if (cancelled) return;
       if (st) {
         setStatus(st);
@@ -98,29 +106,27 @@ export default function DeployMailPage() {
         else if (st.domain) setDomain(mailHostname(st.domain));
         if (st.webmail?.legacy) setReplacing(true);
       }
-      setTargets(tg.options);
-      const first = tg.options.find((o) => !o.disabled);
-      if (first) setSelectedKey(`${first.kind}:${first.serverId}`);
+      setDestination({
+        deployTarget: st?.webmail?.workspaceId ? "cloud" : "server",
+        serverId: st?.webmail?.serverId ?? mailServerId,
+        workspaceId: st?.webmail?.workspaceId ?? undefined,
+      });
       setBootReady(true);
+    }).catch((error) => {
+      if (!cancelled) setBootError(getApiErrorMessage(error, t.chrome.apiDown.title));
     });
     return () => {
       cancelled = true;
     };
-  }, [mailServerId]);
+  }, [mailServerId, loadAttempt, t.chrome.apiDown.title]);
 
-  const selectedTarget = targets.find(
-    (t) => `${t.kind}:${t.serverId}` === selectedKey,
-  );
-
-  const canSubmit = useMemo(() => {
-    if (!domain || !/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/i.test(domain))
-      return false;
-    if (!selectedTarget) return false;
-    if (selectedTarget.disabled) return false;
-    if (selectedTarget.kind !== "opshcloud" && !selectedTarget.serverId)
-      return false;
-    return true;
-  }, [domain, selectedTarget]);
+  const recoveryCandidates = status?.webmailRecoveryCandidates ?? [];
+  const recovering = !!reconnectProjectId;
+  const canSubmit = useMemo(() => (
+    bootReady && destinationReady && !!destination?.serverId &&
+    (!recoveryCandidates.length || !!reconnectProjectId) &&
+    /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)
+  ), [bootReady, destinationReady, destination, domain, recoveryCandidates.length, reconnectProjectId]);
 
   const mailHostnameFromStatus = status?.domain ? mailHostname(status.domain) : "";
   // When cloud is chosen AND the chosen domain is the mail server's own
@@ -129,7 +135,7 @@ export default function DeployMailPage() {
   // public hostname over. DNS stays put - operators don't have to touch
   // it. Otherwise both paths follow normal preflight/DNS expectations.
   const isCloudProxyVariant =
-    selectedTarget?.kind === "opshcloud" &&
+    destination?.deployTarget === "cloud" &&
     !!mailHostnameFromStatus &&
     domain.toLowerCase() === mailHostnameFromStatus;
   // The mail server's own hostname, deployed on the mail server itself: it already
@@ -137,27 +143,30 @@ export default function DeployMailPage() {
   // to set up. Worth saying, because this used to be refused (#566) and the hint that
   // asks for DNS reads as work that isn't needed.
   const isMailHostOnMailServer =
-    selectedTarget?.kind === "mail" &&
+    destination?.serverId === mailServerId &&
     !!mailHostnameFromStatus &&
     domain.toLowerCase() === mailHostnameFromStatus;
 
   const startDeploy = async () => {
-    if (!canSubmit || !selectedTarget) return;
+    if (!canSubmit || !destination?.serverId || submitPending.current) return;
+    submitPending.current = true;
     setSubmitting(true);
     try {
       const target =
-        selectedTarget.kind === "opshcloud"
-          ? ({ kind: "cloud" } as const)
-          : ({ kind: "self", serverId: selectedTarget.serverId } as const);
+        destination.deployTarget === "cloud"
+          ? ({ kind: "cloud", serverId: destination.serverId } as const)
+          : ({ kind: "self", serverId: destination.serverId } as const);
       const { deploymentId } = await mailApi.webmail.deployAsProject({
         mailServerId,
         hostname: domain.toLowerCase(),
         target,
         // Only ever true once the notice below has been on screen.
         replaceLegacy: replacing,
+        ...(reconnectProjectId ? { reconnectProjectId } : {}),
       });
       router.push(`/build/${deploymentId}`);
     } catch (err) {
+      submitPending.current = false;
       // The status this page loaded predates the legacy webmail it's about to
       // deploy over. Show what a replace costs and let them press again - never
       // retry a destructive action for them.
@@ -166,6 +175,9 @@ export default function DeployMailPage() {
         toast.showToast(tm.legacyBody, "error", tm.legacyTitle);
         setSubmitting(false);
         return;
+      }
+      if (["WEBMAIL_RECONNECT_REQUIRED", "WEBMAIL_LINK_CHANGED"].includes(getApiErrorCode(err) ?? "")) {
+        setLoadAttempt((attempt) => attempt + 1);
       }
       toast.showToast(
         getApiErrorMessage(err, tm.deployFailed),
@@ -195,9 +207,6 @@ export default function DeployMailPage() {
     );
   }
 
-  // `selectedTarget` is computed above (right after the `useEffect` that
-  // loads targets) - it drives both the proxy-variant detection and the
-  // submit-button disabled state, so it lives there rather than here.
   const domainPlaceholder = status?.domain
     ? mailHostname(status.domain)
     : "mail.example.com";
@@ -217,7 +226,7 @@ export default function DeployMailPage() {
           href="/emails"
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
         >
-          <ArrowLeft className="size-3.5 rtl:rotate-180" /> {tm.backToMail}
+          <UiIcon name="arrow-left" className="size-3.5 rtl:rotate-180" /> {tm.backToMail}
         </Link>
       </div>
 
@@ -225,7 +234,7 @@ export default function DeployMailPage() {
         <div className="space-y-6">
           {replacing && (
             <div className="rounded-xl border border-warning-border bg-warning-bg p-4 flex gap-3">
-              <TriangleAlert className="size-4 text-warning shrink-0 mt-0.5" strokeWidth={2} />
+              <UiIcon name="warning" className="size-4 text-warning shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">{tm.legacyTitle}</p>
                 <p className="text-sm text-muted-foreground mt-1">{tm.legacyBody}</p>
@@ -234,43 +243,58 @@ export default function DeployMailPage() {
             </div>
           )}
 
+          {bootReady && recoveryCandidates.length > 0 && (
+            <fieldset className="rounded-2xl bg-card p-5 space-y-3" disabled={submitting}>
+              <legend className="sr-only">{tm.reconnectTitle}</legend>
+              <div className="flex gap-3">
+                <UiIcon name="warning" className="size-4 text-warning shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{tm.reconnectTitle}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{tm.reconnectBody}</p>
+                </div>
+              </div>
+              {recoveryCandidates.map(candidate => (
+                <label key={candidate.projectId} className="flex items-center gap-3 rounded-xl bg-background p-3 cursor-pointer">
+                  <input type="radio" name="webmail-recovery" value={candidate.projectId}
+                    checked={reconnectProjectId === candidate.projectId}
+                    onChange={() => {
+                      setReconnectProjectId(candidate.projectId);
+                      setDomain(candidate.hostname);
+                      setDestination({ deployTarget: "server", serverId: candidate.serverId });
+                    }}
+                    className="accent-primary size-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground truncate">{candidate.name}</span>
+                    <span className="block text-xs text-muted-foreground truncate">{candidate.hostname}</span>
+                  </span>
+                </label>
+              ))}
+              <p className="text-xs text-muted-foreground">{recovering ? tm.reconnectPlacement : tm.reconnectChoose}</p>
+            </fieldset>
+          )}
+
           <Section
             title={tm.deployToTitle}
             hint={tm.deployToHint}
           >
-            {!bootReady ? (
-              <div className="rounded-xl border border-border/50 bg-card px-4 py-6 text-sm text-muted-foreground flex items-center gap-2">
-                <Loader2 className="size-4 animate-spin" /> {tm.loadingTargets}
+            {bootError ? (
+              <div role="alert" className="rounded-2xl bg-card p-5 space-y-3">
+                <p className="text-sm text-destructive">{bootError}</p>
+                <Button variant="secondary" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+                  {t.chrome.apiDown.retry}
+                </Button>
+              </div>
+            ) : !bootReady ? (
+              <div className="rounded-2xl bg-card px-4 py-6 text-sm text-muted-foreground flex items-center gap-2">
+                <UiIcon name="spinner" className="size-4 animate-spin" /> {tm.loadingTargets}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {targets.map((t) => {
-                  const Icon =
-                    t.kind === "mail"
-                      ? Inbox
-                      : t.kind === "server"
-                        ? Server
-                        : Globe;
-                  const key = `${t.kind}:${t.serverId}`;
-                  return (
-                    <OptionCard
-                      key={`${t.kind}-${t.serverId || t.label}`}
-                      value={key}
-                      selected={selectedKey === key}
-                      onSelect={() => {
-                        if (!t.disabled) setSelectedKey(key);
-                      }}
-                      icon={<Icon className="size-5" />}
-                      label={t.label}
-                      description={
-                        t.description ||
-                        (t.disabled ? t.disabledReason || tm.notAvailable : "")
-                      }
-                      className="h-full"
-                    />
-                  );
-                })}
-              </div>
+              <AppDestinationPicker
+                value={destination}
+                onChange={setDestination}
+                onReadyChange={setDestinationReady}
+                disabled={submitting || recovering}
+              />
             )}
           </Section>
 
@@ -281,56 +305,61 @@ export default function DeployMailPage() {
                 ? tm.domainHintProxy
                 : isMailHostOnMailServer
                   ? tm.domainHintMailHost
-                  : selectedTarget?.kind === "opshcloud"
+                  : destination?.deployTarget === "cloud"
                     ? tm.domainHintCloud
                     : tm.domainHintDefault
             }
           >
-            <input
+            <Input
+              variant="filled"
+              aria-label={tm.domainTitle}
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder={domainPlaceholder}
-              className="w-full px-4 py-3 bg-card border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
               spellCheck={false}
               autoComplete="off"
-              disabled={submitting}
+              disabled={!bootReady || submitting || recovering}
             />
           </Section>
         </div>
 
         <aside className="lg:sticky lg:top-6 h-fit space-y-4">
-          <div className="bg-card rounded-xl border border-border/50 p-4 space-y-3">
+          <div className="bg-card rounded-2xl p-5 space-y-3">
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               {tm.summary}
             </p>
-            <SummaryRow label={tm.summaryTarget} value={selectedTarget?.label ?? "-"} />
             <SummaryRow label={tm.summaryDomain} value={domain || "-"} />
             {mailHostnameFromStatus && (
               <SummaryRow label={tm.summaryMailServer} value={mailHostnameFromStatus} />
             )}
           </div>
-          <button
+          <Button
             type="button"
             onClick={startDeploy}
             disabled={!canSubmit || submitting}
-            className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+            className="h-11 w-full"
           >
             {submitting ? (
               <>
-                <Loader2 className="size-4 animate-spin" /> {tm.starting}
+                <UiIcon name="spinner" className="size-4 animate-spin" /> {tm.starting}
+              </>
+            ) : recovering ? (
+              <>
+                <UiIcon name="refresh" className="size-4" />
+                {tm.reconnectButton}
               </>
             ) : replacing ? (
               <>
-                <RefreshCw className="size-4" />
+                <UiIcon name="refresh" className="size-4" />
                 {tm.replaceButton}
               </>
             ) : (
               <>
                 {tm.deployButton}
-                <ArrowRight className="size-4 rtl:rotate-180" />
+                <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
               </>
             )}
-          </button>
+          </Button>
         </aside>
       </div>
     </PageContainer>

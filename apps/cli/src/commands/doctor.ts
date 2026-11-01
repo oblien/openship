@@ -1,3 +1,5 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship doctor` — diagnose and repair a local Openship instance.
  *
@@ -19,7 +21,7 @@ import { execFileSync } from "node:child_process";
 import chalk from "chalk";
 import open from "open";
 import { intro, outro, note, select, log, spinner, confirm } from "@clack/prompts";
-import { apiRaw } from "../lib/api-client";
+import { getRemoteClient, nativeSession, isNativeMode } from "../lib/ship-client";
 import { CONFIG_PATH, getActiveContext, getApiUrl, getContext } from "../lib/config";
 import { isJsonMode, printJson } from "../lib/output";
 import { readInstanceUrl } from "../lib/ports";
@@ -50,7 +52,7 @@ const GLYPH: Record<CheckState, string> = {
 };
 
 function isLocalContext(): boolean {
-  return /localhost|127\.0\.0\.1|\[::1\]/i.test(getApiUrl());
+  return /localhost|127\.0\.0\.1|\[::1\]/i.test(getRemoteClient().http.apiUrl);
 }
 
 /* ── DB / service check derivations ──────────────────────────────────────── */
@@ -120,7 +122,8 @@ function bunVersion(): string | null {
   if (embedded) return embedded;
   try {
     return execFileSync("bun", ["--version"], { encoding: "utf8", timeout: 3000 }).trim();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/doctor");
     return null;
   }
 }
@@ -130,15 +133,17 @@ async function remotePreflight(): Promise<void> {
   const hasConfig = existsSync(CONFIG_PATH);
   checks.push({ name: "config", status: hasConfig ? "pass" : "warn", detail: hasConfig ? CONFIG_PATH : `not found; run \`openship login\`` });
   const context = getActiveContext();
-  const apiUrl = getApiUrl();
+  const apiUrl = getRemoteClient().http.apiUrl;
   const hasToken = Boolean(getContext(context).token);
   checks.push({ name: "context", status: hasToken ? "pass" : "warn", detail: hasToken ? `${context} (${apiUrl})` : `${context} has no token; run \`openship login\`` });
   let reachable = false;
   try {
-    const res = await apiRaw("/health", { signal: AbortSignal.timeout(6000) });
+    const res = await getRemoteClient().http.raw("/health", { signal: AbortSignal.timeout(6000) });
     reachable = res.ok;
     checks.push({ name: "api", status: res.ok ? "pass" : "fail", detail: res.ok ? `reachable (${apiUrl})` : `HTTP ${res.status} from ${apiUrl}` });
   } catch (e) {
+    observeCaughtError(e, "cli/commands/doctor");
+      rethrowCommandExit(e);
     checks.push({ name: "api", status: "fail", detail: `unreachable: ${(e as Error).message}` });
   }
   checks.push({ name: "node", status: "pass", detail: process.versions.node });
@@ -152,7 +157,7 @@ async function remotePreflight(): Promise<void> {
     for (const c of checks) process.stdout.write(`  ${GLYPH[c.status]} ${chalk.bold(c.name.padEnd(8))} ${c.detail}\n`);
     process.stdout.write("\n");
   }
-  if (checks.some((c) => c.status === "fail")) process.exit(1);
+  if (checks.some((c) => c.status === "fail")) exitCommand(1);
 }
 
 /* ── One-shot report (--json / non-TTY, local) ───────────────────────────── */
@@ -185,7 +190,7 @@ async function reportOnce(): Promise<void> {
     process.stdout.write("\n");
   }
   const failed = svc.state === "fail" || db.state === "fail" || services.state === "fail" || s.components.some((c) => c.state === "fail");
-  if (failed) process.exit(1);
+  if (failed) exitCommand(1);
 }
 
 /* ── Non-interactive light repair (--fix) ────────────────────────────────── */
@@ -215,7 +220,7 @@ async function autoFix(): Promise<void> {
     out(chalk.green("Database is healthy again. Your data is intact."));
   } else {
     out(chalk.red(`Still not healthy. Backup preserved at ${backup}. Run \`openship doctor\` for guided recovery.`));
-    process.exit(1);
+    exitCommand(1);
   }
 }
 
@@ -276,7 +281,7 @@ async function interactiveDoctor(): Promise<void> {
     }
     if (action === "host-control") {
       const { verifyHostChannel } = await import("../lib/host-channel-preflight");
-      const report = await verifyHostChannel().catch(() => null);
+      const report = await verifyHostChannel().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/commands/doctor"); return null; });
       if (report?.status === "fixed") log.success("Host control is reachable now.");
       else if (report?.status === "ok") log.success("Host control was already reachable.");
       // Anything else already printed its own diagnosis and the rule to paste.
@@ -290,7 +295,9 @@ async function interactiveDoctor(): Promise<void> {
     if (action === "open") {
       const url = readInstanceUrl();
       const target = url && !/^https?:\/\/localhost/i.test(url) ? url : `http://localhost:${dashboardPort()}`;
-      await open(target).catch(() => {});
+      await open(target).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "cli/commands/doctor");
+      });
       log.message(chalk.dim(`Opening ${target}`));
       continue;
     }
@@ -301,6 +308,21 @@ export const doctorCommand = new Command("doctor")
   .description("Check database + services health and repair a corrupt local database")
   .option("--fix", "Attempt an automatic database repair (backup → heal → restart), no prompts")
   .action(async (opts: { fix?: boolean }) => {
+    if (isNativeMode()) {
+      if (opts.fix) throw new Error("Native database repair requires stopping the instance through its host application. Run doctor without --fix to inspect its health.");
+      const session = nativeSession()!;
+      const health = await session.client.system.health();
+      if (isJsonMode()) printJson({ mode: "native", instanceId: session.ship.instanceId, organizationId: session.client.organizationId, ...health });
+      else {
+        console.log(chalk.bold("\n  Openship doctor\n"));
+        console.log(`  Instance   ${session.ship.instanceId}`);
+        console.log(`  Database   ${health.db.driver}: ${health.db.ok ? "healthy" : health.db.error ?? "unavailable"}`);
+        if (health.hostChannel) console.log(`  Host       ${health.hostChannel.state}`);
+        console.log();
+      }
+      if (!health.ok) exitCommand(1);
+      return;
+    }
     // Remote instances: heal + local service control don't apply — keep the
     // original lightweight preflight.
     if (!isLocalContext()) {

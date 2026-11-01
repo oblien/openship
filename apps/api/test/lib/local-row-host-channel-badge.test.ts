@@ -19,12 +19,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const diagnoseReachability = vi.hoisted(() => vi.fn());
 
-vi.mock("../../src/lib/ssh-manager", () => ({ sshManager: { diagnoseReachability } }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { diagnoseReachability } }));
 vi.mock("@repo/db", () => ({ repos: { server: {} } }));
-vi.mock("../../src/lib/box-org", () => ({ boxOwningOrgId: async () => "org_1" }));
-vi.mock("../../src/lib/server-target", () => ({ resolveInstancePublicIp: async () => null }));
+vi.mock("@repo/platform/engine/lib/box-org", () => ({ boxOwningOrgId: async () => "org_1" }));
+vi.mock("@repo/platform/engine/lib/server-target", () => ({ resolveInstancePublicIp: async () => null }));
 
-const { localServerHostChannel } = await import("../../src/lib/startup/self-server");
+const { localServerHostChannel } = await import("@repo/platform/engine/lib/startup/self-server");
 
 beforeEach(() => {
   diagnoseReachability.mockReset();

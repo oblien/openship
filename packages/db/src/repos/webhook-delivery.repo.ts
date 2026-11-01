@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { webhookDelivery } from "../schema";
@@ -69,17 +69,52 @@ export function createWebhookDeliveryRepo(db: Database) {
     /**
      * Atomically CLAIM a GitHub delivery id (source='github'). Returns
      * claimed:true + the new row id on the FIRST delivery; claimed:false on a
-     * redelivery (partial-unique conflict) so the handler drops it. This is the
-     * idempotency guard formerly in github_webhook_event.claim.
+     * completed/in-flight redelivery. A finished failure can be reclaimed once
+     * so an operator can redeliver after fixing a blocked deployment (#847).
      */
-    async claimGithub(input: Omit<WebhookDeliveryInput, "source">): Promise<{ claimed: boolean; id: string }> {
+    async claimGithub(
+      input: Omit<WebhookDeliveryInput, "source" | "deliveryId" | "event"> & {
+        deliveryId: string;
+        event: string;
+      },
+    ): Promise<{ claimed: boolean; id: string; handledProjectIds?: string[] }> {
       const id = generateId("wdl");
       const rows = await db
         .insert(webhookDelivery)
         .values({ ...input, id, source: "github" })
         .onConflictDoNothing()
         .returning();
-      return rows.length > 0 ? { claimed: true, id } : { claimed: false, id: "" };
+      if (rows.length > 0) return { claimed: true, id };
+      const [retry] = await db
+        .update(webhookDelivery)
+        .set({
+          outcome: "received",
+          processedAt: null,
+          error: null,
+          statusCode: null,
+          receivedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(webhookDelivery.source, "github"),
+            eq(webhookDelivery.deliveryId, input.deliveryId),
+            eq(webhookDelivery.event, input.event),
+            eq(webhookDelivery.outcome, "failed"),
+            isNotNull(webhookDelivery.processedAt),
+          ),
+        )
+        .returning();
+      if (!retry) return { claimed: false, id: "" };
+      const summary = retry.summary as { handledProjectIds?: unknown } | null;
+      return {
+        claimed: true,
+        id: retry.id,
+        // A retry must not repeat successful siblings, even after their live
+        // commit changes. Older receipts have no per-project completion data.
+        handledProjectIds: Array.isArray(summary?.handledProjectIds)
+          ? summary.handledProjectIds.filter((id): id is string => typeof id === "string")
+          : [],
+      };
     },
 
     /** Record a delivery row (incoming/backup, or a github fan-out row). Returns its id. */
@@ -114,8 +149,12 @@ export function createWebhookDeliveryRepo(db: Database) {
     },
 
     /** Org-wide feed — includes project-less forwarded/ignored rows for the org. */
-    listByOrg(organizationId: string, opts?: { cursor?: string; limit?: number }) {
-      return page(and(eq(webhookDelivery.organizationId, organizationId)), opts);
+    listByOrg(organizationId: string, opts?: { cursor?: string; limit?: number; projectIds?: string[]; includeUnassigned?: boolean }) {
+      const allowed = opts?.projectIds === undefined ? undefined : or(
+        opts.projectIds.length ? inArray(webhookDelivery.projectId, opts.projectIds) : sql`false`,
+        opts.includeUnassigned ? isNull(webhookDelivery.projectId) : sql`false`,
+      );
+      return page(and(eq(webhookDelivery.organizationId, organizationId), allowed), opts);
     },
 
     /** Delete rows older than `cutoff` (retention). Returns rows deleted. */

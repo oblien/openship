@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
   cacheSet: vi.fn(),
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     CLOUD_MODE: false,
     GITHUB_AUTH_MODE: "auto",
@@ -43,16 +43,16 @@ vi.mock("@repo/db", () => ({
   eq: vi.fn(),
   and: vi.fn(),
 }));
-vi.mock("../../lib/auth", () => ({ auth: { api: { getAccessToken: vi.fn() } } }));
-vi.mock("../../lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: { api: { getAccessToken: vi.fn() } } }));
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: vi.fn(async () => ({
     get: h.cacheGet,
     set: h.cacheSet,
     invalidateByPrefix: vi.fn(),
   })),
 }));
-vi.mock("../../lib/org-actor", () => ({ resolveOrgOwner: vi.fn(async () => null) }));
-vi.mock("./github.http", () => ({
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({ resolveOrgOwner: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
   ghFetch: vi.fn(),
   ghFetchPublic: vi.fn(),
   ghFetchSoft: vi.fn(),
@@ -64,7 +64,7 @@ import {
   getUserInstallations,
   resolveGitHubAuthMode,
   resolveInstallUrl,
-} from "./github.auth";
+} from "@repo/platform/engine/modules/github/github.auth";
 
 const ctx = { userId: "user_1", organizationId: "org_1", role: "owner" } as any;
 

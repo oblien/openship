@@ -3,7 +3,7 @@ title: Cloud as source
 description: Cloud projects are owned by Openship Cloud; your self-hosted instance is a gateway in front of it — plus how projects promote up and come back home.
 ---
 
-When a project runs on **Openship Cloud** (our hosted service), the cloud is the one true copy — the
+For a **Cloud-owned project**, Openship Cloud (our hosted service) holds the one true copy — the
 **canonical** owner. Its record, deployments, domains, environment variables, and logs all live on the
 cloud, and the cloud runs its builds and lifecycle. Your self-hosted instance keeps **no local copy** of
 that project. Instead it acts as a **gateway** — a thin pass-through that forwards requests for that project
@@ -24,9 +24,27 @@ Openship deliberately never keeps two copies of the same project. A mirror would
 that constantly drift apart and need reconciling — and a bug on your box could corrupt cloud data. A gateway
 avoids all of that: there is nothing to sync, because there is only ever one copy.
 
-Your dashboard and CLI still talk **only to your local API**. When a request is for a cloud project, the
-gateway quietly forwards it upstream and streams the response straight back — so the experience feels the
-same whether a project is local or cloud.
+Your dashboard can keep talking to your local API. Requests for a Cloud project are forwarded
+upstream and returned through the gateway. SDK and CLI credentials fixed to an organization
+must connect directly to that organization's API; a local scoped credential cannot borrow
+its owner's Cloud session.
+
+### Creating a project from Desktop
+
+In the connected dashboard, selecting a managed Cloud server for a new catalog app or
+Git project creates its configuration through the Cloud API. Capacity checks, installation
+and subsequent project operations use that Cloud account and organization. The project,
+services and routes are stored in Cloud; the desktop controller keeps no project copy.
+An existing verified server link is translated to its canonical Cloud server ID.
+
+Local folders, upload sessions and custom app definitions uploaded to this instance keep
+their local controller because their source is available there. Existing local projects retain
+their owner, even when they run on a linked managed server. Use an explicit transfer to move an existing project's ownership.
+Credentials scoped to the local installation keep their existing execution path; connect
+SDK and CLI clients directly to the Cloud API to create Cloud-owned projects.
+
+A failed Cloud creation or capacity check remains an error. Openship does not fall back
+to creating a local project or selecting a different Cloud account.
 
 <Callout title="Your local permission checks still run first" type="info">
 Forwarding does **not** skip your rules. The local permission plane gates every call — checking the caller's
@@ -38,15 +56,38 @@ role and access — *before* anything is proxied. Only then does the gateway for
 For every project-scoped request, the local API decides "serve this from my own database, or forward it to
 the cloud?" in this order:
 
-1. **A source hint.** The dashboard's project list tags each row as `local` or `cloud`, and carries that hint
-   on later requests (the `X-Project-Source` header) — the fast path, no database read.
-2. **A local lookup.** No hint? If the project id exists in your local database, it's local.
-3. **A cloud link.** No local row, but your organization has a linked cloud account? Then it's a cloud
-   project, and the request is forwarded.
-4. **Otherwise, not found** — the same `404` a stranger's project id would get, so nothing leaks.
+1. **A local lookup.** A project ID present in the local database stays local, including
+   a row owned by another tenant. Local authorization still decides whether it is accessible.
+2. **A cloud link.** No local row, but the caller's organization has a linked Cloud account?
+   The request may be forwarded after local permission and credential checks.
+3. **Cloud authorization.** Cloud validates that the requested ID belongs to the linked
+   Cloud organization. An unknown or foreign ID remains a `404`.
+4. **Otherwise, not found.** Without a link, an unknown ID is handled locally and returns `404`.
+
+A client-provided `cloud` source hint cannot override a local record or grant Cloud access.
+An explicit `local` hint can keep project requests on the local path.
 
 If the cloud can't be reached while forwarding, you get a `503` with code `CLOUD_UNREACHABLE` — not a `404`.
 That distinction matters: the project *does* exist, the cloud is just temporarily out of touch.
+
+## Actions for Cloud-owned apps
+
+Opening a Cloud project's **Actions** tab forwards its workflows, runs and deployment
+rules to Cloud. Workflow and run detail requests, log cursors, artifacts and runner
+changes follow the same ownership decision. The Actions workflow, project and runner
+lists include both local and connected Cloud inventory; no Cloud records are copied
+into your local database.
+
+A workflow's projects and runners must belong to the same instance. An import or
+policy that mixes local and Cloud targets fails before either side writes anything.
+Cloud checks its own repository access, destinations and approval policy, and records
+the mutation there. Local credentials scoped to this instance cannot borrow the
+owner's Cloud session. Connect your SDK or CLI directly to Cloud when using a fixed
+Cloud organization scope.
+
+If Cloud cannot be reached, Actions reports a connection error instead of presenting
+an empty list. Local project requests continue to use the local engine. On Cloud
+itself, these operations run directly and never proxy back to Cloud.
 
 ## One cloud identity for the whole team
 
@@ -67,11 +108,8 @@ left behind.
 
 There are two ways it happens:
 
-- **Born-on-cloud (automatic).** When you deploy a still-local project to the cloud *and let the cloud
-  build it*, Openship promotes the project **first**, then runs the deploy upstream — so it becomes
-  cloud-canonical from its very first cloud deploy. If the copy-up fails, the promote stops **before**
-  anything local is torn down, leaving your project exactly as it was. (Choosing *build on this machine* is
-  the one exception — see [What your box still does](#what-your-box-still-does-for-a-cloud-project).)
+- **Born on Cloud.** New catalog apps and Git projects created from the connected dashboard with a
+  managed Cloud server are created directly in Cloud. There is no local project to copy or delete.
 - **Explicit transfer.** You can also promote on demand from the CLI or API (see
   [Doing it yourself](#doing-it-yourself)).
 
@@ -100,12 +138,12 @@ containers back up are operator follow-up steps, not part of the data transfer i
 
 ## What your box still does for a cloud project
 
-For a cloud-owned project, your local instance does **zero** orchestration — with one opt-in exception:
-**build locally, upload the artifact.** If you choose "build on this machine," your box builds the app with
-its own credentials and uploads the result to an Openship Cloud workspace to run. In that case the project
-stays local-canonical and is *not* promoted. Everything else — routing, TLS, running the containers —
-belongs to the cloud. See [Runtime model](/docs/architecture/runtime-model) for how a runtime target is
-chosen.
+For a Cloud-owned project, your local instance forwards operations to Cloud. A local project can
+also use a verified managed server as its execution destination: the local controller owns its
+configuration and orchestration, while the managed server and its billing belong to Cloud.
+This supports local-folder sources and credentials scoped to the installation without giving
+them the owner's Cloud account permissions. See [Runtime model](/docs/architecture/runtime-model)
+for how a runtime target is chosen.
 
 ## On Openship Cloud itself
 
@@ -139,7 +177,7 @@ already authoritative.
 - **`502`** — the cloud accepted the call but the transfer itself failed upstream.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Data ownership" href="/docs/architecture/data-ownership" description="Exactly what lives where — your database vs. the cloud." />

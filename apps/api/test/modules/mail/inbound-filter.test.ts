@@ -6,7 +6,7 @@ import {
   matchesRule,
   parseHeaderBlock,
   spamGate,
-} from "../../../src/modules/mail/inbound/filter";
+} from "@repo/platform/engine/modules/mail/inbound/filter";
 import type { MailInboundRule } from "@repo/db";
 
 /**

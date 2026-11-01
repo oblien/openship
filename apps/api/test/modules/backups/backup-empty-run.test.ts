@@ -34,12 +34,14 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
         id: "bkr_live",
         status: "queued",
         policyId: "pol_1",
+        destinationId: "dst_1",
         projectId: "prj_1",
         serviceId: "svc_1",
         mailServerId: null,
@@ -158,10 +160,9 @@ vi.mock("@repo/adapters", async () => {
           throw new Error("destination refused the manifest");
         }
         h.puts.push(key);
-        for await (const _chunk of body) {
-          /* consume to EOF */
-        }
-        return {};
+        let bytesWritten = 0;
+        for await (const chunk of body) bytesWritten += chunk.length;
+        return { bytesWritten };
       },
       deleteMany: async (keys: string[]) => {
         h.deleted.push(...keys);
@@ -188,32 +189,32 @@ vi.mock("@repo/adapters", async () => {
   };
 });
 
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   disposeRuntime: () => {},
   disposePlatform: () => {},
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "docker" } } }),
   resolveTargetPlatform: async () => ({ runtime: { name: "docker" } }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string }) => {
       h.notifications.push(e.eventType);
     },
   },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => "c_pg",
   liveContainerForService: async () => ({ containerId: "c_pg", running: true }),
 }));
 
-import { BackupOrchestrator } from "../../../src/modules/backups/backup.orchestrator";
+import { BackupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
 
 beforeEach(() => {
   h.artifacts = [];

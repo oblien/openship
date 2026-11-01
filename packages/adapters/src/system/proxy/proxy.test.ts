@@ -13,6 +13,7 @@ function makeExecutor(rules: Array<[string, string]>): CommandExecutor {
   return {
     exec: async (cmd: string) => {
       for (const [needle, out] of rules) if (cmd.includes(needle)) return out;
+      if (cmd.includes("{{json .Swarm}}")) return "null";
       return "";
     },
   } as unknown as CommandExecutor;

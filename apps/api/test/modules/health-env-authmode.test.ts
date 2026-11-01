@@ -64,13 +64,13 @@ afterEach(async () => {
   // first case's mode leaks into every later case (they all saw "none"). The
   // real app clears it the same way after any settings write — see
   // clearAuthModeCache() callers in modules/system/setup.controller.ts.
-  const { clearAuthModeCache } = await import("../../src/lib/auth-mode");
+  const { clearAuthModeCache } = await import("@repo/platform/engine/lib/auth-mode");
   clearAuthModeCache();
 });
 
 describe("GET /health/env authMode", () => {
   it("reports the running API release consumed by the dashboard sidebar", async () => {
-    const { APP_VERSION } = await import("../../src/lib/app-version");
+    const { APP_VERSION } = await import("@repo/platform/engine/lib/app-version");
     expect((await getEnv()).body.version).toBe(APP_VERSION);
   });
 
@@ -99,6 +99,18 @@ describe("GET /health/env authMode", () => {
     // "login required" is the safe default.
     getThrows = true;
     expect((await getEnv()).body.authMode).toBe("local");
+  });
+
+  it("advertises no social providers when no OAuth credentials are configured", async () => {
+    // The suite runs with a bare env (no GITHUB_/GOOGLE_ client creds), which is
+    // the default self-hosted instance: password login only. The field must be
+    // PRESENT and empty rather than absent — the dashboard renders whatever it
+    // is handed, and a missing key would be indistinguishable from an older
+    // server on the client side. The configured case lives in
+    // health-env-auth-providers.test.ts (it has to stuff process.env before
+    // config/env parses).
+    const { body } = await getEnv();
+    expect(body.authProviders).toEqual([]);
   });
 
   it("still reports the other instanceSettings fields", async () => {

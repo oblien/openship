@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
@@ -135,7 +137,8 @@ export function DarkSection({
       }, outer);
 
       ScrollTrigger.refresh();
-    } catch {
+    } catch (error) {
+      reportCaughtError(error, "web/components/landing/dark-section");
       /* Fallback: show at full scale */
       inner.style.transform = "scale(1)";
       outer.style.opacity = "1";

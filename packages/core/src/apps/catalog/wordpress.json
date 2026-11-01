@@ -1,0 +1,263 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "wordpress",
+  "name": "WordPress",
+  "description": "Publish websites, blogs, and stores with WordPress Admin, a private MariaDB database, and persistent uploads.",
+  "kind": "template",
+  "logo": "wordpress",
+  "category": "cms",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "wordpress-db",
+      "restart": "unless-stopped",
+      "image": "mariadb:11.4.13",
+      "environment": {
+        "MARIADB_USER": "wordpress",
+        "MARIADB_DATABASE": "wordpress"
+      },
+      "volumes": ["wordpress_db_data:/var/lib/mysql"],
+      "secretEnv": ["MARIADB_ROOT_PASSWORD", "MARIADB_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "30s"
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "wordpress",
+      "restart": "unless-stopped",
+      "environment": {
+        "WORDPRESS_DB_HOST": "wordpress-db",
+        "WORDPRESS_DB_USER": "wordpress",
+        "WORDPRESS_DB_NAME": "wordpress",
+        "OPENSHIP_PUBLIC_URL": "{{publicUrl:wordpress}}",
+        "WORDPRESS_CONFIG_EXTRA": "define('WP_HOME', getenv('OPENSHIP_PUBLIC_URL'));\ndefine('WP_SITEURL', getenv('OPENSHIP_PUBLIC_URL'));\ndefine('DISALLOW_FILE_EDIT', true);\nif (parse_url(getenv('OPENSHIP_PUBLIC_URL'), PHP_URL_SCHEME) === 'https') {\n    $_SERVER['HTTPS'] = 'on';\n    define('FORCE_SSL_ADMIN', true);\n}\n"
+      },
+      "volumes": ["wordpress_data:/var/www/html"],
+      "exposedPort": 80,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 80
+        }
+      ],
+      "dependsOn": ["wordpress-db"],
+      "secretEnv": ["WORDPRESS_DB_PASSWORD", "OPENSHIP_ADMIN_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "curl -fsS http://127.0.0.1/ >/dev/null"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "120s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 768,
+        "diskMb": 8192
+      },
+      "image": "wordpress:7.1.3-php8.3-apache",
+      "commandArgv": ["sh", "/etc/openship/wordpress-start.sh", "apache2-foreground"],
+      "replacesBuilds": ["cadb840dc69bcc6f495e540d62584d44d3cd5c5467b1722b9c62cf44d47cba88"]
+    }
+  ],
+  "configFields": [
+    {
+      "service": "wordpress-db",
+      "key": "MARIADB_ROOT_PASSWORD",
+      "label": "Database root password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "wordpress-db",
+      "key": "MARIADB_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "wordpress-db"
+    },
+    {
+      "service": "wordpress",
+      "key": "WORDPRESS_DB_PASSWORD",
+      "label": "WordPress database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "wordpress-db"
+    },
+    {
+      "service": "wordpress",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "OPENSHIP_SITE_TITLE",
+      "service": "wordpress",
+      "label": "Site title",
+      "default": "My website",
+      "required": true
+    },
+    {
+      "key": "OPENSHIP_ADMIN_EMAIL",
+      "service": "wordpress",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "key": "OPENSHIP_ADMIN_USER",
+      "service": "wordpress",
+      "label": "Admin username",
+      "default": "admin",
+      "required": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to WordPress",
+    "outputs": [
+      {
+        "id": "site",
+        "label": "Website",
+        "source": "publicUrl:wordpress",
+        "kind": "url"
+      },
+      {
+        "id": "admin",
+        "label": "WordPress Admin",
+        "source": "template:{{publicUrl:wordpress}}/wp-admin/",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Admin username",
+        "source": "env:wordpress:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:wordpress:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "wordpress",
+      "port": 80,
+      "label": "Website and WordPress Admin",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "wordpress-db",
+      "port": 3306,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "WordPress Admin",
+        "description": "Manage pages, posts, themes, and plugins in the native control panel."
+      },
+      {
+        "title": "Private database",
+        "description": "A dedicated MariaDB database stays on the project network."
+      },
+      {
+        "title": "Persistent content",
+        "description": "Keep uploads, themes, plugins, and database contents across deployments."
+      }
+    ],
+    "articleFile": "articles/wordpress.md"
+  },
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "Setup",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_SITE_TITLE",
+          "label": "Initial site title",
+          "type": "text",
+          "default": "My website",
+          "installStep": true,
+          "required": true,
+          "help": "Used when creating the site. Edit the site title later in WordPress Admin.",
+          "fullWidth": true
+        },
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+        },
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Admin username",
+          "type": "text",
+          "default": "admin",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[a-zA-Z0-9_.-]+$",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+        }
+      ]
+    }
+  ],
+  "repository": "https://github.com/WordPress/WordPress",
+  "minResources": {
+    "cpuCores": 1.0,
+    "memoryMb": 1280
+  },
+  "tags": ["cms", "blog", "website", "ecommerce"],
+  "files": [
+    {
+      "service": "wordpress",
+      "path": "/etc/openship/wordpress-start.sh",
+      "content": "#!/bin/sh\nset -eu\n# Keep Apache stopped until the initial site owner exists.\ndocker-ensure-installed.sh\nattempt=0\nuntil php -r 'mysqli_report(MYSQLI_REPORT_OFF); $db = @new mysqli(getenv(\"WORDPRESS_DB_HOST\"), getenv(\"WORDPRESS_DB_USER\"), getenv(\"WORDPRESS_DB_PASSWORD\"), getenv(\"WORDPRESS_DB_NAME\")); exit($db->connect_errno ? 1 : 0);'; do\n  attempt=$((attempt + 1))\n  if [ \"$attempt\" -ge 60 ]; then\n    echo 'WordPress could not connect to its database during setup.' >&2\n    exit 1\n  fi\n  sleep 2\ndone\nsu -s /bin/sh www-data -c 'php' <<'PHP'\n<?php\n// Use the installation API shipped in this official image; no extra CLI download.\ndefine('WP_INSTALLING', true);\n$url = getenv('OPENSHIP_PUBLIC_URL');\n$parts = parse_url($url);\nif (!$parts || empty($parts['host']) || !in_array($parts['scheme'] ?? '', ['http', 'https'], true)) {\n    fwrite(STDERR, \"WordPress needs a valid website URL before setup.\\n\");\n    exit(1);\n}\n$_SERVER['HTTP_HOST'] = $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');\n$_SERVER['REQUEST_URI'] = '/';\n$_SERVER['REQUEST_METHOD'] = 'GET';\nrequire '/var/www/html/wp-load.php';\nrequire '/var/www/html/wp-admin/includes/upgrade.php';\nif (!is_blog_installed()) {\n    $username = getenv('OPENSHIP_ADMIN_USER');\n    $password = getenv('OPENSHIP_ADMIN_PASSWORD');\n    $email = getenv('OPENSHIP_ADMIN_EMAIL');\n    $title = getenv('OPENSHIP_SITE_TITLE');\n    if (!validate_username($username) || $password === false || $password === '' || !is_email($email) || $title === false || $title === '') {\n        fwrite(STDERR, \"WordPress needs valid initial owner settings before setup.\\n\");\n        exit(1);\n    }\n    // Match the previous bootstrap's --skip-email behavior, only in this process.\n    add_filter('pre_wp_mail', '__return_false');\n    $installed = wp_install($title, $username, $email, true, '', $password);\n    if (empty($installed['user_id']) || !user_can($installed['user_id'], 'manage_options') || !is_blog_installed()) {\n        fwrite(STDERR, \"WordPress initialization did not complete; the website was not started.\\n\");\n        exit(1);\n    }\n    echo \"WordPress site and owner initialized.\\n\";\n}\nPHP\nexec docker-entrypoint.sh \"$@\"\n"
+    }
+  ]
+}

@@ -251,6 +251,13 @@ export const serviceDeployment = pgTable(
 
     /** Docker container ID */
     containerId: text("container_id"),
+    /** Limits applied to this exact container. Allows checking a stopped Cloud
+     * Docker host without booting it or trusting editable service settings. */
+    allocatedResources: jsonb("allocated_resources").$type<{
+      containerId: string;
+      cpuCores: number;
+      memoryMb: number;
+    }>(),
     /** Per-service status — see table-level doc for allowed values. */
     status: text("status").notNull().default("pending"),
     /**

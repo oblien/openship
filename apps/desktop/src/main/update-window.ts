@@ -5,6 +5,7 @@
  * so no dashboard/web changes are needed.
  */
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { BrowserWindow, nativeTheme } from "electron";
 import { changelogUrl } from "@repo/core";
 import { join } from "node:path";
@@ -137,9 +138,7 @@ export function openUpdateWindow(
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Off for the same reason as the main window (see index.ts) — the preload
-      // requires @repo/onboarding, which a sandboxed preload can't resolve.
-      sandbox: false,
+      sandbox: true,
     },
   });
   updateWin.once("ready-to-show", () => updateWin?.show());
@@ -153,7 +152,7 @@ export function openUpdateWindow(
   // off-origin page inherit the preload bridge.
   const denyNav = (e: Electron.Event, url: string) => {
     e.preventDefault();
-    console.warn(`[security] blocked update-window navigation to ${url}`);
+    errorDiagnostics.warn("desktop/main/update-window", `[security] blocked update-window navigation to ${url}`);
   };
   updateWin.webContents.on("will-navigate", denyNav);
   updateWin.webContents.on("will-redirect", denyNav);

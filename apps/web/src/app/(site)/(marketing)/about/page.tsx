@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { Navbar, Footer } from "@/components/landing";
 
 const PAGE_TITLE = "About";
 const PAGE_DESCRIPTION =
   "Openship is an open-source deployment platform built and maintained by the team at Oblien. Apache 2.0, source on GitHub, yours to run anywhere.";
 
-export const metadata: Metadata = {
+const metadata: Metadata = {
   title: PAGE_TITLE,
   description: PAGE_DESCRIPTION,
   alternates: { canonical: "/about" },
@@ -21,6 +22,13 @@ export const metadata: Metadata = {
     description: PAGE_DESCRIPTION,
   },
 };
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(metadata, parent);
+}
 
 const TOC = [
   { id: "what", title: "What we build" },

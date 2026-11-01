@@ -18,12 +18,12 @@ vi.mock("@repo/db", () => ({
     auditEvent: { create: h.audit },
   },
 }));
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: false },
   localGitHubAppConfiguration: { configured: true, intended: true, missing: [] },
 }));
-vi.mock("./github.http", () => ({ ghFetch: h.ghFetch }));
-vi.mock("./github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({ ghFetch: h.ghFetch }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   appFetch: h.appFetch,
   consumeInstallState: h.consume,
   getUserToken: vi.fn(async () => "github-user-token"),
@@ -32,7 +32,7 @@ vi.mock("./github.auth", () => ({
   resolveGitHubAuthMode: vi.fn(async () => "app"),
 }));
 
-import { claimLocalGitHubInstallation } from "./github.installation-claim";
+import { claimLocalGitHubInstallation } from "@repo/platform/engine/modules/github/github.installation-claim";
 
 const ctx = { userId: "user_1", organizationId: "org_1" } as any;
 const installation = {

@@ -1,18 +1,19 @@
 /**
  * HTTP surface for whole-instance data export / import (self-hosted only).
  *
- *   POST /api/system/data-transfer/export  — { passphrase? } → DataTransferFile
+ *   POST /api/system/data-transfer/export  — { selection? } → DataTransferFile
  *   POST /api/system/data-transfer/import   — { file, passphrase?, mode } → ImportResult
  *
  * AUTHORIZATION: instance administrator, enforced both by
  * `requireInstanceAdmin()` on the routes and by `assertInstanceAdmin(ctx)` here.
- * Export returns EVERY org's data with all secrets decrypted, sealed under a
- * passphrase the caller supplies — so it is a whole-instance read and an
+ * Instance export returns EVERY org's data with all secrets decrypted in the
+ * downloaded JSON — so it is a whole-instance read and an
  * org-scoped role check cannot gate it. It previously used
  * requireRole("owner"), which any authenticated user satisfied as owner of
  * their own personal org (GHSA-rwq6-r63g-3c8h).
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import type { SSEStreamingApi } from "hono/streaming";
 import { PkCollisionError } from "@repo/db";
@@ -42,8 +43,14 @@ import {
   receiveDirectTransfer,
   sendDirectTransfer,
 } from "./direct-transfer.service";
-import { createFileUpload, finalizeFileUpload, uploadFileChunk } from "./file-upload.service";
+import {
+  createFileUpload,
+  finalizeFileUpload,
+  previewFileUpload,
+  uploadFileChunk,
+} from "./file-upload.service";
 import { TransferStoreError } from "./chunk-store";
+import { ProjectImportError } from "./project-import";
 import type {
   DataTransferFile,
   DirectTransferEnvelope,
@@ -51,6 +58,7 @@ import type {
   ExportSelection,
   ImportMode,
   ImportResult,
+  ImportSelection,
 } from "./types";
 
 interface ExportBody {
@@ -61,6 +69,7 @@ interface ImportBody {
   file?: DataTransferFile;
   passphrase?: string;
   mode?: ImportMode;
+  selection?: ImportSelection;
 }
 interface CreateReceiveBody {
   apiBase?: string;
@@ -79,23 +88,32 @@ function readPassphrase(v: unknown): string | undefined {
 }
 
 async function readJsonBody<T>(c: Context): Promise<T | null> {
-  return c.req.json<T>().catch(() => null);
+  return c.req.json<T>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return null; });
 }
 
 async function readFileFinalizeInput(c: Context): Promise<{
   passphrase?: string;
   mode: ImportMode;
+  selection?: ImportSelection;
 } | null> {
-  const body = await readJsonBody<{ passphrase?: unknown; mode?: unknown }>(c);
+  const body = await readJsonBody<{
+    passphrase?: unknown;
+    mode?: unknown;
+    selection?: ImportSelection;
+  }>(c);
   if (!body || (body.mode !== "wipe" && body.mode !== "merge")) return null;
-  return { passphrase: readPassphrase(body.passphrase), mode: body.mode };
+  return {
+    passphrase: readPassphrase(body.passphrase),
+    mode: body.mode,
+    selection: body.selection,
+  };
 }
 
 export async function exportInstanceHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
 
-  const body = ((await c.req.json<ExportBody>().catch(() => ({}))) ?? {}) as ExportBody;
+  const body = ((await c.req.json<ExportBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ?? {}) as ExportBody;
 
   let file: DataTransferFile;
   try {
@@ -121,6 +139,8 @@ export async function exportInstanceHandler(c: Context) {
       tableCount: Object.keys(file.dump.tables).length,
       rowCount: file.summary?.rows,
       history: file.selection?.history,
+      scope: file.selection?.scope ?? "instance",
+      projectIds: file.selection?.projectIds,
     },
   });
 
@@ -131,11 +151,14 @@ export async function previewInstanceExportHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
   try {
-    return c.json(await previewInstanceExport());
+    const body = c.req.method === "POST" ? await readJsonBody<ExportBody>(c) : null;
+    return c.json(await previewInstanceExport(body?.selection));
   } catch (err) {
     if (err instanceof CloudInstanceNotTransferableError) {
       return c.json({ error: err.message, code: err.code }, 403);
     }
+    if (err instanceof InvalidExportSelectionError)
+      return c.json({ error: err.message, code: err.code }, 400);
     throw err;
   }
 }
@@ -143,7 +166,7 @@ export async function previewInstanceExportHandler(c: Context) {
 export async function createDirectReceiveSessionHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
-  const body = ((await c.req.json<CreateReceiveBody>().catch(() => ({}))) ??
+  const body = ((await c.req.json<CreateReceiveBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ??
     {}) as CreateReceiveBody;
   if (typeof body.apiBase !== "string") {
     return c.json(
@@ -207,6 +230,9 @@ function transferProtocolError(c: Context, err: unknown): Response | null {
 function importOperationFailure(err: unknown): TransferFailure | null {
   const protocol = transferProtocolFailure(err);
   if (protocol) return protocol;
+  if (err instanceof ProjectImportError) return { status: 409, error: err.message, code: err.code };
+  if (err instanceof InvalidExportSelectionError)
+    return { status: 400, error: err.message, code: err.code };
   if (err instanceof CloudInstanceNotTransferableError) {
     return { status: 403, error: err.message, code: err.code };
   }
@@ -290,7 +316,7 @@ async function writeTransferStreamResult<T>(
       error: "The data transfer failed unexpectedly.",
       code: "DATA_TRANSFER_FAILED",
     };
-    if (!classified) console.error("[data-transfer] streamed operation failed:", error);
+    if (!classified) errorDiagnostics.error("api/modules/system/data-transfer/data-transfer.controller", "[data-transfer] streamed operation failed:", error);
     await stream.writeSSE({ event: "error", data: JSON.stringify(failure) });
     return null;
   }
@@ -317,13 +343,15 @@ async function sendDirectAndAudit(
 async function finalizeFileAndAudit(
   c: Context,
   context: ReturnType<typeof getRequestContext>,
-  input: { uploadId: string; passphrase?: string; mode: ImportMode },
+  input: { uploadId: string; passphrase?: string; mode: ImportMode; selection?: ImportSelection },
 ): Promise<ImportResult> {
   const result = await finalizeFileUpload({
     uploadId: input.uploadId,
     ownerUserId: context.userId,
     passphrase: input.passphrase,
     mode: input.mode,
+    selection: input.selection,
+    context: { organizationId: context.organizationId, userId: context.userId },
   });
   audit.recordAsync(auditContextFrom(c, context.organizationId, context.userId), {
     eventType: "instance.data.imported",
@@ -433,7 +461,7 @@ export async function finalizeDirectChunkUploadStreamHandler(c: Context) {
 export async function sendDirectTransferHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
-  const body = ((await c.req.json<SendDirectBody>().catch(() => ({}))) ?? {}) as SendDirectBody;
+  const body = ((await c.req.json<SendDirectBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ?? {}) as SendDirectBody;
   if (typeof body.code !== "string") {
     return c.json({ error: "Missing receive code.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
   }
@@ -451,7 +479,7 @@ export async function sendDirectTransferHandler(c: Context) {
 export async function sendDirectTransferStreamHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
-  const body = ((await c.req.json<SendDirectBody>().catch(() => ({}))) ?? {}) as SendDirectBody;
+  const body = ((await c.req.json<SendDirectBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ?? {}) as SendDirectBody;
   if (typeof body.code !== "string") {
     return c.json({ error: "Missing receive code.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
   }
@@ -469,7 +497,8 @@ export async function receiveDirectTransferHandler(c: Context) {
   let envelope: DirectTransferEnvelope;
   try {
     envelope = await c.req.json<DirectTransferEnvelope>();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller");
     return c.json(
       { error: "Invalid encrypted transfer body.", code: "INVALID_DIRECT_TRANSFER_CODE" },
       400,
@@ -491,19 +520,28 @@ export async function importInstanceHandler(c: Context) {
   let body: ImportBody;
   try {
     body = await c.req.json<ImportBody>();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller");
     return c.json({ error: "Invalid JSON body.", code: "INVALID_JSON" }, 400);
   }
-  if (!body.file) {
+  if (!body?.file) {
     return c.json({ error: "Missing export file.", code: "INVALID_TRANSFER_FILE" }, 400);
   }
-  const mode: ImportMode = body.mode === "merge" ? "merge" : "wipe";
+  if (body.mode !== undefined && body.mode !== "merge" && body.mode !== "wipe") {
+    return c.json(
+      { error: "Import mode must be wipe or merge.", code: "INVALID_IMPORT_MODE" },
+      400,
+    );
+  }
+  const mode: ImportMode = body.mode ?? "merge";
 
   try {
     const result = await importInstance({
       file: body.file,
       passphrase: readPassphrase(body.passphrase),
       mode,
+      selection: body.selection,
+      context: { organizationId: ctx.organizationId, userId: ctx.userId },
     });
 
     // Best-effort audit; on a wipe import the pre-import identity may be gone,
@@ -592,6 +630,7 @@ export async function finalizeFileUploadStreamHandler(c: Context) {
     uploadId,
     passphrase: body.passphrase,
     mode: body.mode,
+    selection: body.selection,
   };
   return streamSSE(c, async (stream) => {
     await writeTransferStreamResult(
@@ -600,4 +639,28 @@ export async function finalizeFileUploadStreamHandler(c: Context) {
       importOperationFailure,
     );
   });
+}
+
+export async function previewFileUploadHandler(c: Context) {
+  const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
+  const uploadId = c.req.param("sessionId");
+  if (!uploadId)
+    return c.json({ error: "Missing import upload session.", code: "SESSION_UNAVAILABLE" }, 400);
+  const body = await readJsonBody<{ selection?: ImportSelection }>(c);
+  if (!body) return c.json({ error: "Invalid import review request.", code: "INVALID_JSON" }, 400);
+  try {
+    return c.json(
+      await previewFileUpload({
+        uploadId,
+        ownerUserId: ctx.userId,
+        selection: body.selection,
+        context: { organizationId: ctx.organizationId, userId: ctx.userId },
+      }),
+    );
+  } catch (error) {
+    const response = importOperationError(c, error);
+    if (response) return response;
+    throw error;
+  }
 }

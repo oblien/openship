@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getSession, getDeploymentInfoOrNull, needsOrgSelection } from "@/lib/server/session";
@@ -6,9 +7,12 @@ import {
   getCloudConnectHandoffUrl,
   buildAuthPageHref,
   validateReturnTo,
+  authContinuationHref,
   DESKTOP_CLOUD_FLOW,
 } from "@/lib/cloud-auth";
 import { AuthProviders } from "./providers";
+import { serverApi } from "@/lib/server/api";
+import type { InstanceStatus } from "@/lib/api/instance";
 
 /**
  * Auth layout - minimal shell, no sidebar. Sends already-authenticated
@@ -38,6 +42,13 @@ export default async function AuthLayout({
   const hasBrowserSession = /\.session_token=/.test(cookieHeader);
 
   const session = hasBrowserSession ? await getSession() : null;
+  const pathWithSearch = hdrs.get("x-pathname-with-search") ?? "";
+  const query = pathWithSearch.includes("?")
+    ? pathWithSearch.slice(pathWithSearch.indexOf("?"))
+    : "";
+  const params = new URLSearchParams(query);
+  const isOrgChooser = pathWithSearch.split("?")[0] === "/select-organization";
+  if (!session && isOrgChooser) redirect(authContinuationHref("/login", pathWithSearch));
 
   if (session) {
     // proxy.ts (middleware) stamps the original pathname+search onto
@@ -46,11 +57,6 @@ export default async function AuthLayout({
     // safe to trust. Falling back to `Referer` would be client-
     // controlled and could leak a cross-origin callback into our
     // redirect chain.
-    const pathWithSearch = hdrs.get("x-pathname-with-search") ?? "";
-    const query = pathWithSearch.includes("?")
-      ? pathWithSearch.slice(pathWithSearch.indexOf("?"))
-      : "";
-    const params = new URLSearchParams(query);
     const callback = params.get("callback");
 
     // returnTo wins over callback when both are present — it's the
@@ -58,11 +64,14 @@ export default async function AuthLayout({
     // /cloud-authorize. validateReturnTo enforces the safe-path allowlist
     // server-side so a tampered URL can't redirect to an attacker domain.
     const returnTo = validateReturnTo(params.get("returnTo"));
-    if (returnTo) {
+    const selectingOrganization = isOrgChooser
+      ? await needsOrgSelection(session.session.activeOrganizationId)
+      : undefined;
+    if (returnTo && !selectingOrganization) {
       redirect(returnTo);
     }
 
-    if (callback) {
+    if (callback && !selectingOrganization) {
       if (params.get("flow") === DESKTOP_CLOUD_FLOW) {
         redirect(buildAuthPageHref("/authorize", params));
       }
@@ -91,16 +100,27 @@ export default async function AuthLayout({
     // /select-organization lives in THIS group and the dashboard sends them
     // here for exactly that. Redirecting to "/" would just loop back. When a
     // choice is pending, fall through and render the page instead.
-    if (!(await needsOrgSelection(session.session.activeOrganizationId))) {
+    if (!(selectingOrganization ?? await needsOrgSelection(session.session.activeOrganizationId))) {
       redirect("/");
     }
   }
 
   const deploymentInfo = await getDeploymentInfoOrNull();
   if (!deploymentInfo) return <ApiUnavailable />;
+  const controller = deploymentInfo.selfHosted
+    ? await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(auth)/layout"); return null; })
+    : null;
+  const remoteInstance = controller?.desktop && ["connected", "retired"].includes(controller.role)
+    ? controller.connection?.origin : undefined;
 
   return (
-    <AuthProviders authMode={deploymentInfo.authMode} cloudAuthUrl={deploymentInfo.cloudAuthUrl} selfHosted={deploymentInfo.selfHosted}>
+    <AuthProviders
+      authMode={deploymentInfo.authMode}
+      cloudAuthUrl={deploymentInfo.cloudAuthUrl}
+      selfHosted={deploymentInfo.selfHosted}
+      authProviders={remoteInstance ? [] : deploymentInfo.authProviders ?? []}
+      remoteInstance={remoteInstance}
+    >
       <div className="th-page">{children}</div>
     </AuthProviders>
   );

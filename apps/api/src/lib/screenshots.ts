@@ -11,7 +11,8 @@
  * Gracefully no-ops when the screenshot service is not configured.
  */
 
-import { env } from "../config/env";
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { env } from "@repo/platform/engine/config/env";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export async function captureScreenshot(
     clearTimeout(timer);
 
     if (!res.ok) {
-      console.error(`[screenshot] Service returned ${res.status}: ${await res.text()}`);
+      errorDiagnostics.error("api/lib/screenshots", `[screenshot] Service returned ${res.status}: ${await res.text()}`);
       return null;
     }
 
@@ -108,9 +109,9 @@ export async function captureScreenshot(
     };
   } catch (err) {
     if ((err as Error).name === "AbortError") {
-      console.warn(`[screenshot] Timed out after ${timeout}ms for ${url}`);
+      errorDiagnostics.warn("api/lib/screenshots", `[screenshot] Timed out after ${timeout}ms for ${url}`, err);
     } else {
-      console.error(`[screenshot] Failed to capture ${url}:`, err);
+      errorDiagnostics.error("api/lib/screenshots", `[screenshot] Failed to capture ${url}:`, err);
     }
     return null;
   }
@@ -159,14 +160,14 @@ async function uploadToCdn(imageUrl: string): Promise<string | null> {
     });
 
     if (!res.ok) {
-      console.error(`[screenshot] CDN upload failed: ${res.status}`);
+      errorDiagnostics.error("api/lib/screenshots", `[screenshot] CDN upload failed: ${res.status}`);
       return null;
     }
 
     const data = (await res.json()) as { url: string };
     return data.url;
   } catch (err) {
-    console.error("[screenshot] CDN upload error:", err);
+    errorDiagnostics.error("api/lib/screenshots", "[screenshot] CDN upload error:", err);
     return null;
   }
 }
@@ -183,7 +184,8 @@ export async function cleanupScreenshot(tempUrl: string): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: tempUrl }),
     });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/screenshots");
     // Best-effort cleanup
   }
 }

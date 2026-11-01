@@ -5,16 +5,18 @@
  * request that re-runs the full auth + permission stack (see mcp-dispatch.ts).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Hono, type Context } from "hono";
 import { repos, type Permission } from "@repo/db";
+import { isCapability, type Capability, type GrantPermission } from "@repo/core";
 import { secureRouter } from "../../lib/secure-router";
 import { parseBearerToken } from "../../lib/bearer";
 import {
-  MCP_RESOURCE_PATH,
   allowedMcpResources,
   canonicalizeResource,
   protectedResourceMetadataUrl,
   publicOriginFor,
+  requestMcpResourcePath,
 } from "../../lib/mcp-resource";
 import { readTokenAudience } from "../../lib/mcp-token";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
@@ -36,6 +38,7 @@ interface McpCaller {
   userId: string;
   /** Org the call acts in, default-resolved. Null → the user has none. */
   organizationId: string | null;
+  boundOrganizationId: string | null;
   /** A real personal_access_token row backs this caller (usage is countable). */
   hasBinding: boolean;
   tokenId: string;
@@ -52,23 +55,37 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
   // Same credential→identity lookup authMiddleware uses — one resolver, no fork.
   const id = await resolveBearerIdentity(token, headers);
   if (!id) return null;
+  if (id.scoped && !id.organizationId) return null;
 
   // Layer the capability on top: org (default-resolved), effective role, and —
   // for a scoped principal — the resource types it actually holds grants on.
-  const organizationId = await resolveActiveOrganizationId(id.userId, id.organizationId);
-  let role: McpPrincipal["role"] = "restricted";
-  if (!id.scoped && organizationId) {
-    const member = await repos.member.find(organizationId, id.userId);
-    role = (member?.role as McpPrincipal["role"]) ?? "restricted";
+  // A credential binding is an access boundary, never a fallback preference.
+  const organizationId = id.organizationId ?? await resolveActiveOrganizationId(id.userId, null);
+  if (!organizationId) return null;
+  const member = await repos.member.find(organizationId, id.userId);
+  if (!member) return null;
+  let role = id.scoped ? "restricted" : member.role as McpPrincipal["role"];
+  if (!id.organizationId) {
+    // Unbound credentials can explicitly select any current membership. List
+    // capabilities usable in any of them, even if the default is restricted.
+    // The dispatched request still checks the role in the chosen organization.
+    const roles = new Set((await repos.member.listByUser(id.userId)).map(membership => membership.role));
+    role = (["owner", "admin", "member"] as const).find(candidate => roles.has(candidate)) ?? "restricted";
   }
 
   let grantedRootTypes: ReadonlySet<string> = new Set();
-  let wildcardGrants: ReadonlyMap<string, readonly Permission[]> = new Map();
+  let wildcardGrants: ReadonlyMap<string, readonly GrantPermission[]> = new Map();
+  let grantedCapabilities: ReadonlySet<Capability> = new Set();
   let canCreateProjects = false;
   let sourceCapabilities: ReadonlySet<"content" | "write"> = new Set();
   if (role === "restricted" && id.hasBinding) {
     const grants = await repos.patGrant.listByToken(id.tokenId);
-    grantedRootTypes = new Set(grants.map((g) => g.resourceType));
+    // A capability-only grant (`{project, P, ["domains:read"]}`) reaches only its
+    // capability's routes, so it does not make the whole root type "granted".
+    grantedRootTypes = new Set(
+      grants.filter((g) => (g.permissions ?? []).some((p) => !isCapability(p))).map((g) => g.resourceType),
+    );
+    grantedCapabilities = new Set(grants.flatMap((g) => (g.permissions ?? []).filter(isCapability)));
     // Wildcard rows carry their permissions so the tool filter can answer the same
     // verb question the wildcard arm of `checkPermission` answers. One row per type
     // at most — `pat_grant_unique` is on (token, type, id).
@@ -105,12 +122,14 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
       readOnly: id.readOnly,
       grantedRootTypes,
       wildcardGrants,
+      grantedCapabilities,
       canCreateProjects,
       sourceCapabilities,
     },
     principalId: id.principalId,
     userId: id.userId,
     organizationId,
+    boundOrganizationId: id.organizationId,
     hasBinding: id.hasBinding,
     tokenId: id.tokenId,
   };
@@ -121,7 +140,7 @@ const PUBLIC_REASON =
 
 /**
  * Resource-server 401. `WWW-Authenticate` points at the PATH-AWARE Protected
- * Resource Metadata for the canonical MCP URL (RFC 9728 §5.1) — the root
+ * Resource Metadata for the requested MCP URL (RFC 9728 §5.1) — the root
  * document describes the origin, not this endpoint, and a strict client that
  * follows the pointer must land on metadata whose `resource` matches the URL it
  * connected to. Built from the PUBLIC origin (forwarded host), not the loopback
@@ -131,7 +150,7 @@ function unauthorized(c: Context, message: string) {
   return c.json(jsonRpcError(null, -32001, message), 401, {
     "WWW-Authenticate": `Bearer resource_metadata="${protectedResourceMetadataUrl(
       publicOriginFor(c.req.raw),
-      MCP_RESOURCE_PATH,
+      requestMcpResourcePath(c.req.raw),
     )}"`,
     "Access-Control-Expose-Headers": "WWW-Authenticate",
   });
@@ -192,7 +211,8 @@ r.public("post", "/", { reason: PUBLIC_REASON, rateLimit: "mcp" }, async (c) => 
   let payload: unknown;
   try {
     payload = await c.req.json();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/mcp/mcp.routes");
     return c.json(jsonRpcError(null, -32700, "Parse error"), 400);
   }
 
@@ -210,7 +230,9 @@ r.public("post", "/", { reason: PUBLIC_REASON, rateLimit: "mcp" }, async (c) => 
   // never-used in Settings. `tools/call` is excluded because its sub-request stamps
   // it in authMiddleware — counting both would double every tool call.
   if (caller.hasBinding && message?.method !== "tools/call") {
-    void repos.personalAccessToken.touchLastUsed(caller.tokenId).catch(() => {});
+    void repos.personalAccessToken.touchLastUsed(caller.tokenId).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/mcp/mcp.routes");
+    });
   }
 
   // Read off the OUTER request — a real HTTP request from the real client. The
@@ -222,6 +244,7 @@ r.public("post", "/", { reason: PUBLIC_REASON, rateLimit: "mcp" }, async (c) => 
   const res = await handleMcpMessage(message, {
     bearerToken: token,
     principal: caller.principal,
+    workspace: { organizationId: caller.organizationId, boundOrganizationId: caller.boundOrganizationId },
     origin: { principalId: caller.principalId, clientIp, userAgent },
     onToolCall: (record) =>
       recordToolCall(

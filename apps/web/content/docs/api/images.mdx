@@ -1,6 +1,6 @@
 ---
-title: Images API
-description: List the build-image catalog — the ready-made service images (databases, caches, and more) you can pick when adding a service.
+title: Container images
+description: Browse container images for project services.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -9,13 +9,6 @@ The Images API returns the **build-image catalog** — the curated list of ready
 (PostgreSQL, Redis, and friends) you pick from when adding a service to a project. In the dashboard this is
 the image grid in the **Add service** modal; it's a read-only lookup, so there's nothing to create or edit.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/images`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model and [security/auth](/docs/security/auth) for details.
-</Callout>
-
 <Callout title="Catalog comes from Openship Cloud" type="info">
 The module is available on every deploy mode (self-hosted, cloud, and desktop), but the catalog itself is
 served by Openship Cloud. On a **SaaS** instance it uses the master catalog; on a **self-hosted** instance
@@ -23,15 +16,6 @@ with a cloud account linked it uses your org's cloud token. On a self-hosted ins
 link, the endpoint returns an empty list with `cloudConnected: false` rather than an error — the dashboard
 falls back to the "Custom image" tile. Results are cached in memory for a few minutes.
 </Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/images` | authenticated | List available build/service images, optionally filtered by `?search=` and `?category=`. |
-
-This route carries no fine-grained permission tag — any authenticated member of the organization can read
-the catalog.
 
 ## List images
 
@@ -50,18 +34,12 @@ GET /api/images
 />
 
 ```bash
-curl https://your-host/api/images \
+curl "$OPENSHIP_URL/api/images" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 
 # With filters:
-curl "https://your-host/api/images?search=postgres&category=database" \
+curl "$OPENSHIP_URL/api/images?search=postgres&category=database" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
-```
-
-```bash
-# There's no dedicated CLI verb — reach the catalog through the raw API command:
-openship api /images
-openship api /images -q search=postgres -q category=database
 ```
 
 The response is `{ "success": true, "images": [ … ] }`. Each entry describes one catalog image; common fields
@@ -69,7 +47,7 @@ are `id` (slug you pick), `name` (display name), `image` (the Docker image strin
 `category`, `logo`, `tags`, `ports`, and `defaultEnv` (suggested env keys). Additional fields returned by the
 upstream catalog are passed through unchanged for forward compatibility.
 
-## Errors you might see
+## Errors
 
 <Callout title="Empty catalog with cloudConnected: false" type="info">
 Not an error. On a self-hosted instance with no cloud account linked, the response is
@@ -86,3 +64,13 @@ moment; the result is cached once fetched.
 No valid session cookie or bearer token was supplied. Create a token with
 [`openship token create`](/docs/cli/access) and send it as `Authorization: Bearer <token>`.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| List available build/service images, optionally filtered by `?search=` and `?category=`. | `GET /api/images`<br />`Authenticated` |
+
+{/* api-operations:end */}

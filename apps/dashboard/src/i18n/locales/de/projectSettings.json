@@ -1,4 +1,139 @@
 {
+  "appInstall": {
+    "configurationLoading": "App-Konfiguration wird geladen…",
+    "catalogLoadFailed": "Die App-Details konnten nicht geladen werden. Versuche es vor der Installation erneut.",
+    "routingLoadFailed": "Die gespeicherten Routing-Einstellungen konnten nicht geladen werden. Versuche es vor der Installation erneut.",
+    "retryConfiguration": "Erneut versuchen",
+    "hostFitHint": "Du kannst fortfahren. Die Leistung auf diesem Rechner kann eingeschränkt sein.",
+    "cloudFitTitle": "Diese App benötigt einen größeren Cloud-Tarif",
+    "upgradePlan": "Tarif upgraden",
+    "checkingCapacity": "Kapazität wird geprüft…",
+    "checkCapacityAgain": "Erneut prüfen",
+    "cloudFitUnavailable": "Die Kapazität konnte nicht geprüft werden. Sie wird beim Deployment erneut geprüft.",
+    "withoutDomainsTitle": "Ohne Domains fortfahren?",
+    "withoutDomainsBody": "Diese Web-Endpunkte sind nur über ihre veröffentlichten Ports erreichbar. Du kannst später im Projekt Domains hinzufügen.",
+    "withoutDomainsCloudBody": "Diese Web-Endpunkte haben auf Cloud keine öffentliche URL. Andere Dienste dieser App können sie weiterhin erreichen. Du kannst später im Projekt Domains hinzufügen.",
+    "addDomains": "Domains hinzufügen",
+    "continueWithoutDomains": "Ohne Domains fortfahren",
+    "generatedDomainsTitle": "Kostenlose Domains verwenden?",
+    "generatedDomainsBody": "Diese Endpunkte erhalten kostenlose öffentliche URLs. Du kannst die Namen vor der Installation selbst wählen.",
+    "useGeneratedDomains": "Kostenlose Domains nutzen",
+    "editDomains": "Domains bearbeiten",
+    "routePortCloudDesc": "Nur innerhalb dieses Cloud-Workspaces erreichbar. Füge eine Domain für eine öffentliche URL hinzu.",
+    "exposeTitle": "Domains und Routing",
+    "install": "Installieren",
+    "installing": "Wird installiert…",
+    "advanced": "Erweiterte Bereitstellungsoptionen",
+    "nameLabel": "Name",
+    "nameHint": "Wie diese App in Openship angezeigt wird.",
+    "domainTitle": "Wo soll sie erreichbar sein?",
+    "domainFree": "Kostenlose Subdomain",
+    "domainFreeHint": "Eine kostenlose Subdomain auf {domain}",
+    "domainCustom": "Eigene Domain",
+    "domainCustomPlaceholder": "app.beispiel.de",
+    "domainNone": "Keine öffentliche URL",
+    "domainNoneHint": "Nur intern — keine öffentliche Adresse.",
+    "customRequired": "Geben Sie Ihre Domain ein oder wählen Sie eine andere Option.",
+    "progressPreparing": "Wird vorbereitet…",
+    "progressDeploying": "Wird bereitgestellt…",
+    "progressLive": "Ihre App ist online",
+    "openApp": "App öffnen",
+    "goToApp": "Zur App",
+    "installFailed": "Installation fehlgeschlagen",
+    "installFailedBody": "Der Vorgang wurde gestoppt, bevor alles lief. Die technischen Details enthalten das vollständige Build-Protokoll.",
+    "installCancelledSelf": "Sie haben diese Installation abgebrochen.",
+    "installCancelledBody": "Die erstellten Container und Images wurden entfernt, und Daten-Volumes wurden beibehalten — eine erneute Installation verwendet sie wieder. Alles, was bereits aktiv war, blieb unberührt.",
+    "settledAtPhase": "Gestoppt bei {phase}",
+    "viewDetails": "Technische Details anzeigen",
+    "showLogs": "Logs anzeigen",
+    "hideLogs": "Logs ausblenden",
+    "deployLogs": "Deployment-Logs",
+    "logsWaiting": "Warte auf Ausgabe…",
+    "logsEmpty": "Keine Ausgabe erfasst.",
+    "back": "Zurück",
+    "phaseImages": "Images vorbereiten",
+    "phaseServices": "Dienste starten",
+    "phaseAppSetup": "Einrichtung abschließen",
+    "phaseReady": "Aktiv",
+    "phaseQueued": "In Warteschlange…",
+    "stepperTitle": "Installationsschritte",
+    "firstLoginTitle": "Erstanmeldung",
+    "firstLoginUser": "Benutzername",
+    "firstLoginPassword": "Passwort",
+    "destinationTitle": "Ziel der Installation",
+    "destinationHint": "Wählen Sie den Server oder die Cloud, auf dem diese App ausgeführt wird.",
+    "descMore": "Mehr",
+    "descLess": "Weniger",
+    "needsTitle": "Ressourcenbedarf",
+    "needsMemory": "{value} RAM",
+    "needsCpu": "{value}",
+    "hostFitTitle": "Dieser Server ist kleiner als für {app} erforderlich",
+    "hostFitMemory": "Benötigt {needed} RAM — dieser verfügt über {available}",
+    "hostFitCpu": "Benötigt {needed} — dieser verfügt über {available}",
+    "routePortLabel": "Nur Port (keine Domain)",
+    "routePortDesc": "Über Hostadresse und Port erreichbar — keine Domain oder Cloud erforderlich.",
+    "routeFreeLabel": "Kostenlose Subdomain",
+    "routeFreeDesc": "Eine kostenlose Subdomain auf {domain}, weitergeleitet über Openship Cloud.",
+    "routeFreeNeedsCloud": "Verbinden Sie Openship Cloud, um eine kostenlose Subdomain zu nutzen.",
+    "routeCustomLabel": "Eigene Domain",
+    "routeCustomDesc": "Leiten Sie eine eigene Domain auf diese App weiter.",
+    "routeDomainLabel": "Domain",
+    "routeDomainDesc": "Über eine Domain erreichbar — eine kostenlose Subdomain oder Ihre eigene.",
+    "httpBadge": "Web",
+    "tcpBadge": "Datenbank",
+    "tcpPublishLabel": "Port veröffentlichen",
+    "tcpPublishDesc": "Auf dem Host veröffentlichen, damit externe Tools eine Verbindung herstellen können.",
+    "tcpInternalLabel": "Nur intern",
+    "tcpInternalDesc": "Nur andere Dienste in dieser App können darauf zugreifen.",
+    "tcpFirewallNote": "Öffnen Sie Port {port} in der Firewall Ihres Servers für externe Verbindungen.",
+    "desktopReachNote": "Auf dem Desktop können Sie sie über localhost öffnen — oder den Port unter Server → Ports für einen Remote-Server weiterleiten.",
+    "statusInstalling": "Wird installiert",
+    "statusLive": "Online",
+    "statusCancelled": "Abgebrochen",
+    "statusFailed": "Fehlgeschlagen",
+    "stopInstall": "Installation abbrechen",
+    "stopping": "Wird gestoppt…",
+    "installCancelled": "Installation abgebrochen",
+    "startOver": "Neu beginnen",
+    "breadcrumbApps": "Apps",
+    "appEyebrow": "App",
+    "stopFailed": "Installation konnte nicht abgebrochen werden",
+    "progressStep": "Schritt {current} von {total}",
+    "progressServicesReady": "{done} von {total} Diensten bereit",
+    "summaryTitle": "Konfiguration",
+    "summaryDestination": "Ziel",
+    "summaryServices": "Dienste",
+    "mail": {
+      "title": "E-Mail einrichten",
+      "subtitle": "Stellen Sie Webmail auf Ihrer eigenen Domain bereit oder verbinden Sie ein bestehendes Postfach.",
+      "chooseSelf": "Eigenen Mailserver hosten",
+      "chooseSelfDesc": "Vollständiges SMTP/IMAP + Webmail (iRedMail) auf Ihrem Server — wir richten alles ein.",
+      "chooseConnect": "Bestehendes Postfach verbinden",
+      "chooseConnectDesc": "Nur die Webmail-Oberfläche bereitstellen, angebunden an einen externen SMTP/IMAP-Anbieter — Amazon SES, Oracle Cloud, Gmail, Fastmail und weitere.",
+      "provider": "Anbieter",
+      "presets": {
+        "custom": "Benutzerdefiniert",
+        "ses": "Amazon SES",
+        "gmail": "Gmail",
+        "fastmail": "Fastmail"
+      },
+      "sendOnlyNote": "{provider} sendet nur E-Mails — enthält keine Postfächer. IMAP muss dorthin verweisen, wo Ihre E-Mails tatsächlich gespeichert sind.",
+      "sendOnlyNoInbox": "Noch kein Posteingang? Richten Sie hier einen Mailserver ein und leiten Sie den Versand über {provider} weiter →",
+      "imapOnOurServer": "Postfächer lesen von {host} — dem eigenen Mailserver dieser Instanz. Nur der Versand läuft über {provider}.",
+      "relayNote": "Diese Instanz betreibt bereits einen Mailserver. Wenn die Postfächer darauf liegen, leiten Sie den Versand stattdessen über den Tab Zustellung → Versand weiter: IMAP bleibt lokal und nur der Versand geht an {provider}, pro Domain oder pro Adresse, und das eigene Webmail funktioniert weiterhin.",
+      "relayCta": "Stattdessen Relay konfigurieren →",
+      "hostname": "Webmail-Adresse",
+      "hostnameHint": "Die öffentliche URL zum Lesen von E-Mails, z. B. mail.example.com.",
+      "imapHost": "IMAP-Host",
+      "imapPort": "IMAP-Port",
+      "smtpHost": "SMTP-Host",
+      "smtpPort": "SMTP-Port",
+      "deploy": "Webmail bereitstellen",
+      "deploying": "Wird bereitgestellt…",
+      "hostnameRequired": "Geben Sie die Webmail-Adresse ein.",
+      "hostsRequired": "Geben Sie sowohl IMAP- als auch SMTP-Host ein."
+    }
+  },
   "settingSection": {
     "edit": "Bearbeiten",
     "save": "Speichern",
@@ -240,28 +375,34 @@
         "failed": "Interner Hostname konnte nicht aktualisiert werden",
         "invalid": "Gib mindestens einen Buchstaben oder eine Ziffer ein"
       }
+    },
+    "export": {
+      "title": "Projekt exportieren",
+      "description": "Alle Projekteinstellungen, Umgebungswerte und Anmeldedaten als JSON herunterladen."
     }
   },
   "backup": {
     "live": {
-      "title": "Live-Backup",
+      "title": "Backup-Aktivität",
       "description": "Echtzeit-Fortschritt für den soeben gestarteten Lauf. Übersteht ein Neuladen der Seite.",
       "dismiss": "Ausblenden"
     },
     "destinations": {
       "title": "Backup-Ziele",
-      "description": "Speicherziele pro Benutzer. Fügen Sie S3-kompatible Buckets, SFTP-Server oder lokale Festplatten hinzu.",
+      "description": "Verfügbare Speicherziele für dieses Projekt.",
       "manage": "Verwalten",
       "loading": "Wird geladen…",
       "emptyPrefix": "Noch keine Ziele. ",
       "emptyLink": "Eines erstellen",
       "emptySuffix": ", um mit dem Sichern zu beginnen.",
       "verified": "Verifiziert",
-      "failed": "Fehlgeschlagen"
+      "failed": "Fehlgeschlagen",
+      "emptyHint": "Verbinde einen S3-Bucket, einen SFTP-Host oder einen vorhandenen Server.",
+      "inUse": "In Verwendung"
     },
     "services": {
-      "title": "Dienste + Richtlinien",
-      "description": "Jeder Dienst kann seine eigene Backup-Richtlinie haben (Zeitplan + Ziel). Projektweite Standardwerte kommen in Chunk 2.",
+      "title": "Backup-Richtlinien",
+      "description": "Wähle die Daten, den Zeitplan und das Speicherziel.",
       "refresh": "Aktualisieren",
       "empty": "Dieses Projekt hat noch keine Dienste. Backups auf Dienstebene erscheinen hier, sobald Sie welche hinzufügen.",
       "policyLabel": "Richtlinie:",
@@ -273,22 +414,54 @@
       "editPolicy": "Richtlinie bearbeiten",
       "addDestinationFirst": "Zuerst ein Ziel hinzufügen",
       "createPolicyHint": "Eine Backup-Richtlinie für diesen Dienst erstellen",
-      "createPolicy": "Richtlinie erstellen"
+      "createPolicy": "Richtlinie erstellen",
+      "projectHint": "Eine Richtlinie für alle Services dieses Projekts.",
+      "includedInProject": "In der Projektrichtlinie enthalten.",
+      "retainCount": "{count} Backups behalten",
+      "retainDays": "Bis zu {days} Tage"
     },
     "recent": {
+      "loadOlder": "Ältere Backups laden",
       "title": "Letzte Backups",
-      "description": "Die 25 letzten Läufe über alle Dienste in diesem Projekt.",
+      "description": "Letzte Sicherungen, Ergebnisse und Wiederherstellungsoptionen.",
       "loading": "Wird geladen…",
       "empty": "Noch keine Backups.",
       "protectedTitle": "Vor dem Aufräumen durch Aufbewahrung geschützt",
       "protected": "Geschützt",
       "restoreTitle": "Aus diesem Backup wiederherstellen",
       "allowPrune": "Aufräumen durch Aufbewahrung erlauben",
-      "protectFrom": "Vor Aufbewahrung schützen"
+      "protectFrom": "Vor Aufbewahrung schützen",
+      "emptyHint": "Erstelle eine Richtlinie und starte hier dein erstes Backup.",
+      "backup": "Sicherung",
+      "viewDetails": "Details anzeigen",
+      "restore": "Wiederherstellen",
+      "triggers": {
+        "manual": "Bei Bedarf",
+        "cron": "Geplant",
+        "webhook": "Webhook",
+        "pre_deploy": "Vor dem Deployment"
+      }
     },
     "toast": {
       "runFailed": "Backup-Lauf fehlgeschlagen",
       "toggleProtectionFailed": "Umschalten des Schutzes fehlgeschlagen"
+    },
+    "overview": {
+      "description": "Plane Backups und stelle deine Projektdaten wieder her.",
+      "lastBackup": "Letztes erfolgreiches Backup",
+      "noRecentBackup": "Kein aktuelles Backup",
+      "scheduledPolicies": "Geplante Richtlinien",
+      "projectScope": "Gesamtes Projekt",
+      "serviceBackup": "Service-Backup",
+      "paused": "Pausiert",
+      "loadFailed": "Backups konnten nicht geladen werden"
+    },
+    "schedule": {
+      "daily": "Täglich um {time}",
+      "weekly": "Jeden {day} um {time}",
+      "monthly": "Am {day}. jedes Monats, {time}",
+      "custom": "Eigener Zeitplan",
+      "timezone": "Verwendet die Zeitzone des Servers."
     }
   },
   "build": {
@@ -365,8 +538,8 @@
       "appliesOnDeploy": "Wird beim nächsten Deploy angewendet."
     },
     "env": {
-      "title": "Umgebungsvariablen",
-      "description": "Verschlüsselt gespeichert. Geheimnisse bleiben maskiert — nur die von Ihnen geänderten Werte werden geschrieben.",
+      "title": "Projektumgebung (Build und gemeinsame Laufzeit)",
+      "description": "Wird für Image-Builds und als gemeinsame Laufzeiteingabe verwendet. Compose-Werte und dienstspezifische Laufzeitwerte haben zur Laufzeit Vorrang. Geheimnisse bleiben verborgen.",
       "edit": "Bearbeiten"
     }
   },
@@ -375,10 +548,10 @@
     "saveChanges": "Änderungen speichern",
     "close": "Schließen",
     "applyTitle": "Ohne Neubau anwenden",
-    "applyText": "Gespeichert. Wenden Sie diese auf den laufenden Dienst an — er startet mit der neuen Umgebung neu, ohne Klon oder Neubau.",
+    "applyText": "Gespeichert. Neustarten, um Laufzeitänderungen anzuwenden. Erneut bauen und bereitstellen, um beim Image-Build verwendete Werte anzuwenden.",
     "applyButton": "Anwenden (Neustart, kein Neubau)",
-    "title": "Umgebungsvariablen",
-    "description": "Produktion. Verschlüsselt gespeichert. Geheimnisse werden als gesetzt angezeigt — tippen zum Ersetzen; leer lassen zum Beibehalten.",
+    "title": "Projektumgebung (Build und gemeinsame Laufzeit)",
+    "description": "Produktionsvariablen des Projekts. Geheimnisse bleiben verborgen; ein gespeichertes Geheimnis leer lassen, um es beizubehalten. Dienstwerte haben bei gleichem Schlüssel Vorrang.",
     "empty": "Noch keine Umgebungsvariablen.",
     "keyPlaceholder": "KEY",
     "secretPlaceholder": "•••••••• (gesetzt — tippen zum Ersetzen)",
@@ -436,6 +609,7 @@
       "install": "GitHub App installieren"
     },
     "webhookBanner": {
+      "summary": "Öffentlicher Endpunkt erforderlich",
       "title": "Auto-Deploy aktivieren",
       "description": "Auto-Deploy benötigt einen direkten Webhook-Endpunkt. Stellen Sie diese Openship API unter einer öffentlichen URL bereit oder konfigurieren Sie eine verifizierte Webhook-Domain für die direkte Zustellung."
     },
@@ -452,6 +626,11 @@
       "updating": "Wird aktualisiert...",
       "select": "Domain auswählen...",
       "clear": "Auswahl aufheben"
+    },
+    "buildQueue": {
+      "label": "Überholte Builds abbrechen",
+      "description": "Nur den neuesten ausstehenden Push behalten. Wenn aktiviert, bricht ein neuer Push auch einen älteren automatischen Build vor den Release-Schritten ab. Manuelle Deployments und Rollbacks bleiben erhalten.",
+      "saveFailed": "Einstellung zum Build-Abbruch konnte nicht gespeichert werden"
     },
     "autoDeployCard": {
       "title": "Auto-Deploy",
@@ -474,13 +653,13 @@
       "title": "Rollback-Strategie",
       "rebuild": "Neubau (Git)",
       "instant": "Sofort (Snapshot)",
-      "descRebuild": "Baut den alten Commit neu, sofern dessen Image nicht noch auf dem Host liegt.",
-      "descInstant": "Behält das Image jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher.",
+      "descRebuild": "Baut den früheren Commit neu, sofern sein Image nicht mehr auf dem Host liegt.",
+      "descInstant": "Bewahrt Artefakte bis zum Verlaufslimit auf. Ältere Versionen müssen eventuell neu gebaut werden.",
       "toggleAria": "Snapshot-Aufbewahrung umschalten",
-      "keepNone": "Keine Extra-Kopien",
-      "keepCopies": "Eine Kopie pro Version",
-      "descRebuildFiles": "Baut den alten Commit neu, sofern dessen Dateien nicht noch auf dem Host liegen.",
-      "descInstantFiles": "Behält die Dateien jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher."
+      "keepNone": "Images wiederverwenden oder neu bauen",
+      "keepCopies": "Rollback-Artefakte aufbewahren",
+      "descRebuildFiles": "Baut den früheren Commit neu, sofern seine Dateien nicht mehr auf dem Host liegen.",
+      "descInstantFiles": "Bewahrt Build-Dateien bis zum Verlaufslimit auf. Ältere Versionen müssen eventuell neu gebaut werden."
     },
     "rollbackHistory": {
       "title": "Rollback-Verlauf",
@@ -490,13 +669,19 @@
       "descGit": "Aktuelle Images bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
       "decreaseAria": "Rollback-Verlauf verringern",
       "increaseAria": "Rollback-Verlauf erhöhen",
-      "sizeEach": "~{size} pro Version",
+      "sizeEach": "~{size} pro Image, einschließlich gemeinsam genutzter Schichten",
       "diskFree": "{size} frei",
-      "autoBadge": "automatisch bemessen",
+      "autoBadge": "Automatisch",
       "manualBadge": "manuell gesetzt",
       "kindFiles": "gebaute Dateien auf der Platte",
       "kindImages": "Images auf dem Host",
-      "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann."
+      "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
+      "retentionHint": "Artefakte neuerer Bereitstellungen für ein schnelles Rollback aufbewahren.",
+      "retentionDescription": "Maximale Anzahl aufzubewahrender früherer Versionen. Aktive und angeheftete Versionen zählen zusätzlich. Ältere Artefakte werden entfernt; der Bereitstellungsverlauf bleibt verfügbar. Bei 0 bleiben nur aktive und angeheftete Versionen erhalten.",
+      "automaticValue": "Bis zu {count} Versionen",
+      "automaticDescription": "Behält höchstens die standardmäßig festgelegte Anzahl früherer Versionen. Bei wenig Speicherplatz können wiederherstellbare Artefakte früher entfernt werden. Aktive und angeheftete Versionen zählen zusätzlich. Commit- und Konfigurationsverlauf bleiben erhalten; ein Rollback kann einen erneuten Build erfordern.",
+      "defaultBadge": "Instanzstandard",
+      "loadFailed": "Rollback-Einstellungen konnten nicht geladen werden."
     },
     "commits": {
       "title": "Letzte Commits",
@@ -559,7 +744,7 @@
   },
   "resources": {
     "title": "Maschinenleistung",
-    "description": "CPU- und Speichergrenzen für die Container dieses Projekts.",
+    "description": "Projekte teilen diesen Server. CPU- oder RAM-Limits nur bei Bedarf setzen.",
     "loading": "Zielmaschine wird gelesen …",
     "unavailable": "Maschinenleistung nicht verfügbar",
     "loadFailed": "Maschinenleistung konnte nicht geladen werden",
@@ -569,9 +754,9 @@
     "appliesOnNextDeploy": "Grenzen werden beim Neuerstellen des Containers angewendet – für eine Änderung neu deployen.",
     "tiers": {
       "unlimited": {
-        "name": "Keine Grenzen",
-        "description": "Die ganze Maschine nutzen (Standard)",
-        "spec": "Maschinenkapazität"
+        "name": "Volle Kapazität",
+        "description": "Verfügbare CPU und RAM des Servers nutzen (Standard)",
+        "spec": "Mit anderen Projekten geteilt"
       },
       "micro": {
         "name": "Micro",
@@ -613,6 +798,10 @@
       "updated": "Maschinenleistung aktualisiert",
       "updateFailed": "Maschinenleistung konnte nicht aktualisiert werden",
       "invalidValues": "CPU und Speicher müssen 0 oder eine positive Zahl sein"
+    },
+    "customized": {
+      "name": "Angepasst",
+      "description": "Voreinstellung wählen oder eigene Limits festlegen"
     }
   },
   "sleep": {
@@ -665,7 +854,12 @@
     "linkedTitleOne": "{count} Projekt ist mit dieser App verbunden",
     "linkedTitleOther": "{count} Projekte sind mit dieser App verbunden",
     "linkedNote": "Sie laufen mit unveränderten Daten weiter – nur diese Verbindung entfällt. Deploye sie neu, damit das greift.",
-    "linkedNoteRecordOnly": "Sie laufen weiter, aber die Verknüpfung verschwindet mit dem Eintrag – ein späterer Re-Import stellt sie nicht wieder her."
+    "linkedNoteRecordOnly": "Sie laufen weiter, aber die Verknüpfung verschwindet mit dem Eintrag – ein späterer Re-Import stellt sie nicht wieder her.",
+    "recordOnlyLabel": "Nur aus Openship entfernen",
+    "recordOnlyDesc": "Lässt die App und ihre Daten auf Ihrem Server weiterlaufen — nur der Openship-Eintrag wird entfernt. Sie können sie später wieder importieren.",
+    "recordOnlyReversible": "Umkehrbar — die App bleibt auf Ihrem Server.",
+    "recordOnlyNote": "Auf dem Server wird nichts verändert — die App läuft mit ihren Daten weiter. Nur der Eintrag in Openship wird entfernt und kann später erneut importiert werden.",
+    "confirmRecordOnly": "Eintrag entfernen"
   },
   "routing": {
     "title": "Routing",
@@ -686,21 +880,25 @@
       "active": "Aktiv",
       "failed": "Fehlgeschlagen",
       "removing": "Wird entfernt",
-      "pending": "Ausstehend"
+      "pending": "Ausstehend",
+      "waiting": "Wartet"
     },
     "ssl": {
       "includedByHost": "Vom Host inbegriffen",
       "active": "Aktiv",
-      "provisioning": "Wird bereitgestellt",
+      "provisioning": "Wartet auf Zertifikat",
       "expired": "Abgelaufen",
       "error": "Fehler",
-      "inactive": "Inaktiv"
+      "inactive": "Inaktiv",
+      "unknown": "Unbekannt",
+      "external": "Externes TLS",
+      "manual": "Manuelles Zertifikat"
     },
     "typeCustom": "Benutzerdefinierte Domain",
     "typeFree": "Kostenlose Subdomain",
     "primaryDomainTitle": "Primäre Domain",
     "domainNTitle": "Domain {n}",
-    "portLabel": "Port {port}",
+    "portLabel": "Port: {port}",
     "noPortSelected": "Kein Port ausgewählt",
     "meta": {
       "accessTitle": "Zugriffs-URL",
@@ -738,12 +936,18 @@
       "mapsToPort": "Verweist auf Port",
       "includeWww": "www einbeziehen",
       "dnsChallenge": "DNS-01-Challenge verwenden",
-      "dnsChallengeDesc": "Zertifikat über den verbundenen DNS-Anbieter ausstellen und erneuern. Verwenden, wenn Port 80 nicht erreichbar ist.",
-      "dnsChallengeWildcardDesc": "Wildcard-Zertifikate erfordern DNS-01 und einen verbundenen DNS-Anbieter.",
+      "dnsChallengeDesc": "Über einen DNS-Anbieter oder einen temporären TXT-Eintrag verifizieren. Hilfreich, wenn Port 80 nicht erreichbar ist.",
+      "dnsChallengeWildcardDesc": "Für Wildcard-HTTPS erforderlich. Verwende einen verbundenen DNS-Anbieter oder füge beim Einrichten von HTTPS einen temporären TXT-Eintrag hinzu.",
       "includeWwwDesc": "Auch Einträge für www.{domain} erzeugen",
       "includeWwwFallback": "ihredomain.de",
       "adding": "Wird hinzugefügt...",
-      "submit": "Domain hinzufügen"
+      "submit": "Domain hinzufügen",
+      "noWww": "Diese Domain ist diesem Projekt bereits hinzugefügt.",
+      "servesPath": "Bereitstellungspfad",
+      "servesPathHint": "Anfragen an diese Domain werden von diesem Pfad in Ihrer Build-Ausgabe bedient.",
+      "servesPathRedeploy": "Neue Pfade werden bei Ihrem nächsten Deployment wirksam.",
+      "externalIngress": "Externer Ingress & TLS",
+      "externalIngressDesc": "TLS terminiert an Ihrem Reverse-Proxy (Cloudflare Tunnel, Nginx Proxy Manager oder ein Load-Balancer). Die Domain muss nicht auf diesen Server zeigen, und Openship stellt kein Zertifikat aus."
     },
     "dns": {
       "title": "DNS-Einträge",
@@ -795,7 +999,8 @@
       "title": "Route bearbeiten",
       "internalOnly": "Nur intern",
       "close": "Schließen",
-      "disabledWarning": "Der Dienst ist deaktiviert – Routen sind inaktiv, bis der Dienst wieder aktiviert wird."
+      "disabledWarning": "Der Dienst ist deaktiviert – Routen sind inaktiv, bis der Dienst wieder aktiviert wird.",
+      "save": "Änderungen speichern"
     },
     "menu": {
       "editRoute": "Route bearbeiten",
@@ -806,7 +1011,8 @@
       "renewing": "Wird erneuert...",
       "renewSsl": "SSL erneuern",
       "rechecking": "Wird erneut geprüft...",
-      "recheckSsl": "SSL erneut prüfen"
+      "recheckSsl": "SSL erneut prüfen",
+      "uploadCert": "Zertifikat hochladen"
     },
     "toast": {
       "enterPort": "Geben Sie den Port ein, an den diese Domain weiterleiten soll (1–65535).",
@@ -837,7 +1043,11 @@
       "enterPortShort": "Geben Sie den Port ein, an den diese Domain weiterleiten soll.",
       "noServicePort": "Kein Dienst veröffentlicht Port {port}. Fügen Sie diesen Port zuerst einem Dienst hinzu.",
       "enterCustom": "Geben Sie eine benutzerdefinierte Domain ein.",
-      "enterSubdomain": "Geben Sie eine Subdomain ein."
+      "enterSubdomain": "Geben Sie eine Subdomain ein.",
+      "certUploaded": "Zertifikat für {hostname} installiert.",
+      "certUploadFailed": "Installation des Zertifikats für {hostname} fehlgeschlagen.",
+      "publishing": "Veröffentlichung läuft — Deployment zur Installation des Edge und Anwendung Ihrer Domain…",
+      "publishFailed": "Domain gespeichert, aber Deployment wurde nicht gestartet — erneut deployen, um sie zu veröffentlichen."
     },
     "edge": {
       "setUp": "Edge einrichten",
@@ -847,19 +1057,225 @@
       "foreignProxyHint": "Ein anderer Proxy belegt 80/443"
     },
     "diagnosis": {
-      "title": "Warum das nicht funktioniert",
+      "title": "Domain-Details",
       "noneYet": "Es wurde noch keine Prüfung ausgeführt, daher gibt es kein Ergebnis. Fügen Sie die angezeigten DNS-Einträge hinzu und führen Sie dann „Verifizieren“ aus.",
       "attempts": "Bisher {count} fehlgeschlagene Versuche.",
-      "pillHint": "Grund anzeigen"
+      "pillHint": "Grund anzeigen",
+      "lastChecked": "Letzte Prüfung:",
+      "nextCheck": "Nächste geplante Prüfung:",
+      "scheduleHint": "Prüfungen laufen, solange diese Instanz online ist. Wartende Aufgaben können den Start verzögern.",
+      "automaticDisabled": "Automatische Domain-Prüfungen sind deaktiviert. Wiederhole die Prüfung manuell oder aktiviere sie unter Aufgaben.",
+      "scheduleUnavailable": "Der Zeitplan für automatische Prüfungen ist nicht verfügbar. Du kannst die Prüfung manuell wiederholen.",
+      "retryNow": "Jetzt erneut versuchen",
+      "checking": "Wird geprüft…",
+      "reasons": {
+        "verification": "Die Domain-Prüfung ist noch nicht abgeschlossen. Prüfe die DNS-Einträge vor einem erneuten Versuch.",
+        "certificate": "HTTPS muss auf dem zuständigen Server geprüft werden. Vor der Anforderung eines neuen Zertifikats wird nach einem vorhandenen gesucht.",
+        "deployment": "Diese Route wartet auf eine Bereitstellung. Stelle das Projekt bereit, um sie anzuwenden.",
+        "disabled": "Dieses Projekt oder dieser Dienst ist deaktiviert. Aktiviere es vor der Routenprüfung.",
+        "removing": "Diese Domain wird entfernt. Es ist keine Prüfung geplant.",
+        "manual_certificate": "Diese Domain verwendet ein hochgeladenes Zertifikat. Lade einen gültigen Ersatz hoch und prüfe ihn erneut. Openship erneuert es nicht automatisch.",
+        "managed_certificate": "TLS wird von deinem externen Proxy oder Openship Cloud verwaltet. Prüfe die Konfiguration dieses Anbieters.",
+        "route_missing": "Diese konfigurierte Route wurde noch nicht angewendet. Wiederhole die Routing-Aktion. Es ist kein automatischer Routing-Versuch geplant.",
+        "manual_dns": "Dieses Zertifikat verwendet die manuelle TXT-Verifizierung. Öffne die HTTPS-Einrichtung, um einen neuen TXT-Eintrag zu bestätigen, oder wähle einen verbundenen DNS-Anbieter für die automatische Erneuerung.",
+        "managed_owner": "Dieser Hostname und sein Zertifikat werden vom zugehörigen Dienst verwaltet. Prüfe die Domain-Einstellungen dieses Dienstes."
+      }
     },
     "records": {
       "failed": "Die DNS-Einträge für diese Domain konnten nicht geladen werden.",
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "toggle": "DNS-Einträge",
+      "hint": "Fügen Sie diese bei Ihrem DNS-Anbieter hinzu und klicken Sie dann auf Überprüfen.",
+      "loading": "Einträge werden geladen…",
+      "none": "Keine Einträge für diese Domain hinzuzufügen."
     },
     "outputHint": {
       "body": "Keine Build-Ausgabe unter {path} gefunden — prüfen Sie Ihr Ausgabeverzeichnis und deployen Sie erneut.",
       "noIndex": "Unter {path} liegt eine Ausgabe, aber keine Index-Datei — Anfragen liefern 404. Prüfen Sie Ihr Ausgabeverzeichnis.",
       "notServed": "Der Edge-Proxy antwortete mit HTTP {status} für {path} — dieser Pfad wird nicht ausgeliefert. Prüfen Sie Ihr Ausgabeverzeichnis und die Route."
+    },
+    "wildcard": {
+      "title": "HTTPS mit DNS-Verifizierung",
+      "scope": "Eine Wildcard deckt eine Subdomain-Ebene ab. Füge die Basisdomain separat hinzu, wenn sie diese App ebenfalls bereitstellen soll.",
+      "notice": "Wildcard-HTTPS erfordert eine DNS-Verifizierung. Verbinde nach dem Speichern einen DNS-Anbieter oder füge den TXT-Eintrag aus der HTTPS-Einrichtung hinzu.",
+      "automatic": "Automatischer Anbieter",
+      "manual": "TXT manuell",
+      "automaticHint": "Verbinde Cloudflare unter Einstellungen → DNS, um Zertifikatsnachweise zu erstellen und HTTPS automatisch zu erneuern.",
+      "manualHint": "Füge bei deinem DNS-Anbieter einen temporären TXT-Eintrag hinzu. Jede Erneuerung benötigt einen neuen TXT-Eintrag; Openship zeigt an, wann sie fällig ist.",
+      "routing": "1. Die Domain auf diesen Server verweisen",
+      "certificate": "2. HTTPS aktivieren",
+      "startAutomatic": "HTTPS automatisch aktivieren",
+      "startManual": "TXT-Eintrag abrufen",
+      "renew": "Zertifikat erneuern",
+      "check": "TXT prüfen und HTTPS aktivieren",
+      "cancel": "Verifizierung abbrechen",
+      "refresh": "Status aktualisieren",
+      "close": "Einrichtung schließen",
+      "loading": "Zertifikatseinrichtung wird geladen",
+      "loadFailed": "Die Zertifikatseinrichtung konnte nicht geladen werden. Versuche es erneut, um den aktuellen Status zu sehen.",
+      "recordsFailed": "Die DNS-Routing-Einträge konnten nicht geladen werden. Dein gespeicherter Zertifikatsnachweis ist weiterhin verfügbar.",
+      "actionFailed": "Die Zertifikatseinrichtung konnte nicht aktualisiert werden.",
+      "expires": "Schließe diese Verifizierung bis {date} ab.",
+      "txtHint": "Füge genau diesen TXT-Wert hinzu. Behalte andere TXT-Werte unter demselben Namen bei. Wenn dein Anbieter den Zonennamen ergänzt, gib nur den relativen Teil ein.",
+      "cleanup": "Du kannst den TXT-Wert dieses Versuchs entfernen. Behalte alle anderen TXT-Einträge bei.",
+      "logs": "Zertifikatsprotokolle",
+      "states": {
+        "preparing": "Zertifikatsnachweis wird vorbereitet…",
+        "waiting": "Warten auf deinen TXT-Eintrag",
+        "checking": "DNS und Zertifikatsinhaberschaft werden geprüft…",
+        "installing": "HTTPS wird aktiviert…",
+        "cancelling": "Verifizierung wird abgebrochen…",
+        "completed": "HTTPS ist bereit",
+        "failed": "Die Zertifikatseinrichtung erfordert Aufmerksamkeit",
+        "cancelled": "Verifizierung abgebrochen",
+        "expired": "TXT-Verifizierung abgelaufen"
+      }
+    },
+    "verifyMissing": {
+      "both": "Weder der CNAME- noch der TXT-Eintrag wird bisher aufgelöst — fügen Sie die Einträge unten hinzu, warten Sie auf die DNS-Verteilung und prüfen Sie erneut.",
+      "cname": "Der CNAME-Eintrag wird noch nicht aufgelöst — fügen Sie ihn unten hinzu, warten Sie auf die DNS-Verteilung und prüfen Sie erneut.",
+      "txt": "Der TXT-Verifizierungseintrag wird noch nicht aufgelöst — fügen Sie ihn unten hinzu, warten Sie auf die DNS-Verteilung und prüfen Sie erneut."
+    },
+    "portHint": {
+      "body": "Auf Port {port} hat nichts geantwortet — Anfragen liefern möglicherweise 502, bis die App diesen Port überwacht.",
+      "bodyService": "Dienst „{service}“: Auf Port {port} hat nichts geantwortet — Anfragen liefern möglicherweise 502, bis der Dienst diesen Port überwacht."
+    },
+    "certUpload": {
+      "title": "Zertifikat hochladen",
+      "desc": "TLS mit eigenem Zertifikat (Bring-Your-Own oder Cloudflare Origin CA) anstelle von Let's Encrypt bereitstellen. Verwenden Sie dies, wenn ein vorgeschalteter Proxy vor dieser Domain liegt und der Origin dennoch ein echtes Zertifikat benötigt (Cloudflare Full-strict). Certbot wird für diese Domain deaktiviert, sobald ein Zertifikat hochgeladen wurde — erneuern Sie es durch Hochladen eines neuen Zertifikats.",
+      "certLabel": "Zertifikat (Fullchain-PEM)",
+      "certPlaceholder": "-----BEGIN CERTIFICATE-----",
+      "keyLabel": "Privater Schlüssel (PEM)",
+      "keyPlaceholder": "-----BEGIN PRIVATE KEY-----",
+      "submit": "Zertifikat installieren",
+      "submitting": "Wird installiert…",
+      "close": "Abbrechen"
+    },
+    "removeRoute": {
+      "title": "Route entfernen",
+      "description": "Die App läuft weiter — nur diese Route und ihre Edge-Registrierung werden entfernt. Sie können sie jederzeit wieder hinzufügen.",
+      "confirm": "Route entfernen",
+      "removing": "Wird entfernt…"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Laufzeitumgebung des Dienstes",
+    "description": "Diese Variablen gelten nur für diesen Dienst und überschreiben gleichnamige Werte aus Compose oder dem Projekt. Aktiviere gespeicherte Werte mit Umgebungsänderungen anwenden.",
+    "overrides": "Diese Schlüssel haben für diesen Dienst Vorrang vor den Projektwerten: {keys}.",
+    "buildArguments": "Build-Argumente werden in der Compose-Datei oder der Quellkonfiguration festgelegt und erfordern einen erneuten Build.",
+    "projectLink": "Gemeinsame Projektumgebung bearbeiten",
+    "loadFailed": "Die Namen der Projektvariablen konnten nicht zum Prüfen von Überschreibungen geladen werden."
+  },
+  "cloudStaticHosting": {
+    "title": "Statisches Hosting",
+    "description": "Wähle, wo die erstellten Dateien ausgeliefert werden.",
+    "pages": "Cloud Pages (Standard)",
+    "pagesDescription": "Dateien über die Cloud-Edge ausliefern, ohne laufenden App-Container.",
+    "server": "Verwalteter Server",
+    "serverDescription": "Dateien aus einem nginx-Container auf deinem verwalteten Server ausliefern.",
+    "nextDeploy": "Gespeicherte Hosting-Änderungen gelten ab dem nächsten Deployment."
+  },
+  "deploymentChecks": {
+    "title": "GitHub-Deployment-Checks",
+    "description": "Ergebnisse von Deployment und Diensten am bereitgestellten Commit anzeigen.",
+    "customize": "Checks anpassen",
+    "deployment": "Deployment-Ergebnis",
+    "services": "Alle Dienste, auch neue",
+    "selectedServices": "Dienste auswählen",
+    "includeErrors": "Fehlerdetails einschließen",
+    "errorsHint": "Bereinigte Fehlerzusammenfassungen werden für Personen mit Lesezugriff auf dieses Repository sichtbar.",
+    "emptySelection": "Mindestens einen Check auswählen oder die Berichterstattung ausschalten.",
+    "connectionHint": "Erfordert eine GitHub App mit Schreibzugriff auf Checks.",
+    "connection": "GitHub-Verbindung",
+    "deliveryFailed": "Checks konnten nicht übermittelt werden",
+    "saveFailed": "GitHub-Check-Einstellungen konnten nicht gespeichert werden."
+  },
+  "appSource": {
+    "title": "Quelle",
+    "description": "Diese App wird aus einem Release bereitgestellt — es gibt kein Repo zum Pushen; Updates erscheinen als neue Versionen.",
+    "sourceType": "Quelle",
+    "kindRelease": "Release",
+    "kindImage": "Container-Image",
+    "current": "Aktuelle Version",
+    "latest": "Neueste Version",
+    "repository": "Repository",
+    "notChecked": "Noch nicht geprüft",
+    "upToDate": "Aktuell",
+    "updateAvailable": "Update verfügbar",
+    "checkForUpdates": "Nach Updates suchen",
+    "checkFailed": "Updates konnten nicht geprüft werden",
+    "update": "Aktualisieren",
+    "updateTo": "Auf {version} aktualisieren",
+    "updating": "Wird aktualisiert…",
+    "updateFailed": "Aktualisierung fehlgeschlagen",
+    "toastTitle": "Quelle",
+    "cliManaged": "Dies ist die Steuerungsebene von Openship — sie aktualisiert sich selbst. Führen Sie „openship update“ auf dem Host aus, um sie zu aktualisieren; hier gibt es nichts zu ändern."
+  },
+  "routeRules": {
+    "title": "Routenregeln",
+    "description": "Rate-Limiting-, Sperr- und Zulassen/Ablehnen-Regeln auf Edge-Ebene — sofort wirksam, kein Redeploy.",
+    "loading": "Regeln werden geladen…",
+    "empty": "Noch keine Routenregeln. Fügen Sie unten eine hinzu.",
+    "allHosts": "Alle Hostnamen",
+    "allPaths": "Alle Pfade",
+    "addTitle": "Regel hinzufügen",
+    "pathLabel": "Pfad-Präfix (optional)",
+    "rps": "Anfragen / Sek.",
+    "burst": "Burst",
+    "methods": "Nur Methoden zulassen",
+    "banIps": "IPs / CIDRs sperren",
+    "banCountries": "Länder sperren (ISO)",
+    "allowCountries": "Nur Länder zulassen (ISO)",
+    "denyCidrs": "CIDRs ablehnen",
+    "allowReferers": "Hotlinking: Erlaubte Referrer",
+    "banUserAgents": "User-Agents sperren (Teilzeichenkette)",
+    "blockEmptyUa": "Leere User-Agents blockieren",
+    "blockStatus": "Antwort-Code bei Blockierung",
+    "add": "Regel hinzufügen",
+    "remove": "Entfernen",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "saved": "Regel gespeichert",
+    "saveFailed": "Regel konnte nicht gespeichert werden",
+    "loadFailed": "Regeln konnten nicht geladen werden"
+  },
+  "runtimeUpdates": {
+    "options": "Optionen zur erneuten Bereitstellung",
+    "refresh": "Images aktualisieren und erneut bereitstellen",
+    "refreshing": "Images werden aktualisiert…",
+    "check": "Image-Updates prüfen",
+    "title": "Image-Updates",
+    "failed": "Die Image-Aktualisierung konnte nicht gestartet werden.",
+    "uncertain": "Die Anfrage hat das Zeitlimit überschritten. Prüfe vor einem erneuten Versuch den Bereitstellungsverlauf.",
+    "available": "Image-Updates verfügbar",
+    "current": "Die Image-Digests entsprechen den zuletzt beobachteten Registry-Digests.",
+    "checkUnavailable": "Für den Image-Vergleich sind erfasste Digests und Zugriff auf die Registry erforderlich.",
+    "checkFailed": "Image-Updates konnten nicht geprüft werden.",
+    "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
+  },
+  "securityAdvisories": {
+    "sourceRedeployRequired": "Erstelle diese App aus ihrer gespeicherten Quelle neu, bevor du ihre Laufzeit aktualisierst. Das aktuelle Image hat keine verifizierte Quellrevision. Eine erneute Bereitstellung aus der Quelle kann neueren Code enthalten. Prüfe ihn unter „Bereitstellungen“ und überprüfe diesen Hinweis anschließend erneut.",
+    "openSourceRedeploy": "Bereitstellung aus Quelle öffnen",
+    "reviewApps": "Betroffene Apps prüfen ({count})",
+    "pendingApps": "Prüfungen für {count} Apps stehen aus. Ergebnisse erscheinen automatisch.",
+    "checkAgain": "Erneut prüfen",
+    "checking": "Wird geprüft…",
+    "title": "Sicherheitshinweise",
+    "unavailable": "Sicherheitsprüfungen sind nicht verfügbar oder veraltet. Bisherige Hinweise bleiben sichtbar.",
+    "affected": "Befunde für Apps, auf die du in der aktuellen Organisation zugreifen kannst.",
+    "noMatches": "Keine passenden Hinweise in den geprüften Daten. Dies ist kein vollständiger Schwachstellenscan.",
+    "partial": "Einige Laufzeitumgebungen konnten nicht geprüft werden.",
+    "guidance": "Hinweis lesen",
+    "automatic": "Verifizierte Sicherheitsupdates automatisch anwenden",
+    "automaticDescription": "Standardmäßig aus. Nur Image-Dienste mit einer signierten Korrektur unter ihrem bestehenden Tag werden automatisch aktualisiert. Quellcode-Builds, festgelegte Images und Versionswechsel erfordern eine Prüfung. Normale Deployment- und Zustandsprüfungen gelten weiterhin.",
+    "notifications": "Sicherheitshinweise sind standardmäßig für Benachrichtigungskanäle aktiv. Jeden Kanal kannst du unter Einstellungen → Benachrichtigungen ändern.",
+    "publicFeed": "Öffentlichen Feed ansehen",
+    "checked": "Nachweise geprüft",
+    "possible": "Das Image-Tag stimmt überein; die bereitgestellte Version muss geprüft werden.",
+    "tab": "Sicherheit",
+    "monitoring": "In Monitoring anzeigen",
+    "persistent": "Aktive Befunde bleiben hier sichtbar, auch wenn das Banner geschlossen wird.",
+    "otherApps": "Weitere Apps ({count})",
+    "details": "Details und Hinweise"
   }
 }

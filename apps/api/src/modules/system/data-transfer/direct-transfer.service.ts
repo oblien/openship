@@ -8,6 +8,7 @@
  * The legacy one-envelope receiver remains for transfers from older sources.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   createHash,
   createHmac,
@@ -30,7 +31,7 @@ import {
   encrypt,
   encryptBytesWithKey,
   encryptWithKey,
-} from "../../../lib/encryption";
+} from "@repo/platform/engine/lib/encryption";
 import {
   assertCompleteChunkSet,
   beginDirectSession,
@@ -52,6 +53,7 @@ import {
   type TransferSessionRow,
 } from "./chunk-store";
 import { prepareInstanceExport } from "./export.service";
+import { InvalidExportSelectionError, resolveExportSelection } from "./selection";
 import { importPreparedInstance } from "./import.service";
 import { jsonByteChunks } from "./json-chunks";
 import { readStagedJson } from "./staged-payload";
@@ -133,7 +135,8 @@ function normalizeApiBase(raw: string): string {
   let url: URL;
   try {
     url = new URL(raw);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service");
     throw new InvalidDirectTransferCodeError("The destination API URL is invalid.");
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
@@ -228,7 +231,8 @@ function senderContext(connection: DirectTransferConnection): SenderContext {
   let recipientPublicKey: KeyObject;
   try {
     recipientPublicKey = parsePublicKey(connection.recipientPublicKey);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service");
     throw new InvalidDirectTransferCodeError(
       "The receive code contains an invalid destination key.",
     );
@@ -250,7 +254,8 @@ function sessionPrivateKey(session: TransferSessionRow): KeyObject {
     });
     if (key.asymmetricKeyType !== "x25519") throw new Error("wrong key type");
     return key;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service");
     throw new DirectTransferSessionError(
       "The receive session key is unavailable on this instance.",
     );
@@ -335,7 +340,7 @@ export async function createDirectReceiveSession(opts: {
 async function responseBody(response: Response): Promise<Record<string, unknown> | null> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > TRANSFER_CONTROL_BODY_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
+    await response.body?.cancel().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service"); return undefined; });
     throw new DirectTransferDestinationError("Destination returned an oversized response.");
   }
   if (!response.body) return null;
@@ -354,7 +359,7 @@ async function responseBody(response: Response): Promise<Record<string, unknown>
       chunks.push(value);
     }
   } finally {
-    await reader.cancel().catch(() => undefined);
+    await reader.cancel().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service"); return undefined; });
   }
 
   try {
@@ -391,6 +396,7 @@ async function fetchDestination(
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
+    observeCaughtError(error, "api/modules/system/data-transfer/direct-transfer.service");
     throw new DirectTransferDestinationError(
       error instanceof Error
         ? `Could not reach the destination: ${error.message}`
@@ -635,6 +641,11 @@ export async function sendDirectTransfer(opts: {
   selection?: ExportSelection;
   fetchImpl?: typeof fetch;
 }): Promise<DirectTransferResult> {
+  if (resolveExportSelection(opts.selection).selection.scope === "projects") {
+    throw new InvalidExportSelectionError(
+      "For selected projects, download an export file and import it on the destination to review project conflicts and server mappings. Direct transfer supports whole-instance exports.",
+    );
+  }
   const connection = decodeDirectTransferCode(opts.code);
   // The process id is a fast legacy check, but is not stable across restarts or
   // multiple API workers. The durable capability record is authoritative: if
@@ -666,7 +677,7 @@ export async function sendDirectTransfer(opts: {
         if (heartbeatBusy) return;
         heartbeatBusy = true;
         void heartbeatDestination(connection, sender, fetchImpl)
-          .catch(() => undefined)
+          .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service"); return undefined; })
           .finally(() => {
             heartbeatBusy = false;
           });
@@ -744,7 +755,8 @@ export async function initializeDirectChunkUpload(input: DirectChunkInit) {
   let proof: Record<string, unknown>;
   try {
     proof = JSON.parse(decryptWithKey(key, input.proof)) as Record<string, unknown>;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service");
     throw new InvalidDirectTransferCodeError("The transfer handshake could not be authenticated.");
   }
   if (
@@ -883,7 +895,7 @@ export async function finalizeDirectChunkUpload(
       });
     });
   } catch (error) {
-    await failSession(session).catch(() => undefined);
+    await failSession(session).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service"); return undefined; });
     throw error;
   }
 }
@@ -907,7 +919,8 @@ export async function receiveDirectTransfer(
   let payload: DirectTransferPayload;
   try {
     payload = JSON.parse(decryptWithKey(key, envelope.blob)) as DirectTransferPayload;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service");
     throw new InvalidDirectTransferCodeError(
       "The transfer could not be authenticated or decrypted.",
     );
@@ -934,7 +947,7 @@ export async function receiveDirectTransfer(
       }),
     );
   } catch (error) {
-    await failSession(session).catch(() => undefined);
+    await failSession(session).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/direct-transfer.service"); return undefined; });
     throw error;
   }
 }

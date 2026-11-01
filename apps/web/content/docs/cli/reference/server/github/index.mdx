@@ -1,0 +1,114 @@
+---
+title: server github
+description: Commands, arguments, and options for openship server github.
+cliGroup: openship server github
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server github
+
+Manage GitHub credentials on a deployment server
+
+```text
+openship server github [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`status <server>`](/docs/cli/reference/server/github#openship-server-github-status) | Read this server's GitHub connection and deploy keys |
+| [`connect <server>`](/docs/cli/reference/server/github#openship-server-github-connect) | Start device login; follow the returned verification URL and code |
+| [`poll <server>`](/docs/cli/reference/server/github#openship-server-github-poll) | Check device login progress |
+| [`generate-key <server>`](/docs/cli/reference/server/github#openship-server-github-generate-key) | Generate a server key and print its public key |
+| [`deploy-keys <server>`](/docs/cli/reference/server/github#openship-server-github-deploy-keys) | Use per-repository deploy keys for this server |
+| [`token <server> <file>`](/docs/cli/reference/server/github#openship-server-github-token) | Set the server's GitHub token without putting it in command arguments |
+| [`disconnect [options] <server>`](/docs/cli/reference/server/github#openship-server-github-disconnect) | Remove this server's GitHub connection |
+
+## openship server github connect
+
+Start device login; follow the returned verification URL and code
+
+```text
+openship server github connect [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server github deploy-keys
+
+Use per-repository deploy keys for this server
+
+```text
+openship server github deploy-keys [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server github disconnect
+
+Remove this server's GitHub connection
+
+```text
+openship server github disconnect [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm credential removal |
+
+## openship server github generate-key
+
+Generate a server key and print its public key
+
+```text
+openship server github generate-key [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server github poll
+
+Check device login progress
+
+```text
+openship server github poll [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server github status
+
+Read this server's GitHub connection and deploy keys
+
+```text
+openship server github status [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server github token
+
+Set the server's GitHub token without putting it in command arguments
+
+```text
+openship server github token [options] <server> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `file` | Token file, or - for stdin |

@@ -10,39 +10,76 @@
  * how each column is normally sealed at rest.
  */
 
-import { encrypt, decrypt, decryptEnvMap } from "../../../lib/encryption";
-import { encryptSecretField, decryptSecretField } from "../../../lib/credential-encryption";
+import { encrypt, decrypt, decryptEnvMap } from "@repo/platform/engine/lib/encryption";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { env } from "@repo/platform/engine/config/env";
+import {
+  encryptSecretField,
+  decryptSecretField,
+} from "@repo/platform/engine/lib/credential-encryption";
+import { createConfigurationSecrets, SERVICE_SECRET_FIELDS } from "@repo/db/configuration-secrets";
 
 import type { SecretColumn } from "./secret-registry";
 import type { SecretEntry } from "./types";
 
-/** Decrypt one stored cell → plaintext entry, or null if empty/absent. */
-export function extractPlaintext(
+const configuration = createConfigurationSecrets({ encrypt, decrypt });
+function configurationCell(spec: SecretColumn, cell: unknown, direction: "open" | "seal"): unknown {
+  if (spec.sqlName === "action_run" && spec.column === "configuration") {
+    const value = structuredClone(cell) as { secrets?: Record<string, string> };
+    if (value?.secrets) value.secrets = Object.fromEntries(Object.entries(value.secrets).map(([key, text]) => [key, direction === "open" ? decrypt(text) : encrypt(text)]));
+    return value;
+  }
+  if (spec.sqlName === "deployment" && spec.column === "meta") {
+    return direction === "open"
+      ? configuration.openDeploymentMeta(cell)
+      : configuration.sealDeploymentMeta(cell);
+  }
+  if (spec.sqlName === "service" && SERVICE_SECRET_FIELDS.some((key) => key === spec.column)) {
+    return direction === "open" ? configuration.openJson(cell) : configuration.sealJson(cell);
+  }
+  return structuredClone(cell);
+}
+
+/** Preserve a stored cell, including an explicit clear; absent columns stay absent. */
+export async function extractPlaintext(
   spec: SecretColumn,
   id: string,
   cell: unknown,
-): SecretEntry | null {
-  if (cell === null || cell === undefined) return null;
+): Promise<SecretEntry | null> {
+  if (cell === undefined) return null;
   const base = { table: spec.sqlName, id, column: spec.column } as const;
+  if (cell === null) {
+    const field = spec.scheme === "json" ? "json"
+      : spec.scheme === "map" ? "map"
+      : spec.scheme === "notification-config" ? "config" : "value";
+    return { ...base, scheme: spec.scheme, [field]: null };
+  }
 
   switch (spec.scheme) {
+    case "better-auth": {
+      if (typeof cell !== "string") return null;
+      return { ...base, scheme: "better-auth", value: cell === "" ? "" : await symmetricDecrypt({ key: env.BETTER_AUTH_SECRET, data: cell }) };
+    }
+    case "json":
+      return { ...base, scheme: "json", json: configurationCell(spec, cell, "open") };
     case "scalar": {
-      if (typeof cell !== "string" || cell === "") return null;
-      return { ...base, scheme: "scalar", value: decrypt(cell) };
+      if (typeof cell !== "string") return null;
+      return { ...base, scheme: "scalar", value: cell === "" ? "" : decrypt(cell) };
     }
     case "enc1": {
-      if (typeof cell !== "string" || cell === "") return null;
+      if (typeof cell !== "string") return null;
+      if (cell === "") return { ...base, scheme: "enc1", value: "" };
       const value = decryptSecretField(cell);
       return value === undefined ? null : { ...base, scheme: "enc1", value };
     }
     case "plaintext": {
-      if (typeof cell !== "string" || cell === "") return null;
+      if (typeof cell !== "string") return null;
       return { ...base, scheme: "plaintext", value: cell };
     }
     case "map": {
       if (typeof cell !== "object") return null;
       const map = decryptEnvMap(cell as Record<string, string>);
-      return Object.keys(map).length === 0 ? null : { ...base, scheme: "map", map };
+      return { ...base, scheme: "map", map };
     }
     case "notification-config": {
       if (typeof cell !== "object") return null;
@@ -52,9 +89,7 @@ export function extractPlaintext(
         const v = obj[path];
         if (typeof v === "string" && v !== "") config[path] = decrypt(v);
       }
-      return Object.keys(config).length === 0
-        ? null
-        : { ...base, scheme: "notification-config", config };
+      return { ...base, scheme: "notification-config", config };
     }
   }
 }
@@ -64,16 +99,20 @@ export function extractPlaintext(
  * value to write. For notification-config, `currentCell` is the restored
  * (secret-scrubbed) config object the secret sub-fields are merged back into.
  */
-export function sealForInstance(
+export async function sealForInstance(
   spec: SecretColumn,
   entry: SecretEntry,
   currentCell?: unknown,
-): unknown {
+): Promise<unknown> {
   switch (spec.scheme) {
+    case "better-auth":
+      return entry.value != null ? symmetricEncrypt({ key: env.BETTER_AUTH_SECRET, data: entry.value }) : null;
+    case "json":
+      return configurationCell(spec, entry.json, "seal");
     case "scalar":
       return entry.value != null ? encrypt(entry.value) : null;
     case "enc1":
-      return entry.value != null ? encryptSecretField(entry.value) : null;
+      return entry.value != null ? (encryptSecretField(entry.value) ?? null) : null;
     case "plaintext":
       return entry.value ?? null;
     case "map": {
@@ -83,6 +122,7 @@ export function sealForInstance(
       return sealed;
     }
     case "notification-config": {
+      if (entry.config === null) return null;
       const merged =
         currentCell && typeof currentCell === "object"
           ? { ...(currentCell as Record<string, unknown>) }

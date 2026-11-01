@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "メール",
+    "subtitle": "既存のメールボックスを Openship Webmail で利用できます。",
+    "connectTitle": "メールサーバーに接続",
+    "description": "任意の IMAP/SMTP サーバーに接続できます。メールボックスとメール配信は現在のプロバイダーが管理します。",
+    "connectAction": "既存のメールサーバーに接続",
+    "signInHint": "メールアドレスとメールボックスのパスワードで Webmail にログインしてください。",
+    "manageAction": "Webmail アプリを管理"
+  },
+  "cloudComingSoon": {
+    "title": "マネージドメール",
+    "badge": "近日公開",
+    "description": "Openship Cloud のマネージドメールは近日公開予定です。Cloud サーバープランはアプリのホスティング用で、メールサーバーは作成されません。",
+    "selfHosted": "セルフホスト版 Openship を使えば、ご自身のサーバーでメールを運用できます。"
+  },
   "page": {
     "title": "メールサーバー",
     "subtitle": "数クリックでセルフホスト型メールサーバーをセットアップ",
@@ -132,7 +147,17 @@
     "hide": "非表示",
     "reveal": "表示",
     "generateTitle": "強力なランダムパスワードを生成",
-    "generate": "生成"
+    "generate": "生成",
+    "relay": {
+      "toggle": "メールプロバイダー経由で送信メールをリレーする",
+      "hint": "推奨。プロバイダーの信頼できる IP 経由で送信します。新規サーバーの IP はブロックリストに登録されていることが多く、多くのホストが送信ポート 25 をブロックしています。受信はこのサーバー上で行われます。",
+      "region": "リージョン",
+      "username": "SMTP ユーザー名",
+      "password": "SMTP パスワード",
+      "perDomainNote": "すべてのドメインに適用されます。ドメインごとのルーティングおよび各ドメインのプロバイダー DKIM / MAIL FROM レコードは、インストール後に「送信」タブで設定します。"
+    },
+    "startFailed": "メールエンジンのセットアップを開始できませんでした。",
+    "startFailedFallback": "セットアップを開始するための接続に失敗しました。SSH アクセスを確認して再試行してください。"
   },
   "sidebar": {
     "portConflict": {

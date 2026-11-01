@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Command } from "commander";
 import chalk from "chalk";
 import { CLOUD_DASHBOARD_URL, LOCAL_API_URL } from "@repo/core";
@@ -33,7 +34,8 @@ export const openCommand = new Command("open")
       const { default: open } = await import("open");
       await open(target);
       console.log(chalk.dim(`\n  Opening ${target}\n`));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "cli/commands/open");
       console.log(chalk.dim("\n  Couldn't open a browser. Visit:\n") + chalk.cyan(`  ${target}\n`));
     }
   });

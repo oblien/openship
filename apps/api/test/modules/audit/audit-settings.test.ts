@@ -10,7 +10,7 @@ import {
   setOrgRetentionMetadata,
 } from "./_harness";
 import type { SeededOwner } from "./_harness";
-import { pruneAuditEvents } from "../../../src/modules/audit/audit-prune";
+import { pruneAuditEvents } from "@repo/platform/engine/modules/audit/audit-prune";
 
 /**
  * The recording switch: an organization can stop keeping an activity record.

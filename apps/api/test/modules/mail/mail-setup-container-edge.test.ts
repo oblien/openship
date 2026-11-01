@@ -44,13 +44,14 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
 import {
   stepEnsureComponents,
   stepEnsureReverseProxy,
-} from "../../../src/modules/mail/mail.service";
+} from "@repo/platform/engine/modules/mail/mail.service";
 
 /** Records every command so a test can assert what was NOT run. */
 function fakeExecutor(responses: (cmd: string) => string = () => "") {
   const commands: string[] = [];
   const exec = async (cmd: string) => {
     commands.push(cmd);
+    if (cmd.includes("{{json .Swarm}}")) return '{"LocalNodeState":"inactive"}';
     return responses(cmd);
   };
   return { commands, executor: { exec } as never };

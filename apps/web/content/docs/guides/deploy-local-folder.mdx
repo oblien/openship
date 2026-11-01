@@ -50,8 +50,6 @@ The **Folder** tab shows your **Local Projects**. The very first time it's empty
 projects yet" and an **Import Project** button. Once you've added some, the panel lists them with an
 **Import** button at the top for adding more.
 
-<Callout title="Screenshot">Library page, **Folder** tab on the desktop app — the "Local Projects" panel (or the empty "No local projects yet" state) with the **Import** button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -78,8 +76,6 @@ package manager, and the build and start commands. For most apps there's nothing
 and the build screen streams the logs live. When it finishes, you get a link — click it and your app is
 online. 🎉
 
-<Callout title="Screenshot">The deploy screen for a local folder — the detected stack on the left and the summary panel with the **Deploy** button on the right. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -100,8 +96,6 @@ and it packs and uploads a copy.
 The Folder tab asks **"What are you deploying?"** Choose the tile that matches your app (for example Next.js,
 Vite, or Express). This tells Openship which build environment to prepare.
 
-<Callout title="Screenshot">Library page, **Folder** tab in a browser — the "What are you deploying?" stack grid. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -111,8 +105,6 @@ Vite, or Express). This tells Openship which build environment to prepare.
 Drag your project folder onto the drop zone, or click to browse for it. The panel notes what gets left out —
 `node_modules`, `.git`, and build output are skipped. Once it's picked, you'll see a summary line with the
 folder name and how many files it contains.
-
-<Callout title="Screenshot">The folder drop zone showing "Drop your project folder or click to browse". *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -140,16 +132,16 @@ get a live link. 🎉
 
 </Tabs>
 
-## Prefer the terminal?
+## CLI
 
-The CLI does the whole thing in one command. When you run `openship deploy` in a folder that **isn't** a git
-repository, it automatically packages that folder, uploads it, auto-detects the stack, creates the project
+The CLI does the whole thing in one command. Run `openship deploy --folder` to explicitly upload the current
+directory. It packages that folder, uploads it, auto-detects the stack, creates the project
 (or reuses one that already has the same name), and deploys it — the same pipeline as the browser upload
 above.
 
 ```bash
 # From inside your project folder:
-openship deploy --name my-app --watch
+openship deploy --folder --name my-app --watch
 ```
 
 - `--name` sets the project's name (without it, the folder's name is used).
@@ -157,8 +149,10 @@ openship deploy --name my-app --watch
   command to follow the logs later.
 
 <Callout title="Deploying inside a git repo?" type="info">
-If the folder **is** a git repository, `openship deploy` deploys from git instead of uploading the folder.
-To upload the files directly, run it from a folder without a `.git` — or use [Deploy from GitHub](/docs/guides/deploy-from-github) for the git flow.
+`--folder` also uploads files directly from a Git checkout. Without it, `openship deploy` in a Git
+repository uses the Git flow. Outside Git, `--name` also opts into a folder upload for existing scripts.
+Run from your app's source directory: uploading the temporary directory or any ancestor of it is refused
+to keep staging archives outside the source tree. If `TMPDIR` is inside your app, set it elsewhere.
 </Callout>
 
 ### Deploy to the same project again
@@ -172,14 +166,14 @@ with `openship init`:
 
 ```bash
 openship init          # pick a project to link this folder to
-openship deploy        # from now on, deploys to the linked project
+openship deploy --folder # uploads this folder to the linked project
 ```
 
 `openship init` writes a small `.openship/project.json` file so later commands know which project this folder
 belongs to. It links to a project that **already exists**, so create one first — with a folder deploy, or in
 the dashboard — then run `openship init` to pin future deploys to it.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“That folder looks empty” when you pick it" type="warn">
 Everything in the folder was on the skip list (like `node_modules` and `.git`), or you picked a folder with
@@ -199,7 +193,7 @@ almost always one of three things: a missing build command, a missing environmen
 listening on the wrong port. See [Troubleshooting → Deployments](/docs/troubleshooting/deployments) for fixes.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Connect a repo instead, and redeploy automatically on every push." />

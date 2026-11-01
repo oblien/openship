@@ -5,11 +5,12 @@ import {
   describePath,
   gradeDelivery,
   parseMailQueue,
+  topDeferrals,
   type MailQueueReading,
 } from "../../../src/modules/mail/mail-delivery.service";
-import { mailQueueProbeCommand } from "../../../src/modules/mail/mail-engine";
+import { mailQueueProbeCommand } from "@repo/platform/engine/modules/mail/mail-engine";
 import type { CommandExecutor } from "@repo/adapters";
-import type { OutboundRelay } from "../../../src/modules/mail/mail-state";
+import type { OutboundRelay } from "@repo/platform/engine/modules/mail/mail-state";
 
 /**
  * The blind spot this closes: nine green daemons, green DNS, and a Test-tab email
@@ -51,6 +52,12 @@ const AUTH_REFUSAL =
   "host email-smtp.us-east-1.amazonaws.com[203.0.113.9] said: 535 Authentication Credentials Invalid (in reply to AUTH LOGIN command)";
 const GREYLIST_REFUSAL =
   "host mx.receiver.example[198.51.100.4] said: 450 4.2.0 Greylisted, try again later (in reply to end of DATA command)";
+const RELAY_TLS_REFUSAL =
+  "host email-smtp.us-east-1.amazonaws.com[203.0.113.9]: certificate verification failed";
+const BUSY_RECEIVER = "host mx.b.example said: 451 4.3.0 Temporary local problem";
+const FULL_MAILBOX = "host mx.c.example said: 452 4.2.2 Mailbox full";
+const RELAY_NETWORK_REFUSAL =
+  "connect to email-smtp.us-east-1.amazonaws.com[203.0.113.9]:587: Connection timed out";
 
 const RELAY: OutboundRelay = {
   enabled: true,
@@ -147,7 +154,9 @@ describe("parseMailQueue", () => {
     );
 
     expect(parsed?.queued).toBe(6);
-    expect(parsed?.deferrals).toHaveLength(3);
+    const deferrals = parsed?.deferrals ?? [];
+    expect(deferrals).toHaveLength(6);
+    expect(topDeferrals(deferrals)).toEqual(deferrals.slice(0, 3));
   });
 
   /**
@@ -345,7 +354,7 @@ describe("describePath", () => {
 function box(opts: {
   queue?: string | Error;
   relay?: OutboundRelay;
-  detect?: string;
+  detect?: string | Error;
 }): CommandExecutor & { exec: ReturnType<typeof vi.fn> } {
   const state = JSON.stringify({
     version: 1,
@@ -357,7 +366,11 @@ function box(opts: {
   });
   return {
     exec: vi.fn(async (cmd: string) => {
-      if (cmd.includes("{{.Config.Image}}")) return opts.detect ?? "true\topenship/mail:latest";
+      if (cmd.includes("{{.Config.Image}}")) {
+        if (opts.detect instanceof Error) throw opts.detect;
+        return opts.detect ?? "true\topenship/mail:latest";
+      }
+      if (cmd.includes("systemctl show")) return "__OPENSHIP_NO_SYSTEMCTL__";
       if (cmd.startsWith("cat ")) return state;
       const queue = opts.queue ?? "Mail queue is empty";
       if (queue instanceof Error) throw queue;
@@ -386,6 +399,63 @@ describe("checkMailDelivery", () => {
     expect(health.deferrals[0]?.kind).toBe("auth");
   });
 
+  const crowdedQueue = (last: string) =>
+    queueOutput([
+      { reason: GREYLIST_REFUSAL },
+      { reason: GREYLIST_REFUSAL },
+      { reason: GREYLIST_REFUSAL },
+      { reason: BUSY_RECEIVER },
+      { reason: BUSY_RECEIVER },
+      { reason: FULL_MAILBOX },
+      { reason: FULL_MAILBOX },
+      { reason: last },
+    ]);
+
+  const crowdedRows = [GREYLIST_REFUSAL, BUSY_RECEIVER, FULL_MAILBOX];
+  const tryLater = (i: number) => `host mx${i}.example said: 451 try later`;
+
+  it.each([
+    ["an auth refusal ranked fourth", RELAY, crowdedQueue(AUTH_REFUSAL), "fail", crowdedRows],
+    [
+      "a TLS failure at the smarthost ranked fourth",
+      RELAY,
+      crowdedQueue(RELAY_TLS_REFUSAL),
+      "fail",
+      crowdedRows,
+    ],
+    [
+      "a connection failure at the smarthost ranked fourth",
+      RELAY,
+      crowdedQueue(RELAY_NETWORK_REFUSAL),
+      "fail",
+      crowdedRows,
+    ],
+    [
+      "an auth refusal ranked thirteenth",
+      RELAY,
+      queueOutput([
+        ...Array.from({ length: 24 }, (_, i) => ({ reason: tryLater(i % 12) })),
+        { reason: AUTH_REFUSAL },
+      ]),
+      "fail",
+      [tryLater(0), tryLater(1), tryLater(2)],
+    ],
+    [
+      "an auth refusal queued after three one-off deferrals",
+      RELAY,
+      queueOutput(
+        [GREYLIST_REFUSAL, BUSY_RECEIVER, FULL_MAILBOX, AUTH_REFUSAL].map((reason) => ({ reason })),
+      ),
+      "fail",
+      crowdedRows,
+    ],
+  ])("grades %s", async (_label, relay, queue, status, shown) => {
+    const health = await checkMailDelivery(box({ relay, queue }));
+
+    expect(health.status).toBe(status);
+    expect(health.deferrals.map((d) => d.reason)).toEqual(shown);
+  });
+
   it("probes the queue through the engine, once", async () => {
     const exec = box({});
 
@@ -402,8 +472,9 @@ describe("checkMailDelivery", () => {
     // No container, but systemd knows the units → flavor host.
     const exec = {
       exec: vi.fn(async (cmd: string) => {
-        if (cmd.includes("{{.Config.Image}}")) return "";
-        if (cmd.includes("systemctl show")) return "## postfix\nLoadState=loaded\nActiveState=active";
+        if (cmd.includes("{{.Config.Image}}")) throw new Error("Error: No such object: openship-mail");
+        if (cmd.includes("systemctl show")) return ["postfix", "dovecot"]
+          .map((unit) => `## ${unit}\nLoadState=loaded\nActiveState=active`).join("\n");
         if (cmd.startsWith("cat ")) return "";
         return "Mail queue is empty";
       }),
@@ -420,10 +491,16 @@ describe("checkMailDelivery", () => {
   // Every `unknown` below must carry a reason: without one the row is unactionable
   // and the operator's only recourse is to SSH in and run the probe by hand.
   it("reports unknown on a box with no mail engine", async () => {
-    const health = await checkMailDelivery(box({ detect: "" }));
+    const health = await checkMailDelivery(box({ detect: new Error("Error: No such object: openship-mail") }));
 
     expect(health).toMatchObject({ status: "unknown", queued: 0, deferrals: [] });
     expect(health.detail).toContain("No mail engine");
+  });
+
+  it("leaves delivery unknown without trying a queue read after a lost engine connection", async () => {
+    const exec = box({ detect: new Error("connect ENETUNREACH 192.0.2.1:22") });
+    expect(await checkMailDelivery(exec)).toMatchObject({ status: "unknown", detail: expect.stringContaining("ENETUNREACH") });
+    expect(exec.exec.mock.calls.some(([command]) => command.includes("postqueue"))).toBe(false);
   });
 
   it("reports unknown, and says so, when the engine container is stopped", async () => {

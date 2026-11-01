@@ -1,6 +1,6 @@
 ---
-title: Migration API
-description: Scan a server's existing Docker deployment and adopt the discovered services as an Openship project.
+title: Migration
+description: Discover, adopt, and move services between servers.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -10,28 +10,11 @@ under Openship management. It inspects a server's Docker over SSH, returns the s
 creates an Openship `services` project from the ones you pick. In the dashboard this is the **migration
 wizard**; there is no CLI equivalent.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/migration/scan`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
-
 <Callout title="Self-hosted only" type="info">
 This module is mounted only when your instance runs in self-hosted mode — adopting a deployment requires SSH
 into a server you manage, which Openship Cloud has no notion of. On a cloud instance these routes are not
 mounted and return `404`.
 </Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `POST /api/migration/scan` | `server:write` | Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. |
-| `POST /api/migration/adopt` | `server:write` | Create an Openship project from the selected discovered services. |
-
-Both routes take the target `serverId` in the request body (not the URL). Openship checks that the server
-belongs to your organization and that you have `server:write` on it before doing anything.
 
 ## Scan a server
 
@@ -50,7 +33,7 @@ POST /api/migration/scan
 />
 
 ```bash
-curl -X POST https://your-host/api/migration/scan \
+curl -X POST "$OPENSHIP_URL/api/migration/scan" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123"}'
@@ -78,7 +61,7 @@ POST /api/migration/adopt
 />
 
 ```bash
-curl -X POST https://your-host/api/migration/adopt \
+curl -X POST "$OPENSHIP_URL/api/migration/adopt" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serverId":"srv_123","projectName":"legacy-stack","serviceNames":["web","worker"]}'
@@ -86,7 +69,38 @@ curl -X POST https://your-host/api/migration/adopt \
 
 On success the response is `{ "success": true, … }` with the created project's details.
 
-## Errors you might see
+## Run a reviewed migration
+
+`POST /api/migration/migrate` starts the complete migration. Per-service options use the discovered
+container IDs as keys; legacy service-name keys remain accepted. `routesByServiceName` accepts an array of
+routes per service, preserving aliases, listen ports, path prefixes and exact matches. Environment values
+are saved in the service's production environment scope.
+
+A hostname can contain only explicit paths, such as `/api/` and an exact `/health`, without a
+service at `/`. Migration preserves that selection as a project-owned route: matching requests
+reach their selected services, and unmatched paths return `404`. An exact `/` match does not
+become a catch-all. If an existing source catch-all is omitted, the run asks you to confirm
+the selected paths or cancel and review them before creating project records or changing
+source containers. Routing retries retain the previous complete table when any selected
+service has no live upstream.
+
+When routes are selected, migration prepares the target edge before changing source containers. If another
+proxy must be replaced, the run waits for consent. Read `pendingPrompt` from
+`GET /api/migration/migrations/:id` (also included in the stream snapshot), then answer it with:
+
+```http
+POST /api/migration/migrations/:id/respond
+Content-Type: application/json
+
+{"promptId":"<pendingPrompt.promptId>","action":"migrate"}
+```
+
+Use an action ID from the current prompt. An expired, already answered or invalid prompt returns `409`.
+Answering requires write access to both migration servers. Cancelling keeps the original proxy and source
+containers intact. After attachment or deployment, Openship applies the owned routes and retries pending
+domain verification; unresolved routing failures remain visible on the run.
+
+## Errors
 
 <Callout title="400 — missing or empty field" type="warn">
 `serverId` is required on both routes; `adopt` additionally requires a non-empty `projectName` and at least
@@ -104,3 +118,35 @@ Openship couldn't reach or inspect the server's Docker (SSH unreachable, Docker 
 denied), or the adoption failed. The message includes the underlying reason. Confirm the server is online and
 its Docker is accessible, then retry.
 </Callout>
+
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the active organization's migration-only SSH connections. | `migrations.listSources()`<br />Remote client | `GET /api/migration/sources`<br />`server:read` |
+| Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations. | `migrations.createSource(input)`<br />Remote client | `POST /api/migration/sources`<br />`server:write` |
+| Test a public SSH source without saving it and return its host fingerprint. | `migrations.testSource(input)`<br />Remote client | `POST /api/migration/sources/test`<br />`server:write` |
+| Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. | `migrations.scan(input)`<br />Remote client | `POST /api/migration/scan`<br />`server:write` |
+| Reveal explicitly requested environment values for an authorized import. | `migrations.revealEnv(input)`<br />Remote client | `POST /api/migration/reveal-env`<br />`server:write` |
+| Read Compose configuration from a repository for import. | `migrations.repoCompose(input)`<br />Remote client | `POST /api/migration/repo-compose`<br />`server:read` |
+| Create an Openship project from the selected discovered services. | `migrations.adopt(input)`<br />Remote client | `POST /api/migration/adopt`<br />`server:write` · Self-hosted |
+| Refresh an imported project from its source. | `migrations.reimport(input)`<br />Remote client | `POST /api/migration/reimport`<br />`server:write` · Self-hosted |
+| Preview a migration plan. | `migrations.preview(input)`<br />Remote client | `POST /api/migration/preview`<br />`server:write` |
+| Start a server migration from the reviewed plan. | `migrations.start(input)`<br />Remote client | `POST /api/migration/migrate`<br />`server:write` |
+| Import a discovered project. | `migrations.moveProject(input)`<br />Remote client | `POST /api/migration/project`<br />`server:write` |
+| List active server migration sessions. | `migrations.active(input)`<br />Remote client | `GET /api/migration/active`<br />`server:read` |
+| List migration history. | `migrations.listRuns(input)`<br />Remote client | `GET /api/migration/runs`<br />`server:read` |
+| Disconnect an idle migration source without deleting its external server or workloads. | `migrations.removeSource(id)`<br />Remote client | `DELETE /api/migration/sources/:serverId`<br />`server:write` |
+| Read migration progress and state. | `migrations.get(id)`<br />Remote client | `GET /api/migration/migrations/:id`<br />`server:read` |
+| Switch traffic to the prepared migration target. | `migrations.cutover(id, input)`<br />Remote client | `POST /api/migration/migrations/:id/cutover`<br />`server:write` |
+| Request cancellation of a migration. | `migrations.cancel(id)`<br />Remote client | `POST /api/migration/migrations/:id/cancel`<br />`server:write` |
+| Answer a pending migration prompt, including edge takeover consent. | `migrations.respond(id, input)`<br />Remote client | `POST /api/migration/migrations/:id/respond`<br />`server:write` |
+| Resume an interrupted migration. | `migrations.resume(id, input)`<br />Remote client | `POST /api/migration/migrations/:id/resume`<br />`server:write` |
+| Clean up resources created on the migration target. | `migrations.cleanupTarget(id)`<br />Remote client | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` |
+| Delete an eligible migration record. | `migrations.remove(id)`<br />Remote client | `DELETE /api/migration/migrations/:id`<br />`server:write` |
+| Stream migration progress. | `migrations.events(id, options?)`<br />Remote client | `GET /api/migration/migrations/:id/stream`<br />`server:read` |
+| Stream server-discovery progress. | `migrations.scanEvents(input, options?)`<br />Remote client | `GET /api/migration/scan/stream`<br />`server:write` |
+
+{/* api-operations:end */}

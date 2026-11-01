@@ -35,13 +35,13 @@ vi.mock("@repo/adapters", () => ({
 }));
 
 import { detectMailEngine } from "@repo/adapters";
-import { hashPassword } from "../../../src/modules/mail/admin/password";
+import { hashPassword } from "@repo/platform/engine/modules/mail/admin/password";
 import {
   createMaildirOnDisk,
   generateMaildir,
   removeMaildirOnDisk,
-} from "../../../src/modules/mail/admin/maildir";
-import { forgetMailEngine } from "../../../src/modules/mail/mail-engine";
+} from "@repo/platform/engine/modules/mail/admin/maildir";
+import { forgetMailEngine } from "@repo/platform/engine/modules/mail/mail-engine";
 
 const HASH = "{SSHA512}c2FsdGVkaGFzaHZhbHVl";
 

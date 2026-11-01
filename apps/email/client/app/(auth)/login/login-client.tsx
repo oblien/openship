@@ -8,7 +8,7 @@
  * apps/email/server/src/lib/schemas.ts for the trust rationale.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -63,14 +63,19 @@ export function LoginClient() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const submitPending = useRef(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitPending.current) return;
+    submitPending.current = true;
+    setSignInError(null);
     setSubmitting(true);
     try {
       const { error } = await signIn.email({ email, password });
       if (error) {
-        toast.error(error.message);
+        setSignInError(error.message);
         return;
       }
       toast.success('Welcome back');
@@ -79,8 +84,9 @@ export function LoginClient() {
       // namespaced IDB slot.
       window.location.href = '/mail/inbox';
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Sign in failed');
+      setSignInError(err instanceof Error ? err.message : 'Sign in failed. Please try again.');
     } finally {
+      submitPending.current = false;
       setSubmitting(false);
     }
   }
@@ -189,6 +195,12 @@ export function LoginClient() {
                 </div>
               </div>
             </div>
+
+            {signInError && (
+              <p role="alert" className="mt-5 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {signInError}
+              </p>
+            )}
 
             <Button
               type="submit"

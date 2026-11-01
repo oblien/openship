@@ -1,0 +1,291 @@
+{
+  "cloudSubtitle": "Comandos agendados e sob demanda nos seus servidores gerenciados.",
+  "create": {
+    "commandHint": "Executa em cada servidor selecionado. Use docker run --rm para uma tarefa em um contêiner.",
+    "cloudServersHint": "Use um servidor existente ou adicione um servidor dedicado com sua própria assinatura.",
+    "cloudUsageHint": "As tarefas compartilham a capacidade e a cota de uso do servidor selecionado. O plano deve estar ativo para executá-las.",
+    "addDedicatedServer": "Adicionar servidor dedicado",
+    "title": "Nova tarefa",
+    "name": "Nome",
+    "namePlaceholder": "Vacuum noturno do BD",
+    "server": "Servidor",
+    "servers": "Servidores",
+    "noServers": "Nenhum servidor conectado ainda — adicione um primeiro.",
+    "command": "Comando",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "scheduleType": "Quando executar",
+    "scheduleTypes": {
+      "recurring": "Em um agendamento",
+      "once": "Uma vez",
+      "manual": "Manual"
+    },
+    "sections": {
+      "basics": "Básico",
+      "schedule": "Agendamento",
+      "servers": "Servidores de destino",
+      "reliability": "Confiabilidade",
+      "environment": "Ambiente",
+      "triggers": "Dependências e gatilhos",
+      "notifications": "Notificações"
+    },
+    "schedule": "Agendamento (cron)",
+    "runAt": "Executar às",
+    "manualHint": "Executa apenas quando acionado — Executar agora, uma dependência ou um evento.",
+    "timeout": "Tempo limite (s)",
+    "retryAttempts": "Tentativas máximas",
+    "retryBackoff": "Intervalo entre tentativas (s)",
+    "advanced": "Avançado",
+    "env": "Variáveis de ambiente",
+    "addVar": "Adicionar variável",
+    "secrets": "Segredos",
+    "addSecret": "Adicionar segredo",
+    "replaceSecrets": "Substituir segredos",
+    "secretsSet": "segredo(s) definido(s)",
+    "noSecrets": "Nenhum segredo definido.",
+    "dependencies": "Executar após",
+    "dependenciesHint": "Esta tarefa é executada após as tarefas selecionadas serem concluídas com sucesso.",
+    "triggers": "Gatilhos de eventos",
+    "notifications": "Notificações",
+    "noChannels": "Nenhum canal de notificação ainda — adicione um em Monitoramento → Notificações.",
+    "notificationsHint": "Substitui as configurações globais de notificação para esta tarefa.",
+    "submit": "Criar tarefa",
+    "creating": "Salvando…",
+    "cancel": "Cancelar",
+    "needServer": "Conecte um servidor primeiro",
+    "pasteEnv": "Colar .env",
+    "uploadEnv": "Enviar .env",
+    "envPasteEmpty": "Nenhuma variável encontrada",
+    "comingSoon": "Em breve",
+    "setupChannel": "Configurar um canal",
+    "customTriggerSoon": "Gatilho personalizado",
+    "docsLink": "Saiba mais sobre tarefas",
+    "docsBody": "Agendamentos, tentativas, segredos e notificações",
+    "summary": {
+      "title": "Resumo",
+      "command": "Comando",
+      "schedule": "Agendamento",
+      "targets": "Destinos",
+      "retry": "Tentativas",
+      "timeout": "Tempo limite",
+      "notify": "Notificações",
+      "none": "—",
+      "retryOff": "Desativado"
+    }
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "Verificações de implantação do GitHub",
+    "cloud:workspace-recovery": "Operações de workspace na nuvem",
+    "ssl:renew": "Renovação de certificado SSL",
+    "projects:orphan-gc": "Limpeza de recursos órfãos",
+    "images:gc": "Limpeza de artefatos de implantação",
+    "domains:verify-pending": "Verificar domínios personalizados",
+    "updates:scan": "Verificação de atualizações",
+    "backups:retention-prune": "Excluir backups expirados",
+    "backups:stale-sweep": "Reconciliação de backups pendentes",
+    "prune:audit": "Limpar registro de auditoria",
+    "prune:incidents": "Limpar histórico de incidentes",
+    "sampler:resources": "Amostrador de uso de recursos",
+    "system:analytics-scraper": "Coletor de análises",
+    "build-cache:gc": "Limpeza de cache de compilação",
+    "cloud:https-health": "Saúde HTTPS na nuvem",
+    "system:server-modules": "Varredura de módulos do servidor",
+    "system:server-containers": "Varredura de contêineres do servidor",
+    "system:health-watch": "Monitoramento de integridade",
+    "jobs:due-once": "Executar tarefas avulsas na fila",
+    "edge:verify": "Verificação de proxy perimetral",
+    "audit:retention-prune": "Limpeza de log de auditoria",
+    "retention-prune-daily": "Limpeza de backups antigos",
+    "backups:stale-run-sweep": "Reconciliação de backups travados",
+    "domains:check-https": "Saúde do HTTPS na nuvem",
+    "analytics:scrape": "Coleta de análises de tráfego",
+    "resources:sample": "Amostragem de uso de recursos",
+    "analytics:retention-prune": "Limpeza de análises de tráfego",
+    "resources:retention-prune": "Limpeza de uso de recursos",
+    "migrations:recover": "Recuperação de migrações",
+    "deployments:cloud-build-queue": "Fila de compilação na nuvem",
+    "deployments:cloud-build-recovery": "Recuperação de compilações na nuvem",
+    "deployments:reconcile": "Reconciliação de deploys",
+    "permissions:pending-grant-prune": "Limpeza de convites pendentes",
+    "github:webhook-event-prune": "Limpeza de webhooks do GitHub",
+    "edge:target-verify": "Verificação de domínios gratuitos",
+    "modules:scan": "Varredura de módulos do servidor",
+    "infra:scan": "Varredura de contêineres gerenciados",
+    "mail:inbound-watch": "Regras de e-mail de entrada",
+    "mail:inbound-reconcile": "Reconciliação de regras de e-mail",
+    "services:health-watch": "Monitoramento de saúde dos contêineres",
+    "incidents:prune": "Limpeza do histórico de incidentes",
+    "jobs:oneshot": "Despachante de tarefas pontuais",
+    "Audit log prune": "Limpeza de log de auditoria",
+    "Backup in-flight stale reconciliation": "Reconciliação de backups travados",
+    "Backup retention prune": "Limpeza de backups antigos",
+    "Cloud HTTPS health": "Saúde do HTTPS na nuvem",
+    "Cloud workspace operations": "Operações de workspace na nuvem",
+    "Container health watch": "Monitoramento de saúde dos contêineres",
+    "Deployment artifact cleanup": "Limpeza de artefatos de deploy",
+    "Deployment reconcile": "Reconciliação de deploys",
+    "GitHub deployment Checks": "Verificações de deploy do GitHub",
+    "GitHub webhook event prune": "Limpeza de webhooks do GitHub",
+    "Incident history prune": "Limpeza do histórico de incidentes",
+    "Managed-container update scan": "Varredura de contêineres gerenciados",
+    "Migration recovery": "Recuperação de migrações",
+    "Native-module update scan": "Varredura de módulos do servidor",
+    "Notification rule capture drift": "Reconciliação de regras de e-mail",
+    "Notification rules": "Regras de e-mail de entrada",
+    "One-time job dispatcher": "Despachante de tarefas pontuais",
+    "Orphaned resource cleanup": "Limpeza de recursos órfãos",
+    "Pending grant prune": "Limpeza de convites pendentes",
+    "Resource usage prune": "Limpeza de uso de recursos",
+    "Resource usage sampling": "Amostragem de uso de recursos",
+    "SSL certificate renewal": "Renovação de certificados SSL",
+    "Traffic analytics collection": "Coleta de análises de tráfego",
+    "Traffic analytics prune": "Limpeza de análises de tráfego",
+    "Update scan": "Varredura de atualizações",
+    "Free-domain target verification": "Verificação de domínios gratuitos",
+    "Domain DNS verification": "Verificação de DNS de domínio"
+  },
+  "backups": {
+    "section": "Agendamentos de backup",
+    "sectionDesc": "Backups automáticos agendados por projeto ou serviço. Gerenciados na aba Backups de cada projeto.",
+    "projectDefault": "Padrão do projeto",
+    "mailServer": "Servidor de e-mail",
+    "manage": "Gerenciar em Backups",
+    "badge": "Backup",
+    "never": "Nunca executado",
+    "status": {
+      "succeeded": "Concluído",
+      "failed": "Falhou",
+      "cancelled": "Cancelado",
+      "running": "Em execução"
+    }
+  },
+  "title": "Tarefas",
+  "subtitle": "Manutenção integrada e comandos personalizados em execução nos seus servidores.",
+  "empty": "Nenhuma tarefa agendada ainda.",
+  "searchPlaceholder": "Pesquisar tarefas…",
+  "noResults": "Nenhuma tarefa corresponde aos seus filtros.",
+  "overview": {
+    "title": "Visão geral",
+    "subtitle": "Tarefas nesta instância",
+    "all": "Todas as tarefas",
+    "running": "Em execução",
+    "failed": "Com falha",
+    "scheduled": "Agendadas",
+    "disabled": "Desativadas"
+  },
+  "loadFailed": "Falha ao carregar tarefas.",
+  "kind": {
+    "system": "Sistema",
+    "custom": "Personalizadas"
+  },
+  "fields": {
+    "schedule": "Agendamento",
+    "nextRun": "Próxima execução",
+    "lastRun": "Última execução",
+    "never": "Nunca executado",
+    "notScheduled": "Não agendado"
+  },
+  "status": {
+    "success": "Sucesso",
+    "failed": "Falhou",
+    "running": "Em execução"
+  },
+  "actions": {
+    "run": "Executar agora",
+    "running": "Executando…",
+    "edit": "Editar agendamento",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "enable": "Ativar",
+    "disable": "Desativar",
+    "viewLogs": "Logs"
+  },
+  "cronHint": "Cron padrão de 5 campos (minuto hora dia mês dia_da_semana), UTC.",
+  "toast": {
+    "ran": "{label} iniciado.",
+    "ranFailed": "Falha ao executar {label}.",
+    "saved": "Agendamento atualizado para {label}.",
+    "saved2": "Tarefa atualizada.",
+    "saveFailed": "Falha ao atualizar {label}.",
+    "enabled": "{label} ativado.",
+    "disabled": "{label} desativado.",
+    "toggleFailed": "Falha ao atualizar {label}.",
+    "title": "Tarefas",
+    "created": "Tarefa criada.",
+    "createFailed": "Falha ao criar tarefa.",
+    "deleted": "Tarefa excluída.",
+    "deleteFailed": "Falha ao excluir tarefa."
+  },
+  "newJob": "Nova tarefa",
+  "sections": {
+    "system": "Tarefas do sistema",
+    "systemDesc": "Manutenção integrada nesta instância.",
+    "custom": "Tarefas personalizadas",
+    "customDesc": "Comandos executados nos seus servidores em um agendamento."
+  },
+  "customEmpty": {
+    "title": "Nenhuma tarefa personalizada ainda",
+    "desc": "Execute um comando em um dos seus servidores — em um agendamento, uma vez ou em um evento — com tentativas, segredos, logs em tempo real e notificações.",
+    "cta": "Criar tarefa",
+    "docs": "Documentação"
+  },
+  "edit": {
+    "title": "Editar tarefa",
+    "action": "Editar",
+    "save": "Salvar alterações"
+  },
+  "detail": {
+    "back": "Voltar para tarefas",
+    "tabs": {
+      "overview": "Visão geral",
+      "runs": "Execuções"
+    },
+    "servers": "Servidores",
+    "retry": "Tentativas",
+    "retryValue": "{n} tentativas, intervalo de {s}s",
+    "notifyValue": "{c} canal(is) em {s}",
+    "onceAt": "Uma vez às",
+    "noRuns": "Nenhuma execução ainda."
+  },
+  "delete": {
+    "action": "Excluir",
+    "confirm": "Excluir esta tarefa?",
+    "deleting": "Excluindo…"
+  },
+  "logs": {
+    "title": "Logs de execução",
+    "streaming": "Transmitindo…",
+    "empty": "Nenhuma saída ainda.",
+    "close": "Fechar",
+    "exit": "Código de saída {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Implantação bem-sucedida",
+      "description": "Uma implantação de produção foi concluída com sucesso."
+    },
+    "deployment.failed": {
+      "label": "Falha na implantação",
+      "description": "Erro na compilação ou na implantação."
+    },
+    "backup_run.succeeded": {
+      "label": "Backup concluído",
+      "description": "Um backup agendado ou manual foi concluído."
+    },
+    "backup_run.failed": {
+      "label": "Falha no backup",
+      "description": "A execução do backup apresentou erro."
+    },
+    "backup_restore.completed": {
+      "label": "Restauração concluída",
+      "description": "Uma restauração foi finalizada."
+    },
+    "ssl.renewal_failed": {
+      "label": "Falha na renovação do SSL",
+      "description": "Não foi possível renovar o certificado."
+    },
+    "domain.verification_failed": {
+      "label": "Falha na verificação do domínio",
+      "description": "A verificação de DNS do domínio falhou."
+    }
+  }
+}

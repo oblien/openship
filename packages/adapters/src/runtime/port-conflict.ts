@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { DeployError, shellQuote } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import type { BuildLogger } from "./build-pipeline";
@@ -52,6 +53,7 @@ export interface PortOccupant {
   containerId?: string;
   containerName?: string;
   containerImage?: string;
+  swarmService?: string;
   /** `openship.project` / `openship.service` off that container's labels. */
   ownerProjectId?: string;
   serviceName?: string;
@@ -121,6 +123,7 @@ async function resolveListenerOwner(
 
 /** Why a port whose owner we CAN see is one we won't offer to free. */
 export type PortRefusal =
+  | "swarm"
   | "ambiguous"
   | "our-edge"
   | "platform"
@@ -148,6 +151,7 @@ export type PortVerdict =
  * total switch on {@link PortRefusal} makes a new refusal a compile error instead.
  */
 export function portStopVerdict(occupant: PortOccupant): PortVerdict {
+  if (occupant.swarmService) return { target: "none", why: "swarm" };
   // Two owners for one port: stopping either is a coin flip with someone's app.
   if (occupant.ambiguousOwners) return { target: "none", why: "ambiguous" };
 
@@ -398,7 +402,7 @@ export async function probeListeningPortOwners(
   }
 
   const described = await Promise.all(
-    evidence.pids.map((pid) => describeProcess(executor, pid).catch(() => null)),
+    evidence.pids.map((pid) => describeProcess(executor, pid).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/port-conflict"); return null; })),
   );
   const occupants = described.filter((row): row is PortOccupant => row !== null);
   return {
@@ -424,7 +428,8 @@ export async function probeListeningPortState(
       return { occupant: { pid: null, command: "unknown listener" }, checked: true };
     }
     return { occupant: await describeProcess(executor, pid), checked: true };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/runtime/port-conflict");
     return { occupant: null, checked: false };
   }
 }
@@ -498,6 +503,7 @@ async function withContainer(
     ...(platform ? { platformContainer: true } : {}),
     containerId: container.id,
     containerName: container.name,
+    swarmService: container.swarmService,
     containerImage: container.image,
     ...(container.projectId ? { ownerProjectId: container.projectId } : {}),
     ...(container.deploymentId ? { deploymentId: container.deploymentId } : {}),
@@ -583,6 +589,34 @@ export async function resolvePortOwner(
 }
 
 /**
+ * A suggested Docker publish must be free in both the socket table and Docker.
+ * DNAT-only publishes have no listener; a failed probe is not proof of a free port.
+ */
+export async function isDockerHostPortAvailable(
+  executor: CommandExecutor,
+  port: number,
+): Promise<boolean | null> {
+  const [listening, published] = await Promise.all([
+    probePortListeningOnce(executor, port),
+    resolveContainerPublishingPort(executor, port),
+  ]);
+  if (listening === true || published.kind === "one" || published.kind === "ambiguous") {
+    return false;
+  }
+  return listening === false && published.kind === "none" ? true : null;
+}
+
+export interface AlternativeHostPort {
+  port: number;
+  /** Recheck and reserve this exact port, then update the caller's deploy config. */
+  apply: () => Promise<boolean>;
+}
+
+export type SuggestAlternativeHostPort = (
+  excluded: ReadonlySet<number>,
+) => Promise<AlternativeHostPort | null>;
+
+/**
  * The `DeployError.details` bag for a PORT_IN_USE, in ONE place.
  *
  * Persisted verbatim to `deployment.errorDetails` and read by the operator-facing
@@ -647,6 +681,8 @@ function freeActionLabel(occupant: PortOccupant): string {
 function refusalReason(port: number, occupant: PortOccupant, why: PortRefusal): string {
   const named = occupant.containerName ?? occupant.containerId;
   switch (why) {
+    case "swarm":
+      return `Port ${port} belongs to Swarm service ${occupant.swarmService}. Change its published ports through a Swarm manager; a task cannot be stopped as a standalone container.`;
     case "ambiguous":
       return (
         `Port ${port} is published by ${occupant.ambiguousOwners} containers at once (${occupant.command}), ` +
@@ -690,42 +726,123 @@ function refusalReason(port: number, occupant: PortOccupant, why: PortRefusal): 
  * The only MUTATING consumer of the port probe, and therefore the one that pays for
  * {@link resolvePortOwner}: what gets offered here turns straight into a command on
  * the operator's server. When the owner can be named but not safely stopped, no free
- * action is offered at all — an honest dead end beats a button that does more damage
- * than the conflict it clears.
+ * action is offered at all. Callers which can safely change their host publish may
+ * offer a verified alternative; only the user's exact selection can apply it.
+ *
+ * `outgoingDeploymentId` names the deployment this deploy replaces. When that is what
+ * holds the port, the caller stops it before the new release binds, so there is nothing
+ * to ask; any other owner, another Openship deployment included, is still prompted for.
  */
 export async function ensurePortAvailable(
   executor: CommandExecutor,
   port: number,
   logger: BuildLogger,
   promptUser: PromptUserFn,
+  options: {
+    suggestAlternative?: SuggestAlternativeHostPort;
+    outgoingDeploymentId?: string;
+  } = {},
 ): Promise<void> {
   const occupant = await resolvePortOwner(executor, port);
   if (!occupant) return;
 
+  if (
+    options.outgoingDeploymentId !== undefined &&
+    occupant.deploymentId === options.outgoingDeploymentId
+  ) {
+    logger.log(
+      `Port ${port} is held by the outgoing deployment ${occupant.deploymentId}, which is stopped before the new release starts.\n`,
+    );
+    return;
+  }
+
   const verdict = portStopVerdict(occupant);
   const stopTarget = verdict.target;
+  const reason = verdict.target === "none" ? refusalReason(port, occupant, verdict.why) : undefined;
+  const message =
+    reason ??
+    (occupant.isManagedDeployment
+      ? `Port ${port} is occupied by ${occupant.command}, which Openship deployed.`
+      : `Port ${port} is occupied by ${occupant.command}. This may not be a previous deployment.`);
+  logger.log(`${message} Waiting for user decision...\n`, "warn");
 
-  if (verdict.target === "none") {
-    const reason = refusalReason(port, occupant, verdict.why);
-    logger.log(`${reason} Waiting for user decision...\n`, "warn");
+  const excluded = new Set([port]);
+  let attempt = 0;
+  let retryMessage = "";
+  while (true) {
+    let alternative: AlternativeHostPort | null = null;
+    try {
+      alternative = (await options.suggestAlternative?.(excluded)) ?? null;
+    } catch (error) {
+      observeCaughtError(error, "adapters/runtime/port-conflict");
+      logger.log(
+        "Could not check an alternative host port. The current port still needs your decision.\n",
+        "warn",
+      );
+    }
+    if (
+      alternative &&
+      (!Number.isInteger(alternative.port) ||
+        alternative.port < 1 ||
+        alternative.port > 65535 ||
+        excluded.has(alternative.port))
+    )
+      alternative = null;
 
-    // Offer no stop — but still HOLD. The prompt is the operator's window to free the
-    // port by hand and carry on: at HEAD that window existed only as a mislabelled
-    // "Free Port & Continue" which freed nothing and then re-probed, and removing it
-    // outright would throw away a built artifact for a conflict they could clear in a
-    // shell in ten seconds. `re_check` says what it does instead of implying we will.
+    // New prompt/action identities prevent a delayed answer from authorizing a
+    // later attempt. The initial existing actions retain their public ids.
+    const suffix = attempt === 0 ? "" : `:${attempt}`;
+    const usePortAction = alternative ? `use_port:${alternative.port}${suffix}` : undefined;
     const action = await promptUser({
-      promptId: `port_in_use:${port}`,
+      promptId: `port_in_use:${port}${suffix}`,
       title: "Port In Use",
-      message: reason,
+      message: [
+        retryMessage,
+        message,
+        alternative
+          ? `Port ${alternative.port} is available. Using it keeps the existing service running and saves the new host port for future deployments.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       actions: [
-        { id: "re_check", label: "I Freed It — Re-check", variant: "primary" },
-        { id: "abort", label: "Cancel Deploy", variant: "secondary" },
+        ...(alternative
+          ? [{ id: usePortAction!, label: `Use port ${alternative.port}`, variant: "primary" }]
+          : []),
+        ...(verdict.target === "none"
+          ? [
+              {
+                id: `re_check${suffix}`,
+                label: "I Freed It — Re-check",
+                variant: alternative ? "secondary" : "primary",
+              },
+            ]
+          : [{ id: `free_port${suffix}`, label: freeActionLabel(occupant), variant: "danger" }]),
+        { id: `abort${suffix}`, label: "Cancel Deploy", variant: "secondary" },
       ],
-      details: portOccupantDetails(port, occupant, stopTarget),
+      details: {
+        ...portOccupantDetails(port, occupant, stopTarget),
+        ...(alternative ? { alternativePort: alternative.port } : {}),
+      },
     });
 
-    if (action === "re_check") {
+    if (alternative && action === usePortAction) {
+      if (await alternative.apply()) {
+        logger.log(
+          `User selected host port ${alternative.port} instead of ${port}. The existing service was left running.\n`,
+        );
+        return;
+      }
+      // Another process/controller may have taken the suggestion while the
+      // dialog was open. Ask again, never substitute a different port silently.
+      excluded.add(alternative.port);
+      retryMessage = `Could not confirm port ${alternative.port} is still available. Choose an option to continue.`;
+      logger.log(`${retryMessage}\n`, "warn");
+      attempt += 1;
+      continue;
+    }
+
+    if (verdict.target === "none" && action === `re_check${suffix}`) {
       const remaining = await resolvePortOwner(executor, port);
       if (!remaining) return;
       logger.log(`Port ${port} is still held by ${remaining.command}.\n`, "error");
@@ -739,46 +856,22 @@ export async function ensurePortAvailable(
       );
     }
 
-    throw new DeployError(reason, "PORT_IN_USE", portOccupantDetails(port, occupant, stopTarget));
-  }
-
-  logger.log(
-    `Port ${port} is occupied by ${occupant.command}. Waiting for user decision...\n`,
-    "warn",
-  );
-
-  const action = await promptUser({
-    promptId: `port_in_use:${port}`,
-    title: "Port In Use",
-    message: occupant.isManagedDeployment
-      ? `Port ${port} is occupied by ${occupant.command}, which Openship deployed.`
-      : `Port ${port} is occupied by ${occupant.command}. This may not be a previous deployment.`,
-    actions: [
-      { id: "free_port", label: freeActionLabel(occupant), variant: "danger" },
-      { id: "abort", label: "Cancel Deploy", variant: "secondary" },
-    ],
-    details: portOccupantDetails(port, occupant, stopTarget),
-  });
-
-  if (action === "free_port") {
-    logger.log(`User chose to free port ${port} from ${occupant.command}...\n`);
-    await freePortOccupant(executor, port, occupant, logger);
-
-    const remaining = await resolvePortOwner(executor, port);
-    if (!remaining) {
-      return;
+    if (verdict.target !== "none" && action === `free_port${suffix}`) {
+      logger.log(`User chose to free port ${port} from ${occupant.command}...\n`);
+      await freePortOccupant(executor, port, occupant, logger);
+      const remaining = await resolvePortOwner(executor, port);
+      if (!remaining) return;
+      throw new DeployError(
+        `Port ${port} is still in use by ${remaining.command}. Stop the existing process before deploying.`,
+        "PORT_IN_USE",
+        portOccupantDetails(port, remaining, portStopTarget(remaining)),
+      );
     }
 
     throw new DeployError(
-      `Port ${port} is still in use by ${remaining.command}. Stop the existing process before deploying.`,
+      reason ?? `Deploy aborted: port ${port} is in use by ${occupant.command}`,
       "PORT_IN_USE",
-      portOccupantDetails(port, remaining, portStopTarget(remaining)),
+      portOccupantDetails(port, occupant, stopTarget),
     );
   }
-
-  throw new DeployError(
-    `Deploy aborted: port ${port} is in use by ${occupant.command}`,
-    "PORT_IN_USE",
-    portOccupantDetails(port, occupant, stopTarget),
-  );
 }

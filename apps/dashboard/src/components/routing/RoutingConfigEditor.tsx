@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Controlled editor for a project's vercel.json-derived routing config
  * (rewrites / redirects / headers / cleanUrls / trailingSlash). Used in BOTH the
@@ -11,7 +13,10 @@
  */
 
 import React, { useCallback } from "react";
-import { Plus, Trash2, ArrowRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Switch } from "@/components/ui/Switch";
 import { useI18n } from "@/components/i18n-provider";
 import type { RoutingConfig } from "@repo/core";
 import type { EdgeConfigReport } from "@/lib/api/projects";
@@ -20,12 +25,6 @@ import { ProxySettingsSection } from "./ProxySettingsSection";
 type Rewrite = { source: string; destination: string };
 type Redirect = { source: string; destination: string; permanent?: boolean };
 type HeaderRule = { source: string; headers: { key: string; value: string }[] };
-
-const EMPTY: Required<Pick<RoutingConfig, "rewrites" | "redirects" | "headers">> = {
-  rewrites: [],
-  redirects: [],
-  headers: [],
-};
 
 function normalize(value: RoutingConfig | null | undefined): RoutingConfig {
   return {
@@ -52,52 +51,62 @@ function compact(cfg: RoutingConfig): RoutingConfig | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-const inputCls =
-  "w-full px-2.5 py-1.5 bg-muted/30 border border-border/50 rounded-lg text-sm text-foreground font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20";
+function RuleInput({ label, ...props }: React.ComponentProps<typeof Input> & { label: string }) {
+  return (
+    <label className="block min-w-0 space-y-2 text-sm text-foreground">
+      <span className="font-medium">{label}</span>
+      <Input {...props} />
+    </label>
+  );
+}
 
-const RowShell: React.FC<{ onRemove: () => void; children: React.ReactNode; disabled?: boolean }> = ({
-  onRemove,
-  children,
-  disabled,
-}) => {
+const RowShell: React.FC<{
+  onRemove: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}> = ({ onRemove, children, disabled }) => {
   const { t } = useI18n();
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 min-w-0 flex items-center gap-2">{children}</div>
-      <button
+    <div className="flex items-start gap-2">
+      <div className="grid flex-1 min-w-0 gap-3 @lg:grid-cols-2">{children}</div>
+      <Button
         type="button"
         onClick={onRemove}
         disabled={disabled}
-        className="p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger-bg disabled:opacity-40"
+        variant="ghost"
+        size="icon"
+        className="shrink-0 text-muted-foreground hover:text-danger hover:bg-danger-bg"
         aria-label={t.widgets.routing.configEditor.remove}
       >
-        <Trash2 className="size-3.5" />
-      </button>
+        <UiIcon name="trash" className="size-3.5" />
+      </Button>
     </div>
   );
 };
 
-const SectionHeader: React.FC<{ title: string; hint: string; onAdd: () => void; disabled?: boolean }> = ({
-  title,
-  hint,
-  onAdd,
-  disabled,
-}) => {
+const SectionHeader: React.FC<{
+  title: string;
+  hint: string;
+  onAdd: () => void;
+  disabled?: boolean;
+}> = ({ title, hint, onAdd, disabled }) => {
   const { t } = useI18n();
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-start justify-between gap-4">
       <div>
-        <h4 className="text-[13px] font-semibold text-foreground">{title}</h4>
-        <p className="text-[11px] text-muted-foreground">{hint}</p>
+        <h4 className="text-sm font-medium text-foreground">{title}</h4>
+        <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
-      <button
+      <Button
         type="button"
         onClick={onAdd}
         disabled={disabled}
-        className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-40"
+        variant="secondary"
+        className="shrink-0"
+        aria-label={`${t.widgets.routing.configEditor.add} ${title}`}
       >
-        <Plus className="size-3.5" /> {t.widgets.routing.configEditor.add}
-      </button>
+        <UiIcon name="plus" className="size-3.5" /> {t.widgets.routing.configEditor.add}
+      </Button>
     </div>
   );
 };
@@ -142,9 +151,9 @@ export const RoutingConfigEditor: React.FC<{
   const headers = (cfg.headers ?? []) as HeaderRule[];
 
   return (
-    <div className="space-y-5">
+    <div className="@container space-y-4">
       {/* Rewrites */}
-      <div className="space-y-2">
+      <section aria-label={w.rewrites} className="rounded-2xl bg-card p-5 space-y-4">
         <SectionHeader
           title={w.rewrites}
           hint={w.rewritesHint}
@@ -157,38 +166,51 @@ export const RoutingConfigEditor: React.FC<{
             disabled={disabled}
             onRemove={() => patch({ rewrites: rewrites.filter((_, j) => j !== i) })}
           >
-            <input
-              className={inputCls}
+            <RuleInput
+              dir="ltr"
+              variant="filled"
+              className="min-w-0"
+              label={w.source}
               placeholder="/api/(.*)"
               value={rw.source}
               disabled={disabled}
               onChange={(e) =>
-                patch({ rewrites: rewrites.map((r, j) => (j === i ? { ...r, source: e.target.value } : r)) })
+                patch({
+                  rewrites: rewrites.map((r, j) =>
+                    j === i ? { ...r, source: e.target.value } : r,
+                  ),
+                })
               }
             />
-            <ArrowRight className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
-            <input
-              className={inputCls}
+            <RuleInput
+              dir="ltr"
+              variant="filled"
+              className="min-w-0"
+              label={w.destination}
               placeholder="/index.html or https://backend"
               value={rw.destination}
               disabled={disabled}
               onChange={(e) =>
                 patch({
-                  rewrites: rewrites.map((r, j) => (j === i ? { ...r, destination: e.target.value } : r)),
+                  rewrites: rewrites.map((r, j) =>
+                    j === i ? { ...r, destination: e.target.value } : r,
+                  ),
                 })
               }
             />
           </RowShell>
         ))}
-      </div>
+      </section>
 
       {/* Redirects */}
-      <div className="space-y-2">
+      <section aria-label={w.redirects} className="rounded-2xl bg-card p-5 space-y-4">
         <SectionHeader
           title={w.redirects}
           hint={w.redirectsHint}
           disabled={disabled}
-          onAdd={() => patch({ redirects: [...redirects, { source: "", destination: "", permanent: false }] })}
+          onAdd={() =>
+            patch({ redirects: [...redirects, { source: "", destination: "", permanent: false }] })
+          }
         />
         {redirects.map((rd, i) => (
           <RowShell
@@ -196,77 +218,98 @@ export const RoutingConfigEditor: React.FC<{
             disabled={disabled}
             onRemove={() => patch({ redirects: redirects.filter((_, j) => j !== i) })}
           >
-            <input
-              className={inputCls}
+            <RuleInput
+              dir="ltr"
+              variant="filled"
+              className="min-w-0"
+              label={w.source}
               placeholder="/old"
               value={rd.source}
               disabled={disabled}
               onChange={(e) =>
-                patch({ redirects: redirects.map((r, j) => (j === i ? { ...r, source: e.target.value } : r)) })
+                patch({
+                  redirects: redirects.map((r, j) =>
+                    j === i ? { ...r, source: e.target.value } : r,
+                  ),
+                })
               }
             />
-            <ArrowRight className="size-3.5 text-muted-foreground shrink-0 rtl:rotate-180" />
-            <input
-              className={inputCls}
+            <RuleInput
+              dir="ltr"
+              variant="filled"
+              className="min-w-0"
+              label={w.destination}
               placeholder="/new"
               value={rd.destination}
               disabled={disabled}
               onChange={(e) =>
                 patch({
-                  redirects: redirects.map((r, j) => (j === i ? { ...r, destination: e.target.value } : r)),
+                  redirects: redirects.map((r, j) =>
+                    j === i ? { ...r, destination: e.target.value } : r,
+                  ),
                 })
               }
             />
-            <label className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
-              <input
-                type="checkbox"
-                // `permanent` defaults to TRUE, as vercel.json documents and the compiler
-                // implements (absent ⇒ 308). `!!rd.permanent` displayed an imported rule
-                // with no key as "temporary", so a double-toggle wrote `permanent: false`
-                // and silently downgraded a 308 the edge was already serving to a 307.
+            <div className="flex items-center justify-between gap-3 @lg:col-span-2">
+              <span className="text-sm text-foreground">{w.permanent}</span>
+              <Switch
                 checked={rd.permanent !== false}
                 disabled={disabled}
-                onChange={(e) =>
+                ariaLabel={w.permanent}
+                onChange={(checked) =>
                   patch({
-                    redirects: redirects.map((r, j) => (j === i ? { ...r, permanent: e.target.checked } : r)),
+                    redirects: redirects.map((r, j) =>
+                      j === i ? { ...r, permanent: checked } : r,
+                    ),
                   })
                 }
               />
-              {w.permanent}
-            </label>
+            </div>
           </RowShell>
         ))}
-      </div>
+      </section>
 
       {/* Headers */}
-      <div className="space-y-3">
+      <section aria-label={w.headers} className="rounded-2xl bg-card p-5 space-y-4">
         <SectionHeader
           title={w.headers}
           hint={w.headersHint}
           disabled={disabled}
-          onAdd={() => patch({ headers: [...headers, { source: "/(.*)", headers: [{ key: "", value: "" }] }] })}
+          onAdd={() =>
+            patch({ headers: [...headers, { source: "/(.*)", headers: [{ key: "", value: "" }] }] })
+          }
         />
         {headers.map((hr, i) => (
-          <div key={i} className="rounded-lg border border-border/50 p-2.5 space-y-2">
+          <div key={i} className="rounded-xl bg-card p-4 space-y-3">
             <RowShell
               disabled={disabled}
               onRemove={() => patch({ headers: headers.filter((_, j) => j !== i) })}
             >
-              <input
-                className={inputCls}
+              <RuleInput
+                dir="ltr"
+                variant="filled"
+                className="min-w-0"
+                label={w.source}
                 placeholder="/(.*)"
                 value={hr.source}
                 disabled={disabled}
                 onChange={(e) =>
-                  patch({ headers: headers.map((h, j) => (j === i ? { ...h, source: e.target.value } : h)) })
+                  patch({
+                    headers: headers.map((h, j) =>
+                      j === i ? { ...h, source: e.target.value } : h,
+                    ),
+                  })
                 }
               />
             </RowShell>
-            <div className="ps-2 space-y-1.5">
+            <div className="space-y-3">
               {hr.headers.map((h, k) => (
-                <div key={k} className="flex items-center gap-2">
-                  <input
-                    className={inputCls}
+                <div key={k} className="grid items-end gap-3 @lg:grid-cols-[1fr_1fr_auto]">
+                  <RuleInput
+                    dir="ltr"
+                    variant="filled"
+                    className="min-w-0"
+                    label={w.headerName}
                     placeholder="X-Frame-Options"
                     value={h.key}
                     disabled={disabled}
@@ -274,14 +317,22 @@ export const RoutingConfigEditor: React.FC<{
                       patch({
                         headers: headers.map((row, j) =>
                           j === i
-                            ? { ...row, headers: row.headers.map((x, m) => (m === k ? { ...x, key: e.target.value } : x)) }
+                            ? {
+                                ...row,
+                                headers: row.headers.map((x, m) =>
+                                  m === k ? { ...x, key: e.target.value } : x,
+                                ),
+                              }
                             : row,
                         ),
                       })
                     }
                   />
-                  <input
-                    className={inputCls}
+                  <RuleInput
+                    dir="ltr"
+                    variant="filled"
+                    className="min-w-0"
+                    label={w.headerValue}
                     placeholder="DENY"
                     value={h.value}
                     disabled={disabled}
@@ -289,30 +340,39 @@ export const RoutingConfigEditor: React.FC<{
                       patch({
                         headers: headers.map((row, j) =>
                           j === i
-                            ? { ...row, headers: row.headers.map((x, m) => (m === k ? { ...x, value: e.target.value } : x)) }
+                            ? {
+                                ...row,
+                                headers: row.headers.map((x, m) =>
+                                  m === k ? { ...x, value: e.target.value } : x,
+                                ),
+                              }
                             : row,
                         ),
                       })
                     }
                   />
-                  <button
+                  <Button
                     type="button"
                     disabled={disabled}
                     onClick={() =>
                       patch({
                         headers: headers.map((row, j) =>
-                          j === i ? { ...row, headers: row.headers.filter((_, m) => m !== k) } : row,
+                          j === i
+                            ? { ...row, headers: row.headers.filter((_, m) => m !== k) }
+                            : row,
                         ),
                       })
                     }
-                    className="p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger-bg disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-muted-foreground hover:text-danger hover:bg-danger-bg"
                     aria-label={w.removeHeader}
                   >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                    <UiIcon name="trash" className="size-3.5" />
+                  </Button>
                 </div>
               ))}
-              <button
+              <Button
                 type="button"
                 disabled={disabled}
                 onClick={() =>
@@ -322,36 +382,54 @@ export const RoutingConfigEditor: React.FC<{
                     ),
                   })
                 }
-                className="flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-40"
+                variant="secondary"
               >
-                <Plus className="size-3" /> {w.addHeader}
-              </button>
+                <UiIcon name="plus" className="size-3" /> {w.addHeader}
+              </Button>
             </div>
           </div>
         ))}
-      </div>
+      </section>
 
-      {/* Flags */}
-      <div className="flex flex-wrap gap-4 pt-1">
-        <label className="flex items-center gap-2 text-xs text-foreground">
-          <input
-            type="checkbox"
+      <section aria-label={w.urlBehavior} className="rounded-2xl bg-card p-5 space-y-4">
+        <h4 className="text-sm font-medium text-foreground">{w.urlBehavior}</h4>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-foreground">{w.cleanUrls}</p>
+            <p className="text-xs text-muted-foreground">{w.cleanUrlsHint}</p>
+          </div>
+          <Switch
             checked={!!cfg.cleanUrls}
             disabled={disabled}
-            onChange={(e) => patch({ cleanUrls: e.target.checked || undefined })}
+            ariaLabel={w.cleanUrls}
+            onChange={(checked) => patch({ cleanUrls: checked || undefined })}
           />
-          {w.cleanUrls} <span className="text-muted-foreground">{w.cleanUrlsHint}</span>
-        </label>
-        <label className="flex items-center gap-2 text-xs text-foreground">
-          <input
-            type="checkbox"
-            checked={!!cfg.trailingSlash}
+        </div>
+        <div className="flex flex-col gap-4 @sm:flex-row @sm:items-center @sm:justify-between">
+          <div>
+            <p className="text-sm text-foreground">{w.trailingSlash}</p>
+            <p className="text-xs text-muted-foreground">{w.trailingSlashHint}</p>
+          </div>
+          <CustomSelect
+            variant="filled"
+            triggerClassName="bg-muted/60 hover:bg-muted"
+            className="w-full @sm:w-48 @sm:shrink-0"
             disabled={disabled}
-            onChange={(e) => patch({ trailingSlash: e.target.checked || undefined })}
+            aria-label={w.trailingSlash}
+            value={
+              cfg.trailingSlash === undefined ? "automatic" : cfg.trailingSlash ? "add" : "remove"
+            }
+            onChange={(value) =>
+              patch({ trailingSlash: value === "automatic" ? undefined : value === "add" })
+            }
+            options={[
+              { value: "automatic", label: w.trailingSlashAutomatic },
+              { value: "add", label: w.trailingSlashAdd },
+              { value: "remove", label: w.trailingSlashRemove },
+            ]}
           />
-          {w.trailingSlash}
-        </label>
-      </div>
+        </div>
+      </section>
 
       {showProxySettings && (
         <ProxySettingsSection

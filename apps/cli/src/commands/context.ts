@@ -16,6 +16,7 @@ import {
   setActiveContext,
 } from "../lib/config";
 import { err, ok, printTable } from "../lib/output";
+import { reportResult } from "../lib/cmd-helpers";
 
 function renderContexts(): void {
   const rows = listContexts().map((c) => ({
@@ -23,9 +24,10 @@ function renderContexts(): void {
     name: c.name,
     apiUrl: c.apiUrl,
     dashboardUrl: c.dashboardUrl,
+    organization: c.organizationId ?? "",
     auth: c.hasToken ? "token" : "-",
   }));
-  printTable(rows, ["current", "name", "apiUrl", "dashboardUrl", "auth"]);
+  printTable(rows, ["current", "name", "apiUrl", "dashboardUrl", "organization", "auth"]);
 }
 
 const listCmd = new Command("list")
@@ -39,7 +41,7 @@ const useCmd = new Command("use")
   .action((name: string) => {
     try {
       setActiveContext(name);
-      ok(`\n  Active context → ${name}\n`);
+      reportResult({ context: name, active: true }, `Active context → ${name}`);
     } catch (e) {
       err((e as Error).message);
       process.exit(1);
@@ -52,15 +54,17 @@ const addCmd = new Command("add")
   .option("--api-url <url>", "API base URL")
   .option("--dashboard-url <url>", "Dashboard base URL")
   .option("--token <token>", "Personal Access Token to store")
+  .option("--organization <id>", "Pin this context to a Cloud or self-hosted organization")
   .option("--use", "Switch to this context after adding")
   .action((name: string, opts) => {
     addContext(name, {
       apiUrl: opts.apiUrl,
       dashboardUrl: opts.dashboardUrl,
       token: opts.token,
+      organizationId: opts.organization,
     });
     if (opts.use) setActiveContext(name);
-    ok(`\n  Saved context "${name}"${opts.use ? " (now active)" : ""}.\n`);
+    reportResult({ context: name, saved: true, active: listContexts().find(context => context.name === name)?.current ?? false }, `Saved context "${name}"${opts.use ? " (now active)" : ""}.`);
   });
 
 const rmCmd = new Command("rm")
@@ -70,7 +74,7 @@ const rmCmd = new Command("rm")
   .action((name: string) => {
     try {
       removeContext(name);
-      ok(`\n  Removed context "${name}".\n`);
+      reportResult({ context: name, removed: true }, `Removed context "${name}".`);
     } catch (e) {
       err((e as Error).message);
       process.exit(1);

@@ -21,7 +21,7 @@ hand.
 - That's it. You do **not** need to pre-install Docker or anything else — Openship installs what's missing.
 </Callout>
 
-## The click-by-click way
+## Steps
 
 <Steps>
 
@@ -32,8 +32,6 @@ hand.
 In the dashboard, open the **Servers** page and press **Add Server**. (If this is your first server,
 the empty page has an **Add Your First Server** button that does the same thing.)
 
-<Callout title="Screenshot">The Servers page empty state, with the **Add Server** button and the "What gets configured" cards (Docker, OpenResty, Monitoring, Git). *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -43,6 +41,7 @@ the empty page has an **Add Your First Server** button that does the same thing.
 This is the "who am I connecting to, and how" screen. The fields:
 
 - **Server Name** — an optional label like `Production` or `Staging`, just so you can tell servers apart. Leave it blank and Openship uses the IP address.
+- **Connection** — choose **Direct SSH** or **Cloudflare Access** for an existing Access SSH application.
 - **Server IP Address** — the address of your machine, e.g. `203.0.113.10`.
 - **Port** — the SSH port. Almost always `22` (the default).
 - **Username** — the user to log in as. Usually `root`.
@@ -54,6 +53,19 @@ This is the "who am I connecting to, and how" screen. The fields:
 There's an **Advanced** section too, for a **Jump Host** (a bastion server you must hop through first)
 and **Extra SSH Arguments** — you can ignore both unless you know you need them.
 
+For Cloudflare Access, enter the application's hostname (`ssh.example.com`) and your server's SSH
+credentials. Complete the Cloudflare login on the same machine and under the same OS user that runs
+OpenShip. Windows desktop includes the Cloudflare client. For a self-hosted instance or macOS/Linux,
+install `cloudflared` on the machine running the API, or set `OPENSHIP_CLOUDFLARED_PATH` to its absolute
+path. A containerized API needs the client and its authentication inside the container. The server's
+SSH port stays behind the Cloudflare Tunnel; you do not need to expose port 22 publicly for this route.
+
+The CLI uses the same connection setting:
+
+```bash
+openship server add --name Production --host ssh.example.com --ssh-transport cloudflare --auth-method agent
+```
+
 <Callout title="Test before you save" type="info">
 Press **Test Connection** first. Openship tries to log in and reports back without saving anything. A
 green **Connected** means your details are right. Fix any red message before moving on — it saves you
@@ -61,8 +73,6 @@ guessing later.
 </Callout>
 
 When the test passes, press **Save & Continue to Setup**.
-
-<Callout title="Screenshot">The SSH Connection form with name, IP, port, username, and the Password / SSH Key / Agent authentication switch. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -76,8 +86,6 @@ Once the server is saved, Openship offers two ways to install what's needed:
 - **Step-by-Step Setup** — you review each component and choose what to install, seeing detailed status first.
 
 If you're new, pick **Automatic Setup**.
-
-<Callout title="Screenshot">The "Server Setup" choice screen with the **Automatic Setup** and **Step-by-Step Setup** cards. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -103,8 +111,6 @@ first time a deployment actually needs them — you never install them by hand:
 Once any of these is installed, it shows up on the server's **Components** tab (below), where you can
 re-check, reinstall, or remove it. When setup finishes, you land on the server's own page.
 
-<Callout title="Screenshot">The install progress panel: a component checklist (Docker, Git) with a progress bar and an expandable log. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -121,8 +127,6 @@ Each server gets its own page, split into tabs. From here you can see how it's d
 
 The header also has **Edit** (change the connection details) and, in the "…" menu, **Remove Server**
 (which clears the stored SSH credentials and settings).
-
-<Callout title="Screenshot">A server detail page showing the Overview / Components / Security / Terminal tabs and the CPU / memory / disk stat cards. *(screenshot pending)*</Callout>
 
 ### Rate limiting (Security tab)
 
@@ -143,7 +147,7 @@ server as `localhost` on your own computer — the same idea as VS Code's port f
 bound to loopback only and stays active just while it's running. This tab is hidden outside the
 desktop app.
 
-## Prefer the terminal?
+## CLI
 
 Everything above works from the CLI. You must be logged in (`openship login`) and on a self-hosted
 Openship.
@@ -182,7 +186,39 @@ openship server rate-limit <server-id> --rps 50 --burst 20
 
 The installable components are `docker`, `git`, `openresty`, `certbot`, and `rsync`.
 
-## If something goes wrong
+## Inspect an existing Docker Swarm
+
+On a self-hosted or desktop controller, connect a Swarm manager using the normal
+server connection. Its **Overview → Docker Swarm → Review stacks** shows services,
+observed task counts, published ports, mount destinations and node health. A worker
+shows its membership and asks you to connect a manager for the inventory.
+
+The same inspection is available through the SDK, API and MCP:
+
+```bash
+openship server swarm <server-id>
+openship server swarm <server-id> --details
+```
+
+```ts
+const swarm = await ship.servers.inspectSwarm("server_example", { details: true });
+```
+
+The HTTP operation is `GET /api/system/servers/:id/swarm?details=true`; the MCP tool
+is `get_system_servers_by_id_swarm`. Server administration is required because a
+manager can observe the whole cluster. Environment values, credentials, join
+tokens, node addresses and mount source paths are excluded. Refresh is manual;
+a failed observation stays visible as an error rather than an empty cluster.
+
+This is **inspection only**. Swarm deployment, adoption, scaling and rollback are
+not available through Openship yet. Existing Swarm tasks are excluded from ordinary
+container imports, including flat imports. Edge takeover refuses Swarm-owned
+ports; worker nodes cannot prove routing-mesh ownership, so verify ingress through
+a connected manager. Change Swarm ports using its manager, not by stopping a task.
+Standalone Docker deployments and the existing K3s scaling workflow keep their
+current roles. This does not convert a Swarm cluster to K3s or enable Swarm on Cloud.
+
+## Troubleshooting
 
 <Callout title="Can't reach the server" type="error">
 Openship couldn't open an SSH connection. Check that the machine is powered on, that its SSH service
@@ -210,7 +246,7 @@ you'll see a "couldn't read" message. Install OpenResty from the **Components** 
 to **Security**.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Put an app on your new server — choose 'Server' when Openship asks where to run it." />

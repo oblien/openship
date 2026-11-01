@@ -5,68 +5,78 @@
  */
 
 import { Hono } from "hono";
+import {
+  DomainResourceSchemas,
+  VerifyPendingDomainsInputSchema,
+  ResourceIdSchema,
+  AddDomainBody,
+  UploadCertBody,
+  PreviewDomainBody,
+} from "@repo/contracts";
+import { Type } from "@sinclair/typebox";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudDomainProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./domain.controller";
-import { AddDomainBody, UploadCertBody, PreviewDomainBody } from "./domain.schema";
 
 const r = secureRouter(new Hono(), {
   module: "domains",
   basePath: "/api/domains",
 });
 
-
 /* ─── Domains ──────────────────────────────────────────────────────────── */
-r.get("/", { tag: "domain:list", mcp: { description: "List domains for the org / project." } }, ctrl.list);
+r.get("/", { tag: "domain:list", collectionProject: "query", mcp: { description: "List domains for the project named by the projectId query parameter." }, query: Type.Object({ projectId: ResourceIdSchema }) }, ctrl.list);
 r.post(
   "/",
   {
-    tag: "domain:write",
+    tag: "domain:write", auditHandledByOperation: true,
     // `ctrl.add` asserts {project, body.projectId, write} itself (projectId is
     // required by AddDomainBody). Without this the conditional-singleton
     // fallback asserted {domain,"*"}, which no scoped token can pass.
     collectionProject: true,
     body: AddDomainBody,
-    mcp: { description: "Add a domain (free subdomain or custom)." },
+     mcp: { description: "Add a domain (free subdomain or custom).",
+   },
   },
   ctrl.add,
 );
 // Side-effect-free DNS probe — POST is used to carry hostname in body.
 // readOnly opts out of the scanner's "POST must be write/admin" rule.
-r.post("/preview", { tag: "domain:read", readOnly: true, body: PreviewDomainBody, mcp: { description: "Preview the DNS records a domain will need, before adding it." } }, ctrl.preview);
-// Per-domain routes carry cloudDomainProxy (after the permission middleware):
+r.post("/preview", { tag: "domain:read", cloudResource: "server", readOnly: true, body: PreviewDomainBody, mcp: { description: "Preview the DNS records a domain will need, before adding it." } }, ctrl.preview);
+// Per-domain routes carry the shared Cloud resource gateway (after the permission middleware):
 // a domain belonging to a cloud project is proxied to the SaaS; a local domain
 // falls through to the local handler.
-r.get("/:id", { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } }, cloudDomainProxy, ctrl.get);
+r.get("/:id", { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } }, ctrl.get);
 r.delete(
   "/:id",
   {
-    tag: "domain:admin",
-    mcp: { description: "Delete a domain by id." },
+    tag: "domain:admin", auditHandledByOperation: true,
+     mcp: { description: "Delete a domain by id.",
+   },
   },
-  cloudDomainProxy,
   ctrl.remove,
 );
-r.post("/:id/verify", { tag: "domain:write", mcp: { description: "Verify a domain's ownership / DNS." } }, cloudDomainProxy, ctrl.verify);
+r.post("/:id/verify", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Verify a domain's ownership / DNS." } , query: DomainResourceSchemas.verify.input }, ctrl.verify);
 // Self-hosted live-log verify (SSE): streams certbot's standalone HTTP-01 run.
-r.post("/:id/verify/stream", { tag: "domain:write" }, ctrl.verifyStream);
-r.post("/:id/primary", { tag: "domain:write", mcp: { description: "Set this domain as the project's primary domain." } }, cloudDomainProxy, ctrl.setPrimary);
-r.get("/:id/records", { tag: "domain:read", mcp: { description: "Get the DNS records for a domain." } }, cloudDomainProxy, ctrl.records);
+r.post("/:id/verify/stream", { tag: "domain:write", auditHandledByOperation: true, mcpExcluded: "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming." }, ctrl.verifyStream);
+r.post("/:id/primary", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Set this domain as the project's primary domain." } }, ctrl.setPrimary);
+r.get("/:id/records", { tag: "domain:read", mcp: { description: "Get the DNS records for a domain." } , query: DomainResourceSchemas.records.input }, ctrl.records);
 // On-demand DNS auto-configure via a connected provider (Settings→DNS). Plan is a
 // read-only dry-run; apply writes the records on operator press (never silently).
-r.get("/:id/dns/plan", { tag: "domain:read", mcp: { description: "Preview what auto-configuring this domain's DNS through a connected provider would change." } }, cloudDomainProxy, ctrl.dnsPlan);
-r.post("/:id/dns/apply", { tag: "domain:write", mcp: { description: "Auto-configure this domain's DNS through a connected provider." } }, cloudDomainProxy, ctrl.dnsApply);
-r.post("/:id/renew", { tag: "domain:write", mcp: { description: "Renew the domain's SSL certificate." } }, cloudDomainProxy, ctrl.renewSsl);
-r.post("/:id/verify-ssl", { tag: "domain:write", mcp: { description: "Check/verify the domain's SSL certificate." } }, cloudDomainProxy, ctrl.verifySsl);
+r.get("/:id/dns/plan", { tag: "domain:read", mcp: { description: "Preview what auto-configuring this domain's DNS through a connected provider would change." } , query: DomainResourceSchemas.dnsPlan.input }, ctrl.dnsPlan);
+r.post("/:id/dns/apply", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Auto-configure this domain's DNS through a connected provider." } , query: DomainResourceSchemas.dnsApply.input }, ctrl.dnsApply);
+r.get("/:id/dns/challenge", { tag: "domain:read", mcp: { description: "Read the current DNS-01 HTTPS setup, including the actual ACME TXT record, deadline, logs, and result. Safe to poll or reopen after reconnecting; contains no certificate keys." } }, ctrl.dnsChallenge);
+r.post("/:id/dns/challenge", { tag: "domain:write", auditHandledByOperation: true, body: DomainResourceSchemas.startDnsChallenge.input, mcp: { description: "Start wildcard or DNS-01 HTTPS on a self-hosted deployment. Automatic uses a connected DNS provider; manual prepares a real ACME TXT record to publish. Returns the current attempt immediately; repeated starts reuse an active attempt. Read DNS challenge status, then check the manual attempt after adding its TXT value. Manual renewals need this flow again." } }, ctrl.startDnsChallenge);
+r.post("/:id/dns/challenge/check", { tag: "domain:write", auditHandledByOperation: true, body: DomainResourceSchemas.checkDnsChallenge.input, mcp: { description: "Check the exact TXT record for a manual DNS certificate attempt, then validate with the CA and install HTTPS on the current deployment server. Pass the attemptId returned by DNS challenge status. Read status for the result; a missing TXT keeps the same order available for retry." } }, ctrl.checkDnsChallenge);
+r.post("/:id/dns/challenge/cancel", { tag: "domain:write", auditHandledByOperation: true, body: DomainResourceSchemas.cancelDnsChallenge.input, mcp: { description: "Cancel the named manual DNS certificate attempt. Preserves existing certificates and routes. An installation already in progress must finish. Remove only this attempt's TXT value from DNS afterward." } }, ctrl.cancelDnsChallenge);
+r.post("/:id/renew", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Renew the domain's SSL certificate." } }, ctrl.renewSsl);
+r.post("/:id/verify-ssl", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Check/verify the domain's SSL certificate." } }, ctrl.verifySsl);
 // Self-hosted only: installs a cert into the box's OpenResty. On Openship Cloud
-// TLS is owned by the managed edge, so this 404s in CLOUD_MODE (localOnly gate).
+// The shared operation permits certificates only on customer-owned edges.
 r.post(
   "/:id/certificate",
-  { tag: "domain:write", localOnly: true, body: UploadCertBody, mcp: { description: "Install an operator-supplied TLS certificate (bring-your-own / Cloudflare Origin CA)." } },
-  cloudDomainProxy,
+  { tag: "domain:write", auditHandledByOperation: true, body: UploadCertBody, mcp: { description: "Install an operator-supplied TLS certificate (bring-your-own / Cloudflare Origin CA)." } },
   ctrl.uploadCert,
 );
-r.post("/renew-all", { tag: "domain:write" }, ctrl.renewAllSsl);
-r.post("/verify-pending", { tag: "domain:write" }, ctrl.verifyPending);
+r.post("/renew-all", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Attempt certificate renewal for eligible domains in this workspace. Inspect individual domain SSL state afterward; one domain’s failure does not prove all renewals failed." }, collection: true }, ctrl.renewAllSsl);
+r.post("/verify-pending", { tag: "domain:write", auditHandledByOperation: true, mcp: { description: "Recheck pending domains in this workspace and record current DNS/verification results. Read individual domain status for remaining blockers." }, collection: true, body: VerifyPendingDomainsInputSchema, bodyValidatedByOperation: true }, ctrl.verifyPending);
 
 export const domainRoutes = r.hono;

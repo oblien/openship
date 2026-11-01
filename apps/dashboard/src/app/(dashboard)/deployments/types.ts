@@ -32,6 +32,8 @@ export interface Deployment {
   status: "success" | "failed" | "building" | "pending" | "canceled" | "cancelled" | "partial_failure" | "action_required" | "rejected" | "reconciling" | "no_changes";
   domain: string;
   framework: string;
+  /** Frozen execution shape, including image-only service imports. */
+  serviceDeploymentMode?: "services" | "single";
   commit: {
     hash: string;
     fullHash?: string | null;

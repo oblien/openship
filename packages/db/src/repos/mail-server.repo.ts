@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import type { MailCertificateHealth } from "@repo/core";
 import type { Database } from "../client";
-import { mailServers } from "../schema";
+import { mailServers, servers } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -43,11 +44,33 @@ export function createMailServerRepo(db: Database) {
       });
     },
 
+    async listByOrganization(organizationId: string): Promise<MailServer[]> {
+      const rows = await db.select({ mail: mailServers }).from(mailServers)
+        .innerJoin(servers, eq(mailServers.serverId, servers.id))
+        .where(eq(servers.organizationId, organizationId));
+      return rows.map((row) => row.mail);
+    },
+
     /** Single record by server id. */
     async get(serverId: string): Promise<MailServer | undefined> {
       return db.query.mailServers.findFirst({
         where: eq(mailServers.serverId, serverId),
       });
+    },
+
+    async setCertificateAutoRenew(serverId: string, enabled: boolean): Promise<void> {
+      await db.update(mailServers).set({ certificateAutoRenew: enabled, updatedAt: new Date() })
+        .where(eq(mailServers.serverId, serverId));
+    },
+
+    async setCertificateHealth(serverId: string, health: MailCertificateHealth): Promise<void> {
+      await db.update(mailServers).set({ certificateHealth: health, updatedAt: new Date() })
+        .where(eq(mailServers.serverId, serverId));
+    },
+
+    async setCertificateRenewalError(serverId: string, error: string | null): Promise<void> {
+      await db.update(mailServers).set({ certificateRenewalError: error, updatedAt: new Date() })
+        .where(eq(mailServers.serverId, serverId));
     },
 
     /**
@@ -144,6 +167,16 @@ export function createMailServerRepo(db: Database) {
         .update(mailServers)
         .set({ webmailProjectId: projectId, updatedAt: new Date() })
         .where(eq(mailServers.serverId, serverId));
+    },
+
+    /** Explicit recovery cannot overwrite a link set by another request or recreate a forgotten server. */
+    async reconnectWebmailProject(serverId: string, domain: string, projectId: string): Promise<boolean> {
+      const rows = await db.update(mailServers)
+        .set({ webmailProjectId: projectId, updatedAt: new Date() })
+        .where(and(eq(mailServers.serverId, serverId), eq(mailServers.domain, normalizeDomain(domain)),
+          isNull(mailServers.webmailProjectId)))
+        .returning();
+      return rows.length === 1;
     },
 
     /** Drop the record on uninstall / reset. */

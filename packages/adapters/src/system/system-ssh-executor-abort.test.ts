@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
   stderr = new EventEmitter();
-  stdin = { write: vi.fn(), end: vi.fn() };
+  stdin = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() });
   kill = vi.fn((_signal?: string) => {
     // Real ssh dies and the close event carries no exit code.
     this.emit("close", null);
@@ -45,6 +45,39 @@ import { SystemSshExecutor } from "./system-ssh-executor";
 const CONFIG = { host: "h", username: "u", useSystemSsh: true };
 
 describe("SystemSshExecutor.streamExec abort", () => {
+  it("reports a typed exec timeout only after the ssh child closes", async () => {
+    vi.useFakeTimers();
+    try {
+      const executor = new SystemSshExecutor(CONFIG);
+      const before = spawned.length;
+      const pending = executor.exec("sleep 999", { timeout: 100 });
+      const rejection = expect(pending).rejects.toMatchObject({
+        name: "TimeoutError",
+        message: "Command timed out after 100ms: sleep 999",
+      });
+      for (let i = 0; i < 20 && spawned.length === before; i++) await Promise.resolve();
+      const child = spawned[before]!;
+      expect(child).toBeDefined();
+      child.kill.mockImplementation(() => true);
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+      expect(settled).toBe(false);
+      child.emit("close", null);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("kills the ssh child and resolves with code 0 when the signal fires", async () => {
     const executor = new SystemSshExecutor(CONFIG);
     const controller = new AbortController();

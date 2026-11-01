@@ -18,6 +18,7 @@
  * Everything is behind an injectable `deps` object so the flow is unit-testable
  * with fakes — no real docker/ss/fs.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -193,7 +194,9 @@ export async function planAndApplyHostEdge(
       (m, l) => deps.warn(l === "info" ? m : chalk.yellow(m)),
       () => deps.ourEdgeContainerRunning(executor),
     )
-    .catch(() => {});
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
+    });
 
   const { status, blocked, owner } = await deps.foreignProxyOnEdge(executor);
   if (!blocked) {
@@ -286,7 +289,8 @@ export async function previewHostEdge(
     if (!blocked) return { ...empty, owner: owner || null };
     const { sites, warnings } = await deps.importSites(executor, status);
     return { owner: owner || null, blocked: true, sites, warnings };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     // A probe that can't run (no `ss`, no docker, no permission) must not fail the
     // preview — the rest of the plan is still worth printing.
     return empty;
@@ -305,7 +309,8 @@ export async function rollbackHostEdge(): Promise<boolean> {
     return await realRollbackEdgeTakeover(new LocalExecutor(), (entry) =>
       console.log(chalk.yellow(`  ${entry.message}`)),
     );
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     return false;
   }
 }
@@ -352,7 +357,8 @@ export function markStoppedProxyImported(): void {
   try {
     mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
     writeFileSync(IMPORTED_MARKER, new Date().toISOString(), { mode: 0o600 });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     /* best-effort — worst case we offer again and the operator declines */
   }
 }
@@ -371,7 +377,8 @@ async function offerStoppedProxyImport(
   let proxy: ProxyKind | null = null;
   try {
     proxy = await deps.detectInstalledProxy(executor);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     return { proceed: true };
   }
   if (!proxy) return { proceed: true };
@@ -386,7 +393,8 @@ async function offerStoppedProxyImport(
     const scan = await deps.scanProxySites(executor, proxy);
     sites = scan.sites;
     warnings = scan.warnings;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     return { proceed: true };
   }
   if (sites.length === 0) return { proceed: true };
@@ -471,7 +479,8 @@ export async function diagnoseEdge(): Promise<EdgeDiagnosis> {
     const probe = await realForeignProxyOnEdge(executor);
     status = probe.status;
     owner = probe.owner || null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     return { ...empty, containerExists: exists, containerRunning: running };
   }
 
@@ -489,7 +498,8 @@ export async function diagnoseEdge(): Promise<EdgeDiagnosis> {
   if (status.occupants.length > 0) {
     try {
       sites = (await realImportSites(executor, status)).sites;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
       /* best-effort — a non-importable occupant just has no sites */
     }
   }
@@ -582,7 +592,8 @@ export async function completeHostEdge(): Promise<void> {
   if (process.platform !== "linux") return;
   try {
     await realCompleteEdgeTakeover(new LocalExecutor());
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/edge-preflight");
     /* best-effort — a stale journal only costs one recovery probe next run */
   }
 }
@@ -753,6 +764,7 @@ export async function remediateUnreachableStaticRoots(opts: {
       overrides[u.host] = newRoot;
       log.success(`Copied ${u.host} → ${newRoot}`);
     } catch (err) {
+      observeCaughtError(err, "cli/lib/edge-preflight");
       log.warn(
         `Couldn't copy ${u.host} (${u.root}) — it will migrate as-is: ${err instanceof Error ? err.message : String(err)}`,
       );

@@ -3,11 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 
 const verifyPendingDomains = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../src/modules/domains/domain.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/domain.service", () => ({
   verifyPendingDomains,
 }));
 
-import { SYSTEM_JOB_BY_KEY } from "../../../src/modules/jobs/job.registry";
+import * as platformConfig from "@repo/platform/engine/lib/platform-config";
+import { SYSTEM_JOB_BY_KEY } from "@repo/platform/engine/modules/jobs/job.registry";
 
 describe("domains:verify-pending system job", () => {
   it("is available on Desktop and every other platform", () => {
@@ -41,4 +42,18 @@ describe("domains:verify-pending system job", () => {
       sslRetrying: 1,
     });
   });
+});
+
+
+it("schedules shared SSL renewal for customer hosts on every control plane", () => {
+  const spy = vi.spyOn(platformConfig, "platform");
+  const job = SYSTEM_JOB_BY_KEY.get("ssl:renew")!;
+  try {
+    for (const target of ["desktop", "selfhosted", "cloud"] as const) {
+      spy.mockReturnValue({ target } as never);
+      expect(job.available?.()).toBe(true);
+    }
+  } finally {
+    spy.mockRestore();
+  }
 });

@@ -10,6 +10,7 @@
  * apt is first-class (the common case); dnf/yum/apk are best-effort.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { compareSemver, type SystemPackageManager } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import type { EnvironmentProfile } from "./environment";
@@ -113,7 +114,8 @@ export async function enrichAvailableVersions(
           s.availableVersion = avail;
           s.updateAvailable = true;
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/available-version");
         /* best-effort: leave this component without an available version */
       }
     }),

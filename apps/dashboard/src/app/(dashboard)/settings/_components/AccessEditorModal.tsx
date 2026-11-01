@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The shared access editor, in a modal.
  *
@@ -23,8 +25,7 @@
  * edit surface can prefill from the server and never be silently defaulted.
  */
 
-import { useMemo, useReducer, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useCallback, useMemo, useReducer, useState } from "react";
 import { AccessControlEditor } from "@/components/permissions/AccessControlEditor";
 import {
   reduceSelection,
@@ -58,7 +59,12 @@ export function AccessEditorModal({
   initial: PickerGrant[];
   availableTypes?: ResourceType[];
   saveLabel?: string;
-  show?: { templates?: boolean; readOnlySwitch?: boolean; createCapability?: boolean };
+  show?: {
+    templates?: boolean;
+    readOnlySwitch?: boolean;
+    createCapability?: boolean;
+    capabilities?: boolean;
+  };
   suppressWildcardTypes?: ResourceType[];
   /** Called with the final selection. Throw to keep the modal open. */
   onSave: (grants: PickerGrant[]) => Promise<void> | void;
@@ -78,13 +84,14 @@ export function AccessEditorModal({
     (grants): AccessSelection => ({ grants, readOnly: false, template: "custom" }),
   );
 
-  const onCatalogLoaded = (type: ResourceType, entries: CatalogEntry[]) => {
+  // ResourcePicker reloads when this callback changes; label updates must not restart its fetch.
+  const onCatalogLoaded = useCallback((type: ResourceType, entries: CatalogEntry[]) => {
     setLabels((prev) => {
       const next = new Map(prev);
       for (const e of entries) next.set(`${type} ${e.id}`, e.label);
       return next;
     });
-  };
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -134,7 +141,7 @@ export function AccessEditorModal({
               disabled={saving}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {saveLabel ?? t.settings.common.save}
             </button>
           </div>

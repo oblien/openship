@@ -12,14 +12,20 @@
  * plugin's invariants and audit hooks stay correct.
  */
 
-import { eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, notExists } from "drizzle-orm";
 import type { Database } from "../client";
 import { organization } from "../schema/organization";
+import { cloudWorkspace } from "../schema/cloud-workspace";
 
 export type Organization = typeof organization.$inferSelect;
 
 export function createOrganizationRepo(db: Database) {
   return {
+    async findBySlug(slug: string): Promise<Organization | null> {
+      const [row] = await db.select().from(organization).where(eq(organization.slug, slug)).limit(1);
+      return row ?? null;
+    },
+
     /** Lookup by primary key. Returns null on miss. */
     async findById(id: string): Promise<Organization | null> {
       const [row] = await db
@@ -73,6 +79,19 @@ export function createOrganizationRepo(db: Database) {
         .where(eq(organization.id, id));
     },
 
+    /** Mirror an authoritative Oblien entitlement without changing its quota. */
+    async setBillingEntitlement(id: string, namespace: string, input: {
+      planTierId: string;
+      subscriptionStatus: string;
+      currentPeriodStart: Date | null;
+      currentPeriodEnd: Date | null;
+    }): Promise<void> {
+      const rows = await db.update(organization).set(input)
+        .where(and(eq(organization.id, id), eq(organization.oblienNamespace, namespace)))
+        .returning();
+      if (rows.length !== 1) throw new Error("Organization namespace changed during billing synchronization");
+    },
+
     /**
      * Record the org's Oblien namespace slug.
      *
@@ -85,10 +104,17 @@ export function createOrganizationRepo(db: Database) {
      * was visible: each function returned successfully.
      */
     async setOblienNamespace(id: string, namespace: string): Promise<void> {
-      await db
+      const rows = await db
         .update(organization)
         .set({ oblienNamespace: namespace })
-        .where(eq(organization.id, id));
+        .where(and(eq(organization.id, id), isNull(organization.oblienNamespace)))
+        .returning();
+      if (rows.length === 0) {
+        const existing = await this.findById(id);
+        if (existing?.oblienNamespace !== namespace) {
+          throw new Error("Organization namespace cannot be reassigned");
+        }
+      }
     },
 
     /**
@@ -100,7 +126,9 @@ export function createOrganizationRepo(db: Database) {
       return db
         .select({ id: organization.id })
         .from(organization)
-        .where(isNull(organization.oblienNamespace))
+        .where(and(isNull(organization.oblienNamespace), notExists(
+          db.select({ id: cloudWorkspace.id }).from(cloudWorkspace).where(eq(cloudWorkspace.organizationId, organization.id)),
+        )))
         .limit(limit);
     },
   };

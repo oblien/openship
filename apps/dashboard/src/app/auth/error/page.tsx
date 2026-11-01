@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertCircle } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { authErrorDetails } from "@/lib/auth-error";
@@ -19,7 +20,7 @@ function AuthErrorContent() {
     <AuthShell>
       <div className="text-center">
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
-          <AlertCircle className="size-6" />
+          <UiIcon name="alert-circle" className="size-6" />
         </div>
         <h1 className="text-xl font-semibold text-foreground">Authorization failed</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{details.message}</p>

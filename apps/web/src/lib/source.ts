@@ -6,18 +6,19 @@ export const docsSource = loader({
   source: docs.toFumadocsSource(),
 });
 
-export const resourcesSource = loader({
-  baseUrl: "/resources",
+export const blogSource = loader({
+  baseUrl: "/blog",
   source: resources.toFumadocsSource(),
 });
 
-export interface ResourceFrontmatter {
+export interface BlogFrontmatter {
   title: string;
   description?: string;
   date?: string;
   category?: string;
   author?: string;
   body: React.ComponentType;
+  getText: (type: "raw" | "processed") => Promise<string>;
   _exports?: { raw?: string };
 }
 
@@ -27,4 +28,3 @@ export interface DocFrontmatter {
   body: React.ComponentType;
   toc: unknown;
 }
-

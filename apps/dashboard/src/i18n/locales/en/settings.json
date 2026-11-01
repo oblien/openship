@@ -1,4 +1,67 @@
 {
+  "appearance": {
+    "title": "Appearance",
+    "description": "Choose a theme, or follow your device’s appearance. Changes apply immediately.",
+    "themes": {
+      "light": "Light",
+      "dim": "Dim",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "editor": {
+      "description": "Personal themes, live previews and portable JSON.",
+      "newTheme": "New theme",
+      "duplicate": "Duplicate",
+      "reset": "Reset",
+      "saved": "Saved",
+      "preview": "Live preview",
+      "unsaved": "Previewing unsaved changes.",
+      "invalid": "Fix the highlighted values before saving.",
+      "retry": "Try again",
+      "name": "Theme name",
+      "base": "Base theme",
+      "tokens": "Design tokens",
+      "search": "Find a token…",
+      "typography": "Typography",
+      "interfaceFont": "Interface font",
+      "monoFont": "Monospace font",
+      "fontSize": "Interface size",
+      "monoSize": "Monospace size",
+      "lineHeight": "Line height",
+      "weight": "Font weight",
+      "uploadFont": "Upload WOFF2",
+      "export": "Download theme",
+      "exportAll": "Download all",
+      "json": "Paste theme JSON",
+      "url": "Theme JSON URL",
+      "loadUrl": "Load URL",
+      "selectFile": "Upload JSON",
+      "importHint": "Import a theme or library. Save to keep your changes.",
+      "fontHint": "WOFF2 fonts travel with your theme. Up to 256 KiB per font.",
+      "personal": "Changes apply to this account only.",
+      "presets": "Presets",
+      "discard": "Discard",
+      "color": "Color",
+      "systemFont": "System font",
+      "serifFont": "Serif",
+      "systemMono": "System monospace",
+      "workspace": "Your workspace",
+      "active": "Active",
+      "queued": "Queued",
+      "failed": "Failed",
+      "groups": {
+        "surfaces": "Surfaces",
+        "text": "Text",
+        "controls": "Controls",
+        "status": "Status",
+        "effects": "Effects",
+        "scales": "Scales"
+      },
+      "libraryLimit": "Remove a custom theme before adding another."
+    },
+    "customize": "Customize",
+    "backToGeneral": "Back to General"
+  },
   "language": {
     "title": "Language",
     "description": "Choose the language used across the dashboard."
@@ -69,6 +132,7 @@
     "title": "Settings",
     "tabs": {
       "general": "General",
+      "security": "Security",
       "git": "Git",
       "tokens": "API tokens",
       "mcp": "MCP",
@@ -183,7 +247,7 @@
     "methodApp": "GitHub App",
     "methodAppDesc": "Scoped, short-lived installation tokens for local and remote deploys.",
     "methodSshDesc": "Attach a deploy key to each server (Servers → GitHub).",
-    "methodTokenDesc": "A personal access token, usable everywhere.",
+    "methodTokenDesc": "Use a GitHub token for repository browsing and local builds.",
     "signIn": "Sign in with GitHub",
     "signInDesc": "Browser sign-in with a device code. Nothing to register, no SSH into the server.",
     "changeMethod": "Change method",
@@ -191,7 +255,7 @@
     "openGithub": "Open GitHub",
     "copyCode": "Click to copy",
     "tokenConnect": "Connect",
-    "tokenCreate": "Create a token on GitHub",
+    "tokenCreate": "Create token",
     "tokenGhHint": "Already signed in on the server with",
     "tokenSaveFailed": "Could not save the token.",
     "forwardOffHint": "Local builds only. Turn on \"Forward my git identity to build servers\" to use it for remote server deploys too.",
@@ -205,7 +269,10 @@
     "credentialRejectedImpact": "It was revoked, expired, or lost a required scope. Deploys that clone with it will keep failing until you reconnect below.",
     "credentialUnreachable": "Couldn't reach GitHub to check the stored {method}.",
     "credentialUnreachableImpact": "This is usually a network problem rather than a bad credential — Openship keeps using it. Reconnecting won't help if GitHub is unreachable.",
-    "credentialCheckedAt": "Last checked {time}"
+    "credentialCheckedAt": "Last checked {time}",
+    "replaceToken": "Replace GitHub token",
+    "clearToken": "Clear saved token",
+    "tokenEditorDescription": "Use a GitHub personal access token for repository browsing and builds on this instance."
   },
   "deployDefaults": {
     "title": "Deploy Defaults",
@@ -320,9 +387,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub clone credentials",
-    "description": "Personal token used to clone private repos when the GitHub App isn't installed",
+    "description": "Personal access to private repositories.",
     "loading": "Loading…",
-    "intro": "Paste a GitHub personal access token (classic or fine-grained). The clone module uses it as the second-priority credential - after any per-project override, before the GitHub App installation token.",
+    "intro": "Project tokens take priority. When enabled, this token is used before GitHub App credentials. Turning it off keeps the token saved.",
     "placeholder": "ghp_… or github_pat_…",
     "showToken": "Show token",
     "hideToken": "Hide token",
@@ -334,11 +401,13 @@
     "justNow": "just now",
     "replace": "Replace",
     "clear": "Clear",
-    "useAsDefault": "Use as default clone token",
-    "useAsDefaultDesc": "When on, the clone module uses this token as the second tier in the chain (after per-project overrides). When off, the token is stored but not used - handy if you only want it active for specific deploys.",
-    "forwardGitLabel": "Forward my git identity to build servers",
-    "forwardGitDesc": "When a build runs on a remote server, forward your local GitHub CLI login over the SSH tunnel so private repos clone directly on the server — no GitHub App needed. When off, the server falls back to its own git login, a stored token, or the public/local clone path.",
+    "useAsDefault": "Use by default",
+    "useAsDefaultDesc": "Use this token when a project has no token of its own.",
+    "forwardGitLabel": "Forward local GitHub access",
+    "forwardGitDesc": "Share your local GitHub login with remote build servers over SSH.",
     "forwardGitFailed": "Failed to update git forwarding",
+    "tokenLabel": "Personal access token",
+    "helpTitle": "Token permissions & usage",
     "toast": {
       "pasteFirst": "Paste a token before saving",
       "notLikeToken": "That doesn't look like a GitHub token. Save anyway if you're sure.",
@@ -589,7 +658,19 @@
       "invitationLinkCreated": "Invitation link created — copy it from Pending invitations",
       "personalOrgBlocked": "Personal workspaces can't invite members. Create a team organization first, then send invitations.",
       "updateMailSourceFailed": "Failed to update mail source"
-    }
+    },
+    "delivery": "Delivery",
+    "emailDelivery": "Email",
+    "linkDelivery": "Copy link",
+    "emailDeliveryHint": "Sends through this instance’s configured email service.",
+    "linkDeliveryHint": "Create a link to share directly with this person.",
+    "checkingEmail": "Checking email delivery…",
+    "emailUnavailable": "Email delivery is not configured. You can share a link.",
+    "linkReady": "Invitation ready to share",
+    "emailSent": "Invitation emailed",
+    "recipientHint": "Only {email} can accept this invitation.",
+    "invitationLink": "Invitation link",
+    "manageLinkHint": "Manage or revoke this link in Pending invitations."
   },
   "teamWorkspace": {
     "title": "Invite your team",
@@ -627,9 +708,78 @@
       "perkGithub": "GitHub connected without registering your own app",
       "noLockIn": "Free to connect. Nothing moves, and you can disconnect at any time.",
       "viewPricing": "View pricing"
+    },
+    "connectModal": {
+      "title": "Connect Openship Cloud",
+      "requiresConnection": "{feature} requires an Openship Cloud connection. Connect your account to unlock:",
+      "features": {
+        "deployments": "Cloud deployments",
+        "infra": "Managed infrastructure",
+        "ssl": "Automatic SSL & domains",
+        "cdn": "Global CDN"
+      },
+      "connect": "Connect to Openship Cloud",
+      "waitingSignIn": "Waiting for sign in…",
+      "maybeLater": "Maybe later"
     }
   },
   "instance": {
+    "location": {
+      "title": "Instance location",
+      "thisDesktop": "This desktop",
+      "thisServer": "This server",
+      "desktopHint": "Connect to use an existing instance’s live data, or move Openship to a server to keep it online.",
+      "serverHint": "Jobs, webhooks and team access are managed here.",
+      "remoteHint": "You’re using the remote instance’s live data.",
+      "retiredHint": "This server no longer manages projects. Move an instance here to use it again.",
+      "moveToServer": "Move to a server",
+      "moveToAnotherServer": "Move to another server",
+      "moveToDesktop": "Move to Desktop",
+      "returnToDesktop": "Move back to Desktop",
+      "previousServer": "Move to previous server",
+      "connectExisting": "Connect to an existing instance",
+      "reconnect": "Reconnect",
+      "pairDesktop": "Connect a Desktop",
+      "receiveInstance": "Move an instance here",
+      "disconnect": "Return to local instance",
+      "moreOptions": "More instance options",
+      "memberTitle": "Use Openship from Desktop",
+      "memberHint": "Connect your Desktop with the same access you have here.",
+      "loading": "Loading instance…",
+      "sendHint": "Create a move code, then choose {action} from More options in Desktop’s Instance settings. Control stays here until Desktop completes the handoff.",
+      "connectHint": "Sign in at the instance address, or use {action} in its Instance settings to get a code. Your local instance pauses while you are connected.",
+      "secureAccount": "Secure your instance",
+      "reviewMove": "Review your move",
+      "accountHint": "Add an email and password for signing in after the move. You’ll review the destination again before the transfer starts.",
+      "backToDestination": "Back to destination",
+      "continueSetup": "Continue",
+      "pairHint": "Use your other Desktop with this instance’s live data and your current permissions. Nothing is moved.",
+      "pairOwnDevice": "This code signs in as you. Use Team to invite another person.",
+      "teamAccessTitle": "Enable team invitations",
+      "teamAccessHint": "Team invitations need a reachable instance. Give Openship a public address, or move it to an always-on server.",
+      "adminRequired": "Ask your instance administrator to set this up.",
+      "webhookAccessHint": "GitHub needs a reachable Openship API to send deployment events. Move this instance to an always-on server, or give its API a public address."
+    },
+    "transfer": {
+      "installOnServer": "New installation",
+      "existingInstance": "Existing instance",
+      "destinationCodeHint": "On the destination, open Settings → Instance → {more} → {receive}. Choose {create}, confirm replacement, then copy its receive code here.",
+      "destinationCodeLabel": "Receive code from the destination",
+      "receiveDescription": "Bring another instance’s data here. Your current data is replaced after a recovery snapshot is saved.",
+      "pasteMoveCode": "Paste move code",
+      "createReceiveCode": "Create receive code",
+      "sourceCodeHint": "On the source server, open Settings → Instance → {send} → {create}. To move a Desktop here, choose {receive} instead.",
+      "sourceCodeLabel": "Move code from the source",
+      "createMoveCode": "Create move code",
+      "connectionCode": "Connection code",
+      "moveCode": "Move code",
+      "receiveCode": "Receive code",
+      "connectionCodeHint": "On your other Desktop, open Settings → Instance → {connect}, then choose {useCode}.",
+      "moveCodeHint": "On the receiving Desktop, open Settings → Instance → {more} → {receive}. Choose {paste} and paste this code.",
+      "receiveCodeHint": "On the source, open Settings → Instance → {move} or {another}, then {existing}. Paste the receive code created here.",
+      "codeExpiry": "Expires after 10 minutes. Keep this code private.",
+      "replaceDestinationConfirmation": "Move all workspaces, users and credentials to the destination. Its existing data is replaced after saving a recovery snapshot."
+    },
     "title": "Instance",
     "descDesktop": "Desktop app",
     "descCloud": "Cloud",
@@ -642,11 +792,37 @@
     "authCloud": "Cloud Auth",
     "authLocal": "Local Auth",
     "localUser": "Local user",
-    "change": "Change"
+    "change": "Change",
+    "connection": {
+      "title": "Connect to an instance",
+      "description": "Enter its address, then sign in with your account.",
+      "address": "Instance URL",
+      "addressHint": "A team invitation link works here too. Your local instance pauses while connected.",
+      "codeTitle": "Use a connection code",
+      "codeDescription": "Already signed in elsewhere? Open Settings → Instance → {action} on that instance.",
+      "codeLabel": "Connection code",
+      "codeHint": "Use a code from your own account. It expires after 10 minutes and signs in as you.",
+      "continue": "Continue to sign in",
+      "connectCode": "Connect this Desktop",
+      "connecting": "Connecting…",
+      "useCode": "Use a connection code instead",
+      "useAddress": "Use an instance URL",
+      "invalidAddress": "Enter an HTTPS instance URL or invitation link, without credentials or extra parameters.",
+      "invitationTitle": "Open this invitation",
+      "invitationDescription": "Connect to {instance}, then review the workspace and role before joining.",
+      "reviewInvitation": "Review invitation",
+      "invitationHint": "Your local instance pauses while connected. Nothing is moved."
+    },
+    "recovery": {
+      "title": "Your Openship instance",
+      "subtitle": "Finish the move or reconnect to continue managing your projects.",
+      "checkConnection": "Check connection",
+      "signInRemote": "Sign in to remote instance"
+    }
   },
   "upgradeAuth": {
     "title": "Add a password",
-    "description": "Promote this zero-auth instance to a real email + password login. Your projects and history stay intact.",
+    "description": "Set an email and password to protect access to Openship. Your projects and history stay intact.",
     "close": "Close",
     "name": "Name",
     "namePlaceholder": "Jane Doe",
@@ -664,9 +840,29 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "Delivery history",
+      "description": "Deliveries across all channels.",
+      "page": "Page {page}",
+      "refresh": "Refresh",
+      "loading": "Loading deliveries…",
+      "error": "Could not load delivery history. Refresh to try again.",
+      "empty": "No recent deliveries.",
+      "attempts": "Attempts: {count}",
+      "errorDetails": "Error details",
+      "unknownCategory": "Unknown event",
+      "unknownChannel": "Unknown channel",
+      "status": {
+        "sent": "Sent",
+        "queued": "Queued",
+        "sending": "Sending",
+        "failed": "Failed",
+        "seen": "Seen"
+      }
+    },
     "channels": {
       "title": "Delivery channels",
-      "description": "Where your notifications go. Verified channels are reachable; unverified ones are skipped.",
+      "description": "Enabled, verified channels can receive alerts. Send a test to check delivery.",
       "empty": "No channels yet. Add one to start receiving notifications.",
       "verified": "Verified",
       "unverified": "Unverified",
@@ -676,7 +872,11 @@
       "addChannel": "Add channel",
       "confirmDelete": "Delete this channel? Subscriptions using it will stop.",
       "channelRemoved": "Channel removed",
-      "channelAdded": "Channel added"
+      "channelAdded": "Channel added",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "edit": "Edit",
+      "updated": "Channel updated"
     },
     "describe": {
       "slackWebhook": "Slack webhook",
@@ -708,7 +908,19 @@
       "labelRequired": "Label is required",
       "noEmailTransport": "No email server is set up on this instance, so email notifications won't be delivered.",
       "setUpSmtp": "Set up SMTP →",
-      "otherAddress": "Other address…"
+      "otherAddress": "Other address…",
+      "channelType": "Channel type",
+      "labels": {
+        "name": "Name",
+        "address": "Email address",
+        "url": "Webhook URL",
+        "botToken": "Bot token",
+        "chatId": "Chat ID"
+      },
+      "saving": "Saving…",
+      "editHint": "Leave credential fields blank to keep stored secrets. Destination changes require a new test to verify delivery.",
+      "signingSecret": "Signing secret",
+      "secretHint": "Copy this secret now to verify webhook signatures. It is shown only once."
     },
     "subscriptions": {
       "title": "What to be notified about",
@@ -717,13 +929,173 @@
       "allTab": "All",
       "eventHeader": "Event",
       "cellAria": "{category} via {channel}",
-      "notifyMe": "Notify me"
+      "notifyMe": "Notify me",
+      "search": "Search alerts",
+      "noResults": "No matching alerts."
     },
     "orgDefaults": {
       "title": "Organization defaults",
-      "description": "Defaults applied when a new member joins this organization. Members can override per-channel.",
+      "description": "Organization defaults apply when a member has not made an explicit choice for an alert. Members can override them with their own preferences.",
       "notifyAria": "Notify on {category}",
       "nChannels": "{n} channels"
+    },
+    "overview": {
+      "title": "Notifications",
+      "description": "Channels belong to your account and are shared across organizations. Alert preferences and defaults apply to the active organization.",
+      "ready": "{count} of {total} channels ready",
+      "preferences": "Alert preferences",
+      "configuration": "Channels & alerts",
+      "retry": "Retry"
+    },
+    "groups": {
+      "deployment": "Deployment",
+      "app_health": "App health",
+      "backups": "Backups",
+      "jobs": "Jobs",
+      "actions": "Actions",
+      "domains": "Domains & SSL",
+      "members": "Members",
+      "mail": "Mail",
+      "billing": "Billing",
+      "security": "Security"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Deploy failed",
+        "description": "A build or deploy errored out. We send the error message + a snippet of the failing logs."
+      },
+      "deploy.succeeded": {
+        "label": "Deploy succeeded",
+        "description": "Every successful production deploy. Off by default — most teams find it noisy."
+      },
+      "deploy.cancelled": {
+        "label": "Deploy cancelled",
+        "description": "An in-flight deploy was cancelled by you or another member."
+      },
+      "service.down": {
+        "label": "App down",
+        "description": "A container that should be running isn't — exited, dead, or OOM-killed. Includes the exit code and its last log lines. Never fires for a service you stopped yourself."
+      },
+      "service.crash_loop": {
+        "label": "App crash looping",
+        "description": "A container keeps restarting. Point-in-time status always reads healthy for these, so this is the only way you'd know."
+      },
+      "service.unhealthy": {
+        "label": "App unhealthy",
+        "description": "A container is up but its own healthcheck is failing."
+      },
+      "service.recovered": {
+        "label": "App recovered",
+        "description": "An outage ended and the container is healthy again."
+      },
+      "server.unreachable": {
+        "label": "Server unreachable",
+        "description": "We can't reach a server's Docker daemon. One alert per server — never one per service on it."
+      },
+      "backup.failed": {
+        "label": "Backup failed",
+        "description": "A scheduled or manual backup run errored out. Includes the destination + policy that failed."
+      },
+      "backup.succeeded": {
+        "label": "Backup succeeded",
+        "description": "Each successful backup. Off by default — high volume."
+      },
+      "backup.restore_completed": {
+        "label": "Restore completed",
+        "description": "A restore finished (or failed). Always worth notifying on."
+      },
+      "job.run.failed": {
+        "label": "Job failed",
+        "description": "A scheduled or manual job run errored out. Includes the job + exit code."
+      },
+      "job.run.succeeded": {
+        "label": "Job succeeded",
+        "description": "Each successful job run. Off by default — can be high volume."
+      },
+      "job.run.started": {
+        "label": "Job started",
+        "description": "A job began running. Off by default — mostly useful per-job."
+      },
+      "action.run.failed": {
+        "label": "Action failed",
+        "description": "A GitHub Actions workflow run errored out or was cancelled."
+      },
+      "action.run.succeeded": {
+        "label": "Action succeeded",
+        "description": "Every successful GitHub Actions workflow run."
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL certificate expiring",
+        "description": "A domain's certificate could not be renewed and is nearing expiry."
+      },
+      "member.invited": {
+        "label": "Member invited",
+        "description": "A new member was invited to your organization."
+      },
+      "member.joined": {
+        "label": "Member joined",
+        "description": "A member accepted their invite and joined."
+      },
+      "member.removed": {
+        "label": "Member removed",
+        "description": "A member left or was removed from the organization."
+      },
+      "mail.dns_unverified": {
+        "label": "Mail domain unverified",
+        "description": "A mail domain has missing or incorrect DNS records (SPF, DKIM, MX)."
+      },
+      "mail.queue_backed_up": {
+        "label": "Mail queue backed up",
+        "description": "Outbound mail delivery queue is unusually high or retrying."
+      },
+      "billing.quota_warning": {
+        "label": "Quota warning",
+        "description": "Approaching resource usage limits or spending caps."
+      },
+      "billing.invoice_paid": {
+        "label": "Invoice paid",
+        "description": "A subscription invoice was successfully paid."
+      },
+      "billing.payment_failed": {
+        "label": "Payment failed",
+        "description": "A subscription payment failed and needs attention."
+      },
+      "domain.expiring": {
+        "label": "SSL cert expiring",
+        "description": "Daily check — fires when any custom domain certificate renewal fails and has under 14 days left."
+      },
+      "domain.verification_failed": {
+        "label": "Domain verification failed",
+        "description": "DNS check didn't pass during initial domain setup."
+      },
+      "member.added": {
+        "label": "New member joined",
+        "description": "Someone accepted an invite and joined this organization."
+      },
+      "invitation.sent": {
+        "label": "Invitations sent",
+        "description": "An admin sent invite(s) to new members. Useful as a security signal."
+      },
+      "mail.inbound_received": {
+        "label": "Mail arrived at a watched address",
+        "description": "A message arrived at a mailbox or domain one of your notification rules watches."
+      },
+      "action.run.cancelled": {
+        "label": "Workflow cancelled",
+        "description": "An Actions workflow was cancelled."
+      },
+      "billing.alert": {
+        "label": "Billing alert",
+        "description": "Payment failed, plan limit reached, or invoice overdue. Always notifies billing-owners."
+      },
+      "quota.warning": {
+        "label": "Quota warning",
+        "description": "You're approaching a plan limit (storage, deployments, members). Heads-up before things start failing."
+      },
+      "security.advisory": {
+        "label": "Security advisories",
+        "description": "A published security advisory affects Openship or a deployed service. Includes the cause and available update."
+      }
     }
   },
   "audit": {
@@ -794,6 +1166,188 @@
       "viaAgent": "Agent",
       "technical": "Technical details",
       "eventType": "Event type"
+    },
+    "categories": {
+      "deployments": "Deployments",
+      "apps": "Apps & services",
+      "domains": "Domains & SSL",
+      "servers": "Servers",
+      "members": "Members & access",
+      "agent": "AI agents",
+      "security": "Security",
+      "billing": "Billing",
+      "system": "System"
+    },
+    "events": {
+      "server:write": {
+        "action": "changed the server",
+        "label": "Server changed"
+      },
+      "server:admin": {
+        "action": "ran an admin action on the server",
+        "label": "Server admin action"
+      },
+      "server:add": {
+        "action": "added the server",
+        "label": "Server added"
+      },
+      "server:remove": {
+        "action": "removed the server",
+        "label": "Server removed"
+      },
+      "settings:write": {
+        "action": "changed settings",
+        "label": "Settings changed"
+      },
+      "settings:admin": {
+        "action": "ran an admin action on settings",
+        "label": "Settings admin action"
+      },
+      "project:create": {
+        "action": "created",
+        "label": "Project created"
+      },
+      "project:write": {
+        "action": "changed",
+        "label": "Project changed"
+      },
+      "project:delete": {
+        "action": "deleted",
+        "label": "Project deleted"
+      },
+      "deployment:start": {
+        "action": "started a deploy for",
+        "label": "Deploy started"
+      },
+      "deployment:success": {
+        "action": "deployed",
+        "label": "Deploy succeeded"
+      },
+      "deployment:failed": {
+        "action": "failed to deploy",
+        "label": "Deploy failed"
+      },
+      "deployment:cancelled": {
+        "action": "cancelled the deploy of",
+        "label": "Deploy cancelled"
+      },
+      "domain:add": {
+        "action": "added the domain",
+        "label": "Domain added"
+      },
+      "domain:remove": {
+        "action": "removed the domain",
+        "label": "Domain removed"
+      },
+      "domain:verify": {
+        "action": "verified the domain",
+        "label": "Domain verified"
+      },
+      "member:add": {
+        "action": "added",
+        "label": "Member added"
+      },
+      "member:remove": {
+        "action": "removed",
+        "label": "Member removed"
+      },
+      "terminal:write": {
+        "action": "opened a terminal on",
+        "label": "Terminal session opened"
+      },
+      "deployment:write": {
+        "action": "started a deploy for",
+        "actionWithoutResource": "started a deploy",
+        "label": "Deploy action",
+        "description": "A deployment endpoint was invoked — start, retry, rollback, or promote."
+      },
+      "deployment:admin": {
+        "action": "ran an admin action on the deploy for",
+        "actionWithoutResource": "ran an admin action on the deploy",
+        "label": "Deploy admin action",
+        "description": "An administrative action was invoked on a deployment."
+      },
+      "job:write": {
+        "action": "changed the job",
+        "actionWithoutResource": "changed the job",
+        "label": "Job changed",
+        "description": "A scheduled or custom job was created, edited, run, or removed."
+      },
+      "notification_default.updated": {
+        "action": "changed the notification defaults of",
+        "actionWithoutResource": "changed the notification defaults",
+        "label": "Notification defaults changed",
+        "description": "The default notification routing for the organization was updated."
+      },
+      "notification_channel.created": {
+        "action": "added the notification channel",
+        "actionWithoutResource": "added the notification channel",
+        "label": "Notification channel added"
+      },
+      "notification_channel.updated": {
+        "action": "updated the notification channel",
+        "actionWithoutResource": "updated the notification channel",
+        "label": "Notification channel updated"
+      },
+      "notification_channel.deleted": {
+        "action": "removed the notification channel",
+        "actionWithoutResource": "removed the notification channel",
+        "label": "Notification channel removed"
+      },
+      "notification_subscription.updated": {
+        "action": "changed what is sent to",
+        "actionWithoutResource": "changed notification routing",
+        "label": "Notification routing changed"
+      },
+      "notification_subscription.deleted": {
+        "action": "stopped notifications to",
+        "actionWithoutResource": "stopped notifications",
+        "label": "Notifications stopped"
+      },
+      "notification_delivery.seen": {
+        "action": "marked as seen",
+        "actionWithoutResource": "marked as seen",
+        "label": "Alert marked as seen"
+      },
+      "notifications:write": {
+        "action": "changed notifications",
+        "actionWithoutResource": "changed notifications",
+        "label": "Notifications changed"
+      },
+      "notifications:admin": {
+        "action": "ran a notifications admin action",
+        "actionWithoutResource": "ran a notifications admin action",
+        "label": "Notifications admin action"
+      },
+      "job_run.started": {
+        "action": "started the job",
+        "actionWithoutResource": "started the job",
+        "label": "Job started"
+      },
+      "job_run.succeeded": {
+        "action": "ran the job successfully",
+        "actionWithoutResource": "ran the job successfully",
+        "label": "Job succeeded"
+      },
+      "job_run.failed": {
+        "action": "ran the failing job",
+        "actionWithoutResource": "ran the failing job",
+        "label": "Job failed"
+      },
+      "issues.history.clear": {
+        "action": "cleared resolved monitoring history",
+        "actionWithoutResource": "cleared resolved monitoring history",
+        "label": "Monitoring history cleared"
+      }
+    },
+    "resourceLabels": {
+      "project": "an app",
+      "service": "a service",
+      "container": "a container",
+      "deployment": "a deployment",
+      "domain": "a domain",
+      "server": "a server",
+      "settings": "settings"
     }
   },
   "updates": {
@@ -895,7 +1449,43 @@
       "rowsRestored": "{count} rows restored",
       "secretsRestored": "{count} secrets restored",
       "secretsNotRestored": "secrets NOT restored (no/incorrect passphrase) — re-enter credentials"
-    }
+    },
+    "backupTitle": "Backup & recovery",
+    "backupDesc": "Export a file or restore an existing backup.",
+    "backupWarning": "Archive files include the Openship database and credentials. Docker volume contents remain on their servers; use project backups for service data.",
+    "exportInstanceTitle": "Export instance or projects",
+    "exportInstanceDesc": "Choose a complete instance or selected projects, with their environments and dependencies.",
+    "exportProjectTitle": "Export project",
+    "exportProjectDesc": "Download all project settings, environment values, and credentials as plain JSON.",
+    "exportProjectIntro": "Includes all environments, services, deployment history, analytics, connections, domains, backup settings, environment values, and keys. The JSON file is unencrypted and imports without a password.",
+    "exportProjectReconnection": "The destination needs the same servers or OpenShip Cloud account to reconnect to existing workloads. Their details will be shown after download.",
+    "exportInstanceIntro": "Export the control plane, including stored environment values, server keys, credentials, configuration, and history. The JSON file is unencrypted and needs no password. Workloads on the same servers keep their existing target bindings.",
+    "scopeLabel": "Export scope",
+    "scopeInstance": "Entire instance",
+    "scopeProjects": "Selected projects and environments",
+    "recordsAcrossEnvsIncluded": "{count} records across {envs} environments included.",
+    "checkingExport": "Checking export contents…",
+    "downloadExport": "Download export",
+    "downloadAgain": "Download again",
+    "exporting": "Exporting…",
+    "exportDownloaded": "Export downloaded",
+    "exportCompleteToast": "Export downloaded. Import it from Settings → Instance on the destination control plane.",
+    "optSecretsLabel": "Environment values, keys, and credentials",
+    "optSecretsDesc": "Included as readable JSON, with server keys, inline Compose configuration, and secret files stored in metadata.",
+    "optLinkedAppsLabel": "Linked apps",
+    "optLinkedAppsDesc": "Include database and storage projects required by the selection.",
+    "optServersLabel": "Related self-hosted servers (recommended)",
+    "optServersDesc": "Include server connections and their Git keys. Existing matching servers can be reused during import.",
+    "optDomainsLabel": "Domains and routing",
+    "optBackupsLabel": "Backup configuration",
+    "optBackupsDesc": "Policies and destinations; backup payloads remain in their storage.",
+    "optIntegrationsLabel": "Shared integrations",
+    "optIntegrationsDesc": "Git provider apps, registry logins, and workspace DNS credentials.",
+    "historyOptionsSummary": "History options · {count} of {total} included",
+    "recordsSelected": "{count} records selected.",
+    "recordsAcrossEnvsSelected": "{count} records across {envs} environments selected.",
+    "selectAtLeastOne": "Select at least one project or environment.",
+    "cloudNotice": "Cloud projects will not work until the destination workspace is connected to the same Openship Cloud account. This export preserves cloud workspace references; it cannot transfer a cloud server between accounts."
   },
   "migrate": {
     "chooseTitle": "Move to multi-user mode",
@@ -1063,7 +1653,8 @@
     "confirmTitle": "Stop serving {hostname}?",
     "confirmBody": "This removes the edge configuration for this hostname only. Built files stay on disk, and nothing else on the server is touched. If a project is later deployed to this hostname it will create its own route.",
     "confirmCta": "Stop serving",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "noReverseProxy": "No reverse proxy detected on this machine."
   },
   "credentials": {
     "title": "Credentials",
@@ -1093,6 +1684,102 @@
       "deleteFailed": "Could not delete the credential",
       "verifyOk": "The provider accepted this credential",
       "verifyFailed": "The provider rejected this credential"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Container registry",
+        "summary": "Pull private images from a registry during deploys.",
+        "selector": {
+          "label": "Registry host",
+          "help": "The host as it appears in your image reference — ghcr.io, registry.example.com:5000, or docker.io for Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "Username"
+          },
+          "secret": {
+            "label": "Password or access token",
+            "help": "Prefer a token scoped to read-only registry access over an account password."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Let Openship write the DNS records a custom domain needs, instead of printing them to paste.",
+        "fields": {
+          "apiToken": {
+            "label": "API token",
+            "help": "A token with Zone:Read and DNS:Edit on the zones you want Openship to manage."
+          }
+        }
+      }
+    }
+  },
+  "accountSecurity": {
+    "title": "Two-factor authentication",
+    "description": "Protect your account with an authenticator app and recovery codes.",
+    "enabled": "Enabled",
+    "notEnabled": "Not enabled",
+    "loginHint": "A second factor is required after password, social, and passkey sign-in.",
+    "passwordNeeded": "Add a password to manage two-factor authentication. Your social sign-in will keep working.",
+    "passwordHint": "Confirm your password to set up an authenticator app.",
+    "enable": "Set up 2FA",
+    "disable": "Turn off 2FA",
+    "disableHint": "Confirm your password to turn off two-factor authentication. Your recovery codes will stop working.",
+    "regenerate": "Replace recovery codes",
+    "regenerateHint": "Confirm your password. New recovery codes will replace all your old codes.",
+    "recoveryCodes": "Recovery codes",
+    "password": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "passwordMismatch": "The passwords do not match.",
+    "addPassword": "Add password",
+    "passwordAdded": "Password added. You can now set up 2FA.",
+    "continue": "Continue",
+    "verify": "Verify and enable",
+    "cancel": "Cancel",
+    "done": "Done",
+    "retry": "Try again",
+    "loading": "Loading account security…",
+    "loadFailed": "Could not load account security. Try again.",
+    "failed": "Could not update account security. Try again.",
+    "enabledMessage": "Two-factor authentication is enabled.",
+    "disabledMessage": "Two-factor authentication is off.",
+    "scanHint": "Scan this code with your authenticator app, then enter its six-digit code. Setup is complete only after verification.",
+    "scanTitle": "Authenticator setup QR code",
+    "manualKey": "Or enter this setup key manually",
+    "copyKey": "Copy setup key",
+    "code": "Authenticator code",
+    "saveCodes": "Save your recovery codes",
+    "codesHint": "Store these somewhere safe. Each code can replace your authenticator once. Replacing codes invalidates all previous codes.",
+    "copyCodes": "Copy codes",
+    "download": "Download",
+    "savedCodes": "I have saved my recovery codes",
+    "copied": "Copied.",
+    "copyFailed": "Could not copy. Select and copy the text manually.",
+    "passkeysTitle": "Passkeys",
+    "passkeysDescription": "Sign in with your fingerprint, face, device PIN, or security key.",
+    "passkeyName": "Passkey name",
+    "passkeyPlaceholder": "For example, my laptop",
+    "passkeyDefault": "Passkey",
+    "passkeyAdd": "Add passkey",
+    "passkeyUnsupported": "To add or use a passkey, open this dashboard over HTTPS (or localhost) in a browser that supports passkeys. You can still manage saved passkeys here.",
+    "passkeysEmpty": "No passkeys added yet.",
+    "passkeyAdded": "Passkey added.",
+    "passkeyRemoved": "Passkey removed.",
+    "passkeyFailed": "Could not update the passkey. Try again. If your session expired, sign in again first.",
+    "synced": "Synced passkey",
+    "deviceBound": "Device-bound passkey",
+    "removeNamed": "Remove {name}",
+    "remove": "Remove",
+    "removeConfirm": "This passkey will no longer sign you in. Keep another sign-in method available."
+  },
+  "preferences": {
+    "title": "Preferences",
+    "description": "Personal display preferences for this browser — nothing is sent to the server.",
+    "demoMode": {
+      "title": "Demo mode",
+      "description": "Blur IP addresses, hosts, and environment values during screen-shares and recordings."
     }
   }
 }

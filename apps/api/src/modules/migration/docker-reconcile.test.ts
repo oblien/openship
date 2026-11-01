@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { DockerContainerDetail } from "@repo/adapters";
-import type { ManifestProjectEntry } from "../../lib/openship-manifest";
+import { buildProxyRouteIndex } from "@repo/adapters";
+import type { ManifestProjectEntry } from "@repo/platform/engine/lib/openship-manifest";
 import {
   reconcileOpenshipProjects,
   isBuildHelper,
@@ -10,8 +11,9 @@ import {
   toDiscoveredService,
   parseComposePort,
   isExternalHostPublish,
-} from "./docker-reconcile";
-import type { ComposeService } from "../../lib/compose-parser";
+  reconcileStack,
+} from "@repo/platform/engine/modules/migration/docker-reconcile";
+import type { ComposeService } from "@repo/platform/engine/lib/compose-parser";
 
 describe("isBuildHelper", () => {
   it("is true only for a transient builder (openship.build, no deployment/service)", () => {
@@ -188,6 +190,7 @@ describe("toDiscoveredService — env import separates operator config from imag
     expect(svc.existingRoute).toEqual([
       {
         port: 3100,
+        containerPort: 3000,
         path: "/mcp",
         exact: true,
         domains: ["mcp.example.com"],
@@ -248,6 +251,50 @@ describe("toDiscoveredService — env import separates operator config from imag
       Z_IMG: "9",
     });
     expect(svc.envImageDefaults).toBeUndefined();
+  });
+});
+
+describe("migration proxy discovery across Docker networks", () => {
+  it("matches private Traefik upstreams to their own containers with no host publishes", () => {
+    const stack = reconcileStack({
+      serverId: "remote-server", volumes: [], networks: [], declared: new Map(), alreadyManaged: 0,
+      details: [
+        container({ id: "web-id", name: "shop-web-1", labels: {}, networkAddresses: ["172.20.0.2"] }),
+        container({ id: "api-id", name: "shop-api-1", labels: {}, networkAddresses: ["172.20.0.3"] }),
+      ],
+      proxyRoutesByPort: buildProxyRouteIndex([
+        { serverNames: ["web.example.com", "www.example.com"], ssl: true, target: { kind: "proxy", url: "http://172.20.0.2:3000" } },
+        { serverNames: ["api.example.com"], ssl: true, target: { kind: "proxy", url: "http://172.20.0.3:3000" } },
+        { serverNames: ["other.example.com"], ssl: true, target: { kind: "proxy", url: "http://172.20.0.4:3000" } },
+      ]),
+    });
+    expect(stack.services[0].existingRoute).toMatchObject([{ containerPort: 3000, domains: ["web.example.com", "www.example.com"] }]);
+    expect(stack.services[1].existingRoute).toMatchObject([{ containerPort: 3000, domains: ["api.example.com"] }]);
+    expect(stack.warnings).toEqual(expect.arrayContaining([expect.stringContaining("other.example.com")]));
+    expect(stack.warnings.some((warning) => warning.includes("web.example.com"))).toBe(false);
+  });
+
+  it("maps a host port to the correct container port once despite IPv4/IPv6 bindings", () => {
+    const service = toDiscoveredService(container({
+      labels: {}, ports: [
+        { privatePort: 8080, publicPort: 18080, ip: "0.0.0.0", type: "tcp" },
+        { privatePort: 8080, publicPort: 18080, ip: "::", type: "tcp" },
+        { privatePort: 9000, publicPort: 19000, type: "tcp" },
+      ],
+    }), undefined, undefined, undefined, buildProxyRouteIndex([
+      { serverNames: ["app.example.com"], ssl: false, target: { kind: "proxy", url: "http://127.0.0.1:18080" } },
+    ]));
+    expect(service.existingRoute).toHaveLength(1);
+    expect(service.existingRoute?.[0]).toMatchObject({ port: 18080, containerPort: 8080 });
+  });
+
+  it("does not assign an unrelated private upstream by its coincidentally matching host port", () => {
+    const service = toDiscoveredService(container({
+      labels: {}, networkAddresses: ["172.20.0.2"], ports: [{ privatePort: 80, publicPort: 3000, type: "tcp" }],
+    }), undefined, undefined, undefined, buildProxyRouteIndex([
+      { serverNames: ["other.example.com"], ssl: false, target: { kind: "proxy", url: "http://172.20.0.3:3000" } },
+    ]));
+    expect(service.existingRoute).toBeUndefined();
   });
 });
 

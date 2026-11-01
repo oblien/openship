@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { useState, useEffect } from 'react';
 import { aiApi } from '@/lib/api';
 
@@ -52,7 +53,7 @@ export function useSessions({
       }
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch sessions'));
-      console.error('Error fetching sessions:', err);
+      errorDiagnostics.error("dashboard/hooks/useSessions", 'Error fetching sessions:', err);
     } finally {
       setLoading(false);
     }

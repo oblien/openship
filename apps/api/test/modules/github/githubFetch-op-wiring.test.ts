@@ -30,20 +30,20 @@ const { tokenForSpy, ghFetchSpy, ghFetchPublicSpy, getLocalGhToken } = vi.hoiste
 // ── Neutralize github.auth.ts's static imports (keep the auth stack out) ──
 vi.mock("@repo/db", () => ({ repos: {}, db: {}, schema: {}, eq: vi.fn(), and: vi.fn() }));
 vi.mock("better-auth/api", () => ({ APIError: class APIError extends Error {} }));
-vi.mock("../../../src/config/env", () => ({ env: {} }));
-vi.mock("../../../src/lib/auth", () => ({ auth: {} }));
-vi.mock("../../../src/lib/cache-store", () => ({ cacheStore: vi.fn() }));
-vi.mock("../../../src/lib/org-actor", () => ({ resolveOrgOwner: vi.fn() }));
-vi.mock("../../../src/modules/github/sources/mappers", () => ({ mapAccounts: vi.fn() }));
-vi.mock("../../../src/modules/github/github.http", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({ env: {} }));
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: {} }));
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({ cacheStore: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({ resolveOrgOwner: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/sources/mappers", () => ({ mapAccounts: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
   ghFetch: ghFetchSpy,
   ghFetchPublic: ghFetchPublicSpy,
 }));
 // ── The two dynamically-imported modules inside githubFetch ──
-vi.mock("../../../src/modules/github/github.local-auth", () => ({ getLocalGhToken }));
-vi.mock("../../../src/modules/github/github.token", () => ({ tokenFor: tokenForSpy }));
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({ getLocalGhToken }));
+vi.mock("@repo/platform/engine/modules/github/github.token", () => ({ tokenFor: tokenForSpy }));
 
-import { githubFetch } from "../../../src/modules/github/github.auth";
+import { githubFetch } from "@repo/platform/engine/modules/github/github.auth";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ctx = { userId: "u1", organizationId: "o1" } as any;
@@ -121,6 +121,24 @@ describe("githubFetch — threads op + repo into tokenFor (GHSA-hp2g-hw7g-f3vm)"
     expect(tokenForSpy.mock.calls[0][2]).toMatchObject({ op: "read", repo: "production-api" });
   });
 
+  it("requires write authority for a management probe and never falls back to public access", async () => {
+    tokenForSpy.mockResolvedValue(null);
+    getLocalGhToken.mockResolvedValue("ambient-token");
+    await expect(githubFetch({
+      ctx,
+      url: "https://api.github.com/repos/acme/production-api/actions/runners",
+      owner: "acme",
+      repo: "production-api",
+      authorizeAs: "write",
+    })).rejects.toMatchObject({ statusCode: 403, code: "GITHUB_TOKEN_REQUIRED" });
+    expect(tokenForSpy).toHaveBeenCalledWith(ctx, "local", expect.objectContaining({
+      owner: "acme", repo: "production-api", op: "write",
+    }));
+    expect(getLocalGhToken).not.toHaveBeenCalled();
+    expect(ghFetchPublicSpy).not.toHaveBeenCalled();
+    expect(ghFetchSpy).not.toHaveBeenCalled();
+  });
+
   it("authorizeAs does not let a management call widen itself by default", async () => {
     // No override → DELETE is still a write. Pinned so the escape hatch above
     // cannot quietly become the default.
@@ -144,9 +162,31 @@ describe("githubFetch — threads op + repo into tokenFor (GHSA-hp2g-hw7g-f3vm)"
         owner: "acme",
         repo: "production-api",
       }),
-    ).rejects.toThrow(/No GitHub access token/);
+    ).rejects.toMatchObject({ statusCode: 403, code: "GITHUB_TOKEN_REQUIRED" });
     // A denied write must not fall back to an unauthenticated public request.
     expect(ghFetchPublicSpy).not.toHaveBeenCalled();
     expect(ghFetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("server identity capability boundary (#1500)", () => {
+  it("threads the selected server only into repository reads", async () => {
+    await githubFetch({ ctx, owner: "acme", repo: "app", serverId: "s1", url: "https://api.github.com/repos/acme/app" });
+    expect(tokenForSpy).toHaveBeenCalledWith(ctx, "local", expect.objectContaining({ serverId: "s1", op: "read" }));
+  });
+  it.each([
+    { method: "POST", authorizeAs: "read" as const, url: "https://api.github.com/repos/acme/app/keys" },
+    { method: "DELETE", url: "https://api.github.com/repos/acme/app" },
+    { method: "GET", url: "https://github.example.test/api/v3/repos/acme/app" },
+    { method: "GET", url: "https://api.github.com/user" },
+    { method: "GET", url: "https://api.github.com/repos/acme/another-repo" },
+    { method: "GET", url: "https://api.github.com/repos/acme/app/../../../user" },
+    { method: "GET", url: "https://api.github.com/repos/acme/app/%2e%2e/another-repo" },
+  ])("refuses server credentials for %j", async request => {
+    await githubFetch({ ctx, owner: "acme", repo: "app", serverId: "s1", ...request });
+    const target = tokenForSpy.mock.calls[0][2];
+    expect(target.serverId).toBeUndefined();
+    expect(target.exclude).toContain("server-token");
   });
 });

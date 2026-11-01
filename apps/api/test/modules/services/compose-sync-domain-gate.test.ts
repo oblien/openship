@@ -11,7 +11,11 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { syncComposeServices } from "../../../src/modules/services/service.service";
+vi.mock("@repo/platform/engine/lib/cloud/require-cloud", () => ({
+  requireCloud: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { syncComposeServices } from "@repo/platform/engine/modules/services/service.service";
 
 /**
  * #342 follow-through: the create/update service editors have always shape-checked a

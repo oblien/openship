@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PortScanResult } from "@repo/adapters";
 
-import { confirmPortScanReachability } from "../../src/lib/port-reachability";
+import { confirmPortScanReachability } from "@repo/platform/engine/lib/port-reachability";
 
 const SCAN: PortScanResult = {
   scanned: true,

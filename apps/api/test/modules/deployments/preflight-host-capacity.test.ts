@@ -2,10 +2,8 @@
  * Deploy preflight's `host-capacity` check: an app's declared `minResources`
  * (catalog) matched against the machine it is about to land on.
  *
- * The three rules that keep it from being a footgun are the ones worth pinning:
- * it only ever refuses a FIRST deploy, an unmeasurable box never refuses, and
- * cloud is skipped entirely (sized from the tier table, and a multi-tenant
- * control plane must not dial a tenant's box to read a number).
+ * Self-hosted recommendations are advisory, including the first deployment.
+ * Unknown capacity never implies a shortfall, and Cloud never probes a host.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,20 +27,20 @@ vi.mock("../../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "desktop" }),
 }));
 
-vi.mock("../../../src/lib/cloud/client", () => ({ cloudClient }));
-vi.mock("../../../src/lib/cloud/session", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient }));
+vi.mock("@repo/platform/engine/lib/cloud/session", () => ({
   isCloudConnectedForOrg: vi.fn().mockResolvedValue(true),
 }));
-vi.mock("../../../src/lib/cloud-preflight", () => ({ runCloudPreflight }));
-vi.mock("../../../src/lib/dns-resolver", () => ({
+vi.mock("@repo/platform/engine/lib/cloud-preflight", () => ({ runCloudPreflight }));
+vi.mock("@repo/platform/engine/lib/dns-resolver", () => ({
   resolveRecords: vi.fn().mockResolvedValue([]),
   lookupAddresses: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../../src/lib/host-capacity", () => ({ getTrustedHostCapacity }));
-vi.mock("../../../src/modules/apps/catalog-source", () => ({ getTemplateForOrg }));
+vi.mock("@repo/platform/engine/lib/host-capacity", () => ({ getTrustedHostCapacity }));
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({ getTemplateForOrg }));
 
-import { runPreflightChecks, PREFLIGHT_ERROR_CODES } from "../../../src/modules/deployments/preflight";
+import { runPreflightChecks } from "@repo/platform/engine/modules/deployments/preflight";
 
 /** A catalog app's snapshot: a compose project, so the framework build fields
  *  (build image / start command) aren't required and `config` passes. */
@@ -107,16 +105,14 @@ describe("preflight host-capacity", () => {
     getTrustedHostCapacity.mockResolvedValue({ cpuCores: 2, memoryMb: 2048, source: "docker" });
   });
 
-  it("refuses a first deploy onto a machine measurably too small", async () => {
+  it("allows a first deploy on an undersized self-hosted server and explains the shortfall", async () => {
     const result = await runPreflightChecks(snapshot(), opts());
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
     expect(capacityCheck(result)).toMatchObject({
-      status: "fail",
-      code: PREFLIGHT_ERROR_CODES.HOST_RESOURCES_INSUFFICIENT,
+      status: "warn",
     });
-    // The numbers have to be in the message: AppError serializes only
-    // { error, code } — there is no `details` on the wire.
+    // The recommendation is still visible to SDK and preflight consumers.
     expect(capacityCheck(result)?.message).toContain("8 GB");
     expect(capacityCheck(result)?.message).toContain("2 GB");
   });
@@ -194,3 +190,12 @@ describe("preflight host-capacity", () => {
     expect(capacityCheck(result)).toBeUndefined();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "desktop" }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "desktop" }),
+}));

@@ -1,3 +1,4 @@
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { docsSource } from "@/lib/source";
 import { SITE_URL } from "@/lib/sitemap-builder";
 
@@ -36,7 +37,7 @@ export async function pageToMarkdown(page: LlmPage): Promise<string> {
   const { title, description, getText } = page.data;
   const head = [`# ${title}`, `URL: ${mdUrlFor(page.url)}`];
   if (description) head.push("", description);
-  const raw = await getText("raw").catch(() => "");
+  const raw = await getText("raw").catch(error => { reportCaughtError(error, "web/lib/llms"); return ""; });
   const body = stripFrontmatter(raw);
   return `${head.join("\n")}\n\n${body}`.trimEnd() + "\n";
 }

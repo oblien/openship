@@ -6,13 +6,13 @@ import {
   collectBuildCacheTargets,
   runBuildCacheGcSweep,
   type BuildCacheGcDependencies,
-} from "./build-cache-gc";
+} from "@repo/platform/engine/modules/deployments/build-cache-gc";
 
 const project = (overrides: Record<string, unknown> = {}) =>
   ({
     id: "proj_1",
     organizationId: "org_1",
-    cloudWorkspaceId: null,
+    workspaceId: null,
     serverId: "srv_1",
     activeDeploymentId: null,
     ...overrides,
@@ -108,13 +108,36 @@ describe("clearProjectBuildCache", () => {
     const createRuntime = vi.fn();
     await expect(
       clearProjectBuildCache(
-        project({ cloudWorkspaceId: "ws_1", serverId: null }),
+        project({ workspaceId: "ws_1", serverId: null }),
         dependencies({
           resolveProjectTarget: async () => ({ deployTarget: "cloud", serverId: null }),
           createRuntime,
         }),
       ),
     ).rejects.toMatchObject({ statusCode: 409, code: "BUILD_CACHE_NOT_LOCAL" });
+    expect(createRuntime).not.toHaveBeenCalled();
+  });
+
+  it("prunes a cluster's builder instead of the API host or a workload node", async () => {
+    const createRuntime = vi.fn(async () => ({
+      pruneBuildCache: async () => ({ cachesDeleted: [], spaceReclaimed: 0 }),
+    }));
+    await expect(clearProjectBuildCache(project({ clusterId: "cluster-1", serverId: null }), dependencies({
+      resolveProjectTarget: async () => ({ deployTarget: "cluster", serverId: null }),
+      resolveClusterBuildServer: async () => "cluster-builder",
+      createRuntime,
+    }))).resolves.toMatchObject({ target: "server", serverId: "cluster-builder" });
+    expect(createRuntime).toHaveBeenCalledExactlyOnceWith({
+      key: "server:cluster-builder", serverId: "cluster-builder", organizationId: "org_1",
+    });
+  });
+
+  it("refuses an unresolved cluster builder without falling back to local Docker", async () => {
+    const createRuntime = vi.fn();
+    await expect(clearProjectBuildCache(project({ clusterId: "cluster-1", serverId: null }), dependencies({
+      resolveProjectTarget: async () => ({ deployTarget: "cluster", serverId: null }),
+      createRuntime,
+    }))).rejects.toMatchObject({ code: "BUILD_CACHE_TARGET_MISSING" });
     expect(createRuntime).not.toHaveBeenCalled();
   });
 
@@ -149,6 +172,16 @@ describe("clearProjectBuildCache", () => {
 });
 
 describe("runBuildCacheGcSweep", () => {
+  it("sweeps an owned Cloud host with no project without selecting the API's local Docker", async () => {
+    const target = { key: "cloud:workspace-1", workspaceId: "workspace-1", organizationId: "org-1", serverId: null };
+    const pruneBuildCache = vi.fn(async () => ({ cachesDeleted: ["managed-state"], spaceReclaimed: 1024 }));
+    const createRuntime = vi.fn(async () => ({ pruneBuildCache }));
+    const result = await runBuildCacheGcSweep(dependencies({ hasLocalDockerRuntime: () => false,
+      listManagedTargets: async () => [target], createRuntime }));
+    expect(createRuntime).toHaveBeenCalledExactlyOnceWith(target);
+    expect(pruneBuildCache).toHaveBeenCalledExactlyOnceWith({ all: true, keepStorageBytes: AUTOMATIC_BUILD_CACHE_KEEP_BYTES });
+    expect(result).toEqual({ hostsScanned: 1, cachesDeleted: 1, bytesReclaimed: 1024, errors: 0 });
+  });
   it("applies the 5 GiB policy once per host and isolates host failures", async () => {
     const pruneByTarget = new Map<string, ReturnType<typeof vi.fn>>();
     const disposed: string[] = [];

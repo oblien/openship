@@ -9,7 +9,7 @@ vi.mock("../../src/lib/config", () => ({
 }));
 
 import { deployCommand } from "../../src/commands/deploy";
-import { deployFolder } from "../../src/lib/folder-deploy";
+import { getShipClient } from "../../src/lib/ship-client";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 
 let fetchStub: FetchStub;
@@ -58,11 +58,16 @@ describe("openship deploy — registered server target (#763)", () => {
     writeFileSync(join(sourceDir, "index.html"), "ok");
     fetchStub = stubFetch((req) => {
       if (req.url.endsWith("/api/projects/folder/session")) {
+        expect(req.body).toMatchObject({ serverId: "srv_remote" });
         return {
           json: {
             success: true,
             sessionId: "folder-session",
-            upload: { url: "projects/folder/upload/folder-session", method: "POST" },
+            expiresAt: Date.now() + 60_000,
+            upload: {
+              url: "projects/folder/upload/folder-session", absoluteUrl: "http://api.test/api/projects/folder/upload/folder-session",
+              method: "POST", headers: {}, requiresAuth: true, withCredentials: true,
+            },
           },
         };
       }
@@ -70,27 +75,31 @@ describe("openship deploy — registered server target (#763)", () => {
         return new Response(null, { status: 200 });
       }
       if (req.url.endsWith("/api/projects/folder/scan/folder-session")) {
-        return { json: { success: true, name: "folder-app", stack: "static", projectType: "app" } };
+        return { json: {
+          success: true, name: "folder-app", stack: "static", projectType: "app", packageManager: "npm",
+          installCommand: "", buildCommand: "", startCommand: "", buildImage: "", outputDirectory: "", rootDirectory: "",
+        } };
       }
       if (req.url.endsWith("/api/projects/ensure")) {
         expect(req.body).toMatchObject({ name: "folder-app", serverId: "srv_remote" });
-        return { json: { success: true, project_id: "p-folder" } };
+        return { json: { success: true, project_id: "p-folder", created: true } };
       }
       if (req.url.endsWith("/api/deployments/build/access")) {
         expect(req.body).toMatchObject({
           projectId: "p-folder",
           uploadSessionId: "folder-session",
-          deployTarget: "server",
           serverId: "srv_remote",
         });
+        // The engine resolves local/SSH/managed Cloud from the selected host.
+        expect(req.body).not.toHaveProperty("deployTarget");
         return { json: { success: true, deployment_id: "dep-folder", project_id: "p-folder" } };
       }
       throw new Error(`Unexpected request: ${req.method} ${req.url}`);
     });
 
     try {
-      await expect(deployFolder({ cwd: sourceDir, serverId: "srv_remote" })).resolves.toMatchObject(
-        { deploymentId: "dep-folder", projectId: "p-folder" },
+      await expect(getShipClient().deploy({ source: { type: "directory", path: sourceDir }, serverId: "srv_remote" })).resolves.toMatchObject(
+        { deployment_id: "dep-folder", project_id: "p-folder" },
       );
     } finally {
       rmSync(sourceDir, { recursive: true, force: true });

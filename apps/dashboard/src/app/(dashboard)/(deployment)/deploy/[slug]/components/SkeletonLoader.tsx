@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useI18n } from "@/components/i18n-provider";
@@ -16,34 +18,6 @@ interface SkeletonLoaderProps {
 
 const Shimmer = ({ className }: { className?: string }) => (
   <div className={`bg-muted animate-pulse rounded-lg ${className ?? ""}`} />
-);
-
-/** Subtle ring spinner. Stroke-dashoffset animation, no rotating wrapper. */
-const RingSpinner = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    className="text-foreground/70"
-    aria-hidden
-  >
-    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.18" strokeWidth="2" />
-    <circle
-      cx="12"
-      cy="12"
-      r="9"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeDasharray="14 60"
-      style={{
-        transformOrigin: "center",
-        animation: "deploy-spinner 0.9s linear infinite",
-      }}
-    />
-    <style>{`@keyframes deploy-spinner { to { transform: rotate(360deg); } }`}</style>
-  </svg>
 );
 
 function sourceLabel(source: LoadingSource): string | null {
@@ -75,7 +49,7 @@ const StatusHeader = ({ source }: { source: LoadingSource }) => {
   return (
     <div className="bg-card rounded-2xl border border-border/50 px-5 py-4 mb-6 overflow-hidden">
       <div className="flex items-center gap-3">
-        <RingSpinner />
+        <UiIcon name="spinner" size={18} className="animate-spin text-foreground/70" />
         <div className="min-w-0 flex-1">
           <div
             key={phase}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryFilter } from "@repo/core";
 
 import {
   PROJECT_STATUS_META,
@@ -15,7 +16,9 @@ import { baseDictionary as en } from "@/i18n";
 import {
   calculateDeploymentStats,
   filterDeployments,
+  formatBuildTime,
   getStatusConfig,
+  mapRowToDeployment,
 } from "@/app/(dashboard)/deployments/utils";
 import type { Deployment } from "@/app/(dashboard)/deployments/types";
 
@@ -79,6 +82,13 @@ describe("getProjectStatus — a blocked deploy needs attention", () => {
   it("keeps the existing attention triggers working", () => {
     expect(getProjectStatus({ activeDeploymentId: "d", awaitingDecision: true })).toBe("attention");
     expect(getProjectStatus({ activeDeploymentId: "d", routingUnsynced: true })).toBe("attention");
+  });
+
+  // GH-672: the deploy said ready, then the background watch saw a service keep
+  // restarting. The row is still `ready`, so only this flag stops a green "Live".
+  it("flags current runtime health and clears when its incident resolves", () => {
+    expect(getProjectStatus({ activeDeploymentId: "d", runtimeUnhealthy: true })).toBe("attention");
+    expect(getProjectStatus({ activeDeploymentId: "d", runtimeUnhealthy: false })).toBe("live");
   });
 });
 
@@ -169,6 +179,11 @@ describe("projectActionHref — every action badge has an owner", () => {
       "/projects/p1/domains",
     ],
     [
+      "runtime health needs attention",
+      { id: "p1", activeDeploymentId: "live", runtimeUnhealthy: true },
+      "/projects/p1/health",
+    ],
+    [
       "blocked deployment",
       { id: "p1", latestDeploymentId: "d2", latestDeploymentStatus: "action_required" },
       "/projects/p1/deployments",
@@ -217,6 +232,25 @@ describe("projectDisplayDomain — only a persisted route", () => {
 });
 
 describe("deployments list — a blocked deploy is visible and counted", () => {
+  it("keeps an explicit zero build duration distinct from an unknown measurement", () => {
+    const known = mapRowToDeployment({ id: "reused-image", status: "ready", buildDurationMs: 0 });
+    const measured = mapRowToDeployment({ id: "built-image", status: "ready", buildDurationMs: 4250 });
+    expect(known.buildTime).toBe(0);
+    expect(formatBuildTime(known.buildTime)).toBe("0s");
+    expect(formatBuildTime(measured.buildTime)).toBe("4s");
+    for (const buildDurationMs of [null, undefined, NaN, -1]) {
+      const unknown = mapRowToDeployment({ id: "unknown", status: "failed", buildDurationMs });
+      expect(unknown.buildTime).toBeNull();
+      expect(formatBuildTime(unknown.buildTime)).toBeNull();
+    }
+  });
+  it("uses the API's groups for every filter and page statistic", () => {
+    for (const [group, statuses] of Object.entries(DEPLOYMENT_HISTORY_STATUSES)) {
+      const rows = statuses.map((status) => mapRowToDeployment({ id: status, status }));
+      expect(filterDeployments(rows, { status: group as DeploymentHistoryFilter })).toHaveLength(statuses.length);
+      expect(calculateDeploymentStats(rows)[group as DeploymentHistoryFilter]).toBe(statuses.length);
+    }
+  });
   it("gets its own chip instead of falling through to Pending", () => {
     const config = getStatusConfig("action_required");
     expect(config.label).toBe("Action required");
@@ -418,3 +452,20 @@ describe("a project with a live migration", () => {
     expect(projectStatusLabel("migrating", en as never)).toBe("Migrating");
   });
 });
+
+it.each(["Cache cleanup interrupted", ""])(
+  "reports failed deletion independently of its error text (%j)",
+  (error) => {
+    const project = {
+      id: "p1",
+      activeDeploymentId: "d1",
+      latestDeploymentStatus: "ready",
+      deletionInProgress: true,
+      lifecycleOperation: { kind: "delete", status: "failed", error } as const,
+    };
+    expect(getProjectStatus(project)).toBe("attention");
+    expect(getProjectAttentionReason(project)).toBe("deletion");
+    expect(projectActionHref(project)).toBe("/projects/p1");
+    expect(projectStatusHint(project, en)).toContain(en.projects.delete.retryCleanup);
+  },
+);

@@ -7,6 +7,7 @@
  * including commands (reset-admin-password, doctor) that have nothing to do with
  * bringing a stack up.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -44,6 +45,7 @@ export function readComposeEnvFile(): ComposeEnvRead {
   try {
     text = readFileSync(COMPOSE_ENV_FILE, "utf8");
   } catch (err) {
+    observeCaughtError(err, "cli/lib/compose-env");
     const code = (err as { code?: string }).code;
     return { env: {}, unreadable: code === "ENOENT" ? null : (err as Error).message };
   }

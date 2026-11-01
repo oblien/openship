@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { existsSync, readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 
@@ -78,6 +79,7 @@ export function setHostControlOverride(disabled: boolean | null): void {
 /** Host control explicitly switched off — by the operator's Settings toggle
  *  (runtime override) or, absent that, by `--no-host-control` at install. */
 export function hostControlDisabled(): boolean {
+  if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") return true;
   return (
     hostControlOverride ??
     process.env.OPENSHIP_HOST_CONTROL?.trim().toLowerCase() === "false"
@@ -101,12 +103,14 @@ function runningInContainer(): boolean {
   if (process.env.OPENSHIP_IN_CONTAINER?.trim().toLowerCase() === "true") return true;
   try {
     if (existsSync("/.dockerenv")) return true;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/executor");
     /* fall through to the cgroup probe */
   }
   try {
     return /\b(docker|containerd|podman|kubepods)\b/.test(readFileSync("/proc/1/cgroup", "utf8"));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/executor");
     // No procfs (macOS/Windows dev) — those are never the containerized API.
     return false;
   }
@@ -140,6 +144,7 @@ function readHostChannelKey(
   try {
     contents = readFileSync(keyPath, "utf8");
   } catch (err) {
+    observeCaughtError(err, "adapters/system/executor");
     const detail = err instanceof Error ? err.message : String(err);
     return { reason: `Cannot read the host SSH key at ${keyPath} (${detail}).` };
   }
@@ -345,7 +350,8 @@ function probeForwarding(
         // permitted and only the destination was unreachable.
         finish("ok");
       });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/executor");
       finish("unknown");
     }
   });
@@ -407,6 +413,7 @@ async function verifyHostChannelAuth(config: {
     );
     client.end();
   } catch (err) {
+    observeCaughtError(err, "adapters/system/executor");
     if (isSshAuthError(err)) {
       hint = err instanceof Error ? err.message : HOST_CHANNEL_AUTH_REJECTED;
     }

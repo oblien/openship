@@ -94,6 +94,17 @@ afterEach(() => {
 });
 
 describe("execStream silence is bounded, traffic is not", () => {
+  it("closes a backpressured exec as soon as its upload consumer leaves", async () => {
+    const h = execHarness(stream);
+    const exec = await h.executor();
+    const { stdout, awaitExit } = await exec.execStream(SERVICE, ["pg_dump"]);
+    const failure = expect(awaitExit).rejects.toThrow(/closed before capture completed/);
+    stdout.destroy();
+    await vi.advanceTimersByTimeAsync(1);
+    await failure;
+    expect(stream.destroyed_).toBe(true);
+  });
+
   it("abandons an exec that produces nothing for the idle window", async () => {
     const h = execHarness(stream);
     const exec = await h.executor();

@@ -10,16 +10,17 @@
   },
   "page": {
     "title": "New Project",
-    "subtitle": "Import a repository, paste a URL, or start from a template",
+    "subtitle": "Deploy an app or import your own project.",
     "tabs": {
       "folder": "Folder",
       "github": "GitHub",
-      "url": "Git URL",
-      "template": "Template"
+      "templates": "Templates",
+      "gitUrl": "Git URL"
     }
   },
   "connect": {
     "connectGithub": "Connect GitHub",
+    "deployApp": "Deploy app",
     "manageInSettings": "Other connection methods",
     "terminal": {
       "title": "Connect GitHub",
@@ -59,6 +60,20 @@
       "connect": "Connect",
       "create": "Create a token on GitHub",
       "failed": "Could not save the token."
+    },
+    "installationPicker": {
+      "title": "Choose GitHub access",
+      "description": "Select an existing App installation for this workspace.",
+      "sharedHint": "Using it here keeps your other Openship connections intact.",
+      "connect": "Use this account",
+      "connected": "Already connected",
+      "installAnother": "Install on another GitHub account",
+      "failed": "Could not connect this installation.",
+      "tryAgain": "Start again",
+      "successTitle": "GitHub connected",
+      "successDescription": "Repository access is ready. You can return to Openship.",
+      "errorTitle": "GitHub connection needs attention",
+      "returnToApp": "Back to Library"
     }
   },
   "folderUpload": {
@@ -138,8 +153,6 @@
     "noMatchingDesc": "Try a different search term or adjust your filters",
     "noReposDesc": "This account doesn’t have any repositories yet",
     "privateBadge": "Private",
-    "localOnly": "Local only",
-    "localOnlyTooltip": "The Openship App isn't installed on {owner}. Local builds only — install the App on this owner to enable remote deploys.",
     "repoCountSingular": "{count} repository",
     "repoCountPlural": "{count} repositories",
     "matching": "matching \"{query}\"",
@@ -173,7 +186,7 @@
     "checking": "Checking…",
     "notConnectedManage": "Not connected — manage in Settings",
     "optional": "Optional",
-    "footnote": "Local library via gh CLI; remote deploys use short-lived tokens —",
+    "footnote": "Manage the GitHub connections used to browse and deploy repositories.",
     "manageGithubSettings": "manage GitHub in Settings",
     "methodToken": "GitHub token",
     "methodDevice": "GitHub sign-in"
@@ -183,5 +196,65 @@
     "title": "Import from Git URL",
     "description": "Paste a public repository URL to import. No GitHub connection required.",
     "importButton": "Import Repository"
+  },
+  "customAppModal": {
+    "title": "Add a custom app",
+    "description": "Upload an app definition (JSON). It's added to your catalog and marked unverified.",
+    "howToWrite": "How to write one",
+    "dropPrefix": "Drop",
+    "dropSuffix": "here, or",
+    "browse": "browse",
+    "validDefinition": "Valid app definition —",
+    "unverifiedTitle": "Unverified.",
+    "unverifiedBody": "This deploys images you provided — not an official, reviewed app. Review the definition and only add apps you trust.",
+    "cancel": "Cancel",
+    "addApp": "Add app",
+    "invalidJson": "That file isn't valid JSON.",
+    "invalidDefinition": "This isn't a valid app definition — check the required fields and references.",
+    "onlyTemplateSupported": "Only template apps can be added (flow apps aren't supported).",
+    "addedToast": "Added \"{name}\" to your catalog.",
+    "failedToast": "Couldn't add the app."
+  },
+  "catalog": {
+    "apps": {
+      "mail": "Your own mail on your own domain — SMTP/IMAP, mailboxes and webmail on one server. Or keep the mailboxes you already have and just run the webmail.",
+      "supabase": "Full self-hosted Supabase — Postgres, Auth, REST, Realtime, Storage, and Studio behind one API gateway.",
+      "mongodb": "MongoDB document database with the Mongo Express web admin UI.",
+      "convex": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
+      "n8n": "Workflow automation — connect apps and APIs with a visual editor.",
+      "ghost": "Publishing for blogs, newsletters, and membership sites, with a focused editor and your own database.",
+      "directus": "A headless CMS with REST and GraphQL APIs over your data and a browser-based admin studio.",
+      "nocodb": "An Airtable-style spreadsheet interface for working with SQL-backed data.",
+      "metabase": "Business intelligence, questions, and dashboards over your existing data.",
+      "grafana": "Dashboards and visualization for your metrics and logs, on your own infrastructure.",
+      "gitea": "Lightweight Git hosting with repositories, issues, and pull requests.",
+      "code-server": "VS Code in your browser, running against a workspace on your own server.",
+      "uptime-kuma": "Uptime monitoring with status pages and alerts for your services.",
+      "vaultwarden": "A lightweight, self-hosted password manager compatible with Bitwarden clients.",
+      "freshrss": "Your own RSS and Atom feed reader, with a browser interface for organizing feeds.",
+      "stirling-pdf": "Split, merge, convert, OCR, and edit PDFs on infrastructure you control.",
+      "it-tools": "A browser-based collection of developer and sysadmin utilities, with no account setup.",
+      "excalidraw": "Virtual whiteboard for sketches and diagrams. Stateless — drawings save in your browser.",
+      "buzz": "Self-hostable workspace where humans and AI agents collaborate — chat, code, reviews, and workflows in one audit log.",
+      "minio": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it, or bind a bucket straight into another project's uploads.",
+      "kafka": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",
+      "qdrant": "High-performance vector database for AI search, RAG, and embeddings — with the built-in Qdrant Web UI for browsing collections and running queries.",
+      "meilisearch": "Lightning-fast, typo-tolerant search engine. Point any Meilisearch client at the URL below with the master key — index your documents and search in milliseconds.",
+      "neon": "Community-powered self-hosted Neon with Postgres branching, a console, and per-branch connection strings.",
+      "posthog": "Product analytics, session replay, and feature flags in a self-hosted hobby stack.",
+      "redis": "In-memory data store for caching, sessions, rate limits, and queues — Valkey, the open-source Redis fork. Drop-in Redis-compatible: point any redis client at it. Ships with RedisInsight, a browser UI that arrives already connected to this instance.",
+      "umami": "Privacy-friendly, cookie-free web analytics — a self-hosted alternative to Google Analytics. Add one script tag to your site and see traffic in a clean dashboard you own.",
+      "webmail": "A fast, self-hosted webmail client. Point it at any IMAP/SMTP mailbox — an Openship Mail server, Gmail, Fastmail, or your company's — and read, search and send from a clean UI on your own domain. Nothing is stored outside your server.",
+      "clickhouse": "Columnar SQL for analytical data, with the CH-UI console for queries and schema browsing.",
+      "mindwire": "Run coding-agent runtimes behind a self-hosted control plane. MindWire keeps the runtime private and gives you one console to manage agents, credentials, and sessions.",
+      "pocketbase": "Self-hosted PocketBase with auth, a realtime SQLite database, file storage, and an admin dashboard in one small service.",
+      "authentik": "An identity provider for SSO, OAuth2, OpenID Connect, and SAML, with its server, worker, and PostgreSQL database.",
+      "mariadb": "A MySQL-compatible database with a lightweight Adminer control panel for queries, tables, and exports.",
+      "nextcloud": "Private file sync and sharing with Nextcloud Admin, MariaDB, Redis file locking, and scheduled background jobs.",
+      "odoo": "Run CRM, sales, inventory, and other Community business apps with PostgreSQL and a ready-to-use administrator account.",
+      "postgresql": "A persistent PostgreSQL database with pgAdmin for browser-based administration and SQL queries.",
+      "rabbitmq": "A persistent message broker with the official management dashboard for queues, exchanges, and connections.",
+      "wordpress": "Publish websites, blogs, and stores with WordPress Admin, a private MariaDB database, and persistent uploads."
+    }
   }
 }

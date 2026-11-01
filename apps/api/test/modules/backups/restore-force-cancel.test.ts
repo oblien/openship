@@ -10,7 +10,7 @@
 import { db, repos, schema } from "@repo/db";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { RestoreOrchestrator } from "../../../src/modules/backups/restore.orchestrator";
+import { RestoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 import { seedBackupDestination, seedBackupRun, seedOrg, seedProject } from "../../helpers/seed";
 
 let organizationId: string;

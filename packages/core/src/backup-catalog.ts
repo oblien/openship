@@ -12,7 +12,7 @@
  *     live process in the container, and whether the write only takes effect after
  *     the service is power-cycled (`apps/api/src/modules/backups/restore.orchestrator.ts`);
  *   - the policy service, which must refuse a policy that cannot produce a
- *     restorable artifact (`apps/api/src/modules/backups/backup.service.ts`);
+ *     restorable artifact (`packages/platform/src/engine/modules/backups/backup.service.ts`);
  *   - the dashboard, which has to tell the operator what will happen before it does
  *     (`apps/dashboard/src/components/backup/PolicyEditor.tsx`).
  *
@@ -297,7 +297,7 @@ export type PayloadConfigKey = (typeof PAYLOAD_CONFIG_KEYS)[number];
  * read would have refused every mail policy and every restore that turns verification
  * off.
  */
-export const UNIVERSAL_PAYLOAD_CONFIG_KEYS = ["verifyOnPrepare", "mail"] as const;
+export const UNIVERSAL_PAYLOAD_CONFIG_KEYS = ["verifyOnPrepare", "mail", "incremental"] as const;
 export type UniversalPayloadConfigKey = (typeof UNIVERSAL_PAYLOAD_CONFIG_KEYS)[number];
 
 /**
@@ -389,10 +389,10 @@ export const BACKUP_PAYLOADS: Record<PayloadKind, BackupPayloadSpec> = {
   },
   redis_rdb: {
     kind: "redis_rdb",
-    label: "Redis",
+    label: "Redis / Valkey",
     method: "RDB snapshot",
     shape: "database",
-    images: { names: ["redis"], namespaces: ["redis"] },
+    images: { names: ["redis", "valkey/valkey"], namespaces: ["redis"] },
     restoreNeedsLiveContainer: true,
     // The one kind whose write is inert until the service restarts. See the field doc.
     restoreAppliesAfterBounce: true,
@@ -713,6 +713,14 @@ export function validatePolicyPayload(
   }
   const resolved: PolicyPayloadKind = isPolicyPayloadKind(kind) ? kind : PAYLOAD_KIND_AUTO;
   const cfg = config ?? {};
+  for (const key of ["incremental", "quiesce", "clearPath", "verifyOnPrepare"]) {
+    if (cfg[key] !== undefined && typeof cfg[key] !== "boolean") return `Backup option "${key}" must be true or false.`;
+  }
+  for (const key of ["sourceIds", "exclude"]) {
+    if (cfg[key] !== undefined && (!Array.isArray(cfg[key]) || !(cfg[key] as unknown[]).every(value => typeof value === "string" && value.trim()))) {
+      return `Backup option "${key}" must be a list of non-empty strings.`;
+    }
+  }
 
   // A key no producer reads is a typo, and a typo here is a policy that looks
   // configured and captures nothing. Cross-kind keys are deliberately NOT refused: a

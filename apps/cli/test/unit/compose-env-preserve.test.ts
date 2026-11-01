@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
@@ -21,10 +22,12 @@ const h = vi.hoisted(() => ({
   existing: new Set<string>(),
   written: new Map<string, string>(),
   composeCalls: [] as string[][],
+  failHealthWait: false,
   /** `docker ps` rows for the port query: "<config_files>\t<published ports>". */
   dockerPsPorts: "",
   /** Postgres data volumes this box already has, by full volume name. */
   dbVolumes: new Set<string>(),
+  volumeInspectError: null as string | null,
   /** `docker manifest inspect <ref>` result per ref. Default: the tag exists (#486). */
   manifestInspect: (_ref: string) => ({ status: 0, stdout: "{}", stderr: "" }),
   /**
@@ -68,11 +71,15 @@ vi.mock("node:child_process", () => ({
   execFile: (_c: unknown, _a: unknown, cb: (e: null, o: { stdout: string }) => void) =>
     cb(null, { stdout: "" }),
   spawnSync: (cmd: string, args: string[] = []) => {
-    if (cmd === "docker" && args[0] === "compose") h.composeCalls.push(args);
+    if (cmd === "docker" && args[0] === "compose") {
+      h.composeCalls.push(args);
+      if (h.failHealthWait && args.includes("--wait")) return { status: 1, stdout: "", stderr: "service unhealthy" };
+    }
     // `docker volume inspect <name>`. Empty by default, so the password-reconcile path
     // stays out of the compose sequences most of these tests assert on.
     if (cmd === "docker" && args[0] === "volume") {
-      return { status: h.dbVolumes.has(String(args[2])) ? 0 : 1, stdout: "", stderr: "" };
+      if (h.volumeInspectError) return { status: 1, stdout: "", stderr: h.volumeInspectError };
+      return { status: h.dbVolumes.has(String(args[2])) ? 0 : 1, stdout: "", stderr: `Error: No such volume: ${args[2]}` };
     }
     // Only the published-ports query (composeHeldPorts), not the label sweep below.
     if (cmd === "docker" && args[0] === "ps" && args.some((a) => a.includes("{{.Ports}}"))) {
@@ -265,8 +272,10 @@ beforeEach(() => {
   h.existing = new Set([DOCKER_SOCK]);
   h.written = new Map();
   h.composeCalls = [];
+  h.failHealthWait = false;
   h.dockerPsPorts = "";
   h.dbVolumes = new Set();
+  h.volumeInspectError = null;
   h.manifestInspect = () => ({ status: 0, stdout: "{}", stderr: "" });
   h.pgProbe = () => ({ status: 0, stdout: "sub", stderr: "" });
   h.psAll = "";
@@ -786,7 +795,8 @@ describe("compose port resolution", () => {
     expect(file).toContain(
       "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}",
     );
-    expect(file).not.toContain("0.0.0.0");
+    const spec = parseYaml(file);
+    expect([...spec.services.api.ports, ...spec.services.dashboard.ports].join(" ")).not.toContain("0.0.0.0");
     // A local install leaves the key out entirely → the loopback fallback applies.
     expect(writtenEnv().OPENSHIP_BIND_ADDR).toBeUndefined();
   });
@@ -911,6 +921,37 @@ describe("composeUpdate", () => {
     // New images + a recreate, in that order.
     expect(verbs()).toContainEqual(["pull"]);
     expect(verbs().at(-1)?.slice(0, 3)).toEqual(["up", "-d", "--force-recreate"]);
+  });
+  it("recreates only application services and waits for readiness when the target env is already saved", async () => {
+    seedEnv({ ...CONFIGURED, OPENSHIP_VERSION: "0.4.6" });
+    expect(await composeUpdate("0.4.6")).toEqual({ applied: true, refused: false });
+    const up = verbs().at(-1)!;
+    expect(up).toContain("--force-recreate");
+    expect(up).toContain("--wait");
+    expect(up).toContain("--wait-timeout");
+    expect(up.slice(-3)).toEqual(["api", "dashboard", "edge"]);
+    expect(up).not.toContain("postgres");
+    expect(up).not.toContain("redis");
+    const spec = parseYaml(h.written.get(composePaths.file)!);
+    expect(spec.services.dashboard.environment.HOSTNAME).toBe("0.0.0.0");
+    expect(spec.services.dashboard.healthcheck.test).toContain("node");
+    expect(spec.services.edge.depends_on).toEqual({
+      api: { condition: "service_healthy" },
+      dashboard: { condition: "service_healthy" },
+    });
+  });
+
+  it("does not report an applied update when the new services fail readiness", async () => {
+    seedEnv(CONFIGURED);
+    h.failHealthWait = true;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await composeUpdate("0.4.6")).toEqual({ applied: false, refused: false });
+      expect(writtenEnv().POSTGRES_PASSWORD).toBe(CONFIGURED.POSTGRES_PASSWORD);
+      expect(writtenEnv().BETTER_AUTH_SECRET).toBe(CONFIGURED.BETTER_AUTH_SECRET);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("is a no-op when there's no compose install", async () => {
@@ -1305,16 +1346,16 @@ describe("composeUp — OPENSHIP_PGDATA is read from the volume, not guessed (#4
     expect(writtenEnv().OPENSHIP_PGDATA).toBe("/var/lib/postgresql/data/pgdata");
   });
 
-  it("falls back to the subdir when docker can't probe (status != 0 → unknown)", async () => {
-    // An inconclusive probe must never guess the root — the subdir is the non-crashing
-    // choice, and the compose default besides.
+  it("refuses without rewriting configuration when Docker cannot read the layout", async () => {
     seedEnv(CONFIGURED);
     h.dbVolumes.add("openship_postgres_data");
     h.pgProbe = () => ({ status: 1, stdout: "", stderr: "cannot connect to the Docker daemon" });
 
+    const before = h.written.get(composePaths.env);
     const res = await composeUp({});
-    expect(res.ok).toBe(true);
-    expect(writtenEnv().OPENSHIP_PGDATA).toBe("/var/lib/postgresql/data/pgdata");
+    expect(res).toMatchObject({ ok: false, refused: true });
+    expect(h.written.get(composePaths.env)).toBe(before);
+    expect(h.composeCalls).toEqual([]);
   });
 
   it("reuses a pinned OPENSHIP_PGDATA verbatim, without probing", async () => {
@@ -1365,6 +1406,72 @@ describe("composeUp — refuses to guess OPENSHIP_PGDATA on an unrecognized volu
 
   it("does not fire on a first install — there is no volume", async () => {
     expect((await composeUp({})).ok).toBe(true);
+  });
+});
+
+describe("database inspection failures preserve configuration (#487, #488)", () => {
+  it("does not classify an unreachable Docker daemon as a fresh installation", () => {
+    h.volumeInspectError = "Cannot connect to the Docker daemon";
+    expect(() => composePlan({})).toThrow(/Cannot inspect database volume/);
+    expect(h.written.size).toBe(0);
+  });
+
+  it("cannot overwrite missing secrets when the existence of old data is unknown", () => {
+    seedEnv({ COMPOSE_PROJECT_NAME: "openship", OPENSHIP_PGDATA: "/var/lib/postgresql/data/pgdata" });
+    const before = h.written.get(composePaths.env);
+    h.volumeInspectError = "permission denied while connecting to the Docker socket";
+    expect(() => composePrefetch({})).toThrow(/Cannot inspect database volume/);
+    expect(h.written.get(composePaths.env)).toBe(before);
+    expect(h.composeCalls).toEqual([]);
+  });
+
+  it("refuses foreign data during prefetch, before that path can replace the env file", () => {
+    seedEnv(CONFIGURED);
+    const before = h.written.get(composePaths.env);
+    h.dbVolumes.add("openship_postgres_data");
+    h.pgProbe = () => ({ status: 0, stdout: "foreign", stderr: "" });
+    expect(composePrefetch({})).toEqual({ ok: false, envChanged: false });
+    expect(h.written.get(composePaths.env)).toBe(before);
+    expect(h.composeCalls).toEqual([]);
+  });
+
+  it("revalidates the layout at the write boundary and refuses a later probe failure", async () => {
+    seedEnv(CONFIGURED);
+    const before = h.written.get(composePaths.env);
+    h.dbVolumes.add("openship_postgres_data");
+    let calls = 0;
+    h.pgProbe = () => ++calls === 1
+      ? { status: 0, stdout: "sub", stderr: "" }
+      : { status: 1, stdout: "", stderr: "probe access failed" };
+    await expect(composeUp({})).rejects.toThrow(/data directory could not be inspected/);
+    expect(h.written.get(composePaths.env)).toBe(before);
+    expect(h.composeCalls).toEqual([]);
+  });
+
+  it("uses one layout observation for both the preview value and its verdict", () => {
+    seedEnv(CONFIGURED);
+    h.dbVolumes.add("openship_postgres_data");
+    let calls = 0;
+    h.pgProbe = () => {
+      calls++;
+      return { status: 0, stdout: "sub", stderr: "" };
+    };
+    const plan = composePlan({});
+    expect(calls).toBe(1);
+    expect(plan.pgDataRisk).toBeNull();
+    expect(plan.settings.find((row) => row.key === "OPENSHIP_PGDATA")?.value).toBe("/var/lib/postgresql/data/pgdata");
+  });
+
+  it("reports an unknown layout without claiming a path or a foreign cluster", () => {
+    seedEnv(CONFIGURED);
+    h.dbVolumes.add("openship_postgres_data");
+    h.pgProbe = () => ({ status: 1, stdout: "", stderr: "image pull failed" });
+    const plan = composePlan({ resetSecrets: true });
+    expect(plan.pgDataRisk).toMatchObject({ volume: "openship_postgres_data", reason: "unavailable" });
+    expect(plan.settings.find((row) => row.key === "OPENSHIP_PGDATA")?.value).toBe("<unresolved>");
+    const message = renderPgDataRefusal(plan.pgDataRisk!, { dryRun: true });
+    expect(message).toContain("image pull failed");
+    expect(message).not.toContain("neither present");
   });
 });
 

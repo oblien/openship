@@ -9,7 +9,8 @@
  *                    JS/WASM, @repo/* inlined, ssh2/dockerode/cpu-features external
  *   node_modules/    the FULL prod closure (commander/chalk/ora/open/@clack +
  *                    ssh2/dockerode + transitive), installed with --omit=optional
- *                    so cpu-features (ssh2's only native dep) is dropped → ZERO
+ *                    and --ignore-scripts so optional native dependencies and
+ *                    ssh2's crypto build hook cannot introduce host-specific
  *                    .node files → the tree runs unchanged on x64 AND arm64.
  *   package.json     workspace-stripped, "type":"module" — mirrors the published
  *                    npm layout so dist/index.js + dist/server/index.js resolve
@@ -30,19 +31,21 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DIST = join(CLI_DIR, "dist");
+const PACKAGE_DIR = join(CLI_DIR, "../../packages/openship");
+const DIST = join(PACKAGE_DIR, "dist");
 const OUT = join(CLI_DIR, ".cli-payload");
 const STAGE = join(OUT, "stage");
 
-const pkg = JSON.parse(readFileSync(join(CLI_DIR, "package.json"), "utf8")) as {
+const pkg = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) as {
   name: string;
   version: string;
   type?: string;
@@ -93,10 +96,10 @@ writeFileSync(
 console.log(`[stage-cli-payload] stripped workspace deps: ${stripped.join(", ") || "(none)"}`);
 
 // 3. Install the FULL prod closure into the stage. `--omit=optional` drops
-//    ssh2's only native dep (cpu-features → node-gyp, host-arch, no prebuild),
-//    yielding a zero-`.node`, arch-independent tree; ssh2 falls back to pure-JS
-//    crypto. `--omit=dev` skips devDependencies (none listed here, but explicit).
-console.log("[stage-cli-payload] npm install (prod closure, --omit=optional) …");
+//    cpu-features, but ssh2's own install hook also compiles a crypto addon when
+//    a compiler is available. Disable hooks too; ssh2 supports pure-JS crypto.
+//    `--omit=dev` skips devDependencies (none listed here, but explicit).
+console.log("[stage-cli-payload] npm install (prod closure, no native build hooks) …");
 execFileSync(
   "npm",
   [
@@ -105,6 +108,7 @@ execFileSync(
     STAGE,
     "--omit=dev",
     "--omit=optional",
+    "--ignore-scripts",
     "--no-audit",
     "--no-fund",
     "--no-package-lock",
@@ -161,6 +165,21 @@ if (!/^\d+\.\d+\.\d+/.test(ver)) {
   process.exit(1);
 }
 console.log(`[stage-cli-payload] payload loads ✓  (dist/index.js --version → ${ver})`);
+
+// A dependency may start shipping a prebuilt addon without an install hook.
+// Enforce portability in this build job, before the archive can be published.
+const directories = [STAGE];
+while (directories.length > 0) {
+  const directory = directories.pop()!;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) directories.push(path);
+    else if (entry.name.endsWith(".node"))
+      throw new Error(
+        `[stage-cli-payload] Native addon ${relative(STAGE, path)} prevents this payload from running across CPU architectures.`,
+      );
+  }
+}
 
 // 5. Tarball + sha256 sidecar (`<hash>  <name>`, matching sha256sum so the CLI's
 //    parseSha256 reads it). Hashing streams the file — the closure is tens of MB.

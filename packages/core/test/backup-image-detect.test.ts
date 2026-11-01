@@ -33,8 +33,24 @@ describe("which database an image is", () => {
       "mongo-express:1",
       "acme/postgres:16",
       "someorg/redis:7",
+      "valkey/valkey-exporter:1",
+      "someorg/valkey:8",
     ]) {
       expect(detectDbImage(img), img).toBeNull();
+    }
+  });
+
+  it("uses the same RDB producer for the catalog's official Valkey image", () => {
+    for (const image of [
+      "valkey/valkey",
+      "valkey/valkey:8.1-alpine",
+      "docker.io/valkey/valkey:8.1-alpine",
+      `valkey/valkey@sha256:${"a".repeat(64)}`,
+    ]) {
+      expect(detectDbImage(image)).toMatchObject({
+        payloadKind: "redis_rdb",
+        label: "Redis / Valkey",
+      });
     }
   });
 

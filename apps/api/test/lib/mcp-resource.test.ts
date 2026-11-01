@@ -9,6 +9,7 @@ import {
   protectedResourceMetadata,
   protectedResourceMetadataUrl,
   publicRequestUrl,
+  requestMcpResourcePath,
   resolveTokenAudience,
   rewriteMetadataOrigin,
 } from "../../src/lib/mcp-resource";
@@ -100,21 +101,52 @@ describe("resolveTokenAudience", () => {
   it("falls back to the canonical MCP URL for clients that send no resource", () => {
     expect(resolveTokenAudience(undefined, ORIGIN)).toBe(`${ORIGIN}/api/mcp`);
   });
+
+  it("binds a proxy client's token to the resource its metadata advertises", () => {
+    const resource = `${ORIGIN}${MCP_PROXY_RESOURCE_PATH}`;
+    expect(isAllowedMcpResource(resource, ORIGIN)).toBe(true);
+    expect(resolveTokenAudience(resource, ORIGIN)).toBe(resource);
+  });
+});
+
+describe("requestMcpResourcePath", () => {
+  it.each([
+    MCP_PROXY_RESOURCE_PATH,
+    `${MCP_PROXY_RESOURCE_PATH}/`,
+    `${MCP_PROXY_RESOURCE_PATH}?client=desktop`,
+  ])("recognizes the forwarded proxy path %s", (path) => {
+    const request = new Request("http://api:4000/api/mcp", {
+      headers: { "x-forwarded-uri": path },
+    });
+    expect(requestMcpResourcePath(request)).toBe(MCP_PROXY_RESOURCE_PATH);
+  });
+
+  it.each([
+    "/api/admin",
+    "/api/proxy/api/mcp/../admin",
+    "https://evil.example.com/api/mcp",
+    "/api/proxy/api/mcp, /api/admin",
+  ])("ignores an unrecognized forwarded resource %s", (path) => {
+    const request = new Request("http://api:4000/api/mcp", {
+      headers: { "x-forwarded-uri": path },
+    });
+    expect(requestMcpResourcePath(request)).toBe(MCP_RESOURCE_PATH);
+  });
 });
 
 describe("protected resource metadata", () => {
-  it("advertises the FULL MCP URL as the resource, not the origin", () => {
-    const doc = protectedResourceMetadata(ORIGIN, `${ORIGIN}${MCP_RESOURCE_PATH}`);
-    expect(doc.resource).toBe("https://ship.example.net/api/mcp");
+  it.each([MCP_RESOURCE_PATH, MCP_PROXY_RESOURCE_PATH])("advertises the full resource for %s", (path) => {
+    const doc = protectedResourceMetadata(ORIGIN, `${ORIGIN}${path}`);
+    expect(doc.resource).toBe(`${ORIGIN}${path}`);
     expect(doc.resource.endsWith("/")).toBe(false);
     expect(doc.authorization_servers).toEqual([ORIGIN]);
     expect(doc.jwks_uri).toBe(`${ORIGIN}/api/auth/mcp/jwks`);
     expect(doc.bearer_methods_supported).toEqual(["header"]);
   });
 
-  it("points clients at the path-aware well-known location", () => {
-    expect(protectedResourceMetadataUrl(ORIGIN, MCP_RESOURCE_PATH)).toBe(
-      `${ORIGIN}/.well-known/oauth-protected-resource/api/mcp`,
+  it.each([MCP_RESOURCE_PATH, MCP_PROXY_RESOURCE_PATH])("points clients at path-aware metadata for %s", (path) => {
+    expect(protectedResourceMetadataUrl(ORIGIN, path)).toBe(
+      `${ORIGIN}/.well-known/oauth-protected-resource${path}`,
     );
   });
 });

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
 import { getRouteRegistry, isPublicSpec } from "../../src/lib/route-permission";
-import { AddDomainBody } from "../../src/modules/domains/domain.schema";
+import { AddDomainBody } from "@repo/contracts";
 import {
   TriggerDeployBody,
   BuildAccessBody,
-} from "../../src/modules/deployments/deployment.schema";
+} from "@repo/contracts";
 
 /**
  * `collectionProject: true` tells `requirePermission` to SKIP the collection

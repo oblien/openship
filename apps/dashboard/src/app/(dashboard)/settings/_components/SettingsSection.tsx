@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
 
 export function SettingsSection({
   icon: Icon,
@@ -14,7 +15,7 @@ export function SettingsSection({
   collapsible = false,
   defaultOpen = false,
 }: {
-  icon: React.ElementType;
+  icon: IconName;
   title: string;
   description: string;
   children: React.ReactNode;
@@ -38,14 +39,14 @@ export function SettingsSection({
   const header = (
     <>
       <div className={`w-9 h-9 ${iconBg} rounded-xl flex items-center justify-center shrink-0`}>
-        <Icon className={`size-[18px] ${iconColor}`} />
+        <UiIcon name={Icon} className={`size-[18px] ${iconColor}`} />
       </div>
       <div className="min-w-0 flex-1">
         <h2 className="font-semibold text-foreground text-[15px]">{title}</h2>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
       {collapsible && (
-        <ChevronDown
+        <UiIcon name="chevron-down"
           className={`size-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
         />
       )}

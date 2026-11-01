@@ -35,6 +35,19 @@ function phpConfig(over: Partial<BuildConfig> = {}): BuildConfig {
 }
 
 describe("generateDockerfile — PHP branch", () => {
+  it("checks both selected stages and the actual Composer platform", () => {
+    const selected = generateDockerfile(phpConfig({ runtimeVersion: "8.3", buildImage: "php:8.3-cli-bookworm", runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm" }));
+    expect(selected.match(/RUN php -r/g)).toHaveLength(2);
+    expect(selected.match(/check-platform-reqs --no-dev/g)).toHaveLength(2);
+    expect(selected).toContain("env -u COMPOSER_IGNORE_PLATFORM_REQ -u COMPOSER_IGNORE_PLATFORM_REQS");
+    expect(selected).toContain("rm -f /tmp/openship-composer");
+    expect(generateDockerfile(phpConfig())).not.toContain("check-platform-reqs");
+  });
+  it("refuses a mismatched builder or a recipe that cannot honor the version", () => {
+    expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.3" }))).toThrow(/uses PHP 8.4/);
+    expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.4", dockerfilePath: "Dockerfile" }))).toThrow(/your own Dockerfile/);
+    expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.4", isStatic: true }))).toThrow(/generated PHP Docker/);
+  });
   const df = generateDockerfile(phpConfig());
 
   it("builds on php-cli with Composer pulled in", () => {
@@ -47,7 +60,16 @@ describe("generateDockerfile — PHP branch", () => {
     const installs = df.match(/RUN install-php-extensions [^\n]+/g) ?? [];
     expect(installs).toHaveLength(2);
     expect(installs[0]).toBe(installs[1]);
-    for (const ext of ["pdo_pgsql", "pdo_mysql", "redis", "pcntl", "intl", "gd", "opcache"]) {
+    for (const ext of [
+      "pdo_pgsql",
+      "pdo_mysql",
+      "redis",
+      "pcntl",
+      "intl",
+      "gd",
+      "exif",
+      "opcache",
+    ]) {
       expect(installs[0]).toContain(ext);
     }
   });
@@ -113,10 +135,32 @@ describe("generateDockerfile — PHP with a JS asset pipeline", () => {
     expect(builderStage).not.toContain("npm run build");
   });
 
+  it("builds assets from the installed workspace, including Composer package assets", () => {
+    const assets = df.slice(df.indexOf("AS assets"), df.indexOf("AS runtime"));
+    expect(assets).toContain("COPY --from=builder /workspace /workspace");
+    expect(assets).not.toContain("COPY . /workspace");
+    expect(assets.indexOf("COPY --from=builder")).toBeLessThan(assets.indexOf("npm run build"));
+  });
+
+  it("keeps the whole workspace and builds in the selected monorepo application", () => {
+    const output = generateDockerfile(phpConfig({ rootDirectory: "apps/web", buildCommand: "npm run build" }));
+    const assets = output.slice(output.indexOf("AS assets"), output.indexOf("AS runtime"));
+    expect(assets).toContain("COPY --from=builder /workspace /workspace");
+    expect(assets).toContain("WORKDIR /workspace/apps/web");
+  });
+
+  it("does not require a vendor directory when the installation step is disabled", () => {
+    const output = generateDockerfile(phpConfig({ installCommand: "", buildCommand: "npm run build" }));
+    const assets = output.slice(output.indexOf("AS assets"), output.indexOf("AS runtime"));
+    expect(assets).not.toContain("/vendor");
+    expect(assets).toContain("npm run build");
+  });
+
   it("preludes corepack for a non-npm package manager in the asset stage", () => {
     const pnpm = generateDockerfile(phpConfig({ buildCommand: "pnpm install && pnpm build" }));
     // The project PM is `composer`, so the prelude has to come from the command.
-    expect(pnpm).toContain("corepack enable pnpm");
+    expect(pnpm).toContain("COREPACK_DEFAULT_TO_LATEST=0");
+    expect(pnpm).toContain("pnpm-lock.yaml");
   });
 });
 
@@ -137,7 +181,7 @@ describe("generateDockerfile — non-PHP is unaffected", () => {
         buildCommand: "npm run build",
       }),
     );
-    const runLines = df.split("\n").filter((l) => l.startsWith("RUN "));
+    const runLines = df.split("\n").filter((l) => l.startsWith("RUN ") && !l.includes(".env.example") && !l.includes("eval(Buffer.from"));
     expect(runLines).toHaveLength(1);
     expect(runLines[0]).toContain("npm i --force");
     expect(runLines[0]).toContain("npm run build");
@@ -181,7 +225,7 @@ describe("generateDockerfile — node_modules/.bin on PATH (#623)", () => {
   it("covers the CMD too — a bare `next start` would otherwise crash-loop at boot", () => {
     // Single stage: the build stage IS the runtime stage, so the one ENV serves both.
     const df = generateDockerfile(bunNext());
-    expect(df).toContain('CMD ["sh", "-c", "next start"]');
+    expect(df).toContain('CMD ["sh", "-c", "exec sh .openship-start.sh"]');
     expect(df.indexOf("ENV PATH=")).toBeLessThan(df.indexOf("CMD "));
   });
 
@@ -259,7 +303,7 @@ describe("generateDockerfile — node_modules/.bin on PATH (#623)", () => {
 
   it("keeps install and build in one RUN layer — the PATH is an ENV, not a step", () => {
     const df = generateDockerfile(bunNext());
-    const runLines = df.split("\n").filter((l) => l.startsWith("RUN "));
+    const runLines = df.split("\n").filter((l) => l.startsWith("RUN ") && !l.includes(".env.example") && !l.includes("eval(Buffer.from"));
     expect(runLines).toHaveLength(1);
     expect(runLines[0]).toContain("bun install");
     expect(runLines[0]).toContain("next build");
@@ -301,7 +345,7 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
       .split("\n")
       .filter((line) => line.startsWith("RUN "))
       .flatMap((line) => line.slice("RUN ".length).split(" && "))
-      .filter((step) => step.startsWith("export "));
+      .filter((step) => step.startsWith("export ") && !step.startsWith("export COREPACK_"));
   }
 
   function envPathLines(df: string): string[] {
@@ -411,5 +455,58 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     for (const segment of exports) {
       expect(segment).toBe("export PATH_PREFIX='/base' NEXT_PUBLIC_PATH='/p' NO_COLOR='1'");
     }
+  });
+});
+
+describe("stack-selected recipes and custom runtime bases", () => {
+  it("uses the PHP recipe for a renamed custom image and validates its actual capabilities", () => {
+    const df = generateDockerfile(
+      phpConfig({
+        runtimeVersion: "8.3",
+        buildImage: "php:8.3-cli-bookworm",
+        runtimeImage: "custom/runtime:83",
+        runtimeImageOverride: true,
+      }),
+    );
+    expect(df).toContain("FROM custom/runtime:83 AS runtime");
+    expect(df).toContain("command -v frankenphp");
+    expect(df).toContain("check-platform-reqs");
+    expect(df.match(/RUN php -r/g)).toHaveLength(2);
+  });
+  it("does not select a PHP recipe because a Node image contains that name", () => {
+    const df = generateDockerfile(
+      config({ runtimeImage: "custom/frankenphp-tools:node", runtimeImageOverride: true }),
+    );
+    expect(df).not.toContain("composer:2");
+    expect(df).toContain("process.versions.modules");
+    expect(df).toContain("runtime image is incompatible");
+  });
+  it("uses Ruby instructions for a custom image and checks the copied gems' runtime ABI", () => {
+    const df = generateDockerfile(
+      config({
+        stack: "rails",
+        packageManager: "bundler",
+        runtimeImage: "custom/rails:latest",
+        buildImage: "ruby:3.3-slim",
+        runtimeImageOverride: true,
+      }),
+    );
+    expect(df).toContain("BUNDLE_PATH=/usr/local/bundle");
+    expect(df).toContain("RUBY_VERSION");
+    expect(df).toContain("COPY --from=builder /usr/local/bundle");
+  });
+  it("checks an explicit same-image override without leaving metadata in the application", () => {
+    const df = generateDockerfile(config({ runtimeImageOverride: true }));
+    expect(df).toContain("AS builder");
+    expect(df).toContain("AS runtime");
+    expect(df).toContain("rm /tmp/openship-runtime.requirements");
+  });
+  it("refuses custom runtime settings for a Dockerfile or static extraction", () => {
+    expect(() =>
+      generateDockerfile(config({ runtimeImageOverride: true, dockerfilePath: "Dockerfile" })),
+    ).toThrow(/your own Dockerfile/);
+    expect(() =>
+      generateDockerfile(config({ runtimeImageOverride: true, isStatic: true })),
+    ).toThrow(/static sites/);
   });
 });

@@ -3,7 +3,7 @@ import {
   INVITATION_DELIVERY_HEADER,
   INVITATION_DELIVERY_LINK_ONLY,
 } from "@repo/core";
-import { invitationNeedsEmail } from "@/lib/invitation-delivery";
+import { invitationNeedsEmail } from "@repo/platform/engine/lib/invitation-delivery";
 
 describe("invitationNeedsEmail", () => {
   it("delivers normally when no explicit mode was requested", () => {

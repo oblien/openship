@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
@@ -16,7 +18,8 @@ export function CodeBlock({ language, filename, children }: CodeBlockProps) {
       await navigator.clipboard.writeText(children);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
+    } catch (error) {
+      reportCaughtError(error, "web/app/(site)/(marketing)/mail/setup-guide/_components/code-block");
       /* clipboard unavailable on http */
     }
   };

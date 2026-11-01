@@ -12,7 +12,7 @@
  * reference page for the mapping table.
  */
 
-import type { StackId } from "../stacks";
+import type { StackId, StackRole } from "../stacks";
 import type { RoutingConfig } from "../metadata/types";
 import type { OpenshipReadiness } from "../types";
 
@@ -117,7 +117,10 @@ export interface OpenshipService {
   readiness?: OpenshipReadiness;
   /** Per-service cpu/memory caps, overriding the top-level `resources` field by
    *  field. Parity with compose `mem_limit` / `deploy.resources.limits`, which
-   *  the compose parser now honors. `0` = no limit. */
+   *  the compose parser now honors. `0` = no limit.
+   *
+   *  `swapDisabled` runs this service's container with no swap and requires a
+   *  positive effective memory limit (its own or the project default). */
   resources?: OpenshipResources;
 }
 
@@ -151,6 +154,8 @@ export interface OpenshipResources {
   cpuCores?: number;
   memoryMb?: number;
   diskMb?: number;
+  /** Service-only: run the container with no swap (requires positive memoryMb). */
+  swapDisabled?: boolean;
 }
 
 export interface OpenshipConfig {
@@ -158,6 +163,8 @@ export interface OpenshipConfig {
   framework?: StackId;
   packageManager?: string;
   rootDirectory?: string;
+  /** Push-only repo-relative path overrides. Root build configuration still triggers deployment. */
+  autoDeployPaths?: { include?: string[]; exclude?: string[] };
   /**
    * Where the compose file lives, when it isn't at the project root — either the
    * file itself (`"deploy/stack.yml"`, which also covers non-standard filenames)
@@ -168,8 +175,23 @@ export interface OpenshipConfig {
   installCommand?: string;
   buildCommand?: string;
   startCommand?: string;
+  /**
+   * Commands run ONCE per deploy, after the build and before the new version is
+   * activated — for example, database migrations. A non-zero exit FAILS the
+   * deploy, so the old version keeps serving rather than a new one coming up
+   * against a schema it can't use.
+   *
+   * Each command gets its own execution context and log marker. Only effects in
+   * a database or persistent volume survive a Docker release container. Commands
+   * must be idempotent; a code rollback does not undo their data changes.
+   * Absent/[] disables the phase. Nothing is auto-injected per framework.
+   */
+  releaseCommands?: string[];
   outputDirectory?: string;
   buildImage?: string;
+  /** Explicit runtime version; validated by the detected stack's image policy. */
+  runtimeVersion?: string;
+  runtimeImage?: string;
   productionPaths?: string[];
   /**
    * Paths the app keeps across deploys. Either the short app form — a path
@@ -189,6 +211,32 @@ export interface OpenshipConfig {
    */
   workload?: OpenshipWorkload;
   port?: number;
+  /**
+   * Runtime roles beyond the web process - workers, schedulers (issue #935).
+   * Presence of this field, EVEN `[]`, overrides the stack's own presets
+   * (`STACKS[framework].defaultRoles`) outright; absence derives them from
+   * detected deps/files. See `resolveStackRoles` in `../stack-roles`. A role
+   * with `kind: "web"` is rejected here - the web role is always derived from
+   * `startCommand`. Deriving presets is a creation-time act: the deploy path
+   * resolves the persisted `project.roles`, where null means web only, so an
+   * existing project never gains a process on redeploy (#935 Q2).
+   */
+  roles?: StackRole[];
+  /**
+   * Opt-in Laravel cache warming (issue #19). When `true`, the resolved WEB role
+   * command gains a `php artisan optimize && ` prefix, which warms Laravel's
+   * config/route/event/view caches once at startup for higher per-request
+   * throughput. Default `false`: an absent or `false` flag keeps the web command
+   * byte-identical, so existing projects are unaffected. Laravel web role only —
+   * workers and schedulers stay unwarmed. It applies only to the `laravel` stack.
+   *
+   * Warming must run at startup, never at build or in `releaseCommands`:
+   * `config:cache` (inside `optimize`) freezes the env present when it runs and
+   * makes every `env()` call outside `config/*.php` return `null`, so it is only
+   * correct after Openship injects the runtime env. See `resolveWebCommand` in
+   * `../stack-roles`.
+   */
+  optimize?: boolean;
   // ── Env ──
   env?: OpenshipEnv;
   // ── Domains + routing ──

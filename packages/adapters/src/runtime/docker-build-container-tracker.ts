@@ -4,6 +4,7 @@
  * creation time, memory percentage, and recency cannot establish ownership.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export interface LegacyBuildContainerInspect {
   Id?: string;
   Config?: {
@@ -125,7 +126,7 @@ export class LegacyBuildContainerTracker {
     if (!line) return;
     this.queue = this.queue.then(
       () => this.observeLine(line),
-      () => this.observeLine(line),
+      (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker-build-container-tracker"); return this.observeLine(line); },
     );
   }
 
@@ -138,7 +139,8 @@ export class LegacyBuildContainerTracker {
         try {
           const info = await this.client.inspect(this.active.id);
           if (!info?.State?.Running) this.active = null;
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/docker-build-container-tracker");
           // A transient inspection failure is not proof that ownership ended.
         }
       }

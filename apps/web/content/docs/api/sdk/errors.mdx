@@ -1,0 +1,89 @@
+---
+title: Results, errors, and streams
+description: Handle operation failures, deployment outcomes, pagination, and cancellation.
+---
+
+An operation can fail immediately, or it can submit work that later finishes unsuccessfully. Handle
+both the call and the final deployment outcome.
+
+## Operation errors
+
+```ts title="operation-errors.mts"
+import { OperationError, type OpenshipClient, type ScopedShip } from "openship";
+
+export async function readProject(ship: OpenshipClient | ScopedShip, projectId: string) {
+  try {
+    return await ship.projects.get(projectId);
+  } catch (error) {
+    if (error instanceof OperationError) {
+      console.error(error.statusCode, error.code, error.message);
+    }
+    throw error;
+  }
+}
+```
+
+`OperationError` exposes `statusCode`, `code`, and public `details`. Remote `ApiError` also exposes
+`status` and the HTTP response `body`. Input validation can throw `ValidationError`; network,
+configuration, and abort failures may be other error types.
+
+| Case | Response |
+| --- | --- |
+| Invalid input | Fix the reported fields; do not repeat the same input. |
+| Missing or inaccessible resource | Check the ID, identity, and organization. Inaccessible resources can appear as `NOT_FOUND`. |
+| Expired or revoked identity | Authenticate again through your host or remote login flow. |
+| Unsupported fixed scope | Upgrade the API; see [compatibility](/docs/api/sdk/compatibility). |
+| Rate limit | Observe the API's retry guidance. |
+| Lost mutation response | Inspect stored state before resubmitting; mutations are not retried automatically. |
+
+See [HTTP errors](/docs/api/http#error-shape) for transport status codes.
+
+## Deployment outcomes
+
+`deploy()` returns IDs. `deployment(id).wait()` returns an outcome with `status`, `success`, and any
+pending prompt or cancellation. `ready` and `no_changes` are successful outcomes. A failed or
+partially failed deployment does not become successful because its log stream ended.
+
+Handle an `action_required` prompt explicitly, or supply an `onPrompt` callback that returns one of
+the offered action IDs. See [deployment decisions](/docs/api/deployments#wait-decisions-and-cancellation).
+
+## Streams
+
+Stream methods return async iterables. Pass an abort signal or stop iteration to release a stream:
+
+```ts title="stream-logs.mts"
+import { consumeDeploymentEvents, type OpenshipClient, type ScopedShip } from "openship";
+
+export async function watchLogs(
+  ship: OpenshipClient | ScopedShip,
+  deploymentId: string,
+  signal: AbortSignal,
+) {
+  return consumeDeploymentEvents(ship.deployment(deploymentId).events({ signal }), (event) => {
+    if (event.log) process.stdout.write(event.log);
+  });
+}
+```
+
+Aborting a stream or wait does not cancel the underlying workload. Request that separately with
+`deployment(id).cancel()`. Durable replay across worker restarts is not currently supported.
+
+## Pagination
+
+```ts title="all-projects.mts"
+import { iteratePages, type OpenshipClient, type ScopedShip } from "openship";
+
+export async function allProjects(ship: OpenshipClient | ScopedShip, signal?: AbortSignal) {
+  const ids: string[] = [];
+  for await (const project of iteratePages((page) => ship.projects.list(page), {
+    perPage: 50,
+    signal,
+  })) {
+    ids.push(project.id);
+  }
+  return ids;
+}
+```
+
+Use `iteratePages` with methods returning a page containing `data`. Methods that return plain arrays
+do not use this helper. Authorization applies to every page.

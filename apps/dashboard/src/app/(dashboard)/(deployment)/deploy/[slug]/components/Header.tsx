@@ -1,10 +1,11 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { ArrowLeft, GitBranch, Globe, Lock } from "lucide-react";
 import { HeaderProps } from "@/components/import-project/types";
 import Link from "next/link";
-import { generateIcon } from "@/utils/icons";
+
 import { useI18n } from "@/components/i18n-provider";
 
 const Header: React.FC<HeaderProps> = ({ repoData }) => {
@@ -45,18 +46,18 @@ const Header: React.FC<HeaderProps> = ({ repoData }) => {
             <div className="flex items-center gap-2 text-sm">
               {repoData.private ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning-bg text-warning ring-1 ring-warning-border font-semibold text-xs">
-                  <Lock className="w-3 h-3" />
+                  <UiIcon name="lock" className="w-3 h-3" />
                   {t.deploy.header.private}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-success-bg text-success ring-1 ring-success-border font-semibold text-xs">
-                  <Globe className="w-3 h-3" />
+                  <UiIcon name="globe" className="w-3 h-3" />
                   {t.deploy.header.public}
                 </span>
               )}
               <span className="text-gray-300">•</span>
               <span className="inline-flex items-center gap-1 text-gray-500">
-                <GitBranch className="w-3 h-3" />
+                <UiIcon name="git-branch" className="w-3 h-3" />
                 <span className="text-xs font-medium">{repoData.branch}</span>
               </span>
             </div>
@@ -67,7 +68,7 @@ const Header: React.FC<HeaderProps> = ({ repoData }) => {
           className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 hover:text-black text-sm font-medium rounded-[15px] transition-all"
           type="button"
         >
-          {generateIcon('help%20sign-50-1658435663.png', 16, 'currentColor')}
+          <UiIcon name="help-circle" size={16} />
           <span>{t.deploy.header.help}</span>
         </button>
       </div>

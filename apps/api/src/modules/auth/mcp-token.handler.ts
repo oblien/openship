@@ -22,8 +22,9 @@
  * unconstrained).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { auth } from "../../lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { isAllowedMcpResource, publicOriginFor, resolveTokenAudience } from "../../lib/mcp-resource";
 import { signMcpAccessToken } from "../../lib/mcp-token";
 import { signRs256Jwt } from "../../lib/mcp-oidc-keys";
@@ -90,7 +91,8 @@ async function readResourceParam(request: Request): Promise<string | undefined> 
       const value = body && typeof body === "object" ? body.resource : undefined;
       return typeof value === "string" ? value : undefined;
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/auth/mcp-token.handler");
     // Malformed body — let the plugin produce its own `invalid_request`.
   }
   return undefined;
@@ -121,7 +123,8 @@ async function normalizeErrorStatus(response: Response): Promise<Response> {
   let body: unknown;
   try {
     body = await response.clone().json();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/auth/mcp-token.handler");
     return response;
   }
   const error = (body as { error?: unknown } | null)?.error;
@@ -206,7 +209,8 @@ export async function handleMcpTokenRequest(request: Request): Promise<Response>
 
   try {
     return await bindAudience(response, resolveTokenAudience(resource, origin), origin);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/auth/mcp-token.handler");
     // Never turn a successful grant into a failure over the audience rebind.
     return response;
   }

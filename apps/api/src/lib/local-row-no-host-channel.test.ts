@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -32,21 +33,22 @@ vi.mock("@repo/db", () => ({
 
 // The row IS this box; keyed off the flag so the test doesn't depend on loopback
 // resolution or env.
-vi.mock("./box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
+  boxOwningOrgId: async () => "org1",
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
 }));
 
-vi.mock("./ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { acquire: h.acquire },
   buildSshConfig: async () => ({ host: "127.0.0.1", port: 22, username: "root" }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
 }));
 
 const { resolvePlannedTargetTopology, resolveServerExecutor, hostChannelDeployNotice } =
-  await import("./deployment-runtime");
+  await import("@repo/platform/engine/lib/deployment-runtime");
 const { HostChannelUnavailableError } = await import("@repo/adapters");
 
 const resolve = () => resolveServerExecutor("srv-local", "org1");
@@ -139,7 +141,7 @@ describe("resolveServerExecutor — local row with no host channel", () => {
  */
 describe("the demotion leaves a trace", () => {
   it("logs the decision with the remedy, ONCE per outage", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     h.acquire.mockRejectedValue(
       new HostChannelUnavailableError(
         "not_configured",
@@ -152,8 +154,8 @@ describe("the demotion leaves a trace", () => {
     // Once — this sits on every deploy AND on read paths (logs, status polls), so a
     // line per resolve would bury the log it is meant to be found in.
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]?.[0]).toContain("openship up");
-    expect(warn.mock.calls[0]?.[0]).toContain("not_configured");
+    expect(warn.mock.calls[0]?.[1]).toContain("openship up");
+    expect(warn.mock.calls[0]?.[1]).toContain("not_configured");
     warn.mockRestore();
   });
 
@@ -162,7 +164,7 @@ describe("the demotion leaves a trace", () => {
     h.acquire.mockRejectedValue(new HostChannelUnavailableError("unreachable", reason));
     await resolve();
 
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     h.acquire.mockImplementation(async () => ({ tag: "real-host-channel" }));
     await resolve();
     h.acquire.mockRejectedValue(new HostChannelUnavailableError("unreachable", reason));
@@ -201,3 +203,5 @@ describe("hostChannelDeployNotice", () => {
     expect(hostChannelDeployNotice(undefined)).toBeNull();
   });
 });
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));

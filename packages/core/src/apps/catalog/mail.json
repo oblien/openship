@@ -17,5 +17,22 @@
   "management": {
     "kind": "custom",
     "href": "/emails"
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Your own domain",
+        "description": "Run SMTP and IMAP mailboxes under your domain."
+      },
+      {
+        "title": "Mailbox management",
+        "description": "Manage domains, accounts, and aliases in Openship."
+      },
+      {
+        "title": "Webmail",
+        "description": "Use a browser client alongside your email apps."
+      }
+    ],
+    "articleFile": "articles/mail.md"
   }
 }

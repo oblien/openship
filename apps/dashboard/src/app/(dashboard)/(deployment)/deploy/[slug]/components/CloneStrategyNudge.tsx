@@ -16,6 +16,7 @@
  * `cloneStrategyPreference` back when the user picks.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useState } from "react";
 import { settingsApi, type CloneStrategyPreference } from "@/lib/api";
 
@@ -38,7 +39,8 @@ export function useCloneStrategyGate(): CloneStrategyGateResult {
         if (cancelled) return;
         setPreference(res.cloneStrategyPreference);
         setHasGlobalToken(res.cloneToken.hasToken);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/(deployment)/deploy/[slug]/components/CloneStrategyNudge");
         // Silent — these signals are advisory; the sidebar falls back to live
         // GitHub availability and, ultimately, the recovery modal.
       }

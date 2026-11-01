@@ -1,10 +1,12 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useTheme } from "@/components/theme-provider";
+import { ThemeIcon } from "@/components/theme-icon";
 import { useBrandName, useI18n } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Moon, Sun, SunMoon } from "lucide-react";
 
 /**
  * Shared wrapper for auth pages (login, register, forgot-password, etc.).
@@ -28,7 +30,7 @@ export function AuthShell({
   /** When provided, renders a back button in the top bar */
   onBack?: () => void;
 }) {
-  const { resolvedTheme, toggle } = useTheme();
+  const { toggle } = useTheme();
   const { t } = useI18n();
   const brand = useBrandName();
 
@@ -52,7 +54,7 @@ export function AuthShell({
               aria-label={t.auth.back ?? "Back"}
               className="me-1"
             >
-              <ArrowLeft className="size-4 rtl:rotate-180" />
+              <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
             </Button>
           )}
           <Logo size={24} />
@@ -67,7 +69,7 @@ export function AuthShell({
             onClick={toggle}
             aria-label={t.auth.toggleTheme}
           >
-            {resolvedTheme === "light" ? <Sun /> : resolvedTheme === "dim" ? <SunMoon /> : <Moon />}
+            <ThemeIcon />
           </Button>
         </div>
       </div>

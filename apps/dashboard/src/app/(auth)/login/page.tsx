@@ -1,9 +1,13 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
+import { needsTwoFactor, passkeysSupported } from "@/lib/account-security";
 import { useToast } from "@/components/toast";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useAuthContext } from "../providers";
@@ -12,7 +16,6 @@ import { OAuthButtons } from "@/components/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, ExternalLink } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 import { getApiBaseUrl } from "@/lib/api/client";
 import { getApiOrigin } from "@/lib/api/urls";
@@ -25,6 +28,7 @@ import {
 } from "@/lib/zero-auth";
 import {
   buildAuthPageHref,
+  emailVerificationHref,
   buildDesktopAuthorizeUrl,
   getPostAuthRedirect,
   preparePkceFlow,
@@ -35,7 +39,7 @@ export default function LoginPage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex justify-center py-8"><div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></div>
+        <div className="flex justify-center py-8"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <LoginPageInner />
@@ -48,19 +52,34 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { authMode, cloudAuthUrl, selfHosted } = useAuthContext();
+  const { authMode, cloudAuthUrl, selfHosted, authProviders, remoteInstance } = useAuthContext();
 
   const isDesktop = typeof window !== "undefined" && !!window.desktop?.isDesktop;
-  const handleBack = isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
+  const handleBack = remoteInstance ? () => { window.location.href = "/settings?tab=instance"; }
+    : isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
   const callbackError = searchParams.get("error");
 
   const postLoginUrl = getPostAuthRedirect(searchParams);
+
+  useEffect(() => {
+    setPasskeySupported(!remoteInstance && passkeysSupported());
+  }, [remoteInstance]);
+
+  function completeSignIn(data: unknown) {
+    if (needsTwoFactor(data)) {
+      router.push(buildAuthPageHref("/two-factor", searchParams));
+      return;
+    }
+    if (postLoginUrl) window.location.href = postLoginUrl;
+    else router.push("/");
+  }
 
   // Zero-auth mode has no form — the page exists only to bounce the browser at
   // desktop-login. Decide that BEFORE navigating, so a browser the server will
@@ -95,7 +114,7 @@ function LoginPageInner() {
         // Route to the verify page (resend + status) instead of a dead-end toast.
         const err = result.error;
         if (err.code === "EMAIL_NOT_VERIFIED" || err.message?.toLowerCase().includes("verify")) {
-          router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+          router.push(emailVerificationHref(email, searchParams));
           return; // navigating away — keep the spinner until this page unmounts
         }
         // Stayed on the login page → stop the spinner so they can retry.
@@ -107,16 +126,32 @@ function LoginPageInner() {
       // *starts* the client transition, and the dashboard takes a moment to
       // render. Keeping the button in its loading state until this page unmounts
       // avoids the dead "idle button, no navigation yet" gap.
-      if (postLoginUrl) {
-        window.location.href = postLoginUrl;
-      } else {
-        router.push("/");
-      }
+      completeSignIn(result.data);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/login/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
       setLoading(false); // stayed on the page — re-enable the form
+    }
+  }
+
+  async function handlePasskeySignIn() {
+    setLoading(true);
+    try {
+      const result = await signIn.passkey();
+      if (result.error) {
+        toast("error", result.error.message ?? t.auth.security.passkeyFailed);
+        setLoading(false);
+        return;
+      }
+      completeSignIn(result.data);
+    } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/login/page");
+      toast("error", isNetworkError(err)
+        ? t.auth.errors.serverUnreachable
+        : t.auth.security.passkeyFailed);
+      setLoading(false);
     }
   }
 
@@ -195,7 +230,7 @@ function LoginPageInner() {
     return (
       <AuthShell>
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </div>
       </AuthShell>
     );
@@ -236,7 +271,7 @@ function LoginPageInner() {
           disabled={loading}
           onClick={() => { void handleCloudSignIn(callbackUrl); }}
         >
-          {loading ? <Loader2 className="me-2 size-4 animate-spin" /> : <ExternalLink className="me-2 size-4" />}
+          {loading ? <UiIcon name="spinner" className="me-2 size-4 animate-spin" /> : <UiIcon name="external-link" className="me-2 size-4" />}
           {loading ? "Opening Openship Cloud..." : "Sign in with Openship"}
         </Button>
       </AuthShell>
@@ -251,7 +286,7 @@ function LoginPageInner() {
           {t.auth.login.title}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t.auth.login.subtitle}
+          {remoteInstance ? `Sign in to ${new URL(remoteInstance).host}` : t.auth.login.subtitle}
         </p>
       </div>
 
@@ -273,7 +308,7 @@ function LoginPageInner() {
           <div className="flex items-center justify-between">
             <Label htmlFor="login-password">{t.auth.login.passwordLabel}</Label>
             <Link
-              href="/forgot-password"
+              href={buildAuthPageHref("/forgot-password", searchParams)}
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               {t.auth.login.forgot}
@@ -297,19 +332,50 @@ function LoginPageInner() {
               className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
               aria-label={showPassword ? t.auth.hidePassword : t.auth.showPassword}
             >
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
             </button>
           </div>
         </div>
 
         <Button type="submit" disabled={loading} className="mt-1 w-full">
-          {loading && <Loader2 className="animate-spin" />}
+          {loading && <UiIcon name="spinner" className="animate-spin" />}
           {loading ? t.auth.login.submitting : t.auth.login.submit}
         </Button>
       </form>
 
-      {/* OAuth only for SaaS (cloud-hosted) - hidden on self-hosted */}
-      {!selfHosted && <OAuthButtons callbackURL={postLoginUrl ?? "/"} />}
+      {passkeySupported && (
+        <>
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            <span>{t.auth.oauth.or}</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={loading}
+            className="w-full"
+            onClick={() => void handlePasskeySignIn()}
+          >
+            <UiIcon name="key" className="size-4" />
+            {t.auth.security.passkeySignIn}
+          </Button>
+        </>
+      )}
+
+      {/* Whatever the SERVER says it has credentials for. It used to be
+          `!selfHosted &&` — a stand-in for "are any providers configured?" that
+          hid working buttons from every self-hosted operator who had set
+          GITHUB_CLIENT_ID/SECRET. OAuthButtons renders nothing (not even the
+          divider) when the list is empty, which is the default self-hosted
+          instance, so this is safe to mount unconditionally. */}
+      <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} showDivider={!passkeySupported} />
+      {remoteInstance && (
+        <p className="mt-5 text-sm text-muted-foreground">
+          Using a passkey or social sign-in? Sign in on the remote site, then use
+          Settings → Instance → {t.settings.instance.location.pairDesktop} to connect this device.
+        </p>
+      )}
 
       {/* Public sign-up is a SaaS-only front door. On a self-hosted instance the
           only account is the CLI-created admin; everyone else joins via an

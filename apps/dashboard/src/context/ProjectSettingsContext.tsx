@@ -1,4 +1,8 @@
 "use client";
+
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { useCloudResourceKey } from "./CloudResourceContext";
+import type { IconName } from "@repo/ui/icons";
 import React, {
   createContext,
   useContext,
@@ -9,12 +13,13 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { isServicesFramework, type ReleaseSource, type WorkloadType } from "@repo/core";
-import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
+import type { ReleaseSource, WorkloadType } from "@repo/core";
+import type { ProjectRoutingClaim, ProjectRoutingRetry } from "@repo/contracts";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { projectsApi, servicesApi, type Service } from "@/lib/api";
+import type { ProjectUpdateStatus } from "@/lib/api/projects";
 import {
   invalidateProjectCachesFor,
   PROJECT_INFO_NOT_FOUND,
@@ -28,6 +33,8 @@ import {
   removeProjectEnvironment,
 } from "./project-environments";
 import { beginServicesFetch, failServicesFetch } from "./services-fetch-state";
+
+type AvailableProjectUpdate = Extract<ProjectUpdateStatus, { supported: true }>;
 
 interface ProjectDomain {
   domain: string;
@@ -65,6 +72,7 @@ interface ProjectOptions {
 }
 
 interface BasicProjectData {
+  environmentType?: "production" | "preview" | "development";
   id: string;
   slug: string;
   name: string;
@@ -72,6 +80,8 @@ interface BasicProjectData {
   framework: string;
   options?: ProjectOptions;
   domains?: ProjectDomain[];
+  routingClaims?: ProjectRoutingClaim[];
+  routingRetry?: ProjectRoutingRetry | null;
   access?: ProjectAccess;
   buildImage?: string;
   hasMultipleServices?: boolean;
@@ -95,8 +105,11 @@ interface BasicProjectData {
    * session — a run is part of the project's state, not something a panel fetches.
    */
   activeMigration?: ActiveMigration | null;
-  deployTarget?: "cloud" | "server" | "local";
-  cloudWorkspaceId?: string | null;
+  deployTarget?: "cloud" | "server" | "local" | "cluster";
+  cloudStaticHosting?: "pages" | "server";
+  clusterId?: string | null;
+  clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
+  workspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
   /** Source metadata for prebuilt release/image projects. */
@@ -130,6 +143,8 @@ interface EnvironmentData {
 }
 
 interface GitData {
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks;
+  githubChecksDelivery?: { error: string | null; pending: string | null; updatedAt: string } | null;
   repository: any;
   branch: string;
   recentCommits: any[];
@@ -220,6 +235,18 @@ interface ServicesData {
   error: string | null;
 }
 
+interface ProjectTab {
+  id: string;
+  label: string;
+  icon: IconName;
+  /** Sections keep their existing routes inside a shared navigation group. */
+  sections?: { id: string; label: string }[];
+}
+
+function findTabGroup(tabs: ProjectTab[], tabId: string) {
+  return tabs.find((tab) => tab.id === tabId || tab.sections?.some((section) => section.id === tabId));
+}
+
 interface ProjectSettingsContextType {
   // Project basic data
   projectData: BasicProjectData;
@@ -228,6 +255,11 @@ interface ProjectSettingsContextType {
   // Callers must hit projectsApi.* themselves and only invoke these on
   // success. Synchronous to make that contract explicit.
   updateProjectData: (updates: Partial<BasicProjectData>) => void;
+  /** A confirmed source update that is not already deploying. */
+  availableUpdate: AvailableProjectUpdate | null;
+  updateStatus: ProjectUpdateStatus | null;
+  updateStatusLoading: boolean;
+  refreshUpdateStatus: () => Promise<void>;
 
   // Domains
   domainsData: DomainsData;
@@ -289,12 +321,13 @@ interface ProjectSettingsContextType {
   setSelectedDomain: (domain: string) => void;
   slug?: string[]; // Optional array for catch-all routes
   activeTab: string;
+  activeTabGroup: string;
   setActiveTab: (tab: string) => void;
   /** One-shot intent from the sidebar's "Add domain" affordance: the Domains
    *  tab opens its add-domain form on arrival, then clears it back to null. */
   pendingDomainAction: "add" | null;
   setPendingDomainAction: (action: "add" | null) => void;
-  tabs: { id: string; label: string; icon: string }[];
+  tabs: ProjectTab[];
 }
 
 const ProjectSettingsContext = createContext<ProjectSettingsContextType | undefined>(undefined);
@@ -306,16 +339,22 @@ interface ProviderProps {
   initialProjectData?: BasicProjectData;
 }
 
-export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
+export const ProjectSettingsProvider: React.FC<ProviderProps> = (props) => {
+  const resourceKey = useCloudResourceKey();
+  const seedOwner = useRef(resourceKey);
+  return <ProjectSettingsState key={resourceKey} {...props}
+    initialProjectData={seedOwner.current === resourceKey ? props.initialProjectData : undefined} />;
+};
+
+const ProjectSettingsState: React.FC<ProviderProps> = ({
   children,
   id,
   slug,
   initialProjectData,
 }) => {
   const { t } = useI18n();
-  // Mirrors the API's `isServerHost` (= platform target "selfhosted"), which is
-  // exactly the gate on the health-watch job that feeds the Health tab.
-  const { isServerHost } = usePlatform();
+  // Both server and desktop installations can watch local/SSH Docker workloads.
+  const { selfHosted } = usePlatform();
   const [projectData, setProjectData] = useState<BasicProjectData>(
     initialProjectData || {
       id: "",
@@ -444,6 +483,74 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     if (projectInfo?.environments) setEnvironments(projectInfo.environments);
   }, [projectInfo]);
 
+  // One check for the whole project page: desktop/mobile navigation and the
+  // Deployments banner share its result. A source or deployment change must
+  // discard the old result, including while the new check is still in flight.
+  const updateKey = projectData.id === id && projectData.appTemplateId !== "openship"
+    ? JSON.stringify([
+        id,
+        projectData.activeDeploymentId,
+        projectData.latestDeploymentId,
+        projectData.latestDeploymentStatus,
+        projectData.gitOwner,
+        projectData.gitRepo,
+        projectData.gitBranch,
+        projectData.rootDirectory,
+        projectData.monorepoSharedPaths,
+        projectData.releaseSource,
+      ])
+    : null;
+  const [updateResult, setUpdateResult] = useState<{
+    key: string;
+    data: ProjectUpdateStatus | null;
+    loading: boolean;
+  } | null>(null);
+  const updateRequestRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const currentUpdateKeyRef = useRef(updateKey);
+  currentUpdateKeyRef.current = updateKey;
+  const updateMountedRef = useRef(true);
+
+  useEffect(() => {
+    updateMountedRef.current = true;
+    return () => { updateMountedRef.current = false; };
+  }, []);
+
+  const refreshUpdateStatus = useCallback((): Promise<void> => {
+    if (!updateKey) return Promise.resolve();
+    // The page and newly mounted Deployments/Source tabs can ask at the same time.
+    // Share the in-flight request; later tab visits still get a fresh check.
+    if (updateRequestRef.current?.key === updateKey) return updateRequestRef.current.promise;
+    const promise = projectsApi.getCommitStatus(id)
+      .then(({ data }) => data)
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/context/ProjectSettingsContext"); return null; }) // Best-effort hint: a failed check is not evidence of an update.
+      .then((data) => {
+        if (!updateMountedRef.current || currentUpdateKeyRef.current !== updateKey ||
+          updateRequestRef.current?.promise !== promise) return;
+        setUpdateResult({
+          key: updateKey,
+          data,
+          loading: false,
+        });
+      })
+      .finally(() => {
+        if (updateRequestRef.current?.promise === promise) updateRequestRef.current = null;
+      });
+    updateRequestRef.current = { key: updateKey, promise };
+    setUpdateResult((previous) => ({
+      key: updateKey,
+      data: previous?.key === updateKey ? previous.data : null,
+      loading: true,
+    }));
+    return promise;
+  }, [id, updateKey]);
+
+  useEffect(() => { void refreshUpdateStatus(); }, [refreshUpdateStatus]);
+
+  const updateStatus = updateResult?.key === updateKey ? updateResult.data : null;
+  const updateStatusLoading = !!updateKey && (updateResult?.key !== updateKey || updateResult.loading);
+  const availableUpdate = updateStatus?.supported && updateStatus.behind && !updateStatus.latestInProgress
+    ? updateStatus : null;
+
   const buildData = useMemo<BuildData>(
     () => ({
       ...BUILD_OPTION_DEFAULTS,
@@ -507,7 +614,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       }
     }
 
-    const target = projectData.cloudWorkspaceId
+    const target = projectData.workspaceId
       ? "cloud"
       : (projectData as any).serverId
         ? "server"
@@ -520,17 +627,17 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     return { url: null, host: null, kind: "none", isLocal: false, urls: [] };
   }, [projectData]);
 
-  // Shared domain selection driving the overview URL + analytics: the sidebar
-  // switcher writes it, OverviewTab/MonitoringTab read it to refetch per-domain.
-  // Defaults to the primary and snaps back to it when the current pick drops out
-  // of the project's domains. (The /logs view keeps its own separate selection.)
-  const [selectedDomain, setSelectedDomain] = useState("");
-  useEffect(() => {
-    const available = (projectData.domains || [])
-      .map((d: any) => d?.domain)
-      .filter((d: unknown): d is string => typeof d === "string" && d.length > 0);
-    setSelectedDomain((current) => (current && available.includes(current) ? current : domain));
-  }, [domain, projectData.domains]);
+  // Derive the default during render: a parent effect runs after its children
+  // and would let Overview start an expensive unscoped analytics request first.
+  // Keep explicit choices tied to the project, and use the primary if removed.
+  const [domainChoice, setDomainChoice] = useState<{ projectId: string; domain: string } | null>(null);
+  const availableDomains = projectData.id === id ? projectData.domains ?? [] : [];
+  const selectedDomain = projectData.id !== id ? "" :
+    domainChoice?.projectId === id && availableDomains.some((d) => d.domain === domainChoice.domain)
+      ? domainChoice.domain : domain;
+  const setSelectedDomain = useCallback((domain: string) => {
+    setDomainChoice({ projectId: id, domain });
+  }, [id]);
 
   // Derived: do we have multi-service rendering paths to enable?
   // projectData hint OR serviceCount > 1 OR loaded services > 1.
@@ -580,7 +687,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Failed to fetch environment variables:", error);
+      errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch environment variables:", error);
       setEnvironmentData((prev) => ({
         ...prev,
         isLoading: false,
@@ -641,6 +748,8 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           isLoading: false,
           error: null,
           autoDeployEnabled: response.auto_deploy,
+          githubChecks: response.github_checks,
+          githubChecksDelivery: response.github_checks_delivery,
           webhookActive: response.webhook_active,
           webhookStrategy: response.webhook_strategy,
           webhookDomain: response.webhook_domain,
@@ -679,7 +788,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Failed to fetch git data:", error);
+      errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch git data:", error);
       setGitData((prev) => ({
         ...prev,
         isLoading: false,
@@ -782,7 +891,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }
         return services;
       } catch (error) {
-        console.error("Failed to fetch project services:", error);
+        errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch project services:", error);
         fail();
         return [];
       } finally {
@@ -827,7 +936,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         commit: setEnvironments,
         invalidate: invalidateProjectCachesFor,
         onRefreshError: (error) =>
-          console.warn("Failed to reconcile project environments after create", error),
+          errorDiagnostics.warn("dashboard/context/ProjectSettingsContext", "Failed to reconcile project environments after create", error),
       });
 
       return created;
@@ -837,8 +946,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   const removeEnvironment = useCallback(
     (environmentId: string) => {
-      const remaining = removeProjectEnvironment(environments, environmentId);
-      setEnvironments(remaining);
+      // A deletion can finish after this provider switches to another project.
+      // Filter the current list; never replace it with the request's old list.
+      setEnvironments((current) => removeProjectEnvironment(current, environmentId));
       invalidateProjectCachesFor(projectEnvironmentIds(environmentId, environments));
     },
     [environments],
@@ -941,59 +1051,56 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   const resolveTab = (tab?: string) => {
     if (tab === "general") return "overview";
     if (tab === "git") return "source";
-    if (tab === "settings" || tab === "build") return "runtime";
+    if (tab === "settings" || tab === "build" || tab === "runtime") return "advanced";
     return tab || undefined; // let default be set by tab list below
   };
 
-  // Service-FIRST = the project itself is a compose/services-stack project (no
-  // single primary app). Keyed on the framework, NOT on "a service row exists"
-  // — a single/static app that had a sidecar service added is still an app and
-  // KEEPS its Configuration tab. Only a genuine compose project drops it.
-  const isServicesProject = isServicesFramework(projectData.framework);
-  // A schema app keeps its Configuration tab even when it's a compose/services
-  // project — that tab hosts the "App settings | Deployment" 2-mode surface.
-  const isSchemaApp = !!projectData.isApp && isSchemaAppTemplate(projectData.appTemplateId);
-  const tabs = useMemo(() => {
+  const tabs = useMemo<ProjectTab[]>(() => {
     const tl = t.projects.sidebar.tabs;
-    const all = [
-      { id: "overview", label: tl.overview, icon: "setting-100-1658432731.png" },
-      { id: "services", label: tl.services, icon: "layers.png" },
-      { id: "domains", label: tl.domains, icon: "server-59-1658435258.png" },
-      { id: "deployments", label: tl.deployments, icon: "heart%20rate-118-1658433496.png" },
-      { id: "health", label: tl.health, icon: "heart%20rate-118-1658433496.png" },
+    const healthAvailable = projectData.deployTarget !== "cloud" && (selfHosted || !!projectData.serverId);
+    return [
+      { id: "overview", label: tl.overview, icon: "chart-pie" },
+      { id: "topology", label: tl.topology, icon: "topology" },
+      { id: "services", label: tl.services, icon: "layers" },
+      { id: "domains", label: tl.domains, icon: "globe" },
+      { id: "deployments", label: tl.deployments, icon: "rocket" },
       // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
       // in both modes through adapters that already exist — resource usage via
       // RuntimeAdapter.getUsage (dockerode | Oblien metrics) and visitor geography
       // via the traffic-source resolver (OpenResty mgmt API | Oblien analytics).
-      { id: "monitoring", label: tl.monitoring, icon: "chart-1658432731.png" },
-      { id: "source", label: tl.source, icon: "git%20branch-159-1658431404.png" },
-      { id: "webhooks", label: tl.webhooks, icon: "git%20branch-159-1658431404.png" },
-      { id: "runtime", label: tl.runtime, icon: "setting-40-1662364403.png" },
-      { id: "logs", label: tl.logs, icon: "terminal-184-1658431404.png" },
-      { id: "backup", label: tl.backup, icon: "database.png" },
-      { id: "advanced", label: tl.advanced, icon: "error%20triangle-81-1658234612.png" },
+      {
+        id: "monitoring",
+        label: tl.monitoringAndLogs,
+        icon: "activity",
+        // Incidents belong beside metrics. The health watch covers local/SSH
+        // workloads; cloud monitoring continues to use its existing adapters.
+        sections: [
+          { id: "monitoring", label: tl.monitoring },
+          { id: "logs", label: tl.logs },
+          ...(healthAvailable ? [{ id: "health", label: tl.health }] : []),
+        ],
+      },
+      { id: "actions", label: t.actions.title, icon: "play-circle" },
+      {
+        id: "source",
+        label: tl.sourceAndTriggers,
+        icon: "git-branch",
+        sections: [
+          { id: "source", label: tl.source },
+          { id: "webhooks", label: tl.webhooks },
+        ],
+      },
+      { id: "backup", label: tl.backup, icon: "database-backup" },
+      { id: "advanced", label: tl.settings, icon: "wrench" },
     ];
-    const isCloud = projectData.deployTarget === "cloud";
-    return all.filter((tab) => {
-      // A service-first project has no single-app runtime — config lives per
-      // service under Services — so hide the Configuration (runtime) tab there.
-      // A schema app keeps it, though: it's the home of the 2-mode config.
-      if (isServicesProject && !isSchemaApp && tab.id === "runtime") return false;
-      // Health is fed by the self-hosted container health watch, so it needs BOTH
-      // halves to be true: the control plane has to be the always-on self-hosted
-      // one that runs the watch job (not SaaS, not desktop), and the workload has
-      // to be a container we can poll (Oblien exposes no stability probe).
-      if (tab.id === "health" && (!isServerHost || isCloud)) return false;
-      // The Webhooks tab is shown on cloud too: the managed GitHub push→deploy
-      // entry, custom deploy hooks, and the delivery feed all apply on SaaS. Only
-      // the `job` action + the self-hosted webhook-domain picker are gated by mode
-      // inside the tab (job is refused server-side in CLOUD_MODE).
-      return true;
-    });
-  }, [t, isServicesProject, isSchemaApp, projectData.deployTarget, isServerHost]);
+  }, [t, projectData.deployTarget, selfHosted]);
 
   const defaultTab = tabs[0].id;
-  const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || defaultTab);
+  const [activeTab, setActiveTab] = useState(() => {
+    const resolved = resolveTab(slug?.[0]) || defaultTab;
+    return findTabGroup(tabs, resolved) ? resolved : defaultTab;
+  });
+  const activeTabGroup = findTabGroup(tabs, activeTab)?.id || defaultTab;
   const [pendingDomainAction, setPendingDomainAction] = useState<"add" | null>(null);
 
   useEffect(() => {
@@ -1005,8 +1112,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   useEffect(() => {
     const resolved = resolveTab(slugTab) || defaultTab;
     // If the resolved tab isn't valid for this project type, fall back to default
-    const validIds = tabs.map((t) => t.id);
-    const target = validIds.includes(resolved) ? resolved : defaultTab;
+    const target = findTabGroup(tabs, resolved) ? resolved : defaultTab;
     if (target !== activeTab) {
       setActiveTab(target);
     }
@@ -1017,6 +1123,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       projectData,
       setProjectData,
       updateProjectData,
+      availableUpdate,
+      updateStatus,
+      updateStatusLoading,
+      refreshUpdateStatus,
 
       domainsData,
       updateDomains,
@@ -1059,6 +1169,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       setSelectedDomain,
       slug,
       activeTab,
+      activeTabGroup,
       setActiveTab,
       pendingDomainAction,
       setPendingDomainAction,
@@ -1066,6 +1177,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     }),
     [
       projectData,
+      availableUpdate,
+      updateStatus,
+      updateStatusLoading,
+      refreshUpdateStatus,
       domainsData,
       updateDomains,
       environmentData,
@@ -1097,8 +1212,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       domain,
       access,
       selectedDomain,
+      setSelectedDomain,
       slug,
       activeTab,
+      activeTabGroup,
       pendingDomainAction,
       tabs,
     ],
@@ -1108,6 +1225,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     <ProjectSettingsContext.Provider value={value}>{children}</ProjectSettingsContext.Provider>
   );
 };
+
+/** Service panels can also be opened from a server, outside the project route tree. */
+export const useOptionalProjectSettings = () => useContext(ProjectSettingsContext);
 
 export const useProjectSettings = () => {
   const context = useContext(ProjectSettingsContext);

@@ -16,6 +16,7 @@
  * (repair.ts) MUST `stop()` the service first.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   existsSync,
   readdirSync,
@@ -149,7 +150,8 @@ export function findResetwal(): string | null {
       timeout: 3000,
     }).trim();
     return found || null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/heal");
     return null;
   }
 }

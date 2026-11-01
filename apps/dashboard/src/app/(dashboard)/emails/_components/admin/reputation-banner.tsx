@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Reputation warm-up banner - sits at the top of the admin panel for the
  * first ~7 days after a domain starts sending, telling the operator that
@@ -14,7 +17,6 @@
  */
 
 import { useEffect, useState } from "react";
-import { Clock3, X } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 const WARMUP_WINDOW_DAYS = 7;
@@ -55,7 +57,8 @@ function readState(key: string): StoredState | null {
 function writeState(key: string, state: StoredState) {
   try {
     window.localStorage.setItem(key, JSON.stringify(state));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/reputation-banner");
     /* private mode */
   }
 }
@@ -93,16 +96,15 @@ export function ReputationBanner({ serverId, domain }: ReputationBannerProps) {
   if (!visible) return null;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-warning-border bg-warning-bg">
+    <div className="relative w-full overflow-hidden rounded-2xl border border-warning-border bg-warning-bg">
       <div
         aria-hidden
         className="absolute -top-12 -end-12 size-44 rounded-full bg-warning-bg blur-3xl pointer-events-none"
       />
-      <div className="relative flex items-start gap-3.5 p-4 pe-12">
+      <div className="relative flex items-start gap-3.5 p-4 pe-10 sm:pe-12">
         <div className="size-9 rounded-xl bg-warning-bg border border-warning-border flex items-center justify-center shrink-0">
-          <Clock3
+          <UiIcon name="clock"
             className="size-4 text-warning"
-            strokeWidth={2}
           />
         </div>
         <div className="min-w-0 flex-1">
@@ -127,7 +129,7 @@ export function ReputationBanner({ serverId, domain }: ReputationBannerProps) {
           aria-label={t.emailsAdmin.reputation.dismiss}
           className="absolute top-3 end-3 p-1 rounded-md text-warning hover:bg-warning-bg transition-colors"
         >
-          <X className="size-3.5" strokeWidth={2.25} />
+          <UiIcon name="close" className="size-3.5" />
         </button>
       </div>
     </div>

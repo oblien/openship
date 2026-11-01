@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Daemon log drawer for the Health tab. Slides in from the right, locks body
  * scroll, ESC + backdrop close.
@@ -12,7 +15,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCcw, X } from "lucide-react";
 import { mailAdminApi, type ComponentLogs } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -47,6 +49,7 @@ export function LogsDrawer({
         }
       });
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(dashboard)/emails/_components/admin/_shared/logs-drawer");
       setError(err instanceof Error ? err.message : t.emailsAdmin.shared.logsLoadFailed);
     } finally {
       setLoading(false);
@@ -100,9 +103,9 @@ export function LogsDrawer({
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40"
           >
             {loading ? (
-              <Loader2 className="size-3.5 animate-spin" strokeWidth={2.25} />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
             ) : (
-              <RefreshCcw className="size-3.5" strokeWidth={2.25} />
+              <UiIcon name="refresh" className="size-3.5" />
             )}
           </button>
           <button
@@ -110,7 +113,7 @@ export function LogsDrawer({
             title={t.emailsAdmin.shared.close}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
-            <X className="size-4" strokeWidth={2} />
+            <UiIcon name="close" className="size-4" />
           </button>
         </div>
         <div

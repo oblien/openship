@@ -90,6 +90,15 @@ export interface UpdateGitHubSourceInput {
   webBaseUrl?: string;
 }
 
+export interface BranchPageResponse {
+  data: Array<{ name: string; sha?: string; protected?: boolean }>;
+  pagination: {
+    page: number;
+    perPage: number;
+    hasMore: boolean;
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  /github/status request dedup (in-flight only — NOT a cache)        */
 /* ------------------------------------------------------------------ */
@@ -105,7 +114,7 @@ let statusInflight: Promise<unknown> | null = null;
 
 function getStatusDeduped<T = unknown>(force = false): Promise<T> {
   if (!force && statusInflight) return statusInflight as Promise<T>;
-  const work = api.get<T>(endpoints.github.status).finally(() => {
+  const work = api.get<T>(endpoints.github.status, { dedupe: !force }).finally(() => {
     if (statusInflight === work) statusInflight = null;
   });
   statusInflight = work;
@@ -114,6 +123,12 @@ function getStatusDeduped<T = unknown>(force = false): Promise<T> {
 
 function invalidateStatus(): void {
   statusInflight = null;
+}
+
+/** Notify every GitHub consumer only after a credential/source mutation commits. */
+export function notifyGitHubSourcesChanged(): void {
+  invalidateStatus();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
 }
 
 /* ------------------------------------------------------------------ */
@@ -128,17 +143,16 @@ export interface RepoTreeEntry {
 
 export const githubApi = {
   /** Dashboard home - user info, orgs, recent repos */
-  getUserHome: () => api.get<any>(endpoints.github.userHome),
+  getUserHome: (force = false) => api.get<any>(endpoints.github.userHome, { dedupe: !force }),
 
   /**
    * A repo's whole tree, flat and recursive — one call, so the path picker can
    * render a collapsible tree AND search it without a request per directory.
    * Server-side it's filtered to paths the caller may themselves read.
    */
-  getRepoTree: (owner: string, repo: string, branch?: string) =>
+  getRepoTree: (owner: string, repo: string, branch?: string, serverId?: string) =>
     api.get<{ data: RepoTreeEntry[] }>(
-      endpoints.github.repoTree(owner, repo) +
-        (branch ? `?branch=${encodeURIComponent(branch)}` : ""),
+      endpoints.github.repoTree(owner, repo), { params: { branch, serverId } },
     ),
 
   /** Repos for a specific GitHub org */
@@ -147,15 +161,18 @@ export const githubApi = {
   /** Repos for a specific GitHub user. Server-paginated: pass page/perPage/
    *  search/visibility/sort and read the authoritative `count`/`total` back
    *  (omit the params to get the full set, as MCP + legacy callers do). */
-  getUserRepos: (owner: string, params?: RepoListQuery) =>
+  getUserRepos: (owner: string, params?: RepoListQuery, force = false) =>
     api.get<RepoPageResponse>(endpoints.github.userRepos, {
       params: { owner, ...params },
+      dedupe: !force,
     }),
 
   /** List a repo's branches (used before a project exists — e.g. the migration
    *  wizard's link-repo step, which can't use projectsApi.getBranches). */
-  listBranches: (owner: string, repo: string) =>
-    api.get<{ data: Array<{ name: string }> }>(endpoints.github.repoBranches(owner, repo)),
+  listBranches: (owner: string, repo: string, page = 1, serverId?: string) =>
+    api.get<BranchPageResponse>(endpoints.github.repoBranches(owner, repo), {
+      params: { page, serverId },
+    }),
 
   /**
    * Mint a short-lived GitHub App installation token for cloning a repo and
@@ -168,7 +185,8 @@ export const githubApi = {
     ),
 
   /** Check GitHub connection status (live, no dedup). */
-  getStatus: () => api.get<any>(endpoints.github.status),
+  getStatus: (options?: { includeInstallUrl?: boolean }) =>
+    api.get<any>(endpoints.github.status, { params: options, dedupe: false }),
 
   /**
    * GitHub connection status, de-duplicated across CONCURRENT callers (Settings
@@ -188,8 +206,8 @@ export const githubApi = {
    *   - "cli"   → only consider the gh CLI source.
    *   - omit    → server picks based on installation auth mode.
    */
-  connect: (source?: "oauth" | "cli") =>
-    api.post<any>(endpoints.github.connect, source ? { source } : undefined),
+  connect: (source?: "oauth" | "cli", state?: string) =>
+    api.post<any>(endpoints.github.connect, source || state ? { source, state } : undefined, { timeout: 60_000 }),
 
   /**
    * Connect this instance with a pasted GitHub token. Validated server-side
@@ -203,7 +221,7 @@ export const githubApi = {
     ),
 
   /** Poll device flow status */
-  pollConnect: () => api.get<any>(endpoints.github.connectPoll),
+  pollConnect: (state?: string) => api.get<any>(endpoints.github.connectPoll, state ? { params: { state }, dedupe: false } : undefined),
 
   /** Finalize a workspace-bound GitHub App installation callback. */
   claimInstallation: (input: { state: string; installationId: string; setupAction?: string }) =>
@@ -211,7 +229,7 @@ export const githubApi = {
       ok: boolean;
       pendingApproval?: boolean;
       installation?: { login?: string };
-    }>(endpoints.github.installationClaim, input),
+    }>(endpoints.github.installationClaim, input, { timeout: 60_000 }),
 
   /**
    * Disconnect a GitHub source.

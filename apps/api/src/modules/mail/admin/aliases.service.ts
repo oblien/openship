@@ -17,8 +17,8 @@
  *     sense; createAlias replaces any existing one atomically.
  */
 
-import { queryRows, queryOne, execute, transaction, q, qInt } from "./psql-runner";
-import { validateDomain, recountDomain } from "./domains.service";
+import { queryRows, queryOne, execute, transaction, q, qInt } from "@repo/platform/engine/modules/mail/admin/psql-runner";
+import { validateDomain, recountDomain } from "@repo/platform/engine/modules/mail/admin/domains.service";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 const LOCAL_PART_RE = /^[a-z0-9._+-]+$/;

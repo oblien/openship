@@ -3,16 +3,17 @@
  * suspend / unsuspend.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { env } from "../../config/env";
+import { env } from "@repo/platform/engine/config/env";
 import {
   getGitHubAuthMode,
   invalidateOrgGitHubCache,
   invalidateUserGitHubCache,
-} from "./github.auth";
-import type { WebhookHandlerResult } from "../webhooks/webhook.types";
-import type { GitHubInstallationPayload } from "./github.types";
-import { listGitHubSourcesForWebhook } from "./github-source.service";
+} from "@repo/platform/engine/modules/github/github.auth";
+import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
+import type { GitHubInstallationPayload } from "@repo/contracts";
+import { listGitHubSourcesForWebhook } from "@repo/platform/engine/modules/github/github-source.service";
 
 interface InstallationWebhookScope {
   sourceIds: Set<string>;
@@ -25,7 +26,7 @@ async function resolveInstallationScope(
   const sources = await listGitHubSourcesForWebhook({
     installationId: payload.installation.id,
     appId: payload.installation.app_id,
-  }).catch(() => []);
+  }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return []; });
   const sourceIds = new Set(sources.map((source) => source.id));
   const configuredAppId = Number(env.GITHUB_APP_ID ?? 0);
   const legacyMode = env.CLOUD_MODE || getGitHubAuthMode() === "app";
@@ -109,7 +110,7 @@ async function handleInstallationCreated(
   // verified claim callback already owns, but must never invent one by guessing
   // from sender membership order.
   const existing = rowsInScope(
-    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch(() => []),
+    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return []; }),
     scope,
   );
   if (existing.length === 0) {
@@ -168,7 +169,7 @@ async function handleInstallationDeleted(
   const accountLogin = payload.installation.account.login.toLowerCase();
 
   const existing = rowsInScope(
-    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch(() => []),
+    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return []; }),
     scope,
   );
   const sourceIds = new Set(existing.map((row) => row.sourceId ?? null));
@@ -193,11 +194,11 @@ async function handleInstallationDeleted(
       // active App still covers this owner in the workspace.
       const replacement = await repos.gitInstallation
         .findByOrgAndOwner(organizationId, accountLogin)
-        .catch(() => undefined);
+        .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return undefined; });
       if (!replacement) {
         await repos.resourceGrant
           .deleteGitHubGrantsForOwner(organizationId, accountLogin)
-          .catch(() => 0);
+          .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return 0; });
       }
     }),
   );
@@ -216,7 +217,7 @@ async function handleInstallationSuspended(
   // unsuspend event becomes usable again without an impossible second setup
   // callback; GitHub will refuse token minting while it is suspended.
   const existing = rowsInScope(
-    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch(() => []),
+    await repos.gitInstallation.findByInstallationIdForProvider(installationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return []; }),
     scope,
   );
   const sourceIds = new Set(existing.map((row) => row.sourceId ?? null));

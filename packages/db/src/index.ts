@@ -1,5 +1,13 @@
 // ─── Database client ─────────────────────────────────────────────────────────
-export { db, getDriver, getPgPool, closeDb, type Database, type DatabaseTransaction, type Driver } from "./client";
+export {
+  db,
+  getDriver,
+  getPgPool,
+  closeDb,
+  type Database,
+  type DatabaseTransaction,
+  type Driver,
+} from "./client";
 // The dev hot-reload contract: shutdown must free the PGlite lock inside the
 // successor's takeover grace, or every reload hard-kills the DB mid-close.
 export { DEV_LOCK_TAKEOVER_GRACE_MS, isDevWatchReload } from "./pglite-lock";
@@ -8,13 +16,40 @@ export { DEV_LOCK_TAKEOVER_GRACE_MS, isDevWatchReload } from "./pglite-lock";
 export {
   withAdvisoryLock,
   tryAcquireAdvisoryLock,
+  runOutsideAdvisoryLock,
   hashStringToInt,
   type AdvisoryLockHandle,
 } from "./advisory-lock";
 
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
+export type { ActionRunConfiguration } from "./schema/actions";
+export {
+  githubActionRunId,
+  githubActionJobId,
+  type ActionRunnerSession,
+} from "./repos/action-github.repo";
+export {
+  createActionsRepo,
+  type ActionRunner,
+  type ActionWorkflow,
+  type ActionRun,
+  type ActionJob,
+  type ActionDelivery,
+} from "./repos/actions.repo";
+export type { ActionDeploymentRequest } from "./repos/action-project.repo";
+export {
+  createActionStorageRepo,
+  type ActionStorageObject,
+  type ActionStorageChunk,
+} from "./repos/action-storage.repo";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
+export type {
+  CloudWorkspaceOperation,
+  CloudWorkspaceActivity,
+  LinkedCloudServer,
+  CloudSubscriptionChangeIntent,
+} from "./schema/cloud-workspace";
 export type { ServerContainerDetail } from "./schema/server-container-status";
 export type {
   IncomingWebhookActionType,
@@ -30,6 +65,8 @@ export {
   countInstanceSubgraphTables,
   restoreSubgraph,
   restoreSubgraphInTransaction,
+  assertActiveDeploymentOwnership,
+  assertDumpSchemaCompatible,
   deleteProjectSubgraph,
   dumpDatabase,
   restoreDatabase,
@@ -39,6 +76,7 @@ export {
   EXCLUDED_TABLES,
   topoOrderedTables,
   stripEncryptedInPlace,
+  stripInstanceRefsInPlace,
   type DatabaseDump,
   type DumpOptions,
   type RestoreOptions,
@@ -56,17 +94,32 @@ export {
   createGitSourceRepo,
   createProjectGroupRepo,
   createProjectRepo,
+  createCloudDockerWorkspaceRepo,
+  type CloudDockerWorkspace,
+  createCloudWorkspaceRepo,
+  type CloudWorkspace,
   createDeploymentRepo,
   createDomainRepo,
+  createDomainDnsChallengeRepo,
+  type DomainDnsChallenge,
   createServiceRepo,
   createServiceDeploymentRepo,
   createPersonalAccessTokenRepo,
   normalizeRoutingFields,
+  normalizeComposeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  reconcileComposeSpec,
+  unresolvedComposeEnvironmentKeys,
   composeSpecDiff,
   createSettingsRepo,
   createServerRepo,
+  createServerClusterRepo,
+  type ServerClusterRecord,
+  type ClusterVerificationRecord,
+  type ManagedNetworkOperationRecord,
+  createNetworkPreparationRepo,
+  type NetworkPreparationRecord,
   createServerGithubAuthRepo,
   createGithubDeployKeyRepo,
   createServerTunnelRepo,
@@ -91,6 +144,7 @@ export {
   type NewDeployment,
   type BuildSession,
   type NewBuildSession,
+  type DeploymentResourceChanges, type DeploymentRoleChanges,
   type Domain,
   type NewDomain,
   type DnsCredential,
@@ -112,6 +166,7 @@ export {
   type UserSettings,
   type NewUserSettings,
   type Server,
+  type ConnectedServer,
   type NewServer,
   type ServerGithubAuth,
   type NewServerGithubAuth,
@@ -219,3 +274,22 @@ export {
   sql,
   count,
 } from "drizzle-orm";
+export * from "./project-transfer";
+
+export { createComputeClusterRepo, type ComputeClusterRecord } from "./repos/compute-cluster.repo";
+export { createClusterRuntimeRepo, type ClusterRuntimeRecord } from "./repos/cluster-runtime.repo";
+export { createClusterStorageRepo, type ClusterStorageRecord } from "./repos/cluster-storage.repo";
+export {
+  createClusterDatabaseRepo,
+  type ClusterDatabaseRecord,
+} from "./repos/cluster-database.repo";
+
+export type { CloudBuildActivity } from "./schema/cloud-build-activity";
+export { createCloudBuildActivityRepo, reserveCloudBuildActivity, type CloudBuildActivityIdentity, type CloudBuildResources } from "./repos/cloud-build-activity.repo";
+export { createDeploymentCheckRepo, type DeploymentCheck } from "./repos/deployment-check.repo";
+
+export type { IngressConnection, IngressHostname } from "./repos/ingress.repo";
+
+export { createPullRequestPreviewRepo, type PullRequestPreview } from "./repos/pull-request-preview.repo";
+
+export type { AutomaticBuildCancellation } from "./repos/deployment.repo";

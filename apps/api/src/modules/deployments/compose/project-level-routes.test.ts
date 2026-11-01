@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
  * inputs in `src/lib/project-service-upstream.test.ts`, including the agreement between
  * the deploy's pure resolver and the live one.
  */
-const SRC = readFileSync(new URL("./deploy.service.ts", import.meta.url), "utf8");
+const SRC = readFileSync(new URL("../../../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts", import.meta.url), "utf8");
 
 /**
  * The project-level block itself, delimited by its own anchors rather than a character

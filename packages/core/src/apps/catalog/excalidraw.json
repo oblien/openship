@@ -44,5 +44,21 @@
     "firstLogin": {
       "note": "There is nothing to log into and nothing stored on the server: drawings live in your browser, so use Export to save anything you want to keep. Anyone who can reach this URL can use it — put it behind your own access control if that matters."
     }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Visual whiteboard",
+        "description": "Sketch ideas and diagrams."
+      },
+      {
+        "title": "Browser drawings",
+        "description": "Create and save drawings in your browser."
+      },
+      {
+        "title": "Stateless template",
+        "description": "No database service is required."
+      }
+    ]
   }
 }

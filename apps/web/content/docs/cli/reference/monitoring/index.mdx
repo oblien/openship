@@ -1,0 +1,126 @@
+---
+title: monitoring
+description: Commands, arguments, and options for openship monitoring.
+cliGroup: openship monitoring
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship monitoring
+
+Inspect issues and workload health using the platform's monitoring operations
+
+```text
+openship monitoring [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`issues [options]`](/docs/cli/reference/monitoring#openship-monitoring-issues) | List issues with counts and available recovery actions |
+| [`summary`](/docs/cli/reference/monitoring#openship-monitoring-summary) | Show open issue counts |
+| [`clear-history [options]`](/docs/cli/reference/monitoring#openship-monitoring-clear-history) | Clear resolved incidents in the selected organization; preserves active issues (self-hosted owner/admin) |
+| [`health`](/docs/cli/reference/monitoring#openship-monitoring-health) | Show workload health, scan freshness and watcher capabilities |
+| [`scan`](/docs/cli/reference/monitoring#openship-monitoring-scan) | Run an authorized current workload health scan |
+| [`rescan [options]`](/docs/cli/reference/monitoring#openship-monitoring-rescan) | Run the shared instance rescan (self-hosted administrator) |
+| [`watch`](/docs/cli/reference/monitoring#openship-monitoring-watch) | Configure the existing engine health watcher |
+
+## openship monitoring clear-history
+
+Clear resolved incidents in the selected organization; preserves active issues (self-hosted owner/admin)
+
+```text
+openship monitoring clear-history [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm permanent removal of resolved incident history |
+
+## openship monitoring health
+
+Show workload health, scan freshness and watcher capabilities
+
+```text
+openship monitoring health [options]
+```
+
+## openship monitoring issues
+
+List issues with counts and available recovery actions
+
+```text
+openship monitoring issues [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--status <status>` | Issue status (choices: "open", "resolved", default: "open") |
+
+## openship monitoring rescan
+
+Run the shared instance rescan (self-hosted administrator)
+
+```text
+openship monitoring rescan [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`status`](/docs/cli/reference/monitoring#openship-monitoring-rescan-status) | Inspect the current instance rescan |
+
+| Option | Meaning |
+| --- | --- |
+| `--health-only` | Check health without running infrastructure or update jobs |
+
+## openship monitoring rescan status
+
+Inspect the current instance rescan
+
+```text
+openship monitoring rescan status [options]
+```
+
+## openship monitoring scan
+
+Run an authorized current workload health scan
+
+```text
+openship monitoring scan [options]
+```
+
+## openship monitoring summary
+
+Show open issue counts
+
+```text
+openship monitoring summary [options]
+```
+
+## openship monitoring watch
+
+Configure the existing engine health watcher
+
+```text
+openship monitoring watch [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`enable`](/docs/cli/reference/monitoring#openship-monitoring-watch-enable) | Enable continuous container monitoring when permitted by this instance |
+| [`disable`](/docs/cli/reference/monitoring#openship-monitoring-watch-disable) | Disable continuous container monitoring when permitted by this instance |
+
+## openship monitoring watch disable
+
+Disable continuous container monitoring when permitted by this instance
+
+```text
+openship monitoring watch disable [options]
+```
+
+## openship monitoring watch enable
+
+Enable continuous container monitoring when permitted by this instance
+
+```text
+openship monitoring watch enable [options]
+```

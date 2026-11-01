@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { WORKLOAD_TYPES } from "../deployment-class";
 import { RESOURCE_TIER_ORDER } from "../resources";
 
@@ -25,76 +25,79 @@ import { RESOURCE_TIER_ORDER } from "../resources";
  */
 
 /** Highest `schemaVersion` this build understands. */
-export const MAX_SUPPORTED_PRICING_SCHEMA = 1;
+export const MAX_SUPPORTED_PRICING_SCHEMA = 2;
 
 /** A limit that may be "unlimited" (null). Non-negative integers only. */
 const limitNumber = z.number().int().nonnegative().nullable();
+const namespaceLimit = z.number().int().min(0).max(1_000_000_000).nullable();
 
-/**
- * Limits are stated in the units a CUSTOMER can act on, and the Oblien ceilings
- * are derived from them (`toOblienLimits`) rather than authored separately.
- *
- * That direction is deliberate. Oblien's `resource_limits` are
- * `{max_workspaces, max_vcpus, max_ram_mb, max_disk_gb}`, and three of those four
- * are PER-WORKSPACE caps — only `max_workspaces` is namespace-wide. Authoring
- * them directly produced a catalog that read as a pool ("Pro: 16 vCPU") while
- * permitting 16 × 10 = 160 vCPU, and whose numbers matched nothing the deploy
- * wizard could actually select. Deriving instead means the published number and
- * the enforced number cannot drift, and the transient BUILD workspace is
- * accounted for by construction instead of 409-ing the free tier.
- */
-const planLimitsSchema = z.object({
+/** App-level customer rules. Oblien's VM policy is declared separately below. */
+export const planLimitsSchema = z.object({
   /** Which deployment workloads the tier may run. Free ships `["static"]`. */
   workloads: z.array(z.enum(WORKLOAD_TYPES)).min(1),
   /** May the tier run multi-service stacks — Compose, catalog apps, managed DBs? */
   services: z.boolean(),
   /**
-   * Concurrently running services — one Oblien workspace each. This is the
-   * ceiling customers feel: an app + Postgres + Redis is 3, a static site is 0
-   * at rest. Drives `max_workspaces` (plus build headroom).
+   * Concurrent services across projects. Compose services share a workspace;
+   * this app-level rule is independent of Oblien's workspace count.
    */
   runningServices: limitNumber,
+  /** Active deployment build slots. Absent on existing paid offers. */
+  concurrentBuilds: limitNumber.optional(),
   /** Projects (project groups). Oblien has no project concept — Openship gates it. */
   maxProjects: limitNumber,
-  /**
-   * The largest per-service machine this tier may select, named in the deploy
-   * wizard's OWN vocabulary (`RESOURCE_TIER_SPECS`). Stating a raw vCPU number
-   * here is what made the pricing page advertise sizes no picker offered.
-   * `null` = uncapped (enterprise).
-   */
+  /** Preset ceiling for saved offers without explicit service resources. */
   maxResourceTier: z.enum(RESOURCE_TIER_ORDER).nullable(),
-  /**
-   * App runtime included per month, in COMPUTE MINUTES — one minute of a `low`
-   * machine. Bigger machines burn proportionally more (`computeUnitsPerMinute`:
-   * medium 2×, high 4×, xlarge 8×), so one published number covers every size
-   * without quoting a separate allowance per tier of machine.
-   *
-   * This replaced an authored `credits` blob whose numbers meant nothing: 60,000
-   * credits against a 43,200-minute month, on a tier advertising 50 running
-   * services — i.e. not enough to run ONE app around the clock. The unit now has
-   * a definition, and `planMonthlyCredits()` derives the Oblien grant from it.
-   *
-   * `runningServices` is a CONCURRENCY cap, this is the METER. A tier may allow
-   * more always-on apps than its minutes cover; that is what "up to" means and is
-   * how metered compute works everywhere.
-   *
-   * 0 is meaningful and correct for a static-only tier: the edge serves static
-   * sites, `runningServices` is already 0, so no app compute is consumed.
-   */
+  /** CPU/RAM ceiling, including custom sizes. Absent on older paid snapshots. */
+  maxServiceResources: z.object({
+    cpuCores: z.number().finite().positive(),
+    memoryMb: z.number().int().positive(),
+  }).strict().nullable().optional(),
+  /** Legacy display field. Paid offers leave it null: metered credits do not
+   * imply a fixed number of runtime minutes. It never determines a credit grant. */
   computeMinutesPerMonth: limitNumber,
   buildMinutesPerMonth: limitNumber,
   freeSubdomains: limitNumber,
-  customDomains: limitNumber,
-  seats: limitNumber,
+  // No finite admission gates exist for these fields yet. Do not sell a limit
+  // that the application cannot enforce; current offers leave both uncapped.
+  customDomains: z.null(),
+  seats: z.null(),
 });
 
 const planSchema = z.object({
   id: z.string().min(1),
+  availableForPurchase: z.boolean().default(true),
   price: z.object({
     /** USD cents, or null for "contact sales". */
     monthly: z.number().int().nonnegative().nullable(),
     annual: z.number().int().nonnegative().nullable(),
   }),
+  /** Compute contract, independent of checkout copy and application limits. */
+  billing: z
+    .object({
+      mode: z.enum(["metered", "monthly"]).default("metered"),
+      creditsPerCycle: z.number().int().min(0).max(1_000_000_000).nullable(),
+      yearlyCreditsPerCycle: z.number().int().min(1).max(1_000_000_000).nullable(),
+      overdraft: z.number().int().min(0).max(1_000_000_000),
+      suspendThreshold: z.number().int().min(0).max(1_000_000_000),
+      onOverdraftAction: z.enum(["block", "stop_workspaces"]),
+      /** VM ceilings and a separate total allocation for the namespace. */
+      resourceLimits: z.object({
+        max_workspaces: namespaceLimit,
+        max_vcpus: namespaceLimit,
+        max_ram_mb: namespaceLimit,
+        max_disk_gb: namespaceLimit,
+        max_total_vcpus: namespaceLimit,
+        max_total_ram_mb: namespaceLimit,
+        max_total_disk_gb: namespaceLimit,
+      }).strict(),
+      checkoutName: z.string().min(1).max(120).optional(),
+      checkoutDescription: z.string().min(1).max(500).optional(),
+    })
+    .refine(
+      (value) => value.suspendThreshold >= value.overdraft,
+      "suspendThreshold must be at least overdraft",
+    ),
   stripePriceEnv: z.object({
     monthly: z.string().min(1).nullable(),
     annual: z.string().min(1).nullable(),
@@ -173,6 +176,68 @@ const creditPackSchema = z.object({
   sortOrder: z.number().int(),
 });
 
+const resourceRangeSchema = z.object({
+  min: z.number().int().positive(),
+  max: z.number().int().positive(),
+  step: z.number().int().positive(),
+}).strict().refine(range => range.max >= range.min && range.min % range.step === 0 && range.max % range.step === 0,
+  "Resource bounds must be ordered and align with their step");
+
+export const customPricingSchema = z.object({
+  resources: z.object({
+    cpuCores: resourceRangeSchema,
+    memoryMb: resourceRangeSchema,
+    diskGb: resourceRangeSchema,
+  }).strict(),
+  extraMonthlyCents: z.object({
+    cpuCore: z.number().int().positive(),
+    memoryGb: z.number().int().positive(),
+    diskGb: z.number().int().positive(),
+  }).strict(),
+  extraAnnualCents: z.object({
+    cpuCore: z.number().int().positive(),
+    memoryGb: z.number().int().positive(),
+    diskGb: z.number().int().positive(),
+  }).strict(),
+}).strict();
+
+/** Openship resource access tiers, independent of monthly offers and usage rates.
+ * Funding thresholds refer to verified credit purchases, never remaining balance. */
+const paygPricingSchema = z.object({
+  version: z.number().int().positive(),
+  creditPackagesCents: z.array(z.number().int().positive()).min(1),
+  tiers: z.array(z.object({
+    id: z.string().regex(/^tier_[1-9]\d*$/),
+    level: z.number().int().positive(),
+    minimumFundingCents: z.number().int().positive(),
+    pool: z.object({
+      cpuCores: z.number().int().positive(),
+      memoryMb: z.number().int().positive(),
+      diskGb: z.number().int().positive(),
+      servers: z.number().int().positive(),
+    }).strict(),
+  }).strict()).min(1),
+}).strict();
+
+/** Retail worker time, separate from app-server subscriptions and provider usage. */
+const actionsPricingSchema = z.object({
+  version: z.number().int().positive(),
+  currency: z.literal("usd"),
+  maxParallel: z.number().int().min(1).max(16),
+  depositsCents: z.array(z.number().int().min(100).max(100_000)).min(1),
+  runners: z.array(z.object({
+    id: z.string().regex(/^linux_[1-9]\d*$/),
+    cpuCores: z.number().int().min(1).max(12),
+    memoryMb: z.number().int().positive(),
+    diskGb: z.number().int().positive(),
+  }).strict()).min(1),
+}).strict().superRefine((value, ctx) => {
+  if (new Set(value.runners.map(runner => runner.id)).size !== value.runners.length)
+    ctx.addIssue({ code: "custom", path: ["runners"], message: "Actions runner identities must be unique" });
+  if (value.depositsCents.some((amount, index) => index > 0 && amount <= value.depositsCents[index - 1]!))
+    ctx.addIssue({ code: "custom", path: ["depositsCents"], message: "Actions deposits must be unique and ascending" });
+});
+
 export const pricingCatalogSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -184,24 +249,8 @@ export const pricingCatalogSchema = z
       enabled: z.boolean(),
       monthsFree: z.number().int().nonnegative(),
     }),
-    /**
-     * How customer-facing limits translate into Oblien's per-namespace ceilings.
-     *
-     * `buildResources` MIRRORS `DEFAULT_BUILD_RESOURCE_CONFIG` in adapters — a
-     * build runs in its own Oblien workspace, and since `max_vcpus`/`max_ram_mb`/
-     * `max_disk_gb` are per-workspace caps, a tier whose ceiling sits below the
-     * build machine cannot build AT ALL (Oblien 409s the create). That is not
-     * hypothetical: free published 2 vCPU / 2 GB against a 4 vCPU / 8 GB build,
-     * so the one workload free is allowed to run would have failed the moment
-     * ceilings went live. The mirror is asserted by test.
-     *
-     * `buildWorkspaceHeadroom` is how many transient build workspaces a tier may
-     * hold ON TOP of its running services, because Oblien counts build
-     * workspaces in `max_workspaces` too. Without it a free user with one
-     * service could never deploy — the build would have nowhere to go.
-     */
+    /** Actual build-machine requests, independent of namespace policy. */
     oblien: z.object({
-      buildWorkspaceHeadroom: z.number().int().nonnegative(),
       buildResources: z.object({
         cpuCores: z.number().positive(),
         memoryMb: z.number().int().positive(),
@@ -210,6 +259,19 @@ export const pricingCatalogSchema = z
     }),
     /** Time-bounded automatic discounts. Empty = list price. */
     campaigns: z.array(campaignSchema),
+    custom: customPricingSchema,
+    payg: paygPricingSchema,
+    actions: actionsPricingSchema,
+    management: z.object({
+      version: z.number().int().positive(),
+      monthlyCents: z.number().int().min(100),
+      priorityMonthlyCents: z.number().int().min(100),
+      includedServers: z.number().int().positive(),
+      extraServerMonthlyCents: z.number().int().min(100),
+      maxServers: z.number().int().positive(),
+      includedWithCloud: z.boolean(),
+      dedicatedContact: z.email(),
+    }).strict(),
     plans: z.array(planSchema).min(1),
     creditPacks: z.array(creditPackSchema),
     /**
@@ -237,13 +299,40 @@ export const pricingCatalogSchema = z
       });
     }
 
+    if (data.management.priorityMonthlyCents <= data.management.monthlyCents) {
+      ctx.addIssue({ code: "custom", path: ["management", "priorityMonthlyCents"], message: "Priority must include the Basic price and an additional support fee" });
+    }
     const ids = new Set<string>();
+    data.payg.tiers.forEach((tier, i) => {
+      const previous = data.payg.tiers[i - 1];
+      if (tier.level !== i + 1 || tier.id !== `tier_${tier.level}` ||
+          (previous && (tier.minimumFundingCents <= previous.minimumFundingCents ||
+            Object.keys(tier.pool).some(key => tier.pool[key as keyof typeof tier.pool] < previous.pool[key as keyof typeof tier.pool])))) {
+        ctx.addIssue({ code: "custom", path: ["payg", "tiers", i], message: "PAYG tiers must have ordered identities, increasing funding thresholds and non-decreasing pools" });
+      }
+      if (tier.pool.memoryMb % 1024 !== 0 ||
+          (["cpuCores", "memoryMb", "diskGb"] as const).some(key =>
+            tier.pool[key] < data.custom.resources[key].min * tier.pool.servers)) {
+        ctx.addIssue({ code: "custom", path: ["payg", "tiers", i, "pool"], message: "A PAYG pool must fit its advertised server count at the supported minimum size" });
+      }
+    });
+    if (data.payg.creditPackagesCents.some((amount, i, amounts) => i > 0 && amount <= amounts[i - 1]!)) {
+      ctx.addIssue({ code: "custom", path: ["payg", "creditPackagesCents"], message: "PAYG packages must be unique and ascending" });
+    }
     data.plans.forEach((plan, i) => {
       if (ids.has(plan.id)) {
         ctx.addIssue({ code: "custom", path: ["plans", i, "id"], message: `duplicate plan id "${plan.id}"` });
       }
       ids.add(plan.id);
     });
+
+    const retailPlans = data.plans.filter(plan => (plan.price.monthly ?? 0) > 0 && !plan.contactSales);
+    if (!retailPlans.length || retailPlans.some(plan => plan.billing.resourceLimits.max_workspaces !== 1)) {
+      ctx.addIssue({ code: "custom", path: ["custom"], message: "Custom pricing requires single-server retail bundles" });
+    }
+    if (data.custom.resources.memoryMb.step % 1024 !== 0) {
+      ctx.addIssue({ code: "custom", path: ["custom", "resources", "memoryMb"], message: "Custom memory increments must be whole GB" });
+    }
 
     data.plans.forEach((plan, i) => {
       // `inherits` drives the "Everything in X" bullet, so a dangling id would
@@ -254,15 +343,62 @@ export const pricingCatalogSchema = z
       if (plan.inherits === plan.id) {
         ctx.addIssue({ code: "custom", path: ["plans", i, "inherits"], message: `plan "${plan.id}" inherits itself` });
       }
-      // A purchasable price with no Stripe env name can never reach checkout;
-      // an env name with no price would render a free-looking paid tier.
+      // Namespace offers use dynamic provider prices; no Stripe price ID is needed.
       const monthlyPurchasable = plan.price.monthly !== null && plan.price.monthly > 0;
-      if (monthlyPurchasable && !plan.stripePriceEnv.monthly) {
-        ctx.addIssue({ code: "custom", path: ["plans", i, "stripePriceEnv", "monthly"], message: `plan "${plan.id}" has a monthly price but no Stripe price env name` });
+      if (monthlyPurchasable && plan.billing.mode === "metered" && !plan.billing.creditsPerCycle) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["plans", i, "billing", "creditsPerCycle"],
+          message: `plan "${plan.id}" needs a finite positive namespace allowance`,
+        });
+      }
+      if (plan.billing.mode === "monthly" && (plan.billing.creditsPerCycle !== 0 ||
+          plan.billing.yearlyCreditsPerCycle !== null ||
+          plan.billing.overdraft !== 0 || plan.billing.suspendThreshold !== 0)) {
+        ctx.addIssue({ code: "custom", path: ["plans", i, "billing"], message: "Prepaid capacity has no compute-credit allowance or overdraft" });
       }
       const annualPurchasable = plan.price.annual !== null && plan.price.annual > 0;
-      if (annualPurchasable && !plan.stripePriceEnv.annual) {
-        ctx.addIssue({ code: "custom", path: ["plans", i, "stripePriceEnv", "annual"], message: `plan "${plan.id}" has an annual price but no Stripe price env name` });
+      // Oblien wallet funding is 100 credits/USD. Retail allowances must be
+      // funded at list price; admin promotions record any deliberate subsidy.
+      for (const [price, credits, field] of [[plan.price.monthly, plan.billing.creditsPerCycle, "creditsPerCycle"],
+        [plan.price.annual, plan.billing.yearlyCreditsPerCycle, "yearlyCreditsPerCycle"]] as const) {
+        if (price != null && price > 0 && credits != null && credits > price) {
+          ctx.addIssue({ code: "custom", path: ["plans", i, "billing", field], message: "Namespace credits cannot exceed the wallet funding for this payment" });
+        }
+      }
+      if (monthlyPurchasable && !plan.contactSales && Object.values(plan.billing.resourceLimits).some(value => value === null)) {
+        ctx.addIssue({ code: "custom", path: ["plans", i, "billing", "resourceLimits"], message: "Retail plans require explicit VM and total namespace capacity limits" });
+      }
+      const service = plan.limits.maxServiceResources;
+      if (monthlyPurchasable && !plan.contactSales && !service) {
+        ctx.addIssue({ code: "custom", path: ["plans", i, "limits", "maxServiceResources"], message: "Retail plans require explicit per-service CPU and memory limits" });
+      }
+      if (service) {
+        const policy = plan.billing.resourceLimits;
+        for (const [dimension, caps] of [
+          ["cpuCores", [policy.max_vcpus, policy.max_total_vcpus]],
+          ["memoryMb", [policy.max_ram_mb, policy.max_total_ram_mb]],
+        ] as const) {
+          if (caps.some(cap => cap !== null && service[dimension] > cap)) {
+            ctx.addIssue({ code: "custom", path: ["plans", i, "limits", "maxServiceResources", dimension], message: "A service must fit within its workspace and shared capacity" });
+          }
+        }
+      }
+      if (annualPurchasable && plan.billing.mode === "metered" && !plan.billing.yearlyCreditsPerCycle) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["plans", i, "billing", "yearlyCreditsPerCycle"],
+          message: `plan "${plan.id}" needs an explicit annual namespace allowance`,
+        });
+      }
+      for (const amount of [plan.price.monthly, plan.price.annual]) {
+        if (amount !== null && amount !== 0 && (amount < 100 || amount > 1_000_000)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["plans", i, "price"],
+            message: "Hosted offers require USD cents between 100 and 1000000",
+          });
+        }
       }
       // "Contact sales" and "has a price" are mutually exclusive: the UI keys
       // its whole CTA off which one is set.
@@ -279,6 +415,10 @@ export const pricingCatalogSchema = z
     });
 
     const campaignIds = new Set<string>();
+    data.creditPacks.forEach((pack, i) => {
+      if (pack.creditsMilli / 1000 > pack.priceCents) ctx.addIssue({ code: "custom", path: ["creditPacks", i],
+        message: "Top-up credits cannot exceed the wallet funding for this payment" });
+    });
     data.campaigns.forEach((c, i) => {
       if (campaignIds.has(c.id)) {
         ctx.addIssue({ code: "custom", path: ["campaigns", i, "id"], message: `duplicate campaign id "${c.id}"` });

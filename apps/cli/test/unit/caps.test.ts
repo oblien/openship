@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError } from "../../src/lib/api-client";
+import { ApiError } from "../../src/lib/ship-client";
 import { requireSelfHost } from "../../src/lib/caps";
 import type { ContextCaps } from "../../src/lib/config";
 

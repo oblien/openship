@@ -1,0 +1,354 @@
+---
+title: migration
+description: Commands, arguments, and options for openship migration.
+cliGroup: openship migration
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship migration
+
+Discover, import, move and copy Docker workloads between authorized servers, including Cloud
+
+```text
+openship migration [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`source`](/docs/cli/reference/migration#openship-migration-source) | Manage migration-only SSH sources; these cannot run general server commands |
+| [`scan [options] <server>`](/docs/cli/reference/migration#openship-migration-scan) | Read Docker services, container IDs, routes and volumes with environment values masked |
+| [`repo-compose [options] [file]`](/docs/cli/reference/migration#openship-migration-repo-compose) | Read repository Compose services with environment values masked |
+| [`preview [options] [file]`](/docs/cli/reference/migration#openship-migration-preview) | Inspect transfer size, blocked services, conflicts and downtime before moving |
+| [`adopt [options] [file]`](/docs/cli/reference/migration#openship-migration-adopt) | Register discovered services in place on a self-hosted controller |
+| [`reimport [options] [file]`](/docs/cli/reference/migration#openship-migration-reimport) | Recover a scanned orphaned Openship project with its original ID |
+| [`start [options] [file]`](/docs/cli/reference/migration#openship-migration-start) | Start the reviewed Docker migration; keep killOriginals false to review cutover |
+| [`project [options] [file]`](/docs/cli/reference/migration#openship-migration-project) | Move or copy an existing project; the run waits for explicit cutover |
+| [`reveal-env [options] [file]`](/docs/cli/reference/migration#openship-migration-reveal-env) | Print only the requested environment keys from one source container (secrets) |
+| [`get <id>`](/docs/cli/reference/migration#openship-migration-get) | Read durable state, logs, transfer progress, pending prompts and cutover token |
+| [`active <server>`](/docs/cli/reference/migration#openship-migration-active) | Find an active run before starting or reattaching to work |
+| [`list [options]`](/docs/cli/reference/migration#openship-migration-list) | List up to 50 runs for a server or project |
+| [`events <id>`](/docs/cli/reference/migration#openship-migration-events) | Reattach to a migration's progress without restarting it |
+| [`respond [options] <id>`](/docs/cli/reference/migration#openship-migration-respond) | Respond to the exact pending decision returned by migration get |
+| [`resume [options] <id> [file]`](/docs/cli/reference/migration#openship-migration-resume) | Resume a partial run with reviewed path overrides or skips |
+| [`cutover [options] <id>`](/docs/cli/reference/migration#openship-migration-cutover) | Confirm the reviewed target; never invents a cutover token or changes the retirement choice |
+| [`cancel [options] <id>`](/docs/cli/reference/migration#openship-migration-cancel) | Request cancellation and rollback; poll migration get until it finishes |
+| [`cleanup-target [options] <id>`](/docs/cli/reference/migration#openship-migration-cleanup-target) | Delete target volumes copied by a failed migration; source data remains |
+| [`remove [options] <id>`](/docs/cli/reference/migration#openship-migration-remove) | Delete a terminal run's history record; retain the migrated project and data |
+
+## openship migration active
+
+Find an active run before starting or reattaching to work
+
+```text
+openship migration active [options] <server>
+```
+
+## openship migration adopt
+
+Register discovered services in place on a self-hosted controller
+
+```text
+openship migration adopt [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship migration cancel
+
+Request cancellation and rollback; poll migration get until it finishes
+
+```text
+openship migration cancel [options] <id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm operation |
+
+## openship migration cleanup-target
+
+Delete target volumes copied by a failed migration; source data remains
+
+```text
+openship migration cleanup-target [options] <id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm operation |
+
+## openship migration cutover
+
+Confirm the reviewed target; never invents a cutover token or changes the retirement choice
+
+```text
+openship migration cutover [options] <id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--token-file <file>` | This run's confirmation token, or - for stdin |
+| `--originals <choice>` | Retain source containers or authorize their destruction (choices: "retain", "retire") |
+| `-y, --yes` | Confirm cutover |
+
+## openship migration events
+
+Reattach to a migration's progress without restarting it
+
+```text
+openship migration events [options] <id>
+```
+
+## openship migration get
+
+Read durable state, logs, transfer progress, pending prompts and cutover token
+
+```text
+openship migration get [options] <id>
+```
+
+## openship migration list
+
+List up to 50 runs for a server or project
+
+```text
+openship migration list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Source or target server |
+| `--project <id>` | Project ID |
+
+## openship migration preview
+
+Inspect transfer size, blocked services, conflicts and downtime before moving
+
+```text
+openship migration preview [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship migration project
+
+Move or copy an existing project; the run waits for explicit cutover
+
+```text
+openship migration project [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship migration reimport
+
+Recover a scanned orphaned Openship project with its original ID
+
+```text
+openship migration reimport [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship migration remove
+
+Delete a terminal run's history record; retain the migrated project and data
+
+```text
+openship migration remove [options] <id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm operation |
+
+## openship migration repo-compose
+
+Read repository Compose services with environment values masked
+
+```text
+openship migration repo-compose [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship migration respond
+
+Respond to the exact pending decision returned by migration get
+
+```text
+openship migration respond [options] <id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--prompt <id>` | Current pending prompt ID |
+| `--action <id>` | An action offered by that prompt |
+| `-y, --yes` | Confirm the offered action |
+
+## openship migration resume
+
+Resume a partial run with reviewed path overrides or skips
+
+```text
+openship migration resume [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship migration reveal-env
+
+Print only the requested environment keys from one source container (secrets)
+
+```text
+openship migration reveal-env [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship migration scan
+
+Read Docker services, container IDs, routes and volumes with environment values masked
+
+```text
+openship migration scan [options] <server>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--flat-docker` | Include managed containers in the Docker scan |
+| `--follow` | Stream scan progress |
+| `--timeout <ms>` | Bound the streaming scan (default: 120000) |
+
+## openship migration source
+
+Manage migration-only SSH sources; these cannot run general server commands
+
+```text
+openship migration source [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/migration#openship-migration-source-list) | List registered migration sources |
+| [`test [options] [file]`](/docs/cli/reference/migration#openship-migration-source-test) | Verify source access and return its SSH fingerprint without saving it |
+| [`add [options] [file]`](/docs/cli/reference/migration#openship-migration-source-add) | Connect a source using credentials from a JSON file or stdin |
+| [`remove [options] <id>`](/docs/cli/reference/migration#openship-migration-source-remove) | Delete saved migration access; retain source workloads and data |
+
+## openship migration source add
+
+Connect a source using credentials from a JSON file or stdin
+
+```text
+openship migration source add [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship migration source list
+
+List registered migration sources
+
+```text
+openship migration source list [options]
+```
+
+## openship migration source remove
+
+Delete saved migration access; retain source workloads and data
+
+```text
+openship migration source remove [options] <id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm disconnect |
+
+## openship migration source test
+
+Verify source access and return its SSH fingerprint without saving it
+
+```text
+openship migration source test [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship migration start
+
+Start the reviewed Docker migration; keep killOriginals false to review cutover
+
+```text
+openship migration start [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |

@@ -34,8 +34,6 @@ In the left sidebar, click **Backups**. If you have no destinations yet, you'll 
 yet" screen with an **Add Your First Destination** button. Otherwise, press **Add Destination** in the top
 right.
 
-<Callout title="Screenshot">The Backups page empty state, with the **Add Your First Destination** button and the four supported destination types. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -109,8 +107,6 @@ Back on the list, each destination has a **Verify connection** button (the circu
 Openship writes a tiny test file, reads it back, and deletes it. A green **Verified** badge means the login and
 address are correct. Do this now, before you rely on it.
 
-<Callout title="Screenshot">The Backups list with one destination and its **Verified** badge after a successful connection check. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -156,9 +152,12 @@ these choices:
 - **Webhook trigger** *(optional, advanced)* — generates a private URL you can `POST` to from an outside
   scheduler or CI so something else can kick off this backup.
 
-<Callout title="Screenshot">The Create backup policy panel showing the destination dropdown, schedule presets, retain-count/retain-days fields, and the pre-deploy checkbox. *(screenshot pending)*</Callout>
-
 Press **Create policy**.
+
+Retention runs after each successful backup, independently for each service in a project policy.
+Protected copies remain exempt. A cleanup failure keeps the affected records for retry and does
+not invalidate the new backup. The **Backup retention prune** system job provides a fallback;
+new installations schedule it hourly at minute 29. Existing schedules remain editable in **Jobs**.
 
 </Step>
 
@@ -235,8 +234,6 @@ Once verified, you're asked to **type the service's name exactly** to confirm. T
 sure?" gate, because the next step permanently replaces the current data. Type the name and press **Apply
 restore**.
 
-<Callout title="Screenshot">The Restore backup wizard on the Confirm step, showing the "type the service name to confirm" box and the red **Apply restore** button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -250,7 +247,7 @@ complete**.
 
 </Steps>
 
-## Prefer the terminal?
+## CLI
 
 Everything above works from the CLI. The base command is `openship backup`, with four groups: `destination`,
 `policy`, `run`, and `restore`.
@@ -292,7 +289,7 @@ anything yet. You must run `backup restore apply` with that token to actually sw
 "type the name to confirm" gate in the dashboard.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="A destination won't verify" type="error">
 Click **Verify connection** and read the reason it shows. The usual causes are a wrong access key or password, a
@@ -317,7 +314,7 @@ state beforehand. Your safety net is a backup taken *before* the restore: if you
 earlier run still holds the state you want), open that run in **Recent backups** and **Restore** from it.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Multi-service apps" href="/docs/guides/compose-multi-service" description="Understand services — the parts of your app that policies back up individually." />

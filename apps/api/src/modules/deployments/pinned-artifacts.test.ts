@@ -5,8 +5,10 @@ import {
   pinnedImageForService,
   refreshAppDeploymentId,
   snapshotNeedsGitSource,
+  snapshotNeedsProjectSource,
   withoutPinnedArtifacts,
-} from "./pinned-artifacts";
+  strictRefreshImages,
+} from "@repo/platform/engine/modules/deployments/pinned-artifacts";
 
 describe("pinned artifact lookup", () => {
   const snapshot = {
@@ -43,14 +45,44 @@ describe("pinned artifact lookup", () => {
       strictServiceScope: true,
       refreshServiceIds: ["svc-api"],
       forcePullImages: true,
+      securityApproval: { deploymentId: "dep_old", approvedBy: "owner", expiresAt: "2026-10-25T00:00:00Z" },
+      capacityAdjustment: { key: "capacity-request", requestHash: "hash" },
       hasBuild: true,
     });
     expect(stripped).toEqual({ hasBuild: true });
   });
 
+  it("waives a build reservation only for a strict refresh of every selected service", () => {
+    const meta = {
+      ...snapshot,
+      strictServiceScope: true,
+      targetServiceIds: ["web", "db"],
+      refreshServiceIds: ["web", "db"],
+    };
+    expect(strictRefreshImages(meta)).toEqual(snapshot.handoverImages);
+    expect(strictRefreshImages({ ...meta, refreshServiceIds: ["web"] })).toBeUndefined();
+    expect(strictRefreshImages({ ...meta, strictServiceScope: false })).toBeUndefined();
+    expect(strictRefreshImages({ ...meta, targetServiceIds: [] })).toBeUndefined();
+    expect(strictRefreshImages(snapshot)).toBeUndefined();
+  });
+
   it("normalizes the active deployment marker", () => {
     expect(refreshAppDeploymentId({ refreshAppDeploymentId: " dep_live " })).toBe("dep_live");
     expect(refreshAppDeploymentId({ refreshAppDeploymentId: " " })).toBeUndefined();
+  });
+
+  it("shares one primary app pin with its service identity without pinning another app", () => {
+    const primary = {
+      primaryAppServiceName: "web",
+      handoverAppImage: "sha256:primary",
+      handoverImages: { web: "legacy-web", database: "postgres:16" },
+    };
+    expect(pinnedAppImage(primary)).toBe("sha256:primary");
+    expect(pinnedImageForService(primary, "web")).toBe("sha256:primary");
+    expect(pinnedImageForService(primary, "database")).toBe("postgres:16");
+    expect(pinnedImageForService(primary, "other-app")).toBeUndefined();
+    expect(pinnedAppImage({ ...primary, handoverAppImage: undefined })).toBe("legacy-web");
+    expect(pinnedAppImage({ handoverImages: primary.handoverImages })).toBeUndefined();
   });
 });
 
@@ -91,7 +123,7 @@ describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", ()
     // A staged local directory is not cloned.
     expect(snapshotNeedsGitSource({ localPath: "/srv/app", hasBuild: true })).toBe(false);
     // A folder upload is not cloned.
-    expect(snapshotNeedsGitSource({ uploadWorkspaceId: "up_1", hasBuild: true })).toBe(false);
+    expect(snapshotNeedsGitSource({ localPath: "/uploads/up_1", hasBuild: true })).toBe(false);
     // A release/dist tarball deploys verbatim.
     expect(snapshotNeedsGitSource({ releaseVersion: "1.2.3", hasBuild: true })).toBe(false);
     // An explicit image source is never cloned.
@@ -129,6 +161,38 @@ describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", ()
     ).toBe(true);
   });
 
+  it("needs no app source for a classified primary pin, while preserving other source and mount requirements", () => {
+    const snapshot = {
+      repoUrl: repo,
+      primaryAppServiceName: "web",
+      handoverAppImage: "sha256:primary",
+      composeServices: [
+        { name: "web", kind: "monorepo" },
+        { name: "database", image: "postgres:16" },
+      ],
+    };
+    expect(snapshotNeedsProjectSource(snapshot)).toBe(false);
+    expect(snapshotNeedsGitSource(snapshot)).toBe(false);
+    expect(snapshotNeedsProjectSource({ ...snapshot, primaryAppServiceName: undefined })).toBe(
+      true,
+    );
+    expect(
+      snapshotNeedsProjectSource({
+        ...snapshot,
+        composeServices: [...snapshot.composeServices, { name: "other-app", kind: "monorepo" }],
+      }),
+    ).toBe(true);
+    expect(
+      snapshotNeedsProjectSource({
+        ...snapshot,
+        composeServices: [
+          ...snapshot.composeServices,
+          { name: "config", image: "alpine", volumes: ["./config:/config:ro"] },
+        ],
+      }),
+    ).toBe(true);
+  });
+
   it("compose: disabled services don't force a clone", () => {
     expect(
       snapshotNeedsGitSource({
@@ -144,5 +208,58 @@ describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", ()
     expect(
       snapshotNeedsGitSource({ composeServices: [{ name: "app", dockerfile: "Dockerfile" }] }),
     ).toBe(true);
+  });
+
+  it("requires repository files for image services with relative mounts, including pinned restores", () => {
+    const snapshot = {
+      repoUrl: repo,
+      composeServices: [
+        { name: "web", image: "nginx:alpine", volumes: ["./config:/etc/nginx:ro"] },
+      ],
+      handoverImages: { web: "nginx:alpine" },
+    };
+    expect(snapshotNeedsProjectSource(snapshot)).toBe(true);
+    expect(snapshotNeedsGitSource(snapshot)).toBe(true);
+    expect(
+      snapshotNeedsGitSource({
+        ...snapshot,
+        composeServices: [{ name: "web", volumes: ["data:/data"] }],
+      }),
+    ).toBe(false);
+  });
+
+  it("stages uploaded Compose source without asking for a Git credential", () => {
+    const snapshot = {
+      localPath: "/uploads/upload-a",
+      composeServices: [{ name: "web", build: "." }],
+    };
+    expect(snapshotNeedsProjectSource(snapshot)).toBe(true);
+    expect(snapshotNeedsGitSource(snapshot)).toBe(false);
+    expect(snapshotNeedsGitSource({ ...snapshot, localPath: "/source" })).toBe(false);
+  });
+
+  it("uses inline catalog files without requiring a project repository", () => {
+    const snapshot = {
+      composeServices: [
+        {
+          name: "web",
+          kind: "monorepo",
+          dockerfile: "Dockerfile",
+          advanced: { build: { dockerfile: "FROM alpine" } },
+        },
+        { name: "sidecar", volumes: ["./web/config:/config:ro"] },
+      ],
+    };
+    expect(snapshotNeedsProjectSource(snapshot)).toBe(false);
+    expect(snapshotNeedsGitSource(snapshot)).toBe(false);
+  });
+
+  it("does not clone for a monorepo service running an existing image", () => {
+    expect(
+      snapshotNeedsGitSource({
+        repoUrl: repo,
+        composeServices: [{ name: "web", kind: "monorepo", image: "nginx:alpine" }],
+      }),
+    ).toBe(false);
   });
 });

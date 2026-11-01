@@ -1,28 +1,21 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
+import { AnalyticsError } from "@/components/monitoring/AnalyticsError";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
-import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
+import { TrafficChart } from "./general/TrafficChart";
+import { useProjectInfo, useAnalyticsData, retryProjectRequests } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
-import {
-  ExternalLink,
-  GitBranch,
-  Cpu,
-  Server,
-  Users,
-  Gauge,
-  ArrowUpDown,
-  BarChart3,
-  Layers,
-  ChevronRight,
-  Container,
-} from "lucide-react";
+import { hasSeparateApplication } from "@/lib/project-application";
 
 export const OverviewTab = () => {
   const {
@@ -43,17 +36,18 @@ export const OverviewTab = () => {
   const hasDomain =
     !!(selectedDomain || domain) || (domainsData?.domains?.length ?? 0) > 0;
 
-  // ATOMIC PER-ENDPOINT HOOKS — each one owns its own skeleton state.
-  // No context coupling, no useMemo soup. Module-level caches dedup
-  // concurrent fetches across components (e.g. OverviewTab and
-  // MonitoringTab share one summary fetch).
+  // Project info and analytics load independently. Analytics share one
+  // project-wide request and cache with Monitoring's default All scope.
   const projectInfoQuery = useProjectInfo(id);
-  const analytics = useAnalyticsData(id, selectedDomain);
+  const analytics = useAnalyticsData(projectData.id === id && hasDomain ? id : null);
+  const showAnalyticsError = !!analytics.error;
   const analyticsData = analytics.data;
   const services = servicesData.services;
   const serviceCount = servicesData.isLoading
     ? (projectData.serviceCount ?? services.length)
     : services.length;
+  const hasApplication = !servicesData.isLoading && !servicesData.error && hasSeparateApplication(projectData, services);
+  const applicationCount = serviceCount + (hasApplication ? 1 : 0);
 
   // deployTarget comes from API (active deployment's meta), not from global dashboard mode
   const deployTarget = projectData.deployTarget as string | null;
@@ -87,11 +81,7 @@ export const OverviewTab = () => {
     return num?.toString() || "0";
   };
 
-  // Each skeleton gate reads STRICTLY from its own hook's isLoading.
-  // No cross-coupling possible — info, summary, periods each own a
-  // module-level cache and an independent isLoading boolean. A slow
-  // periods endpoint cannot pin the stats; a slow getInfo cannot pin
-  // the analytics widgets.
+  // Summary and chart come from the same snapshot; info has its own load.
   const showProjectInfoSkeleton = projectInfoQuery.isLoading;
   const showStatsSkeleton = analytics.isLoadingSummary;
   const showChartSkeleton = analytics.isLoadingPeriods;
@@ -102,39 +92,38 @@ export const OverviewTab = () => {
     subtext?: string;
     loading?: boolean;
   };
-  const hasAnalytics = !!analyticsData;
   const stats: Stat[] = showStatsSkeleton
     ? [
         {
           label: t.projects.stats.serverRequests,
           value: "",
-          icon: <Server className="size-4" />,
+          icon: <UiIcon name="server" className="size-4" />,
           loading: true,
         },
         {
           label: t.projects.stats.uniqueIPs,
           value: "",
-          icon: <Users className="size-4" />,
+          icon: <UiIcon name="users" className="size-4" />,
           loading: true,
         },
         {
           label: t.projects.stats.avgResponse,
           value: "",
-          icon: <Gauge className="size-4" />,
+          icon: <UiIcon name="gauge" className="size-4" />,
           loading: true,
         },
         {
           label: t.projects.stats.bandwidthOut,
           value: "",
-          icon: <ArrowUpDown className="size-4" />,
+          icon: <UiIcon name="arrows-up-down" className="size-4" />,
           loading: true,
         },
       ]
     : [
         {
           label: t.projects.stats.serverRequests,
-          value: formatNumber(analyticsData?.summary?.uniqueRequests ?? 0),
-          icon: <Server className="size-4" />,
+          value: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
+          icon: <UiIcon name="server" className="size-4" />,
           subtext: interpolate(t.projects.stats.requestsSubtext, {
             total: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
             avg: String(analyticsData?.summary?.avgRequestsPerHour ?? 0),
@@ -143,7 +132,7 @@ export const OverviewTab = () => {
         {
           label: t.projects.stats.uniqueIPs,
           value: formatNumber(analyticsData?.summary?.uniqueIPs ?? 0),
-          icon: <Users className="size-4" />,
+          icon: <UiIcon name="users" className="size-4" />,
           subtext: interpolate(t.projects.stats.uniqueIPsSubtext, {
             pct: String(analyticsData?.summary?.uniqueIPsPercentage ?? 0),
           }),
@@ -151,13 +140,13 @@ export const OverviewTab = () => {
         {
           label: t.projects.stats.avgResponse,
           value: `${analyticsData?.performance?.avgResponseTimeMs?.toFixed(2) || "N/A "}ms`,
-          icon: <Gauge className="size-4" />,
+          icon: <UiIcon name="gauge" className="size-4" />,
           subtext: t.projects.stats.responseTime,
         },
         {
           label: t.projects.stats.bandwidthOut,
           value: analyticsData?.bandwidth?.totalOutFormatted || "N/A",
-          icon: <ArrowUpDown className="size-4" />,
+          icon: <UiIcon name="arrows-up-down" className="size-4" />,
           subtext: interpolate(t.projects.stats.bandwidthInSubtext, {
             value: analyticsData?.bandwidth?.totalInFormatted ?? "0 B",
           }),
@@ -166,25 +155,12 @@ export const OverviewTab = () => {
 
   const trafficData = analyticsData?.trafficByHour || [];
   const topPaths = analyticsData?.topPaths || [];
-  const dateRange = analyticsData
-    ? `${new Date(analyticsData.summary.firstRequest).toLocaleDateString()} – ${new Date(analyticsData.summary.lastRequest).toLocaleDateString()}`
-    : undefined;
-
-  const displayData =
-    trafficData.length > 0
-      ? trafficData
-      : Array.from({ length: 24 }, (_, i) => ({ hour: i, requests: 0 }));
-  const maxRequests = Math.max(...displayData.map((d) => d.requests), 1);
-  const areaData = displayData.length === 1 ? [displayData[0], displayData[0]] : displayData;
 
   return (
     <div className="space-y-5">
-      {/* Only a catalog app's curated connection (URLs + generated keys) belongs on
-          the overview. A plain project's synthesized internal address is edited in
-          Settings → Advanced (single-app alias) and shown per service in the service
-          detail panel — surfacing it here too just clutters a plain project. Card
-          self-hides when the app declares no connection outputs. */}
-      {projectData.isApp && (
+      {/* Apps expose their connection details first. Projects share individual
+          services from the Services tab. */}
+      {projectData.id && projectData.isApp && (
         <ConnectionCard
           projectId={projectData.id}
           appTemplateId={projectData.appTemplateId}
@@ -203,7 +179,7 @@ export const OverviewTab = () => {
       {/* ── Info sections ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Infrastructure */}
-        <Card title={t.projects.overview.infrastructure} icon={Cpu} iconColor="primary">
+        <Card title={t.projects.overview.infrastructure} icon={"cpu"} iconColor="primary">
           <Item
             label={t.projects.overview.platform}
             value={platformLabel}
@@ -214,10 +190,10 @@ export const OverviewTab = () => {
             value={modeLabel}
             loading={showProjectInfoSkeleton}
           />
-          {/* Port row shown when loading (we don't know the workload yet) or
-              when it's a web app. A worker runs a process but listens on no
-              port, and a static site has none either — both hide the row. */}
-          {(showProjectInfoSkeleton || workload === "web") && (
+          {/* project.port belongs to the single-app runtime. Service projects
+              own their ports per service; showing this fallback for an adopted
+              stack contradicts its actual routing (#506). */}
+          {serviceCount === 0 && (showProjectInfoSkeleton || workload === "web") && (
             <Item
               label={t.projects.overview.port}
               value={String(projectData.port || 3000)}
@@ -225,8 +201,8 @@ export const OverviewTab = () => {
             />
           )}
           {/* Which self-hosted server this runs on — links to the server page. */}
-          {deployTarget === "server" && (showProjectInfoSkeleton || projectData.serverName) && (
-            <div className="flex items-center justify-between gap-4">
+          {(deployTarget === "server" || (projectData.workspaceId && projectData.serverId)) && (showProjectInfoSkeleton || projectData.serverName) && (
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <span className="text-[13px] text-muted-foreground">
                 {t.projects.overview.server}
               </span>
@@ -235,13 +211,13 @@ export const OverviewTab = () => {
               ) : projectData.serverId ? (
                 <Link
                   href={`/servers/${projectData.serverId}`}
-                  className="inline-flex max-w-[180px] items-center gap-1.5 truncate text-[13px] font-medium text-foreground transition-colors hover:text-primary"
+                  className="inline-flex min-w-0 items-center gap-1.5 truncate text-[13px] font-medium text-foreground transition-colors hover:text-primary sm:max-w-[180px]"
                 >
-                  {projectData.serverName}
-                  <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{projectData.serverName}</span>
+                  <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground" />
                 </Link>
               ) : (
-                <span className="max-w-[180px] truncate text-[13px] font-medium text-foreground">
+                <span className="min-w-0 truncate text-[13px] font-medium text-foreground sm:max-w-[180px]">
                   {projectData.serverName}
                 </span>
               )}
@@ -250,8 +226,8 @@ export const OverviewTab = () => {
         </Card>
 
         {/* Source & CI/CD */}
-        <Card title={t.projects.overview.sourceCicd} icon={GitBranch} iconColor="orange">
-          <div className="flex items-center justify-between">
+        <Card title={t.projects.overview.sourceCicd} icon={"git-branch"} iconColor="orange">
+          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-[13px] text-muted-foreground">
               {t.projects.overview.repository}
             </span>
@@ -262,10 +238,10 @@ export const OverviewTab = () => {
                 href={`https://github.com/${projectData.gitOwner}/${projectData.gitRepo}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 truncate max-w-[180px]"
+                className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex min-w-0 items-center gap-1.5 truncate sm:max-w-[180px]"
               >
-                {projectData.gitOwner}/{projectData.gitRepo}
-                <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{projectData.gitOwner}/{projectData.gitRepo}</span>
+                <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground" />
               </a>
             ) : (
               <span className="text-[13px] text-muted-foreground/60">
@@ -300,7 +276,15 @@ export const OverviewTab = () => {
       </div>
 
       {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
-      {hasDomain && (
+      {hasDomain && showAnalyticsError && (
+        <AnalyticsError
+          error={analytics.error!}
+          onRetry={() => retryProjectRequests(id)}
+          retrying={analytics.isRefreshing}
+          hasData={!!analyticsData}
+        />
+      )}
+      {hasDomain && (!showAnalyticsError || analyticsData) && (
         <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -333,98 +317,17 @@ export const OverviewTab = () => {
         ))}
       </div>
 
-      {/* Compact traffic chart */}
-      <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="size-3.5 text-primary" />
-            <span className="text-[13px] font-semibold text-foreground">
-              {t.projects.overview.traffic}
-            </span>
-          </div>
-          {dateRange && <span className="text-[11px] text-muted-foreground">{dateRange}</span>}
-        </div>
-        {showChartSkeleton ? (
-          // Chart-shaped skeleton - animated bars at varied heights so
-          // the placeholder reads as "a chart is coming" instead of a
-          // bare text line. Gated on `showChartSkeleton` (periods
-          // hydration) only — the stat cards above use their own
-          // `showStatsSkeleton`, so a fast `summary` endpoint can flip
-          // those even while `periods` is still in flight.
-          <div className="flex items-end gap-[3px] h-[120px] px-1 pb-1">
-            {Array.from({ length: 32 }).map((_, i) => {
-              // Deterministic varied heights - sine-based so the bars
-              // form a wave rather than a uniform block, and the
-              // sequence stays stable across re-renders.
-              const h = 18 + Math.abs(Math.sin(i * 0.7)) * 70;
-              return (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm bg-muted-foreground/15 animate-pulse"
-                  style={{ height: `${h}%`, animationDelay: `${i * 40}ms` }}
-                />
-              );
-            })}
-          </div>
-        ) : !hasAnalytics ? (
-          <div className="flex items-center justify-center h-[120px] rounded-xl border border-dashed border-border/50 bg-muted/10">
-            <span className="text-[12px] text-muted-foreground">
-              {t.projects.overview.noTrafficData}
-            </span>
-          </div>
-        ) : (
-          <div>
-            <div className="relative h-[120px]">
-              <svg
-                className="absolute inset-0 w-full h-full text-primary"
-                viewBox="0 0 1000 200"
-                preserveAspectRatio="none"
-                style={{ color: "var(--primary)" }}
-              >
-                <defs>
-                  <linearGradient id="overviewAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="20%" stopColor="currentColor" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d={`M 0 200 ${areaData
-                    .map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `L ${x} ${y}`;
-                    })
-                    .join(" ")} L 1000 200 Z`}
-                  fill="url(#overviewAreaGrad)"
-                />
-                <path
-                  d={areaData
-                    .map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
-                    })
-                    .join(" ")}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
-              {displayData
-                .filter((_, i) => i % 6 === 0)
-                .map((d, i) => (
-                  <span key={i}>{d.hour}:00</span>
-                ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <TrafficChart
+        trafficData={trafficData}
+        isLoading={showChartSkeleton}
+        totalRequests={analyticsData?.summary.totalRequests}
+        scopeLabel={t.projects.monitoring.allDomains}
+        compact
+      />
         </>
       )}
 
-      {/* Connected Services bar */}
+      {/* The primary application and configured services share one entry point. */}
       <button
         onClick={() => {
           const projectId = projectData.id || id;
@@ -432,47 +335,48 @@ export const OverviewTab = () => {
           setActiveTab("services");
           window.history.replaceState({}, "", `/projects/${projectId}/services`);
         }}
-        className="w-full bg-card rounded-2xl border border-border/50 px-4 py-3 flex items-center justify-between hover:bg-accent/50 transition-colors group"
+        className="w-full bg-card rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-accent/50 transition-colors group"
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-success-bg flex items-center justify-center">
-            <Layers className="size-3.5 text-success" />
+            <UiIcon name="layers" className="size-3.5 text-success" />
           </div>
-          <span className="text-[13px] font-medium text-foreground">
-            {t.projects.overview.services}
+          <span className="text-sm font-medium text-foreground">
+            {t.projects.sidebar.tabs.services}
           </span>
-          {serviceCount > 0 && (
-            <span className="text-[11px] font-semibold text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
-              {serviceCount}
+          {applicationCount > 0 && (
+            <span className="text-xs font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
+              {applicationCount}
             </span>
           )}
-          {services.length > 0 && (
+          {applicationCount > 0 && (
             <div className="flex items-center gap-1 ms-1">
-              {services.slice(0, 4).map((svc) => (
+              {hasApplication && <div title={projectData.name} className="size-6 rounded-md bg-muted/50 flex items-center justify-center"><UiIcon name="window" className="size-3 text-muted-foreground" /></div>}
+              {services.slice(0, hasApplication ? 3 : 4).map((svc) => (
                 <div
                   key={svc.id}
                   title={svc.name}
                   className="w-6 h-6 rounded-md bg-muted/50 flex items-center justify-center"
                 >
-                  <Container className="size-3 text-muted-foreground" />
+                  <ServiceIcon service={svc} className="size-3" />
                 </div>
               ))}
-              {services.length > 4 && (
-                <span className="text-[10px] text-muted-foreground/60 ms-0.5">
-                  +{services.length - 4}
+              {applicationCount > 4 && (
+                <span className="text-xs text-muted-foreground ms-0.5">
+                  +{applicationCount - 4}
                 </span>
               )}
             </div>
           )}
-          {serviceCount === 0 && (
+          {!servicesData.isLoading && applicationCount === 0 && (
             <span className="text-xs text-muted-foreground">
-              {t.projects.overview.noServicesConnected}
+              {servicesData.error ? t.projects.services.failedLoad : t.projects.overview.noServicesConnected}
             </span>
           )}
         </div>
         <div className="flex items-center gap-1.5 text-muted-foreground">
-          <span className="text-[12px]">{t.projects.overview.manage}</span>
-          <ChevronRight className="size-3.5 group-hover:translate-x-0.5 transition-transform rtl:rotate-180" />
+          <span className="text-xs">{t.projects.overview.manage}</span>
+          <UiIcon name="chevron-right" className="size-3.5 group-hover:translate-x-0.5 transition-transform rtl:rotate-180" />
         </div>
       </button>
 
@@ -480,7 +384,7 @@ export const OverviewTab = () => {
       {hasDomain && topPaths.length > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
           <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="size-3.5 text-primary" />
+            <UiIcon name="chart-bar" className="size-3.5 text-primary" />
             <span className="text-[13px] font-semibold text-foreground">
               {t.projects.overview.topPaths}
             </span>
@@ -528,7 +432,7 @@ function Card({
   children,
 }: {
   title: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   iconColor?: keyof typeof ICON_COLORS;
   children: React.ReactNode;
 }) {
@@ -537,7 +441,7 @@ function Card({
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors.bg}`}>
-          <Icon className={`size-4 ${colors.text}`} />
+          <UiIcon name={Icon} className={`size-4 ${colors.text}`} />
         </div>
         <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
       </div>
@@ -548,12 +452,12 @@ function Card({
 
 function Item({ label, value, loading }: { label: string; value: string; loading?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-[13px] text-muted-foreground">{label}</span>
       {loading ? (
         <div className="h-[14px] w-24 rounded bg-muted-foreground/20 animate-pulse" />
       ) : (
-        <span className="text-[13px] font-medium text-foreground truncate max-w-[200px]">
+        <span className="min-w-0 truncate text-[13px] font-medium text-foreground sm:max-w-[200px]">
           {value}
         </span>
       )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { flattenSettingFields, type AppSettingField } from "@repo/core";
 import { appsApi, type AppSettingsView } from "@/lib/api/apps";
@@ -33,6 +34,7 @@ export function useAppSettings(projectId: string) {
         setInitial(seeded);
         return res.data;
       } catch (e) {
+        observeCaughtError(e, "dashboard/components/app-settings/useAppSettings");
         setError(true);
         return null;
       } finally {

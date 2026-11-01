@@ -16,7 +16,7 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   peekPlatform: () => singleton.shared,
 }));
 
-import { disposePlatform, disposeRuntime } from "../../src/lib/deployment-runtime";
+import { disposePlatform, disposeRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 
 /**
  * `disposePlatform` is THE release step — fourteen call sites, most of them in a

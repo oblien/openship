@@ -1,11 +1,13 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useState } from "react";
-import { Info, MonitorSmartphone, Shield } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useAuth } from "@/context/AuthContext";
 import { SettingsSection } from "./SettingsSection";
-import { UpgradeAuthModal } from "./UpgradeAuthModal";
+import { UpgradeAuthModal } from "@/components/instance/UpgradeAuthModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export function InstanceInfo() {
@@ -26,13 +28,15 @@ export function InstanceInfo() {
     bridge
       ?.version()
       .then(setDesktopVersion)
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InstanceInfo");
+      });
   }, [deployMode]);
   const version = (deployMode === "desktop" ? desktopVersion : serverVersion) ?? null;
 
   return (
     <SettingsSection
-      icon={Info}
+      icon={"info"}
       title={t.settings.instance.title}
       description={
         isDesktop
@@ -47,7 +51,7 @@ export function InstanceInfo() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex items-center gap-3 rounded-xl border border-border/50 p-4">
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-            <MonitorSmartphone className="size-4 text-muted-foreground" />
+            <UiIcon name="devices" className="size-4 text-muted-foreground" />
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">
@@ -65,7 +69,7 @@ export function InstanceInfo() {
         </div>
         <div className="flex items-center gap-3 rounded-xl border border-border/50 p-4">
           <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-            <Shield className="size-4 text-muted-foreground" />
+            <UiIcon name="shield" className="size-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground">

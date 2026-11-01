@@ -31,8 +31,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { excludeAlreadyManaged } from "./managed-containers";
-import type { DiscoveredService } from "./docker-reconcile";
+import { excludeAlreadyManaged } from "@repo/platform/engine/modules/migration/managed-containers";
+import type { DiscoveredService } from "@repo/platform/engine/modules/migration/docker-reconcile";
 
 const svc = (name: string, containerId: string): DiscoveredService =>
   ({

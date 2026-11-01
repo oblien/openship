@@ -1,0 +1,53 @@
+name: Publish security advisories
+on:
+  push:
+    branches: [main]
+    paths:
+      [
+        security-advisories.json,
+        scripts/sign-security-advisories.ts,
+        packages/core/src/updates/security.ts,
+        packages/core/src/updates/signing-public-key.json,
+        .github/workflows/security-advisories.yml,
+      ]
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: security-advisories
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'oblien/openship' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Sign public, declarative advisory metadata
+        env:
+          OPENSHIP_DESKTOP_SIGNING_KEY: ${{ secrets.OPENSHIP_DESKTOP_SIGNING_KEY }}
+        run: bun scripts/sign-security-advisories.ts "$RUNNER_TEMP/security-advisories.signed.json"
+      - name: Publish atomically on the public feed branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git fetch origin security-advisories; then
+            git switch --detach FETCH_HEAD
+          else
+            git switch --orphan security-advisories
+            git rm -rf --ignore-unmatch .
+          fi
+          cp "$RUNNER_TEMP/security-advisories.signed.json" security-advisories.signed.json
+          git add security-advisories.signed.json
+          git commit -m 'Refresh signed security advisories'
+          git push origin HEAD:security-advisories

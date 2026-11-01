@@ -1,280 +1,11 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { api, getApiBaseUrl } from "./client";
 import { endpoints } from "./endpoints";
+import type { MigrationServiceRoutes, MigrationSourceInput, ServerDetail } from "@repo/contracts";
 
-// ─── Types (mirror apps/api docker-inspect.service.ts DiscoveredStack) ────────
-
-export interface DiscoveredVolumeMount {
-  type: "volume" | "bind";
-  source?: string;
-  target: string;
-  rw: boolean;
-}
-
-export interface DiscoveredService {
-  name: string;
-  source: "compose" | "container";
-  containerId?: string;
-  containerName?: string;
-  running: boolean;
-  image?: string;
-  build?: string;
-  dockerfile?: string;
-  buildArgs?: Record<string, string | null>;
-  ports: string[];
-  env: Record<string, string>;
-  /** Env that provably came from the IMAGE, not the operator (recovered from
-   *  Docker's create-time merge order). Not imported — the same image re-supplies
-   *  it — but carried with values so the card can show what was left behind and
-   *  offer a one-click import. Absent when nothing was left behind. */
-  envImageDefaults?: Record<string, string>;
-  volumes: DiscoveredVolumeMount[];
-  networks: string[];
-  dependsOn: string[];
-  command?: string;
-  restart?: string;
-  /** Set when this container IS the edge proxy (80/443) — dropped from import;
-   *  Openship's OpenResty replaces it. */
-  proxyKind?: "nginx" | "caddy" | "apache" | "traefik" | "haproxy" | "openresty";
-  /** Host edge ports (80/443) it publishes — reserved for Openship's edge. */
-  edgePorts?: number[];
-  /** Routes the server's existing (foreign) reverse proxy already serves for this
-   *  container, matched by published host port. ONE ENTRY PER (port,path,match mode): a
-   *  path-fan-out domain (`/ → :1010`, `/v3 → :1020`) or a multi-port container
-   *  collects several. Absent = none detected. */
-  existingRoute?: Array<{
-    port: number;
-    path: string;
-    exact?: boolean;
-    domains: string[];
-    ssl: { enabled: boolean; certPath?: string; keyPath?: string };
-    source?: string;
-  }>;
-  warnings: string[];
-}
-
-/** A service parsed from a LINKED repo's docker-compose (the map-step reference).
- *  Carries env + deps so a repo service with no running container renders as a
- *  full native service card in the wizard, not just a chip. */
-export interface ComposeRepoService {
-  name: string;
-  build?: string;
-  dockerfile?: string;
-  buildArgs?: Record<string, string | null>;
-  image?: string;
-  ports: string[];
-  environment: Record<string, string>;
-  dependsOn: string[];
-}
-
-export interface DiscoveredGroup {
-  /** compose project name, or null for hand-run standalone containers. */
-  project: string | null;
-  services: DiscoveredService[];
-}
-
-/** An Openship project recovered from the server (see api docker-reconcile.ts). */
-export interface OpenshipProjectGroup {
-  projectId: string;
-  suggestedName: string;
-  slug?: string;
-  domains?: string[];
-  source?: {
-    gitProvider?: string | null;
-    gitOwner?: string | null;
-    gitRepo?: string | null;
-    gitBranch?: string | null;
-  };
-  runtimeMode?: string | null;
-  /** true = already exists in this instance's DB (not re-importable, just counted). */
-  knownHere: boolean;
-  /** A full recovery snapshot exists → re-import restores it faithfully. */
-  hasSnapshot: boolean;
-  deploymentId?: string;
-  /** When last deployed (manifest updatedAt) — a "last seen" hint. */
-  updatedAt?: string;
-  services: DiscoveredService[];
-}
-
-export interface DiscoveredStack {
-  serverId: string;
-  composeProjects: string[];
-  groups: DiscoveredGroup[];
-  services: DiscoveredService[];
-  volumes: Array<{ name: string; driver: string; inUseBy: string[] }>;
-  networks: Array<{ name: string; driver: string }>;
-  warnings: string[];
-  adoptable: boolean;
-  /** Live containers already managed by a project in this instance's DB (count). */
-  alreadyManaged: number;
-  /** Openship projects found on the server; `knownHere: false` are re-importable. */
-  openshipProjects: OpenshipProjectGroup[];
-  /** Every route the foreign proxy serves, flattened (one per port+path) — for
-   *  the route review. Unmatched ones (no adopted service on that port) also
-   *  appear in `warnings`. */
-  proxyRoutes?: Array<{
-    port: number;
-    path: string;
-    domains: string[];
-    ssl: { enabled: boolean; certPath?: string; keyPath?: string };
-    source?: string;
-  }>;
-}
-
-export interface ReimportResult {
-  success: boolean;
-  projectId: string;
-  slug: string;
-  reimported: string[];
-  /** Reconstructed/restored deployment id when the project came back live. */
-  deploymentId?: string;
-  /** True when the running containers were re-attached (project is immediately live). */
-  reattached: boolean;
-  /** True when restored faithfully from the server's full subgraph snapshot. */
-  restored?: boolean;
-}
-
-export interface AdoptResult {
-  success: boolean;
-  projectId: string;
-  slug: string;
-  created: boolean;
-  adopted: string[];
-}
-
-// ─── Full migration (adopt → move → deploy → verify → cutover) ────────────────
-
-export interface MigrationPreviewService {
-  name: string;
-  source: "compose" | "container";
-  image?: string;
-  classification: "registry" | "build";
-  blocked: boolean;
-  reason?: string;
-  /** This service IS the edge proxy → dropped from import. */
-  edgeProxy?: boolean;
-  /** Non-proxy service whose 80/443 host bindings are stripped (reserved). */
-  edgePortsReserved?: number[];
-  volumes: Array<{ name: string; target: string }>;
-  /** App-data bind paths that WILL be copied to the target. */
-  bindMounts: string[];
-  /** System/socket bind paths left on the source host. */
-  bindMountsSkipped: string[];
-  warnings: string[];
-}
-
-/** One measured item in the transfer plan. */
-export interface SizedItem {
-  ref: string;
-  kind: "volume" | "bind" | "image" | "path";
-  /** Apparent bytes, or null when unmeasurable (timeout / missing). */
-  bytes: number | null;
-  /** Source existence + type for a bind/custom path (undefined for volume/image).
-   *  `exists:false` → the plan warns; the run would park `partial` for it. */
-  exists?: boolean;
-  type?: "dir" | "file";
-}
-
-/** A user-selected extra path to move: source (on source host) → dest (on target). */
-export interface CustomPath {
-  source: string;
-  dest: string;
-}
-
-export interface MigrationPreview {
-  sameServer: boolean;
-  services: MigrationPreviewService[];
-  volumesToMove: string[];
-  hasBlocked: boolean;
-  downtimeWarning: boolean;
-  /** Reverse proxies that won't be imported (Openship's edge replaces them). */
-  droppedProxies: string[];
-  warnings: string[];
-  /** Cross-server transfer plan (payload sizes). Absent for same-server.
-   *  `partial` = a size couldn't be measured, so `totalBytes` is a lower bound. */
-  plan?: {
-    totalBytes: number;
-    partial: boolean;
-    items: SizedItem[];
-  };
-  /** Per kept domain: whether the source cert will be CARRIED (reused, no ACME)
-   *  or re-issued on publish. Cross-server only. */
-  sslByDomain?: Array<{ domain: string; hasCert: boolean }>;
-  /** Cross-server: each target VOLUME that already holds data (unique per
-   *  volume name — two services can share a display name). The user resolves
-   *  each (override/clone/keep) at the plan step before migrating. */
-  conflicts?: Array<{ serviceName: string; volume: string }>;
-}
-
-/** Per-VOLUME resolution for a target-volume conflict (keyed by volume name). */
-export type ConflictAction = "override" | "clone" | "keep";
-
-export type MigrationStatus =
-  | "queued"
-  | "adopting"
-  | "moving_data"
-  | "deploying"
-  | "verifying"
-  | "awaiting_cutover"
-  | "cutover"
-  | "partial"
-  | "succeeded"
-  | "failed"
-  | "rolled_back";
-
-/** A data path that didn't transfer — a `partial` run's resolvable to-do item. */
-export interface PendingItem {
-  key: string;
-  kind: "volume" | "bind" | "path";
-  source: string;
-  dest?: string;
-  serviceName?: string;
-  reason: "missing" | "denied" | "error";
-  message?: string;
-}
-
-export interface MigrationRun {
-  id: string;
-  status: MigrationStatus;
-  /**
-   * How the run was started. The first two come from a SCAN (adopt someone else's stack);
-   * the `project_*` pair from a project this instance already owns — a move relocates it, a
-   * copy leaves it running and builds a second one on the target. Both of those are
-   * cross-server by construction, so anything keying off `same_server` treats them
-   * correctly by falling through.
-   */
-  mode: "cross_server" | "same_server" | "project_move" | "project_copy";
-  projectName?: string | null;
-  projectId?: string | null;
-  deploymentId?: string | null;
-  bytesMoved?: number | null;
-  errorMessage?: string | null;
-  /** Durable session log (newline-joined) for the run detail view. */
-  logs?: string | null;
-  sourceServerId?: string | null;
-  targetServerId?: string | null;
-  serviceNames?: string[];
-  startedAt?: string | null;
-  finishedAt?: string | null;
-  /** `partial` run's unresolved paths (edit/skip → resume). */
-  pendingItems?: PendingItem[];
-  /** Volumes a run wrote to the target — a FAILED run can offer to remove these
-   *  (they're orphaned after rollback) so a retry starts clean. */
-  targetVolumes?: string[];
-  /** Snapshot of the start input — drives a failed run's edit-&-retry re-seed
-   *  (detail fetch only; stripped from the list). */
-  inputSnapshot?: Record<string, unknown> | null;
-}
-
-/** Live data-move progress during `moving_data` (in-memory, coarse per-poll).
- *  `movedBytes` is the aggregate across all tasks; `totalBytes` the scanned
- *  payload size (null when unknown — relay path — so the UI shows bytes, not a
- *  %). `task`/`kind` label the current unit. */
-export interface TransferProgress {
-  task: string;
-  kind: "image" | "volume";
-  movedBytes: number;
-  totalBytes: number | null;
-}
+// Public migration result types are shared with the CLI and SDK.
+import type { DiscoveredVolumeMount, DiscoveredService, ComposeRepoService, DiscoveredGroup, OpenshipProjectGroup, DiscoveredStack, ReimportResult, AdoptResult, MigrationPreviewService, SizedItem, CustomPath, MigrationPreview, ConflictAction, MigrationStatus, PendingItem, MigrationRun, TransferProgress } from "@repo/contracts";
+export type { DiscoveredVolumeMount, DiscoveredService, ComposeRepoService, DiscoveredGroup, OpenshipProjectGroup, DiscoveredStack, ReimportResult, AdoptResult, MigrationPreviewService, SizedItem, CustomPath, MigrationPreview, ConflictAction, MigrationStatus, PendingItem, MigrationRun, TransferProgress } from "@repo/contracts";
 
 /**
  * GH-570: an intermediary that buffers `text/event-stream` answers 200 and then
@@ -309,6 +40,10 @@ export const isScanStreamStalled = (e: unknown): e is ScanStreamStalledError =>
  * team-instance/data migration.
  */
 export const dockerMigrationApi = {
+  listSources: () => api.get<{ sources: ServerDetail[] }>(endpoints.dockerMigration.sources),
+  createSource: (input: MigrationSourceInput) => api.post<{ server: ServerDetail }>(endpoints.dockerMigration.sources, input, { timeout: 45_000 }).then(result => result.server),
+  testSource: (input: MigrationSourceInput) => api.post<{ ok: boolean; message: string; fingerprint: string }>(endpoints.dockerMigration.testSource, input, { timeout: 45_000 }),
+  deleteSource: (id: string) => api.delete<{ success: boolean }>(endpoints.dockerMigration.source(id)),
   /** Read-only: inspect a server's Docker and return the adoptable stack.
    *  SSH connect + `docker inspect` across every container easily exceeds the
    *  client's 15s default (esp. through the same-origin proxy's extra hop under
@@ -365,6 +100,7 @@ export const dockerMigrationApi = {
             signal: abort.signal,
           });
         } catch (e) {
+          observeCaughtError(e, "dashboard/lib/api/server-migration");
           clearTimeout(watchdog);
           reject(asError(e));
           return;
@@ -372,7 +108,7 @@ export const dockerMigrationApi = {
         if (!res.ok || !res.body) {
           // Watchdog stays armed across this read: a hop that stalls a stream stalls
           // an error body too, and aborting here just falls back to the status text.
-          const detail = await res.text().catch(() => res.statusText);
+          const detail = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/api/server-migration"); return res.statusText; });
           clearTimeout(watchdog);
           reject(new Error(detail));
           return;
@@ -382,7 +118,9 @@ export const dockerMigrationApi = {
         const contentType = res.headers.get("content-type") ?? "";
         if (!contentType.includes("text/event-stream")) {
           clearTimeout(watchdog);
-          void res.body.cancel().catch(() => {});
+          void res.body.cancel().catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "dashboard/lib/api/server-migration");
+          });
           reject(new ScanStreamStalledError(`200 response was "${contentType || "untyped"}"`));
           return;
         }
@@ -394,7 +132,8 @@ export const dockerMigrationApi = {
           if (settled) return;
           settled = true;
           clearTimeout(watchdog);
-          try { void reader.cancel(); } catch { /* noop */ }
+          try { void reader.cancel(); } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "dashboard/lib/api/server-migration"); /* noop */ }
           fn();
         };
         try {
@@ -429,6 +168,7 @@ export const dockerMigrationApi = {
           // like this too, so it carries the same "retry unstreamed" signal.
           if (!settled) reject(new ScanStreamStalledError("stream ended without a result"));
         } catch (e) {
+          observeCaughtError(e, "dashboard/lib/api/server-migration");
           clearTimeout(watchdog);
           if (!settled) reject(asError(e));
         }
@@ -521,17 +261,7 @@ export const dockerMigrationApi = {
     /** serviceName → domain/route to publish server-side once the target is up.
      *  `targetPath` (e.g. "/v3") marks a service serving a PATH of a shared
      *  domain (path fan-out); its absence = the root `/`. */
-    routesByServiceName?: Record<
-      string,
-      {
-        exposedPort?: string;
-        domainType: "free" | "custom";
-        domain?: string;
-        customDomain?: string;
-        targetPath?: string;
-        exact?: boolean;
-      }
-    >;
+    routesByServiceName?: MigrationServiceRoutes;
     /** serviceName → target-volume conflict resolution (override/clone/keep). */
     conflictResolution?: Record<string, ConflictAction>;
     /** Adopt Openship-managed containers too (raw Docker) — must match the scan. */
@@ -584,6 +314,9 @@ export const dockerMigrationApi = {
       endpoints.dockerMigration.migration(id),
     ),
 
+  respond: (id: string, promptId: string, action: string) =>
+    api.post<{ success: boolean }>(endpoints.dockerMigration.respond(id), { promptId, action }),
+
   /**
    * Live run SSE — the CLEAN real-time feed (like the deploy build stream):
    * byte-level `progress` (smooth bar) + session `log` lines as they happen.
@@ -606,7 +339,8 @@ export const dockerMigrationApi = {
           headers: { Accept: "text/event-stream" },
           signal: controller.signal,
         });
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/api/server-migration");
         return;
       }
       if (!res.ok || !res.body) return;
@@ -642,7 +376,8 @@ export const dockerMigrationApi = {
             }
           }
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/api/server-migration");
         /* aborted / dropped — the getMigration poll keeps state fresh */
       }
     })();

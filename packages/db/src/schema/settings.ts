@@ -1,12 +1,7 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  integer,
-  boolean,
-  jsonb,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+
+import type { AppearancePreferences } from "@repo/core";
 
 // ─── Instance Settings ───────────────────────────────────────────────────────
 
@@ -82,9 +77,7 @@ export const instanceSettings = pgTable("instance_settings", {
    * deployments can flip this to "cloud" to keep delivery routed
    * through the central relay.
    */
-  invitationMailSource: text("invitation_mail_source")
-    .notNull()
-    .default("platform"),
+  invitationMailSource: text("invitation_mail_source").notNull().default("platform"),
 
   // ── Team-mode migration ────────────────────────────────────────────────────
   //
@@ -254,6 +247,9 @@ export const userSettings = pgTable("user_settings", {
     .unique()
     .references(() => user.id, { onDelete: "cascade" }),
 
+  /** Personal themes only; never applied to another member or to deployed apps. */
+  appearance: jsonb("appearance").$type<AppearancePreferences>(),
+
   /**
    * Per-user build strategy override:
    *   "auto"   → use the stack's defaultBuildStrategy (smart per-framework)
@@ -304,6 +300,10 @@ export const userSettings = pgTable("user_settings", {
   cloneTokenEncrypted: text("clone_token_encrypted"),
   cloneTokenSetAt: timestamp("clone_token_set_at"),
   cloneTokenAsDefault: boolean("clone_token_as_default").notNull().default(false),
+
+  /** Repository OAuth grant, independent of the user's GitHub sign-in link.
+   * An encrypted disconnected marker suppresses the legacy token fallback. */
+  githubAuthorizationEncrypted: text("github_authorization_encrypted"),
 
   /**
    * What the first-time deploy nudge resolved to. Once set to anything other

@@ -3,7 +3,7 @@ import {
   auditStaticOutput,
   outputFindingIsBroken,
   staticOutputTargets,
-} from "./output-audit.service";
+} from "@repo/platform/engine/modules/deployments/output-audit.service";
 import type { BuildLogger } from "@repo/adapters";
 
 const logger = { log: vi.fn() } as unknown as BuildLogger;

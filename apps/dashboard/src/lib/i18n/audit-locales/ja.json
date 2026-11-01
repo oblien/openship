@@ -1,0 +1,698 @@
+{
+  "deployment.failed": {
+    "action": "デプロイに失敗しました",
+    "label": "デプロイ失敗",
+    "description": "デプロイが正常な状態に達する前にエラーが発生しました。"
+  },
+  "deployment.cancelled": {
+    "action": "デプロイをキャンセルしました",
+    "label": "デプロイキャンセル",
+    "description": "デプロイが完了する前に停止されました。"
+  },
+  "deployment:write": {
+    "action": "のデプロイを開始しました:",
+    "actionWithoutResource": "デプロイを開始しました",
+    "label": "デプロイアクション",
+    "description": "デプロイエンドポイントが呼び出されました（開始、再試行、ロールバック、昇格）。"
+  },
+  "deployment:admin": {
+    "action": "のデプロイで管理者アクションを実行しました:",
+    "actionWithoutResource": "デプロイで管理者アクションを実行しました",
+    "label": "デプロイ管理者アクション",
+    "description": "デプロイで管理者アクションが呼び出されました。"
+  },
+  "project.created": {
+    "label": "アプリを作成",
+    "action": "が作成しました",
+    "description": "新しいアプリとその構成が作成されました。"
+  },
+  "project.updated": {
+    "label": "アプリを更新",
+    "action": "が更新しました",
+    "description": "設定、サービス、環境変数、またはルーティングが変更されました。"
+  },
+  "project.deleted": {
+    "label": "アプリを削除",
+    "action": "が削除しました",
+    "description": "アプリとそのワークロードが削除されました。"
+  },
+  "project.deletion.rejected": {
+    "label": "アプリ削除の拒否",
+    "action": "を削除しようとしました",
+    "description": "削除が拒否されました — 他のリソースがまだこのアプリに依存しています。"
+  },
+  "project.deletion.failed": {
+    "label": "アプリ削除の失敗",
+    "action": "の削除に失敗しました",
+    "description": "クリーンアップが完了しなかったため、安全に再試行できるようアプリの記録が保持されました。"
+  },
+  "project.build_cache.cleared": {
+    "label": "ビルドキャッシュをクリア",
+    "action": "のDockerビルドキャッシュをクリアしました",
+    "description": "未使用のビルドキャッシュがアプリのDockerホストから削除されました。"
+  },
+  "project:write": {
+    "action": "変更しました",
+    "label": "プロジェクト変更",
+    "description": "アプリ書き込みエンドポイントが呼び出されました。"
+  },
+  "job:write": {
+    "action": "ジョブを変更しました",
+    "actionWithoutResource": "ジョブを変更しました",
+    "label": "ジョブ変更",
+    "description": "スケジュールまたはカスタムジョブが作成、編集、実行、または削除されました。"
+  },
+  "job_run.started": {
+    "action": "ジョブを開始しました",
+    "actionWithoutResource": "ジョブを開始しました",
+    "label": "ジョブ開始"
+  },
+  "job_run.succeeded": {
+    "action": "ジョブを正常に実行しました",
+    "actionWithoutResource": "ジョブを正常に実行しました",
+    "label": "ジョブ成功"
+  },
+  "job_run.failed": {
+    "action": "失敗したジョブを実行しました",
+    "actionWithoutResource": "失敗したジョブを実行しました",
+    "label": "ジョブ失敗"
+  },
+  "service.down": {
+    "label": "アプリが停止",
+    "action": "の停止を報告しました",
+    "description": "実行中であるべきコンテナが停止しています。"
+  },
+  "service.crash_loop": {
+    "label": "アプリがクラッシュループ中",
+    "action": "のクラッシュループを報告しました",
+    "description": "コンテナが安定して動作せず再起動を繰り返しています。"
+  },
+  "service.unhealthy": {
+    "label": "アプリのヘルスチェック異常",
+    "action": "のヘルスチェック失敗を報告しました",
+    "description": "コンテナは実行中ですが、ヘルスチェックに失敗しています。"
+  },
+  "service.recovered": {
+    "label": "アプリが回復",
+    "action": "の回復を報告しました",
+    "description": "障害が解消し、コンテナが再び正常に稼働しています。"
+  },
+  "server:write": {
+    "action": "サーバーを変更しました",
+    "label": "サーバー変更"
+  },
+  "server:admin": {
+    "action": "サーバーで管理者アクションを実行しました",
+    "label": "サーバー管理者操作",
+    "description": "サーバーの破棄操作（削除またはコンポーネントインストール）が呼び出されました。"
+  },
+  "terminal:write": {
+    "action": "ターミナルを開きました：",
+    "label": "ターミナルセッション開始",
+    "description": "サーバー上で対話型シェルセッションが開始されました。"
+  },
+  "settings:write": {
+    "action": "設定を変更しました",
+    "label": "設定変更"
+  },
+  "settings:admin": {
+    "action": "設定で管理者アクションを実行しました",
+    "label": "設定管理者操作",
+    "description": "破壊的なシステム設定操作が呼び出されました。"
+  },
+  "notification_channel.created": {
+    "action": "通知チャンネルを追加しました",
+    "actionWithoutResource": "通知チャンネルを追加しました",
+    "label": "通知チャンネル追加"
+  },
+  "notification_channel.updated": {
+    "action": "通知チャンネルを更新しました",
+    "actionWithoutResource": "通知チャンネルを更新しました",
+    "label": "通知チャンネル更新"
+  },
+  "notification_channel.deleted": {
+    "action": "通知チャンネルを削除しました",
+    "actionWithoutResource": "通知チャンネルを削除しました",
+    "label": "通知チャンネル削除"
+  },
+  "notification_subscription.updated": {
+    "action": "への通知先設定を変更しました",
+    "actionWithoutResource": "通知ルーティングを変更しました",
+    "label": "通知ルーティング変更"
+  },
+  "notification_subscription.deleted": {
+    "action": "への通知を停止しました",
+    "actionWithoutResource": "通知を停止しました",
+    "label": "通知停止"
+  },
+  "notification_default.updated": {
+    "action": "の通知デフォルトを変更しました",
+    "actionWithoutResource": "通知デフォルトを変更しました",
+    "label": "通知デフォルト変更",
+    "description": "組織のデフォルトの通知ルーティングが更新されました。"
+  },
+  "notification_delivery.seen": {
+    "action": "既読にしました",
+    "actionWithoutResource": "既読にしました",
+    "label": "アラートを既読に設定"
+  },
+  "notifications:write": {
+    "action": "通知を変更しました",
+    "actionWithoutResource": "通知を変更しました",
+    "label": "通知変更"
+  },
+  "notifications:admin": {
+    "action": "通知の管理者アクションを実行しました",
+    "actionWithoutResource": "通知の管理者アクションを実行しました",
+    "label": "通知管理者アクション"
+  },
+  "deployment.succeeded": {
+    "label": "デプロイ成功",
+    "action": "デプロイしました",
+    "description": "デプロイが正常に完了し、トラフィックを処理しています。"
+  },
+  "deployment.no_changes": {
+    "label": "デプロイする変更がありません",
+    "action": "デプロイ対象の変更が見つかりませんでした",
+    "description": "すべてのサービスが最新であるため、現在のリリースが維持されました。"
+  },
+  "project:admin": {
+    "label": "アプリ管理者アクション",
+    "action": "アプリの管理者操作を実行しました",
+    "description": "アプリの破棄操作（削除または転送）が呼び出されました。"
+  },
+  "project:service:write": {
+    "label": "サービス変更",
+    "action": "サービスを変更しました",
+    "description": "サービスが作成、更新、開始、停止、または再起動されました。"
+  },
+  "project:service:admin": {
+    "label": "サービス管理者アクション",
+    "action": "サービスの管理者操作を実行しました"
+  },
+  "service.exec": {
+    "label": "サービス内コマンド実行",
+    "action": "サービス内でコマンドを実行しました",
+    "description": "サービスのコンテナ内でシェルコマンドが実行されました。"
+  },
+  "domain.added": {
+    "label": "ドメイン追加",
+    "action": "ドメインを追加しました"
+  },
+  "domain.removed": {
+    "label": "ドメイン削除",
+    "action": "ドメインを削除しました"
+  },
+  "domain.verified": {
+    "label": "ドメイン確認済み",
+    "action": "ドメインを確認しました",
+    "description": "DNSレコードが確認され、証明書が正常に発行されました。"
+  },
+  "domain.verification_failed": {
+    "label": "ドメイン確認失敗",
+    "action": "ドメインを確認できませんでした",
+    "description": "DNSチェックまたは証明書の発行に失敗しました。"
+  },
+  "domain.verify_failed": {
+    "label": "ドメイン確認失敗",
+    "action": "ドメインを確認できませんでした",
+    "description": "DNSチェックまたは証明書の発行に失敗しました。"
+  },
+  "domain.set_primary": {
+    "label": "プライマリドメイン設定",
+    "action": "プライマリドメインとして設定しました",
+    "description": "他のドメインへのトラフィックはこのドメインにリダイレクトされます。"
+  },
+  "domain.dns_provisioned": {
+    "label": "DNS自動プロビジョニング",
+    "action": "DNSを設定しました",
+    "description": "接続されたプロバイダー経由でDNSレコードが作成されました。"
+  },
+  "domain.cert_uploaded": {
+    "label": "独自証明書アップロード",
+    "action": "独自証明書をアップロードしました",
+    "description": "Let's Encryptの代わりに独自のSSL証明書がアップロードされました。"
+  },
+  "ssl.renewal_failed": {
+    "label": "SSL更新失敗",
+    "action": "SSLを更新できませんでした",
+    "description": "証明書の自動更新が失敗しました。"
+  },
+  "credential.created": {
+    "label": "資格情報作成",
+    "action": "資格情報を追加しました",
+    "description": "レジストリキー、プロバイダートークン、またはSSHキーが保存されました。"
+  },
+  "credential.updated": {
+    "label": "資格情報更新",
+    "action": "資格情報を更新しました",
+    "description": "保存された資格情報が編集されました。"
+  },
+  "credential.deleted": {
+    "label": "資格情報削除",
+    "action": "資格情報を削除しました",
+    "description": "保存された資格情報が削除されました。"
+  },
+  "credential.verified": {
+    "label": "資格情報検証済み",
+    "action": "資格情報を検証しました",
+    "description": "リモートサービスに対して資格情報が正常に確認されました。"
+  },
+  "dns_credential.connected": {
+    "label": "DNSプロバイダー接続",
+    "action": "DNSプロバイダーを接続しました",
+    "description": "ドメイン自動管理用のDNS資格情報が設定されました。"
+  },
+  "dns_credential.disconnected": {
+    "label": "DNSプロバイダー切断",
+    "action": "DNSプロバイダーを切断しました",
+    "description": "DNS APIへのアクセスが削除されました。既存のレコードはそのまま保持されます。"
+  },
+  "domain:write": {
+    "label": "ドメイン変更",
+    "action": "ドメインを変更しました",
+    "description": "ドメインエンドポイントが呼び出されました — 追加、検証、サービスルーティング。"
+  },
+  "domain:admin": {
+    "label": "ドメイン管理者アクション",
+    "action": "ドメインの管理者操作を実行しました"
+  },
+  "server.added": {
+    "label": "サーバー追加",
+    "action": "サーバーを追加しました"
+  },
+  "server.updated": {
+    "label": "サーバー更新",
+    "action": "サーバーを更新しました"
+  },
+  "server.removed": {
+    "label": "サーバー削除",
+    "action": "サーバーを削除しました"
+  },
+  "server.removal.rejected": {
+    "label": "サーバー削除拒否",
+    "action": "サーバーを削除しようとしました",
+    "description": "ワークロードが実行中のためサーバーを削除できません。"
+  },
+  "server.exec": {
+    "label": "サーバー上コマンド実行",
+    "action": "サーバー上でコマンドを実行しました",
+    "description": "ホスト上でシェルコマンドが実行されました。"
+  },
+  "server.unreachable": {
+    "label": "サーバー到達不能",
+    "action": "サーバー到達不能を報告しました",
+    "description": "OpenshipはこのサーバーへのSSH接続を開けませんでした。"
+  },
+  "server.reachable": {
+    "label": "サーバー再接続完了",
+    "action": "サーバーへの再到達を報告しました"
+  },
+  "migration.source_connected": {
+    "label": "移行元接続完了",
+    "action": "移行元を接続しました",
+    "description": "プロジェクトをインポートするために外部SSHサーバーが接続されました。"
+  },
+  "migration.source_disconnected": {
+    "label": "移行元切断",
+    "action": "移行元を切断しました",
+    "description": "保存された移行接続が削除されました。"
+  },
+  "mail_server:write": {
+    "label": "メールサーバー変更",
+    "action": "メールサーバーを変更しました",
+    "description": "メールサーバーのエンドポイントが呼び出されました。"
+  },
+  "mail_server:admin": {
+    "label": "メールサーバー管理者アクション",
+    "action": "メールサーバーの管理者操作を実行しました"
+  },
+  "mail.inbound_received": {
+    "label": "受信メール到着",
+    "action": "通知ルールに一致するメールを受信しました",
+    "actionWithoutResource": "メールを受信しました"
+  },
+  "identity.provisioned": {
+    "label": "IDプロビジョニング完了",
+    "action": "IDをプロビジョニングしました",
+    "description": "信頼できるホストが外部IDをOpenshipユーザーにマッピングしました。"
+  },
+  "organization.created": {
+    "label": "組織作成",
+    "action": "組織を作成しました"
+  },
+  "organization.deleted": {
+    "label": "組織削除",
+    "action": "組織を削除しました"
+  },
+  "organization.deletion.blocked": {
+    "label": "組織の削除が拒否されました",
+    "action": "組織を削除しようとしました",
+    "description": "削除拒否 — アクティブなリソースまたは請求がまだ関連付けられています。"
+  },
+  "member.added": {
+    "label": "メンバー追加",
+    "action": "追加しました"
+  },
+  "member.removed": {
+    "label": "メンバー削除",
+    "action": "削除しました"
+  },
+  "member.role_changed": {
+    "label": "メンバーロール変更",
+    "action": "ロールを変更しました"
+  },
+  "member.updated": {
+    "label": "メンバーシップ更新",
+    "action": "メンバーシップを変更しました",
+    "description": "信頼できるホストが組織メンバーシップを追加、変更、または削除しました。"
+  },
+  "member.joined": {
+    "label": "メンバー参加完了",
+    "action": "参加しました",
+    "description": "招待されたユーザーが招待を受け入れ、アクセス権を取得しました。"
+  },
+  "member.invited": {
+    "label": "メンバー招待",
+    "action": "招待しました"
+  },
+  "member.removal.grant_cleanup_failed": {
+    "label": "削除メンバーの権限クリーンアップ失敗",
+    "action": "未削除の権限を残したまま削除しました",
+    "description": "メンバーは削除されましたが権限が残っています — 手動で確認してください。"
+  },
+  "member.removal.subscription_cleanup_failed": {
+    "label": "削除メンバーの請求クリーンアップ失敗",
+    "action": "サブスクリプションを残したまま削除しました",
+    "description": "メンバーは削除されましたがサブスクリプションが残っています — 請求を確認してください。"
+  },
+  "invitation.created": {
+    "label": "招待作成",
+    "action": "招待しました"
+  },
+  "invitation.sent": {
+    "label": "権限付き招待送信",
+    "action": "保留中の権限を付けて招待しました",
+    "description": "権限がキューに追加され、招待者が参加した瞬間に適用されます。"
+  },
+  "invitation.resent": {
+    "label": "招待再送信",
+    "action": "招待を更新しました",
+    "description": "招待の有効期限とキーが更新されました。"
+  },
+  "invitation.accepted": {
+    "label": "招待受諾",
+    "action": "招待を承諾しました"
+  },
+  "invitation.rejected": {
+    "label": "招待辞退",
+    "action": "招待を辞退しました"
+  },
+  "invitation.cancelled": {
+    "label": "招待取り消し",
+    "action": "招待を取り消しました"
+  },
+  "team.created": {
+    "label": "チーム作成",
+    "action": "チームを作成しました"
+  },
+  "grant.granted": {
+    "label": "権限付与",
+    "action": "権限を付与しました"
+  },
+  "grant.revoked": {
+    "label": "権限取り消し",
+    "action": "権限を取り消しました"
+  },
+  "grant.replaced": {
+    "label": "権限置換",
+    "action": "権限を置き換えました",
+    "description": "既存の権限が別のスコープで上書きされました。"
+  },
+  "grant.materialized": {
+    "label": "保留中権限適用",
+    "action": "保留中の権限が適用されました",
+    "description": "招待に添付された権限が参加時に適用されました。"
+  },
+  "permissions:write": {
+    "label": "権限変更",
+    "action": "権限を変更しました"
+  },
+  "permissions:admin": {
+    "label": "権限管理者アクション",
+    "action": "権限の管理者操作を実行しました"
+  },
+  "mcp.authorized": {
+    "label": "MCPクライアント承認",
+    "action": "MCPクライアントを承認しました",
+    "description": "AIエージェントが接続され、動作スコープが付与されました。"
+  },
+  "mcp.scope_changed": {
+    "label": "MCPアクセス権変更",
+    "action": "MCPクライアントのアクセス権を変更しました",
+    "description": "接続されたエージェントのスコープが編集されました。"
+  },
+  "mcp.disconnected": {
+    "label": "MCPクライアント切断",
+    "action": "MCPクライアントを切断しました",
+    "description": "接続されたエージェントのトークンとアクセス権が失効しました。"
+  },
+  "mcp.tool_called": {
+    "label": "AIツール呼び出し",
+    "action": "MCPツールを実行しました",
+    "description": "MCPクライアントによってOpenshipツールが実行されました。"
+  },
+  "admin.bootstrapped": {
+    "label": "初期管理者アカウント作成",
+    "action": "最初の管理者アカウントを作成しました",
+    "description": "インスタンスの初期オーナーが作成されました。"
+  },
+  "admin.password_reset": {
+    "label": "管理者パスワードリセット",
+    "action": "管理者パスワードをリセットしました"
+  },
+  "auth-mode-changed": {
+    "label": "サインインモード変更",
+    "action": "サインインモードを変更しました",
+    "description": "インスタンスがシングルユーザーと完全認証の間で切り替えられました。"
+  },
+  "instance.data.exported": {
+    "label": "インスタンスデータエクスポート",
+    "action": "すべてのインスタンスデータをエクスポートしました",
+    "description": "完全なデータベースダンプがこのインスタンスから出力されました。"
+  },
+  "instance.data.receive_code_created": {
+    "label": "データ転送受信コード作成",
+    "action": "直接データ転送受信コードを作成しました",
+    "description": "インスタンスデータを直接受信するための短期コードが作成されました。"
+  },
+  "instance.data.sent": {
+    "label": "インスタンスデータ送信",
+    "action": "別のインスタンスにデータを送信しました",
+    "description": "選択したインスタンスデータが別のインスタンスに直接転送されました。"
+  },
+  "instance.data.imported": {
+    "label": "インスタンスデータインポート",
+    "action": "インスタンスデータをインポートしました",
+    "description": "別のインスタンスからのデータベースダンプが読み込まれました。"
+  },
+  "instance.move_requested": {
+    "label": "コントロールプレーン移行要求",
+    "action": "別のインスタンスへの移行を要求しました",
+    "description": "管理者がデータと制御の移行を要求しました。"
+  },
+  "instance.server_move_requested": {
+    "label": "サーバーへの移行要求",
+    "action": "サーバーへのコントロールプレーン移行を要求しました",
+    "description": "管理者が選択したサーバーでのホストを要求しました。"
+  },
+  "audit.disabled": {
+    "label": "アクティビティ記録無効化",
+    "action": "アクティビティ記録を無効にしました",
+    "description": "記録が再度有効になるまで、アクションは記録されません。"
+  },
+  "audit.enabled": {
+    "label": "アクティビティ記録有効化",
+    "action": "アクティビティ記録を有効にしました"
+  },
+  "audit.retention_changed": {
+    "label": "アクティビティ保持期間変更",
+    "action": "アクティビティ保持期間を変更しました"
+  },
+  "audit:write": {
+    "label": "アクティビティ設定変更",
+    "action": "アクティビティ設定を変更しました"
+  },
+  "billing.hard_cap_tripped": {
+    "label": "利用限度額到達",
+    "action": "利用限度額に達しました",
+    "description": "Cloudリソースが一時停止された可能性があります — 請求を確認してください。"
+  },
+  "billing.credit_low": {
+    "label": "Cloudクレジット残高少",
+    "action": "クレジット限度額に近づきました",
+    "description": "ワークロードが中断される前に残高を確認してください。"
+  },
+  "billing.credit_exhausted": {
+    "label": "クレジット使い切り",
+    "action": "クレジットを使い切りました",
+    "description": "チャージまたは月次リセットまで使用が停止されます。"
+  },
+  "billing.credit_restored": {
+    "label": "クレジット復元",
+    "action": "クレジットを復元しました"
+  },
+  "billing.anniversary_reset": {
+    "label": "月次クレジットリセット",
+    "action": "月次クレジットをリセットしました"
+  },
+  "quota.threshold_fired": {
+    "label": "使用量しきい値超過",
+    "action": "使用量しきい値を超過しました"
+  },
+  "billing:write": {
+    "label": "請求アクション",
+    "action": "請求を変更しました",
+    "description": "請求エンドポイントが呼び出されました。"
+  },
+  "billing:admin": {
+    "label": "請求管理者アクション",
+    "action": "請求の管理者操作を実行しました",
+    "description": "サブスクリプション解約などの操作が呼び出されました。"
+  },
+  "settings.updated": {
+    "label": "設定更新",
+    "action": "設定を更新しました"
+  },
+  "updates:write": {
+    "label": "システム更新",
+    "action": "更新プログラムを確認または適用しました",
+    "description": "Openshipコンポーネントの更新が実行されました。"
+  },
+  "cloud.disconnect": {
+    "label": "Cloud切断",
+    "action": "Cloud連携を切断しました"
+  },
+  "cloud:write": {
+    "label": "Cloud操作",
+    "action": "Cloud連携を変更しました",
+    "description": "Cloudエンドポイントが呼び出されました。"
+  },
+  "cloud:admin": {
+    "label": "Cloud管理者アクション",
+    "action": "Cloudの管理者操作を実行しました"
+  },
+  "github.install": {
+    "label": "GitHub App インストール",
+    "action": "GitHub Appをインストールしました"
+  },
+  "github.source.created": {
+    "label": "GitHubリポジトリ追加",
+    "action": "GitHubリポジトリを追加しました",
+    "description": "プロジェクトソースとしてGitHubリポジトリが追加されました。"
+  },
+  "github.source.updated": {
+    "label": "GitHubリポジトリ更新",
+    "action": "GitHubリポジトリを更新しました",
+    "description": "GitHubソースの設定が変更されました。"
+  },
+  "github.source.verified": {
+    "label": "GitHubリポジトリ検証完了",
+    "action": "GitHubアクセスを確認しました"
+  },
+  "github.source.defaulted": {
+    "label": "デフォルトGitHubリポジトリ設定",
+    "action": "デフォルトリポジトリに設定しました"
+  },
+  "github.source.deleted": {
+    "label": "GitHubリポジトリ削除",
+    "action": "GitHubリポジトリを削除しました",
+    "description": "GitHubリポジトリへのリンクが削除されました。"
+  },
+  "github.connect": {
+    "label": "GitHubアカウント接続",
+    "action": "GitHubアカウントを接続しました"
+  },
+  "github.installation.claim": {
+    "label": "GitHubインストール関連付け",
+    "action": "GitHubインストールを関連付けました"
+  },
+  "github.disconnect": {
+    "label": "GitHubアカウント切断",
+    "action": "GitHubアカウントを切断しました"
+  },
+  "github.repo.create": {
+    "label": "GitHubリポジトリ作成",
+    "action": "GitHub上にリポジトリを作成しました"
+  },
+  "github.repo.delete": {
+    "label": "GitHubリポジトリ削除",
+    "action": "GitHub上のリポジトリを削除しました"
+  },
+  "github.webhook.register": {
+    "label": "GitHub Webhook登録",
+    "action": "GitHub Webhookを登録しました"
+  },
+  "github.webhook.delete": {
+    "label": "GitHub Webhook削除",
+    "action": "GitHub Webhookを削除しました"
+  },
+  "github.instance_token.set": {
+    "label": "GitHubインスタンストークン設定",
+    "action": "GitHubインスタンストークンを設定しました",
+    "description": "インスタンス用の独自GitHub Appトークンが設定されました。"
+  },
+  "github:write": {
+    "label": "GitHub操作",
+    "action": "GitHub連携を変更しました"
+  },
+  "github:admin": {
+    "label": "GitHub管理者アクション",
+    "action": "GitHubの管理者操作を実行しました"
+  },
+  "backup_run.succeeded": {
+    "label": "バックアップ成功",
+    "action": "バックアップを正常に作成しました"
+  },
+  "backup_run.failed": {
+    "label": "バックアップ失敗",
+    "action": "バックアップの作成に失敗しました"
+  },
+  "backup_restore.completed": {
+    "label": "バックアップ復元完了",
+    "action": "バックアップから正常に復元しました"
+  },
+  "backup_restore.failed": {
+    "label": "バックアップ復元失敗",
+    "action": "バックアップからの復元に失敗しました"
+  },
+  "backup.webhook.fired": {
+    "label": "バックアップWebhook送信",
+    "action": "バックアップWebhookを送信しました"
+  },
+  "backup.webhook.disabled": {
+    "label": "バックアップWebhook無効化",
+    "action": "バックアップWebhookを無効にしました",
+    "description": "配信失敗が繰り返されたため無効化されました。"
+  },
+  "backup_destination:write": {
+    "label": "バックアップ先変更",
+    "action": "バックアップ先を変更しました"
+  },
+  "backup_destination:admin": {
+    "label": "バックアップ先管理者アクション",
+    "action": "バックアップ先の管理者操作を実行しました"
+  },
+  "backup_destination:backup_policy:write": {
+    "label": "バックアップポリシー変更",
+    "action": "バックアップポリシーを変更しました"
+  },
+  "backup_destination:backup_run:write": {
+    "label": "バックアップ実行変更",
+    "action": "バックアップ実行を変更しました"
+  },
+  "backup_destination:backup_restore:write": {
+    "label": "バックアップ復元変更",
+    "action": "バックアップ復元を変更しました"
+  }
+}

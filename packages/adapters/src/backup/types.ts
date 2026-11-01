@@ -21,7 +21,7 @@ import type { Readable } from "node:stream";
  *  into the DB. Everything an executor or producer might need about
  *  the service is on this handle. */
 export interface ServiceHandle {
-  /** Stable service id from the DB. */
+  /** Stable source id: a service, standalone project, or mail server. */
   id: string;
   projectId: string;
   /** Compose-style service name; used for hostnames + container names. */
@@ -33,7 +33,7 @@ export interface ServiceHandle {
    *  `pg_dump -U $POSTGRES_USER` etc. The orchestrator decrypts the
    *  per-service env_vars before constructing the handle. */
   env: Record<string, string>;
-  /** Raw compose-syntax volume strings from `service.volumes`. The
+  /** Declared persistent volumes in Compose syntax. The
    *  executor parses these to discover sources. */
   volumes: string[];
   /** Runtime-specific container/workspace id when the service is
@@ -61,6 +61,9 @@ export interface ServiceHandle {
    *  fallback in listSources resolves the same name deploy used. False for
    *  grandfathered pre-migration services (bare names). */
   namespaceVolumes: boolean;
+  /** Migration includes bind-mounted config files; default backups keep their
+   * existing directory/volume selection. */
+  includeFileBinds?: boolean;
 }
 
 export interface ExecExitInfo {
@@ -75,6 +78,8 @@ export interface ExecExitInfo {
 /** The set of physical sources an executor can pull bytes out of for a
  *  given service. Producers iterate this to decide what to back up. */
 export interface BackupSource {
+  /** False for a single bind-mounted file when explicitly requested. */
+  isDirectory?: boolean;
   /** Opaque id understood by the executor — typically the path or
    *  volume name. */
   id: string;
@@ -107,10 +112,14 @@ export interface ExecuteCommandOpts {
   /** Absolute ceiling regardless of traffic, behind `idleTimeoutMs`. Docker
    *  exec default 6 hours, matching capture/restore helpers. */
   timeoutMs?: number;
+  /** Cancel a command/restore owned by this operation. */
+  signal?: AbortSignal;
 }
 
 export interface StreamPathOpts {
   compression?: PayloadCompression;
+  /** A migration may intentionally copy an empty source; backups stay strict. */
+  allowEmpty?: boolean;
   /** Glob-ish patterns to exclude (passed to tar `--exclude`). */
   exclude?: string[];
   /**
@@ -150,6 +159,8 @@ export interface StreamPathOpts {
 
 export interface ReceiveStreamOpts {
   compression?: PayloadCompression;
+  /** Incoming archive contains one file at the canonical `file` entry. */
+  sourceIsFile?: boolean;
   /** Wipe the target before extracting. Default false — adapter-
    *  specific safer modes (delete-then-recreate volume) take precedence. */
   clearTarget?: boolean;
@@ -183,7 +194,9 @@ export interface ReceiveStreamOpts {
  *  Oblien cloud, or an SSH host. */
 export interface BackupExecutor {
   /** Identifies which RuntimeAdapter this executor pairs with. */
-  readonly runtimeName: "docker" | "bare" | "cloud";
+  readonly runtimeName: "docker" | "bare";
+  /** False when stopping the service also stops access to its filesystem. */
+  readonly supportsOfflineVolumeRestore?: boolean;
 
   /** Discover what's backupable inside a service. */
   listSources(service: ServiceHandle): Promise<BackupSource[]>;
@@ -310,6 +323,8 @@ export type { PayloadCompression, PayloadKind };
  * the config unfiltered so the two halves cannot drift again.
  */
 export interface ProducerOpts {
+  /** Store complete snapshots with reusable blocks; interpreted by the storage pipeline. */
+  incremental?: boolean;
   /** Which sources from `listSources()` to back up. Null = producer's
    *  default (usually "everything"). */
   sourceIds?: string[];
@@ -403,8 +418,9 @@ export interface ArtifactRef {
   payloadKind: PayloadKind;
   sha256: string;
   sizeBytes: number;
-  /** Lazily-resolved stream from the destination. The producer pipes
-   *  this through whatever decompression/parsing it needs. */
+  /** Lazily-resolved stream from the destination. Finish validation
+   *  before opening, and open before clearing or writing target data: the
+   *  orchestrator records that writes may begin when it hands out this stream. */
   open: () => Promise<Readable>;
 }
 
@@ -445,6 +461,7 @@ export type DestinationCapability =
   | "streamingGet"
   | "multipart"
   | "presignedGet"
+  | "rangedGet"
   | "presignedPut"
   | "quota"
   | "serverSideCopy";
@@ -460,6 +477,9 @@ export type DestinationKind =
  *  module decrypts its own secrets at construction time and discards
  *  the plaintext immediately. */
 export interface BackupDestinationRow {
+  /** Trusted execution policy, injected by the control plane at use time.
+   * Never persisted or accepted from a destination's configuration. */
+  publicNetworkOnly?: boolean;
   id: string;
   organizationId: string;
   name: string;
@@ -471,6 +491,9 @@ export interface BackupDestinationRow {
   sshHost: string | null;
   sshPort: number | null;
   sshUser: string | null;
+  /** Existing host identity pinned on a saved server; never discard it when
+   * hydrating an openship_server destination. Base64 SSH public host key. */
+  sshHostKey?: string | null;
   /** When kind="openship_server" this is the user's servers.id. The
    *  apps/api layer hydrates SSH creds from that server BEFORE handing
    *  the row to resolveDestination — the adapter never queries the DB. */
@@ -534,7 +557,8 @@ export interface BackupDestination {
   preflight(): Promise<{ ok: true } | { ok: false; reason: string }>;
 
   put(key: string, body: Readable, opts: PutOpts): Promise<PutResult>;
-  get(key: string): Promise<Readable>;
+  /** Ranges require the rangedGet capability; offsets are inclusive. */
+  get(key: string, options?: { range?: { start: number; end: number } }): Promise<Readable>;
   head(key: string): Promise<HeadInfo | null>;
   list(prefix: string, opts?: ListOpts): Promise<ListPage>;
   delete(key: string): Promise<void>;
@@ -576,7 +600,7 @@ export interface BackupTrigger {
  *  destination directory. Self-contained: anyone with destination
  *  access can hand-restore by reading this file. */
 export interface BackupManifest {
-  version: 1;
+  version: 1 | 2;
   runId: string;
   projectId: string;
   projectSlug: string;

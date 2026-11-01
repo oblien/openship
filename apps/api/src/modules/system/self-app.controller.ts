@@ -16,21 +16,22 @@
  * No new routing/SSL machinery — Openship deploys itself with its own tools.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import type { ImportedSite, ManualCert } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { SYSTEM, safeErrorMessage } from "@repo/core";
-import { sshManager } from "../../lib/ssh-manager";
-import { env } from "../../config";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { env } from "@repo/platform/engine/config/index";
 import { assertNotCloud, platform } from "../../lib/controller-helpers";
 import { ensureLocalUser } from "../../lib/local-user";
-import { createProject } from "../projects/project-crud.service";
-import { getCloudConnectionStatusForOrg } from "../../lib/cloud/session";
-import { ensureManagedEdgeProxy, ManagedEdgeError } from "../../lib/managed-edge-proxy";
+import { createProject } from "@repo/platform/engine/modules/projects/project-crud.service";
+import { getCloudConnectionStatusForOrg } from "@repo/platform/engine/lib/cloud/session";
+import { ensureManagedEdgeProxy, ManagedEdgeError } from "@repo/platform/engine/lib/managed-edge-proxy";
 import { ensureAdoptDeployment, provisionSelfAppEdge } from "../../lib/startup/self-deploy";
-import { ensureLocalServer } from "../../lib/startup/self-server";
-import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
-import { refreshSelfAppPublicUrl } from "../../lib/public-url";
+import { ensureLocalServer } from "@repo/platform/engine/lib/startup/self-server";
+import { reapplyProjectLiveRoutes } from "@repo/platform/engine/modules/domains/project-route.service";
+import { refreshSelfAppPublicUrl } from "@repo/platform/engine/lib/public-url";
 import { streamSSE } from "../../lib/sse";
 import {
   createSetupSession,
@@ -39,7 +40,7 @@ import {
   appendSetupLog,
   finishSetupSession,
   subscribeSetupSession,
-} from "./setup-session";
+} from "@repo/platform/engine/modules/system/setup-session";
 
 const APP_SLUG = "openship";
 const APP_TEMPLATE_ID = "openship";
@@ -63,7 +64,7 @@ export async function foundingAdminId(): Promise<string | null> {
 }
 
 async function resolveOrg(): Promise<{ userId: string; organizationId: string }> {
-  const linked = await repos.settings.listCloudLinkedOrgIds().catch(() => [] as string[]);
+  const linked = await repos.settings.listCloudLinkedOrgIds().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller"); return [] as string[]; });
   if (linked.length > 0) {
     const organizationId = linked[0];
     return { userId: organizationId.replace(/^org_/, ""), organizationId };
@@ -120,14 +121,14 @@ export async function cloudConnect(c: Context) {
   const guard = assertNotCloud(c); if (guard) return guard;
   const body = await c.req
     .json<{ code?: string; codeVerifier?: string }>()
-    .catch(() => ({}) as { code?: string; codeVerifier?: string });
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller"); return ({}) as { code?: string; codeVerifier?: string }; });
   if (!body.code) return c.json({ error: "code is required" }, 400);
 
   try {
     const { exchangeCodeWithCloud, mirrorCloudUser, storeCloudSession } = await import(
       "../../lib/cloud-auth-proxy"
     );
-    const { clearAuthModeCache, isAuthModePinned } = await import("../../lib/auth-mode");
+    const { clearAuthModeCache, isAuthModePinned } = await import("@repo/platform/engine/lib/auth-mode");
     const data = await exchangeCodeWithCloud(body.code, body.codeVerifier);
     if (!data) return c.json({ error: "Could not verify with Openship Cloud" }, 401);
     const email = (data.user as { email?: string | null }).email ?? null;
@@ -145,7 +146,9 @@ export async function cloudConnect(c: Context) {
       // queries the admin row directly — NOT resolveOrg()/ensureLocalUser(), which
       // would miss the renamed local user and provision a phantom org.
       await storeCloudSession(adminId, data.sessionToken);
-      await ensureLocalServer().catch(() => {});
+      await ensureLocalServer().catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+      });
       return c.json({
         ok: true,
         userId: adminId,
@@ -160,7 +163,9 @@ export async function cloudConnect(c: Context) {
     // The mirror just made this box's founding admin, so its "This Server" row is
     // now registerable — and this is the EARLIEST point on the free-domain install
     // where that's true (bootstrap-admin will 409 on the very admin created here).
-    await ensureLocalServer().catch(() => {});
+    await ensureLocalServer().catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+    });
     // Fresh box → local login becomes cloud-backed (passwordless). Reuse the
     // singleton upsert; clear the cached mode so the change takes effect now.
     //
@@ -177,6 +182,7 @@ export async function cloudConnect(c: Context) {
     }
     return c.json({ ok: true, userId, organizationId: `org_${userId}`, email });
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/self-app.controller");
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
 }
@@ -209,7 +215,7 @@ export async function selfRegister(c: Context) {
      *  cert (Cloud terminates TLS). In compose the container edge owns :80, so
      *  this is omitted and only the route is registered. */
     localEdge?: boolean;
-  }>().catch(() => ({}) as Record<string, never>);
+  }>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller"); return ({}) as Record<string, never>; });
 
   const domainType = body.domainType ?? "byo";
   const dashPort = Number(body.dashPort) || env.OPENSHIP_DASHBOARD_PORT || 3001;
@@ -248,6 +254,7 @@ export async function selfRegister(c: Context) {
       host = wired.target;
       targetWarning = wired.warning;
     } catch (err) {
+      observeCaughtError(err, "api/modules/system/self-app.controller");
       // The funnel's own status: 400 unresolvable target, 409 Cloud not linked,
       // 502 upstream refusal. Preserved rather than collapsed — the wizard shows
       // this straight to the operator and each one has a different fix.
@@ -306,10 +313,13 @@ export async function selfRegister(c: Context) {
         },
       )
         .then(async (res) => {
-          await refreshSelfAppPublicUrl().catch(() => {});
+          await refreshSelfAppPublicUrl().catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+          });
           finishSetupSession(session.id, res.verified ? "completed" : "failed");
         })
         .catch((err) => {
+          observeCaughtError(err, "api/modules/system/self-app.controller");
           appendSetupLog(session.id, "edge", safeErrorMessage(err), "error");
           finishSetupSession(session.id, "failed");
         });
@@ -338,12 +348,14 @@ export async function selfRegister(c: Context) {
         isSelfApp: true,
         managedEdgeSyncedByCaller: true,
       }).catch((err) =>
-        console.warn(
-          `[self-register] free domain ${hostname} registered with Cloud but the local edge route failed: ${safeErrorMessage(err)}`,
+        errorDiagnostics.warn("api/modules/system/self-app.controller",
+          `[self-register] free domain ${hostname} registered with Cloud but the local edge route failed: ${safeErrorMessage(err)}`, err,
         ),
       );
     }
-    await refreshSelfAppPublicUrl().catch(() => {});
+    await refreshSelfAppPublicUrl().catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+    });
     return c.json({
       ok: true,
       url: `https://${hostname}`,
@@ -405,11 +417,16 @@ export async function selfRegister(c: Context) {
             sslStatus: res.verified ? "active" : "error",
             sslExpiresAt: res.expiresAt ? new Date(res.expiresAt) : undefined,
           })
-          .catch(() => {});
-        await refreshSelfAppPublicUrl().catch(() => {});
+          .catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+          });
+        await refreshSelfAppPublicUrl().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+        });
         finishSetupSession(session.id, res.verified ? "completed" : "failed");
       })
       .catch((err) => {
+        observeCaughtError(err, "api/modules/system/self-app.controller");
         appendSetupLog(session.id, "edge", safeErrorMessage(err), "error");
         finishSetupSession(session.id, "failed");
       });
@@ -432,7 +449,9 @@ export async function selfRegister(c: Context) {
       sslStatus: "external",
     });
   }
-  await refreshSelfAppPublicUrl().catch(() => {});
+  await refreshSelfAppPublicUrl().catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
+  });
   return c.json({ ok: true, url: hostname ? `https://${hostname}` : null, hostname: hostname || null });
 }
 
@@ -478,6 +497,7 @@ export async function selfEdgePreflight(c: Context) {
     const unreachable = unreachableStaticRoots(sites, { containerEdge });
     return c.json({ status, sites, warnings, unreachableStaticRoots: unreachable });
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/self-app.controller");
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
 }
@@ -502,7 +522,8 @@ export async function edgeImportSites(c: Context) {
   let body: { sites?: unknown; certPems?: unknown; staticRootOverrides?: unknown };
   try {
     body = await c.req.json();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
     return c.json({ error: "Invalid JSON body" }, 400);
   }
   if (!Array.isArray(body.sites)) return c.json({ error: "`sites` must be an array" }, 400);
@@ -533,6 +554,7 @@ export async function edgeImportSites(c: Context) {
     });
     return c.json({ registered, warnings });
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/self-app.controller");
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
 }
@@ -561,7 +583,8 @@ export async function selfRegisterStream(c: Context) {
       try {
         void sseStream.writeSSE({ event, data });
         return true;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "api/modules/system/self-app.controller");
         return false;
       }
     };

@@ -11,7 +11,7 @@
  * decrypted password ready for `withImap` / `sendMail`.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db, schema } from '../db';
 import { encryptSecret, decryptSecret } from './crypto';
@@ -29,20 +29,20 @@ export interface SessionContext {
   expiresAt: Date;
 }
 
-export async function createSession(opts: {
+/** Persist credentials only after a successful IMAP sign-in, in one write. */
+export async function saveSession(opts: {
   email: string;
-  name: string | null;
+  name?: string | null;
   password: string;
   imapHost: string;
   imapPort: number;
   smtpHost: string;
   smtpPort: number;
-}): Promise<{ id: string; expiresAt: Date }> {
-  const id = nanoid(40);
+}, existingId?: string): Promise<{ id: string; expiresAt: Date }> {
+  const id = existingId ?? nanoid(40);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + env.SESSION_TTL_SECONDS * 1000);
-  await db.insert(schema.session).values({
-    id,
+  const values = {
     email: opts.email.toLowerCase(),
     name: opts.name,
     encryptedPassword: encryptSecret(opts.password),
@@ -50,9 +50,18 @@ export async function createSession(opts: {
     imapPort: opts.imapPort,
     smtpHost: opts.smtpHost,
     smtpPort: opts.smtpPort,
-    createdAt: now,
     expiresAt,
-  });
+  };
+  if (existingId) {
+    // Re-authentication must refresh the password AND backend together. An
+    // omitted display name leaves the existing one intact (Drizzle skips it).
+    const updated = await db.update(schema.session).set(values).where(and(
+      eq(schema.session.id, id), eq(schema.session.email, values.email),
+    )).returning({ id: schema.session.id });
+    if (!updated.length) throw new Error('The session changed during sign-in. Please sign in again.');
+  } else {
+    await db.insert(schema.session).values({ id, ...values, name: opts.name ?? null, createdAt: now });
+  }
   return { id, expiresAt };
 }
 
@@ -87,8 +96,8 @@ export async function deleteSession(sessionId: string): Promise<void> {
  * overrides are set, use them - otherwise guess `mail.<domain>`.
  *
  * This is the convention iRedMail installs out of the box, and is the
- * shape openship's mail panel provisions; for other setups, the
- * sign-in endpoint accepts host/port overrides.
+ * shape Openship's mail panel provisions. Backend overrides are server-side;
+ * the sign-in endpoint accepts credentials only.
  */
 export function defaultMailHosts(email: string): {
   imapHost: string;

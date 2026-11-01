@@ -1,0 +1,247 @@
+---
+title: github repo
+description: Commands, arguments, and options for openship github repo.
+cliGroup: openship github repo
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship github repo
+
+Browse and manage repositories available to this connection
+
+```text
+openship github repo [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/github/repo#openship-github-repo-list) | List repositories with explicit pagination and filters |
+| [`get [options] <repository>`](/docs/cli/reference/github/repo#openship-github-repo-get) | Inspect a repository |
+| [`create [options] <name>`](/docs/cli/reference/github/repo#openship-github-repo-create) | Create a GitHub repository |
+| [`remove [options] <repository>`](/docs/cli/reference/github/repo#openship-github-repo-remove) | Permanently delete a GitHub repository |
+| [`branches [options] <repository>`](/docs/cli/reference/github/repo#openship-github-repo-branches) | List branches and whether another page is available |
+| [`clone-token <repository>`](/docs/cli/reference/github/repo#openship-github-repo-clone-token) | Print a short-lived clone credential; output contains a secret |
+| [`detect [options] <repository>`](/docs/cli/reference/github/repo#openship-github-repo-detect) | Detect stack, build configuration and Compose services |
+| [`files [options] <repository>`](/docs/cli/reference/github/repo#openship-github-repo-files) | List files at a repository path |
+| [`tree [options] <repository>`](/docs/cli/reference/github/repo#openship-github-repo-tree) | List the repository tree |
+| [`file [options] <repository> <path>`](/docs/cli/reference/github/repo#openship-github-repo-file) | Read a repository file and its revision |
+| [`webhook`](/docs/cli/reference/github/repo#openship-github-repo-webhook) | Manage Openship deployment webhooks on a GitHub repository |
+
+## openship github repo branches
+
+List branches and whether another page is available
+
+```text
+openship github repo branches [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+| Option | Meaning |
+| --- | --- |
+| `--page <number>` | Page number |
+
+## openship github repo clone-token
+
+Print a short-lived clone credential; output contains a secret
+
+```text
+openship github repo clone-token [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+## openship github repo create
+
+Create a GitHub repository
+
+```text
+openship github repo create [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | Repository name |
+
+| Option | Meaning |
+| --- | --- |
+| `--owner <name>` | GitHub owner or organization |
+| `--description <text>` | Repository description |
+| `--public` | Create a public repository (default: private) |
+
+## openship github repo detect
+
+Detect stack, build configuration and Compose services
+
+```text
+openship github repo detect [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch <name>` | Branch to inspect |
+| `--compose-path <path>` | Compose file to inspect |
+
+## openship github repo file
+
+Read a repository file and its revision
+
+```text
+openship github repo file [options] <repository> <path>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+| `path` | File path |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch <name>` | Branch |
+
+## openship github repo files
+
+List files at a repository path
+
+```text
+openship github repo files [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch <name>` | Branch |
+| `--path <path>` | Directory or file path |
+
+## openship github repo get
+
+Inspect a repository
+
+```text
+openship github repo get [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+| Option | Meaning |
+| --- | --- |
+| `--branches` | Include the first branch page |
+
+## openship github repo list
+
+List repositories with explicit pagination and filters
+
+```text
+openship github repo list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--owner <name>` | Repository owner filter |
+| `--org <name>` | List this GitHub organization's repositories |
+| `--page <number>` | Page number |
+| `--per-page <number>` | Page size |
+| `--search <text>` | Repository search |
+| `--visibility <type>` | Visibility filter (choices: "all", "public", "private") |
+| `--sort <field>` | Sort order (choices: "updated", "name", "stars") |
+
+## openship github repo remove
+
+Permanently delete a GitHub repository
+
+```text
+openship github repo remove [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm deletion on GitHub |
+
+## openship github repo tree
+
+List the repository tree
+
+```text
+openship github repo tree [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch <name>` | Branch |
+
+## openship github repo webhook
+
+Manage Openship deployment webhooks on a GitHub repository
+
+```text
+openship github repo webhook [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <repository>`](/docs/cli/reference/github/repo#openship-github-repo-webhook-list) | list repository webhooks |
+| [`register <repository>`](/docs/cli/reference/github/repo#openship-github-repo-webhook-register) | register repository webhooks |
+| [`remove [options] <repository> <hook>`](/docs/cli/reference/github/repo#openship-github-repo-webhook-remove) | Delete a repository webhook |
+
+## openship github repo webhook list
+
+list repository webhooks
+
+```text
+openship github repo webhook list [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+## openship github repo webhook register
+
+register repository webhooks
+
+```text
+openship github repo webhook register [options] <repository>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+
+## openship github repo webhook remove
+
+Delete a repository webhook
+
+```text
+openship github repo webhook remove [options] <repository> <hook>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repository` | owner/repo |
+| `hook` | Webhook ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm webhook removal |

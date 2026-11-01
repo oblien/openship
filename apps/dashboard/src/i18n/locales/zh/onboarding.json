@@ -7,7 +7,9 @@
   },
   "topBar": {
     "website": "官网",
-    "github": "GitHub"
+    "github": "GitHub",
+    "theme": "主题",
+    "language": "语言"
   },
   "choose": {
     "title": "欢迎使用 Openship",
@@ -29,7 +31,8 @@
       "perk3": "其余交给我们处理",
       "cta": "配置我的服务器"
     },
-    "migrateNote": "随时一键在 Cloud 与自托管之间切换，绝无绑定。"
+    "migrateNote": "随时一键在 Cloud 与自托管之间切换，绝无绑定。",
+    "skip": "暂时跳过"
   },
   "selfhost": {
     "title": "Openship 应在何处运行？",
@@ -38,7 +41,9 @@
     "local": {
       "title": "本机",
       "badge": "Beta",
-      "desc": "直接在此安装 Openship —— 无需 SSH，无需远程配置"
+      "desc": "直接在此安装 Openship —— 无需 SSH，无需远程配置",
+      "comingSoon": "本地安装即将推出。",
+      "comingSoonDesc": "目前支持在任何安装了 Docker 的 Linux 服务器上自行托管。"
     },
     "remote": {
       "title": "其他服务器",
@@ -68,7 +73,12 @@
     "jumpHostLabel": "跳板主机",
     "extraArgsLabel": "额外 SSH 参数",
     "submit": "保存并继续",
-    "tutorial": "分步配置教程"
+    "tutorial": "分步配置教程",
+    "testConnection": "测试连接",
+    "testing": "正在测试...",
+    "connected": "已连接！",
+    "testFailed": "连接失败",
+    "testHint": "请确保主机可达、22 端口已开放且凭据有效。"
   },
   "tunnel": {
     "title": "互联网访问",

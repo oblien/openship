@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMinutePeriod } from "./plan-guard";
+import { buildMinutePeriod } from "@repo/platform/engine/lib/plan-guard";
 
 /**
  * The build-minute window is the boundary a customer is refused on, so it gets
@@ -42,13 +42,22 @@ describe("buildMinutePeriod", () => {
   });
 
   it("clamps a day-31 anchor into shorter months", () => {
-    // Created Jan 31; February has no 31st. Date.UTC normalizes forward, which is
-    // the forgiving direction — the user gets their allowance slightly early
-    // rather than being locked out for a month.
     const created = at("2026-01-31T00:00:00Z");
     const { from, to } = buildMinutePeriod(created, at("2026-03-05T00:00:00Z"));
-    expect(from.getTime()).toBeLessThanOrEqual(at("2026-03-05T00:00:00Z").getTime());
-    expect(to.getTime()).toBeGreaterThan(from.getTime());
+    expect(from.toISOString()).toBe("2026-02-28T00:00:00.000Z");
+    expect(to.toISOString()).toBe("2026-03-31T00:00:00.000Z");
+  });
+
+  it.each([2026, 2028])("has no gaps or overlapping allowances at a short-month reset in %s", year => {
+    const created = at(`${year}-01-31T00:00:00Z`);
+    const january = buildMinutePeriod(created, at(`${year}-02-10T00:00:00Z`));
+    const february = buildMinutePeriod(created, january.to);
+    const march = buildMinutePeriod(created, february.to);
+    expect(january.to.toISOString()).toBe(`${year}-02-${year === 2028 ? 29 : 28}T00:00:00.000Z`);
+    expect(february.from).toEqual(january.to);
+    expect(february.to.toISOString()).toBe(`${year}-03-31T00:00:00.000Z`);
+    expect(march.from).toEqual(february.to);
+    expect(march.to.toISOString()).toBe(`${year}-04-30T00:00:00.000Z`);
   });
 
   it("spans a year boundary", () => {

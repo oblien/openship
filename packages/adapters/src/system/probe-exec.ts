@@ -32,6 +32,7 @@
  * site says so.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { safeErrorMessage } from "@repo/core";
 
 import type { ExecOnly } from "../types";
@@ -47,7 +48,8 @@ export async function tryExec(
     // Forwarded only when set: several suites assert `exec` was called with one argument,
     // and passing an explicit `undefined` would fail those without changing behavior.
     return opts ? await executor.exec(command, opts) : await executor.exec(command);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/probe-exec");
     return null;
   }
 }

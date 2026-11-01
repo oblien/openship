@@ -46,14 +46,14 @@ const ORG_SCOPED_LOOKUPS: Array<{
 }> = [
   {
     what: "build status → serverName",
-    file: "apps/api/src/modules/deployments/build-status.service.ts",
+    file: "packages/platform/src/engine/modules/deployments/build-status.service.ts",
     orgArg: "dep.organizationId",
     breaks:
       "GET build status leaks a foreign org's server name/sshHost for any serverId posted in a deploy body",
   },
   {
     what: "project enrichment → serverName",
-    file: "apps/api/src/modules/projects/project-crud.service.ts",
+    file: "packages/platform/src/engine/modules/projects/project-crud.service.ts",
     orgArg: "p.organizationId",
     breaks: "the project projection leaks a foreign org's server name/sshHost",
   },
@@ -72,7 +72,7 @@ describe("client-supplied server ids are resolved org-scoped", () => {
   }
 
   it("reconcile org-checks the snapshot serverId BEFORE probing it", () => {
-    const file = "apps/api/src/modules/deployments/reconcile.service.ts";
+    const file = "packages/platform/src/engine/modules/deployments/reconcile.service.ts";
     const src = code(read(file));
 
     const guardAt = src.indexOf("getInOrganization");

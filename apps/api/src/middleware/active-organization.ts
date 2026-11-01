@@ -13,6 +13,7 @@
  * preserved for forensic queries (who deployed, who restored).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
 import { repos } from "@repo/db";
 import { getRequestContext } from "../lib/request-context";
@@ -41,7 +42,7 @@ export async function resolveActiveOrganizationId(
   userId: string,
   sessionOrgId: string | null,
 ): Promise<string | null> {
-  const memberships = await repos.member.listByUser(userId).catch(() => []);
+  const memberships = await repos.member.listByUser(userId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/middleware/active-organization"); return []; });
   if (memberships.length === 0) return null;
   const memberOrgIds = new Set(memberships.map((m) => m.organizationId));
 
@@ -54,7 +55,7 @@ export async function resolveActiveOrganizationId(
   // membership would be unacceptable.
   const orgs = await repos.organization
     .findManyById(Array.from(memberOrgIds))
-    .catch(() => []);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/middleware/active-organization"); return []; });
   const teamOrgIds = new Set(
     orgs.filter((o) => o?.isTeam === true).map((o) => o!.id),
   );
@@ -147,7 +148,8 @@ export function requireRole(
     let userId: string;
     try {
       userId = getRequestContext(c).userId;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/middleware/active-organization");
       return c.json({ error: "Unauthorized" }, 401);
     }
 

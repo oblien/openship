@@ -6,8 +6,10 @@
 
 import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
-import { dockerMigrationRun } from "../schema";
+import { cloudWorkspace, dockerMigrationRun, project, service, servers } from "../schema";
+import { AppError } from "@repo/core";
 import { withProjectWorkAdmission } from "./project-work-admission";
+import type { DockerMigrationRecovery } from "../schema/docker-migration";
 
 export type DockerMigrationRun = typeof dockerMigrationRun.$inferSelect;
 export type NewDockerMigrationRun = typeof dockerMigrationRun.$inferInsert;
@@ -89,12 +91,16 @@ const liveExecution = and(
   isNull(dockerMigrationRun.executionFinishedAt),
 );
 
-const activeMigration = or(
+export const activeMigration = or(
   and(
     inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
     isNull(dockerMigrationRun.finishedAt),
   ),
   liveExecution,
+  // A finished callback is not enough to disconnect a source while temporary
+  // trust or stopped target containers still require recovery.
+  sql`coalesce(${dockerMigrationRun.recovery}->>'transferRunTag', '') <> ''`,
+  sql`jsonb_array_length(coalesce(${dockerMigrationRun.recovery}->'targetRunningContainerIds', '[]'::jsonb)) > 0`,
 );
 
 export function createDockerMigrationRunRepo(db: Database) {
@@ -111,6 +117,18 @@ export function createDockerMigrationRunRepo(db: Database) {
      */
     async create(data: NewDockerMigrationRun): Promise<DockerMigrationRun | undefined> {
       return withProjectWorkAdmission(db, data.projectId, data.organizationId, async (tx) => {
+        // Lifecycle requests lock these same rows. A queued/parked migration
+        // reserves both hosts before any project or remote command exists.
+        const endpoints = await tx.select({ workspaceId: servers.workspaceId }).from(servers)
+          .where(and(eq(servers.organizationId, data.organizationId),
+            inArray(servers.id, [data.sourceServerId, data.targetServerId].filter((id): id is string => !!id))));
+        for (const workspaceId of [...new Set(endpoints.flatMap(row => row.workspaceId ? [row.workspaceId] : []))].sort()) {
+          const [owner] = await tx.select().from(cloudWorkspace).where(and(
+            eq(cloudWorkspace.id, workspaceId), eq(cloudWorkspace.organizationId, data.organizationId),
+          )).for("update");
+          if (!owner || owner.deletionInProgress || (owner.operation?.kind === "resize" && owner.operation.status !== "succeeded"))
+            throw new AppError("Finish the server's current operation before migrating", 409, "CLOUD_WORKSPACE_BUSY");
+        }
         const [row] = await tx.insert(dockerMigrationRun).values(data).returning();
         return row as DockerMigrationRun;
       });
@@ -187,6 +205,7 @@ export function createDockerMigrationRunRepo(db: Database) {
               executionStartedAt: now,
               executionFinishedAt: null,
               errorMessage: null,
+              recovery: sql`${dockerMigrationRun.recovery} || ${JSON.stringify({ worker: input.from === "partial" ? "resume" : "cutover", cancelRequested: false })}::jsonb`,
             })
             .where(
               and(
@@ -322,6 +341,73 @@ export function createDockerMigrationRunRepo(db: Database) {
         .where(eq(dockerMigrationRun.id, id));
     },
 
+    async updateRecovery(id: string, patch: Partial<DockerMigrationRecovery>): Promise<void> {
+      await db.update(dockerMigrationRun).set({
+        recovery: sql`${dockerMigrationRun.recovery} || ${JSON.stringify(patch)}::jsonb`,
+        lastEventAt: new Date(),
+      }).where(eq(dockerMigrationRun.id, id));
+    },
+
+    /** The explicit migration path allowed to change a Cloud binding. Save its
+     * inverse in the same transaction before rebinding either column. */
+    async placeProject(id: string, organizationId: string, targetServerId: string): Promise<void> {
+      const snapshot = await db.query.dockerMigrationRun.findFirst({ where: and(eq(dockerMigrationRun.id, id), eq(dockerMigrationRun.organizationId, organizationId)) });
+      if (!snapshot?.projectId) throw new Error("Migration project is unavailable");
+      await db.transaction(async tx => {
+        // Match project admission/deletion lock order: project, then run.
+        const [current] = await tx.select().from(project).where(and(eq(project.id, snapshot.projectId!),
+          eq(project.organizationId, organizationId), eq(project.deletionInProgress, false), isNull(project.deletedAt))).for("update");
+        if (!current) throw new Error("Migration project is unavailable");
+        const [run] = await tx.select().from(dockerMigrationRun).where(and(eq(dockerMigrationRun.id, id),
+          eq(dockerMigrationRun.organizationId, organizationId))).for("update");
+        if (run?.projectId !== current.id || run.targetServerId !== targetServerId) throw new Error("Migration target changed");
+        if (run.status !== "adopting" || run.finishedAt) throw new Error("Migration is no longer placing its project");
+        const [target] = await tx.select().from(servers).where(and(eq(servers.id, targetServerId), eq(servers.organizationId, organizationId)));
+        if (!target || target.purpose === "migration_source") throw new Error("Migration destination is unavailable");
+        if (run.mode === "project_move" && !run.recovery.sourceProject) {
+          if (current.serverId !== run.sourceServerId) throw new Error("Migration source changed");
+          const services = await tx.select({ id: service.id, volumes: service.volumes, namespaceVolumes: service.namespaceVolumes })
+            .from(service).where(eq(service.projectId, current.id));
+          const sourceProject = { serverId: current.serverId, workspaceId: current.workspaceId, activeDeploymentId: current.activeDeploymentId, services };
+          await tx.update(dockerMigrationRun).set({ recovery: { ...run.recovery, sourceProject } }).where(eq(dockerMigrationRun.id, id));
+        }
+        await tx.execute(sql`select set_config('openship.migration_id', ${id}, true)`);
+        await tx.update(project).set({ serverId: target.id, workspaceId: target.workspaceId, updatedAt: new Date() }).where(eq(project.id, current.id));
+      });
+    },
+
+    async restoreProject(id: string, organizationId: string): Promise<void> {
+      const snapshot = await db.query.dockerMigrationRun.findFirst({ where: and(eq(dockerMigrationRun.id, id), eq(dockerMigrationRun.organizationId, organizationId)) });
+      if (!snapshot?.projectId) return;
+      await db.transaction(async tx => {
+        const [current] = await tx.select().from(project).where(and(eq(project.id, snapshot.projectId!), eq(project.organizationId, organizationId))).for("update");
+        if (!current) return;
+        const [run] = await tx.select().from(dockerMigrationRun).where(and(eq(dockerMigrationRun.id, id),
+          eq(dockerMigrationRun.organizationId, organizationId))).for("update");
+        const saved = run?.recovery.sourceProject;
+        if (run?.projectId !== current.id || !saved) return;
+        if (run.mode !== "project_move" || run.finishedAt || !["adopting", "moving_data", "deploying", "verifying", "awaiting_cutover", "partial"].includes(run.status))
+          throw new Error("Migration can no longer restore its source");
+        if (saved.serverId !== run.sourceServerId || (current.serverId !== saved.serverId && current.serverId !== run.targetServerId))
+          throw new Error("Migration project placement changed");
+        const { services, ...binding } = saved;
+        await tx.execute(sql`select set_config('openship.migration_id', ${id}, true)`);
+        await tx.update(project).set({ ...binding, updatedAt: new Date() }).where(and(eq(project.id, run.projectId), eq(project.organizationId, organizationId)));
+        for (const row of services) await tx.update(service).set({ volumes: row.volumes, namespaceVolumes: row.namespaceVolumes })
+          .where(and(eq(service.id, row.id), eq(service.projectId, run.projectId)));
+      });
+    },
+
+    async requestCancel(id: string, organizationId: string): Promise<boolean> {
+      const rows = await db.update(dockerMigrationRun).set({
+        recovery: sql`${dockerMigrationRun.recovery} || '{"cancelRequested":true}'::jsonb`,
+        lastEventAt: new Date(),
+      }).where(and(eq(dockerMigrationRun.id, id), eq(dockerMigrationRun.organizationId, organizationId),
+        inArray(dockerMigrationRun.status, ["queued", "adopting", "moving_data", "deploying", "verifying"]),
+      )).returning();
+      return rows.length > 0;
+    },
+
     /** Patch only the durable session log (no status change). Bumps lastEventAt
      *  so an actively-logging long transfer isn't seen as stale. */
     async updateLogs(id: string, logs: string): Promise<void> {
@@ -331,11 +417,14 @@ export function createDockerMigrationRunRepo(db: Database) {
         .where(eq(dockerMigrationRun.id, id));
     },
 
-    /** Every in-flight (non-terminal) run — for boot recovery, which restarts
-     *  the source containers before marking each rolled_back. */
+    /** Recover execution artifacts and retry a rolled-back run's draft deletion.
+     * Draft deletion is not live execution: teardown must not wait for itself. */
     async listInFlight(): Promise<DockerMigrationRun[]> {
       return db.query.dockerMigrationRun.findMany({
-        where: activeMigration,
+        where: or(activeMigration, and(
+          eq(dockerMigrationRun.status, "rolled_back"),
+          sql`${dockerMigrationRun.projectId} = ${dockerMigrationRun.recovery}->>'createdProjectId'`,
+        )),
       });
     },
 

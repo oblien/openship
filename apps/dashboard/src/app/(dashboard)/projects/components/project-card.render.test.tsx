@@ -1,10 +1,13 @@
 // No DOM needed: renderToStaticMarkup runs no effects, and the row is pure.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ModalProvider } from "@/context/ModalContext";
 import type { Project } from "@/constants/mock";
 import ProjectCard from "./ProjectCard";
+import ProjectGridCard from "./ProjectGridCard";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 /**
  * Two lies this row used to tell, both seen in the field on one Convex app:
@@ -116,5 +119,39 @@ describe("ProjectCard — status pill", () => {
       }),
     );
     expect(out).toContain('href="/projects/p1/domains"');
+  });
+});
+
+
+describe("ProjectGridCard — management shortcuts", () => {
+  function grid(over: Partial<Project>) {
+    return renderToStaticMarkup(
+      <I18nProvider><ProjectGridCard project={project(over)} /></I18nProvider>,
+    );
+  }
+
+  it("links to project services, deployments and logs with persisted counts", () => {
+    const html = grid({ activeDeploymentId: "d1", serviceCount: 3, activeVersion: 17 });
+    expect(html).toContain('href="/projects/p1/services"');
+    expect(html).toContain('href="/projects/p1/deployments"');
+    expect(html).toContain('href="/projects/p1/logs"');
+    expect(html).toContain('aria-label="Convex: Services"');
+    expect(text(html)).toContain("Services 3 Deployments v17 Logs");
+    // The whole-card link must not wrap the independently clickable shortcuts.
+    for (const anchor of html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/g)) {
+      expect(anchor[1]).not.toMatch(/<a\b/);
+    }
+  });
+
+  it.each([undefined, 0, -1, NaN])("hides the services shortcut when count is %s", (serviceCount) => {
+    const html = grid({ serviceCount });
+    expect(html).not.toContain('aria-label="Convex: Services"');
+    expect(text(html)).toContain("Deployments Logs");
+  });
+
+  it("opens topology for a draft with known services", () => {
+    const html = grid({ serviceCount: 2 });
+    expect(html).toContain('href="/projects/p1/topology"');
+    expect(text(html)).toContain("Services 2");
   });
 });

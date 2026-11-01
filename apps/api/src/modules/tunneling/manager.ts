@@ -20,7 +20,8 @@
  *     (the old agent is stopped first)
  */
 
-import { systemDebug } from "../../lib/system-debug";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { systemDebug } from "@repo/platform/engine/lib/system-debug";
 import type { TunnelAgent, TunnelProvider, TunnelRecord } from "./types";
 
 interface ActiveSession {
@@ -64,6 +65,7 @@ function scheduleReconnect(reason: string): void {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void connectOnce().catch((err) => {
+      observeCaughtError(err, "api/modules/tunneling/manager");
       debug(`reconnect attempt failed: ${err instanceof Error ? err.message : String(err)}`);
       scheduleReconnect("reconnect-failed");
     });
@@ -88,7 +90,7 @@ async function connectOnce(): Promise<void> {
     active = null;
     scheduleReconnect(`disconnect:${code}`);
   });
-  agent.on("error", (err: Error) => {
+  agent.on("error", (err: Error) => { observeCaughtError(err, "api/modules/tunneling/manager");
     debug(`error: ${err.message}`);
     // Don't null `active` on transient errors — the socket may still
     // be alive. The disconnect listener fires if it actually drops.
@@ -129,6 +131,7 @@ export async function startAgent(
   try {
     await connectOnce();
   } catch (err) {
+    observeCaughtError(err, "api/modules/tunneling/manager");
     debug(`initial connect failed: ${err instanceof Error ? err.message : String(err)}`);
     scheduleReconnect("initial-connect-failed");
   }
@@ -146,6 +149,7 @@ export function stopAgent(): void {
     try {
       active.close();
     } catch (err) {
+      observeCaughtError(err, "api/modules/tunneling/manager");
       debug(`close failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     active = null;

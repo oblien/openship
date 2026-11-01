@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The prominent "pick up where you left off" action for an incomplete mail
  * install. Rendered at the TOP of the progress view so resuming — not the
@@ -10,7 +12,6 @@
  * (`stepId`), the step's human label, and the halt reason (`error`).
  */
 
-import { PauseCircle, PlayCircle } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface ResumeHeroProps {
@@ -27,7 +28,7 @@ export function ResumeHero({ stepId, stepLabel, error, onResume }: ResumeHeroPro
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <PauseCircle className="size-5 shrink-0 text-primary" />
+            <UiIcon name="pause-circle" className="size-5 shrink-0 text-primary" />
             <h3 className="text-base font-semibold text-foreground">
               {t.emails.progress.resumePausedTitle}
             </h3>
@@ -45,7 +46,7 @@ export function ResumeHero({ stepId, stepLabel, error, onResume }: ResumeHeroPro
           onClick={() => onResume(stepId)}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          <PlayCircle className="size-4" />
+          <UiIcon name="play-circle" className="size-4" />
           {interpolate(t.emails.progress.continueFromStep, { step: String(stepId) })}
         </button>
       </div>

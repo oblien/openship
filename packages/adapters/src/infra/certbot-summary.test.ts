@@ -43,6 +43,37 @@ Certbot failed to authenticate some domains (authenticator: webroot).
     expect(s).toMatch(/takeover|another web server|:80/i);
   });
 
+  it.each([502, 504])(
+    "HTTP %s → inspect challenge forwarding without inferring a takeover",
+    (status) => {
+      const out = `${OPENER}
+  Type:   unauthorized
+  Detail: Invalid response from http://app.example.test/.well-known/acme-challenge/abc: ${status}${status === 504 ? " Gateway Timeout" : " Bad Gateway"}`;
+      const summary = summarizeCertbotFailure(out, "app.example.test");
+      expect(summary).toContain(`HTTP ${status}`);
+      expect(summary).toContain("49180");
+      expect(summary).toMatch(/challenge.*forward|forward.*challenge/i);
+      expect(summary).not.toMatch(
+        /Port 80.*isn't reachable|choose take-over|Nothing is occupying|takeover didn't complete/i,
+      );
+    },
+  );
+
+  it("does not diagnose a gateway failure from digits in the challenge URL", () => {
+    const out = `${OPENER}
+  Detail: Invalid response from http://502.example.test/.well-known/acme-challenge/token-504: 404`;
+    const summary = summarizeCertbotFailure(out, "502.example.test");
+    expect(summary).not.toMatch(/listener failed|HTTP 502|HTTP 504|gateway could not/i);
+  });
+
+  it("names an HTTPS gateway failure without claiming port 80 answered", () => {
+    const out = `${OPENER}
+  Detail: Invalid response from https://app.example.test/.well-known/acme-challenge/abc: 502`;
+    const summary = summarizeCertbotFailure(out, "app.example.test");
+    expect(summary).toMatch(/redirected.*HTTPS/);
+    expect(summary).not.toContain("reached port 80");
+  });
+
   it("525 → Cloudflare answered the challenge itself, and names the three fixes", () => {
     // Cloudflare redirected the plain-HTTP challenge to https ("Always Use HTTPS"),
     // then couldn't complete TLS to origin. Reported as an "Invalid response", so

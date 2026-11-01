@@ -16,9 +16,9 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { syncComposeServices, updateService } from "../../../src/modules/services/service.service";
+import { syncComposeServices, updateService } from "@repo/platform/engine/modules/services/service.service";
 import { toComposeSpec } from "@repo/db";
-import { mergeServiceDeployEnv } from "../../../src/modules/deployments/compose/service-env-layers";
+import { mergeServiceDeployEnv } from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
 
 /**
  * #332 left the EDITORS behind: the compose parser produced `commandArgv`, but
@@ -155,6 +155,22 @@ describe("syncComposeServices — hands the command to the repo untouched", () =
 
     expect(synced()[0]?.environment).toEqual({ SECRET: "real-value" });
     expect(synced()[0]).not.toHaveProperty("commandArgv");
+  });
+
+  it("#854: restores build args during compose sync and masks its response", async () => {
+    serviceRepo.listByProject.mockResolvedValue([row({ buildArgs: { TOKEN: "stored-token" } })]);
+    serviceRepo.syncFromCompose.mockImplementation(async (_project, services) =>
+      services.map((service: object) => row(service)),
+    );
+    const response = await syncComposeServices(ctx, project.id, [
+      {
+        name: "web",
+        buildArgs: { TOKEN: "••••••••", INHERITED: null, GHOST: "••••••••" },
+      },
+    ]);
+    expect(synced()[0].buildArgs).toEqual({ TOKEN: "stored-token", INHERITED: null });
+    expect(response[0]?.buildArgs).toEqual({ TOKEN: "••••••••", INHERITED: null });
+    expect(JSON.stringify(response)).not.toContain("stored-token");
   });
 
   it("preserves Compose env expressions and resolves them from project env at deploy (#751)", async () => {

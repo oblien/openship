@@ -1,9 +1,13 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Server, Loader2 } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useCallback, useEffect, useId, useState } from "react";
 import { useI18n } from "@/components/i18n-provider";
 import { domainsApi } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api/client";
+import { Button } from "@/components/ui/button";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import type { DomainDnsRecord } from "@/lib/api/domains";
 import DnsConfiguration from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DnsConfiguration";
 
@@ -37,17 +41,36 @@ export default function DnsRecordsModal({
 }: DnsRecordsModalProps) {
   const { t } = useI18n();
   const d = t.deploy.dns;
-  const [sections, setSections] = useState<Array<{
-    hostname: string;
-    domainId?: string;
-    records: DomainDnsRecord[];
-    mode: "cloud" | "selfhosted";
-  }>>([]);
+  const titleId = useId();
+  const { dialog, onKeyDown } = useDialogFocus(onCancel);
+  const [sections, setSections] = useState<
+    Array<{
+      hostname: string;
+      domainId?: string;
+      records: DomainDnsRecord[];
+      mode: "cloud" | "selfhosted";
+      error?: string;
+    }>
+  >([]);
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const [connectionRevision, setConnectionRevision] = useState(0);
+  const [applying, setApplying] = useState<Set<string>>(() => new Set());
+  const handleApplying = useCallback((hostname: string, busy: boolean) => {
+    setApplying((current) => {
+      if (current.has(hostname) === busy) return current;
+      const next = new Set(current);
+      if (busy) next.add(hostname);
+      else next.delete(hostname);
+      return next;
+    });
+  }, []);
+  const handleConnected = useCallback(() => setConnectionRevision((value) => value + 1), []);
   const targetKey = JSON.stringify({ targets, serverId });
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void (async () => {
       try {
         const loaded = await Promise.all(
@@ -60,19 +83,20 @@ export default function DnsRecordsModal({
                     target.includeWww === true,
                     serverId,
                   );
-              const mode = res.data.mode === "cloud" ? "cloud" as const : "selfhosted" as const;
+              const mode = res.data.mode === "cloud" ? ("cloud" as const) : ("selfhosted" as const);
               return {
                 hostname: target.hostname,
                 domainId: target.domainId ?? undefined,
                 records: res.data.records,
                 mode,
               };
-            } catch {
+            } catch (error) {
               return {
                 hostname: target.hostname,
                 domainId: target.domainId ?? undefined,
                 records: [],
                 mode: "selfhosted" as const,
+                error: getApiErrorMessage(error, t.autoDns.recordsFailed),
               };
             }
           }),
@@ -86,21 +110,28 @@ export default function DnsRecordsModal({
     return () => {
       cancelled = true;
     };
-  // The serialized key is stable across equivalent arrays, avoiding a refetch
-  // if a parent rebuilds the target list during an unrelated render.
-  }, [targetKey]);
+    // The serialized key is stable across equivalent arrays, avoiding a refetch
+    // if a parent rebuilds the target list during an unrelated render.
+  }, [targetKey, revision]);
 
   return (
-    <div className="p-5">
-      {/* Same clean header as the "view DNS" modal — records + the hint carry
-          everything; the old "Point your domain, then deploy" title/subtitle and
-          the "auto-configure" row were redundant chrome. */}
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-          <Server className="size-4 text-primary" />
+    <div
+      ref={dialog}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      className="flex max-h-[90vh] min-h-0 flex-col p-5 outline-none"
+    >
+      <div className="mb-4 flex shrink-0 items-center gap-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <UiIcon name="server" className="size-4 text-primary" />
         </div>
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">{d.title}</h2>
+        <div className="min-w-0">
+          <h2 id={titleId} className="text-lg font-semibold text-foreground">
+            {d.title}
+          </h2>
           <p className="text-xs text-muted-foreground break-words">
             {d.addRecordsFor}{" "}
             <span className="font-medium text-foreground">
@@ -110,45 +141,55 @@ export default function DnsRecordsModal({
         </div>
       </div>
 
-      <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
-        {d.modalSubtitle}
-      </p>
+      <p className="mb-4 shrink-0 text-xs leading-relaxed text-muted-foreground">{d.modalSubtitle}</p>
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {d.loadingRecords}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {d.loadingRecords}
         </div>
       ) : (
-        <div className="max-h-[60vh] space-y-4 overflow-y-auto pe-1">
-          {sections.map((section) => (
-            <DnsConfiguration
-              key={section.hostname}
-              domain={section.hostname}
-              records={section.records}
-              mode={section.mode}
-              showHeader={targets.length > 1}
-              domainId={section.domainId}
-              serverId={serverId}
-            />
-          ))}
+        <div className="max-h-[60vh] min-h-0 space-y-4 overflow-y-auto pe-1">
+          {sections.map((section) =>
+            section.error ? (
+              <div key={section.hostname} className="space-y-3 rounded-xl bg-card p-4">
+                <p className="break-all text-sm font-medium text-foreground">{section.hostname}</p>
+                <p role="alert" className="break-words text-sm text-danger">
+                  {section.error}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={applying.size > 0}
+                  onClick={() => setRevision((value) => value + 1)}
+                >
+                  {t.autoDns.retry}
+                </Button>
+              </div>
+            ) : (
+              <DnsConfiguration
+                key={section.hostname}
+                domain={section.hostname}
+                records={section.records}
+                mode={section.mode}
+                showHeader={targets.length > 1}
+                domainId={section.domainId}
+                serverId={serverId}
+                connectionRevision={connectionRevision}
+                onConnected={handleConnected}
+                onApplyingChange={handleApplying}
+              />
+            ),
+          )}
         </div>
       )}
 
-      <div className="mt-5 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60"
-        >
+      <div className="mt-5 flex shrink-0 items-center justify-end gap-2">
+        <Button type="button" onClick={onCancel} variant="ghost">
           {d.cancel}
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+        </Button>
+        <Button type="button" onClick={onConfirm} disabled={loading || applying.size > 0}>
           {confirmLabel ?? d.deployAction}
-        </button>
+        </Button>
       </div>
     </div>
   );

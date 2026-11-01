@@ -1,3 +1,4 @@
+import type { RoleContainerRef } from "@repo/core";
 import {
   pgTable,
   text,
@@ -52,6 +53,8 @@ export const deployment = pgTable(
      * (no DB check constraint) — keep new values lowercase + hyphenated.
      */
     trigger: text("trigger").notNull().default("manual"),
+    /** Internal CI admission receipt; an uncertain retry cannot create another release. */
+    actionRequestId: text("action_request_id"),
 
     /* ── Build details ──────────────────────────────────────────────────── */
     /** Environment: production | preview */
@@ -115,6 +118,16 @@ export const deployment = pgTable(
     /* ── Container details ──────────────────────────────────────────────── */
     /** Adapter container ID (for stop/start/destroy) */
     containerId: text("container_id"),
+    /**
+     * Which container runs which role replica for this deployment (#935). NULL
+     * when the deployment has no roles. Written and read by the deploy fan-out,
+     * teardown and pause/resume; `containerId` above stays the web container.
+     */
+    roleContainers: jsonb("role_containers").$type<
+      RoleContainerRef[] | null
+    >(),
+    /** Durable runtime handover journal, separate from immutable config metadata. */
+    roleHandover: jsonb("role_handover").$type<Record<string, unknown> | null>(),
     /** External URL where deployment is reachable */
     url: text("url"),
 
@@ -211,6 +224,7 @@ export const deployment = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex("deployment_action_request_unique").on(t.actionRequestId),
     // At most ONE in-flight deployment per project. The race-prone
     // pattern (SELECT-then-INSERT inside checkNoActiveBuild +
     // createQueuedDeployment) is replaced by relying on this constraint:
@@ -223,6 +237,11 @@ export const deployment = pgTable(
     // Org scoping for the build-minute sum (which joins build_session → deployment
     // and filters here) and for org-wide deployment listings. See migration 0107.
     index("idx_deployment_org").on(t.organizationId),
+    index("idx_deployment_role_handover_pending")
+      .on(t.projectId)
+      .where(
+        sql`${t.roleHandover} IS NOT NULL AND coalesce(${t.roleHandover}->>'phase', '') <> 'complete'`,
+      ),
   ],
 );
 

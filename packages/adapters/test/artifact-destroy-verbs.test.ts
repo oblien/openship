@@ -37,7 +37,7 @@ describe("DockerRuntime.removeImage", () => {
     expect(getImage).not.toHaveBeenCalled();
   });
 
-  it("still accepts a real tag", async () => {
+  it("accepts a real tag while preserving Docker's in-use image protection", async () => {
     const rt = await DockerRuntime.create(dockerSocket);
     const remove = vi.fn(async () => {});
     vi.spyOn(
@@ -46,7 +46,7 @@ describe("DockerRuntime.removeImage", () => {
     ).mockReturnValue({ remove } as never);
 
     await rt.removeImage("openship/my-app:bld_1");
-    expect(remove).toHaveBeenCalledWith({ force: true });
+    expect(remove).toHaveBeenCalledWith({ force: false });
   });
 });
 

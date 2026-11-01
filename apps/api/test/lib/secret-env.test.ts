@@ -12,7 +12,7 @@ import {
   maskServicesEnv,
   mergeServiceEnv,
   unmaskEnv,
-} from "../../src/lib/secret-env";
+} from "@repo/platform/engine/lib/secret-env";
 
 describe("maskEnv", () => {
   test("blanks every value regardless of key", () => {
@@ -301,6 +301,7 @@ describe("maskScanService", () => {
           sourceValue: "registry.example.com/app:literal-secret",
         },
         environmentTemplateKeys: ["DATABASE_URL"],
+        environmentOverrideKeys: ["PINNED"],
         readiness: { enabled: true },
       },
     });
@@ -327,6 +328,12 @@ describe("maskScanService", () => {
 
     expect(masked.advanced).toEqual({});
     expect(JSON.stringify(masked)).not.toContain("private-default");
+  });
+
+  test("keeps removed-key ownership internal even without an environment map (#893)", () => {
+    expect(maskScanService({
+      name: "worker", advanced: { environmentOverrideKeys: ["REMOVED_KEY"] },
+    }).advanced).toEqual({});
   });
 });
 

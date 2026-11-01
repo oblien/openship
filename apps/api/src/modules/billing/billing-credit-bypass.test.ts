@@ -1,138 +1,113 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-/**
- * The credit-bypass guard.
- *
- * These tests exist because of a specific, shipped hole. `ensureNamespace` returns
- * early the moment `organization.oblien_namespace` is set and never touches quota.
- * Org creation pairs namespace + quota via `provisionOrgNamespace`, but that call is
- * fire-and-forget in `auth.ts` so a slow Oblien can't fail signup — and when it
- * failed, the first deploy called bare `ensureNamespace`, which CREATED and RECORDED
- * the namespace with no ceiling. Every later call then hit the early return and the
- * boot backfill skipped the org (it has a namespace, so it looks provisioned). The
- * tenant ran fully metered, uncapped, indefinitely.
- *
- * So the property under test is not "setQuota gets called somewhere". It is: you
- * cannot obtain a namespace to spend against unless the ceiling was asserted first,
- * and if it can't be asserted you get nothing.
- */
-
 const h = vi.hoisted(() => ({
-  org: null as { id: string; oblienNamespace: string | null; planTierId: string } | null,
-  setQuotaForTier: vi.fn(async () => {}),
-  tokensCreate: vi.fn(async () => ({ token: "tok_1", expiresAt: "2026-01-01T00:00:00Z" })),
-  namespacesEnsure: vi.fn(async () => ({ data: { slug: "os-1" } })),
-  setOblienNamespace: vi.fn(async () => {}),
-  cacheGet: vi.fn(async () => null as string | null),
-  cacheSet: vi.fn(async () => {}),
-  // Real Map-backed store for the assertion memo, NOT a stub that always misses:
-  // "asserts once, not on every call" is only a meaningful test if a set is
-  // actually visible to the next get.
-  memo: new Map<string, unknown>(),
+  workspace: { id: "workspace_1", name: "Production", organizationId: "org_1", namespace: "os-1" as string | null },
+  findById: vi.fn(),
+  assertPolicy: vi.fn(),
+  defaults: vi.fn(),
+  tokens: vi.fn(),
+  ensure: vi.fn(),
+  persist: vi.fn(),
+  stores: new Map<string, Map<string, unknown>>(),
 }));
-
-vi.mock("../../config/env", () => ({
-  env: {
-    CLOUD_MODE: true,
-    OBLIEN_CLIENT_ID: "cid_test",
-    OBLIEN_CLIENT_SECRET: "csec_test",
-  },
-}));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://api.oblien.com" } }));
 vi.mock("@repo/db", () => ({
   repos: {
-    organization: {
-      findById: async () => h.org,
-      setOblienNamespace: h.setOblienNamespace,
+    organization: { findById: h.findById },
+    cloudWorkspace: {
+      listByOrganization: async () => [{ ...h.workspace }],
+      findByIdInOrganization: async (id: string, org: string) => id === h.workspace.id && org === h.workspace.organizationId ? { ...h.workspace } : undefined,
+      setNamespace: h.persist,
     },
   },
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
 }));
-vi.mock("../../lib/cache-store", () => ({
-  cacheStore: async (ns: string) =>
-    ns === "oblien-quota-asserted"
-      ? {
-          get: async (k: string) => h.memo.get(k) ?? null,
-          set: async (k: string, v: unknown) => void h.memo.set(k, v),
-          invalidateByPrefix: async () => h.memo.clear(),
-        }
-      : { get: h.cacheGet, set: h.cacheSet },
-}));
-// Mocked at the SDK boundary, not with a spy on `getOblienClient`: that function is
-// called through the module's own local binding, so spying on the export would not
-// intercept it.
-vi.mock("@repo/adapters", () => ({
-  Oblien: class {
-    namespaces = { ensure: h.namespacesEnsure };
-    tokens = { create: h.tokensCreate };
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
+  cacheStore: async (namespace: string) => {
+    if (!h.stores.has(namespace)) h.stores.set(namespace, new Map());
+    const map = h.stores.get(namespace)!;
+    return {
+      get: async (key: string) => map.get(key) ?? null,
+      set: async (key: string, value: unknown) => { map.set(key, value); },
+      invalidateByPrefix: async () => { map.clear(); },
+    };
   },
 }));
-// The quota wrapper is reached through a DYNAMIC import inside
-// ensureNamespaceWithQuota (it imports getOblienClient from openship-cloud, so a
-// static import would be a cycle). vi.mock intercepts it either way.
-vi.mock("./billing-oblien-quota", () => ({ setQuotaForTier: h.setQuotaForTier }));
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
+  getOblienClient: () => ({ namespaces: { ensure: h.ensure }, tokens: { create: h.tokens } }),
+}));
+vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
+  assertNamespaceHasQuota: h.assertPolicy, ensureOblienDefaultQuota: h.defaults,
+}));
+vi.mock("@repo/platform/engine/lib/cloud-resource-limits", () => ({
+  initialCloudNamespaceLimits: async () => ({ max_workspaces: 2, max_vcpus: 4, max_ram_mb: 8192, max_disk_gb: 32 }),
+}));
 
-import {
-  ensureNamespaceWithQuota,
-  issueNamespaceToken,
-  __resetQuotaAssertedForTests,
-} from "../../lib/openship-cloud";
+import { ensureNamespace, ensureNamespaceWithQuota, issueNamespaceToken } from "@repo/platform/engine/lib/openship-cloud";
 
-describe("credit bypass — namespace cannot precede its ceiling", () => {
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    await __resetQuotaAssertedForTests();
-    h.org = { id: "org_1", oblienNamespace: "os-1", planTierId: "starter" };
-    h.setQuotaForTier.mockImplementation(async () => {});
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.stores.clear();
+  h.workspace = { id: "workspace_1", name: "Production", organizationId: "org_1", namespace: "os-1" };
+  h.findById.mockResolvedValue({ id: "org_1" });
+  h.persist.mockImplementation(async (_id, _org, namespace) => { h.workspace.namespace = namespace; });
+  h.ensure.mockImplementation(async ({ slug }) => ({ data: { slug } }));
+  h.tokens.mockResolvedValue({ token: "tenant-token", expiresAt: "2026-10-01T00:00:00Z" });
+});
+
+describe("cloud namespace and billing boundary", () => {
+  it("checks provider policy even for an already recorded namespace", async () => {
+    expect(await ensureNamespaceWithQuota("org_1", null)).toBe("os-1");
+    expect(h.assertPolicy).toHaveBeenCalledWith("org_1", "workspace_1");
+    expect(h.ensure).not.toHaveBeenCalled();
   });
-
-  it("asserts the ceiling even when the namespace is ALREADY recorded", async () => {
-    // The exact bypass shape: the row already has a namespace, so `ensureNamespace`
-    // short-circuits. If the assertion rode along with namespace *creation* only,
-    // this org would stay uncapped forever.
-    await ensureNamespaceWithQuota("org_1");
-    expect(h.setQuotaForTier).toHaveBeenCalledWith("org_1", "starter");
+  it("issues no token if entitlement verification fails, and retries next time", async () => {
+    h.assertPolicy.mockRejectedValueOnce(new Error("provider unavailable"));
+    await expect(issueNamespaceToken("org_1", null)).rejects.toThrow("provider unavailable");
+    expect(h.tokens).not.toHaveBeenCalled();
+    await issueNamespaceToken("org_1", null);
+    expect(h.assertPolicy).toHaveBeenCalledTimes(2);
+    expect(h.tokens).toHaveBeenCalledWith({ scope: "namespace", namespace: "os-1", ttl: 1800 });
   });
-
-  it("refuses to hand back a namespace when the ceiling cannot be set", async () => {
-    h.setQuotaForTier.mockRejectedValueOnce(new Error("oblien 503"));
-    await expect(ensureNamespaceWithQuota("org_1")).rejects.toThrow(/oblien 503/);
+  it("does not create provider resources when the organization lookup fails", async () => {
+    h.findById.mockRejectedValue(new Error("database unavailable"));
+    await expect(ensureNamespace("org_1", null)).rejects.toThrow("database unavailable");
+    expect(h.ensure).not.toHaveBeenCalled();
+    expect(h.tokens).not.toHaveBeenCalled();
   });
-
-  it("does not mark the org asserted after a failed push, so the next call retries", async () => {
-    h.setQuotaForTier.mockRejectedValueOnce(new Error("oblien 503"));
-    await expect(ensureNamespaceWithQuota("org_1")).rejects.toThrow();
-
-    // A memo written before the write succeeded would make the retry a no-op and
-    // leave the tenant uncapped for the life of the process.
-    await ensureNamespaceWithQuota("org_1");
-    expect(h.setQuotaForTier).toHaveBeenCalledTimes(2);
+  it("does not mint a token when ownership cannot be persisted", async () => {
+    h.workspace.namespace = null;
+    h.persist.mockRejectedValue(new Error("database unavailable"));
+    await expect(issueNamespaceToken("org_1", null)).rejects.toThrow("database unavailable");
+    expect(h.tokens).not.toHaveBeenCalled();
+    expect(h.workspace.namespace).toBeNull();
   });
-
-  it("asserts once per TTL window, not on every call", async () => {
-    await ensureNamespaceWithQuota("org_1");
-    await ensureNamespaceWithQuota("org_1");
-    await ensureNamespaceWithQuota("org_1");
-    expect(h.setQuotaForTier).toHaveBeenCalledTimes(1);
+  it("checks onboarding defaults before creating a new namespace", async () => {
+    h.workspace.namespace = null;
+    h.defaults.mockRejectedValue(new Error("uncapped default policy"));
+    await expect(ensureNamespace("org_1", null)).rejects.toThrow("uncapped default policy");
+    expect(h.ensure).not.toHaveBeenCalled();
   });
-
-  it("falls back to the FREE tier when the org's tier is unreadable", async () => {
-    h.org = { id: "org_1", oblienNamespace: "os-1", planTierId: null as unknown as string };
-    await ensureNamespaceWithQuota("org_1");
-    // Smallest ceiling is the safe direction for an unknown tier.
-    expect(h.setQuotaForTier).toHaveBeenCalledWith("org_1", "free");
+  it("creates new namespaces with finite provider resource ceilings", async () => {
+    h.workspace.namespace = null;
+    await ensureNamespace("org_1", null);
+    expect(h.ensure).toHaveBeenCalledWith(expect.objectContaining({
+      resource_limits: { max_workspaces: 2, max_vcpus: 4, max_ram_mb: 8192, max_disk_gb: 32 },
+    }));
   });
-
-  it("mints no deploy token until the ceiling is asserted", async () => {
-    h.setQuotaForTier.mockRejectedValueOnce(new Error("oblien down"));
-    await expect(issueNamespaceToken("org_1")).rejects.toThrow(/oblien down/);
-    // The token is full namespace authority — create workspaces, deploy, run.
-    // Handing one out before the ceiling exists IS the bypass.
-    expect(h.tokensCreate).not.toHaveBeenCalled();
+  it("never aliases server identities through prefix stripping or case folding", async () => {
+    for (const id of ["workspace_A", "workspace_a", "A", "workspace.a", "workspace-a"]) {
+      h.workspace.id = id;
+      h.workspace.namespace = null;
+      await ensureNamespace("org_1", id);
+    }
+    expect(new Set(h.ensure.mock.calls.map(([input]) => input.slug)).size).toBe(5);
   });
-
-  it("mints a token once the ceiling is in place", async () => {
-    const res = await issueNamespaceToken("org_1");
-    expect(h.setQuotaForTier).toHaveBeenCalledOnce();
-    expect(h.tokensCreate).toHaveBeenCalledOnce();
-    expect(res.namespace).toBe("os-1");
+  it("rejects an unexpected namespace from the provider", async () => {
+    h.workspace.namespace = null;
+    h.ensure.mockResolvedValue({ data: { slug: "another-customer" } });
+    await expect(issueNamespaceToken("org_1", null)).rejects.toMatchObject({ code: "CLOUD_NAMESPACE_MISMATCH" });
+    expect(h.persist).not.toHaveBeenCalled();
+    expect(h.tokens).not.toHaveBeenCalled();
   });
 });

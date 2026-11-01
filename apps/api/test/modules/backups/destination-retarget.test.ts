@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createDestination,
   updateDestination,
-} from "../../../src/modules/backup-destinations/destination.service";
+} from "@repo/platform/engine/modules/backup-destinations/destination.service";
 import { seedOrg } from "../../helpers/seed";
 
 const ctx = (organizationId: string) => ({ organizationId, userId: "usr_1" }) as never;

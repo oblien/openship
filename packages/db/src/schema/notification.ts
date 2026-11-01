@@ -219,6 +219,10 @@ export const notificationDelivery = pgTable(
 
     /** Retry counter. Workers increment + back off exponentially. */
     attempts: integer("attempts").notNull().default(0),
+    /** Persisted backoff for durable billing alerts. */
+    nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+    /** Renewable ownership; expired durable sends can be reclaimed after a crash. */
+    leaseUntil: timestamp("lease_until"),
 
     /** Rendered payload — subject + body for email, JSON for webhook, etc.
      *  Stored so retries don't re-render (avoids drift if templates

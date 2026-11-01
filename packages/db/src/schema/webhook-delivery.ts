@@ -35,7 +35,7 @@ export const webhookDelivery = pgTable(
     event: text("event").notNull(),
     /** 'ok' | 'failed' | 'none' (credential check result). */
     authResult: text("auth_result"),
-    /** 'received' | 'dispatched' | 'skipped' | 'forwarded' | 'ignored' | 'failed'. */
+    /** 'received' | 'dispatched' | 'skipped' | 'queued' | 'forwarded' | 'ignored' | 'failed'. */
     outcome: text("outcome").notNull(),
     /** Resulting deployment / job-run id, when dispatched. */
     actionRef: text("action_ref"),

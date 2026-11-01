@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveComposeBuildContext } from "../../../src/modules/deployments/compose/build.service";
+import { resolveComposeBuildContext } from "@repo/platform/engine/modules/deployments/compose/build.service";
 
 /**
  * Compose resolves `build.context` relative to the COMPOSE FILE's directory, not

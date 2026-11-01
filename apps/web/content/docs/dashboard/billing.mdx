@@ -1,37 +1,107 @@
 ---
 title: Billing
-description: The Billing area (Openship Cloud only) shows your plan, usage, and invoices. Self-hosted Openship has no billing.
+description: Manage each Openship Cloud server's coverage, usage, upgrades and payments, including from a linked self-hosted installation.
 ---
 
-<Callout title="Openship Cloud only">
-The Billing area appears only on **Openship Cloud**. A self-hosted install has
-nothing to bill, so the screen doesn't exist there.
+<Callout title="Openship Cloud resources">
+Choose **Openship Cloud** for managed compute, or **Your infrastructure** for
+Openship Manage ($5/month including two connected servers, then $3/month each).
+Running your own Openship control plane remains free. Linked self-hosted
+installations can also manage Cloud billing.
 </Callout>
 
-## Self-hosted has no billing
+## Choose a server
 
-A plain **self-hosted** Openship has nothing to pay and shows no billing data —
-the Billing area simply doesn't appear. You only pay for your own infrastructure.
+Select a server in Billing to inspect its own plan, usage and payments. The right
+card lists existing servers on usage and history tabs; Plans keeps a compact
+selector in the header. **Get server** opens a separate server purchase. A server
+without a plan keeps the selector so you can return to another server.
 
-## Openship Cloud
+A first purchase shows **Monthly plans** and **Prepaid PAYG**. Monthly plans
+and Custom use the same purchase controls. The PAYG pricing preview has resource
+tier tabs inside the resource configurator. Each tier shows its shared CPU, RAM, storage
+and server allowance, together with the credit-purchase amount needed to unlock it.
+Resource inputs stay intact when switching tiers. Configurations above a pool's
+limits show the excess and offer a larger tier when one fits.
 
-On Cloud, **Billing** is where you watch usage, change plan, and pull invoices.
-Plans, prices, and per-plan limits are published on the
-[pricing page](/pricing); the header strip on this screen shows how much of your
-plan's credits, bandwidth, build minutes, and capacity you've used in the current
-period.
+Choose a credit package to see its qualifying tier and estimate one server's
+hourly cost at full CPU usage using the provider's published rates. Spending credits
+does not lower a tier. Purchases are not available yet; the displayed selections
+do not grant access or change an existing plan.
+Both purchase views end with an Enterprise contact card for larger or tailored needs.
+
+## Coverage and usage
+
+Monthly subscriptions include the purchased CPU, RAM and disk for the full paid
+month, without another compute-credit allowance. Overview puts **Monthly coverage**
+and the paid-through date after plan capacity and usage. Usage shows recorded CPU time and resource measurements.
+The server page separates actual usage from provisioned capacity; unavailable
+measurements stay unknown.
+
+Monthly servers include managed internet transfer. Billing shows its available
+allowance, or **Unlimited** when confirmed by the provider, and current-period
+usage. Public app routes and backups are separate. Transfer exhaustion does not
+end paid compute coverage. Existing metered subscriptions keep their saved terms
+and credit displays; updating Openship does not convert them.
 
 | Tab | What it does |
 | --- | --- |
-| **Overview** | Current plan, billing period, and credit balance. |
-| **Usage** | Metered usage over the period, charted. |
-| **Plans** | Upgrade or downgrade — starts a Stripe Checkout session. |
-| **Top-ups** | One-shot credit packs (coming to the dashboard). |
-| **Payment Method** | Opens the Stripe portal to manage cards. |
-| **Invoices** | Opens the Stripe portal to download invoices. |
+| **Overview** | Current plan, period, coverage and renewal controls. |
+| **Usage** | Recorded resource usage over the selected period. |
+| **Plans** | Review upgrades or other plans, including Custom resources. |
+| **Top-ups** | Shown only for eligible saved metered subscriptions. |
+| **Payments** | Unfinished payments, plus invoices and cards in the server's scoped Stripe portal. |
 
-Cancelling from **Plans** flips the subscription to end at the close of the
-period you've already paid for; the organisation then drops back to the free
-tier. Nothing is deleted.
+## Finish or cancel a checkout
 
-For the endpoints behind this screen, see the [billing API](/docs/api/billing).
+Open **Pending payments** in the Billing header to find unfinished payments across
+your Cloud servers, including servers without an active plan. Connected desktop and
+self-hosted installations offer the same recovery flow without creating local
+execution links. A server's **Payments** tab lists its own unfinished payments;
+the header action lists all of your Cloud servers' payments.
+
+**Resume payment** opens the original checkout with its saved plan and price.
+**Cancel payment** closes a supported checkout after the provider confirms it
+cannot be paid. If confirmation is still pending, retry cancellation or refresh;
+do not start a competing purchase. Payments that have already been submitted link
+to their verification status instead.
+
+After confirmed cancellation or expiry, choose another plan or delete the unused
+server using the existing delete confirmation. If cancellation is unavailable,
+resume the payment, wait for expiry, or contact support.
+
+## Change or cancel a plan
+
+**Review change** shows the provider's amount due now, effective date and projects
+that may restart. Upgrades apply after payment. Resource reductions and changes
+of billing mode take effect at renewal. Review the actual quote before confirming.
+If payment needs authentication, use **Complete payment**. Pending operations stay
+visible and can be canceled when allowed; retries reuse the same operation.
+
+After payment, the existing server resize worker applies the approved resources.
+If projects changed after review, **Apply plan capacity** asks for an updated
+restart confirmation. A resize can be retried without buying the plan again.
+Disks can grow but cannot shrink in place; use Custom to retain storage while
+reducing other resources, or migrate to another server.
+
+Canceling renewal preserves the paid period. When coverage ends, compute stops
+and retained disks follow the saved storage terms. Retention does not mean free
+storage: billing continues until deletion, with no automatic deletion at the
+minimum retention review date. Overview shows these terms and any storage amount
+due. Invoices and cards stay scoped to this server, not other customers or the
+provider account.
+
+## Make room for another deployment
+
+Apps and source builds share the managed server. A new project does not reserve
+another VM or disk, and container sizes are limits within the existing host.
+Image-only installs do not allocate a source builder. Inspect server usage,
+stop an idle service if memory is tight, or review a larger plan. See
+[Servers](/docs/dashboard/servers) for progress, logs and recovery.
+
+## Credit warnings
+
+Only saved metered subscriptions show low-credit notices. Monthly coverage does
+not depend on an old credit balance. See
+[credit warnings and recovery](/docs/guides/billing#credit-warnings-and-recovery)
+for the metered flow, and the [billing API](/docs/api/billing) for the endpoints.

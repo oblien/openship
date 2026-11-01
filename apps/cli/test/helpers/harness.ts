@@ -7,11 +7,12 @@
  *   - interceptExit — turn process.exit(code) into a thrown ExitError so a guard's
  *                     `process.exit(1)` becomes an assertable outcome, not a killed runner.
  *
- * Command modules build their request through the real api-client (URL building,
+ * Command modules build their request through the real SDK HTTP client (URL building,
  * header/auth, ApiError mapping all run for real); only `fetch` and the config/caps
  * seams are mocked, so these are end-to-end minus the socket.
  */
 import { vi } from "vitest";
+import { CommandExit } from "../../src/lib/command-exit";
 
 // ─── @repo/adapters partial mocks ────────────────────────────────────────────
 
@@ -168,7 +169,10 @@ export async function runCommand(
     // Some actions signal failure via process.exitCode instead of exit().
     code = typeof process.exitCode === "number" ? process.exitCode : 0;
   } catch (e) {
-    if (e instanceof ExitError) code = e.code;
+    // Command factories may deliberately reload modules between runs. Resolve
+    // the current exit class as well as the one imported with this harness.
+    const CurrentCommandExit = (await import("../../src/lib/command-exit")).CommandExit;
+    if (e instanceof ExitError || e instanceof CommandExit || e instanceof CurrentCommandExit) code = e.code;
     else {
       process.exitCode = prevExitCode;
       cap.restore();

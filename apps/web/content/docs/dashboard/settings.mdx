@@ -12,8 +12,6 @@ screen has a tab nav on the right (a horizontal strip on mobile) that switches b
 is also directly linkable with a `?tab=` query — e.g. `/settings?tab=team` — so you can bookmark or share the
 exact place you mean.
 
-<Callout title="Screenshot">Settings page with the tab nav and the General tab open. *(screenshot pending)*</Callout>
-
 <Callout title="Some tabs and sections only appear in some setups" type="info">
 The **Cloud** tab is hidden on the managed Openship Cloud — it shows on self-hosted and desktop installs
 only. The **Audit log** tab is always listed, but the log itself loads only for **admins and owners**
@@ -25,6 +23,20 @@ expect, that's why.
 ## General
 
 The home tab contains language, interface preferences, and self-hosted build preferences.
+
+## Appearance
+
+Open **Settings → General** to use the existing Light, Dim, Dark and System switches; preset changes apply immediately. Choose **Customize** to open the editor inline (`/settings?tab=general&view=appearance`) while General stays selected, and **Back to General** to return. Built-in presets remain unchanged; editing one in the editor creates a personal copy. System follows the device, using Dim for a dark Desktop environment and Dark on the web.
+
+The editor groups all registered design tokens into surfaces, text, controls, status, effects and scales. Search by token name, edit its color or value, and reset individual overrides. Typography controls the interface and monospace fonts, size, weight and line height. Uploaded WOFF2 files are embedded in theme JSON, so custom fonts travel with an export.
+
+Edits preview immediately across the dashboard, including open terminals, without restarting their sessions. **Save** persists the theme to the authenticated user on the connected instance. **Discard** restores the saved appearance. The bottom controls retain a readable base palette; **Reset** previews the default Light appearance and clears the personal library only when you save. Navigating away discards the unsaved preview; a full reload warns about unsaved changes.
+
+Import a JSON file, paste JSON, or load a public HTTPS JSON URL that permits browser CORS requests. URL imports omit credentials and are fetched once, rather than continuously following remote changes. A single-theme import replaces a matching theme ID or adds it to the library; a library import replaces the draft library. Nothing is persisted until Save.
+
+**Download theme** exports the active theme; **Download all** exports the personal library. The versioned format supports up to 32 themes, two WOFF2 fonts per theme (256 KiB each), and 1 MiB total. Unsupported tokens, invalid values, cyclic token references and incompatible versions are rejected. These preferences affect this account's dashboard, not deployed applications or other members.
+
+The [appearance API and CLI](/docs/api/settings#personal-appearance) use the same format. Saving requires a version of the API that supports the appearance endpoints; a failed settings read stays visible and blocks saving until a retry succeeds.
 
 ## Git
 
@@ -42,8 +54,6 @@ The **GitHub clone credentials** card stores a personal token fallback for priva
 also forward the local Git identity to remote build servers.
 
 See [Deploy from GitHub](/docs/guides/deploy-from-github) for the full walk-through.
-
-<Callout title="Screenshot">Git tab showing workspace-owned GitHub Apps, the GitHub identity card, and clone credentials. *(screenshot pending)*</Callout>
 
 ### Deploy Defaults
 
@@ -80,8 +90,6 @@ permissions unless you narrow it. When creating one you can:
 Press **Create token**, then copy it immediately — this is the only time the value is shown. Existing
 tokens are listed with **read-only** / **scoped** badges and a **Revoke** button.
 
-<Callout title="Screenshot">Tokens tab showing the Personal Access Tokens list with the create form (name, expiry, read-only, limit-to-resources). *(screenshot pending)*</Callout>
-
 <Callout title="Copy the token now" type="warn">
 A new token's value is displayed once, at creation. If you lose it you can't recover it — revoke it and
 make a new one.
@@ -103,8 +111,6 @@ Two ways to authenticate:
 **Connected clients** lists every authorized client with its access level (read-only / full control) and
 resource scope, each with a disconnect action.
 
-<Callout title="Screenshot">MCP tab showing the endpoint copy row, the per-client "Add to your client" snippets, and the Connected clients list. *(screenshot pending)*</Callout>
-
 ## Team
 
 Who can reach this organization's projects, deployments, and servers. See
@@ -112,14 +118,22 @@ Who can reach this organization's projects, deployments, and servers. See
 
 - **Active members** — everyone with access, their role, and a **Remove member** action.
 - **Pending invitations** — invites you've sent that haven't been accepted yet.
-- **Invite member** — email a join link. Pick a role: **Member** (read + write to everything), **Admin**
+- **Invite member** — send through the instance's configured email service or create a link to copy.
+  Pick a role: **Member** (read + write to everything), **Admin**
   (Member plus manage members and billing), or **Restricted** (no default access — you choose exactly which
   resources to unlock). Restricted invites open a resource picker.
 
+Both delivery choices use the same email-bound invitation. The link is shown after creation
+and stays available in Pending invitations, where it can also be revoked. From a connected
+Desktop, copied links point to the remote instance. Recipients use their own accounts and
+enter the invited organization after accepting.
+Self-hosted recipients can choose **Open in Desktop** on the invitation page, confirm the
+instance, and use the same sign-in and acceptance flow in the app. The page also provides
+a copyable invitation URL for manual connection. Joining never grants more than the offered
+role and resource access; opening the link alone does not join a workspace.
+
 If you're on a personal workspace, this tab also offers **Create team** to spin up a separate, isolated
 team organization.
-
-<Callout title="Screenshot">Team tab showing Active members with role selectors and the Invite member button, plus any pending invitations. *(screenshot pending)*</Callout>
 
 ## Notifications
 
@@ -134,24 +148,19 @@ Decide what you get told about and where it goes.
 - **Organization defaults** — the subscriptions applied when a new member joins. Members can override their
   own per-channel.
 
-<Callout title="Screenshot">Notifications tab showing the delivery channels list and the event × channel subscription grid. *(screenshot pending)*</Callout>
-
 ## Audit log
 
 *(Admin or owner only.)* A running feed of every change in the organization — who did it, what changed, and
 when. Search across events, actors, and resources, filter by event type, and expand any entry to see the
 **before**/**after** of the change plus actor details (name, email, IP, user agent).
 
-<Callout title="Screenshot">Audit log tab with the search box, event-type filter, and an expanded entry showing before/after values. *(screenshot pending)*</Callout>
-
 ## Cloud
 
 *(Self-hosted and desktop only.)* Link this instance to Openship Cloud to unlock cloud deployments, managed SSL, and the
-global CDN. Press **Connect to Openship Cloud** and sign in; once connected the card shows your cloud
-account with a **Disconnect** option. This connection is also what enables migrating your instance to the
-cloud — see [Connect to Cloud & migrate](/docs/guides/cloud-connect-migration).
-
-<Callout title="Screenshot">Cloud tab in the disconnected state showing the "Connect to Openship Cloud" button and the features it unlocks. *(screenshot pending)*</Callout>
+global CDN. Press **Connect to Openship Cloud**, sign in, and review the account and organization
+before authorizing. The consent screen has **Switch** actions for both. Once connected the card shows
+your cloud account with a **Disconnect** option. This connection also enables migrating your instance
+to Cloud — see [Connect to Cloud & migrate](/docs/guides/cloud-connect-migration).
 
 ## Instance
 
@@ -167,17 +176,66 @@ you add an email + password login without losing any projects or history.
 **Update & security notifications**. Openship only ever *pulls* this data from the public GitHub releases —
 nothing can push updates to your install. More in [Updating Openship](/docs/guides/updating).
 
-### Export / Import data
+### Instance location
 
-*(Self-hosted and desktop, owner-gated.)* **Export data** downloads the entire instance database as one portable file —
-projects, servers, deployments, and settings. Set a passphrase to include your secrets (env vars, tokens,
-SSH credentials), re-encrypted under it; leave it blank to export without secrets. **Import data** restores
-such a file onto this instance, either **Replace everything** (wipe and restore exactly — best for moving
-to a new machine) or **Merge into existing** (keep current data and add the imported rows).
+Move between Desktop and a connected or managed server from one card. Choose API-only or
+API + dashboard, or connect Desktop to an existing remote instance without copying its data.
+The move preserves workspaces and credentials, verifies the receiver before cutover, and
+keeps the source inactive afterward. **Move back to Desktop** transfers the latest remote
+state. [Read the instance move guide](/docs/guides/migrate-control-plane).
+
+The card shows the current location and its main action. The **More instance options** menu
+contains existing-instance connections, move codes and returning to a previous server.
+An active server offers **Connect a Desktop** directly; a retired server offers
+**Move an instance here**.
+
+### Backup & recovery
+
+*(Self-hosted and desktop, instance administrators only.)* **Export instance or projects** downloads a
+portable JSON file. Choose the entire instance, or select projects and individual environments in bulk.
+The same project export is available in **Project → Advanced → Export project**, with all of that
+project's environments selected by default.
+
+Project exports include deployments, service configuration, environment variables, overview analytics, linked apps, routing,
+backup policies and destinations, and Git credentials. Related self-hosted servers are recommended and
+included by default. You can choose which configuration and history to include. Both instance and project
+exports include environment values, private keys, deployment snapshots, inline Compose configuration,
+and credentials as **unencrypted JSON**, with no export password. Credentials and all history are selected
+by default. Keep using the listed servers, or connect the destination to the same Openship Cloud account.
+
+**Import data** uploads the file once and previews its contents. An instance archive starts in **Replace
+the entire destination instance** mode, with confirmation before applying. It restores the source
+projects, users, servers, credentials, settings and included history over the destination's older records.
+For project archives, select the environments to import into
+the current workspace, review conflicts, and map source servers to destination servers. Matching
+self-hosted servers are reused with their existing connection credentials. Existing projects are skipped
+by default; **Overwrite matching project records** replaces the selected projects, removes destination-only
+records in the selected categories, and respects credentials cleared at the source. The review shows
+how many records will be removed. Excluded categories and other projects are retained. Individual projects
+can override that choice. Shared integrations and backup
+destinations are reused unless you explicitly choose to overwrite shared settings.
+
+Cloud projects require the destination workspace to be connected to the **same Openship Cloud account**.
+Cloud servers cannot be transferred between accounts. For project imports, a source control-plane host needs an
+explicit target mapping. Projects mapped to a different host arrive disabled with live container
+references cleared, ready for a migration or redeployment.
+
+In project imports, loopback SSH addresses also require explicit mapping. Backup schedules that use a source-local folder
+or a different backup host arrive disabled; reconnect the storage, verify it, and then enable the schedules.
+
+Exports contain control-plane metadata. Volume contents, database payloads, source folders, and host TLS
+files stay on their server. Keep using that server, or move the runtime data with migration/backup
+restore. Reconnect local source folders and update Git/webhook callback URLs when the control-plane
+address changes. The import result keeps these follow-up notes available.
+
+Use **Instance location** for a live move of the whole control plane. Use an export file for
+project selections so you can review conflicts and server mappings before applying them.
 
 <Callout title="Import can wipe this instance" type="warn">
-"Replace everything" erases all current data here and signs you out. Only the workspace **owner** can
-export or import, and you'll need the original passphrase to restore secrets.
+An instance archive offers merge or full replacement. Replacement erases
+all destination data and signs you out. A project archive can never wipe an instance. Only an
+**instance administrator** can export or import. Older password-protected archives still require their
+original password. If an older file contains no credentials, export again from the updated source;
+an import cannot recover values absent from the file. Update the destination before importing a newer
+archive so all its fields can be restored.
 </Callout>
-
-<Callout title="Screenshot">Instance tab showing the type/auth cards, the Updates section, and the Export / Import data controls. *(screenshot pending)*</Callout>

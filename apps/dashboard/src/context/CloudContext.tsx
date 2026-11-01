@@ -1,16 +1,20 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import {
   createContext,
   useContext,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { Cloud, ExternalLink, X, Rocket, Shield, Globe, Zap, Loader2 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
+import { useSession } from "@/lib/auth-client";
 import { defaultDomainType } from "@/lib/default-domain-type";
 import {
   getCloudConnectHandoffUrl,
@@ -25,12 +29,19 @@ import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
 import type { CloudCapability } from "@repo/core";
 import { useCloudCapabilityCopy, type CloudRequirementPrompt } from "./cloud/capability-copy";
+import { CloudResourceContext } from "./CloudResourceContext";
+import { useRouter } from "next/navigation";
+import { setApiResourceScope } from "@/lib/api/client";
+import { clearProjectEndpointCaches } from "@/hooks/useProjectEndpoints";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
 interface CloudUser {
+  id?: string;
+  organizationId?: string;
   name: string;
   email: string;
   image?: string | null;
@@ -91,14 +102,15 @@ export function useDefaultDomainType(): "free" | "custom" {
 /* ------------------------------------------------------------------ */
 
 const FEATURES = [
-  { icon: Rocket, label: "Cloud deployments" },
-  { icon: Shield, label: "Managed infrastructure" },
-  { icon: Globe, label: "Automatic SSL & domains" },
-  { icon: Zap, label: "Global CDN" },
+  { icon: "rocket" as const, label: "Cloud deployments" },
+  { icon: "shield" as const, label: "Managed infrastructure" },
+  { icon: "globe" as const, label: "Automatic SSL & domains" },
+  { icon: "bolt" as const, label: "Global CDN" },
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
-  const { selfHosted, deployMode, cloudAuthUrl, cloudApiUrl } = usePlatform();
+  const router = useRouter();
+  const { selfHosted, deployMode, cloudApiUrl } = usePlatform();
   const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
   const hasNativeCloudAccess = !canConnectCloud;
   // GitHubProvider is an ancestor of CloudProvider (see providers.tsx),
@@ -106,10 +118,26 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   // whenever the cloud connection flips (below).
   const { refresh: refreshGitHub } = useGitHub();
   const cloudCapabilityCopy = useCloudCapabilityCopy();
+  const { t } = useI18n();
+  const modalLoc = t.settings.cloud.connectModal;
+  const cloudFeatures = [
+    { icon: "rocket" as const, label: modalLoc?.features?.deployments ?? "Cloud deployments" },
+    { icon: "shield" as const, label: modalLoc?.features?.infra ?? "Managed infrastructure" },
+    { icon: "globe" as const, label: modalLoc?.features?.ssl ?? "Automatic SSL & domains" },
+    { icon: "bolt" as const, label: modalLoc?.features?.cdn ?? "Global CDN" },
+  ];
 
-  const [connected, setConnected] = useState(false);
-  const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: session } = useSession();
+  const contextKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+  const statusRequest = useRef(0);
+  const [status, setStatus] = useState<{ contextKey: string; connected: boolean; user: CloudUser | null } | null>(null);
+  const [checking, setChecking] = useState(true);
+  const current = status?.contextKey === contextKey;
+  const connected = current && status.connected;
+  const cloudUser = current ? status.user : null;
+  const loading = canConnectCloud && (!current || checking);
   const [connecting, setConnecting] = useState(false);
   const [modalFeature, setModalFeature] = useState<CloudRequirementPrompt | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -118,37 +146,39 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   // legitimately settle together on the same outcome. Drained atomically.
   const pendingRef = useRef<Array<(v: boolean) => void>>([]);
 
-  // Clean up polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
-  // Check cloud status on mount (self-hosted / desktop only)
-  const checkStatus = useCallback(async () => {
+  // Ignore replies from a previous account/org and from superseded requests.
+  const checkStatus = useCallback(async (): Promise<boolean> => {
+    if (contextRef.current !== contextKey) return false;
+    const request = ++statusRequest.current;
     if (!canConnectCloud) {
-      setConnected(true);
-      setCloudUser(null);
-      setLoading(false);
-      return;
+      setStatus({ contextKey, connected: true, user: null });
+      setChecking(false);
+      return true;
     }
+    setChecking(true);
     try {
-      setLoading(true);
       const res = await cloudApi.status();
-      setConnected(res?.connected ?? false);
-      setCloudUser(res?.user ?? null);
-    } catch {
-      setConnected(false);
-      setCloudUser(null);
+      if (contextRef.current !== contextKey || statusRequest.current !== request) return false;
+      setStatus({ contextKey, connected: res?.connected ?? false, user: res?.user ?? null });
+      return res?.connected === true;
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/context/CloudContext");
+      if (contextRef.current === contextKey && statusRequest.current === request)
+        setStatus({ contextKey, connected: false, user: null });
+      return false;
     } finally {
-      setLoading(false);
+      if (contextRef.current === contextKey && statusRequest.current === request) setChecking(false);
     }
-  }, [canConnectCloud]);
+  }, [canConnectCloud, contextKey]);
 
-  useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
+  useEffect(() => { void checkStatus(); }, [checkStatus]);
+
+  const setConnected = useCallback((value: boolean) => {
+    if (value) { void checkStatus(); return; }
+    ++statusRequest.current;
+    setStatus({ contextKey, connected: false, user: null });
+    setChecking(false);
+  }, [checkStatus, contextKey]);
 
   // Listen for the popup's "cloud-connect-success" postMessage so we
   // refresh status the instant the callback page reports finalize OK,
@@ -161,25 +191,14 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    async function refreshOnce() {
-      try {
-        const res = await cloudApi.status();
-        const isConnected = res?.connected === true;
-        setConnected(isConnected);
-        setCloudUser(res?.user ?? null);
-        return isConnected;
-      } catch {
-        return false;
-      }
-    }
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
       if (e.data && typeof e.data === "object" && e.data.type === "cloud-connect-success") {
-        void refreshOnce().then((ok) => {
-          if (ok) return;
+        void checkStatus().then((ok) => {
+          if (ok || contextRef.current !== contextKey) return;
           // First refresh said "still disconnected" — try once more
           // after a settle window in case of a propagation race.
-          retryTimer = setTimeout(() => void refreshOnce(), 600);
+          retryTimer = setTimeout(() => void checkStatus(), 600);
         });
       }
     }
@@ -188,29 +207,28 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("message", onMessage);
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, []);
+  }, [checkStatus, contextKey]);
 
   const isConnected = hasNativeCloudAccess || connected;
+  const resourceKey = `${contextKey}:${hasNativeCloudAccess ? "native" : !current ? "pending"
+    : connected ? `${cloudApiUrl}:${cloudUser?.id ?? cloudUser?.email ?? ""}:${cloudUser?.organizationId ?? ""}` : "disconnected"}`;
+  // Layout effects run before resource hooks start their passive fetches.
+  useLayoutEffect(() => {
+    setApiResourceScope(resourceKey);
+    clearProjectEndpointCaches();
+  }, [resourceKey]);
 
-  // GitHub `cloud-app` mode is backed by the cloud session: connecting or
-  // disconnecting Openship Cloud changes which GitHub auth mode resolves
-  // and whether a token is available. So whenever the cloud connection
-  // TRANSITIONS, re-resolve GitHub state — this is the single wiring point
-  // that keeps the GitHub card honest across every connect/disconnect path
-  // (settings button, modal, popup postMessage, desktop poll), not just one.
-  //
-  // The `loading` gate skips the in-flight initial status check so we don't
-  // fire a spurious refresh on mount (GitHub already has its SSR data); the
-  // first SETTLED value becomes the baseline, and only real changes after
-  // that trigger a GitHub refresh.
-  const prevConnectedRef = useRef<boolean | null>(null);
+  // Refresh account-backed UI after connect, disconnect or a different Cloud
+  // identity. The first settled status keeps the server-rendered baseline.
+  const previousResourceKey = useRef<string | null>(null);
   useEffect(() => {
     if (loading) return;
-    const prev = prevConnectedRef.current;
-    prevConnectedRef.current = isConnected;
-    if (prev === null || prev === isConnected) return;
+    const prev = previousResourceKey.current;
+    previousResourceKey.current = resourceKey;
+    if (prev === null || prev === resourceKey) return;
     void refreshGitHub();
-  }, [isConnected, loading, refreshGitHub]);
+    router.refresh();
+  }, [resourceKey, loading, refreshGitHub, router]);
 
   // Settle every pending requireCloud promise once, then clear the batch
   // atomically (reassign before calling, so a resolver that re-enters can't
@@ -220,6 +238,18 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     pendingRef.current = [];
     resolvers.forEach((resolve) => resolve(value));
   }, []);
+
+  useEffect(() => {
+    setModalFeature(null);
+    setConnecting(false);
+    previousResourceKey.current = null;
+    return () => {
+      ++statusRequest.current;
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+      settlePendingCloud(false);
+    };
+  }, [contextKey, settlePendingCloud]);
 
   // A successful connect flips `isConnected` true (via checkStatus / the
   // postMessage refresh / the desktop poll). Whichever path gets there, resolve
@@ -288,7 +318,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(CONNECT_PKCE_STORAGE_PREFIX + flowId, verifier);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/context/CloudContext");
         /* localStorage disabled — fall back to non-PKCE flow */
       }
     }
@@ -307,6 +338,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     setConnecting(true);
     try {
       const result = await desktop.cloud.connect();
+      if (contextRef.current !== contextKey) return;
       if (!result?.ok) {
         setConnecting(false);
         return;
@@ -318,11 +350,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       pollRef.current = setInterval(async () => {
         try {
           const poll = await desktop.cloud.connectPoll(nonce);
+          if (contextRef.current !== contextKey) return;
           if (poll.status === "resolved") {
             if (pollRef.current) clearInterval(pollRef.current);
             pollRef.current = null;
             await checkStatus();
-            setConnecting(false);
+            if (contextRef.current === contextKey) setConnecting(false);
           } else if (poll.status === "expired") {
             if (pollRef.current) clearInterval(pollRef.current);
             pollRef.current = null;
@@ -335,7 +368,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               setConnecting(false);
             }
           }
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/context/CloudContext");
+          if (contextRef.current !== contextKey) return;
           errorCount++;
           if (errorCount >= 5) {
             if (pollRef.current) clearInterval(pollRef.current);
@@ -344,10 +379,11 @@ export function CloudProvider({ children }: { children: ReactNode }) {
           }
         }
       }, 2000);
-    } catch {
-      setConnecting(false);
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/context/CloudContext");
+      if (contextRef.current === contextKey) setConnecting(false);
     }
-  }, [checkStatus]);
+  }, [checkStatus, contextKey]);
 
   /** Browser popup connect flow */
   const startBrowserConnect = useCallback(() => {
@@ -356,17 +392,18 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     // setup resolves.
     const handle = openAuthWindow();
     prepareConnectUrl()
-      .then((url) => handle.navigate(url))
+      .then((url) => contextRef.current === contextKey ? handle.navigate(url) : handle.close())
       .catch((error) => {
+        if (contextRef.current !== contextKey) { handle.close(); return; }
         // Never silently close the popup. Self-hosted dashboards are often
         // served over private-LAN HTTP, where browser security APIs differ
         // from HTTPS. Keep the window open with an actionable local error if
         // setup still fails after the PKCE fallback.
-        console.error("Unable to prepare Openship Cloud sign-in", error);
+        errorDiagnostics.error("dashboard/context/CloudContext", "Unable to prepare Openship Cloud sign-in", error);
         handle.navigate(`${window.location.origin}/cloud-connect-callback?setup_error=pkce`);
       });
     handle.onClose(() => checkStatus());
-  }, [prepareConnectUrl, checkStatus]);
+  }, [prepareConnectUrl, checkStatus, contextKey]);
 
   /** Start cloud connect - auto-detects desktop vs browser */
   const startConnect = useCallback(() => {
@@ -384,9 +421,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
   return (
     <CloudContext.Provider
-      value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: checkStatus, setConnected }}
+      value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: async () => { await checkStatus(); }, setConnected }}
     >
-      {children}
+      <CloudResourceContext.Provider value={resourceKey}>{children}</CloudResourceContext.Provider>
 
       {/* ── Connect Modal ──────────────────────────────────── */}
       {modalFeature && (
@@ -408,17 +445,17 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               onClick={dismissCloudModal}
               className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted"
             >
-              <X className="size-4" />
+              <UiIcon name="close" className="size-4" />
             </button>
 
             {/* Icon */}
             <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/80 to-primary shadow-sm shadow-primary/20">
-              <Cloud className="size-7 text-primary-foreground" />
+              <UiIcon name="cloud" className="size-7 text-primary-foreground" />
             </div>
 
             {/* Title */}
             <h2 className="text-lg font-semibold text-foreground">
-              Connect Openship Cloud
+              {modalLoc?.title ?? "Connect Openship Cloud"}
             </h2>
             {modalFeature.description ? (
               <div className="mt-1 space-y-1.5 text-sm leading-relaxed">
@@ -427,8 +464,11 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               </div>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">{modalFeature.feature}</strong> requires
-                an Openship Cloud connection. Connect your account to unlock:
+                {interpolate(
+                  modalLoc?.requiresConnection ??
+                    "{feature} requires an Openship Cloud connection. Connect your account to unlock:",
+                  { feature: modalFeature.feature }
+                )}
               </p>
             )}
 
@@ -440,10 +480,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
             {/* Feature list */}
             <div className="mt-4 space-y-2">
-              {FEATURES.map(({ icon: Icon, label }) => (
+              {cloudFeatures.map(({ icon: Icon, label }) => (
                 <div key={label} className="flex items-center gap-2.5 text-sm text-muted-foreground">
                   <div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Icon className="size-3.5 text-primary" />
+                    <UiIcon name={Icon} className="size-3.5 text-primary" />
                   </div>
                   <span>{label}</span>
                 </div>
@@ -456,24 +496,23 @@ export function CloudProvider({ children }: { children: ReactNode }) {
                 size="lg"
                 disabled={connecting}
                 onClick={() => {
-                  // Keep the modal open in the `connecting` state — it stays the
-                  // dismissal arbiter. Success closes it (the isConnected effect);
-                  // an abandoned/blocked connect is dismissed → resolves false.
                   startConnect();
                 }}
               >
                 {connecting ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <ExternalLink className="size-4" />
+                  <UiIcon name="external-link" className="size-4" />
                 )}
-                {connecting ? "Waiting for sign in…" : (modalFeature.ctaLabel ?? "Connect to Openship Cloud")}
+                {connecting
+                  ? (modalLoc?.waitingSignIn ?? "Waiting for sign in…")
+                  : (modalFeature.ctaLabel ?? modalLoc?.connect ?? "Connect to Openship Cloud")}
               </Button>
               <Button
                 variant="ghost"
                 onClick={dismissCloudModal}
               >
-                Maybe later
+                {modalLoc?.maybeLater ?? "Maybe later"}
               </Button>
             </div>
           </div>

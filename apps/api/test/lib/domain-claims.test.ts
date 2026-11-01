@@ -15,10 +15,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * claim throwing cannot turn the caller's conflict error into a 500.
  */
 
-const { findByDomain, getServer, findProject } = vi.hoisted(() => ({
+const { findByDomain, getServer, findProject, findDomain } = vi.hoisted(() => ({
   findByDomain: vi.fn(),
   getServer: vi.fn(),
   findProject: vi.fn(),
+  findDomain: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -26,10 +27,14 @@ vi.mock("@repo/db", () => ({
     mailServer: { findByDomain },
     server: { get: getServer },
     project: { findById: findProject },
+    domain: { findByHostname: findDomain },
   },
 }));
 
-import { routableWithoutOwnership } from "../../src/lib/domain-claims";
+import {
+  readProjectRoutingClaims,
+  routableWithoutOwnership,
+} from "@repo/platform/engine/lib/domain-claims";
 
 const MAIL_ROW = {
   hostname: "mail.example.com",
@@ -46,6 +51,66 @@ beforeEach(() => {
   });
   getServer.mockResolvedValue({ id: "srv_mail", organizationId: "org_1" });
   findProject.mockResolvedValue({ id: "prj_webmail", organizationId: "org_1" });
+  findDomain.mockResolvedValue(null);
+});
+
+describe("project routing claim status", () => {
+  it("projects a mail-owned certificate's state without exposing domain mutation credentials", async () => {
+    findDomain.mockResolvedValue({
+      id: "dom-mail",
+      hostname: "mail.example.com",
+      ownerType: "mail",
+      projectId: null,
+      verificationToken: "private-owner-token",
+      verified: true,
+      status: "active",
+      sslStatus: "active",
+      sslExpiresAt: new Date("2099-01-01T00:00:00.000Z"),
+      manualSsl: false,
+    });
+    expect(
+      await readProjectRoutingClaims("prj_webmail", ["MAIL.EXAMPLE.COM", "mail.example.com"]),
+    ).toEqual([
+      {
+        hostname: "mail.example.com",
+        ownerType: "mail",
+        verified: true,
+        status: "active",
+        sslStatus: "active",
+        sslExpiresAt: "2099-01-01T00:00:00.000Z",
+        manualSsl: false,
+      },
+    ]);
+    expect(findDomain).toHaveBeenCalledOnce();
+  });
+
+  it("reports an authorized hostname with missing certificate bookkeeping as unknown", async () => {
+    expect(await readProjectRoutingClaims("prj_webmail", ["mail.example.com"])).toEqual([
+      {
+        hostname: "mail.example.com",
+        ownerType: null,
+        verified: null,
+        status: null,
+        sslStatus: null,
+        sslExpiresAt: null,
+        manualSsl: false,
+      },
+    ]);
+  });
+
+  it("does not disclose another project's or organization's domain status", async () => {
+    findDomain.mockResolvedValue(MAIL_ROW);
+    expect(await readProjectRoutingClaims("prj_other", ["mail.example.com"])).toEqual([]);
+    getServer.mockResolvedValue({ id: "srv_mail", organizationId: "org_elsewhere" });
+    expect(await readProjectRoutingClaims("prj_webmail", ["mail.example.com"])).toEqual([]);
+    getServer.mockResolvedValue({ id: "srv_mail", organizationId: "org_1" });
+    findDomain.mockResolvedValue({
+      ...(MAIL_ROW as object),
+      projectId: "prj_other",
+      ownerType: "project",
+    });
+    expect(await readProjectRoutingClaims("prj_webmail", ["mail.example.com"])).toEqual([]);
+  });
 });
 
 describe("routableWithoutOwnership", () => {

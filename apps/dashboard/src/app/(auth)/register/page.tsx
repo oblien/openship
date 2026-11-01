@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +16,6 @@ import { useAuthContext } from "../providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 import { buildAuthPageHref, getPostAuthRedirect } from "@/lib/cloud-auth";
 
@@ -21,7 +23,7 @@ export default function RegisterPage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex justify-center py-8"><div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></div>
+        <div className="flex justify-center py-8"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <RegisterPageInner />
@@ -34,7 +36,7 @@ function RegisterPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { selfHosted } = useAuthContext();
+  const { authProviders } = useAuthContext();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -59,7 +61,7 @@ function RegisterPageInner() {
         email,
         password,
       });
-      const next = signUpNext(result, { email, postLoginUrl });
+      const next = signUpNext(result, { email, postLoginUrl, authParams: searchParams });
       if (next.kind === "error") {
         toast("error", next.message ?? t.auth.errors.createFailed);
       } else if (next.kind === "verify") {
@@ -73,6 +75,7 @@ function RegisterPageInner() {
         router.push(next.href);
       }
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/register/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
@@ -140,21 +143,22 @@ function RegisterPageInner() {
               className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
               aria-label={showPassword ? t.auth.hidePassword : t.auth.showPassword}
             >
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
             </button>
           </div>
         </div>
 
         <Button type="submit" disabled={loading} className="mt-1 w-full">
-          {loading && <Loader2 className="animate-spin" />}
+          {loading && <UiIcon name="spinner" className="animate-spin" />}
           {loading ? t.auth.register.submitting : t.auth.register.submit}
         </Button>
       </form>
 
-      {/* Social login is cloud-only — a self-hosted operator rarely sets
-          GOOGLE_/GITHUB_ client creds, so the buttons would just fail. Mirror
-          the login page, which hides them on self-hosted. */}
-      {!selfHosted && <OAuthButtons callbackURL={postLoginUrl ?? "/"} />}
+      {/* Mirrors the login page: render the providers the SERVER advertises as
+          configured, not a `!selfHosted` guess. A self-hosted operator who HAS
+          set GITHUB_/GOOGLE_ client creds gets working buttons; one who hasn't
+          gets nothing rendered, exactly as before. */}
+      <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} />
 
       <p className="mt-8 text-center text-sm text-muted-foreground">
         {t.auth.register.hasAccount}{" "}

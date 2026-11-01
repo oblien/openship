@@ -1,0 +1,93 @@
+---
+title: Manage Openship Cloud
+description: Deploy and operate Cloud projects from your laptop, CI runner, or another server.
+---
+
+Use a Cloud token to connect directly to Openship Cloud. Remote commands need Node.js 22 or later and
+network access to the API; Docker and a local Openship installation are not required.
+
+## Connect and select a workspace
+
+```bash
+openship login --cloud
+openship --context cloud access workspaces
+openship --context cloud --organization org_123 --json project list
+openship --context cloud --organization org_123 server managed list
+```
+
+Save the organization during login with `--organization org_123`, or provide it before each command.
+The API enforces the token's membership and resource grants. Use a self-hosted API URL and its own
+token in another context to manage that installation with the same project and service commands.
+
+## Deploy code or redeploy a project
+
+```bash
+openship --context cloud --organization org_123 deploy \
+  --folder --name my-app --server srv_123 --watch
+
+openship --context cloud --organization org_123 deploy \
+  --project proj_123 --watch
+
+openship --context cloud --organization org_123 service list --project proj_123
+openship --context cloud --organization org_123 project server-logs proj_123 --follow
+```
+
+Run the first command inside the source directory. The CLI uploads it through the SDK's source
+staging workflow and builds on the selected server. The second command redeploys the project's saved
+source and works outside its checkout. Use IDs returned by the resource commands. `--watch` checks
+the final outcome and reports pending decisions or failures.
+
+A desktop or self-hosted project can also run on a linked managed server. Connect with the local
+context, use `server managed available`, then `server managed connect <cloud-server-id>`, and deploy
+to the returned local server ID. Project records remain on that controller. To manage records stored
+in Cloud itself, use the direct Cloud context. An owner's Cloud link never expands a scoped token's
+authority.
+
+## Inspect or buy capacity
+
+```bash
+openship --context cloud billing plans
+openship --context cloud billing state --server srv_123
+openship --context cloud billing usage --server srv_123 --group-by day
+openship --context cloud billing subscription get --server srv_123
+```
+
+`--server` resolves that exact server's billing workspace. It does not select another subscription.
+Use `--workspace` for a known retained billing workspace.
+
+To obtain another managed server, create its entry and request a checkout for a plan from `billing plans`:
+
+```bash
+openship --context cloud server managed create "Production"
+openship --context cloud billing subscription create <plan-id> \
+  --server <new-server-id> --idempotency-key <checkout-key>
+```
+
+Complete payment at the returned URL. Inspect `billing checkout list` and `billing checkout get <id>`
+before retrying a purchase whose response was lost. Creating a checkout is not confirmation that
+payment or provisioning finished.
+
+For an existing subscription, review the exact quote before confirming a capacity change:
+
+```bash
+openship --context cloud billing change preview <plan-id> \
+  --server srv_123 --idempotency-key <change-key>
+openship --context cloud billing change apply <quote-id> \
+  --server srv_123 --confirm-restart --yes
+```
+
+The server validates the quoted change, current state, ownership and restart consent. Custom capacity
+uses `billing quote` and the returned resources and `quoteReference`. See the
+[billing reference](/docs/cli/reference/billing) and [managed server reference](/docs/cli/reference/server/managed).
+
+## JSON configuration and useful operations
+
+Complex commands accept a JSON file or `-` for stdin. `--schema` prints the current input schema
+without contacting the API, for example `openship project options proj_123 --schema` or
+`openship migration project --schema`.
+
+Use `project environment` for isolated environments, `project resources` for runtime limits,
+`project database` and `project volume` for managed data, `backup` for recovery, `monitoring` for
+issues and updates, and `github` for repositories and server-side build access. Availability depends
+on the selected controller and provider; unsupported operations return an error without switching
+to another target.

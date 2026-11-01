@@ -1,5 +1,7 @@
+import type { IconName } from "@repo/ui/icons";
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
+import type { RouteProtectionDraft } from "@/components/routing/RouteProtectionButton";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
 import {
   getBuildImage,
@@ -13,6 +15,7 @@ import {
   type StackId,
   type RoutingConfig,
   type OpenshipReadiness,
+  type PortCheckResult,
   type ResourceTier as CoreResourceTier,
 } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -29,6 +32,9 @@ import { randomUUID } from "@/lib/random-uuid";
  * monorepoWorkspace install at the repo root.
  */
 export interface MonorepoAppConfig {
+  suggested?: boolean;
+  /** Public routing is separate from whether the app is deployed. */
+  exposed?: boolean;
   /** Stable identifier (defaults to rootDirectory). */
   id: string;
   /** Display name (last segment of rootDirectory, or package.json name). */
@@ -83,7 +89,10 @@ export interface Screenshot {
  * change it. The dashboard's deployment context uses this name for
  * legacy reasons; new code should reach for PrepareComposeService.
  */
-export type ComposeServiceInfo = PrepareComposeService;
+export type ComposeServiceInfo = PrepareComposeService & {
+  /** UI-only draft of the same effective environment edited in the service panel. */
+  environmentDraft?: import("@/lib/service-environment-editor").ServiceEnvironmentDraft;
+};
 
 /**
  * Loosely-typed compose service as it arrives from any saved source — a DB
@@ -188,6 +197,8 @@ export function normalizeComposeService(raw: RawComposeService): ComposeServiceI
 }
 
 export interface PublicEndpoint {
+  /** In-memory only. Persisted through the dedicated write-only route-protection operation. */
+  protectionDraft?: RouteProtectionDraft;
   id: string;
   port: string;
   targetPath: string;
@@ -255,6 +266,26 @@ export function composeServiceTally(services: readonly ServiceDeployStatus[]): {
   return { running, built, building, failed };
 }
 
+/**
+ * Which log feed a compose service tab shows (#667): the live runtime stream of
+ * the deployed container, or the recorded build logs. Runtime wins only when
+ * the deploy finished successfully with no held keep/reject decision AND this
+ * service's container is up — everything else (in-progress deploys, failures,
+ * static services that never run) stays on build history. The Prepare tab is
+ * not a service and never reaches this.
+ */
+export function serviceLogSource(opts: {
+  deploymentStatus: DeploymentStatus;
+  isCurrentDeployment: boolean;
+  decisionPending?: boolean;
+  serviceStatus?: ServiceDeployStatus["status"];
+}): "runtime" | "build" {
+  if (opts.deploymentStatus !== "ready") return "build";
+  if (!opts.isCurrentDeployment) return "build";
+  if (opts.decisionPending) return "build";
+  return opts.serviceStatus === "running" ? "runtime" : "build";
+}
+
 // ─── Build Strategy ──────────────────────────────────────────────────────────
 
 export type { BuildStrategy, RuntimeMode, DeployTarget } from "@repo/core";
@@ -307,6 +338,7 @@ export interface DeploymentModeSnapshot {
   buildImage: string;
   buildStrategy: BuildStrategy;
   runtimeMode: RuntimeMode;
+  runtimeModeExplicit?: boolean;
   publicEndpoints: PublicEndpoint[];
   options: DeploymentOptions;
 }
@@ -322,12 +354,10 @@ export interface DeploymentModeSnapshots {
 
 /**
  * Resource tier IDs for Openship Cloud deploys — DERIVED from the one tier union
- * in @repo/core, which the backend provisioner reads too. `unlimited` is excluded
- * because a metered cloud workspace must be provisioned at a concrete size.
- * The picker's display specs come from the same core table (see
- * `CLOUD_RESOURCE_TIERS` in `DeployTargetStep.tsx`).
+ * in @repo/core. A managed server already has its purchased allocation, so
+ * `unlimited` lets a container use the host's available capacity, as on self-hosted.
  */
-export type CloudResourceTier = Exclude<CoreResourceTier, "unlimited">;
+export type CloudResourceTier = CoreResourceTier;
 
 /**
  * User-supplied resource values when `cloudResourceTier === "custom"`.
@@ -344,6 +374,8 @@ export interface CloudResourceCustom {
 }
 
 export interface DeploymentConfig {
+  /** Explicitly staged Actions links and future push deployment rules. */
+  actions?: Pick<import("@repo/contracts").ActionProjectPolicy, "mode" | "workflowIds" | "requiredWorkflowIds">;
   /** Existing deployable environment to update/deploy, when launched from a project page. */
   projectId?: string;
   /** One-click catalog app (repo-less services project). Deploys from its saved
@@ -380,6 +412,8 @@ export interface DeploymentConfig {
    */
   rollbackWindow?: number | null;
   rollbackStrategy?: "git" | "snapshot";
+  /** Subscription-owned Cloud execution target. Immutable after project creation. */
+  workspaceId?: string;
   /** Which server to deploy to when deployTarget === "server" */
   serverId?: string;
   /**
@@ -393,11 +427,16 @@ export interface DeploymentConfig {
   serverName?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode: RuntimeMode;
+  /** Saved project, source declaration or user choice; automatic recommendations
+   * must never overwrite it when server capacity becomes available. */
+  runtimeModeExplicit?: boolean;
   projectType: ProjectType;
   framework: FrameworkId;
   detectedFramework: FrameworkId | null;
   packageManager: string;
   buildImage: string;
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   publicEndpoints: PublicEndpoint[];
   envVars: EnvironmentVariable[];
   /**
@@ -411,6 +450,8 @@ export interface DeploymentConfig {
   rootEnvVars: EnvironmentVariable[];
   branch: string;
   branches: string[];
+  branchPage: number;
+  branchesHasMore: boolean;
   services: ComposeServiceInfo[];
   /**
    * Compose/import projects can either deploy each parsed service, or ignore the
@@ -431,6 +472,7 @@ export interface DeploymentConfig {
   monorepoWorkspace?: MonorepoWorkspaceConfig;
   /** Routing config parsed from the repo's vercel.json; carried from prepare to
    *  project create so the backend persists + compiles it. Opaque passthrough. */
+  cloudStaticHosting?: "pages" | "server";
   routingConfig?: RoutingConfig | null;
   /**
    * Deploy-time readiness gate, set in the wizard's collapsed Health section and
@@ -439,6 +481,11 @@ export interface DeploymentConfig {
    * and nothing post-start can delay or veto it.
    */
   readiness?: OpenshipReadiness | null;
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
+  /** Ordered commands required before activating a single-app release. */
+  releaseCommands?: string[] | null;
+  /** Runtime roles (workers, a scheduler) seeded from openship.json. Data only, no editor yet. */
+  roles?: import("@repo/core").StackRole[] | null;
   /**
    * What the scan's openship.json parse refused (#641). NOT a user setting — it's
    * a fresh observation of the repo, so it is never hydrated from the saved
@@ -446,14 +493,10 @@ export interface DeploymentConfig {
    */
   configDiagnostics?: { errors: string[]; warnings: string[]; wholeFile?: true };
   /**
-   * Resource tier picked for Openship Cloud deploys. Self-hosted servers
-   * inherit the host's capacity, so this field is meaningless for them
-   * — kept on the config (not nested under cloud) because operators
-   * sometimes preview the cost before picking the target. The backend
-   * is responsible for translating the tier into a real ResourceConfig
-   * (cpuCores/memoryMb/diskMb) and the corresponding billing line. See
-   * `CLOUD_RESOURCE_TIERS` in the deploy-target step for placeholder
-   * values; real numbers come from the pricing service later.
+   * Container resource tier for Cloud deployments. Presets come from
+   * @repo/core; custom values use cloudResourceCustom. The selection is
+   * independent of the managed server's subscription and is bounded by
+   * that server's capacity.
    */
   cloudResourceTier?: CloudResourceTier;
   /** Custom CPU/RAM/disk values, used only when cloudResourceTier === "custom". */
@@ -492,9 +535,11 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   noPublicRoute: false,
   branch: "main",
   branches: [],
+  branchPage: 0,
+  branchesHasMore: false,
   services: [],
   serviceDeploymentMode: "single",
-  cloudResourceTier: "low",
+  cloudResourceTier: "unlimited",
   productionPortTouched: false,
   lastAutoDetectedEnvPort: null,
   options: {
@@ -586,6 +631,7 @@ export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } fro
 
 export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): PublicEndpoint {
   return {
+    ...(overrides.protectionDraft ? { protectionDraft: overrides.protectionDraft } : {}),
     id: overrides.id ?? randomUUID(),
     port: overrides.port ?? "",
     targetPath: overrides.targetPath ?? "",
@@ -645,6 +691,9 @@ function normalizePublicEndpointForMode(
 }
 
 export function syncPublicEndpointState(config: DeploymentConfig): DeploymentConfig {
+  if (config.projectType === "monorepo" && config.serviceDeploymentMode === "services") {
+    return { ...config, publicEndpoints: [] };
+  }
   const workload = workloadOf(config.options);
 
   // A worker (#538) binds no port and is never routed — it has no public
@@ -730,15 +779,8 @@ export function getPublicEndpointHosts(
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-/** One exposed port's advisory probe result (mirrors the API `PortCheckResult`). */
-export interface PortCheckUI {
-  port: number;
-  listening: boolean;
-  checked: boolean;
-  serviceId?: string;
-  serviceName?: string;
-  skippedReason?: string;
-}
+/** Use the engine's persisted/SSE shape for live checks and deployment review. */
+export type PortCheckUI = PortCheckResult;
 
 /** One routed path's advisory static-output result (mirrors `OutputCheckResult`). */
 export interface OutputCheckUI {
@@ -756,7 +798,16 @@ export interface OutputCheckUI {
   skippedReason?: string;
 }
 
+export interface CloudBuildQueueStatus {
+  position: number | null;
+  reason: "concurrency" | "resources" | "server";
+  simultaneousBuilds: number | null;
+  activeBuilds: number;
+  workspaceId: string;
+}
+
 export interface DeploymentState {
+  queue: CloudBuildQueueStatus | null;
   deploymentId: string | null;
   isDeploying: boolean;
   isStopping: boolean;
@@ -765,6 +816,9 @@ export interface DeploymentState {
   deploymentCanceled: boolean;
   /** A cancelled row whose worker lease has not acknowledged completion yet. */
   cancellationPending: boolean;
+  /** A terminal outcome whose worker is still completing cleanup. */
+  completionPending: boolean;
+  canRetryDeployment: boolean;
   failureMessage: string;
   warningMessage: string;
   /**
@@ -799,8 +853,6 @@ export interface DeploymentState {
   buildDurationMs: number | null;
   /** ISO timestamp when the build started (for elapsed timer). */
   buildStartedAt: string | null;
-  /** Accumulated elapsed ms carried from previous failed/cancelled retries. */
-  buildRetryCarryMs: number;
   /** Active pipeline prompt waiting for user response. */
   pendingPrompt: {
     promptId: string;
@@ -829,6 +881,7 @@ export const BUILD_PHASES: ReadonlyArray<{ id: string; label: string; oneTime?: 
 ];
 
 export const INITIAL_STATE: DeploymentState = {
+  queue: null,
   deploymentId: null,
   isDeploying: false,
   isStopping: false,
@@ -836,6 +889,8 @@ export const INITIAL_STATE: DeploymentState = {
   deploymentFailed: false,
   deploymentCanceled: false,
   cancellationPending: false,
+  completionPending: false,
+  canRetryDeployment: false,
   failureMessage: "",
   warningMessage: "",
   decisionPending: false,
@@ -851,30 +906,39 @@ export const INITIAL_STATE: DeploymentState = {
   projectId: null,
   buildDurationMs: null,
   buildStartedAt: null,
-  buildRetryCarryMs: 0,
   pendingPrompt: null,
   serviceStatuses: [],
   phaseDurations: {},
 };
 
-export function resolveBuildElapsedMs(
-  state: Pick<DeploymentState, "buildDurationMs" | "buildStartedAt" | "buildRetryCarryMs">,
-  now = Date.now(),
-): number {
-  const carry = state.buildRetryCarryMs || 0;
+export type BuildTimingState = Pick<
+  DeploymentState,
+  | "buildDurationMs"
+  | "buildStartedAt"
+  | "isDeploying"
+  | "deploymentSuccess"
+  | "deploymentFailed"
+  | "deploymentCanceled"
+>;
 
-  if (typeof state.buildDurationMs === "number") {
-    return Math.max(0, carry + state.buildDurationMs);
+export function isBuildClockRunning(state: BuildTimingState): boolean {
+  return (
+    state.isDeploying &&
+    !state.deploymentSuccess &&
+    !state.deploymentFailed &&
+    !state.deploymentCanceled &&
+    !Number.isFinite(state.buildDurationMs) &&
+    Number.isFinite(Date.parse(state.buildStartedAt ?? ""))
+  );
+}
+
+/** One attempt's duration. A missing terminal measurement is unknown, never
+ *  elapsed time since an old start (which can be days ago on a history page). */
+export function resolveBuildElapsedMs(state: BuildTimingState, now = Date.now()): number | null {
+  if (typeof state.buildDurationMs === "number" && Number.isFinite(state.buildDurationMs)) {
+    return Math.max(0, state.buildDurationMs);
   }
-
-  if (state.buildStartedAt) {
-    const startedAtMs = new Date(state.buildStartedAt).getTime();
-    if (Number.isFinite(startedAtMs)) {
-      return Math.max(0, carry + (now - startedAtMs));
-    }
-  }
-
-  return Math.max(0, carry);
+  return isBuildClockRunning(state) ? Math.max(0, now - Date.parse(state.buildStartedAt!)) : null;
 }
 
 // ─── Status ──────────────────────────────────────────────────────────────────
@@ -886,6 +950,8 @@ export type DeploymentStatus = "building" | "deploying" | "ready" | "failed" | "
 export interface DeploymentContextType {
   // Single source of truth
   config: DeploymentConfig;
+  /** Source detection is in flight; save/deploy must wait for a consistent config. */
+  isRescanning: boolean;
   state: DeploymentState;
   terminalRef: React.MutableRefObject<Terminal | null>;
   canStreamContainer: React.MutableRefObject<boolean>;
@@ -929,6 +995,8 @@ export interface DeploymentContextType {
   rescanWithComposePath: (
     composePath: string,
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
+  /** Re-detect the selected branch before applying its name and build defaults. */
+  rescanWithBranch: (branch: string) => Promise<{ success: boolean; error?: string }>;
   /** Folder-upload hydration — seed from the user-picked stack's defaults
    *  (no auto-detection); falls back to the session scan when no stack given. */
   initializeFromUpload: (
@@ -950,8 +1018,10 @@ export interface DeploymentContextType {
   connectToBuild: (deploymentId?: string, startBuild?: boolean) => Promise<void>;
   loadBuildSession: (deploymentId: string) => Promise<BuildSessionLoadResult>;
   stopDeployment: () => Promise<void>;
-  redeploy: (deploymentId: string) => Promise<string | null>;
+  redeploy: (deploymentId: string, options?: { reuseBuild?: boolean }) => Promise<string | null>;
   respondToPrompt: (action: string) => Promise<void>;
+  /** Reflect a successful port edit/dismissal only in the deployment it belongs to. */
+  resolvePortCheck: (deploymentId: string, target: number | string) => void;
   /** Open the shared clone-credential modal for a github-credential error code
    *  (single handler for the deploy wizard, redeploy, and the build page).
    *  Returns true when it opened; false when the code isn't credential-related. */
@@ -966,6 +1036,6 @@ export interface DeploymentContextType {
 
   // Internal
   _setContainerFailed: (message: string) => void;
-  steps: { label: string; icon: string }[];
+  steps: { label: string; icon: IconName }[];
   deploymentStatus: DeploymentStatus;
 }

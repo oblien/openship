@@ -26,8 +26,9 @@
  * sweeper that could itself crash.
  */
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { MiddlewareHandler } from "hono";
-import { env } from "../config/env";
+import { env } from "@repo/platform/engine/config/env";
 import { isMigrationInProgress } from "../modules/system/migration/migration-lock";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -42,6 +43,8 @@ const EXEMPT_PREFIXES = [
 ] as const;
 
 function isExemptPath(path: string): boolean {
+  // Logging neither writes instance data nor participates in the handoff.
+  if (path === "/api/diagnostics/client-errors") return true;
   return EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
@@ -74,7 +77,7 @@ export const migrationGuard: MiddlewareHandler = async (c, next) => {
     // If the read fails we err on the side of allowing the request —
     // a permanent lockout on a DB blip would be worse than letting a
     // mutation slip through during the cutover window.
-    console.warn("[migration-guard] flag read failed; allowing request:", err);
+    errorDiagnostics.warn("api/middleware/migration-guard", "[migration-guard] flag read failed; allowing request:", err);
   }
 
   if (!locked) {

@@ -132,6 +132,21 @@ on every check. This is expected — fix the underlying reachability problem, wa
 A single success clears it.
 </Callout>
 
+### Connecting through Cloudflare Access
+
+Select **Cloudflare Access** in the server's **Connection** field. Use the Access application hostname,
+not a URL or a raw `ProxyCommand`. Passwords, encrypted keys and agent authentication are supported.
+
+If OpenShip reports that `cloudflared` is missing, install it on the machine running the API. Windows
+desktop bundles it. An operator can override the executable using the process environment variable
+`OPENSHIP_CLOUDFLARED_PATH`; quote Windows paths containing spaces when setting that variable.
+Finish Cloudflare authentication as the same OS user running OpenShip, then retry **Test Connection**.
+In headless or container installations, an authenticated `cloudflared` session must be available in
+that environment. Check that the Access policy permits the account and that the tunnel points to SSH.
+
+Cloudflare and a jump host are separate connection choices. Raw `ProxyCommand` and other options
+that execute commands locally are rejected in the server form and API.
+
 ### A jump host or extra SSH args seem ignored
 
 <Callout type="error">
@@ -241,6 +256,63 @@ Press **Re-check** (or `openship server check <serverId>`) — the Docker row sh
 Automated Docker (and OpenResty) installation targets Linux servers. On a non-Linux host you'll see
 `Docker installation is only supported on Linux servers` — install Docker yourself, then Re-check.
 </Callout>
+
+### Docker is installed but the connection can't use its socket
+
+<Callout type="error">
+``Docker is installed but this connection is not allowed to use its socket — add the login user to the
+`docker` group, or connect as root — permission denied while trying to connect to the Docker API at
+unix:///var/run/docker.sock``
+</Callout>
+
+**What it means.** SSH works and Docker is installed, but the user Openship logs in as may not talk to the
+Docker daemon. `/var/run/docker.sock` is owned by `root` and the `docker` group, so a non-root user outside
+that group is refused. This says nothing about whether the daemon is running — the permission check happens
+first.
+
+**How to fix.**
+
+<Steps>
+
+<Step>
+On the server, as that login user, confirm who you are and which groups you're in:
+
+```bash
+whoami
+id
+```
+
+If `docker` isn't in the `groups=` list, that's the cause.
+</Step>
+
+<Step>
+Add the user to the `docker` group:
+
+```bash
+sudo usermod -aG docker "$USER"
+```
+
+Or skip this and edit the server to log in as `root` instead.
+</Step>
+
+<Step>
+Press **Re-check** (or `openship server check <serverId>`). Group changes only apply to new login sessions;
+Openship notices that its existing SSH session predates the change and reconnects before checking again, so
+you don't need to remove and re-add the server.
+</Step>
+
+</Steps>
+
+<Callout title="The docker group is root-equivalent" type="warn">
+Anyone who can use the Docker socket can start a container that mounts the host's filesystem, so membership
+in `docker` grants the same power as `root` on that server. Only add a user you'd trust with `root`.
+</Callout>
+
+If the server is **the machine Openship itself runs on**, there is no SSH session to replace: Openship's own
+process keeps the groups it started with, and the Docker row adds
+`Restart Openship to apply the updated user group membership.` Restart the Openship service (`openship stop`,
+then `openship up`). For the desktop app, log out of your desktop session and back in first, then reopen the
+app — it inherits its groups from your login.
 
 ### A component is installed but "unhealthy"
 

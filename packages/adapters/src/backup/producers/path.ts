@@ -78,6 +78,8 @@ import {
   validateClearPath,
 } from "@repo/core";
 import { registerProducer } from "../registry";
+import { sourceArchiveName } from "../common/source-names";
+import { yieldArtifact } from "../common/artifact-stream";
 import {
   codecSuffix,
   detectDumpCodec,
@@ -161,16 +163,6 @@ function guardRestorePath(path: string, codec: DumpCodec, clear: boolean): strin
   return lines.join("\n");
 }
 
-/** Filename-safe rendering of a path: `/var/www/html` → `var_www_html`. */
-function pathSlug(path: string): string {
-  return (
-    path
-      .replace(/^\/+/, "")
-      .replace(/[^a-zA-Z0-9._-]/g, "_")
-      .slice(0, 80) || "root"
-  );
-}
-
 class PathArchiveProducerImpl implements BackupProducer {
   readonly kind = "path" as const;
 
@@ -236,8 +228,8 @@ class PathArchiveProducerImpl implements BackupProducer {
         ),
       );
 
-      yield {
-        name: `path-${pathSlug(path)}.tar${codecSuffix(codec)}`,
+      yield* yieldArtifact({
+        name: `path-${sourceArchiveName(path)}.tar${codecSuffix(codec)}`,
         stream: stdout as unknown as Readable,
         payloadKind: "path",
         metadata: {
@@ -251,15 +243,9 @@ class PathArchiveProducerImpl implements BackupProducer {
           // rather than leaving an operator to assume otherwise.
           consistency: "crash",
         },
-      };
-
-      const exit = await awaitExit;
-      if (exit.code !== 0) {
-        throw new Error(
-          `Archiving ${path} from service "${service.name}" failed (exit ${exit.code}): ` +
-            `${exit.stderr.slice(0, 500)}`,
-        );
-      }
+      }, awaitExit, exit =>
+        `Archiving ${path} from service "${service.name}" failed (exit ${exit.code}): ${exit.stderr.slice(0, 500)}`,
+      );
     }
   }
 

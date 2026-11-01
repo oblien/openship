@@ -1,0 +1,82 @@
+---
+title: Embed Openship
+description: Create a native installation and deploy through shared platform operations.
+---
+
+Use `createShip()` when your Node application owns the installation. It creates an isolated worker,
+storage, and providers. Native operations call the shared engine without an API HTTP listener.
+
+## Create an installation and deploy
+
+[Install the SDK](/docs/api/sdk/installation), then set `OPENSHIP_ENCRYPTION_KEY` to a persistent
+secret of at least 32 bytes. Keep that key when reopening the database.
+
+```ts title="native.mts"
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+import { createShip, type VerifiedIdentity } from "openship/native";
+
+const encryptionKey = process.env.OPENSHIP_ENCRYPTION_KEY;
+if (!encryptionKey) throw new Error("Set OPENSHIP_ENCRYPTION_KEY");
+const sessions = new Map<string, VerifiedIdentity>();
+const stateDirectory = resolve("./ship-state");
+const ship = await createShip({
+  instanceId: "my-product",
+  stateDirectory,
+  storage: { driver: "pglite", dataDir: resolve(stateDirectory, "database") },
+  encryptionKey,
+  runtime: "bare",
+  routing: "none",
+  policy: { allowHostExecution: true },
+  administration: true,
+  identity: { resolve: async (assertion: string) => sessions.get(assertion) ?? null },
+});
+
+try {
+  if (!ship.operator) throw new Error("Host administration is required for this example");
+  const person = await ship.operator.ensureIdentity({
+    issuer: "my-product",
+    subject: "customer-123",
+    email: "customer@example.com",
+  });
+  const assertion = randomUUID();
+  sessions.set(assertion, { user: person.user, sessionId: assertion });
+  await ship.start();
+  const customer = await ship.scope({
+    identity: assertion,
+    organizationId: person.personalOrganizationId,
+  });
+  const submitted = await customer.deploy({
+    name: "generated-app",
+    source: { type: "files", files: { "index.html": "<h1>Hello</h1>" } },
+  });
+  const outcome = await customer
+    .deployment(submitted.deployment_id)
+    .wait({ timeoutMs: 60_000 });
+  if (!outcome.success) throw new Error(outcome.message ?? outcome.status);
+  console.log(submitted.project_id, outcome.status);
+} finally {
+  await ship.close({ mode: "drain" });
+}
+```
+
+This uses a demo session map. An embedding application should verify assertions through its own
+authentication service; see [identities and scopes](/docs/api/sdk/identity).
+
+## Runtime choices
+
+| Choice | Behavior |
+| --- | --- |
+| `bare` with `routing: "none"` | Build and manage local workloads without setting up managed routing. A static release has no public URL. |
+| `bare` or `docker` with managed routing | Use the existing local runtime and edge providers. Host setup requires explicit execution policy. |
+| Registered server or Cloud provider | Use configured infrastructure and its capability checks. See [compatibility](/docs/api/sdk/compatibility). |
+
+`allowHostExecution: true` permits host builds. Organization scopes authorize operations; they do not
+sandbox generated application code. Choose providers suitable for the workloads your application accepts.
+
+## Continue
+
+- [Lifecycle and configuration](/docs/api/sdk/lifecycle): storage, keys, startup, and shutdown.
+- [Users and organizations](/docs/api/sdk/identity): verified identities and tenant scopes.
+- [Runnable example](/docs/api/sdk/examples): deploy twice, reopen state, and remove the project.
+- [Operator reference](/docs/api/sdk/operator): trusted installation administration.

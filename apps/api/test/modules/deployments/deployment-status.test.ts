@@ -6,7 +6,7 @@ import {
   BLOCKING_ERROR_CODES,
   failureStatusFor,
   isBlockingErrorCode,
-} from "../../../src/modules/deployments/blocking-errors";
+} from "@repo/platform/engine/modules/deployments/blocking-errors";
 
 /**
  * Two things are pinned here.
@@ -47,20 +47,20 @@ const SETTLED_STATUS_GUARDS: Array<{
 }> = [
   {
     what: "startBuild idempotency guard",
-    file: "apps/api/src/modules/deployments/build.service.ts",
+    file: "packages/platform/src/engine/modules/deployments/build.service.ts",
     anchor:
       '[\n      "building",\n      "deploying",\n      "ready",\n      "failed",\n      "cancelled",\n      "action_required",',
     breaks: "POST /:id/build re-runs the build on an already-settled row",
   },
   {
     what: "markDeploymentFailedFromOutside already-settled guard",
-    file: "apps/api/src/modules/deployments/build-pipeline.ts",
+    file: "packages/platform/src/engine/modules/deployments/build-pipeline.ts",
     anchor: '["failed", "ready", "cancelled", "action_required"',
     breaks: "an outer throw overwrites the recorded blocker with a bare `failed`",
   },
   {
     what: "migration orchestrator TERMINAL_DEPLOY",
-    file: "apps/api/src/modules/migration/migration.orchestrator.ts",
+    file: "packages/platform/src/engine/modules/migration/migration.orchestrator.ts",
     anchor: "TERMINAL_DEPLOY",
     breaks: "waitForDeployment polls for the full VERIFY_TIMEOUT_MS (20 min)",
   },
@@ -99,7 +99,7 @@ const SETTLED_STATUS_GUARDS: Array<{
 const IN_FLIGHT_SITES = [
   "packages/db/src/schema/deployment.ts",
   "packages/db/src/repos/deployment.repo.ts",
-  "apps/api/src/modules/projects/deployment-flags.ts",
+  "packages/platform/src/engine/modules/projects/deployment-flags.ts",
 ];
 
 describe("blocking error codes — the promotion rule", () => {
@@ -148,7 +148,7 @@ describe("the in-flight vocabulary stays one vocabulary", () => {
     // starts a NEW deploy. If it leaked into this set, the row would hold the
     // one-in-flight-per-project slot forever and block every future deploy.
     const { IN_FLIGHT_DEPLOY_STATUSES, deploymentIsInFlight } =
-      await import("../../../src/modules/projects/deployment-flags");
+      await import("@repo/platform/engine/modules/projects/deployment-flags");
     expect(IN_FLIGHT_DEPLOY_STATUSES.has("action_required")).toBe(false);
     expect(deploymentIsInFlight({ status: "action_required" } as never)).toBe(false);
     expect(deploymentIsInFlight({ status: "deploying" } as never)).toBe(true);

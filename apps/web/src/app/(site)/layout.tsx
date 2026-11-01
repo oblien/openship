@@ -54,9 +54,7 @@ export const metadata: Metadata = {
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
     ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     other: [
       { url: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
       { url: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png" },
@@ -93,9 +91,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
     types: {
-      "application/rss+xml": [
-        { url: "/resources/rss.xml", title: "Openship Resources" },
-      ],
+      "application/rss+xml": [{ url: "/blog/rss.xml", title: "Openship Blog" }],
     },
   },
   // verification: {
@@ -166,11 +162,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link
-          rel="preconnect"
-          href="https://cdn.oblien.com"
-          crossOrigin="anonymous"
-        />
+        <link rel="preconnect" href="https://cdn.oblien.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://cdn.oblien.com" />
         <script
           type="application/ld+json"

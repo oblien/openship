@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { systemApi, type ContainerApplyActive, type ServerContainerGroup } from "@/lib/api/system";
@@ -80,7 +81,8 @@ export function useInfraFleet(enabled: boolean) {
       const fresh = await systemApi.listAllContainers();
       if (alive.current) setGroups(fresh);
       return fresh;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/hooks/useInfraFleet");
       if (alive.current) setGroups([]); // cloud / read error → the card simply doesn't render
       return [];
     }
@@ -92,7 +94,8 @@ export function useInfraFleet(enabled: boolean) {
     try {
       setGroups(await systemApi.scanAllContainers());
       markInfraScanned();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/hooks/useInfraFleet");
       // Best-effort: one unreachable box shouldn't wipe the cached view.
     } finally {
       setScanning(false);
@@ -110,7 +113,7 @@ export function useInfraFleet(enabled: boolean) {
     void (async () => {
       await load();
       if (cancelled || autoScanRan.current || !infraScanStale()) return;
-      const on = await systemApi.getInfraAutoScan().catch(() => false);
+      const on = await systemApi.getInfraAutoScan().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/hooks/useInfraFleet"); return false; });
       if (cancelled || !on) return;
       autoScanRan.current = true;
       markInfraScanned();
@@ -118,7 +121,8 @@ export function useInfraFleet(enabled: boolean) {
       try {
         const fresh = await systemApi.scanAllContainers();
         if (!cancelled) setGroups(fresh);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/hooks/useInfraFleet");
         /* cached view stays */
       } finally {
         if (!cancelled) setScanning(false);
@@ -150,7 +154,7 @@ export function useInfraFleet(enabled: boolean) {
    */
   const poll = useCallback(async () => {
     watchTicks.current += 1;
-    const next = await systemApi.applyingContainers().catch(() => null);
+    const next = await systemApi.applyingContainers().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/hooks/useInfraFleet"); return null; });
     if (next && alive.current) {
       // A session anywhere means the control plane is alive and doing the work, so
       // only its absence counts toward the stall bound.

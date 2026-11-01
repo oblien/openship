@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../../packages/ui/src/AppLogo.tsx";
 @import "../styles/fonts.css";
 @import "../styles/theme.css";
 @import "../styles/chart.css";
@@ -120,7 +121,9 @@
   border-radius: 999px;
   color: var(--th-text-title);
   opacity: 0.45;
-  transition: background-color 0.15s, opacity 0.15s;
+  transition:
+    background-color 0.15s,
+    opacity 0.15s;
 }
 .app-titlebar-btn:hover,
 .app-titlebar-menu > button:hover {
@@ -133,15 +136,10 @@
   opacity: 0.15;
   pointer-events: none;
 }
-/* Window-control glyphs are hand-drawn 12x12 strokes, unlike the lucide icons. */
+/* Window controls share the catalog while retaining their compact dimensions. */
 .app-titlebar-wc {
   width: 12px;
   height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 /* The ⋯ dropdown lives in a 44px bar, so its popup has to escape downward. */
 .app-titlebar-menu {
@@ -215,16 +213,29 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 4px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 20px);
 }
 
 @theme inline {
-  --font-sans: 'Gellix', 'SF Arabic', system-ui, -apple-system, sans-serif;
+  --font-sans: "Gellix", "SF Arabic", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
 }
 
 @layer base {
-  html { -webkit-font-smoothing: antialiased; }
+  :where(.bg-card) {
+    box-shadow: var(--th-card-shadow);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
   body {
     font-family: var(--font-sans);
+    font-weight: var(--appearance-font-weight, 400);
+    line-height: var(--appearance-line-height, 1.5);
     background-color: var(--th-bg-page);
     color: var(--th-text-body);
   }
@@ -232,6 +243,14 @@
 
 ::-webkit-scrollbar {
   display: none;
+}
+
+/* `scrollbar-hide` is referenced by Tabs.tsx and ProjectMobileTabs but was
+ * never actually defined - the global ::-webkit-scrollbar rule above already
+ * hides WebKit scrollbars everywhere, so it went unnoticed there, but Firefox
+ * doesn't honor that rule and needs `scrollbar-width` instead. */
+.scrollbar-hide {
+  scrollbar-width: none;
 }
 
 button {
@@ -295,7 +314,7 @@ button {
  */
 .bg-card.border-border\/50,
 .bg-card.border-border\/60 {
-  border-color: transparent;
+  border-color: var(--th-card-bd);
 }
 
 /* Exceptions: things that carry the card fill but are not card containers.
@@ -320,7 +339,8 @@ textarea.bg-card,
  * language still holds. Form controls opt out — they keep the white field
  * background that --th-input-bg specifies. */
 html:not([data-theme="dark"]):not([data-theme="dim"])
-  .bg-card .bg-card:not(input):not(select):not(textarea) {
+  .bg-card
+  .bg-card:not(input):not(select):not(textarea) {
   background-color: var(--th-sf-03);
 }
 
@@ -331,7 +351,6 @@ html:not([data-theme="dark"]):not([data-theme="dim"])
  * one, not from black, so it steps like dim's ladder: +7, to #141414. Same
  * selector and opt-outs as light. Lower this and the inner card starts merging
  * into the outer one; there is no border left to save it. */
-html[data-theme="dark"]
-  .bg-card .bg-card:not(input):not(select):not(textarea) {
+html[data-theme="dark"] .bg-card .bg-card:not(input):not(select):not(textarea) {
   background-color: var(--th-sf-03);
 }

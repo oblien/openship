@@ -1,4 +1,67 @@
 {
+  "appearance": {
+    "title": "Görünüm",
+    "description": "Bir tema seçin veya cihazınızın görünümünü takip edin. Değişiklikler hemen uygulanır.",
+    "themes": {
+      "light": "Açık",
+      "dim": "Loş",
+      "dark": "Koyu",
+      "system": "Sistem"
+    },
+    "editor": {
+      "description": "Kişisel temalar, canlı önizleme ve taşınabilir JSON.",
+      "newTheme": "Yeni tema",
+      "duplicate": "Çoğalt",
+      "reset": "Sıfırla",
+      "saved": "Kaydedildi",
+      "preview": "Canlı önizleme",
+      "unsaved": "Kaydedilmemiş değişiklikler önizleniyor.",
+      "invalid": "Kaydetmeden önce işaretli değerleri düzeltin.",
+      "retry": "Tekrar dene",
+      "name": "Tema adı",
+      "base": "Temel tema",
+      "tokens": "Tasarım belirteçleri",
+      "search": "Belirteç ara…",
+      "typography": "Tipografi",
+      "interfaceFont": "Arayüz yazı tipi",
+      "monoFont": "Eş aralıklı yazı tipi",
+      "fontSize": "Arayüz boyutu",
+      "monoSize": "Eş aralıklı boyut",
+      "lineHeight": "Satır yüksekliği",
+      "weight": "Yazı kalınlığı",
+      "uploadFont": "WOFF2 yükle",
+      "export": "Temayı indir",
+      "exportAll": "Tümünü indir",
+      "json": "Tema JSON’unu yapıştır",
+      "url": "Tema JSON adresi",
+      "loadUrl": "Adresi yükle",
+      "selectFile": "JSON yükle",
+      "importHint": "Bir tema veya kitaplık içe aktarın. Değişiklikleri korumak için kaydedin.",
+      "fontHint": "WOFF2 yazı tipleri temayla taşınır. Yazı tipi başına en fazla 256 KiB.",
+      "personal": "Değişiklikler yalnızca bu hesaba uygulanır.",
+      "presets": "Hazır temalar",
+      "discard": "Vazgeç",
+      "color": "Renk",
+      "systemFont": "Sistem yazı tipi",
+      "serifFont": "Serifli",
+      "systemMono": "Sistem eş aralıklı",
+      "workspace": "Çalışma alanınız",
+      "active": "Etkin",
+      "queued": "Sırada",
+      "failed": "Başarısız",
+      "groups": {
+        "surfaces": "Yüzeyler",
+        "text": "Metin",
+        "controls": "Kontroller",
+        "status": "Durum",
+        "effects": "Efektler",
+        "scales": "Tonlar"
+      },
+      "libraryLimit": "Yeni bir tema eklemeden önce özel bir temayı kaldırın."
+    },
+    "customize": "Özelleştir",
+    "backToGeneral": "Genel ayarlara dön"
+  },
   "language": {
     "title": "Dil",
     "description": "Kontrol panelinde kullanılacak dili seçin."
@@ -48,6 +111,7 @@
     "title": "Ayarlar",
     "tabs": {
       "general": "Genel",
+      "security": "Güvenlik",
       "git": "Git",
       "tokens": "API jetonları",
       "mcp": "MCP",
@@ -57,7 +121,8 @@
       "credentials": "Kimlik bilgileri",
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
-      "instance": "Kurulum"
+      "instance": "Kurulum",
+      "systemSender": "Sistem göndericisi"
     }
   },
   "email": {
@@ -100,6 +165,7 @@
     "toastTitle": "E-posta"
   },
   "github": {
+    "tokenCreate": "Jeton oluştur",
     "title": "GitHub",
     "titleWithLogin": "GitHub · @{login}",
     "noInstallations": "Bağlandı · Henüz kurulum yok",
@@ -143,8 +209,49 @@
       "optionalSuffix": "çalıştırın. Uzak dağıtımlar her sunucunun SSH anahtarını veya Uygulamayı kullanır.",
       "disconnectPrefix": "Bağlantıyı kesmek için terminalinizde",
       "disconnectSuffix": "çalıştırın.",
-      "use": "gh CLI Kullan"
-    }
+      "use": "gh CLI Kullan",
+      "login": "GitHub ile giriş yap",
+      "deviceHint": "Bu örneği yetkilendirmek için GitHub'da bu tek kullanımlık kodu girin:",
+      "waiting": "Yetkilendirme bekleniyor — bu otomatik olarak güncellenir.",
+      "tokenAltPrefix": "Belirteç mi tercih edersiniz? Şuraya kişisel bir erişim belirteci ekleyin:",
+      "tokenAltLink": "Klonlama kimlik bilgileri.",
+      "forwardOnNote": "İletme açık — gh CLI uzak sunucu klonlamalarını da doğrular. Kimliğiniz klonlama başına SSH üzerinden tünellenir; sunucuda hiçbir şey saklanmaz.",
+      "forwardOffHint": "Şimdilik yalnızca yerel derlemeler. Uzak sunucu dağıtımları için de gh CLI kullanmak üzere \"Git kimliğimi derleme sunucularına ilet\" seçeneğini açın.",
+      "manageForward": "İletmeyi yönet",
+      "disconnectBody": "Openship bu kimlik bilgisini bu örnekten kaldıracak ve klonlamalar için kullanmayı durduracaktır. Siz GitHub'da iptal edene kadar orada geçerli kalır. İstediğiniz zaman yeniden bağlanabilirsiniz.",
+      "recheck": "Tekrar kontrol et"
+    },
+    "replaceToken": "GitHub belirtecini değiştir",
+    "clearToken": "Kayıtlı belirteci sil",
+    "tokenEditorDescription": "Depoları görüntülemek ve bu kurulumda derleme yapmak için GitHub kişisel erişim belirteci kullanın.",
+    "methodTokenDesc": "Depoları görüntülemek ve yerel derlemeler için GitHub belirteci kullanın.",
+    "activeVia": "{method} ile bağlandı",
+    "pickMethod": "Openship'in depolarınıza nasıl erişeceğini seçin.",
+    "methodDevice": "GitHub ile giriş",
+    "methodApp": "GitHub Uygulaması",
+    "methodAppDesc": "Yerel ve uzak dağıtımlar için kapsamlı, kısa ömürlü yükleme belirteçleri.",
+    "methodSshDesc": "Her sunucuya bir dağıtım anahtarı ekleyin (Sunucular → GitHub).",
+    "signIn": "GitHub ile giriş yap",
+    "signInDesc": "Cihaz koduyla tarayıcıdan giriş yapın. Kayıt gerektirmez, sunucuya SSH bağlantısı gerekmez.",
+    "changeMethod": "Yöntemi değiştir",
+    "otherMethods": "Diğer yöntemler",
+    "openGithub": "GitHub'ı Aç",
+    "copyCode": "Kopyalamak için tıklayın",
+    "tokenConnect": "Bağlan",
+    "tokenGhHint": "Sunucuda zaten şununla giriş yapıldı:",
+    "tokenSaveFailed": "Belirteç kaydedilemedi.",
+    "forwardOffHint": "Yalnızca yerel derlemeler. Uzak sunucu dağıtımları için de kullanmak üzere \"Git kimliğimi derleme sunucularına ilet\" seçeneğini açın.",
+    "remoteCredentialHint": "Bu ana makinede çalışan depo tarama ve derlemeler için kullanılır. Uzak bir sunucuda derlenen dağıtımlar o sunucunun kendi kimlik bilgilerini kullanır — sunucu başına bir dağıtım anahtarı veya belirteç ekleyin.",
+    "methodToken": "GitHub belirteci",
+    "methodHostCli": "Bu ana makinedeki gh CLI",
+    "manageTokensOnGithub": "GitHub'da belirteçleri yönet",
+    "manageAccessOnGithub": "GitHub'da erişimi yönet",
+    "disconnectScopeNote": "Bağlantıyı kesmek bu kimlik bilgisini Openship'ten kaldırır ve klonlamalar için kullanımını durdurur. Siz orada iptal edene kadar GitHub'da geçerli kalır.",
+    "credentialRejected": "GitHub saklanan {method} yöntemini reddetti.",
+    "credentialRejectedImpact": "İptal edildi, süresi doldu veya gerekli bir kapsamı kaybetti. Bununla klonlanan dağıtımlar, siz aşağıdan yeniden bağlanana kadar başarısız olmaya devam edecektir.",
+    "credentialUnreachable": "Saklanan {method} yöntemini kontrol etmek için GitHub'a ulaşılamadı.",
+    "credentialUnreachableImpact": "Bu genellikle geçersiz bir kimlik bilgisinden ziyade bir ağ sorunudur — Openship bunu kullanmaya devam eder. GitHub erişilemez durumdaysa yeniden bağlanmak yardımcı olmaz.",
+    "credentialCheckedAt": "Son kontrol: {time}"
   },
   "deployDefaults": {
     "title": "Dağıtım Varsayılanları",
@@ -259,9 +366,9 @@
   },
   "cloneCredentials": {
     "title": "GitHub klonlama kimlik bilgileri",
-    "description": "GitHub Uygulaması kurulu olmadığında özel depoları klonlamak için kullanılan kişisel jeton",
+    "description": "Özel depolara kişisel erişim.",
     "loading": "Yükleniyor…",
-    "intro": "Bir GitHub kişisel erişim jetonu (classic veya fine-grained) yapıştırın. Klonlama modülü bunu — proje bazlı özel ayarlardan sonra, GitHub Uygulama jetonundan önce — ikinci öncelikli kimlik bilgisi olarak kullanır.",
+    "intro": "Projeye özel jetonlar önceliklidir. Etkinleştirildiğinde bu jeton, GitHub Uygulaması kimlik bilgilerinden önce kullanılır. Devre dışı bırakıldığında jeton kayıtlı kalır.",
     "placeholder": "ghp_… veya github_pat_…",
     "showToken": "Jetonu göster",
     "hideToken": "Jetonu gizle",
@@ -273,8 +380,12 @@
     "justNow": "az önce",
     "replace": "Değiştir",
     "clear": "Temizle",
-    "useAsDefault": "Varsayılan klonlama jetonu olarak kullan",
-    "useAsDefaultDesc": "Açık olduğunda, klonlama modülü bu jetonu zincirdeki ikinci katman olarak kullanır. Kapalı olduğunda jeton saklanır ancak kullanılmaz — yalnızca belirli dağıtımlarda aktif olmasını istiyorsanız kullanışlıdır.",
+    "useAsDefault": "Varsayılan olarak kullan",
+    "useAsDefaultDesc": "Projenin kendi jetonu yoksa bu jetonu kullan.",
+    "tokenLabel": "Kişisel erişim jetonu",
+    "helpTitle": "Jeton izinleri ve kullanımı",
+    "forwardGitLabel": "Yerel GitHub erişimini ilet",
+    "forwardGitDesc": "Yerel GitHub oturumunu SSH üzerinden uzak derleme sunucularıyla paylaş.",
     "toast": {
       "pasteFirst": "Kaydetmeden önce bir jeton yapıştırın",
       "notLikeToken": "Bu bir GitHub jetonuna benzemiyor. Eminseniz yine de kaydedin.",
@@ -283,7 +394,8 @@
       "cleared": "Klonlama jetonu temizlendi",
       "clearFailed": "Jeton temizlenemedi",
       "updateDefaultFailed": "Varsayılan güncellenemedi"
-    }
+    },
+    "forwardGitFailed": "Git iletmesi güncellenemedi"
   },
   "tokens": {
     "title": "Kişisel Erişim Jetonları",
@@ -330,7 +442,9 @@
       "revoked": "\"{name}\" iptal edildi",
       "revokeFailed": "Jeton iptal edilemedi",
       "loadFailed": "Jetonlar yüklenemedi"
-    }
+    },
+    "callsOne": " · 1 çağrı",
+    "callsMany": " · {count} çağrı"
   },
   "mcp": {
     "title": "MCP",
@@ -359,13 +473,30 @@
     "allResources": "Tüm kaynaklar",
     "resourcesOne": "{count} kaynak",
     "resourcesMany": "{count} kaynak",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "Yetkilendirilme: {date}",
     "lastUsedSuffix": " · son kullanım: {date}",
     "toast": {
       "disconnected": "MCP istemcisinin bağlantısı kesildi",
       "disconnectFailed": "Bağlantı kesilemedi"
-    }
+    },
+    "callsOne": " · 1 çağrı",
+    "callsMany": " · {count} çağrı",
+    "editAccess": "Erişimi düzenle",
+    "viewActivity": "Etkinlik",
+    "editScopeTitle": "{client} erişimi",
+    "editScopeSubtitle": "Değişiklikler aracının bir sonraki isteğinde geçerli olur — yeniden bağlanması gerekmez.",
+    "editScopeOrg": "{org} içinde",
+    "wasNResourcesOne": "şu anda 1 kaynak",
+    "wasNResourcesMany": "şu anda {count} kaynak",
+    "saveScope": "Erişimi kaydet",
+    "scopeSaved": "Erişim güncellendi",
+    "scopeSaveFailed": "Erişim güncellenemedi",
+    "loadScopeFailed": "Bu istemcinin erişimi yüklenemedi",
+    "scopeGrantRejected": "Artık {resource} yetkisi veremezsiniz, bu yüzden kaldırıldı. Devam etmek için tekrar kaydedin.",
+    "confirmWidenTitle": "Bu işlem tüm kısıtlamaları kaldırır",
+    "confirmWidenBody": "Aracı hemen geçerli olmak üzere tam erişiminizle hareket edecektir. Onaylamak için tekrar basın.",
+    "confirmWidenAction": "Tüm kısıtlamaları kaldır"
   },
   "team": {
     "heading": "Ekip",
@@ -460,6 +591,14 @@
       "deleted": "Çalışma alanı silindi",
       "leaveFailed": "Çalışma alanından ayrılamadınız",
       "left": "Çalışma alanından ayrılındı"
+    },
+    "serverAccessWarning": {
+      "title": "Tam sunucu erişimi verilsin mi?",
+      "body": "{member}, {scope} üzerinde tam denetim kazanacaktır — her dağıtım ve verileri, üzerinde çalışan tüm uygulamalar, saklanan gizli diziler ve ortam değişkenleri, terminal erişimi ve bağlı tüm entegrasyonlar (örn. bunun için tutulan GitHub belirteçleri ve dağıtım anahtarları). Bu kaynakları yönetebilecek veya silebileceklerdir.",
+      "scopeAllServers": "bu kuruluştaki tüm sunucular",
+      "scopeThisServer": "bu sunucu",
+      "scopeCount": "{count} sunucu",
+      "confirm": "Erişim ver"
     }
   },
   "inviteMember": {
@@ -498,7 +637,19 @@
       "invitationLinkCreated": "Davet bağlantısı oluşturuldu — Bekleyen davetlerden kopyalayın",
       "personalOrgBlocked": "Kişisel çalışma alanları üye davet edemez. Önce bir ekip organizasyonu oluşturun, ardından davet gönderin.",
       "updateMailSourceFailed": "E-posta kaynağı güncellenemedi"
-    }
+    },
+    "delivery": "Gönderim",
+    "emailDelivery": "E-posta",
+    "linkDelivery": "Bağlantıyı kopyala",
+    "emailDeliveryHint": "Bu örnekte yapılandırılmış e-posta hizmeti üzerinden gönderir.",
+    "linkDeliveryHint": "Bu kişiyle doğrudan paylaşabileceğin bir bağlantı oluştur.",
+    "checkingEmail": "E-posta gönderimi kontrol ediliyor…",
+    "emailUnavailable": "E-posta hizmeti yapılandırılmamış. Bağlantı paylaşabilirsin.",
+    "linkReady": "Davet paylaşılmaya hazır",
+    "emailSent": "Davet e-postayla gönderildi",
+    "recipientHint": "Bu daveti yalnızca {email} kabul edebilir.",
+    "invitationLink": "Davet bağlantısı",
+    "manageLinkHint": "Bu bağlantıyı Bekleyen davetler bölümünden yönetebilir veya iptal edebilirsin."
   },
   "teamWorkspace": {
     "title": "Ekibinizi davet edin",
@@ -526,9 +677,88 @@
     "toast": {
       "disconnected": "Openship Bulut bağlantısı kesildi",
       "disconnectFailed": "Bağlantı kesilemedi"
+    },
+    "pitch": {
+      "title": "Openship Cloud ekleyin",
+      "body": "Her proje otomatik SSL ile ücretsiz bir .{domain} etki alanı alır — DNS yok, sertifika yok. Kendi sunucularınız tam olarak şu anki gibi çalışmaya devam eder.",
+      "perkDomain": "Her projede ücretsiz .{domain} etki alanı + otomatik SSL",
+      "perkDeploy": "Yönetilen buluta dağıtın veya kendi sunucularınızda kalın",
+      "perkServices": "Tek tıklamayla sağlanan yönetilen Postgres, Redis ve daha fazlası",
+      "perkGithub": "Kendi uygulamanızı kaydetmeden bağlı GitHub",
+      "noLockIn": "Bağlanmak ücretsizdir. Hiçbir şey taşınmaz ve istediğiniz zaman bağlantıyı kesebilirsiniz.",
+      "viewPricing": "Fiyatlandırmayı görüntüle"
+    },
+    "connectModal": {
+      "title": "Openship Cloud Bağla",
+      "requiresConnection": "{feature} için Openship Cloud bağlantısı gerekir. Erişimi açmak için hesabınızı bağlayın:",
+      "features": {
+        "deployments": "Bulut dağıtımları",
+        "infra": "Yönetilen altyapı",
+        "ssl": "Otomatik SSL ve alan adları",
+        "cdn": "Küresel CDN"
+      },
+      "connect": "Openship Cloud Bağlan",
+      "waitingSignIn": "Giriş bekleniyor…",
+      "maybeLater": "Belki daha sonra"
     }
   },
   "instance": {
+    "location": {
+      "title": "Örnek konumu",
+      "thisDesktop": "Bu bilgisayar",
+      "thisServer": "Bu sunucu",
+      "desktopHint": "Mevcut örneğin verilerini kullanmak için bağlanın veya Openship’i çevrimiçi tutmak için bir sunucuya taşıyın.",
+      "serverHint": "Görevler, webhook’lar ve ekip erişimi buradan yönetilir.",
+      "remoteHint": "Uzak örneğin canlı verilerini kullanıyorsunuz.",
+      "retiredHint": "Bu sunucu artık projeleri yönetmiyor. Yeniden kullanmak için buraya bir örnek taşıyın.",
+      "moveToServer": "Bir sunucuya taşı",
+      "moveToAnotherServer": "Başka bir sunucuya taşı",
+      "moveToDesktop": "Desktop’a taşı",
+      "returnToDesktop": "Desktop’a geri taşı",
+      "previousServer": "Önceki sunucuya taşı",
+      "connectExisting": "Mevcut bir örneğe bağlan",
+      "reconnect": "Yeniden bağlan",
+      "pairDesktop": "Desktop bağla",
+      "receiveInstance": "Buraya bir örnek taşı",
+      "disconnect": "Yerel örneğe dön",
+      "moreOptions": "Diğer örnek seçenekleri",
+      "memberTitle": "Openship’i Desktop’tan kullanın",
+      "memberHint": "Desktop’ı buradaki erişim yetkilerinizle bağlayın.",
+      "loading": "Örnek yükleniyor…",
+      "sendHint": "Bir taşıma kodu oluşturun, ardından Desktop’ın Örnek ayarlarındaki diğer seçeneklerden {action} seçeneğini seçin. Desktop devri tamamlayana kadar yönetim burada kalır.",
+      "connectHint": "Örnek adresinden giriş yapın veya kod almak için Örnek ayarlarındaki {action} seçeneğini kullanın. Bağlı olduğunuz sürece yerel örneğiniz duraklatılır.",
+      "secureAccount": "Kurulumunuzu güvene alın",
+      "reviewMove": "Taşımayı gözden geçirin",
+      "accountHint": "Taşıma sonrasında oturum açmak için e-posta ve parola ekleyin. Aktarım başlamadan önce hedefi tekrar gözden geçireceksiniz.",
+      "backToDestination": "Hedefe dön",
+      "continueSetup": "Devam et",
+      "pairHint": "Diğer Desktop uygulamanızdan bu kurulumun güncel verilerini mevcut yetkilerinizle kullanın. Veriler taşınmaz.",
+      "pairOwnDevice": "Bu kod sizin hesabınızla oturum açar. Başka birini davet etmek için Ekip bölümünü kullanın.",
+      "teamAccessTitle": "Ekip davetlerini etkinleştir",
+      "teamAccessHint": "Ekip davetleri erişilebilir bir kurulum gerektirir. Openship’e herkese açık bir adres verin veya sürekli açık bir sunucuya taşıyın.",
+      "adminRequired": "Bunu ayarlaması için kurulum yöneticinize başvurun.",
+      "webhookAccessHint": "GitHub, dağıtım olaylarını göndermek için erişilebilir bir Openship API’sine ihtiyaç duyar. Bu kurulumu sürekli açık bir sunucuya taşıyın veya API’sine herkese açık bir adres verin."
+    },
+    "transfer": {
+      "installOnServer": "Yeni kurulum",
+      "existingInstance": "Mevcut örnek",
+      "destinationCodeHint": "Hedefte Ayarlar → Örnek → {more} → {receive} yolunu açın. {create} seçeneğini seçin, değiştirmeyi onaylayın ve alma kodunu buraya kopyalayın.",
+      "destinationCodeLabel": "Hedefin alma kodu",
+      "receiveDescription": "Başka bir örneğin verilerini buraya taşıyın. Kurtarma anlık görüntüsü kaydedildikten sonra mevcut verileriniz değiştirilir.",
+      "pasteMoveCode": "Taşıma kodunu yapıştır",
+      "createReceiveCode": "Alma kodu oluştur",
+      "sourceCodeHint": "Kaynak sunucuda Ayarlar → Örnek → {send} → {create} yolunu açın. Desktop örneğini buraya taşımak için bunun yerine {receive} seçeneğini seçin.",
+      "sourceCodeLabel": "Kaynağın taşıma kodu",
+      "createMoveCode": "Taşıma kodu oluştur",
+      "connectionCode": "Bağlantı kodu",
+      "moveCode": "Taşıma kodu",
+      "receiveCode": "Alma kodu",
+      "connectionCodeHint": "Diğer Desktop cihazınızda Ayarlar → Örnek → {connect} yolunu açın ve {useCode} seçeneğini seçin.",
+      "moveCodeHint": "Alıcı Desktop cihazında Ayarlar → Örnek → {more} → {receive} yolunu açın. {paste} seçeneğini seçin ve bu kodu yapıştırın.",
+      "receiveCodeHint": "Kaynakta Ayarlar → Örnek → {move} veya {another}, ardından {existing} yolunu açın. Burada oluşturulan alma kodunu yapıştırın.",
+      "codeExpiry": "10 dakika sonra süresi dolar. Bu kodu gizli tutun.",
+      "replaceDestinationConfirmation": "Tüm çalışma alanlarını, kullanıcıları ve kimlik bilgilerini hedefe taşıyın. Kurtarma anlık görüntüsü kaydedildikten sonra hedefin mevcut verileri değiştirilir."
+    },
     "title": "Kurulum",
     "descDesktop": "Masaüstü uygulaması",
     "descCloud": "Bulut",
@@ -541,11 +771,37 @@
     "authCloud": "Bulut Doğrulaması",
     "authLocal": "Yerel Doğrulama",
     "localUser": "Yerel kullanıcı",
-    "change": "Değiştir"
+    "change": "Değiştir",
+    "connection": {
+      "title": "Bir örneğe bağlan",
+      "description": "Adresini gir, ardından hesabınla oturum aç.",
+      "address": "Örnek URL’si",
+      "addressHint": "Ekip davet bağlantısı da kullanılabilir. Bağlıyken yerel örneğin duraklatılır.",
+      "codeTitle": "Bağlantı kodu kullan",
+      "codeDescription": "Başka bir cihazda oturum açık mı? O örnekte Ayarlar → Örnek → {action} yolunu aç.",
+      "codeLabel": "Bağlantı kodu",
+      "codeHint": "Kendi hesabının kodunu kullan. Kod 10 dakika sonra sona erer ve senin adına oturum açar.",
+      "continue": "Oturum açmaya devam et",
+      "connectCode": "Bu Desktop’ı bağla",
+      "connecting": "Bağlanıyor…",
+      "useCode": "Bunun yerine bağlantı kodu kullan",
+      "useAddress": "Örnek URL’si kullan",
+      "invalidAddress": "Kimlik bilgisi veya ek parametre içermeyen bir HTTPS örnek URL’si ya da davet bağlantısı gir.",
+      "invitationTitle": "Bu daveti aç",
+      "invitationDescription": "{instance} bağlantısını kurun, ardından katılmadan önce çalışma alanını ve rolü inceleyin.",
+      "reviewInvitation": "Daveti incele",
+      "invitationHint": "Bağlantı sırasında yerel örneğiniz duraklatılır. Hiçbir veri taşınmaz."
+    },
+    "recovery": {
+      "title": "Openship örneğiniz",
+      "subtitle": "Projelerinizi yönetmeye devam etmek için taşımayı tamamlayın veya yeniden bağlanın.",
+      "checkConnection": "Bağlantıyı kontrol et",
+      "signInRemote": "Uzak örneğe giriş yap"
+    }
   },
   "upgradeAuth": {
     "title": "Bir şifre ekleyin",
-    "description": "Bu kimlik doğrulamasız kurulumu e-posta ve şifreyle giriş yapılabilen bir kuruluma yükseltin. Projeleriniz ve geçmişiniz aynen korunur.",
+    "description": "Openship’e erişimi korumak için e-posta ve parola belirleyin. Projeleriniz ve geçmişiniz korunur.",
     "close": "Kapat",
     "name": "Ad",
     "namePlaceholder": "Ahmet Yılmaz",
@@ -563,9 +819,29 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "İletim geçmişi",
+      "description": "Tüm kanallardaki teslimatlar.",
+      "page": "Sayfa {page}",
+      "refresh": "Yenile",
+      "loading": "İletimler yükleniyor…",
+      "error": "İletim geçmişi yüklenemedi. Yenileyerek tekrar deneyin.",
+      "empty": "Yakın zamanda iletim yok.",
+      "attempts": "Deneme sayısı: {count}",
+      "errorDetails": "Hata ayrıntıları",
+      "unknownCategory": "Bilinmeyen etkinlik",
+      "unknownChannel": "Bilinmeyen kanal",
+      "status": {
+        "sent": "Gönderildi",
+        "queued": "Sırada",
+        "sending": "Gönderiliyor",
+        "failed": "Başarısız",
+        "seen": "Görüldü"
+      }
+    },
     "channels": {
       "title": "Teslimat kanalları",
-      "description": "Bildirimlerinizin nereye gideceği. Doğrulanmış kanallar erişilebilirdir; doğrulanmamış olanlar atlanır.",
+      "description": "Etkin ve doğrulanmış kanallar uyarı alabilir. Teslimatı kontrol etmek için bir test gönderin.",
       "empty": "Henüz kanal yok. Bildirim almaya başlamak için bir tane ekleyin.",
       "verified": "Doğrulandı",
       "unverified": "Doğrulanmadı",
@@ -573,18 +849,28 @@
       "addChannel": "Kanal ekle",
       "confirmDelete": "Bu kanal silinsin mi? Bunu kullanan abonelikler duracaktır.",
       "channelRemoved": "Kanal kaldırıldı",
-      "channelAdded": "Kanal eklendi"
+      "channelAdded": "Kanal eklendi",
+      "enabled": "Etkin",
+      "disabled": "Devre dışı",
+      "edit": "Düzenle",
+      "updated": "Kanal güncellendi",
+      "sendTest": "Test gönder",
+      "testSent": "Test gönderildi"
     },
     "describe": {
       "slackWebhook": "Slack webhook'u",
-      "inApp": "Panel bildirim simgesi"
+      "inApp": "Panel bildirim simgesi",
+      "discordWebhook": "Discord web kancası",
+      "msteamsWebhook": "Microsoft Teams web kancası"
     },
     "kinds": {
       "email": "E-posta",
       "webhook": "Webhook",
       "slack": "Slack",
       "telegram": "Telegram",
-      "in_app": "Uygulama içi"
+      "in_app": "Uygulama içi",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams"
     },
     "form": {
       "labelPlaceholder": "Etiket (örn. Nöbetçi e-postası)",
@@ -599,7 +885,21 @@
       "labelRequired": "Etiket gereklidir",
       "noEmailTransport": "Bu kurulumda e-posta sunucusu yapılandırılmamış; bu nedenle e-posta bildirimleri gönderilmeyecektir.",
       "setUpSmtp": "SMTP'yi kur →",
-      "otherAddress": "Diğer adres…"
+      "otherAddress": "Diğer adres…",
+      "channelType": "Kanal türü",
+      "labels": {
+        "name": "Ad",
+        "address": "E-posta adresi",
+        "url": "Webhook URL’si",
+        "botToken": "Bot belirteci",
+        "chatId": "Sohbet kimliği"
+      },
+      "saving": "Kaydediliyor…",
+      "editHint": "Kayıtlı sırları korumak için kimlik bilgilerini boş bırakın. Hedef değişiklikleri teslimatı doğrulamak için yeni bir test gerektirir.",
+      "signingSecret": "İmzalama sırrı",
+      "secretHint": "Webhook imzalarını doğrulamak için bu sırrı şimdi kopyalayın. Yalnızca bir kez gösterilir.",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/..."
     },
     "subscriptions": {
       "title": "Neler hakkında bildirim alınacak",
@@ -608,13 +908,173 @@
       "allTab": "Tümü",
       "eventHeader": "Olay",
       "cellAria": "{channel} üzerinden {category}",
-      "notifyMe": "Bana bildir"
+      "notifyMe": "Bana bildir",
+      "search": "Uyarılarda ara",
+      "noResults": "Eşleşen uyarı yok."
     },
     "orgDefaults": {
       "title": "Organizasyon varsayılanları",
-      "description": "Bu organizasyona yeni bir üye katıldığında uygulanan varsayılanlar. Üyeler kanal bazında değiştirebilir.",
+      "description": "Bir üye bir uyarı için açık bir seçim yapmadığında kuruluş varsayılanları uygulanır. Üyeler bunları kendi tercihleriyle değiştirebilir.",
       "notifyAria": "{category} bildirimini aç",
       "nChannels": "{n} kanal"
+    },
+    "overview": {
+      "title": "Bildirimler",
+      "description": "Kanallar hesabınıza aittir ve kuruluşlar arasında paylaşılır. Uyarı tercihleri ve varsayılanlar etkin kuruluş için geçerlidir.",
+      "ready": "{total} kanaldan {count} tanesi hazır",
+      "preferences": "Uyarı tercihleri",
+      "configuration": "Kanallar ve uyarılar",
+      "retry": "Yeniden dene"
+    },
+    "groups": {
+      "deployment": "Dağıtım",
+      "app_health": "Uygulama sağlığı",
+      "backups": "Yedekler",
+      "jobs": "Görevler",
+      "actions": "Eylemler",
+      "domains": "Alan Adları ve SSL",
+      "members": "Üyeler",
+      "mail": "E-posta",
+      "billing": "Faturalandırma",
+      "security": "Güvenlik"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Dağıtım başarısız",
+        "description": "Bir derleme veya dağıtım hatayla sonuçlandı. Hata mesajını ve günlükleri gönderiyoruz."
+      },
+      "deploy.succeeded": {
+        "label": "Dağıtım başarılı",
+        "description": "Her başarılı üretim dağıtımı. Varsayılan olarak kapalıdır."
+      },
+      "deploy.cancelled": {
+        "label": "Dağıtım iptal edildi",
+        "description": "Süren bir dağıtım siz veya başka bir üye tarafından iptal edildi."
+      },
+      "service.down": {
+        "label": "Uygulama çöktü",
+        "description": "Çalışması gereken bir konteyner durdu veya bellek yetersizliği nedeniyle sonlandırıldı."
+      },
+      "service.crash_loop": {
+        "label": "Uygulama çökme döngüsünde",
+        "description": "Bir konteyner sürekli yeniden başlatılıyor."
+      },
+      "service.unhealthy": {
+        "label": "Uygulama sağlıksız",
+        "description": "Bir konteyner çalışıyor ancak sağlık kontrolü başarısız oluyor."
+      },
+      "service.recovered": {
+        "label": "Uygulama kurtarıldı",
+        "description": "Kesinti sona erdi ve konteyner tekrar sağlıklı."
+      },
+      "server.unreachable": {
+        "label": "Sunucu erişilemez",
+        "description": "Sunucunun Docker daemon servisine ulaşılamıyor."
+      },
+      "backup.failed": {
+        "label": "Yedekleme başarısız",
+        "description": "Zamanlanmış veya manuel bir yedekleme hatayla sonuçlandı."
+      },
+      "backup.succeeded": {
+        "label": "Yedekleme başarılı",
+        "description": "Her başarılı yedekleme."
+      },
+      "backup.restore_completed": {
+        "label": "Geri yükleme tamamlandı",
+        "description": "Bir geri yükleme tamamlandı (veya başarısız oldu)."
+      },
+      "job.run.failed": {
+        "label": "Görev başarısız",
+        "description": "Zamanlanmış veya manuel bir görev çalıştırması hatayla sonuçlandı."
+      },
+      "job.run.succeeded": {
+        "label": "Görev başarılı",
+        "description": "Her başarılı görev çalıştırması."
+      },
+      "job.run.started": {
+        "label": "Görev başladı",
+        "description": "Bir görev çalışmaya başladı."
+      },
+      "action.run.failed": {
+        "label": "Eylem başarısız",
+        "description": "GitHub Actions iş akışı hatayla sonuçlandı veya iptal edildi."
+      },
+      "action.run.succeeded": {
+        "label": "Eylem başarılı",
+        "description": "Her başarılı GitHub Actions iş akışı çalıştırması."
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL sertifikasının süresi doluyor",
+        "description": "Bir alan adının sertifikası yenilenemedi ve süresi dolmak üzere."
+      },
+      "member.invited": {
+        "label": "Üye davet edildi",
+        "description": "Kuruluşunuza yeni bir üye davet edildi."
+      },
+      "member.joined": {
+        "label": "Üye katıldı",
+        "description": "Bir üye daveti kabul etti ve katıldı."
+      },
+      "member.removed": {
+        "label": "Üye çıkarıldı",
+        "description": "Bir üye kuruluştan ayrıldı veya çıkarıldı."
+      },
+      "mail.dns_unverified": {
+        "label": "Posta alan adı doğrulanmadı",
+        "description": "Posta alan adının eksik veya hatalı DNS kayıtları var."
+      },
+      "mail.queue_backed_up": {
+        "label": "Posta kuyruğu birikti",
+        "description": "Giden posta kuyruğu anormal şekilde yüksek."
+      },
+      "billing.quota_warning": {
+        "label": "Kota uyarısı",
+        "description": "Kaynak kullanım sınırlarına veya harcama limitine yaklaşılıyor."
+      },
+      "billing.invoice_paid": {
+        "label": "Fatura ödendi",
+        "description": "Bir abonelik faturası başarıyla ödendi."
+      },
+      "billing.payment_failed": {
+        "label": "Ödeme başarısız",
+        "description": "Bir abonelik ödemesi başarısız oldu."
+      },
+      "domain.expiring": {
+        "label": "SSL sertifikasının süresi doluyor",
+        "description": "Günlük kontrol — özel alan adı sertifikalarınızdan herhangi birinin 7 günden az süresi kaldığında ve yenileyici ana bilgisayara ulaşamadığında tetiklenir."
+      },
+      "domain.verification_failed": {
+        "label": "Alan adı doğrulaması başarısız",
+        "description": "İlk alan adı kurulumunda DNS kontrolü geçilemedi."
+      },
+      "member.added": {
+        "label": "Yeni üye katıldı",
+        "description": "Biri bir daveti kabul etti ve bu organizasyona katıldı."
+      },
+      "invitation.sent": {
+        "label": "Davetler gönderildi",
+        "description": "Bir yönetici yeni üyelere davet gönderdi. Güvenlik sinyali olarak yararlıdır."
+      },
+      "mail.inbound_received": {
+        "label": "İzlenen bir adrese e-posta geldi",
+        "description": "Bildirim kurallarınızdan birinin izlediği bir posta kutusuna veya alan adına bir ileti ulaştı."
+      },
+      "action.run.cancelled": {
+        "label": "İş akışı iptal edildi",
+        "description": "Bir Actions iş akışı çalıştırması iptal edildi."
+      },
+      "billing.alert": {
+        "label": "Fatura uyarısı",
+        "description": "Ödeme başarısız oldu, plan sınırına ulaşıldı veya faturanın vadesi geçti. Her zaman fatura sahiplerini bilgilendirir."
+      },
+      "quota.warning": {
+        "label": "Kota uyarısı",
+        "description": "Plan sınırına yaklaşıyorsunuz (depolama, dağıtımlar, üyeler). Sorunlar başlamadan önce ön uyarı."
+      },
+      "security.advisory": {
+        "label": "Güvenlik duyuruları",
+        "description": "Bir güvenlik duyurusu Openship veya dağıtılmış bir hizmeti etkiliyor. Nedeni ve mevcut güncellemeyi içerir."
+      }
     }
   },
   "audit": {
@@ -657,7 +1117,9 @@
       "today": "Bugün",
       "last7": "Son 7 gün",
       "last30": "Son 30 gün",
-      "last90": "Son 90 gün"
+      "last90": "Son 90 gün",
+      "anyAgent": "Herhangi bir aracı",
+      "agentCalls": "{count} olay"
     },
     "tabs": {
       "all": "Tümü"
@@ -681,7 +1143,190 @@
       "when": "Ne zaman",
       "cameFrom": "Nereden",
       "technical": "Teknik detaylar",
-      "eventType": "Olay türü"
+      "eventType": "Olay türü",
+      "viaAgent": "Aracı"
+    },
+    "categories": {
+      "deployments": "Dağıtımlar",
+      "apps": "Uygulamalar ve hizmetler",
+      "domains": "Alan Adları ve SSL",
+      "servers": "Sunucular",
+      "members": "Üyeler ve erişim",
+      "agent": "Yapay Zeka Ajanları",
+      "security": "Güvenlik",
+      "billing": "Faturalandırma",
+      "system": "Sistem"
+    },
+    "events": {
+      "server:write": {
+        "action": "sunucuyu değiştirdi",
+        "label": "Sunucu değiştirildi"
+      },
+      "server:admin": {
+        "action": "sunucuda yönetici işlemi gerçekleştirdi",
+        "label": "Sunucu yönetici eylemi"
+      },
+      "server:add": {
+        "action": "sunucuyu ekledi",
+        "label": "Sunucu eklendi"
+      },
+      "server:remove": {
+        "action": "sunucuyu kaldırdı",
+        "label": "Sunucu kaldırıldı"
+      },
+      "settings:write": {
+        "action": "ayarları değiştirdi",
+        "label": "Ayarlar değiştirildi"
+      },
+      "settings:admin": {
+        "action": "ayarlarda yönetici işlemi gerçekleştirdi",
+        "label": "Ayarlar yönetici eylemi"
+      },
+      "project:create": {
+        "action": "oluşturdu",
+        "label": "Proje oluşturuldu"
+      },
+      "project:write": {
+        "action": "değiştirdi",
+        "label": "Proje değiştirildi"
+      },
+      "project:delete": {
+        "action": "sildi",
+        "label": "Proje silindi"
+      },
+      "deployment:start": {
+        "action": "dağıtım başlattı:",
+        "label": "Dağıtım başlatıldı"
+      },
+      "deployment:success": {
+        "action": "dağıttı",
+        "label": "Dağıtım başarılı"
+      },
+      "deployment:failed": {
+        "action": "dağıtılamadı:",
+        "label": "Dağıtım başarısız"
+      },
+      "deployment:cancelled": {
+        "action": "dağıtımını iptal etti:",
+        "label": "Dağıtım iptal edildi"
+      },
+      "domain:add": {
+        "action": "alan adını ekledi",
+        "label": "Alan adı eklendi"
+      },
+      "domain:remove": {
+        "action": "alan adını kaldırdı",
+        "label": "Alan adı kaldırıldı"
+      },
+      "domain:verify": {
+        "action": "alan adını doğruladı",
+        "label": "Alan adı doğrulandı"
+      },
+      "member:add": {
+        "action": "ekledi",
+        "label": "Üye eklendi"
+      },
+      "member:remove": {
+        "action": "kaldırdı",
+        "label": "Üye kaldırıldı"
+      },
+      "terminal:write": {
+        "action": "uçbirim açtı:",
+        "label": "Uçbirim oturumu açıldı"
+      },
+      "deployment:write": {
+        "action": "için bir dağıtım başlattı:",
+        "actionWithoutResource": "bir dağıtım başlattı",
+        "label": "Dağıtım eylemi",
+        "description": "Bir dağıtım uç noktası çağrıldı — başlatma, yeniden deneme, geri alma veya yükseltme."
+      },
+      "deployment:admin": {
+        "action": "dağıtımında bir yönetici eylemi gerçekleştirdi:",
+        "actionWithoutResource": "dağıtımda bir yönetici eylemi gerçekleştirdi",
+        "label": "Dağıtım yönetici eylemi",
+        "description": "Bir dağıtım üzerinde yönetici eylemi çağrıldı."
+      },
+      "job:write": {
+        "action": "görevi değiştirdi",
+        "actionWithoutResource": "görevi değiştirdi",
+        "label": "Görev değiştirildi",
+        "description": "Zamanlanmış veya özel bir görev oluşturuldu, düzenlendi, çalıştırıldı veya kaldırıldı."
+      },
+      "notification_default.updated": {
+        "action": "için varsayılan bildirim ayarlarını değiştirdi",
+        "actionWithoutResource": "varsayılan bildirim ayarlarını değiştirdi",
+        "label": "Varsayılan bildirim ayarları değiştirildi",
+        "description": "Kuruluş için varsayılan bildirim yönlendirmesi güncellendi."
+      },
+      "notification_channel.created": {
+        "action": "bildirim kanalını ekledi",
+        "actionWithoutResource": "bildirim kanalını ekledi",
+        "label": "Bildirim kanalı eklendi"
+      },
+      "notification_channel.updated": {
+        "action": "bildirim kanalını güncelledi",
+        "actionWithoutResource": "bildirim kanalını güncelledi",
+        "label": "Bildirim kanalı güncellendi"
+      },
+      "notification_channel.deleted": {
+        "action": "bildirim kanalını kaldırdı",
+        "actionWithoutResource": "bildirim kanalını kaldırdı",
+        "label": "Bildirim kanalı kaldırıldı"
+      },
+      "notification_subscription.updated": {
+        "action": "adresine gönderilen bildirimleri değiştirdi",
+        "actionWithoutResource": "bildirim yönlendirmesini değiştirdi",
+        "label": "Bildirim yönlendirmesi değiştirildi"
+      },
+      "notification_subscription.deleted": {
+        "action": "için bildirimleri durdurdu",
+        "actionWithoutResource": "bildirimleri durdurdu",
+        "label": "Bildirimler durduruldu"
+      },
+      "notification_delivery.seen": {
+        "action": "görüldü olarak işaretledi",
+        "actionWithoutResource": "görüldü olarak işaretledi",
+        "label": "Uyarı görüldü olarak işaretlendi"
+      },
+      "notifications:write": {
+        "action": "bildirimleri değiştirdi",
+        "actionWithoutResource": "bildirimleri değiştirdi",
+        "label": "Bildirimler değiştirildi"
+      },
+      "notifications:admin": {
+        "action": "bildirimler üzerinde bir yönetici işlemi gerçekleştirdi",
+        "actionWithoutResource": "bildirimler üzerinde bir yönetici işlemi gerçekleştirdi",
+        "label": "Bildirimler yönetici işlemi"
+      },
+      "job_run.started": {
+        "action": "görevi başlattı",
+        "actionWithoutResource": "görevi başlattı",
+        "label": "Görev başlatıldı"
+      },
+      "job_run.succeeded": {
+        "action": "görevi başarıyla çalıştırdı",
+        "actionWithoutResource": "görevi başarıyla çalıştırdı",
+        "label": "Görev başarılı oldu"
+      },
+      "job_run.failed": {
+        "action": "başarısız olan görevi çalıştırdı",
+        "actionWithoutResource": "başarısız olan görevi çalıştırdı",
+        "label": "Görev başarısız oldu"
+      },
+      "issues.history.clear": {
+        "action": "çözülen izleme olaylarının geçmişini temizledi",
+        "actionWithoutResource": "çözülen izleme olaylarının geçmişini temizledi",
+        "label": "İzleme geçmişi temizlendi"
+      }
+    },
+    "resourceLabels": {
+      "project": "bir uygulama",
+      "service": "bir servis",
+      "container": "bir konteyner",
+      "deployment": "bir dağıtım",
+      "domain": "bir alan adı",
+      "server": "bir sunucu",
+      "settings": "ayarlar"
     }
   },
   "updates": {
@@ -783,7 +1428,43 @@
       "rowsRestored": "{count} satır geri yüklendi",
       "secretsRestored": "{count} gizli veri geri yüklendi",
       "secretsNotRestored": "gizli veriler GERİ YÜKLENEMEDİ (parola yok/hatalı) — kimlik bilgilerini tekrar girin"
-    }
+    },
+    "backupTitle": "Yedekleme ve kurtarma",
+    "backupDesc": "Bir dosya dışa aktarın veya mevcut bir yedekten geri yükleyin.",
+    "backupWarning": "Arşiv dosyaları Openship veritabanını ve kimlik bilgilerini içerir. Docker birim içerikleri sunucularında kalır; hizmet verileri için proje yedeklerini kullanın.",
+    "exportInstanceTitle": "Örneği veya projeleri dışa aktar",
+    "exportInstanceDesc": "Ortamları ve bağımlılıklarıyla birlikte tam bir örneği veya seçilen projeleri seçin.",
+    "exportProjectTitle": "Projeyi dışa aktar",
+    "exportProjectDesc": "Tüm proje ayarlarını, ortam değişkenlerini ve kimlik bilgilerini düz JSON olarak indirin.",
+    "exportProjectIntro": "Tüm ortamları, hizmetleri, dağıtım geçmişini, analizleri, bağlantıları, alan adlarını, yedekleme ayarlarını ve anahtarları içerir. JSON dosyası şifrelenmemiştir ve parola olmadan içe aktarılır.",
+    "exportProjectReconnection": "Hedefin mevcut iş yüklerine yeniden bağlanabilmesi için aynı sunuculara veya OpenShip Cloud hesabına ihtiyacı vardır.",
+    "exportInstanceIntro": "Depolanan ortam değişkenleri, sunucu anahtarları, kimlik bilgileri, yapılandırma ve geçmiş dahil olmak üzere kontrol panelini dışa aktarın.",
+    "scopeLabel": "Dışa aktarma kapsamı",
+    "scopeInstance": "Tüm örnek",
+    "scopeProjects": "Seçilen projeler ve ortamlar",
+    "recordsAcrossEnvsIncluded": "{envs} ortamda {count} kayıt dahil edildi.",
+    "checkingExport": "Dışa aktarma içeriği kontrol ediliyor…",
+    "downloadExport": "Dışa aktarmayı indir",
+    "downloadAgain": "Tekrar indir",
+    "exporting": "Dışa aktarılıyor…",
+    "exportDownloaded": "Dışa aktarma indirildi",
+    "exportCompleteToast": "Dışa aktarma indirildi. Hedef kontrol panelinde Ayarlar → Örnek altından içe aktarın.",
+    "optSecretsLabel": "Ortam değerleri, anahtarlar ve kimlik bilgileri",
+    "optSecretsDesc": "Sunucu anahtarları, satır içi Compose yapılandırması ve gizli dosyalarla okunabilir JSON olarak dahil edilmiştir.",
+    "optLinkedAppsLabel": "Bağlı uygulamalar",
+    "optLinkedAppsDesc": "Seçim için gereken veritabanı ve depolama projelerini dahil edin.",
+    "optServersLabel": "İlgili kendi sunucularınız (önerilir)",
+    "optServersDesc": "Sunucu bağlantılarını ve Git anahtarlarını dahil edin. Eşleşen sunucular içe aktarma sırasında yeniden kullanılabilir.",
+    "optDomainsLabel": "Alan adları ve yönlendirme",
+    "optBackupsLabel": "Yedekleme yapılandırması",
+    "optBackupsDesc": "İlkeler ve hedefler; yedekleme verileri depolarında kalır.",
+    "optIntegrationsLabel": "Paylaşılan entegrasyonlar",
+    "optIntegrationsDesc": "Git sağlayıcı uygulamaları, kayıt defteri girişleri ve çalışma alanı DNS kimlik bilgileri.",
+    "historyOptionsSummary": "Geçmiş seçenekleri · {total} öğeden {count} tanesi dahil edildi",
+    "recordsSelected": "{count} kayıt seçildi.",
+    "recordsAcrossEnvsSelected": "{envs} ortamda {count} kayıt seçildi.",
+    "selectAtLeastOne": "En az bir proje veya ortam seçin.",
+    "cloudNotice": "Hedef çalışma alanı aynı Openship Cloud hesabına bağlanana kadar Cloud projeleri çalışmayacaktır."
   },
   "migrate": {
     "chooseTitle": "Çok kullanıcılı moda geçin",
@@ -956,6 +1637,149 @@
       "deleteFailed": "Kimlik bilgisi silinemedi",
       "verifyOk": "Sağlayıcı kimlik bilgisini kabul etti",
       "verifyFailed": "Sağlayıcı kimlik bilgisini reddetti"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Konteyner kayıt defteri",
+        "summary": "Dağıtımlar sırasında kayıt defterinden özel görüntüleri çekin.",
+        "selector": {
+          "label": "Kayıt defteri sunucusu",
+          "help": "Görüntü referansınızda göründüğü şekliyle ana bilgisayar — ghcr.io, registry.example.com:5000 veya Docker Hub için docker.io."
+        },
+        "fields": {
+          "username": {
+            "label": "Kullanıcı adı"
+          },
+          "secret": {
+            "label": "Şifre veya erişim belirteci",
+            "help": "Hesap şifresi yerine salt okunur kayıt defteri erişimine sahip bir belirteç tercih edin."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Openship'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını otomatik oluşturmasına izin verin.",
+        "fields": {
+          "apiToken": {
+            "label": "API belirteci",
+            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç."
+          }
+        }
+      }
     }
+  },
+  "accountSecurity": {
+    "title": "İki faktörlü kimlik doğrulama",
+    "description": "Hesabınızı bir kimlik doğrulama uygulaması ve kurtarma kodlarıyla koruyun.",
+    "enabled": "Etkin",
+    "notEnabled": "Etkin değil",
+    "loginHint": "Parola, sosyal hesap veya geçiş anahtarıyla girişten sonra ikinci bir faktör gerekir.",
+    "passwordNeeded": "İki faktörlü doğrulamayı yönetmek için bir parola ekleyin. Sosyal hesabınızla giriş çalışmaya devam eder.",
+    "passwordHint": "Kimlik doğrulama uygulaması kurmak için parolanızı doğrulayın.",
+    "enable": "2FA kur",
+    "disable": "2FA kapat",
+    "disableHint": "İki faktörlü doğrulamayı kapatmak için parolanızı doğrulayın. Kurtarma kodlarınız da geçersiz olur.",
+    "regenerate": "Kurtarma kodlarını yenile",
+    "regenerateHint": "Parolanızı doğrulayın. Yeni kodlar tüm eski kodların yerini alır.",
+    "recoveryCodes": "Kurtarma kodları",
+    "password": "Mevcut parola",
+    "newPassword": "Yeni parola",
+    "confirmPassword": "Parolayı doğrula",
+    "passwordMismatch": "Parolalar eşleşmiyor.",
+    "addPassword": "Parola ekle",
+    "passwordAdded": "Parola eklendi. Artık 2FA kurabilirsiniz.",
+    "continue": "Devam et",
+    "verify": "Doğrula ve etkinleştir",
+    "cancel": "İptal",
+    "done": "Bitti",
+    "retry": "Tekrar dene",
+    "loading": "Hesap güvenliği yükleniyor…",
+    "loadFailed": "Hesap güvenliği yüklenemedi. Tekrar deneyin.",
+    "failed": "Hesap güvenliği güncellenemedi. Tekrar deneyin.",
+    "enabledMessage": "İki faktörlü kimlik doğrulama etkinleştirildi.",
+    "disabledMessage": "İki faktörlü kimlik doğrulama kapatıldı.",
+    "scanHint": "Bu kodu kimlik doğrulama uygulamanızla tarayın ve altı haneli kodu girin. Kurulum yalnızca doğrulama sonrası tamamlanır.",
+    "scanTitle": "Kimlik doğrulama kurulumu QR kodu",
+    "manualKey": "Veya bu kurulum anahtarını elle girin",
+    "copyKey": "Kurulum anahtarını kopyala",
+    "code": "Doğrulama kodu",
+    "saveCodes": "Kurtarma kodlarınızı kaydedin",
+    "codesHint": "Güvenli bir yerde saklayın. Her kod, doğrulama uygulamasının yerine bir kez kullanılabilir. Kodları yenilemek tüm eski kodları geçersiz kılar.",
+    "copyCodes": "Kodları kopyala",
+    "download": "İndir",
+    "savedCodes": "Kurtarma kodlarımı kaydettim",
+    "copied": "Kopyalandı.",
+    "copyFailed": "Kopyalanamadı. Metni seçip elle kopyalayın.",
+    "passkeysTitle": "Geçiş anahtarları",
+    "passkeysDescription": "Parmak izi, yüz, cihaz PIN’i veya güvenlik anahtarıyla giriş yapın.",
+    "passkeyName": "Geçiş anahtarı adı",
+    "passkeyPlaceholder": "Örneğin, dizüstü bilgisayarım",
+    "passkeyDefault": "Geçiş anahtarı",
+    "passkeyAdd": "Geçiş anahtarı ekle",
+    "passkeyUnsupported": "Geçiş anahtarı eklemek veya kullanmak için bu paneli destekleyen bir tarayıcıda HTTPS (veya localhost) üzerinden açın. Kaydedilmiş anahtarları burada yönetebilirsiniz.",
+    "passkeysEmpty": "Henüz geçiş anahtarı eklenmedi.",
+    "passkeyAdded": "Geçiş anahtarı eklendi.",
+    "passkeyRemoved": "Geçiş anahtarı kaldırıldı.",
+    "passkeyFailed": "Geçiş anahtarı güncellenemedi. Tekrar deneyin. Oturumunuz sona erdiyse önce yeniden giriş yapın.",
+    "synced": "Eşitlenmiş geçiş anahtarı",
+    "deviceBound": "Cihaza bağlı geçiş anahtarı",
+    "removeNamed": "{name} anahtarını kaldır",
+    "remove": "Kaldır",
+    "removeConfirm": "Bu anahtar artık giriş yapmanızı sağlamayacak. Başka bir giriş yöntemi bulundurun."
+  },
+  "preferences": {
+    "title": "Tercihler",
+    "description": "Bu tarayıcı için kişisel görünüm tercihleri — sunucuya hiçbir şey gönderilmez.",
+    "demoMode": {
+      "title": "Demo modu",
+      "description": "Ekran paylaşımları ve kayıtlar sırasında IP adreslerini, sunucuları ve ortam değişkenlerini bulanıklaştırın."
+    }
+  },
+  "productView": {
+    "title": "Arayüz",
+    "description": "Bu kontrol panelinin size hangi yönetim panelini göstereceği.",
+    "platformLabel": "Tam platform",
+    "platformDesc": "Projeler, uygulamalar, dağıtımlar, sunucular — bu kurulumun yapabileceği her şey.",
+    "mailLabel": "Yalnızca posta",
+    "mailDesc": "Kenar çubuğundaki posta kontrol paneli: etki alanları, posta kutuları, DNS, kuyruk, günlükler.",
+    "instanceDefault": "Bu örnek varsayılan olarak {mode} modundadır.",
+    "useDefault": "Örneğin varsayılanını kullan"
+  },
+  "mailMode": {
+    "title": "Ürün modu",
+    "description": "Bu örneğin kendini ne olarak sunduğu. Bu, buradaki herkes için varsayılandır — her kullanıcı Ayarlar → Genel bölümünden kendi görünümünü seçebilir.",
+    "platformLabel": "Tam platform",
+    "platformDesc": "Projeler, uygulamalar, dağıtımlar, sunucular — bu kurulumun yapabileceği her şey.",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "Örneği Openship Mail olarak markalar ve kenar çubuğunu posta kontrol paneli yapar.",
+    "savedOverridden": "Kaydedildi. Kendi görünümünüz değişmedi — Ayarlar → Genel bölümünden seçmiştiniz.",
+    "errorToast": "Ürün modu değiştirilemedi.",
+    "envNote": "Bu örnek, ortamdan OPENSHIP_PRODUCT=mail ayarını takip eder. Buradan bir mod seçmek bunu geçersiz kılar."
+  },
+  "edgeOrphans": {
+    "title": "İzlenmeyen edge rotaları",
+    "description": "Bu makinenin hala sunduğu ancak Openship'in kaydı bulunmayan ana makine adları",
+    "scan": "Tara",
+    "scanning": "Taranıyor…",
+    "allClear": "Edge tarafından sunulan tüm ana makine adları hesaplanmıştır.",
+    "comparedTo": "{count} izlenen ana makine adıyla karşılaştırıldı.",
+    "unavailable": "Edge kontrol edilemedi",
+    "explain": "Bir projeyi \"Yalnızca Openship'ten kaldır\" seçeneğiyle kaldırmak, rotasını kasıtlı olarak çalışır durumda bırakır. Artık bir uygulama rotası, kapsayıcısı gittikten sonra 502 döndürür, ancak kalan STATİK rota eski dosyaları 200 ile sunmaya devam eder — o zamandan beri başka bir projeye verilmiş bir ana makine adında bile.",
+    "kindStatic": "Statik dosyalar",
+    "kindProxy": "Uygulama rotası",
+    "staticWarning": "Hala dosyaları sunuyor. Bugün gelen isteklere yanıt veriyor.",
+    "proxyWarning": "Muhtemelen artık mevcut olmayan bir yukarı akışa (upstream) işaret ediyor.",
+    "servingFrom": "Şuradan sunuluyor:",
+    "proxyingTo": "Şuraya proxy yapılıyor:",
+    "alsoAnswers": "Ayrıca şunun için yanıt verir:",
+    "stopServing": "Sunmayı durdur",
+    "stopping": "Durduruluyor…",
+    "stopped": "{hostname} artık sunulmuyor.",
+    "stopFailed": "{hostname} sunumu durdurulamadı",
+    "confirmTitle": "{hostname} sunumu durdurulsun mu?",
+    "confirmBody": "Bu işlem yalnızca bu ana makine adı için edge yapılandırmasını kaldırır. Derlenen dosyalar diskte kalır ve sunucudaki başka hiçbir şeye dokunulmaz. Daha sonra bu ana makine adına bir proje dağıtılırsa kendi rotasını oluşturacaktır.",
+    "confirmCta": "Sunmayı durdur",
+    "cancel": "İptal",
+    "noReverseProxy": "Bu makinede ters proxy algılanmadı."
   }
 }

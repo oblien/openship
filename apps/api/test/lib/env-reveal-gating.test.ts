@@ -43,6 +43,13 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
       ),
     ).toBe("project:write");
 
+    expect(
+      tagOf(
+        (r) => r.method === "POST" && r.path === "/api/deployments/prepare",
+        "editable source preparation",
+      ),
+    ).toBe("deployment:write");
+
     // Migration container reveal — write-gated, same bar as the service reveal.
     expect(
       tagOf(

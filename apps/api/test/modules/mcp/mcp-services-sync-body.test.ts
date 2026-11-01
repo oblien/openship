@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import "../../../src/modules/services/service.routes";
 import { getMcpTools } from "../../../src/modules/mcp/mcp-tools";
-import { SyncServicesBody } from "../../../src/modules/services/service.schema";
+import { SyncServicesBody } from "@repo/contracts";
 
 /**
  * `spec.body` on the sync route drives BOTH the auto-wired request validator

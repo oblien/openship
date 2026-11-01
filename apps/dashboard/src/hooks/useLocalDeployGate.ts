@@ -5,6 +5,7 @@
 // DESKTOP_LOCAL_DEPLOY_ENABLED to true (one line) to turn the whole gate off —
 // then delete this hook, LocalDeployComingSoonModal, and the call sites.
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useState } from "react";
 import { systemApi } from "@/lib/api";
 import { usePlatform } from "@/context/PlatformContext";
@@ -58,7 +59,9 @@ export function useLocalDeployGate(): LocalDeployGate {
         if (cancelled) return;
         setLocalServerIds(new Set(list.filter((s) => s.isLocal).map((s) => s.id)));
       })
-      .catch(() => {})
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/hooks/useLocalDeployGate");
+      })
       .finally(() => {
         if (!cancelled) setReady(true);
       });

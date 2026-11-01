@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NotificationChannel } from "@repo/db";
+import { consoleErrorSink, errorReporter, reportError, type ErrorEvent } from "@repo/core/diagnostics";
 
 /**
  * Telegram is the one channel where a well-formed request can come back HTTP 200
@@ -19,19 +20,19 @@ const safeFetch = vi.fn(async () => ({
   text: async () => JSON.stringify({ ok: true, result: { message_id: 1 } }),
 }));
 
-vi.mock("../../src/lib/safe-fetch", () => ({
+vi.mock("@repo/platform/engine/lib/safe-fetch", () => ({
   safeFetch: (...args: unknown[]) => safeFetch(...(args as [])),
 }));
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   get env() {
     return { CLOUD_MODE: false, NOTIFY_WEBHOOK_ALLOW_INTERNAL: false };
   },
 }));
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("../../src/lib/mail", () => ({ sendMail: vi.fn() }));
-vi.mock("../../src/lib/encryption", () => ({ decrypt: (v: string) => v }));
+vi.mock("@repo/platform/engine/lib/mail", () => ({ sendMail: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt: (v: string) => v }));
 
-const { sendTestToChannel, buildTelegramText } = await import("../../src/lib/notification-workers");
+const { sendTestToChannel, buildTelegramText } = await import("@repo/platform/engine/lib/notification-workers");
 
 const TOKEN = "123456789:AAHrandomlookingbottokenvalue0001";
 
@@ -44,6 +45,26 @@ const lastCall = () => {
 };
 
 describe("telegram delivery", () => {
+  it("keeps the channel's opaque token out of diagnostic events as well as the returned error", async () => {
+    await errorReporter.flush();
+    const events: ErrorEvent[] = [];
+    errorReporter.setEnabled(true);
+    errorReporter.setSink((batch) => { events.push(...batch); });
+    safeFetch.mockRejectedValueOnce(new Error(`Transport failed for ${TOKEN}`));
+    try {
+      const failure = await sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "test" }))
+        .catch((error) => { reportError(error, { component: "notification-api-boundary" }); return error; });
+      expect(failure).toBeInstanceOf(Error);
+      await errorReporter.flush();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.error.message).toContain("Transport failed");
+      expect(JSON.stringify(events)).not.toContain(TOKEN);
+    } finally {
+      errorReporter.setEnabled(false);
+      errorReporter.setSink(consoleErrorSink);
+    }
+  });
+
   beforeEach(() => {
     safeFetch.mockClear();
     safeFetch.mockResolvedValue({

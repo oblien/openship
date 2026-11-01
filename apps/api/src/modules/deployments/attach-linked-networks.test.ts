@@ -8,13 +8,14 @@ vi.mock("@repo/db", () => ({
   repos: {
     projectConnection: { listByTarget: (...a: unknown[]) => listByTarget(...a) },
     project: { findById: (...a: unknown[]) => findById(...a) },
+    deployment: { findById: async () => ({ id: "dep-1", projectId: "target", organizationId: "org1" }) },
     // The consumer's OWN container ids, passed explicitly because an adopted container
     // keeps its original labels and the `openship.project` filter cannot see it.
     service: { listByDeployment: (...a: unknown[]) => listByDeployment(...a) },
   },
 }));
 
-import { attachLinkedNetworks, linkedNetworkName } from "./attach-linked-networks";
+import { attachLinkedNetworks, linkedNetworkName } from "@repo/platform/engine/modules/deployments/attach-linked-networks";
 
 describe("attachLinkedNetworks", () => {
   beforeEach(() => {
@@ -52,7 +53,7 @@ describe("attachLinkedNetworks", () => {
   it("names the consumer's stored container ids, so an adopted container is joined too", async () => {
     listByTarget.mockResolvedValue([{ mode: "internal", sourceProjectId: "s1" }]);
     findById.mockImplementation(async (id: string) =>
-      id === "s1" ? { slug: "supabase" } : { activeDeploymentId: "dep-1" },
+      id === "s1" ? { slug: "supabase" } : { id: "target", organizationId: "org1", activeDeploymentId: "dep-1" },
     );
     listByDeployment.mockResolvedValue([
       { containerId: "adopted-web-1" },
@@ -78,6 +79,29 @@ describe("attachLinkedNetworks", () => {
     await attachLinkedNetworks("target", { attachToExternalNetworks: attach });
     expect(attach).toHaveBeenCalledWith("target", ["openship-supabase"], []);
     expect(listByDeployment).not.toHaveBeenCalled();
+  });
+
+  it("scopes release preparation to the candidate and skips the live container inventory", async () => {
+    listByTarget.mockResolvedValue([{ mode: "internal", sourceProjectId: "database" }]);
+    findById.mockImplementation(async (id: string) =>
+      id === "database" ? { slug: "database" } : { slug: "app", activeDeploymentId: "live-deploy" },
+    );
+    const attachToExternalNetworks = vi.fn();
+    await attachLinkedNetworks("target", {
+      attachToExternalNetworks, joinServiceGroupContainers: vi.fn(),
+    }, undefined, "candidate-deploy", ["release-container"]);
+    expect(attachToExternalNetworks).toHaveBeenCalledWith(
+      "target", ["openship-database"], [], expect.objectContaining({
+        onlyContainerIds: ["release-container"], strict: true,
+      }),
+    );
+    expect(listByDeployment).not.toHaveBeenCalled();
+  });
+
+  it("fails release preparation when its links cannot be read", async () => {
+    listByTarget.mockRejectedValueOnce(new Error("db down"));
+    await expect(attachLinkedNetworks("target", { attachToExternalNetworks: vi.fn() },
+      undefined, "candidate-deploy", ["release-container"])).rejects.toThrow("db down");
   });
 
   it("no-ops (never reads links) when the runtime can't join external networks — e.g. cloud", async () => {

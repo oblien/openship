@@ -1,0 +1,48 @@
+{
+  "tier": "starter",
+  "limits": {
+    "workloads": [
+      "static",
+      "web",
+      "worker"
+    ],
+    "services": true,
+    "runningServices": 15,
+    "concurrentBuilds": 4,
+    "maxProjects": 10,
+    "maxResourceTier": null,
+    "maxServiceResources": {
+      "cpuCores": 1,
+      "memoryMb": 4096
+    },
+    "computeMinutesPerMonth": null,
+    "buildMinutesPerMonth": null,
+    "freeSubdomains": 25,
+    "customDomains": null,
+    "seats": null
+  },
+  "offer": {
+    "name": "Openship Custom",
+    "description": "1 vCPU · 4 GB RAM · 128 GB disk. CPU, RAM and storage are covered for the paid month.",
+    "unitAmount": 2000,
+    "currency": "usd",
+    "billingMode": "monthly",
+    "credits": 0,
+    "capacity": {
+      "vcpus": 1,
+      "memoryMb": 4096,
+      "diskGb": 128,
+      "workspaces": 1
+    },
+    "resourceLimits": {
+      "max_workspaces": 1,
+      "max_vcpus": 1,
+      "max_total_vcpus": 1,
+      "max_ram_mb": 4096,
+      "max_total_ram_mb": 4096,
+      "max_disk_gb": 128,
+      "max_total_disk_gb": 128
+    },
+    "reference": "openship:custom:v2:92605432eb915a787e65bd49db9dbfc6d377d04c1c5f3f038d7d46aa7447b943"
+  }
+}

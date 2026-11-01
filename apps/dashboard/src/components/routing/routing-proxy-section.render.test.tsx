@@ -1,5 +1,5 @@
 // No DOM needed: renderToStaticMarkup runs no effects, so this pins the markup the
-// section renders for a given config — including whether it starts open.
+// section renders for a given config — including discoverable groups and human labels.
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PROXY_DIRECTIVES, type RoutingConfig } from "@repo/core";
@@ -12,8 +12,7 @@ import { RoutingConfigEditor } from "./RoutingConfigEditor";
  * an upload over 1 MB is a 413 and anything slower than 60s is cut off — and because
  * "what we saved" and "what the edge serves" can differ without anything saying so.
  *
- * Properties worth pinning: it must NOT appear in the deploy wizard; it must start
- * OPEN when there is something to look at; every directive in the table must reach
+ * Properties worth pinning: it must NOT appear in the deploy wizard; every group must remain visible; every directive in the table must reach
  * the UI without a code change here; and the live column must never report "not set"
  * for a value the box is actually serving.
  */
@@ -61,14 +60,14 @@ function report(
 describe("RoutingConfigEditor proxy-tunables section", () => {
   it("is absent unless the caller asks for it (keeps it out of the deploy wizard)", () => {
     const html = render(null);
-    expect(html).not.toContain("Request limits");
+    expect(html).not.toContain("Proxy settings");
     expect(html).not.toContain("client_max_body_size");
   });
 
-  it("renders its header on the project tab, so it's discoverable while collapsed", () => {
+  it("renders its header and a description on the project tab", () => {
     const html = render(null, true);
-    expect(html).toContain("Request limits");
-    expect(html).toContain("Upload size and timeouts");
+    expect(html).toContain("Proxy settings");
+    expect(html).toContain("Upload size, timeouts");
   });
 
   it("names the defaults it is overriding, so an empty box isn't ambiguous", () => {
@@ -78,12 +77,12 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
     expect(html).toContain("60s");
   });
 
-  it("stays collapsed when nothing is set", () => {
-    // Collapsed = the fields aren't in the markup at all.
-    expect(render(null, true)).not.toContain("client_max_body_size");
+  it("shows all settings even when nothing is set", () => {
+    // Empty defaults must not hide the available controls.
+    expect(render(null, true)).toContain("client_max_body_size");
   });
 
-  it("starts OPEN and shows the stored value when a limit is configured", () => {
+  it("shows the stored value when a limit is configured", () => {
     const html = render({ proxy: { clientMaxBodySize: "50m" } }, true);
     expect(html).toContain('value="50m"');
     expect(html).toContain("client_max_body_size");
@@ -106,7 +105,7 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
 
   it("groups the fields, so 23 directives don't read as one flat wall", () => {
     const html = render({ proxy: { clientMaxBodySize: "50m" } }, true);
-    for (const group of ["Request body", "Upstream timeouts", "Response buffering", "Compression"]) {
+    for (const group of ["Uploads", "Timeouts", "Response buffering", "Compression"]) {
       expect(html).toContain(group);
     }
   });
@@ -115,15 +114,15 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
     // A checkbox can express on/off but not "unset, inherit nginx's default" — and
     // once a value is stored, being unable to clear it is a one-way door.
     const html = render({ proxy: { gzip: true } }, true);
-    expect(html).toContain("nginx default");
-    expect(html).toContain('<option value="on" selected="">on</option>');
+    expect(html).toContain("Use server default");
+    expect(html).toContain("Enabled");
   });
 
   it("does not claim buffering is on when nothing was chosen", () => {
     // The old checkbox rendered unset as checked, so an unset project looked like it
     // had explicitly opted into buffering.
     const html = render({ proxy: { clientMaxBodySize: "50m" } }, true);
-    expect(html).not.toContain('<option value="on" selected="">on</option>');
+    expect(html).not.toContain(">Enabled<");
   });
 
   it("shows a cleared field as empty rather than echoing a default into it", () => {
@@ -140,7 +139,15 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
       { proxy: { clientMaxBodySize: "50m" } },
       true,
       report([
-        { key: "clientMaxBodySize", directive: "client_max_body_size", group: "body", expected: "50m", live: "50m", liveRaw: "50m", drift: false },
+        {
+          key: "clientMaxBodySize",
+          directive: "client_max_body_size",
+          group: "body",
+          expected: "50m",
+          live: "50m",
+          liveRaw: "50m",
+          drift: false,
+        },
       ]),
     );
     expect(html).toContain("Serving:");
@@ -148,39 +155,58 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
   });
 
   it("flags drift and offers to adopt what the box is serving", () => {
-    const html = render(
-      { proxy: { clientMaxBodySize: "50m" } },
-      true,
-      {
-        ...report([
-          { key: "clientMaxBodySize", directive: "client_max_body_size", group: "body", expected: "50m", live: "1m", liveRaw: "1m", drift: true },
-        ]),
-        hosts: [
-          {
-            hostname: "app.example.com",
-            found: true,
-            tls: true,
-            directives: [
-              { key: "clientMaxBodySize", directive: "client_max_body_size", group: "body", expected: "50m", live: "1m", liveRaw: "1m", drift: true },
-            ],
-            adoptable: { clientMaxBodySize: "1m" },
-            driftCount: 1,
-          },
-        ],
-      },
-    );
+    const html = render({ proxy: { clientMaxBodySize: "50m" } }, true, {
+      ...report([
+        {
+          key: "clientMaxBodySize",
+          directive: "client_max_body_size",
+          group: "body",
+          expected: "50m",
+          live: "1m",
+          liveRaw: "1m",
+          drift: true,
+        },
+      ]),
+      hosts: [
+        {
+          hostname: "app.example.com",
+          found: true,
+          tls: true,
+          directives: [
+            {
+              key: "clientMaxBodySize",
+              directive: "client_max_body_size",
+              group: "body",
+              expected: "50m",
+              live: "1m",
+              liveRaw: "1m",
+              drift: true,
+            },
+          ],
+          adoptable: { clientMaxBodySize: "1m" },
+          driftCount: 1,
+        },
+      ],
+    });
     expect(html).toContain("The edge is serving different values for:");
     expect(html).toContain("Adopt live values");
   });
 
-  it("starts OPEN on drift alone, even with nothing saved", () => {
+  it("shows drift even with nothing saved", () => {
     // Drift with no saved value is the interesting case — someone edited the vhost by
     // hand, and the next save will overwrite it.
     const html = render(
       null,
       true,
       report([
-        { key: "clientMaxBodySize", directive: "client_max_body_size", group: "body", live: "1m", liveRaw: "1m", drift: true },
+        {
+          key: "clientMaxBodySize",
+          directive: "client_max_body_size",
+          group: "body",
+          live: "1m",
+          liveRaw: "1m",
+          drift: true,
+        },
       ]),
     );
     expect(html).toContain("client_max_body_size");
@@ -193,7 +219,13 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
       null,
       true,
       report([
-        { key: "clientMaxBodySize", directive: "client_max_body_size", group: "body", liveRaw: "20M", drift: true },
+        {
+          key: "clientMaxBodySize",
+          directive: "client_max_body_size",
+          group: "body",
+          liveRaw: "20M",
+          drift: true,
+        },
       ]),
     );
     expect(html).toContain("20M");
@@ -216,7 +248,15 @@ describe("RoutingConfigEditor proxy-tunables section", () => {
       { proxy: { clientMaxBodySize: "50m" } },
       true,
       report([
-        { key: "clientMaxBodySize", directive: "client_max_body_size", group: "body", expected: "50m", live: "50m", liveRaw: "50m", drift: false },
+        {
+          key: "clientMaxBodySize",
+          directive: "client_max_body_size",
+          group: "body",
+          expected: "50m",
+          live: "50m",
+          liveRaw: "50m",
+          drift: false,
+        },
       ]),
     );
     expect(html).not.toContain("The edge is serving different values for:");

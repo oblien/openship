@@ -1,7 +1,7 @@
 {
   "checking": "Verificando seu provedor de DNS…",
   "noProviderTitle": "Configure esses registros automaticamente",
-  "noProviderDesc": "Conecte um provedor de DNS e o Openship adiciona esses registros para você.",
+  "noProviderDesc": "Conecte um provedor DNS com acesso à zona deste domínio; depois revise e aplique os registros.",
   "connect": "Conectar um provedor de DNS",
   "unauthorizedTitle": "O provedor de DNS precisa ser reconectado",
   "unauthorizedDesc": "Seu token salvo foi rejeitado. Reconecte-o para configurar o DNS automaticamente.",
@@ -25,5 +25,20 @@
   "outcomeFailed": "Falhou",
   "resultDone": "DNS atualizado.",
   "resultPartial": "Alguns registros precisam de atenção.",
-  "applyFailed": "Não foi possível configurar o DNS."
+  "applyFailed": "Não foi possível configurar o DNS.",
+  "preDeployHint": "Provedor conectado. Faça o deploy primeiro e depois escolha Configurar DNS automaticamente nas configurações de domínio do projeto.",
+  "currentValue": "Valor atual",
+  "desiredValue": "Novo valor",
+  "checkAgain": "Verificar novamente",
+  "manualSetup": "Configuração manual de DNS",
+  "recordsFailed": "Não foi possível carregar os registros DNS. Tente novamente.",
+  "connection": {
+    "description": "Conecte uma vez para este espaço de trabalho. Revise as alterações de DNS antes de aplicá-las.",
+    "provider": "Provedor DNS",
+    "connection": "Conexão",
+    "newConnection": "Adicionar uma conexão",
+    "createToken": "Criar token de API",
+    "adminRequired": "Um proprietário ou administrador precisa conectar o provedor DNS. Você ainda pode adicionar os registros manualmente.",
+    "loadFailed": "Não foi possível carregar as conexões DNS. Tente novamente."
+  }
 }

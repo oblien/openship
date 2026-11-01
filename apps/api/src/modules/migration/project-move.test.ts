@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { assertProjectMovable, planProjectMove, ProjectMoveRefused } from "./project-move";
-import type { DiscoveredService } from "./docker-reconcile";
+import {
+  assertProjectMovable,
+  planProjectMove,
+  ProjectMoveRefused,
+  type ProjectRoleWork,
+  type RoleWorkDeployment,
+} from "@repo/platform/engine/modules/migration/project-move";
+import type { StackRole } from "@repo/core";
+import type { DiscoveredService } from "@repo/platform/engine/modules/migration/docker-reconcile";
 
 /**
  * The refusal matrix, and the three fields whose wrong value is destructive:
@@ -27,12 +34,18 @@ const svc = (over: Partial<DiscoveredService> = {}): DiscoveredService =>
 
 const project = { id: "p1", name: "clincai", slug: "clincai", serverId: "srv_a" };
 
+const worker: StackRole = { name: "queue", kind: "worker", command: "php artisan queue:work" };
+
+/** No active deployment and nothing unfinished: what a project that never ran roles has. */
+const NO_ROLE_WORK: ProjectRoleWork = { active: null, unsettled: [] };
+
 const plan = (over: Partial<Parameters<typeof planProjectMove>[0]> = {}) =>
   planProjectMove({
     project,
     targetServerId: "srv_b",
     discovered: [svc()],
     ourContainerIds: ["c_web"],
+    roleWork: NO_ROLE_WORK,
     ...over,
   });
 
@@ -43,10 +56,13 @@ describe("planProjectMove refusals", () => {
     expect(() => plan({ isControlPlane: true })).toThrow(ProjectMoveRefused);
   });
 
-  it("refuses a cloud project, naming Cloud", () => {
-    expect(() =>
-      plan({ project: { ...project, cloudWorkspaceId: "ws_1", serverId: null } }),
-    ).toThrow(/Openship Cloud/);
+  it("moves managed Docker projects through the same server flow", () => {
+    expect(() => plan({ project: { ...project, workspaceId: "ws_1", runtimeMode: "docker" } })).not.toThrow();
+  });
+
+  it("requires a server binding and does not migrate bare processes as Docker containers", () => {
+    expect(() => plan({ project: { ...project, workspaceId: "ws_1", serverId: null } })).toThrow(/isn't bound to a server/);
+    expect(() => plan({ project: { ...project, runtimeMode: "bare" } })).toThrow(/Docker/i);
   });
 
   it("refuses a project bound to no server", () => {
@@ -86,6 +102,7 @@ describe("planProjectMove refusals", () => {
     const codes = [
       [() => plan({ isControlPlane: true }), "control_plane"],
       [() => plan({ project: { ...project, serverId: null } }), "not_server_hosted"],
+      [() => plan({ project: { ...project, roles: [worker] } }), "has_roles"],
       [() => plan({ targetServerId: "srv_a" }), "same_server"],
       [() => plan({ ourContainerIds: [] }), "nothing_running"],
       [() => plan({ discovered: [svc({ build: ".", image: undefined })] }), "builds_from_source"],
@@ -98,6 +115,155 @@ describe("planProjectMove refusals", () => {
         expect((err as ProjectMoveRefused).code).toBe(code);
       }
     }
+  });
+});
+
+describe("runtime roles", () => {
+  const withRoles = (roles: readonly StackRole[] | null) => ({ ...project, roles });
+  const refusal = (fn: () => unknown) => {
+    try {
+      fn();
+      return null;
+    } catch (err) {
+      return err as ProjectMoveRefused;
+    }
+  };
+
+  it("refuses a project that declares roles, for both a move and a copy", () => {
+    for (const intent of ["move", "copy"] as const) {
+      const err = refusal(() =>
+        assertProjectMovable({
+          project: withRoles([worker]),
+          targetServerId: "srv_b",
+          intent,
+          roleWork: NO_ROLE_WORK,
+        }),
+      );
+      expect(err).toBeInstanceOf(ProjectMoveRefused);
+      expect(err?.code).toBe("has_roles");
+      expect(err?.message).toContain('"clincai" runs worker or scheduler roles');
+      expect(err?.message).toContain("Remove its roles and redeploy");
+    }
+  });
+
+  it("refuses through the full plan too", () => {
+    expect(refusal(() => plan({ project: withRoles([worker]) }))?.code).toBe("has_roles");
+  });
+
+  it("does not refuse an empty or null roles list", () => {
+    for (const roles of [[], null]) {
+      expect(() =>
+        assertProjectMovable({
+          project: withRoles(roles),
+          targetServerId: "srv_b",
+          roleWork: NO_ROLE_WORK,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("keeps the existing refusal order: the control plane and an unbound project win", () => {
+    const roled = withRoles([worker]);
+    expect(
+      refusal(() =>
+        assertProjectMovable({
+          project: roled,
+          targetServerId: "srv_b",
+          isControlPlane: true,
+          roleWork: NO_ROLE_WORK,
+        }),
+      )?.code,
+    ).toBe("control_plane");
+    expect(
+      refusal(() =>
+        assertProjectMovable({
+          project: { ...roled, serverId: null },
+          targetServerId: "srv_b",
+          roleWork: NO_ROLE_WORK,
+        }),
+      )?.code,
+    ).toBe("not_server_hosted");
+  });
+
+  describe("role work that has not been retired", () => {
+    const dep = (over: Partial<RoleWorkDeployment> = {}): RoleWorkDeployment => ({
+      id: "dep_1",
+      status: "ready",
+      meta: null,
+      roleContainers: null,
+      ...over,
+    });
+    const app = { ...project, name: "example-app", slug: "example-app", roles: [] };
+    const scheduler = { role: "scheduler", replica: 1, containerId: "c_sched" };
+    const runningRoles = dep({ meta: { roles: [worker] }, roleContainers: [scheduler] });
+    const kept = { cancellation: { keepProvisioned: true } };
+    const movable = (roleWork: ProjectRoleWork) =>
+      refusal(() => assertProjectMovable({ project: app, targetServerId: "srv_b", roleWork }));
+
+    it("refuses saved `roles: []` while the active deployment still runs roles, for both a move and a copy", () => {
+      for (const intent of ["move", "copy"] as const) {
+        const err = refusal(() =>
+          assertProjectMovable({
+            project: app,
+            targetServerId: "srv_b",
+            intent,
+            roleWork: { active: runningRoles, unsettled: [] },
+          }),
+        );
+        expect(err?.code).toBe("has_roles");
+        expect(err?.message).toBe(
+          '"example-app" still runs worker or scheduler roles from its active deployment, and moving roles between servers is not supported yet. Redeploy it without roles before moving it.',
+        );
+      }
+      expect(refusal(() => plan({ roleWork: { active: runningRoles, unsettled: [] } }))?.code).toBe(
+        "has_roles",
+      );
+    });
+
+    it("refuses recorded role containers on the active deployment even without frozen roles", () => {
+      expect(movable({ active: dep({ roleContainers: [scheduler] }), unsettled: [] })?.code).toBe(
+        "has_roles",
+      );
+    });
+
+    it("refuses unfinished work with frozen roles before its containers are recorded", () => {
+      const err = movable({
+        active: null,
+        unsettled: [dep({ status: "deploying", meta: { roles: [worker] }, roleContainers: null })],
+      });
+      expect(err?.code).toBe("has_roles");
+      expect(err?.message).toBe(
+        '"example-app" has an unfinished deployment with worker or scheduler roles, and moving roles between servers is not supported yet. Wait for it to finish, then redeploy without roles before moving it.',
+      );
+    });
+
+    it("refuses a finished cancellation that kept its role containers, and names the fix", () => {
+      const err = movable({
+        active: null,
+        unsettled: [
+          dep({ id: "dep_kept", status: "cancelled", meta: kept, roleContainers: [scheduler] }),
+        ],
+      });
+      expect(err?.code).toBe("has_roles");
+      expect(err?.message).toBe(
+        '"example-app" has a cancelled deployment (dep_kept) that kept its worker or scheduler role containers, and moving roles between servers is not supported yet. Once its execution has stopped, remove any remaining worker or scheduler containers belonging to that deployment from the source server, then delete that deployment before moving the project.',
+      );
+    });
+
+    it("allows a cancellation that kept its containers but ran no roles", () => {
+      expect(
+        movable({ active: null, unsettled: [dep({ status: "cancelled", meta: kept })] }),
+      ).toBeNull();
+    });
+
+    it("allows a clean role-free active deployment and role-free unfinished work", () => {
+      expect(
+        movable({
+          active: dep({ meta: { roles: [] } }),
+          unsettled: [dep({ id: "dep_2", status: "deploying", meta: {} })],
+        }),
+      ).toBeNull();
+    });
   });
 });
 
@@ -240,7 +406,7 @@ describe("planProjectMove service scope", () => {
 describe("the same-server refusal names the server", () => {
   const onSame = (sourceServerName?: string | null) => {
     try {
-      assertProjectMovable({ project, targetServerId: "srv_a", sourceServerName });
+      assertProjectMovable({ project, targetServerId: "srv_a", sourceServerName, roleWork: NO_ROLE_WORK });
       return null;
     } catch (err) {
       return err as ProjectMoveRefused;

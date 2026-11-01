@@ -1,0 +1,118 @@
+---
+title: github
+description: Commands, arguments, and options for openship github.
+cliGroup: openship github
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship github
+
+Connect GitHub, browse repositories and manage deployment sources
+
+```text
+openship github [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`status`](/docs/cli/reference/github#openship-github-status) | Show available connection methods and current GitHub access |
+| [`home`](/docs/cli/reference/github#openship-github-home) | Show connected accounts and recent repositories |
+| [`local-status`](/docs/cli/reference/github#openship-github-local-status) | Inspect GitHub credentials on the selected Openship instance |
+| [`connect [options]`](/docs/cli/reference/github#openship-github-connect) | Begin a connection; follow the returned browser, device or installation instructions |
+| [`poll [options]`](/docs/cli/reference/github#openship-github-poll) | Check whether a connection attempt completed |
+| [`claim [options] <installation>`](/docs/cli/reference/github#openship-github-claim) | Select an installation offered to the authenticated user |
+| [`token <file>`](/docs/cli/reference/github#openship-github-token) | Set the instance's GitHub personal token (self-hosted administrators) |
+| [`disconnect [options]`](/docs/cli/reference/github#openship-github-disconnect) | Disconnect a GitHub credential source |
+| [`repo`](/docs/cli/reference/github/repo#openship-github-repo) | Browse and manage repositories available to this connection |
+| [`source`](/docs/cli/reference/github/source#openship-github-source) | Configure self-hosted GitHub Apps and their installations |
+
+## openship github claim
+
+Select an installation offered to the authenticated user
+
+```text
+openship github claim [options] <installation>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `installation` | Installation ID offered by github connect |
+
+| Option | Meaning |
+| --- | --- |
+| `--state <state>` | Exact connection attempt state |
+
+## openship github connect
+
+Begin a connection; follow the returned browser, device or installation instructions
+
+```text
+openship github connect [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--source <method>` | Connection method (choices: "oauth", "cli") |
+| `--state <state>` | Resume this connection attempt |
+
+## openship github disconnect
+
+Disconnect a GitHub credential source
+
+```text
+openship github disconnect [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--source <method>` | Credential to disconnect (choices: "oauth", "cli", "all", default: "all") |
+| `-y, --yes` | Confirm disconnection |
+
+## openship github home
+
+Show connected accounts and recent repositories
+
+```text
+openship github home [options]
+```
+
+## openship github local-status
+
+Inspect GitHub credentials on the selected Openship instance
+
+```text
+openship github local-status [options]
+```
+
+## openship github poll
+
+Check whether a connection attempt completed
+
+```text
+openship github poll [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--state <state>` | Attempt state from github connect |
+
+## openship github status
+
+Show available connection methods and current GitHub access
+
+```text
+openship github status [options]
+```
+
+## openship github token
+
+Set the instance's GitHub personal token (self-hosted administrators)
+
+```text
+openship github token [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | Token file, or - for stdin |

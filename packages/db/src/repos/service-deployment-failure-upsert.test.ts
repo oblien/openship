@@ -1,3 +1,4 @@
+import { createEncryption } from "../encryption";
 import { describe, it, expect, beforeEach } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -33,7 +34,7 @@ async function fresh() {
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   // Seed rows without the full org→project→service FK chain.
   await client.exec("SET session_replication_role = replica;");
-  return { db, repo: createServiceRepo(db) };
+  return { db, repo: createServiceRepo(db, createEncryption("repository-test-secret")) };
 }
 
 const DEP = "dep_1";

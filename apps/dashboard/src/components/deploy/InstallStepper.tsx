@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * InstallStepper — a checklist of named steps with per-step status icons, shared
  * by the guided app-install page (JSON-mapped install phases + per-service
@@ -11,7 +13,6 @@
  */
 
 import type { ReactNode } from "react";
-import { Loader2, CheckCircle2, AlertCircle, Circle, CircleSlash, MinusCircle } from "lucide-react";
 
 export type StepStatus =
   | "pending"
@@ -35,16 +36,16 @@ export interface StepItem {
 }
 
 function StepIcon({ status }: { status: StepStatus }) {
-  if (status === "done") return <CheckCircle2 className="size-3.5 shrink-0 text-success" />;
+  if (status === "done") return <UiIcon name="check-circle" className="size-3.5 shrink-0 text-success" />;
   if (status === "failed" || status === "error")
-    return <AlertCircle className="size-3.5 shrink-0 text-danger" />;
+    return <UiIcon name="alert-circle" className="size-3.5 shrink-0 text-danger" />;
   if (status === "active" || status === "running")
-    return <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />;
+    return <UiIcon name="spinner" className="size-3.5 shrink-0 animate-spin text-primary" />;
   if (status === "stopped")
-    return <CircleSlash className="size-3.5 shrink-0 text-muted-foreground" />;
+    return <UiIcon name="ban" className="size-3.5 shrink-0 text-muted-foreground" />;
   if (status === "skipped")
-    return <MinusCircle className="size-3.5 shrink-0 text-muted-foreground/40" />;
-  return <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />;
+    return <UiIcon name="minus-circle" className="size-3.5 shrink-0 text-muted-foreground/40" />;
+  return <UiIcon name="circle" className="size-3.5 shrink-0 text-muted-foreground/40" />;
 }
 
 function labelClass(status: StepStatus): string {
@@ -56,14 +57,14 @@ function labelClass(status: StepStatus): string {
   return "text-foreground";
 }
 
-export function InstallStepper({ steps }: { steps: StepItem[] }) {
+export function InstallStepper({ steps, columns = 1 }: { steps: StepItem[]; columns?: 1 | 2 }) {
   return (
-    <div className="space-y-1">
+    <div className={columns === 2 ? "grid grid-cols-2 gap-x-4 gap-y-1" : "space-y-1"}>
       {steps.map((s) => (
-        <div key={s.id}>
-          <div className="flex items-center gap-2 text-[13px]">
+        <div key={s.id} className="min-w-0">
+          <div className="flex items-center gap-2 py-1 text-sm">
             <StepIcon status={s.status} />
-            <span className={labelClass(s.status)}>{s.label}</span>
+            <span className={`min-w-0 break-words ${labelClass(s.status)}`}>{s.label}</span>
           </div>
           {/* Logical margin, not `ml-`: the indent has to land under the icon
               column, which is on the right in Arabic. */}

@@ -7,6 +7,12 @@ export interface GithubInstallStatePayload {
   name?: string;
   apiBaseUrl?: string;
   webBaseUrl?: string;
+  /** Repository OAuth: PKCE is encrypted, browser proof is hashed. */
+  sessionId?: string;
+  browserNonceHash?: string;
+  codeVerifierEncrypted?: string;
+  callbackMode?: "dashboard" | "bridge";
+  connectionError?: string;
 }
 
 /**
@@ -25,8 +31,9 @@ export interface GithubInstallStatePayload {
  * gets a row here, keyed by the state nonce, carrying the originating
  * user/org. When the install-complete callback (or webhook) fires with
  * a matching state, we look the row up, verify the caller matches the
- * stored userId/organizationId, then DELETE the row so the binding is
- * one-shot.
+ * stored userId/organizationId, then atomically mark it complete with the
+ * installation write. The short-lived result lets its initiator poll progress;
+ * a completed state can never claim another installation.
  *
  * Cleanup
  * ───────
@@ -48,9 +55,10 @@ export const githubInstallState = pgTable(
     organizationId: text("organization_id"),
     /** Source being installed. Null for legacy env/Cloud App flows and manifests. */
     sourceId: text("source_id").references(() => gitSource.id, { onDelete: "cascade" }),
-    /** `install` or `manifest`; text keeps future setup flows migration-free. */
+    /** `install`, `manifest`, `repository-oauth`, or a short-lived completion. */
     flow: text("flow").notNull().default("install"),
-    /** Non-secret manifest setup inputs. Never stores conversion credentials. */
+    /** Setup inputs, plus encrypted PKCE for repository OAuth. This ephemeral
+     * table is excluded from transfers and never stores provider tokens. */
     payload: jsonb("payload")
       .$type<GithubInstallStatePayload>()
       .notNull()

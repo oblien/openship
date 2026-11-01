@@ -1,3 +1,4 @@
+import type { ExecutionContext } from "@repo/platform";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 
@@ -38,18 +39,17 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("./project-teardown", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-teardown", () => ({
   teardownProject: h.teardownProject,
   getActiveProjectState: h.getActiveProjectState,
 }));
 
 import { remove } from "./project.controller";
+import { handleApiError } from "../../middleware/error-handler";
 
 function app() {
   const api = new Hono();
-  api.onError((error, c) =>
-    c.json({ error: error.message }, error instanceof SyntaxError ? 400 : 500),
-  );
+  api.onError(handleApiError);
   api.delete("/projects/:id", remove);
   return api;
 }
@@ -79,7 +79,7 @@ describe("DELETE project option transport", () => {
     expect(response.status).toBe(200);
     expect(h.getActiveProjectState).not.toHaveBeenCalled();
     expect(h.teardownProject).toHaveBeenCalledWith(
-      { userId: "user-1", organizationId: "org-1" },
+      expect.objectContaining({ userId: "user-1", organizationId: "org-1", source: "api" }),
       "project-1",
       {
         force: true,
@@ -99,7 +99,7 @@ describe("DELETE project option transport", () => {
 
     expect(response.status).toBe(200);
     expect(h.teardownProject).toHaveBeenCalledWith(
-      { userId: "user-1", organizationId: "org-1" },
+      expect.objectContaining({ userId: "user-1", organizationId: "org-1", source: "api" }),
       "project-1",
       expect.objectContaining({ force: true, forceOrphan: true }),
     );
@@ -154,3 +154,13 @@ describe("DELETE project option transport", () => {
     expect(h.getActiveProjectState).not.toHaveBeenCalled();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: ExecutionContext) => ctx },
+}));
+
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
+  audit: { recordAsync: vi.fn() },
+  auditContextFrom: vi.fn(() => ({})),
+}));

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseImageRef } from "./image-registry";
+import { parseImageRef } from "@repo/platform/engine/lib/image-registry";
 
 describe("parseImageRef", () => {
   it("Docker Hub namespaced repo → registry-1.docker.io, tag preserved", () => {

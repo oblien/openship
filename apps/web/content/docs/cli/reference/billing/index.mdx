@@ -1,0 +1,172 @@
+---
+title: billing
+description: Commands, arguments, and options for openship billing.
+cliGroup: openship billing
+---
+
+See the [workflow guide](/docs/cli/cloud) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship billing
+
+Manage Cloud plans, server subscriptions, usage and payment checkouts
+
+```text
+openship billing [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`plans [options]`](/docs/cli/reference/billing#openship-billing-plans) | Show the current plan catalog and prices |
+| [`quote [options]`](/docs/cli/reference/billing#openship-billing-quote) | Quote custom server capacity using current catalog pricing |
+| [`state [options]`](/docs/cli/reference/billing#openship-billing-state) | Show the effective plan, allowance and billing state |
+| [`resources [options]`](/docs/cli/reference/billing#openship-billing-resources) | Show measured compute and traffic usage |
+| [`allowances [options]`](/docs/cli/reference/billing#openship-billing-allowances) | Show allowance use and the resources consuming it |
+| [`alerts`](/docs/cli/reference/billing#openship-billing-alerts) | Show credit and funding alerts |
+| [`usage [options]`](/docs/cli/reference/billing#openship-billing-usage) | Read metered usage for a date range |
+| [`portal [options]`](/docs/cli/reference/billing#openship-billing-portal) | Create a link to manage this subscription's payments |
+| [`subscription`](/docs/cli/reference/billing/subscription#openship-billing-subscription) | Purchase, inspect or change a managed server subscription |
+| [`change`](/docs/cli/reference/billing/change#openship-billing-change) | Preview and confirm a subscription change with its exact quote |
+| [`checkout`](/docs/cli/reference/billing/checkout#openship-billing-checkout) | Recover existing payment checkouts without creating another purchase |
+| [`topup`](/docs/cli/reference/billing#openship-billing-topup) | Add usage credit through a payment checkout |
+| [`manage`](/docs/cli/reference/billing/manage#openship-billing-manage) | Hosted management for your own servers; scoped to the active organization |
+
+## openship billing alerts
+
+Show credit and funding alerts
+
+```text
+openship billing alerts [options]
+```
+
+## openship billing allowances
+
+Show allowance use and the resources consuming it
+
+```text
+openship billing allowances [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing plans
+
+Show the current plan catalog and prices
+
+```text
+openship billing plans [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--locale <locale>` | Catalog language |
+
+## openship billing portal
+
+Create a link to manage this subscription's payments
+
+```text
+openship billing portal [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing quote
+
+Quote custom server capacity using current catalog pricing
+
+```text
+openship billing quote [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--cpu <cores>` | CPU cores |
+| `--memory <mb>` | Memory in MiB |
+| `--disk <gb>` | Storage in GiB |
+
+## openship billing resources
+
+Show measured compute and traffic usage
+
+```text
+openship billing resources [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing state
+
+Show the effective plan, allowance and billing state
+
+```text
+openship billing state [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing topup
+
+Add usage credit through a payment checkout
+
+```text
+openship billing topup [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`packs`](/docs/cli/reference/billing#openship-billing-topup-packs) | List current funding packages |
+| [`create [options] <pack>`](/docs/cli/reference/billing#openship-billing-topup-create) | Create a top-up checkout; complete payment at the returned URL |
+
+## openship billing topup create
+
+Create a top-up checkout; complete payment at the returned URL
+
+```text
+openship billing topup create [options] <pack>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `pack` | Pack ID from topup packs |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `--idempotency-key <key>` | Stable key for this top-up request |
+
+## openship billing topup packs
+
+List current funding packages
+
+```text
+openship billing topup packs [options]
+```
+
+## openship billing usage
+
+Read metered usage for a date range
+
+```text
+openship billing usage [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `--from <timestamp>` | Start timestamp |
+| `--to <timestamp>` | End timestamp |
+| `--group-by <period>` | Usage bucket size (choices: "hour", "day") |

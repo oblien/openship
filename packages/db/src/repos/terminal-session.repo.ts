@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt } from "drizzle-orm";
 import type { Database } from "../client";
 import { terminalSessions } from "../schema";
 
@@ -57,7 +57,7 @@ export function createTerminalSessionRepo(db: Database) {
           exitCode: data.exitCode ?? null,
           exitReason: data.exitReason,
         })
-        .where(eq(terminalSessions.id, id));
+        .where(and(eq(terminalSessions.id, id), isNull(terminalSessions.endedAt)));
     },
 
     /**
@@ -73,6 +73,14 @@ export function createTerminalSessionRepo(db: Database) {
           and(eq(terminalSessions.userId, userId), isNull(terminalSessions.endedAt)),
         );
       return Number(row?.count ?? 0);
+    },
+
+    /** A Cloud replica may restart while another still owns live sessions.
+     * Only expire rows older than the enforced maximum session lifetime. */
+    async closeExpiredForUser(userId: string, startedBefore: Date): Promise<void> {
+      await db.update(terminalSessions)
+        .set({ endedAt: new Date(), exitReason: "session_cap" })
+        .where(and(eq(terminalSessions.userId, userId), isNull(terminalSessions.endedAt), lt(terminalSessions.startedAt, startedBefore)));
     },
 
     /**

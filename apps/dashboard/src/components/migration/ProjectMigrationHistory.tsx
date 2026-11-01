@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "@/components/i18n-provider";
@@ -35,7 +36,8 @@ export function ProjectMigrationHistory({
     try {
       const res = await dockerMigrationApi.listForProject(projectId);
       setRuns(res.runs);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/migration/ProjectMigrationHistory");
       // History is context, never the point of the page: an unreachable list renders as "no
       // history" rather than an error the operator can do nothing about.
       setRuns((prev) => prev ?? []);
@@ -51,7 +53,9 @@ export function ProjectMigrationHistory({
         for (const s of list) if (s.name) map[s.id] = s.name;
         setNames(map);
       })
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/migration/ProjectMigrationHistory");
+      });
   }, [fetchRuns]);
 
   // Poll only while something is actually moving, and only from this list — the run's own panel

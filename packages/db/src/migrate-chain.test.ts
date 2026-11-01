@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -7,6 +7,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import * as schema from "./schema";
+import { createProjectConnectionRepo } from "./repos/project-connection.repo";
 
 // Does the migration chain actually APPLY to a database that already exists and
 // already holds rows?
@@ -176,11 +177,34 @@ async function seedRow(client: PGlite, table: string, id: string): Promise<void>
       col.column_name === "id" ? `'${id}'` : fillerFor(table, col.column_name, col.data_type),
     );
   }
+  // `servers` has a row-level CHECK (0156 `servers_connection_check`) that a SSH row needs
+  // `ssh_host`, a nullable column the NOT NULL introspection above never fills. The recent
+  // window slides forward with every new migration, so the first one added after 0156 moved
+  // the window's start past it and this seed began failing for a reason unrelated to the new
+  // migration. Fill it whenever the column exists at this point in the chain.
+  if (table === "servers" && !names.includes(`"ssh_host"`)) {
+    const hasSshHost = await client.query<{ n: number }>(
+      `select count(*)::int as n from information_schema.columns
+        where table_schema = 'public' and table_name = 'servers' and column_name = 'ssh_host'`,
+    );
+    if ((hasSshHost.rows[0]?.n ?? 0) > 0) {
+      names.push(`"ssh_host"`);
+      values.push(`'192.0.2.1'`);
+    }
+  }
+
   // `id` may carry a default (so it's excluded above) — force ours in anyway, because
   // the assertions find the row by it.
   if (!names.includes(`"id"`)) {
     names.push(`"id"`);
     values.push(`'${id}'`);
+  }
+  // Managed servers made ssh_host nullable, but a non-local server still needs
+  // an SSH address or a workspace binding. Keep the seed valid when the moving
+  // upgrade window starts after that constraint was introduced.
+  if (table === "servers" && !names.includes(`"ssh_host"`)) {
+    names.push(`"ssh_host"`);
+    values.push(`'192.0.2.1'`);
   }
 
   await client.exec(
@@ -243,6 +267,364 @@ describe("migration chain applies to an existing, populated database", () => {
     await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
     expect(await appliedMigrations(client)).toBe(total);
   });
+
+  test("adds runtime roles after the applied lifecycle migration without changing existing releases", async () => {
+    const cutoff = journal.entries.findIndex((entry) => entry.tag === "0192_runtime_roles");
+    expect(journal.entries[cutoff - 1]?.tag).toBe("0191_project_lifecycle_operation");
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec("SET session_replication_role = replica;");
+      await seedRow(client, "project", SEED_ID);
+      await seedRow(client, "deployment", SEED_ID);
+      const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project")).rows;
+      const deployments = (await client.query<Record<string, unknown>>("SELECT * FROM deployment"))
+        .rows;
+      const applied = (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id"))
+        .rows;
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect((await client.query("SELECT * FROM project")).rows).toEqual(
+        projects.map((project) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false })),
+      );
+      expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
+        deployments.map((deployment) => ({
+          ...deployment,
+          role_containers: null,
+          role_handover: null,
+        })),
+      );
+      expect((await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(0, applied.length))
+        .toEqual(applied);
+      expect(await appliedMigrations(client)).toBe(total);
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect(await appliedMigrations(client)).toBe(total);
+    } finally {
+      await client.close();
+      rmSync(legacy, { recursive: true, force: true });
+    }
+  });
+
+  test("upgrades the published Cloud Pages schema without losing project state", async () => {
+    const cutoff =
+      journal.entries.findIndex((entry) => entry.tag === "0168_cloud_static_hosting") + 1;
+    expect(cutoff).toBeGreaterThan(0);
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec("SET session_replication_role = replica;");
+      await seedRow(client, "project", SEED_ID);
+      await client.exec(
+        "UPDATE project SET cloud_static_hosting = 'server', active_deployment_id = 'retained-release'",
+      );
+      const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project")).rows;
+      const applied = (
+        await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")
+      ).rows;
+      expect(await tableExists(client, "instance_controller")).toBe(false);
+      expect(await tableExists(client, "instance_handoff")).toBe(false);
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect(await appliedMigrations(client)).toBe(total);
+      // Schema-backed reads must include the fields startup and recovery require.
+      expect(await db.select().from(schema.instanceController)).toEqual([]);
+      expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
+      expect((await client.query("SELECT * FROM project")).rows).toEqual(
+        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false })),
+      );
+      expect(
+        (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
+          0,
+          applied.length,
+        ),
+      ).toEqual(applied);
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect(await appliedMigrations(client)).toBe(total);
+    } finally {
+      await client.close();
+      rmSync(legacy, { recursive: true, force: true });
+    }
+  });
+
+  for (const missingFields of [true, false]) {
+    test(`upgrades an applied instance controller migration with portable fields ${missingFields ? "missing" : "already present"}`, async () => {
+      const controllerMigration = "0169_instance_controller";
+      const cutoff = journal.entries.findIndex((entry) => entry.tag === "0168_cloud_static_hosting");
+      expect(cutoff).toBeGreaterThan(0);
+      const legacy = migrationsPrefix(cutoff);
+      const { client, db } = await freshDb();
+      try {
+        // Reproduce the PR's original journal, before main occupied 0168. Its
+        // timestamps and recorded rows must survive the reordered migrations.
+        const earlierEntries: JournalEntry[] = [{
+          idx: cutoff,
+          version: "7",
+          when: 1791331200000,
+          tag: "0168_instance_controller",
+          breakpoints: true,
+        }];
+        const path = join(legacy, "0168_instance_controller.sql");
+        writeFileSync(
+          path,
+          readFileSync(join(MIGRATIONS_DIR, controllerMigration + ".sql"), "utf8")
+            .replaceAll("CREATE TABLE IF NOT EXISTS", "CREATE TABLE"),
+        );
+        if (missingFields) {
+          // A dev instance can have applied 0168 before these fields were added.
+          // Its recorded migration must stay intact; only a new migration runs.
+          writeFileSync(
+            path,
+            readFileSync(path, "utf8")
+              .split("\n")
+              .filter(
+                (line) =>
+                  !/^\s*"(?:environment|desktop_user_id|project_id|recovery|provisioning)" /.test(
+                    line,
+                  ),
+              )
+              .join("\n"),
+          );
+        } else {
+          earlierEntries.push({
+            idx: cutoff + 1,
+            version: "7",
+            when: 1791379680000,
+            tag: "0169_instance_controller_fields",
+            breakpoints: true,
+          });
+          copyFileSync(
+            join(MIGRATIONS_DIR, "0170_instance_controller_fields.sql"),
+            join(legacy, "0169_instance_controller_fields.sql"),
+          );
+        }
+        writeFileSync(
+          join(legacy, "meta", "_journal.json"),
+          JSON.stringify({
+            ...journal,
+            entries: [...journal.entries.slice(0, cutoff), ...earlierEntries],
+          }, null, 2),
+        );
+        const expectedMigrations = total + earlierEntries.length;
+        await migrate(db, { migrationsFolder: legacy });
+        await client.exec(`
+          INSERT INTO instance_controller (installation_id, role, handoff_id, revision, connection)
+            VALUES ('existing-installation', 'retired', 'existing-handoff', 7, 'sealed-device-connection');
+          INSERT INTO instance_handoff (id, direction, owner_user_id, token_hash, secrets, status, expires_at)
+            VALUES ('existing-handoff', 'source', 'existing-owner', 'existing-token-hash', 'sealed-transfer-key', 'prepared', '2026-10-08');
+        `);
+        if (missingFields) {
+          await expect(
+            db
+              .select({ environment: schema.instanceController.environment })
+              .from(schema.instanceController)
+              .limit(1),
+          ).rejects.toThrow(/environment/);
+        } else {
+          await client.exec(`
+            UPDATE instance_controller SET environment = 'sealed-environment', desktop_user_id = 'existing-owner', project_id = 'hosted-api';
+            UPDATE instance_handoff SET recovery = '{"sha256":"saved-checksum"}', provisioning = '{"serverId":"existing-server"}';
+          `);
+        }
+        const controllers = (
+          await client.query<Record<string, unknown>>("SELECT * FROM instance_controller")
+        ).rows;
+        const handoffs = (
+          await client.query<Record<string, unknown>>("SELECT * FROM instance_handoff")
+        ).rows;
+        const applied = (
+          await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")
+        ).rows;
+
+        await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+        expect(await appliedMigrations(client)).toBe(expectedMigrations);
+        // These are the same schema-backed reads used during startup and recovery.
+        expect(await db.select().from(schema.instanceController)).toMatchObject([
+          {
+            installationId: "existing-installation",
+            role: "retired",
+            revision: 7,
+            environment: missingFields ? null : "sealed-environment",
+            desktopUserId: missingFields ? null : "existing-owner",
+            projectId: missingFields ? null : "hosted-api",
+          },
+        ]);
+        expect(await db.select().from(schema.instanceHandoff)).toMatchObject([
+          {
+            id: "existing-handoff",
+            status: "prepared",
+            recovery: missingFields ? null : { sha256: "saved-checksum" },
+            provisioning: missingFields ? null : { serverId: "existing-server" },
+          },
+        ]);
+        await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+        expect(await appliedMigrations(client)).toBe(expectedMigrations);
+        expect((await client.query("SELECT * FROM instance_controller")).rows).toEqual(
+          controllers.map((row) => ({
+            environment: null,
+            desktop_user_id: null,
+            project_id: null,
+            ...row,
+          })),
+        );
+        expect((await client.query("SELECT * FROM instance_handoff")).rows).toEqual(
+          handoffs.map((row) => ({ recovery: null, provisioning: null, ...row })),
+        );
+        expect(
+          (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
+            0,
+            applied.length,
+          ),
+        ).toEqual(applied);
+      } finally {
+        await client.close();
+        rmSync(legacy, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("upgrades managed server identities and drops retired native placement fields", async () => {
+    const cutoff = journal.entries.findIndex((entry) => entry.tag === "0156_managed_servers");
+    expect(cutoff).toBeGreaterThan(0);
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec(`
+        INSERT INTO organization (id, name) VALUES ('org', 'Existing organization');
+        INSERT INTO project_app (id, organization_id, name, slug) VALUES ('group', 'org', 'Apps', 'apps');
+        INSERT INTO servers (id, organization_id, name, ssh_host, is_local) VALUES
+          ('ssh-host', 'org', 'SSH host', '192.0.2.1', false),
+          ('local-host', 'org', 'Local host', '127.0.0.1', true);
+        INSERT INTO cloud_workspace (id, organization_id, name, namespace, mode, runtime, plan_tier_id) VALUES
+          ('shared', 'org', 'Shared', 'shared-namespace', 'shared', 'docker', 'hobby'),
+          ('dedicated', 'org', 'Native', 'native-namespace', 'dedicated', 'native', 'starter');
+        INSERT INTO project (id, organization_id, app_id, environment_slug, name, slug, server_id, workspace_id, cloud_workspace_id) VALUES
+          ('ssh-app', 'org', 'group', 'ssh', 'SSH app', 'ssh-app', 'ssh-host', NULL, NULL),
+          ('local-app', 'org', 'group', 'local', 'Local app', 'local-app', 'local-host', NULL, NULL),
+          ('direct-app', 'org', 'group', 'direct', 'Direct app', 'direct-app', NULL, NULL, 'direct-provider-vm'),
+          ('shared-a', 'org', 'group', 'a', 'Shared A', 'shared-a', NULL, 'shared', NULL),
+          ('shared-b', 'org', 'group', 'b', 'Shared B', 'shared-b', NULL, 'shared', NULL),
+          ('native-app', 'org', 'group', 'native', 'Native app', 'native-app', NULL, 'dedicated', 'native-provider-vm');
+        INSERT INTO cloud_docker_workspace (owner_workspace_id, namespace, provision_key, workspace_id, image, resources, state)
+          VALUES ('shared', 'shared-namespace', 'existing-provision-key', 'shared-provider-vm', 'docker', '{"cpuCores":1,"memoryMb":4096,"diskMb":25600}', 'ready');
+      `);
+      const selectProjects = () =>
+        client.query<{ id: string; server_id: string | null; workspace_id: string | null }>(
+          "SELECT * FROM project ORDER BY id",
+        );
+      const original = (await selectProjects()).rows;
+      const bindings = (await client.query<Record<string, unknown>>("SELECT * FROM cloud_docker_workspace")).rows;
+      const workspaces = (await client.query<Record<string, unknown>>("SELECT * FROM cloud_workspace ORDER BY id")).rows;
+      const connected = (
+        await client.query<Record<string, unknown>>("SELECT * FROM servers ORDER BY id")
+      ).rows;
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      const managed = (
+        await client.query<{ id: string; workspace_id: string }>(
+          "SELECT id, workspace_id FROM servers WHERE workspace_id IS NOT NULL ORDER BY id",
+        )
+      ).rows;
+      expect(managed).toHaveLength(2);
+      for (const row of (await selectProjects()).rows) {
+        const old = original.find((project) => project.id === row.id)!;
+        const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, ...previous } = old as typeof old & Record<string, unknown>;
+        expect(row).toEqual({
+          ...previous,
+          runtime_version: null, runtime_image: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null,
+          auto_deploy_cancel_builds: false,
+          cloud_promotion: null,
+          lifecycle_operation: null,
+          cloud_static_hosting: "pages",
+          github_checks: null,
+          server_id: previous.workspace_id
+            ? managed.find((server) => server.workspace_id === previous.workspace_id)!.id
+            : previous.server_id,
+        });
+      }
+      expect((await client.query("SELECT * FROM cloud_docker_workspace")).rows).toEqual(bindings.map(({ project_id: _, ...host }) => host));
+      expect((await client.query("SELECT * FROM cloud_workspace ORDER BY id")).rows).toEqual(
+        workspaces.map(({ mode: _mode, runtime: _runtime, ...owner }) => ({ ...owner, remote: null, activity: null, linked_projects: [], subscription_change: null })),
+      );
+      expect(
+        (await client.query("SELECT * FROM servers WHERE workspace_id IS NULL ORDER BY id")).rows,
+      ).toEqual(connected.map((server) => ({
+        ...server,
+        workspace_id: null,
+        purpose: "deployment",
+        ssh_host_key: null,
+        gpu_override: null,
+      })));
+      // Repeated startup retains execution IDs and cannot detach a managed project.
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect(
+        (
+          await client.query(
+            "SELECT id, workspace_id FROM servers WHERE workspace_id IS NOT NULL ORDER BY id",
+          )
+        ).rows,
+      ).toEqual(managed);
+      await client.exec("UPDATE project SET workspace_id = NULL WHERE id = 'shared-a'");
+      expect(
+        (await selectProjects()).rows.find((project) => project.id === "shared-a")?.workspace_id,
+      ).toBe("shared");
+      await expect(
+        client.exec("UPDATE project SET server_id = 'ssh-host' WHERE id = 'shared-a'"),
+      ).rejects.toThrow(/explicit migration/);
+    } finally {
+      await client.close();
+      rmSync(legacy, { recursive: true, force: true });
+    }
+  });
+
+  for (const missingNetworkFlag of [true, false]) {
+    test(`upgrades shared connections with the network flag ${missingNetworkFlag ? "missing" : "already present"}`, async () => {
+      const sharedMigration = "0128_shared_service_connections";
+      const cutoff = journal.entries.findIndex((entry) => entry.tag === sharedMigration) + 1;
+      expect(cutoff).toBeGreaterThan(0);
+      const legacy = migrationsPrefix(cutoff);
+      const { client, db } = await freshDb();
+      try {
+        if (missingNetworkFlag) {
+          // Early installs recorded 0128 before this column was added to its SQL.
+          // Editing that applied migration cannot repair those databases.
+          const path = join(legacy, `${sharedMigration}.sql`);
+          const statements = readFileSync(path, "utf8").split("--> statement-breakpoint");
+          writeFileSync(path, statements
+            .filter((statement) => !statement.includes("uses_private_network"))
+            .join("--> statement-breakpoint"));
+        }
+        await migrate(db, { migrationsFolder: legacy });
+        await client.exec("SET session_replication_role = replica;");
+        await seedRow(client, "project_connection", "existing-connection");
+        await client.exec(`UPDATE project_connection SET source_service_id = 'existing-service', mode = 'internal'`);
+        const repo = createProjectConnectionRepo(db);
+        if (missingNetworkFlag) {
+          await expect(repo.listByTarget("seed")).rejects.toThrow(/uses_private_network/);
+        } else {
+          await client.exec("UPDATE project_connection SET uses_private_network = false");
+        }
+
+        await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+        expect(await appliedMigrations(client)).toBe(total);
+        expect(await repo.listByTarget("seed")).toMatchObject([{
+          id: "existing-connection",
+          sourceServiceId: "existing-service",
+          envKey: "seed",
+          mode: "internal",
+          usesPrivateNetwork: missingNetworkFlag,
+        }]);
+        const links = await repo.listByTarget("seed");
+        await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+        expect(await repo.listByTarget("seed")).toEqual(links);
+      } finally {
+        await client.close();
+        rmSync(legacy, { recursive: true, force: true });
+      }
+    });
+  }
 
   // Without this, the two cases below are unfalsifiable: they'd pass just as happily if
   // the seeding silently stopped working or drizzle swallowed migration errors.

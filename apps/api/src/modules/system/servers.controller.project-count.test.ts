@@ -1,3 +1,4 @@
+import type { ExecutionContext, PermissionInput } from "@repo/platform";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 /**
@@ -16,17 +17,18 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
  */
 
 const h = vi.hoisted(() => ({
-  assert: vi.fn(async () => {}),
+  assert: vi.fn(async (_ctx: ExecutionContext, _input: PermissionInput) => {}),
   counts: vi.fn(async () => ({ srv1: 3, srv2: 1 }) as Record<string, number>),
   rows: [
-    { id: "srv1", name: "web-1", isLocal: false, sshHost: "203.0.113.10", sshPort: 22, sshUser: "root", createdAt: "2026-01-01" },
-    { id: "srv2", name: "web-2", isLocal: false, sshHost: "203.0.113.11", sshPort: 22, sshUser: "root", createdAt: "2026-01-01" },
-    { id: "srv3", name: "web-3", isLocal: false, sshHost: "203.0.113.12", sshPort: 22, sshUser: "root", createdAt: "2026-01-01" },
+    { id: "srv1", name: "web-1", isLocal: false, sshHost: "203.0.113.10", sshPort: 22, sshUser: "root", createdAt: new Date("2026-01-01T00:00:00Z"), sshAuthMethod: null, sshKeyPath: null, sshPrivateKey: null, sshJumpHost: null, sshArgs: null },
+    { id: "srv2", name: "web-2", isLocal: false, sshHost: "203.0.113.11", sshPort: 22, sshUser: "root", createdAt: new Date("2026-01-01T00:00:00Z"), sshAuthMethod: null, sshKeyPath: null, sshPrivateKey: null, sshJumpHost: null, sshArgs: null },
+    { id: "srv3", name: "web-3", isLocal: false, sshHost: "203.0.113.12", sshPort: 22, sshUser: "root", createdAt: new Date("2026-01-01T00:00:00Z"), sshAuthMethod: null, sshKeyPath: null, sshPrivateKey: null, sshJumpHost: null, sshArgs: null },
   ],
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
+    settings: { findOrgOwnerCloudLink: vi.fn(async () => null) },
     server: {
       listByOrganization: vi.fn(async () => h.rows),
       getInOrganization: vi.fn(async (id: string) => h.rows.find((r) => r.id === id) ?? null),
@@ -35,16 +37,20 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("@repo/adapters", () => ({ hostControlDisabled: () => false }));
+vi.mock("@repo/adapters", async (original) => ({ ...(await original<Record<string, unknown>>()), hostControlDisabled: () => false }));
 vi.mock("../../lib/permission", () => ({ permission: { assert: h.assert } }));
+vi.mock("../../lib/operation-context", () => ({
+  operationContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
+  operationData: async (_c: unknown, work: Promise<{ data: unknown }>) => (await work).data,
+}));
 vi.mock("../../lib/request-context", () => ({
   getRequestContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
 }));
-vi.mock("@/lib/startup/self-server", () => ({
+vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({
   ensureLocalServer: vi.fn(async () => null),
   localServerHostChannel: vi.fn(async () => null),
 }));
-vi.mock("@/lib/geo-ip", () => ({ primeGeo: vi.fn(async () => {}), countryForIp: () => null }));
+vi.mock("@repo/platform/engine/lib/geo-ip", () => ({ primeGeo: vi.fn(async () => {}), countryForIp: () => null }));
 
 import { getServer, listServers } from "./servers.controller";
 
@@ -109,4 +115,28 @@ describe("GET /servers/:id carries projectCount", () => {
     await expect(getServer(c)).rejects.toThrow();
     expect(h.counts).not.toHaveBeenCalled();
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { checkPermissionOnResource: vi.fn(async () => true), authorize: async (ctx: ExecutionContext, input: PermissionInput) => { await h.assert(ctx, input); return ctx; } },
+}));
+
+// Keep the controller unit focused on this real shared operation group.
+vi.mock("@repo/platform/engine/lib/platform", async () => {
+  const { createServerOperations } = await import("@repo/platform");
+  const { serverDependencies } = await import("@repo/platform/engine/modules/system/server.operations");
+  const { authorization } = await import("@repo/platform/engine/lib/authorization");
+  const servers = createServerOperations(authorization, serverDependencies);
+  return { getPlatformKernel: () => ({ servers }) };
+});
+
+it("reports routing requirements independently from the deployed project count", async () => {
+  h.counts.mockImplementation(
+    async (_org?: string, opts?: { withRoutes?: boolean }): Promise<Record<string, number>> =>
+      opts?.withRoutes ? {} : { srv1: 3 },
+  );
+  const { c, sent } = context("srv1");
+  await getServer(c);
+  expect(sent.body).toMatchObject({ projectCount: 3, edgeRequired: false });
 });

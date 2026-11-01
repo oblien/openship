@@ -35,7 +35,7 @@ const MAX_PORT = 65535;
 export function isPortFree(port: number, host: string = LOOPBACK): Promise<boolean> {
   return new Promise((resolve) => {
     const srv = createServer();
-    srv.once("error", () => resolve(false));
+    srv.once("error", () => { /* diagnostics-ignore: Port bind failure is the result of an availability probe, not an operation failure. */ return resolve(false); });
     srv.listen(port, host, () => srv.close(() => resolve(true)));
   });
 }

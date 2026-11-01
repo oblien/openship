@@ -43,6 +43,58 @@ Four jobs, all on the request path:
   from the dashboard.
 </Callout>
 
+## Self-hosted vs Cloud
+
+A self-hosted deployment uses an edge on your own server. Openship Cloud uses
+a managed edge. Review these differences when moving a project between them.
+
+| Feature | Self-hosted edge | Openship Cloud |
+| --- | --- | --- |
+| Proxy settings (`routingConfig.proxy`) | Supported, subject to validation and the proxy's capabilities. | New or changed nonempty proxy settings are rejected with `CLOUD_PROXY_SETTINGS_UNSUPPORTED`. Unchanged legacy settings may be carried forward; this does not make them supported. |
+| Domain redirects | Applied through the server's edge configuration. | Applied through the managed Cloud edge. |
+| Shared-password protection | Exact custom HTTPS hostnames on a self-hosted Linux OpenResty edge. | Unsupported; protection requests and transfers of protected projects are rejected. |
+| Route rules: rate limits, IP/country access rules, and hotlink protection | Enforced by the OpenResty route-rule guard after the rules are successfully pushed. | The self-hosted route-rule push path skips Cloud projects. Saving a rule does not establish that equivalent protection is active on Cloud. |
+| Live edge configuration inspection | Can compare saved proxy settings with the configuration served by a reachable server. | Self-hosted OpenResty inspection is unavailable; the report returns `reachable: false`. |
+| Operator-defined trusted proxies and client-IP headers | Configured on the self-hosted edge, with the limitations below. | The self-hosted environment variables below do not configure the managed Cloud edge. |
+
+### Real client IP and trusted proxies
+
+IP-based rules need the visitor's real address. If another proxy sits in front
+of a self-hosted edge, configure which proxy addresses it trusts:
+
+- `OPENSHIP_EDGE_TRUSTED_PROXIES` adds trusted proxy addresses or CIDR ranges.
+  Only include proxies you control or trust to supply the client address.
+- On bare or remote OpenResty installations,
+  `OPENSHIP_EDGE_REAL_IP_HEADER` selects the client-IP header when configuration
+  is generated. The default is `CF-Connecting-IP`.
+- On containerized edges, the generated configuration adds trusted proxy
+  addresses but retains the header baked into the image. Setting
+  `OPENSHIP_EDGE_REAL_IP_HEADER` does not override that header.
+
+Reapply routing after changing these settings. A reload alone does not
+regenerate configuration.
+
+### Visitor country
+
+The self-hosted edge sends `x-visitor-country` to upstream apps using its local
+GeoIP database and the resolved client address. It overwrites a supplied header
+and removes it when the country is unknown. Apps can use this ISO country code
+as a default, with a manual region choice for visitors. Analytics and route rules
+reuse the same request result, including unknown countries. Lookups retain the
+existing in-memory LRU of up to 50,000 IPs per worker, with no external requests.
+This header does not change response cache settings. The database is bundled with
+edge releases and refreshed with `bun run update:geoip` when preparing a release.
+
+### Moving a project between deployment types
+
+Review proxy settings, route rules, and client-IP handling on the destination.
+Verify that the intended protections are active after deployment; saved
+configuration alone is not proof of enforcement.
+
+Domain redirects are supported on both deployment types. Redirect targets
+must belong to the same project, and redirect cycles are rejected. See
+[Redirect one domain to another](/docs/guides/custom-domains#redirect-one-domain-to-another).
+
 ## Taking over a server that's already serving
 
 This is the headline case. You have a server that's *already* running nginx, Apache, or Caddy on `:80/:443`
@@ -109,9 +161,12 @@ the box yet, the command prints the records to add and you re-run verification o
 domain workflow — DNS records, verification, primary vs. redirect — lives in the
 [Custom domains](/docs/guides/custom-domains) guide; `openship edge domains` is the edge-scoped view of it.
 
-<Callout title="Screenshot">A project's **Domains** tab showing a verified hostname with a green SSL badge. *(screenshot pending)*</Callout>
-
 ## Protecting a route
+
+For a private preview or internal site, use the lock icon beside its hostname.
+Visitors sign in once with a shared password; the edge checks subsequent requests locally.
+See [Password-protected routes](/docs/guides/route-password-protection) for setup,
+supported targets, session revocation, and recovery.
 
 Rules are applied by the edge itself, so an abusive request is turned away before it costs your app anything.
 Scope a rule to a whole project, one domain, or a path prefix, and combine as many conditions as you like into
@@ -131,10 +186,10 @@ openship edge rules list -p prj_123
 ```
 
 <Callout title="Rules that key on IP need the real client IP" type="warn">
-Rate limits and country rules only work if the edge sees the visitor's true address. Openship's own edge does.
-If you've put *another* proxy (or Cloudflare) in front of it, that proxy has to pass the real IP through and
-you have to run with `--trust-proxy` — otherwise every visitor looks like the proxy. See
-[`openship up`](/docs/cli/run) for the flag.
+Rate limits and country rules need the visitor's real address. If another proxy sits in front of the
+self-hosted edge, it must pass the client IP through, and the edge must trust that proxy. See
+[Real client IP and trusted proxies](#real-client-ip-and-trusted-proxies) for the edge configuration
+and the differences between bare and containerized installations.
 </Callout>
 
 ## Watching your traffic
@@ -172,7 +227,7 @@ Everything here is a task-level walkthrough. For the complete list of `openship 
 — the interactive panel, `up`/`repair`, all the domain, rule, and analytics options — see the
 [Edge & monitoring](/docs/cli/edge) CLI reference.
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Edge & monitoring (CLI)" href="/docs/cli/edge" description="Every openship edge subcommand and flag, in full." />

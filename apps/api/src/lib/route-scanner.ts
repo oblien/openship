@@ -21,6 +21,7 @@
  *   }
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Hono } from "hono";
 import {
   getRouteRegistry,
@@ -108,6 +109,7 @@ export function scanRoutes(app: Hono): ScanResult {
         }
       }
     } catch (err) {
+      observeCaughtError(err, "api/lib/route-scanner");
       errors.push({
         route: { method: entry.method, path: entry.path },
         severity: "critical",
@@ -194,14 +196,14 @@ export function enforceRouteScanAtBoot(app: Hono): void {
   if (result.errors.length > 0) {
     for (const err of result.errors) {
       const tag = err.severity === "critical" ? "ERROR" : "WARN";
-      console.error(
+      errorDiagnostics.error("api/lib/route-scanner",
         `[route-scanner] ${tag} ${err.route.method} ${err.route.path}: ${err.message}`,
       );
     }
   }
 
   if (!result.ok) {
-    console.error(
+    errorDiagnostics.error("api/lib/route-scanner",
       `[route-scanner] Refusing to start: ${
         result.errors.filter((e) => e.severity === "critical").length
       } critical error(s). Fix above before booting.`,

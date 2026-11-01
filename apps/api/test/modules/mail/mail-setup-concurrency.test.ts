@@ -44,7 +44,7 @@ vi.mock("../../../src/lib/sse", () => ({
   streamSSE: mocks.streamSSE,
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { withExecutor: mocks.sshWithExecutor },
 }));
 
@@ -143,3 +143,19 @@ describe("startSetup concurrency", () => {
     expect(mocks.streamSSE).not.toHaveBeenCalled();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn(async () => undefined) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
+});
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  isServerInOrg: vi.fn(async () => true),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  isServerInOrg: vi.fn(async () => true),
+}));

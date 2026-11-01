@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHmac } from "node:crypto";
-import { verifyHmacSha256 } from "./webhook.service";
+import { verifyHmacSha256 } from "@repo/platform/engine/modules/webhooks/webhook.service";
 
 /**
  * Locks the GitHub-webhook signature contract the auto-deploy verifier relies
@@ -21,6 +21,9 @@ function sign(body: string, secret: string): string {
 const BODY = JSON.stringify({ ref: "refs/heads/main", repository: { full_name: "o/r" } });
 
 describe("verifyHmacSha256", () => {
+  it("rejects a multibyte signature without throwing", () => {
+    expect(verifyHmacSha256(BODY, "s3cr3t", "é".repeat(sign(BODY, "s3cr3t").length))).toBe(false);
+  });
   it("accepts a correct sha256= HMAC of the body", () => {
     expect(verifyHmacSha256(BODY, "s3cr3t", sign(BODY, "s3cr3t"))).toBe(true);
   });

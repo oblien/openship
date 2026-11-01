@@ -1,0 +1,55 @@
+---
+title: system onboarding
+description: Commands, arguments, and options for openship system onboarding.
+cliGroup: openship system onboarding
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship system onboarding
+
+First-run instance setup
+
+```text
+openship system onboarding [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`status`](/docs/cli/reference/system/onboarding#openship-system-onboarding-status) | Check whether the controller has completed first-run setup |
+| [`apply [options]`](/docs/cli/reference/system/onboarding#openship-system-onboarding-apply) | Configure a fresh instance (fails once already configured) |
+
+## openship system onboarding apply
+
+Configure a fresh instance (fails once already configured)
+
+```text
+openship system onboarding apply [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--ssh-host <host>` | SSH host of the target server |
+| `--ssh-port <n>` | SSH port (default 22) |
+| `--ssh-user <user>` | SSH user (default root) |
+| `--ssh-auth-method <method>` | SSH auth method |
+| `--ssh-password <password>` | SSH password |
+| `--ssh-key-path <path>` | SSH private key path |
+| `--ssh-key-passphrase <pass>` | SSH key passphrase |
+| `--ssh-jump-host <host>` | SSH jump host |
+| `--ssh-transport <transport>` | SSH transport (direct\|cloudflare) |
+| `--ssh-args <args>` | SSH connection tuning arguments |
+| `--server-name <name>` | Display name for the server |
+| `--auth-mode <mode>` | Initial auth mode: none \| local \| cloud |
+| `--tunnel-provider <provider>` | Tunnel provider |
+| `--tunnel-token <token>` | Tunnel token |
+| `--default-build-mode <mode>` | Default build mode |
+| `--default-rollback-window <n>` | Default rollback window |
+
+## openship system onboarding status
+
+Check whether the controller has completed first-run setup
+
+```text
+openship system onboarding status [options]
+```

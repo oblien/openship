@@ -26,9 +26,11 @@ export default function GitHubAppSetupCallback() {
 
     async function claim() {
       const query = new URLSearchParams(window.location.search);
-      const flow = query.get("flow");
       const code = query.get("code");
       const installationId = query.get("installation_id");
+      // A manifest registration comes back with ?code=…&state=… and no installation_id (its
+      // redirect_url cannot carry ?flow=manifest: GitHub rejects query strings there).
+      const flow = query.get("flow") ?? (code && !installationId ? "manifest" : null);
       const state = query.get("state");
       const setupAction = query.get("setup_action");
 

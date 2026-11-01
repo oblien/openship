@@ -14,6 +14,8 @@
  * UI is @clack/prompts (modern, keyboard-driven).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { reportCliMessage } from "../lib/output";
 import chalk from "chalk";
 import open from "open";
 import { createHash, randomBytes } from "node:crypto";
@@ -153,7 +155,9 @@ async function connectOpenshipCloud(port: string, token?: string): Promise<{ ema
   console.log("\n" + chalk.cyan.underline(handoff) + "\n");
   // A box with a desktop browser can auto-open it; over SSH there's none, so
   // the user opens the printed URL on their own machine.
-  if (!overSsh) void open(handoff).catch(() => {});
+  if (!overSsh) void open(handoff).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "cli/commands/wizard");
+  });
 
   const s = spinner();
   s.start("Waiting for you to authorize in the browser");
@@ -176,7 +180,8 @@ async function connectOpenshipCloud(port: string, token?: string): Promise<{ ema
         code = data.code;
         break;
       }
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "cli/commands/wizard");
       /* transient network blip — keep polling until the deadline */
     }
   }
@@ -275,7 +280,8 @@ async function streamProvision(
         }
       }
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/wizard");
     return { ok, detail };
   }
   return { ok, detail };
@@ -711,6 +717,7 @@ export async function runWizard(): Promise<void> {
       });
       dl.stop("Openship dist ready.");
     } catch (e) {
+      observeCaughtError(e, "cli/commands/wizard");
       dl.stop(`Couldn't pull the Openship dist: ${(e as Error).message}`, 1);
       log.info("Check your network / that this release published its dashboard asset, then re-run `openship`.");
       process.exit(1);
@@ -788,7 +795,7 @@ export async function runWizard(): Promise<void> {
     // who wants the reset runs `openship up --reset-secrets`.
     const rotation = composeSecretRotationRisk();
     if (rotation) {
-      console.error(renderSecretRotationRefusal(rotation));
+      reportCliMessage("error", renderSecretRotationRefusal(rotation));
       cancel("This install's secrets couldn't be read — nothing on this box was changed.");
       process.exit(1);
     }
@@ -797,7 +804,7 @@ export async function runWizard(): Promise<void> {
     // refuse before the prefetch writes a guessed OPENSHIP_PGDATA into `.env`.
     const pgData = composePgDataRisk();
     if (pgData) {
-      console.error(renderPgDataRefusal(pgData));
+      reportCliMessage("error", renderPgDataRefusal(pgData));
       cancel("This install's Postgres data layout couldn't be determined — nothing on this box was changed.");
       process.exit(1);
     }
@@ -874,6 +881,7 @@ export async function runWizard(): Promise<void> {
         { quiet: true },
       );
     } catch (e) {
+      observeCaughtError(e, "cli/commands/wizard");
       s.stop("Couldn't install the service.", 1);
       log.error((e as Error).message);
       log.info("Run `openship up --foreground` to run it attached and see the error.");
@@ -987,7 +995,9 @@ export async function runWizard(): Promise<void> {
     // before the summary claims the install is done. Best-effort — a blocked channel
     // is a degraded install, not a failed one.
     const { verifyHostChannel } = await import("../lib/host-channel-preflight");
-    await verifyHostChannel().catch(() => {});
+    await verifyHostChannel().catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "cli/commands/wizard");
+    });
     finishSetup({
       liveUrl,
       dashPort: started.dashPort,
@@ -1209,7 +1219,7 @@ export async function runControl(): Promise<void> {
   // case: surface it up front and offer the SAME takeover/migrate that `openship
   // edge` and `openship up` run, by calling that exact core (repairEdgeConflict).
   // Linux-only — diagnoseEdge returns an empty diagnosis (occupant null) elsewhere.
-  const edge = process.platform === "linux" ? await diagnoseEdge().catch(() => null) : null;
+  const edge = process.platform === "linux" ? await diagnoseEdge().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/commands/wizard"); return null; }) : null;
   const foreignProxy = edge?.occupant ? edge : null;
   if (foreignProxy) {
     const n = foreignProxy.sites.length;
@@ -1274,7 +1284,9 @@ export async function runControl(): Promise<void> {
       return;
     }
     case "open":
-      await open(primaryUrl).catch(() => {});
+      await open(primaryUrl).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "cli/commands/wizard");
+      });
       outro(chalk.dim(`Opening ${primaryUrl}`));
       return;
     case "start": {

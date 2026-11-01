@@ -44,10 +44,10 @@ export function Choice({
         checked ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-muted/40"
       }`}
     >
-      <Checkbox checked={checked} size="sm" className="pointer-events-none" />
+      <Checkbox checked={checked} asButton={false} size="sm" className="pointer-events-none" />
       {icon && <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>}
       <span className="truncate text-foreground">{label}</span>
-      {hint && <span className="shrink-0 text-xs text-muted-foreground">{hint}</span>}
+      {hint && <bdi className="shrink-0 text-xs text-muted-foreground">{hint}</bdi>}
     </button>
   );
 }

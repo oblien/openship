@@ -1,3 +1,5 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * SYSTEM / LIFECYCLE commands — self-hosted only.
  *
@@ -6,14 +8,19 @@
  * gated by `localOnly`). We gate client-side with requireSelfHost so cloud
  * targets get a clean message instead of a 404.
  */
-import { Command } from "commander";
+import { Command, Option } from "commander";
+import type { UpdateInstanceSettingsInput } from "@repo/sdk";
 import ora, { type Ora } from "ora";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { apiRequest, ApiError } from "../lib/api-client";
+import { getRemoteClient, getShipClient } from "../lib/ship-client";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { printJson, printTable, isJsonMode, ok, info, err } from "../lib/output";
+import { SystemOperationSchemas, InstanceOperationSchemas, InstanceOnboardingSchema, InstanceArchiveSchema, InstanceExportSelectionSchema, InstanceImportSelectionSchema, parseInput } from "@repo/contracts";
+import { readJsonInput, readSecret } from "../lib/command-input";
+import { confirmOrExit, printResult, fail } from "../lib/cmd-helpers";
+import { jsonCommand } from "../lib/json-command";
 
 /** Domain target for the "own server" migration path (preflight + start). */
 type DomainChoice =
@@ -29,11 +36,8 @@ async function guarded(fn: () => Promise<void>): Promise<void> {
     requireSelfHost(await fetchCaps());
     await fn();
   } catch (e) {
-    if (e instanceof ApiError) {
-      err(`\n  ${e.message}\n`);
-      process.exit(1);
-    }
-    throw e;
+    observeCaughtError(e, "cli/commands/system");
+    fail(e);
   }
 }
 
@@ -76,26 +80,22 @@ async function promptHidden(query: string): Promise<string> {
  * GET  /api/system/settings  → setup.getSetup
  * PATCH /api/system/settings → setup.updateSettings
  */
-interface InstanceSettings {
-  configured: boolean;
-  authMode: string;
-  tunnelProvider: string | null;
-  defaultBuildMode: string;
-  defaultRollbackWindow: unknown;
-  invitationMailSource: string;
-  teamMode: string;
-  migrationTargetUrl: string | null;
-  migratedAt: string | null;
-}
-
 const settingsCommand = new Command("settings").description("Read or update instance settings");
+jsonCommand(settingsCommand.command("patch").description("Update any supported instance setting using its shared JSON contract"),
+  SystemOperationSchemas.updateSettings.input, value => getShipClient().system.updateSettings(value));
+settingsCommand.command("reset").description("Reset instance settings and return to setup")
+  .option("-y, --yes", "Confirm the instance reset")
+  .action(opts => printResult(async () => {
+    await confirmOrExit(opts.yes, "Reset this instance's settings and setup state?");
+    return getShipClient().system.resetSettings();
+  }));
 
 settingsCommand
   .command("get")
   .description("Show current instance settings")
   .action(async () => {
     await guarded(async () => {
-      const s = await apiRequest<InstanceSettings>("/system/settings");
+      const s = await getShipClient().system.getSettings();
       report(s, () =>
         printTable(
           Object.entries(s).map(([key, value]) => ({ setting: key, value: value ?? "" })),
@@ -117,7 +117,7 @@ settingsCommand
   .option("--invitation-mail-source <src>", "Invitation mail source: platform | cloud")
   .action(async (opts) => {
     await guarded(async () => {
-      const body: Record<string, unknown> = {};
+      const body: UpdateInstanceSettingsInput = {};
       if (opts.authMode !== undefined) body.authMode = opts.authMode;
       if (opts.confirm !== undefined) body.confirm = opts.confirm;
       if (opts.tunnelProvider !== undefined) body.tunnelProvider = opts.tunnelProvider;
@@ -131,13 +131,10 @@ settingsCommand
       const settable = Object.keys(body).filter((k) => k !== "confirm");
       if (settable.length === 0) {
         err("\n  Nothing to update. Pass at least one field (see --help).\n");
-        process.exit(1);
+        exitCommand(1);
       }
 
-      const res = await apiRequest<{ ok: true }>("/system/settings", {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
+      const res = await getShipClient().system.updateSettings(body);
       report(res, () => ok(`\n  Settings updated (${settable.join(", ")}).\n`));
     });
   });
@@ -147,6 +144,9 @@ settingsCommand
  * Persists instance settings + creates the initial SSH server row.
  */
 const onboardingCommand = new Command("onboarding").description("First-run instance setup");
+
+onboardingCommand.command("status").description("Check whether the controller has completed first-run setup")
+  .action(() => printResult(() => getRemoteClient().instance.onboardingStatus()));
 
 onboardingCommand
   .command("apply")
@@ -159,7 +159,8 @@ onboardingCommand
   .option("--ssh-key-path <path>", "SSH private key path")
   .option("--ssh-key-passphrase <pass>", "SSH key passphrase")
   .option("--ssh-jump-host <host>", "SSH jump host")
-  .option("--ssh-args <args>", "Extra SSH args")
+  .option("--ssh-transport <transport>", "SSH transport (direct|cloudflare)")
+  .option("--ssh-args <args>", "SSH connection tuning arguments")
   .option("--server-name <name>", "Display name for the server")
   .option("--auth-mode <mode>", "Initial auth mode: none | local | cloud")
   .option("--tunnel-provider <provider>", "Tunnel provider")
@@ -183,18 +184,17 @@ onboardingCommand
         sshKeyPath: opts.sshKeyPath,
         sshKeyPassphrase: opts.sshKeyPassphrase,
         sshJumpHost: opts.sshJumpHost,
+        sshTransport: opts.sshTransport,
         sshArgs: opts.sshArgs,
       };
 
       const spin = spinner("Applying onboarding…");
       try {
-        const res = await apiRequest<{ ok: true }>("/system/onboarding", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
+        const res = await getRemoteClient().instance.configureOnboarding(parseInput(InstanceOnboardingSchema, body));
         spin?.succeed("Onboarding applied.");
         report(res, () => ok("\n  Instance configured.\n"));
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Onboarding failed.");
         throw e;
       }
@@ -221,23 +221,14 @@ const upgradeToAuthCommand = new Command("upgrade-to-auth")
       if (!password) {
         if (!process.stdin.isTTY || isJsonMode()) {
           err("\n  --password is required in non-interactive mode.\n");
-          process.exit(1);
+          exitCommand(1);
         }
         password = await promptHidden("  New password: ");
       }
 
-      const res = await apiRequest<{ ok: true; authMode: string; user: unknown }>(
-        "/system/upgrade-to-auth",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            name,
-            email,
-            password,
-            useOwnMailServer: opts.useOwnMailServer === true,
-          }),
-        },
-      );
+      const res = await getRemoteClient().instance.upgradeToAuth(parseInput(InstanceOperationSchemas.upgradeToAuth.input, {
+        name, email, password, useOwnMailServer: opts.useOwnMailServer === true,
+      }));
       report(res, () => ok(`\n  Upgraded to ${res.authMode} auth. Sign in with ${email}.\n`));
     });
   });
@@ -246,18 +237,12 @@ const upgradeToAuthCommand = new Command("upgrade-to-auth")
  * GET /api/system/browse?path=<dir> → filesystem.browse. Lists child
  * directories (projects first) so you can pick a folder to deploy.
  */
-interface BrowseResult {
-  path: string;
-  directories: { name: string; path: string; isProject: boolean }[];
-}
-
 const browseCommand = new Command("browse")
   .description("List directories on the instance host (defaults to home)")
   .argument("[path]", "Directory to list")
   .action(async (path?: string) => {
     await guarded(async () => {
-      const qs = path ? `?path=${encodeURIComponent(path)}` : "";
-      const res = await apiRequest<BrowseResult>(`/system/browse${qs}`);
+      const res = await getShipClient().system.browse({ path });
       report(res, () => {
         info(`\n  ${res.path}\n`);
         printTable(
@@ -281,12 +266,12 @@ const browseCommand = new Command("browse")
 function buildDomain(opts: { hostname?: string; slug?: string }): DomainChoice {
   if (opts.hostname && opts.slug) {
     err("\n  Pass either --hostname (custom) or --slug (free), not both.\n");
-    process.exit(1);
+    exitCommand(1);
   }
   if (opts.hostname) return { kind: "custom", hostname: opts.hostname };
   if (opts.slug) return { kind: "free", slug: opts.slug };
   err("\n  A domain is required: pass --hostname <host> or --slug <slug>.\n");
-  process.exit(1);
+  exitCommand(1);
 }
 
 const migrationCommand = new Command("migration").description("Team-mode migration lifecycle");
@@ -300,13 +285,8 @@ migrationCommand
   .action(async (opts) => {
     await guarded(async () => {
       const domain = buildDomain(opts);
-      const res = await apiRequest<{
-        ready: boolean;
-        checks: Record<string, { ok: boolean; detail: string }>;
-      }>("/system/migration/preflight", {
-        method: "POST",
-        body: JSON.stringify({ serverId: opts.serverId, domain }),
-      });
+      const res = await getRemoteClient().instance.preflightMigration({ serverId: opts.serverId, domain });
+      if (!res.ready) process.exitCode = 1;
       report(res, () => {
         printTable(
           Object.entries(res.checks).map(([check, v]) => ({
@@ -323,7 +303,7 @@ migrationCommand
 
 migrationCommand
   .command("start")
-  .description("Migrate this instance onto your own server")
+  .description("Earlier migration endpoint; use Settings → Instance → Instance location to move")
   .requiredOption("--server-id <id>", "Target server id")
   .option("--hostname <host>", "Custom domain pointing at the server")
   .option("--slug <slug>", "Free <slug>.opsh.io subdomain")
@@ -332,13 +312,11 @@ migrationCommand
       const domain = buildDomain(opts);
       const spin = spinner("Migrating to server…");
       try {
-        const res = await apiRequest<{ ok: true; migrationTargetUrl: string }>(
-          "/system/migration/start",
-          { method: "POST", body: JSON.stringify({ serverId: opts.serverId, domain }) },
-        );
+        const res = await getRemoteClient().instance.migrateToServer({ serverId: opts.serverId, domain });
         spin?.succeed("Migration complete.");
         report(res, () => ok(`\n  Now serving at ${res.migrationTargetUrl}\n`));
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Migration failed.");
         throw e;
       }
@@ -353,16 +331,11 @@ migrationCommand
     await guarded(async () => {
       const spin = spinner("Migrating to Openship Cloud…");
       try {
-        const res = await apiRequest<{ ok: true; publicUrl: string; imported: unknown }>(
-          "/system/migration/start-cloud",
-          {
-            method: "POST",
-            body: JSON.stringify({ allowNonEmptyTarget: opts.allowNonEmptyTarget === true }),
-          },
-        );
+        const res = await getRemoteClient().instance.migrateToCloud({ allowNonEmptyTarget: opts.allowNonEmptyTarget === true });
         spin?.succeed("Cloud migration complete.");
         report(res, () => ok(`\n  Now hosted at ${res.publicUrl}\n`));
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Cloud migration failed.");
         throw e;
       }
@@ -377,13 +350,11 @@ migrationCommand
     await guarded(async () => {
       const spin = spinner("Provisioning tunnel…");
       try {
-        const res = await apiRequest<{ ok: true; migrationTargetUrl: string }>(
-          "/system/migration/start-tunnel",
-          { method: "POST", body: JSON.stringify({ slug: opts.slug }) },
-        );
+        const res = await getRemoteClient().instance.exposeTunnel({ slug: opts.slug });
         spin?.succeed("Tunnel active.");
         report(res, () => ok(`\n  Now reachable at ${res.migrationTargetUrl}\n`));
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Tunnel provisioning failed.");
         throw e;
       }
@@ -399,19 +370,11 @@ migrationCommand
     await guarded(async () => {
       if (!(await confirm("Switch back to single-user? Teammates will lose access.", opts.yes))) {
         err("\n  Aborted.\n");
-        process.exit(1);
+        exitCommand(1);
       }
       const spin = spinner("Switching back…");
       try {
-        const res = await apiRequest<{
-          ok: true;
-          previousMode: string;
-          rowsRestored: number;
-          syncedFromRemote: boolean;
-        }>("/system/migration/switch-back", {
-          method: "POST",
-          body: JSON.stringify({ abandonRemote: opts.abandonRemote === true }),
-        });
+        const res = await getRemoteClient().instance.switchBack({ abandonRemote: opts.abandonRemote === true });
         spin?.succeed("Switched back to single-user.");
         report(res, () =>
           ok(
@@ -421,6 +384,7 @@ migrationCommand
           ),
         );
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Switch-back failed.");
         throw e;
       }
@@ -429,32 +393,31 @@ migrationCommand
 
 /* ── data-transfer export / import ───────────────────────────────────
  * POST /api/system/data-transfer/{export,import} → data-transfer.controller
- * (owner-only). Moves the WHOLE instance database; secrets are sealed with an
- * optional passphrase. Import defaults to wipe mode.
+ * (instance-admin only). Current exports include plaintext credentials; imports
+ * also accept older sealed archives. Import defaults to explicitly confirmed wipe mode.
  */
 const dataTransferCommand = new Command("data-transfer").description(
-  "Whole-instance export / import (owner-only)",
+  "Instance and project data export / import (instance-admin only)",
 );
+
+jsonCommand(dataTransferCommand.command("preview").description("Review export row counts, scope, projects and credentials before exporting"),
+  InstanceOperationSchemas.previewExport.input, input => getRemoteClient().instance.previewExport(input));
 
 dataTransferCommand
   .command("export")
-  .description("Export the entire instance to a JSON file")
-  .option("--passphrase <passphrase>", "Seal secrets under this passphrase")
+  .description("Export instance or project data, including plaintext credentials, to a private JSON file")
+  .option("--selection <file>", "Export selection as JSON, or - for stdin")
   .option("--out <file>", "Write the export to this file instead of stdout")
   .action(async (opts) => {
     await guarded(async () => {
+      const selection = opts.selection ? parseInput(InstanceExportSelectionSchema, readJsonInput(opts.selection)) : undefined;
+      if (opts.out && existsSync(opts.out)) throw new Error(`Output file already exists: ${opts.out}. Choose a new filename.`);
       const spin = spinner("Exporting instance…");
       try {
-        const file = await apiRequest<{ dump: { tables: Record<string, unknown> } }>(
-          "/system/data-transfer/export",
-          {
-            method: "POST",
-            body: JSON.stringify(opts.passphrase ? { passphrase: opts.passphrase } : {}),
-          },
-        );
+        const file = await getRemoteClient().instance.exportData({ selection });
         spin?.succeed("Export ready.");
         if (opts.out) {
-          writeFileSync(opts.out, JSON.stringify(file));
+          writeFileSync(opts.out, JSON.stringify(file), { mode: 0o600, flag: "wx" });
           const tables = Object.keys(file.dump?.tables ?? {}).length;
           report({ out: opts.out, tables }, () =>
             ok(`\n  Wrote ${tables} tables to ${opts.out}\n`),
@@ -463,6 +426,7 @@ dataTransferCommand
           printJson(file);
         }
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Export failed.");
         throw e;
       }
@@ -473,15 +437,19 @@ dataTransferCommand
   .command("import")
   .description("Import an instance export file")
   .requiredOption("--file <path>", "Path to an export file")
-  .option("--passphrase <passphrase>", "Passphrase used at export time")
-  .option("--mode <mode>", "wipe (replace) | merge", "wipe")
+  .addOption(new Option("--passphrase <passphrase>", "Passphrase for a legacy encrypted export").conflicts("passphraseFile"))
+  .option("--passphrase-file <file>", "Legacy passphrase file, or - for stdin")
+  .option("--selection <file>", "Import selection and reviewed server mappings as JSON")
+  .addOption(new Option("--mode <mode>", "wipe (replace) | merge").choices(["wipe", "merge"]).default("wipe"))
   .option("-y, --yes", "Skip the confirmation prompt")
   .action(async (opts) => {
     await guarded(async () => {
-      const mode = opts.mode === "merge" ? "merge" : "wipe";
+      const mode: "wipe" | "merge" = opts.mode;
+      const selection = opts.selection ? parseInput(InstanceImportSelectionSchema, readJsonInput(opts.selection)) : undefined;
+      const passphrase = opts.passphraseFile ? readSecret(opts.passphraseFile) : opts.passphrase;
       if (mode === "wipe" && !(await confirm("Wipe this instance and import the file?", opts.yes))) {
         err("\n  Aborted.\n");
-        process.exit(1);
+        exitCommand(1);
       }
 
       let file: unknown;
@@ -489,21 +457,12 @@ dataTransferCommand
         file = JSON.parse(readFileSync(opts.file, "utf8"));
       } catch {
         err(`\n  Could not read or parse ${opts.file}.\n`);
-        process.exit(1);
+        exitCommand(1);
       }
 
       const spin = spinner("Importing instance…");
       try {
-        const res = await apiRequest<{
-          mode: string;
-          rowsRestored: number;
-          secretsRehydrated: number;
-          secretsSkipped: boolean;
-          localPathProjects?: Array<{ slug: string; localPath: string }>;
-        }>("/system/data-transfer/import", {
-          method: "POST",
-          body: JSON.stringify({ file, passphrase: opts.passphrase, mode }),
-        });
+        const res = await getRemoteClient().instance.importData({ file: parseInput(InstanceArchiveSchema, file), passphrase, mode, selection });
         spin?.succeed("Import complete.");
         report(res, () => {
           ok(
@@ -521,6 +480,7 @@ dataTransferCommand
           }
         });
       } catch (e) {
+      rethrowCommandExit(e);
         spin?.fail("Import failed.");
         throw e;
       }
@@ -536,3 +496,31 @@ export const systemCommand = new Command("system")
   .addCommand(browseCommand)
   .addCommand(migrationCommand)
   .addCommand(dataTransferCommand);
+
+systemCommand.command("info").description("Read product mode, version and advertised capabilities")
+  .action(() => printResult(() => getShipClient().system.info()));
+systemCommand.command("notices").description("Read advisories for this instance and workspace")
+  .action(() => printResult(() => getShipClient().notices.list()));
+const email = new Command("email").description("Manage the instance's invitation and authentication email transport");
+email.command("get").description("Read mail transport configuration with credentials masked")
+  .action(() => printResult(() => getShipClient().system.getEmailSettings()));
+jsonCommand(email.command("set").description("Update the instance's email transport credentials"),
+  SystemOperationSchemas.updateEmailSettings.input, value => getShipClient().system.updateEmailSettings(value));
+email.command("test").argument("<address>", "Recipient for one test message")
+  .description("Send one test message through the configured mail transport")
+  .action((to: string) => printResult(async () => {
+    const result = await getShipClient().system.sendTestEmail({ to });
+    if (!result.ok) process.exitCode = 1;
+    return result;
+  }));
+systemCommand.addCommand(email);
+const orphans = new Command("untracked-sites").description("Inspect edge sites not tracked by Openship");
+orphans.command("list").description("Read untracked edge sites and scan readiness")
+  .action(() => printResult(() => getShipClient().system.listUntrackedEdgeSites()));
+orphans.command("remove").argument("<hostname>", "Exact hostname from the scan")
+  .option("-y, --yes", "Confirm removal").description("Remove one untracked edge site through ownership checks")
+  .action((hostname: string, opts) => printResult(async () => {
+    await confirmOrExit(opts.yes, `Remove untracked edge site ${hostname}?`);
+    return getShipClient().system.removeUntrackedEdgeSite({ hostname });
+  }));
+systemCommand.addCommand(orphans);

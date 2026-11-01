@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import TerminalSurface from "./TerminalSurface";
@@ -44,7 +45,9 @@ export function DeploymentTerminal({
 
     if (live) {
       // Attach-only: replays history + streams new frames. No new deploy.
-      void build.connect(deploymentId, false).catch(() => {});
+      void build.connect(deploymentId, false).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/import-project/DeploymentTerminal");
+      });
     } else if (seededRef.current !== deploymentId) {
       // Terminal deploy: the stream won't replay, so paint persisted logs once.
       seededRef.current = deploymentId;
@@ -53,7 +56,8 @@ export function DeploymentTerminal({
           const st = await deployApi.getBuildStatus(deploymentId);
           const logs = typeof st?.logs === "string" ? st.logs : "";
           if (!cancelled && logs) term.write(logs.replace(/\r?\n/g, "\r\n"));
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/import-project/DeploymentTerminal");
           /* best-effort */
         }
       })();

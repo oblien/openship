@@ -1,0 +1,47 @@
+---
+title: Installation operator
+description: Connect external identities and namespaces with explicit installation authority.
+---
+
+An operator is an installation capability for trusted host code. Ordinary `ScopedShip` objects do not
+expose it. Enable `administration: true` when [creating a native installation](/docs/api/sdk/native) if
+your host needs to provision identities or namespaces.
+
+## Native operator
+
+After startup, use `ownedShip.operator`. It provides these identity-management methods:
+
+| Method | Purpose |
+| --- | --- |
+| `ensureIdentity({ issuer, subject, email, name?, instanceAdmin? })` | Create or resolve a stable external identity and personal organization. |
+| `resolveIdentity({ issuer, subject })` | Read an existing identity mapping, or return `null`. |
+| `ensureNamespace({ issuer, key, name, ownerUserId })` | Create or resolve a stable organization mapping. |
+| `setMembership({ organizationId, userId, role })` | Set the member role; use `null` to remove membership. |
+
+`issuer` and `subject` must come from your verified identity system. Keep this capability within the host
+integration; tenant-supplied IDs do not establish identity. [Identity scopes](/docs/api/sdk/identity) shows
+the complete mapping and scope flow.
+
+## Remote operator
+
+`OpenshipOperatorClient` uses an internal installation token and exposes notice administration:
+
+```ts title="operator.mts"
+import { OpenshipOperatorClient } from "openship";
+
+const internalToken = process.env.OPENSHIP_INTERNAL_TOKEN;
+if (!internalToken) throw new Error("Set OPENSHIP_INTERNAL_TOKEN");
+
+export const operator = new OpenshipOperatorClient({
+  baseUrl: "https://ship.example.com",
+  internalToken,
+});
+```
+
+It accepts the remote transport options except user `token` and `organizationId`. The token can also
+be a sync or async provider. It does not expose the native identity-provisioning methods.
+
+## Notices
+
+Both operators provide `notices.listAll()`, `notices.create(input)`, and `notices.remove(id)`.
+See [Public notices](/docs/api/notices) for the shared fields and SDK/REST examples.

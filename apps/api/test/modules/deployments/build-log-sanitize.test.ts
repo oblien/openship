@@ -9,7 +9,7 @@ import {
   sanitizeLogsForPersistence,
   sanitizeStorableStrings,
   sliceWithoutSplittingPair,
-} from "../../../src/modules/deployments/build-log-sanitize";
+} from "@repo/platform/engine/modules/deployments/build-log-sanitize";
 
 /**
  * `build_session.logs` is jsonb. Postgres REFUSES a jsonb value carrying a NUL

@@ -20,7 +20,7 @@ import {
   EXEC_TIMEOUT_MAX_MS,
   execInContainer,
   execOnHost,
-} from "../../src/lib/agent-exec";
+} from "@repo/platform/engine/lib/agent-exec";
 
 type StreamOpts = { signal?: AbortSignal };
 

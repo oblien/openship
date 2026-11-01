@@ -23,14 +23,15 @@ Open your project and click the **Deployments** tab. You'll see two things:
 - At the top, a **Deploy Latest Changes** card with a **Redeploy Project** button — that's for shipping again.
 - Below it, the **history**: every deploy this project has had, newest first, each on its own row.
 
+Use the page controls below the rows to browse older deployments. Search and status filters apply to the
+whole history, including deployments on other pages.
+
 Each row shows the version (like `v3`), a status, the commit message, and small labels that tell you the
 state of that version:
 
 - **Active** — the version currently live and serving your site.
 - **Snapshotted** — Openship still has this version's finished build saved, so rolling back to it skips the build entirely.
 - **Pinned** — this version is kept safe forever and will never be cleaned up (more on this below).
-
-<Callout title="Screenshot">Project → **Deployments** tab: the "Deploy Latest Changes" card on top and the deploy history list below, showing the **Active** / **Snapshotted** / **Pinned** labels on rows. *(screenshot pending)*</Callout>
 
 ## Roll back to a version that worked
 
@@ -67,8 +68,6 @@ and reminds you what rollback does either way:
 Confirm, and Openship brings that version back as a new entry in your history. Rolling back doesn't erase
 anything: the version you rolled away from stays in the list, so you can roll forward again the same way.
 
-<Callout title="Screenshot">The row **⋮** menu open, with **Rollback to this version** highlighted and the confirmation dialog. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -88,6 +87,15 @@ If the build has been cleaned up, Openship rebuilds that version's commit instea
 — but it lands you in the same place, so rollback is never a dead end.
 </Callout>
 
+<Callout title="An older release contains redacted configuration" type="warn">
+Older Openship versions could replace credentials in saved Compose configuration with `***`.
+Openship refuses to replay an affected snapshot before starting a deployment; your active release
+stays in place. Today's service settings are not a reliable copy of that older release and are
+never substituted silently. Choose an intact release, or redeploy the original source with the
+required credentials to create a new restore point. New deployment snapshots preserve encrypted
+configuration exactly while build logs continue to redact credentials.
+</Callout>
+
 <Callout title="The rollback option is greyed out" type="warn">
 Only two things disable it: the version is already **Active** (you're on it), or it never finished healthy.
 A cleaned-up build no longer disables rollback — Openship rebuilds the commit instead.
@@ -105,6 +113,35 @@ says so. To make sure a version always stays instantly restorable, **pin** it �
 
 ## Redeploy (run it again)
 
+### Retry deployment without rebuilding
+
+When a Docker build finishes but starting its containers fails, the failed attempt offers
+**Retry deployment** while its completed images are still retained. This creates a new attempt
+through the normal deployment pipeline using the exact images, source revision, destination,
+and saved configuration. It does not rebuild or pull replacement images.
+Runtime secrets still follow the normal deployment environment layering: the saved project
+environment is replayed, while service-scoped values use the shared service environment loader.
+
+Openship retains the newest failed completed build until a newer completed attempt fails or a
+later release succeeds. A missing image produces a clear error; it never silently rebuilds.
+Use ordinary **Redeploy** when you want current source or configuration instead. Cancelled and
+incomplete builds, bare/static releases, and services requiring repository bind-mount files do
+not offer this image-only retry. A routing-only warning on a running release uses **Retry routing**
+in Domains, which leaves its containers running.
+
+The same operation is available through the API, SDK, and CLI:
+
+```bash
+openship deployment redeploy <deployment-id> --reuse-build
+```
+
+```ts
+await client.deployments.redeploy(deploymentId, { reuseBuild: true });
+```
+
+`POST /api/deployments/:id/redeploy` accepts `{ "reuseBuild": true }`.
+`useExistingCommit` is a separate rebuild option and cannot be combined with `reuseBuild`.
+
 Redeploying builds and ships your project again. Reach for it after you push a fix, or when you want the
 live site to pick up the newest commit.
 
@@ -117,6 +154,58 @@ The small caret (⌄) next to the button opens a couple of extra choices:
 - **Refresh env** — redeploy so the app picks up environment-variable changes you just made.
 - **Rebuild all** — rebuild every service instead of only the ones whose files changed. This choice appears
   only for multi-service projects (a single-app project always rebuilds the whole app anyway).
+- **Refresh images & redeploy** — pull refreshed image tags and rebuild with fresh base images,
+  keeping the deployed source revision.
+- **Check image updates** — compare recorded image digests with the registry and show image drift.
+
+## Runtime settings
+
+The deployment wizard's **Runtime** section shows the supported runtime version, build image, and
+production runtime image where applicable. Managed image defaults follow the selected version;
+custom images and digest pins remain explicit. Blank image overrides restore the managed defaults.
+Static Docker builds show their build image; Dockerfiles, prebuilt images, service recipes, and
+bare servers retain control of their own runtime.
+
+## Update a runtime after an image rebuild
+
+Image publishers can replace the content behind an existing tag, such as `php:8.4-fpm` or a WordPress
+image, without changing the tag's name. Running containers keep their existing image until replaced.
+
+Open the caret beside **Redeploy** and choose **Refresh images & redeploy**. The same menu is
+available for a project and an individual service. A service action targets that service; the project
+action includes all enabled services. Both use your saved configuration and environment variables.
+
+- Image services pull their configured tag again and deploy the acquired image.
+- Git source apps rebuild their deployed revision with fresh builder and production base images.
+  Reusable build layers remain available; deleting the build cache is unnecessary.
+- Digest pins stay fixed. Change the configured reference first if the fix requires a different digest
+  or version tag. A tag naming an old PHP patch release does not automatically advance to a newer patch.
+
+**Check image updates** compares deployed image digests and captured source-build base digests with
+the current registry manifests. It shows changed references and a direct refresh action. Source
+applications can update their bases even when there is no new application commit. Local and uploaded
+source do not have a retained Git revision;
+use their normal Redeploy flow after selecting an explicit updated runtime image tag or digest.
+Source services carried from a different deployment, or restored from a rollback/migration artifact,
+also need an explicit source deployment before Openship can confirm their revision for a runtime update.
+Image-only services can be updated separately while those source services remain running.
+
+Explicitly refreshed source builds record the literal base images selected by the build. Ordinary
+cached builds, older deployments, and unsupported custom Dockerfile expressions have an unknown
+baseline; a registry result alone does not prove what
+the previous build used. Refreshing a supported build records a baseline for future checks.
+
+The image publisher must have released its patched image first. Digest changes indicate different
+image content; they do not certify that a vulnerability was fixed. Openship does not execute
+interpreter-version probes as part of this feature.
+
+**Clear Build Cache** remains a separate storage/diagnostics action: it prunes unused build cache.
+It does not pull images, schedule an update, or redeploy the application. To acquire newer image
+content, choose **Refresh images & redeploy**. Useful build layers can remain cached.
+
+Runtime updates use the existing health checks, artifact retention and rollback policy. Restart and
+Refresh env continue to use the existing image. Rolling back restores the earlier image, including
+its earlier runtime version.
 
 <Callout title="Rebuild one specific old commit" type="info">
 To go back to a past deploy, use **Rollback to this version** on its row — Openship reuses its saved build
@@ -128,17 +217,25 @@ To *force* a from-source rebuild of a specific commit even when its build is sti
 
 ## How many versions stay instantly restorable
 
-Saved builds take disk, so Openship keeps a window of the most recent ones and cleans up the rest. You'll find
-the setting in your project's **Backup** tab — and in the deploy wizard when you edit the target server, since
-it's that machine's disk being used.
+Open **Project → Advanced → Rollback history** to set the maximum number of past deployments whose
+artifacts are kept. The default is **5**, inherited from the instance's default unless you set a project
+override. Disk measurements are informational; they do not change this limit. The same setting is available
+in the deployment wizard.
 
-By default the window sizes itself: Openship measures free space on the deploy host and how much one of your
-builds actually takes, then keeps as many as fit comfortably (between 2 and 20). The card shows what it
-measured — something like *"5 versions · ~1.8 GB each · 42 GB free · sized automatically"*. Type a number to
-pin the window yourself; clear the field to hand it back to Openship.
+The active deployment and pinned deployments are kept in addition to this window. A multi-service deployment
+counts once, even if it needs several images. Set the limit to **0** to keep only active and pinned releases.
 
-Versions beyond the window aren't lost — you can still roll back to them, Openship just rebuilds their commit
-instead of reusing a saved build.
+Cleanup runs after deployments finish, when you save a limit, and when you unpin a deployment. The scheduled
+**Deployment artifact cleanup** job retries failed cleanup and reconciles existing history; you can also run
+it manually from Jobs. Cleanup waits for any running deployment worker to finish.
+
+Older rows remain in the history but lose their **Snapshotted** label after their artifacts are reclaimed.
+An image or file tree still needed by an active, pinned, or retained deployment stays on the host until its
+last retained reference expires. Operator-managed and third-party registry images are not removed.
+
+Rollback checks what is actually available. Expired source builds can be rebuilt from their recorded commit;
+image releases can be pulled again from their recorded reference. Bare hosts without a restartable supervisor
+unit rebuild from source. A release without either a usable artifact or a reproducible source cannot be restored.
 
 ## Pin a version so it's always there
 
@@ -154,7 +251,7 @@ You can pin up to **10** deploys per project. Pin your last reliable release bef
 that way rollback is always one click away, no rebuild required.
 </Callout>
 
-## Prefer the terminal?
+## CLI
 
 Every action above works from the CLI. First list the deploys to get their IDs:
 
@@ -190,7 +287,7 @@ To simply ship the latest commit of the whole project (the terminal equivalent o
 *specific* deploy from the history.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“This deployment is already active”" type="error">
 You're trying to roll back to the version that's already live. Pick a *different* row from the history — the
@@ -208,7 +305,7 @@ bad data change or a migration, rolling back the code won't undo it. You'll need
 backup or fix it directly.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Auto-deploy on push" href="/docs/guides/auto-deploy" description="Ship every commit automatically — and roll back just as easily when one misbehaves." />

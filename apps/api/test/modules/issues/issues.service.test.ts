@@ -36,6 +36,8 @@ const { checkPermissionOnResource } = vi.hoisted(() => ({ checkPermissionOnResou
 const { loadOrgContainerIssues } = vi.hoisted(() => ({ loadOrgContainerIssues: vi.fn() }));
 const { listOrganizationUpdates } = vi.hoisted(() => ({ listOrganizationUpdates: vi.fn() }));
 const { getOrgPendingActions } = vi.hoisted(() => ({ getOrgPendingActions: vi.fn() }));
+const mailMocks = vi.hoisted(() => ({ list: vi.fn(), job: vi.fn() }));
+const disconnected = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock("@repo/db", () => ({
   repos: {
@@ -43,15 +45,18 @@ vi.mock("@repo/db", () => ({
     serverContainerStatus: { listBehindByOrg: listBehindByOrg },
     project: { listByOrganization: projectListByOrganization },
     server: { listByOrganization: serverListByOrganization },
+    mailServer: { listByOrganization: mailMocks.list },
+    job: { findByKey: mailMocks.job },
   },
 }));
-vi.mock("../../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("../../../src/lib/permission", () => ({ checkPermissionOnResource }));
-vi.mock("../../../src/modules/system/server-containers.service", () => ({ loadOrgContainerIssues }));
-vi.mock("../../../src/modules/updates/updates.service", () => ({ listOrganizationUpdates }));
-vi.mock("../../../src/modules/projects/pending-actions.service", () => ({ getOrgPendingActions }));
+vi.mock("@repo/platform/engine/modules/system/server-containers.service", () => ({ loadOrgContainerIssues }));
+vi.mock("@repo/platform/engine/modules/updates/updates.service", () => ({ listOrganizationUpdates }));
+vi.mock("@repo/platform/engine/modules/projects/pending-actions.service", () => ({ getOrgPendingActions }));
+vi.mock("@repo/platform/engine/lib/desktop-network", () => ({ desktopNetworkDisconnected: disconnected }));
 
-import { countIssues, listOrganizationIssues } from "../../../src/modules/issues/issues.service";
+import { countIssues, listOrganizationIssues } from "@repo/platform/engine/modules/issues/issues.service";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ORG = "org-1";
@@ -111,7 +116,10 @@ const update = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  disconnected.mockReturnValue(false);
   envMock.CLOUD_MODE = false;
+  mailMocks.list.mockResolvedValue([]);
+  mailMocks.job.mockResolvedValue({ enabled: true, cronExpression: "17 3 * * *", scheduleType: "recurring" });
   checkPermissionOnResource.mockResolvedValue(true);
   incidentListByOrg.mockResolvedValue([]);
   listBehindByOrg.mockResolvedValue([]);
@@ -190,6 +198,63 @@ describe("severity is defined once, across all sources", () => {
 });
 
 describe("one row per cause", () => {
+  const networkIncident = (serverId: string) => incident({
+    id: `network-${serverId}`, projectId: null, serverId, serviceKey: `server:${serverId}`,
+    serviceName: serverId, kind: "server_unreachable",
+    reason: `Cannot reach Docker over SSH (connect ENETUNREACH 192.0.2.1:22 - Local (0.0.0.0:63263))`,
+  });
+
+  it("combines three explicit network failures and stale mail health into one connection notice", async () => {
+    incidentListByOrg.mockResolvedValue(["srv-1", "srv-2", "srv-3"].map(networkIncident));
+    loadOrgContainerIssues.mockResolvedValue({ servers: [component({ component: "mail" })] });
+    const result = await listOrganizationIssues(ctx);
+    expect(result.counts).toEqual({ outage: 0, actionRequired: 1, advisory: 0, total: 1 });
+    expect(result.issues).toMatchObject([{ kind: "monitoring_offline", scope: "platform", resolveWith: [] }]);
+    expect(result.issues[0].details?.affectedServers).toHaveLength(3);
+    expect(result.issues[0].infraFix).toBeUndefined();
+    expect(result.issues[0].message).toContain("health is unknown");
+    disconnected.mockReturnValue(true);
+    expect((await listOrganizationIssues(ctx)).counts.total).toBe(1);
+  });
+
+  it("keeps independently confirmed workload and host-specific failures visible", async () => {
+    incidentListByOrg.mockResolvedValue([
+      networkIncident("srv-1"),
+      incident({ id: "app-down" }),
+      incident({ id: "other-server", projectId: null, serverId: "srv-other", kind: "server_unreachable", reason: "connect ECONNREFUSED 192.0.2.2:22" }),
+    ]);
+    const result = await listOrganizationIssues(ctx);
+    expect(result.issues.map((issue) => issue.kind)).toEqual(["workload_down", "monitoring_offline", "server_unreachable"]);
+    expect(result.counts).toMatchObject({ outage: 1, actionRequired: 2, total: 3 });
+  });
+
+  it("does not include inaccessible targets in the grouped notice or count", async () => {
+    incidentListByOrg.mockResolvedValue([networkIncident("srv-1"), networkIncident("secret-server")]);
+    checkPermissionOnResource.mockImplementation(async (_context, input) => input.resourceId !== "secret-server");
+    const result = await listOrganizationIssues({ ...ctx, role: "restricted" } as RequestContext);
+    expect(result.issues[0].details?.affectedServers).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain("secret-server");
+    checkPermissionOnResource.mockImplementation(async (_context, input) => input.resourceId === "*");
+    expect((await listOrganizationIssues({ ...ctx, role: "restricted" } as RequestContext)).issues).toEqual([]);
+  });
+
+  it("shows an observation gap for an offline desktop and removes it when connectivity returns", async () => {
+    disconnected.mockReturnValue(true);
+    const offline = await listOrganizationIssues(ctx);
+    expect(offline.issues).toMatchObject([{ kind: "monitoring_offline", scope: "platform", severity: "action_required" }]);
+    expect(offline.counts.outage).toBe(0);
+
+    disconnected.mockReturnValue(false);
+    expect((await listOrganizationIssues(ctx)).issues).toEqual([]);
+    expect(incidentListByOrg).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not invent a recovery in incident history when the desktop reconnects", async () => {
+    disconnected.mockReturnValue(true);
+    const history = await listOrganizationIssues(ctx, { status: "resolved" });
+    expect(history.issues).toEqual([]);
+  });
+
   it("reports an unreachable box once, not once per workload on it", async () => {
     incidentListByOrg.mockResolvedValue([
       incident({
@@ -208,7 +273,7 @@ describe("one row per cause", () => {
     expect(issues[0]).toMatchObject({
       kind: "server_unreachable",
       scope: "server",
-      severity: "outage",
+      severity: "action_required",
       target: { scope: "server", id: "srv-1", name: "web-01", href: "/servers/srv-1" },
     });
   });
@@ -281,18 +346,16 @@ describe("the infra gate mirrors the endpoints it replaces", () => {
     expect(listBehindByOrg).not.toHaveBeenCalled();
   });
 
-  it("drops them on cloud without asking about permissions at all", async () => {
-    // Managed containers and the health watcher are self-hosted concepts; the
-    // endpoints behind them `assertNotCloud`, so the feed must not call them.
+  it("keeps customer-server monitoring available in hosted mode with permission checks", async () => {
     envMock.CLOUD_MODE = true;
     incidentListByOrg.mockResolvedValue([incident()]);
     getOrgPendingActions.mockResolvedValue(new Map([["proj-1", [pendingAction()]]]));
 
     const { issues } = await listOrganizationIssues(ctx);
 
-    expect(issues.map((i) => i.source)).toEqual(["domain"]);
-    expect(checkPermissionOnResource).not.toHaveBeenCalled();
-    expect(loadOrgContainerIssues).not.toHaveBeenCalled();
+    expect(issues.map((i) => i.source)).toEqual(["incident", "domain"]);
+    expect(checkPermissionOnResource).toHaveBeenCalled();
+    expect(loadOrgContainerIssues).toHaveBeenCalled();
   });
 
   it("checks server:read as a list-scope read, not against one server", async () => {
@@ -468,6 +531,19 @@ describe("every row carries its own fix", () => {
 
     expect((await listOrganizationIssues(ctx)).issues).toEqual([]);
   });
+
+  it.each([true, false])("keeps an updating row visible with behind=%s", async (behind) => {
+    listOrganizationUpdates.mockResolvedValue([update({
+      behind, latestInProgress: true, inProgressDeploymentId: "dep_update",
+    })]);
+    const { issues } = await listOrganizationIssues(ctx);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      id: "update:proj-2",
+      details: { latestInProgress: true, inProgressDeploymentId: "dep_update" },
+      target: { href: "/build/dep_update" },
+    });
+  });
 });
 
 describe("targets are the thing an operator acts on", () => {
@@ -553,5 +629,55 @@ describe("a broken source degrades to a missing section, never a broken page", (
     const { issues } = await listOrganizationIssues(ctx);
 
     expect(issues.map((i) => i.kind)).toEqual(["domain_unverified"]);
+  });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({ checkPermissionOnResource }))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
+});
+
+
+describe("mail certificate monitoring", () => {
+  const mail = (over = {}) => ({
+    serverId: "srv-1", domain: "example.com", installedAt: new Date(), certificateAutoRenew: true,
+    certificateRenewalError: null,
+    certificateHealth: { hostname: "mail.example.com", checkedAt: new Date().toISOString(), status: "fail", reason: "expired", detail: "The mail certificate has expired.", certificate: null, endpoints: [] },
+    ...over,
+  });
+
+  it("reports one certificate issue with a link to the mail controls", async () => {
+    mailMocks.list.mockResolvedValue([mail()]);
+    const result = await listOrganizationIssues(ctx);
+    expect(mailMocks.list).toHaveBeenCalledWith(ORG);
+    expect(result.issues).toMatchObject([{ id: "mail:certificate:srv-1", kind: "mail_certificate", severity: "action_required", target: { href: "/emails?serverId=srv-1&tab=advanced" } }]);
+  });
+
+  it("suppresses certificate symptoms when the server is unreachable", async () => {
+    mailMocks.list.mockResolvedValue([mail()]);
+    incidentListByOrg.mockResolvedValue([incident({ projectId: null, kind: "server_unreachable" })]);
+    const result = await listOrganizationIssues(ctx);
+    expect(result.issues.map((issue) => issue.kind)).toEqual(["server_unreachable"]);
+  });
+
+  it("keeps monitoring expired certificates after automatic renewal is disabled", async () => {
+    mailMocks.list.mockResolvedValue([mail({ certificateAutoRenew: false })]);
+    expect((await listOrganizationIssues(ctx)).issues[0]?.kind).toBe("mail_certificate");
+  });
+
+  it("removes the issue after a successful certificate check and reload", async () => {
+    mailMocks.list.mockResolvedValue([mail({ certificateHealth: { hostname: "mail.example.com", status: "ok", checkedAt: new Date().toISOString(), certificate: null, endpoints: [] } })]);
+    expect((await listOrganizationIssues(ctx)).issues).toEqual([]);
+  });
+
+  it("does not read mail records in cloud mode or without mail access", async () => {
+    envMock.CLOUD_MODE = true;
+    await listOrganizationIssues(ctx);
+    expect(mailMocks.list).not.toHaveBeenCalled();
+    envMock.CLOUD_MODE = false;
+    checkPermissionOnResource.mockImplementation(async (_ctx, input) => input.resourceType !== "mail_server");
+    await listOrganizationIssues(ctx);
+    expect(mailMocks.list).not.toHaveBeenCalled();
   });
 });

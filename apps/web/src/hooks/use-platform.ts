@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import { useEffect, useState } from "react";
 
@@ -62,7 +64,8 @@ async function detectPlatform(): Promise<Platform> {
     let arch = "";
     try {
       arch = (await uaData?.getHighEntropyValues?.(["architecture"]))?.architecture ?? "";
-    } catch {
+    } catch (error) {
+      reportCaughtError(error, "web/hooks/use-platform");
       /* Client Hints unsupported → fall through to the Apple Silicon default */
     }
     return arch === "x86" ? "mac-intel" : "mac-arm";

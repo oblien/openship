@@ -18,7 +18,7 @@ const matchAll = (src: string, re: RegExp) => [...src.matchAll(re)].map((m) => m
 
 // Channels the MAIN process answers (invoke targets) or emits (events).
 const handled = new Set([
-  ...matchAll(main, /ipcMain\.handle\(\s*["'`]([^"'`]+)["'`]/g),
+  ...matchAll(main, /(?:ipcMain\.handle|handleIpc)\(\s*["'`]([^"'`]+)["'`]/g),
   ...matchAll(main, /ipcMain\.on\(\s*["'`]([^"'`]+)["'`]/g),
 ]);
 const sent = new Set(matchAll(main, /\.send\(\s*["'`]([^"'`]+)["'`]/g));
@@ -28,6 +28,9 @@ const invoked = matchAll(preload, /ipcRenderer\.invoke\(\s*["'`]([^"'`]+)["'`]/g
 const listened = matchAll(preload, /ipcRenderer\.on\(\s*["'`]([^"'`]+)["'`]/g);
 
 describe("preload ↔ main IPC contract", () => {
+  it("registers observed handlers through Electron without changing channel access", () => {
+    expect(main).toContain("ipcMain.handle(channel, observeIpcHandler(channel, listener))");
+  });
   it("every ipcRenderer.invoke() channel has a matching ipcMain.handle()", () => {
     const missing = invoked.filter((ch) => !handled.has(ch));
     expect(missing, `preload invokes channels with no main handler: ${missing.join(", ")}`).toEqual([]);

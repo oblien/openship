@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { access, readdir } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -222,7 +223,7 @@ type RootCandidate = {
 };
 
 async function pathExists(path: string): Promise<boolean> {
-  return access(path).then(() => true).catch(() => false);
+  return access(path).then(() => true).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker-paths"); return false; });
 }
 
 async function manifestCount(dir: string): Promise<number> {
@@ -287,7 +288,7 @@ async function collectCandidates(
     return;
   }
 
-  const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => []);
+  const entries = await readdir(currentDir, { withFileTypes: true }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker-paths"); return []; });
   for (const entry of entries) {
     if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name)) {
       continue;

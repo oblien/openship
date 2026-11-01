@@ -54,7 +54,7 @@
     {
       "id": "backend",
       "label": "Mail backend",
-      "description": "Which IMAP/SMTP server this webmail talks to. Leave the hosts blank and each address resolves to mail.<its own domain> at sign-in — the convention Openship Mail and iRedMail install. Set them to pin every mailbox to one server. Users can still override host and port on the sign-in screen.",
+      "description": "Which IMAP/SMTP server this webmail talks to. Leave the hosts blank and each address resolves to mail.<its own domain> at sign-in — the convention Openship Mail and iRedMail install. Set them to pin every mailbox to one server. Backend settings are managed here; users sign in with their mailbox credentials.",
       "fields": [
         {
           "key": "DEFAULT_IMAP_HOST",
@@ -158,5 +158,21 @@
         "domain"
       ]
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "IMAP and SMTP",
+        "description": "Connect an existing mail provider."
+      },
+      {
+        "title": "Read and send",
+        "description": "Use a browser interface for everyday email."
+      },
+      {
+        "title": "Your domain",
+        "description": "Run the client on an address you control."
+      }
+    ]
+  }
 }

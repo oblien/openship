@@ -31,7 +31,7 @@ import {
   resolveSourceAccess,
   checkSourceTier,
   filterTreeEntries,
-} from "../../../src/modules/github/github-access";
+} from "@repo/platform/engine/modules/github/github-access";
 
 type G = {
   resourceType: string;

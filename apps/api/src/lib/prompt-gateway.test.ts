@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { PromptRegistry } from "./prompt-gateway";
+import { PromptRegistry } from "@repo/platform/engine/lib/prompt-gateway";
 
 describe("PromptRegistry", () => {
   it("resolves the awaiting promise with the chosen action", async () => {

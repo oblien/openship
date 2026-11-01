@@ -32,7 +32,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   resolveProjectTrafficSources: vi.fn(async () => h.sources),
   fetchMgmt: vi.fn(async (_serverId: string, path: string) => {
     for (const [prefix, value] of h.mgmt) {
@@ -42,18 +42,22 @@ vi.mock("../../../src/lib/project-analytics", () => ({
   }),
 }));
 
-vi.mock("../../../src/modules/system/analytics-scraper", () => ({
+vi.mock("@repo/platform/engine/modules/system/analytics-scraper", () => ({
   scrapeServerIfStale: h.scrape,
 }));
 
-vi.mock("../../../src/modules/cloud/cloud-analytics.service", () => ({
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: vi.fn(async () => {}) },
+}));
+
+vi.mock("@repo/platform/engine/modules/cloud/cloud-analytics.service", () => ({
   proxyCloudAnalytics: vi.fn(async (_org: string, input: Record<string, unknown>) => {
     h.cloudCalls.push(input);
     return h.cloudResult;
   }),
 }));
 
-const { getProjectGeo } = await import("../../../src/modules/analytics/geo.service");
+const { getProjectGeo } = await import("@repo/platform/engine/modules/analytics/geo.service");
 
 const ctx = { organizationId: "org1" } as never;
 
@@ -74,6 +78,14 @@ beforeEach(() => {
 });
 
 describe("self-hosted daily rollup", () => {
+  it("defaults to exactly seven UTC dates including today, not eight", async () => {
+    const { repos } = await import("@repo/db");
+    const { analyticsDependencies } = await import("@repo/platform/engine/modules/analytics/analytics.operations");
+    await analyticsDependencies.projects.geo(ctx, "p1");
+    expect(repos.analytics.queryGeoRange).toHaveBeenLastCalledWith({
+      serverId: "s1", domain: "a.com", fromDay: dayKey(-6), toDay: dayKey(),
+    });
+  });
   it("does NOT add the live read to today's persisted row — they are the same counter", async () => {
     h.geoRows = [{ day: dayKey(), countries: { US: 100 }, visitors: 40, paths: {}, statuses: {} }];
     h.mgmt.set("/analytics/geo", { countries: { US: 120 }, visitors: 45, paths: {}, statuses: {} });

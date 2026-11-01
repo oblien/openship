@@ -1,0 +1,189 @@
+---
+title: project database
+description: Commands, arguments, and options for openship project database.
+cliGroup: openship project database
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship project database
+
+Manage project databases, replicas, backups and application connections
+
+```text
+openship project database [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <project>`](/docs/cli/reference/project/database#openship-project-database-list) | List project databases and their operation sequences |
+| [`imports <project>`](/docs/cli/reference/project/database#openship-project-database-imports) | List backup artifacts available to import into a database |
+| [`get [options] <project> <database>`](/docs/cli/reference/project/database#openship-project-database-get) | Read database health, backups and progress |
+| [`create [options] <id> [file]`](/docs/cli/reference/project/database#openship-project-database-create) | Provision a database, optionally from an import, copy or backup |
+| [`update [options] <id> [file]`](/docs/cli/reference/project/database#openship-project-database-update) | Apply database configuration at the reviewed sequence |
+| [`retry [options] <project> <database>`](/docs/cli/reference/project/database#openship-project-database-retry) | Resume a failed database operation at its current sequence |
+| [`backup [options] <project> <database>`](/docs/cli/reference/project/database#openship-project-database-backup) | Start a database backup at the reviewed sequence |
+| [`connect [options] <id> [file]`](/docs/cli/reference/project/database#openship-project-database-connect) | Bind a database to an environment key; null disconnects, replacement needs its sequence |
+| [`remove [options] <id> [file]`](/docs/cli/reference/project/database#openship-project-database-remove) | Remove a named database with an explicit retain-or-delete-data decision |
+| [`events [options] <project>`](/docs/cli/reference/project/database#openship-project-database-events) | Stream health and operation progress |
+
+## openship project database backup
+
+Start a database backup at the reviewed sequence
+
+```text
+openship project database backup [options] <project> <database>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+| `database` | Database ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current database sequence |
+
+## openship project database connect
+
+Bind a database to an environment key; null disconnects, replacement needs its sequence
+
+```text
+openship project database connect [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship project database create
+
+Provision a database, optionally from an import, copy or backup
+
+```text
+openship project database create [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship project database events
+
+Stream health and operation progress
+
+```text
+openship project database events [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |
+
+## openship project database get
+
+Read database health, backups and progress
+
+```text
+openship project database get [options] <project> <database>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+| `database` | Database ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--observe` | Refresh observed database health |
+
+## openship project database imports
+
+List backup artifacts available to import into a database
+
+```text
+openship project database imports [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship project database list
+
+List project databases and their operation sequences
+
+```text
+openship project database list [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship project database remove
+
+Remove a named database with an explicit retain-or-delete-data decision
+
+```text
+openship project database remove [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship project database retry
+
+Resume a failed database operation at its current sequence
+
+```text
+openship project database retry [options] <project> <database>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+| `database` | Database ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current database sequence |
+
+## openship project database update
+
+Apply database configuration at the reviewed sequence
+
+```text
+openship project database update [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |

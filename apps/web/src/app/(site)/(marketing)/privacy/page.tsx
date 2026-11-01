@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { Navbar, Footer } from "@/components/landing";
 
 const PAGE_TITLE = "Privacy Policy";
 const PAGE_DESCRIPTION =
   "How Openship handles your data. What we collect, why, where it lives, how to remove it. We do not sell personal data and we do not show ads.";
 
-export const metadata: Metadata = {
+const metadata: Metadata = {
   title: PAGE_TITLE,
   description: PAGE_DESCRIPTION,
   alternates: { canonical: "/privacy" },
@@ -21,6 +22,13 @@ export const metadata: Metadata = {
     description: PAGE_DESCRIPTION,
   },
 };
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(metadata, parent);
+}
 
 const SECTIONS = [
   {

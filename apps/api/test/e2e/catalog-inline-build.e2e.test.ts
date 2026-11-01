@@ -45,7 +45,7 @@ vi.mock("@repo/db", () => ({
   repos: { service: { listByProject: listByProjectMock } },
 }));
 
-import { buildComposeImages } from "../../src/modules/deployments/compose/build.service";
+import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
 
 const execFileAsync = promisify(execFile);
 

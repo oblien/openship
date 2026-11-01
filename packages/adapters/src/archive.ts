@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -73,7 +74,8 @@ export async function gitTrackedFiles(localPath: string): Promise<string[] | nul
     );
     const files = stdout.split("\0").filter(Boolean);
     return files.length > 0 ? files : null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/archive");
     // Not a repo, git missing, or the dir is outside any work tree.
     return null;
   }
@@ -87,7 +89,8 @@ async function existingRelativePaths(root: string, paths?: string[]): Promise<st
     try {
       await stat(join(root, p));
       found.push(p);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/archive");
       // Missing (e.g. build produced no such dir) — skip; never abort the pack.
     }
   }

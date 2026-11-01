@@ -17,10 +17,10 @@ vi.mock("@repo/db", () => ({
     },
   },
 }));
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { GITHUB_WEBHOOK_SECRET: "legacy-app-secret" },
 }));
-vi.mock("./github-source.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github-source.service", () => ({
   collectGitHubSourceWebhookSecrets: h.collectSourceSecrets,
 }));
 vi.mock("./webhook-installation", () => ({ handleInstallation: vi.fn() }));
@@ -49,7 +49,7 @@ describe("custom GitHub App webhook verification", () => {
         "x-github-event": "installation",
         "x-hub-signature-256": signature(payload, "workspace-app-secret"),
       }),
-    ).resolves.toEqual({ valid: true });
+    ).resolves.toEqual({ valid: true, githubApp: true });
     expect(h.collectSourceSecrets).toHaveBeenCalledWith({
       installationId: 42,
       appId: 12345,

@@ -1,0 +1,12 @@
+# The guard is rendered from the same dependency-free policy used by tests.
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS policy
+WORKDIR /src
+COPY packages/core/src/build-metadata-policy.ts packages/core/src/build-metadata-policy.ts
+COPY packages/adapters/scripts/render-buildkit-guard.ts packages/adapters/scripts/render-buildkit-guard.ts
+RUN bun packages/adapters/scripts/render-buildkit-guard.ts /openship-buildkitd
+
+# Official v0.34.1 multi-architecture index, verified against Docker Hub.
+FROM moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+LABEL org.openship.build-metadata-policy="1"
+COPY --from=policy --chmod=755 /openship-buildkitd /usr/local/bin/openship-buildkitd
+ENTRYPOINT ["/usr/local/bin/openship-buildkitd"]

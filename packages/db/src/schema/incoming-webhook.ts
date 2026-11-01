@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 import { project } from "./project";
+import type { ExecutionAuthority } from "@repo/core";
 
 // ─── Incoming webhooks ───────────────────────────────────────────────────────
 
@@ -60,6 +61,8 @@ export const incomingWebhook = pgTable(
     hmacSecretEncrypted: text("hmac_secret_encrypted"),
 
     createdBy: text("created_by"),
+    /** Captured by authorized management operations; revalidated on every invocation. */
+    executionAuthority: jsonb("execution_authority").$type<ExecutionAuthority>(),
     lastFiredAt: timestamp("last_fired_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

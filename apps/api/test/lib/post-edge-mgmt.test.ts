@@ -24,14 +24,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
  */
 const { tunnelRequest } = vi.hoisted(() => ({ tunnelRequest: vi.fn() }));
 
-vi.mock("../../src/lib/ssh-tunnel", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-tunnel", () => ({
   tunnelRequest,
   tunnelStream: vi.fn(),
 }));
-vi.mock("../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: vi.fn(), release: vi.fn(), acquire: vi.fn() },
 }));
-vi.mock("../../src/lib/platform-mode", () => ({ isOblienBackedDeployment: async () => false }));
+vi.mock("@repo/platform/engine/lib/platform-mode", () => ({ isOblienBackedDeployment: async () => false }));
 const { findLocal } = vi.hoisted(() => ({ findLocal: vi.fn() }));
 vi.mock("@repo/db", () => ({
   repos: {
@@ -39,7 +39,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-const { postEdgeMgmt } = await import("../../src/lib/project-analytics");
+const { postEdgeMgmt } = await import("@repo/platform/engine/lib/project-analytics");
 
 beforeEach(() => {
   vi.clearAllMocks();

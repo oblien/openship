@@ -61,7 +61,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  disposeRuntime: (runtime: { dispose?: () => Promise<void> } | null) => { void runtime?.dispose?.(); },
   resolveDeploymentRuntimeForRead: vi.fn(async (dep: { meta?: { serverId?: string } }) => {
     h.resolveCalls += 1;
     const key = dep.meta?.serverId ?? "__local__";
@@ -80,6 +81,7 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
             }
           : undefined,
         getUsage: h.getUsage,
+        getContainerInfo: async (containerId: string) => ({ containerId, status: "running" }),
         dispose: async () => {
           h.activeServers -= 1;
           await h.dispose();
@@ -90,13 +92,13 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   }),
 }));
 
-vi.mock("../../../src/lib/system-debug", () => ({
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({
   systemDebug: vi.fn(),
   formatDuration: () => "1ms",
 }));
 
 const { runUsageSampleSweep, bucketMinuteFor } = await import(
-  "../../../src/modules/monitoring/usage-sampler"
+  "@repo/platform/engine/modules/monitoring/usage-sampler"
 );
 
 const container = (id: string, service: string, state = "running") => ({
@@ -110,9 +112,10 @@ const container = (id: string, service: string, state = "running") => ({
 
 /** A project + its active deployment, on `serverId`. */
 function project(id: string, serverId: string | null, containerId: string | null = null) {
-  h.projects.push({ id, slug: "app", activeDeploymentId: `d-${id}`, disabledAt: null });
+  h.projects.push({ id, organizationId: "org1", slug: "app", activeDeploymentId: `d-${id}`, disabledAt: null });
   h.deployments.set(`d-${id}`, {
     id: `d-${id}`,
+    projectId: id,
     organizationId: "org1",
     containerId,
     meta: serverId ? { serverId } : {},
@@ -154,6 +157,18 @@ describe("bucketMinuteFor", () => {
 });
 
 describe("scope", () => {
+  it.each([
+    { projectId: "p2", organizationId: "org1" },
+    { projectId: "p1", organizationId: "org2" },
+  ])("skips a mismatched active deployment before resolving a runtime: %j", async (owner) => {
+    project("p1", "s1", "c-app");
+    Object.assign(h.deployments.get("d-p1")!, owner);
+    const result = await runUsageSampleSweep();
+    expect(result).toMatchObject({ skipped: 1, samples: 0, servers: 0 });
+    expect(h.resolveCalls).toBe(0);
+    expect(h.inserted).toEqual([]);
+  });
+
   it("samples a single-container project under the shared sentinel key", async () => {
     project("p1", "s1", "c-app");
     h.liveContainers = [{ ...container("c-app", "app"), labels: {} }];
@@ -338,17 +353,17 @@ describe("failure handling", () => {
     expect(h.getUsage).not.toHaveBeenCalled();
   });
 
-  it("still samples cloud projects, which have no host to enumerate", async () => {
+  it("still samples a managed server when enumeration is unavailable", async () => {
     // The whole reason this isn't part of the health watch: gating on
     // hostContainerQuery would exclude Oblien entirely.
     project("p1", null, null);
-    h.caps = new Set(["usage"]); // CloudRuntime: getUsage yes, docker ps no
+    h.caps = new Set(["usage", "containerInfo"]);
     h.servicesByProject.set("p1", [{ id: "sv-web", name: "web" }]);
-    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "ws-123" }];
+    h.serviceDeployments = [{ serviceId: "sv-web", containerId: "managed-web" }];
 
     const r = await runUsageSampleSweep();
 
-    expect(h.getUsage).toHaveBeenCalledWith("ws-123");
+    expect(h.getUsage).toHaveBeenCalledWith("managed-web");
     expect(r.samples).toBe(1);
   });
 

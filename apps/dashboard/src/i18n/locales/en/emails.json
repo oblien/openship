@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "Emails",
+    "subtitle": "Use your existing mailboxes with Openship Webmail.",
+    "connectTitle": "Connect your mail server",
+    "description": "Connect any IMAP/SMTP server. Your provider keeps your mailboxes and mail delivery.",
+    "connectAction": "Connect existing mail server",
+    "signInHint": "Sign in to webmail with your mailbox email address and password.",
+    "manageAction": "Manage webmail apps"
+  },
+  "cloudComingSoon": {
+    "title": "Managed email",
+    "badge": "Coming soon",
+    "description": "Managed email on Openship Cloud is coming soon. Cloud server plans are for hosting applications and do not provision a mail server.",
+    "selfHosted": "Self-hosted email is available on your own server through a self-hosted Openship installation."
+  },
   "page": {
     "title": "Email Server",
     "subtitle": "Set up a self-hosted mail server with a few clicks",

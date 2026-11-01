@@ -1,0 +1,248 @@
+{
+  "home": {
+    "goodMorning": "Доброе утро",
+    "goodAfternoon": "Добрый день",
+    "goodEvening": "Добрый вечер",
+    "subtitle": "Вот что происходит в ваших проектах",
+    "statsProjects": "Проекты",
+    "statsDeployments": "Деплои",
+    "statsSuccessful": "Успешные",
+    "statsFailed": "С ошибкой",
+    "recentProjects": "Недавние проекты",
+    "yourLatestActivity": "Ваша последняя активность",
+    "viewAll": "Смотреть все",
+    "noProjectsYet": "Проектов пока нет",
+    "createFirstProject": "Создайте свой первый проект",
+    "justNow": "только что",
+    "minutesAgo": "{n} мин. назад",
+    "hoursAgo": "{n} ч. назад",
+    "daysAgo": "{n} дн. назад",
+    "monthsAgo": "{n} мес. назад",
+    "statusLive": "Работает",
+    "statusPaused": "Приостановлен",
+    "yourProjects": "Ваши проекты",
+    "loading": "Загрузка...",
+    "projectCountOne": "{count} проект",
+    "projectCountOther": "{count} проектов",
+    "viewAllProjects": "Все проекты ({count}) →",
+    "viewAllApps": "Все приложения ({count}) →",
+    "greetingName": "{greeting}, {name}!",
+    "importGit": "Импорт из Git",
+    "importGitDesc": "Из репозитория",
+    "mcpDeploy": "Деплой MCP",
+    "mcpDeployDesc": "Подключить ИИ-агента",
+    "settingsCard": "Настройки",
+    "settingsCardDesc": "Аккаунт и команда",
+    "docs": "Документация",
+    "docsDesc": "Узнать больше",
+    "activityTitle": "Активность",
+    "systemStatus": "Статус системы",
+    "operational": "Работает стабильно",
+    "oneIssue": "1 проблема",
+    "manyIssues": "Проблем: {n}",
+    "recentTitle": "Недавнее",
+    "activityEmpty": "Здесь появится ваша активность",
+    "appsEmptyTitle": "Приложений пока нет",
+    "appsEmptyDesc": "В один клик, полностью self-hosted — базы данных, автоматизация, аналитика, менеджеры паролей и многое другое на ваших серверах.",
+    "allSystemsOperational": "Все системы работают стабильно",
+    "runningSmoothly": "Ваши проекты работают без сбоев",
+    "time": {
+      "justNow": "только что",
+      "minutes": "{n} мин. назад",
+      "hours": "{n} ч. назад",
+      "days": "{n} дн. назад",
+      "months": "{n} мес. назад"
+    }
+  },
+  "nav": {
+    "affiliates": "Заработок",
+    "resources": "Облачные пространства",
+    "support": "Поддержка",
+    "scale": "Масштабирование",
+    "home": "Главная",
+    "new-project": "Новый проект",
+    "projects": "Проекты",
+    "apps": "Приложения",
+    "deployments": "Деплои",
+    "issues": "Мониторинг",
+    "backups": "Резервные копии",
+    "domains": "Домены",
+    "monitoring": "Мониторинг",
+    "servers": "Серверы",
+    "emails": "Почта",
+    "jobs": "Задачи",
+    "settings": "Настройки",
+    "billing": "Оплата и тарифы",
+    "audit": "Журнал аудита",
+    "mailSetup": "Настройка почты",
+    "mailSetupProgress": "Прогресс настройки",
+    "addMailbox": "Добавить ящик",
+    "webmail": "Веб-почта",
+    "sections": {
+      "help": "Помощь",
+      "main": "Основное",
+      "settings": "Настройки",
+      "infrastructure": "Инфраструктура",
+      "mail": "Почта",
+      "delivery": "Доставка",
+      "system": "Система",
+      "account": "Аккаунт"
+    },
+    "workspaces": "Рабочие пространства",
+    "actions": "Действия"
+  },
+  "sidebar": {
+    "expand": "Развернуть панель",
+    "collapse": "Свернуть панель"
+  },
+  "user": {
+    "logout": "Выйти",
+    "loggingOut": "Выход…",
+    "profile": "Профиль",
+    "preferences": "Предпочтения"
+  },
+  "pages": {
+    "apps": {
+      "title": "Приложения",
+      "description": "Управляемые сервисы в один клик — установка и запуск Convex, WordPress, почты и другого.",
+      "createButton": "Установить приложение",
+      "loading": "Загрузка приложений…",
+      "countOne": "{count} приложение",
+      "countOther": "{count} приложений",
+      "emptyTitle": "Установите первое приложение",
+      "emptyDescription": "Развертывайте базы данных, инструменты и сервисы из каталога приложений.",
+      "popular": "Популярные приложения",
+      "alsoDeploy": "Вы также можете развернуть",
+      "browseAll": "Все приложения",
+      "moreApps": "+ еще {count}",
+      "catalogTitle": "Установка приложения",
+      "catalogDescription": "Управляемые сервисы в один клик. Выберите сервис для установки.",
+      "catalogSearchPlaceholder": "Поиск приложений…",
+      "catalogNoResults": "Приложения не найдены.",
+      "categories": {
+        "all": "Все",
+        "backend": "Бэкенд",
+        "database": "Базы данных",
+        "cms": "CMS",
+        "analytics": "Аналитика",
+        "automation": "Автоматизация",
+        "mail": "Почта",
+        "other": "Инструменты",
+        "ai": "ИИ и модели"
+      },
+      "installing": "Установка…",
+      "install": "Установить",
+      "cancel": "Отмена",
+      "nameLabel": "Имя",
+      "configTitle": "Настройка {app}",
+      "comingSoon": "Скоро",
+      "addCustom": "Добавить свое",
+      "howToAddApp": "Как добавить приложение",
+      "removeCustomApp": "Удалить пользовательское приложение",
+      "needsUpdateDesc": "Обновите инстанс Openship для установки этого приложения.",
+      "needsUpdateBadge": "Требуется обновление",
+      "needsVersionBadge": "Требуется v{version}",
+      "removedToast": "Приложение «{name}» удалено.",
+      "removeFailedToast": "Не удалось удалить приложение.",
+      "gpu": {
+        "recommended": "Рекомендуется GPU",
+        "required": "Требуется NVIDIA GPU",
+        "mode": "Вычисления",
+        "cpu": "Только CPU",
+        "nvidia": "Графический процессор NVIDIA",
+        "hint": "Режим NVIDIA требует совместимый драйвер и NVIDIA Container Toolkit на сервере.",
+        "cloudUnsupported": "Это приложение работает только на собственном сервере. Выберите подключённый сервер.",
+        "selfHostedOnly": "Только свой сервер",
+        "noGpu": "GPU не обнаружен. Проверьте драйвер NVIDIA и Container Toolkit или выберите CPU."
+      }
+    },
+    "projects": {
+      "title": "Проекты",
+      "description": "Простое развертывание и управление вашими приложениями",
+      "createButton": "Создать проект",
+      "stats": {
+        "totalProjects": "Всего проектов",
+        "liveNow": "Работают сейчас",
+        "avgPerDay": "В среднем за день",
+        "successRate": "Успешность"
+      },
+      "searchPlaceholder": "Поиск проектов...",
+      "pinnedProjects": "Закрепленные проекты",
+      "otherProjects": "Другие проекты",
+      "noResultsFound": "Проекты по запросу «{query}» не найдены",
+      "emptyState": {
+        "title": "Создайте свой первый проект",
+        "description": "Импортируйте Git-репозиторий, используйте шаблон или выполните деплой из CLI. Ваши проекты появятся здесь.",
+        "createProject": "Создать проект",
+        "browseTemplates": "Каталог шаблонов",
+        "zeroConfig": "Деплой без лишней конфигурации",
+        "instant": "Мгновенно",
+        "instantDesc": "Деплой за секунды",
+        "global": "Глобально",
+        "globalDesc": "100+ edge-регионов",
+        "previews": "Превью",
+        "previewsDesc": "URL для каждой ветки",
+        "rollbacks": "Откаты",
+        "rollbacksDesc": "Откат в один клик",
+        "commandPalette": "Или нажмите {key} для командной строки"
+      },
+      "view": {
+        "label": "Вид",
+        "list": "Список",
+        "grid": "Сетка"
+      }
+    },
+    "deployments": {
+      "title": "Деплои",
+      "description": "Просмотр и управление историей деплоев."
+    },
+    "domains": {
+      "title": "Домены",
+      "description": "Управление пользовательскими доменами и DNS-записями."
+    },
+    "monitoring": {
+      "title": "Мониторинг",
+      "description": "Логи, метрики и проверки состояния ваших сервисов."
+    },
+    "servers": {
+      "title": "Серверы",
+      "description": "Управление серверами деплоя и инфраструктурой."
+    },
+    "settings": {
+      "title": "Настройки",
+      "description": "Настройки аккаунта, команды и платформы."
+    },
+    "billing": {
+      "title": "Оплата и тарифы",
+      "description": "Управление подпиской, расходом ресурсов и способами оплаты."
+    }
+  },
+  "quickLinks": {
+    "title": "Быстрые действия",
+    "subtitle": "Переход к частым задачам",
+    "deployProject": {
+      "title": "Развернуть проект",
+      "description": "Импорт из Git"
+    },
+    "projects": {
+      "title": "Проекты",
+      "description": "Все проекты"
+    },
+    "deployments": {
+      "title": "Деплои",
+      "description": "История сборок"
+    },
+    "settings": {
+      "title": "Настройки",
+      "description": "Управление доступом"
+    },
+    "domains": {
+      "title": "Домены",
+      "description": "Пользовательские домены"
+    },
+    "billing": {
+      "title": "Оплата и тарифы",
+      "description": "Тарифы и использование"
+    }
+  }
+}

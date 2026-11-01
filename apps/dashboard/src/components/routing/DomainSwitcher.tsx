@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { ChevronDown } from "lucide-react";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -84,7 +85,7 @@ export function DomainSwitcher({
           <span className="truncate">
             {current || (allowAll ? w.allDomains : w.selectDomain)}
           </span>
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          <UiIcon name="chevron-down" className="size-3.5 shrink-0 text-muted-foreground" />
         </>
       }
     />

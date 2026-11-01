@@ -39,12 +39,49 @@ Each environment is a full, independent copy: its own address, its own variables
 they share is the build recipe — when you create one, Openship copies the original project's framework, build
 commands, and settings so you don't set them up again.
 
+## Automatic pull request previews
+
+Open the source environment's **Git → Pull request previews**, then enable previews.
+This applies to every supported Git-backed stack, including monorepos and Compose services.
+Open, non-draft pull requests from the same repository targeting this environment's branch
+get an isolated environment. Fork pull requests are excluded. Existing open pull requests
+are discovered when you enable the setting.
+
+Set project and service variables in **Environment → Preview** before enabling automation.
+Only those values are copied into the new environment's own production variable set;
+production variables and inline service secrets are not copied. Preview values are refreshed
+on each new commit. Move variables out of install, build, start and lifecycle commands first.
+
+Each environment inherits its source's build configuration when created, uses fresh named
+volumes, and gets a distinct URL for each public service port. Workers do not get a public URL.
+On a server, supply a **Preview base domain** such as `preview.example.com` and point its
+wildcard DNS record at that server. HTTPS verification must succeed before deployment.
+Leave the field empty to use managed domains when the deployment target supports them.
+
+New commits deploy their exact SHA. Openship publishes deployment checks through the existing
+GitHub Checks integration and can maintain one comment with the preview URL and deployment
+link. The GitHub identity needs permission to read pull requests; comments also need write
+access. Existing GitHub App installations may need to accept updated permissions.
+
+Closing or merging a pull request, converting it to a draft, changing its base away from the
+source branch, or disabling previews removes its environment and owned volumes. Cleanup retries
+when the server is unavailable. Reopening an eligible pull request creates a fresh environment.
+Delivery deduplication, leases, and periodic reconciliation recover missed webhooks and restarts.
+Failures and pending cleanup are visible in the source environment's preview list.
+
+Whole-instance transfers preserve preview ownership and pending cleanup. Disable previews and wait
+for cleanup before transferring their environments individually. Portable configuration exports
+clear preview automation and host-specific cache receipts; configure them on the destination.
+
+Automation currently supports Docker, direct-server and managed Cloud targets. Cluster targets,
+host bind mounts, shared host/container namespaces, and generated service files or inline Dockerfiles
+require a separate preview template and are rejected during setup. They cannot silently reuse
+production infrastructure. Standard repository Dockerfiles and Compose files are supported.
+
 ## Create an environment from a branch
 
 You do this from the project's page, using the **environment switcher** — the little pill at the top that shows
 the current environment's name and its branch.
-
-<Callout title="Screenshot">The project page header showing the environment switcher pill (environment name + branch) with a **+** button beside it. *(screenshot pending)*</Callout>
 
 <Steps>
 
@@ -67,8 +104,6 @@ top to filter a long list. Click the branch you want to base the new environment
 
 Openship creates a fresh copy of the project tied to that branch and drops you onto its page. That's it — you're
 now looking at the new environment.
-
-<Callout title="Screenshot">The Add-branch panel: a **Search branches** box and a list of repository branches, each with a **+** to add it as an environment. *(screenshot pending)*</Callout>
 
 <Callout title="Tip" type="info">
 The name is filled in for you from the branch (a branch called `feature/new-home` becomes "Feature New Home").
@@ -95,15 +130,13 @@ Once you have more than one, click the switcher pill to see the full list. Each 
 and its branch, with a check mark next to the one you're viewing. Click any row to jump to that copy of the
 project — its own deploys, logs, and variables.
 
-<Callout title="Screenshot">The open environment switcher dropdown listing each environment with its branch and a check mark on the current one. *(screenshot pending)*</Callout>
-
 ### Creating one by hand (no branch)
 
 At the bottom of the Add-branch panel there's a **Manual environment** option. Use it when you want an
 environment that isn't tied to a specific branch yet — you give it a name (and, optionally, a **Branch label**)
 and press **Create**. This makes a *development* environment.
 
-## Prefer the terminal?
+## CLI
 
 If you deploy from the CLI, the `deploy` command has an `--env` flag that tells Openship which environment a
 deploy is for. It applies that environment's variables and records the deploy under it.
@@ -130,7 +163,7 @@ openship deploy --project <environment-project-id> --env preview --watch
 
 `--watch` streams the build logs until it finishes, so you can see it go live right there in your terminal.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="No branches show up when I press +" type="warn">
 The environment list is built from your GitHub branches, so the project has to be connected to GitHub and have
@@ -153,7 +186,7 @@ Variables are per-environment — a preview copy doesn't automatically inherit p
 environment and add what it needs. See [Environment variables](/docs/guides/environment-variables).
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Environment variables" href="/docs/guides/environment-variables" description="Give each environment its own secrets and settings." />

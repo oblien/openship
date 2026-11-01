@@ -1,10 +1,12 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship deploy` — deploy the current project.
  *
- * Two paths, auto-selected by whether the cwd is a git repository:
+ * Two paths:
  *   - Git repo  → POST /api/deployments (git-source build of the linked project).
- *   - No git    → folder-upload: package the cwd and drive the same pipeline the
- *                 MCP / dashboard folder deploy uses (see lib/folder-deploy.ts).
+ *   - --folder (or --name outside Git) → stage the current directory through
+ *                 the shared SDK source workflow.
  *
  * The git path's controller accepts an allowlist body ({ projectId, branch,
  * commitSha, environment, serverId, forceAll, serviceIds, smartRoute, refresh }) and
@@ -14,11 +16,12 @@
 import { Command } from "commander";
 import { execFileSync } from "node:child_process";
 import ora from "ora";
-import { apiRequest, ApiError } from "../lib/api-client";
+import { getShipClient, assertLinkedProjectConnection, ApiError } from "../lib/ship-client";
+import type { CreateDeploymentInput, CreateDeploymentResult } from "@repo/sdk/client";
 import { readProjectLink } from "../lib/project-link";
-import { deployFolder } from "../lib/folder-deploy";
 import { streamDeploymentLogs } from "../lib/deploy-stream";
 import { isJsonMode, printJson, err, info } from "../lib/output";
+import { parseDeploymentEnvironment, timeoutMilliseconds } from "../lib/command-input";
 
 /** Read a value from git, or undefined when not in a repo / git missing. */
 function git(args: string[]): string | undefined {
@@ -28,13 +31,10 @@ function git(args: string[]): string | undefined {
         .toString()
         .trim() || undefined
     );
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/deploy");
     return undefined;
   }
-}
-
-interface CreateResponse {
-  data?: { success?: boolean; deployment_id?: string; project_id?: string };
 }
 
 export const deployCommand = new Command("deploy")
@@ -42,34 +42,46 @@ export const deployCommand = new Command("deploy")
   .option("--project <id>", "Project ID (defaults to the linked project in .openship/project.json)")
   .option("--branch <name>", "Git branch to deploy (defaults to the current branch)")
   .option("--commit <sha>", "Specific commit SHA (defaults to the latest commit on the branch)")
-  .option("--env <environment>", "Target environment: production | preview", "production")
+  .option("--env <environment>", "Variable set: production | preview (defaults to the link, then production; project ID selects the runtime)")
   .option("--force-all", "Rebuild every enabled service (skip smart per-service routing)")
   .option("--service-ids <ids>", "Comma-separated service IDs to deploy (smart routing)")
   .option("--smart-route", "Rebuild only services changed since the active deploy")
   .option("--refresh", "Re-apply current env to the active deploy (no git pull, no rebuild)")
+  .option("--folder", "Upload the current folder as source (also works inside a Git repository)")
   .option(
     "--name <name>",
     "Project name for a folder (non-git) deploy (defaults to the directory name)",
   )
   .option("--server <id>", "Registered server ID (see `openship server list`)")
   .option("--watch", "Stream the deployment logs until it finishes")
+  .option("--timeout <ms>", "Maximum watch duration; timing out leaves the deployment running", timeoutMilliseconds, 600_000)
   .action(async (opts) => {
-    const link = readProjectLink();
+    // An explicit project selects its own target, without inheriting a different
+    // project's branch, environment or connection from the working directory.
+    const link = opts.project ? null : readProjectLink();
+    assertLinkedProjectConnection(link);
+    const env = parseDeploymentEnvironment(opts.env ?? link?.defaults?.environment ?? "production");
 
-    const env: string = opts.env;
-    if (env !== "production" && env !== "preview") {
-      err(`Invalid --env "${env}". Must be "production" or "preview".`);
-      process.exit(1);
-    }
-
-    // Auto-detect: outside a git repo, deploy the folder via the upload flow
-    // (same pipeline as the MCP / dashboard folder deploy). The git-only flags
-    // don't apply to a fresh upload, so they force the git path if set.
+    // Never turn a redeploy from the wrong directory into an implicit upload.
+    // --name remains an opt-in for existing folder-deploy scripts outside Git.
     const inGitRepo = git(["rev-parse", "--is-inside-work-tree"]) === "true";
     // --service-ids scopes BOTH a git redeploy and a folder redeploy (so a
     // backend-only change doesn't recreate stateful services), so it is NOT
     // git-only; commit/smart-route/refresh genuinely need git history.
-    const gitOnlyFlags = opts.commit || opts.smartRoute || opts.refresh;
+    const gitOnlyFlags = opts.branch || opts.commit || opts.smartRoute || opts.refresh;
+    if (opts.folder && gitOnlyFlags) {
+      err("--folder cannot be combined with --branch, --commit, --smart-route, or --refresh.");
+      exitCommand(1);
+    }
+    const folderUpload = opts.folder || (!inGitRepo && !gitOnlyFlags && opts.name);
+    const targetProjectId: string | undefined = opts.project || link?.projectId;
+    if (!inGitRepo && !gitOnlyFlags && !folderUpload && !targetProjectId) {
+      err(
+        "No linked project in this directory. Pass --project <id> to redeploy a project. " +
+          "To upload this directory, pass --folder or --name <name>.",
+      );
+      exitCommand(1);
+    }
     const serviceIds: string[] | undefined = opts.serviceIds
       ? opts.serviceIds
           .split(",")
@@ -80,11 +92,11 @@ export const deployCommand = new Command("deploy")
     let deploymentId: string | undefined;
     let payload: Record<string, unknown> | undefined;
 
-    if (!inGitRepo && !gitOnlyFlags) {
+    if (folderUpload) {
       const spinner = isJsonMode() ? null : ora("Deploying folder").start();
       try {
-        const result = await deployFolder({
-          cwd: process.cwd(),
+        const result = await getShipClient().deploy({
+          source: { type: "directory", path: process.cwd() },
           name: opts.name,
           projectId: opts.project || link?.projectId,
           environment: env,
@@ -94,11 +106,11 @@ export const deployCommand = new Command("deploy")
             if (spinner) spinner.text = m;
           },
         });
-        deploymentId = result.deploymentId;
+        deploymentId = result.deployment_id;
         payload = {
           success: true,
-          deployment_id: result.deploymentId,
-          project_id: result.projectId,
+          deployment_id: result.deployment_id,
+          project_id: result.project_id,
           ...(result.configDiagnostics && { configDiagnostics: result.configDiagnostics }),
         };
         spinner?.succeed(deploymentId ? `Deployment queued: ${deploymentId}` : "Deployment queued");
@@ -112,21 +124,22 @@ export const deployCommand = new Command("deploy")
         for (const e of result.configDiagnostics?.errors ?? []) err(`    • ${e}`);
         for (const w of result.configDiagnostics?.warnings ?? []) info(`    ⚠ ${w}`);
       } catch (e) {
+      rethrowCommandExit(e);
         spinner?.fail("Folder deploy failed");
         err(e instanceof ApiError ? e.message : String(e));
-        process.exit(1);
+        exitCommand(1);
       }
     } else {
       const projectId: string | undefined = opts.project || link?.projectId;
       if (!projectId) {
         err("No project specified. Pass --project <id> or run `openship init` to link one.");
-        process.exit(1);
+        exitCommand(1);
       }
 
       const branch: string | undefined =
         opts.branch || link?.branch || git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
-      const body = {
+      const body: CreateDeploymentInput = {
         projectId,
         branch,
         commitSha: opts.commit || undefined,
@@ -139,20 +152,18 @@ export const deployCommand = new Command("deploy")
       };
 
       const spinner = isJsonMode() ? null : ora("Triggering deployment").start();
-      let res: CreateResponse;
+      let result: CreateDeploymentResult;
       try {
-        res = await apiRequest<CreateResponse>("/deployments", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
+        result = await getShipClient().deployments.create(body);
       } catch (e) {
+      rethrowCommandExit(e);
         spinner?.fail("Deployment failed to start");
         err(e instanceof ApiError ? e.message : String(e));
-        process.exit(1);
+        exitCommand(1);
       }
 
-      deploymentId = res.data?.deployment_id;
-      payload = res.data ?? (res as Record<string, unknown>);
+      deploymentId = result.deployment_id;
+      payload = { ...result };
       spinner?.succeed(deploymentId ? `Deployment queued: ${deploymentId}` : "Deployment queued");
     }
 
@@ -171,6 +182,6 @@ export const deployCommand = new Command("deploy")
       return;
     }
 
-    const result = await streamDeploymentLogs(deploymentId);
-    if (result.success === false || result.status === "cancelled") process.exit(1);
+    const result = await streamDeploymentLogs(deploymentId, opts.timeout);
+    if (result.success === false || result.status === "cancelled") exitCommand(1);
   });

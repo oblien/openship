@@ -1,7 +1,9 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Cloud, HardDrive, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -44,7 +46,7 @@ function SectionCard({
 }: {
   title: string;
   description?: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   iconTone: keyof typeof ICON_TONES;
   actions?: React.ReactNode;
   children: React.ReactNode;
@@ -55,7 +57,7 @@ function SectionCard({
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}
         >
-          <Icon className="size-4" />
+          <UiIcon name={Icon} className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
@@ -115,7 +117,7 @@ function PersistentPathsCard(): React.JSX.Element {
       // Read back rather than echo the draft: the server normalizes bare paths
       // into real mounts, and on a reset only it knows what the framework
       // default resolves to.
-      const fresh = await projectsApi.getObjectStorage(id).catch(() => null);
+      const fresh = await projectsApi.getObjectStorage(id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/StorageSettings"); return null; });
       updateBuild({
         volumes: fresh?.data?.volumes ?? volumes,
         resolvedVolumes: fresh?.data?.resolvedVolumes ?? volumes ?? [],
@@ -131,7 +133,7 @@ function PersistentPathsCard(): React.JSX.Element {
 
   return (
     <SectionCard
-      icon={HardDrive}
+      icon={"hard-drive"}
       iconTone="amber"
       title={s.title}
       description={s.description}
@@ -142,7 +144,7 @@ function PersistentPathsCard(): React.JSX.Element {
             onClick={() => setEditing(true)}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
           >
-            <Pencil className="size-3.5" />
+            <UiIcon name="edit" className="size-3.5" />
             {s.edit}
           </button>
         )
@@ -166,7 +168,7 @@ function PersistentPathsCard(): React.JSX.Element {
               onClick={() => void save(splitLines(draft))}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {s.save}
             </button>
             <button
@@ -187,7 +189,7 @@ function PersistentPathsCard(): React.JSX.Element {
                 onClick={() => void save(null)}
                 className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                <RotateCcw className="size-3.5" />
+                <UiIcon name="rotate-left" className="size-3.5" />
                 {s.reset}
               </button>
             )}
@@ -249,7 +251,8 @@ function ObjectStorageCard(): React.JSX.Element {
     try {
       const res = await projectsApi.getObjectStorage(id);
       setView(res.data ?? null);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/StorageSettings");
       // A read failure leaves the card in its empty state; the bind attempt will
       // surface the real error with a message worth showing.
       setView(null);
@@ -319,7 +322,7 @@ function ObjectStorageCard(): React.JSX.Element {
 
   return (
     <SectionCard
-      icon={Cloud}
+      icon={"cloud"}
       iconTone="primary"
       title={s.title}
       description={s.description}
@@ -331,7 +334,7 @@ function ObjectStorageCard(): React.JSX.Element {
             onClick={() => void unbind()}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-60"
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            {busy ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="trash" className="size-3.5" />}
             {s.disconnect}
           </button>
         ) : (
@@ -347,7 +350,7 @@ function ObjectStorageCard(): React.JSX.Element {
     >
       {loading ? (
         <p className="text-[13px] text-muted-foreground">
-          <Loader2 className="mr-1.5 inline size-3.5 animate-spin" />
+          <UiIcon name="spinner" className="mr-1.5 inline size-3.5 animate-spin" />
           {s.loading}
         </p>
       ) : open ? (
@@ -418,7 +421,7 @@ function ObjectStorageCard(): React.JSX.Element {
               onClick={() => void bind()}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
-              {busy && <Loader2 className="size-3.5 animate-spin" />}
+              {busy && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {s.testAndConnect}
             </button>
             <button

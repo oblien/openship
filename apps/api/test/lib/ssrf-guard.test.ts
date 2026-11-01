@@ -6,7 +6,7 @@ import {
   assertPublicUrlLiteral,
   isBlockedHostname,
   isPrivateIp,
-} from "../../src/lib/ssrf-guard";
+} from "@repo/platform/engine/lib/ssrf-guard";
 
 // The literal (sync, no-DNS) half of the guard — the create/update-time reject.
 // Fetch-time DNS pinning is covered by safe-fetch.test.ts.
@@ -47,6 +47,9 @@ describe("isPrivateIp", () => {
 });
 
 describe("isBlockedHostname", () => {
+  it.each(["localhost.", "metadata.google.internal.", "169.254.169.254.", "127.0.0.1."])("rejects a terminal DNS dot: %s", host => {
+    expect(() => assertPublicHostLiteral(host)).toThrow(SsrfError);
+  });
   it("blocks loopback and internal-only suffixes", () => {
     for (const host of [
       "localhost",

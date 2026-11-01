@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash } from "node:crypto";
 import { mkdtemp, open, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -78,7 +79,7 @@ export async function readStagedJson(
 
     return JSON.parse(await readFile(path, "utf8")) as unknown;
   } finally {
-    await handle.close().catch(() => undefined);
+    await handle.close().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/staged-payload"); return undefined; });
     await rm(dir, { recursive: true, force: true });
   }
 }

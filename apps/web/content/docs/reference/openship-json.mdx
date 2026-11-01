@@ -10,6 +10,10 @@ project. It mirrors what you'd otherwise set in the [deploy wizard](/docs/guides
 so a repo becomes "ready to ship on Openship" and [auto-deploy on push](/docs/guides/auto-deploy)
 and `openship deploy` become deterministic — no wizard needed.
 
+When refreshing services for a project with a saved subfolder, Openship uses that subfolder's
+`openship.json` when present. Otherwise, it uses the repository-root manifest, preserving existing
+service definitions and environment defaults. The saved build directory still applies.
+
 <Callout title="Authoritative overlay">
   Openship **auto-detects** your stack first, then applies every field present in `openship.json` on
   top. Fields you omit keep their detected value. So a good `openship.json` is **small** — declare
@@ -60,6 +64,11 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
     installCommand: { type: "string", description: "Command that installs dependencies." },
     buildCommand: { type: "string", description: "Command that builds the app." },
     startCommand: { type: "string", description: "Command that starts the server in production." },
+    releaseCommands: {
+      type: "string[]",
+      description:
+        "Commands run once per deploy, after the build and before the new version goes live. A failure fails the deploy. See Release commands.",
+    },
     outputDirectory: {
       type: "string",
       description: "Directory the build writes to (dist, .next, build, out).",
@@ -68,12 +77,74 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
       type: "string",
       description: 'Docker image used for the build (e.g. "node:22").',
     },
+    runtimeVersion: {
+      type: "string",
+      description: "Runtime version resolved by the selected stack. Omit to preserve detected defaults. See Runtime version selection below.",
+    },
+    runtimeImage: {
+      type: "string",
+      description: "Optional production base image for generated Docker builds. Omit to use the managed stack default. See Custom runtime images below.",
+    },
     productionPaths: {
       type: "string[]",
       description: "Paths shipped to the runtime as the production artifact.",
     },
   }}
 />
+
+## Runtime version selection
+
+`runtimeVersion` is one setting shared by runtime policies; it is not a global PHP enum.
+The selected or detected stack validates supported versions and chooses matching build/runtime images.
+Explicit selection currently supports PHP 8.3 and 8.4 for generated Docker builds. Other runtimes
+keep their existing repository detection and defaults; an explicit unsupported selection fails
+before a project write or build instead of being ignored.
+
+For the Laravel and Symfony stacks, select a version in the deploy wizard's
+build settings or declare it in `openship.json`:
+
+```json
+{
+  "framework": "laravel",
+  "runtimeVersion": "8.3",
+  "installCommand": "composer install --no-dev --optimize-autoloader"
+}
+```
+
+| Selection | Builder | Runtime |
+| --- | --- | --- |
+| Not declared (unchanged default) | `php:8.4-cli` | `dunglas/frankenphp:1-php8.4-bookworm` |
+| `8.3` | `php:8.3-cli-bookworm` | `dunglas/frankenphp:1-php8.3-bookworm` |
+| `8.4` | `php:8.4-cli-bookworm` | `dunglas/frankenphp:1-php8.4-bookworm` |
+
+A new selection keeps Composer installation enabled even when there is no JavaScript asset build.
+You can disable Build when your source already contains its prepared dependencies.
+
+These are the currently tested selections. Other major/minor or patch selections are rejected.
+Both selected stages verify their actual PHP major/minor version. The generated recipe checks
+production Composer requirements in the builder and runtime, including PHP and extensions.
+[Composer's platform check](https://getcomposer.org/doc/03-cli.md#check-platform-reqs) uses the real
+platform, even if `config.platform` or the install command's `--ignore-platform-reqs` pretends otherwise.
+An incompatible build fails before activation, leaving the current deployment available.
+
+A declared `buildImage` overrides the managed builder, while the selected FrankenPHP runtime stays
+fixed. The custom builder must provide the selected PHP version and support the generated
+Composer/extension setup; known incompatible official PHP tags are rejected immediately and
+custom images are checked during the build. Changing the version replaces a previously managed
+builder default, but does not overwrite a custom builder. When you select a different version with
+a custom builder, update both settings together.
+
+This project-level setting applies to generated Docker builds on self-hosted and managed Cloud
+Docker destinations. It cannot configure a user-owned Dockerfile, Compose/monorepo service image,
+bare runtime, static site, or prebuilt image. Explicit selection on these paths is refused; configure
+PHP in their own image instead. Existing projects and user Dockerfiles without `runtimeVersion` are unchanged.
+
+The API and SDK accept `runtimeVersion` in project creation, ensure/update and build options. Send
+`null` in project options to restore the default PHP version; custom builder overrides are preserved. Folder scans, the SDK source deployment flow,
+and `openship deploy --folder` preserve repository declarations. The CLI validates this field with
+`openship config validate`. Version and resolved image references are frozen in each deployment
+snapshot; rollback reuses that release's retained application image rather than the latest project
+setting. Openship Edge, TLS, routing and resource monitoring continue through the existing deployment path.
 
 ## Runtime
 
@@ -94,8 +165,423 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
       description:
         "Paths kept across deploys. Omit to inherit the framework defaults; [] turns persistence off.",
     },
+    optimize: {
+      type: "boolean",
+      description:
+        "Laravel only. Opt-in cache warming for the web role. Default false. true prefixes the web command with `php artisan optimize && `. See Laravel cache warming below.",
+    },
   }}
 />
+
+## Laravel cache warming
+
+`php artisan optimize` warms Laravel's config, route, event, and view caches. A
+warmed web role answers each request faster. The default is off, so an existing
+project keeps its exact web command until it opts in.
+
+Warming helps the web role only. It does not fix cold start, because cold start
+is dominated by PHP opcode compilation, not cache state. Workers and schedulers
+gain little, so leave them unwarmed.
+
+<Callout title="Run optimize at startup, never at build" type="warn">
+`optimize` runs `config:cache`. `config:cache` freezes whatever environment is
+present when it runs. After that, every `env()` call outside `config/*.php`
+returns `null`.
+
+Warm the cache at startup, after Openship injects the runtime environment. Do
+not warm it in `buildCommand`, which freezes build-time values. Do not warm it
+in `releaseCommands`, which runs in a throwaway container whose
+`bootstrap/cache` is discarded. Read configuration through `config()` and keep
+`env()` inside `config/*.php`.
+</Callout>
+
+### Opt-in flag
+
+Set `optimize: true` to warm the web role. The flag prefixes the web command and
+keeps the rest of the command unchanged.
+
+```json
+{
+  "framework": "laravel",
+  "optimize": true
+}
+```
+
+Warming runs before the server through `&&`. A failing `php artisan optimize`
+short-circuits the chain, so the web role never boots. Opt in only when the
+command succeeds reliably in your runtime environment.
+
+`optimize: true` always prepends `php artisan optimize && `. Do not also put
+`php artisan optimize` in a custom `startCommand`, or it runs twice. The repeat
+is harmless but wasteful.
+
+### Override the web command directly
+
+You can warm the web role without the flag. Override `startCommand` and keep the
+`exec` form. `optimize` runs first. `exec` then hands PID 1 to FrankenPHP, so
+`SIGTERM` still drains in-flight requests.
+
+```json
+{
+  "framework": "laravel",
+  "startCommand": "php artisan optimize && SERVER_NAME=\":$PORT\" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile"
+}
+```
+
+<Callout title="Monorepo caveat" type="warn">
+Neither the `optimize` prefix nor a manual `startCommand` override is applied to
+a Laravel sub-app selected inside a JavaScript-workspace monorepo — a repo root
+that declares a `pnpm`, `npm`, `yarn`, or Bun workspace. In that layout the
+sub-app's web command is re-derived from the bare preset. This is pre-existing
+behavior and not specific to `optimize`. Standalone Laravel repos, and Laravel
+repos without a JavaScript workspace at the root, are unaffected.
+</Callout>
+
+### Warm a worker or scheduler
+
+Warming a worker gives a small, one-time benefit, so prefer warming the web role
+only. To warm a worker anyway, declare it in `roles`, and keep any other roles you
+declared there. Prefix its command with `php artisan optimize && ` and keep the
+`exec` form. The fields and rules are in
+[Runtime roles](#runtime-roles).
+
+```json
+{
+  "roles": [
+    { "name": "queue", "kind": "worker", "command": "php artisan optimize && exec php artisan queue:work", "stopGracePeriod": "90s" },
+    { "name": "scheduler", "kind": "scheduler", "command": "php artisan optimize && exec php artisan schedule:work", "stopSignal": "SIGTERM", "stopGracePeriod": "10s", "singleton": true }
+  ]
+}
+```
+
+These are example shutdown budgets. Longer scheduled runs may need a larger grace period on
+a Laravel version verified to drain.
+
+## Custom runtime images
+
+Docker source builds offer a **Runtime image** field under Advanced build settings.
+It is a production **base** image, separate from the builder and the final application image.
+Omit it in `openship.json`, or send `runtimeImage: null` through project options, to restore the managed default.
+
+```json
+{
+  "framework": "laravel",
+  "runtimeVersion": "8.3",
+  "runtimeImage": "registry.example.com/team/php-runtime:8.3"
+}
+```
+
+The stack selects its Docker recipe, even when a custom image has a different name.
+A PHP runtime base must provide the selected PHP version, FrankenPHP, `install-php-extensions`,
+and the `www-data` user. The recipe checks these capabilities and Composer's actual platform.
+Known incompatible official PHP image/version combinations are rejected before settings are saved.
+Other custom interpreter images compare the actual builder/runtime fingerprint during the build
+(runtime ABI or version, architecture, and libc where applicable). Compiled-native applications
+continue through deployment readiness checks. A failed build does not replace the live application.
+
+Overrides must support the generated recipe's shell, directories and package setup.
+Use your own Dockerfile for a different server implementation or filesystem layout.
+Project-level overrides are refused for bare runtimes, prebuilt images, static extraction and
+service-owned Compose/monorepo builds. Those paths manage their images directly.
+
+Omitted options preserve a saved override; `null` clears it. A version change preserves custom
+image overrides and validates the new combination. Version, resolved images and the override
+flag are frozen in each deployment snapshot, so retained-image rollback restores its original
+application without changing the current project settings.
+
+## Release commands
+
+`releaseCommands` runs once per deploy, **after the build and before the new version goes
+live**: the place migrations belong. Each command runs in order, its output streams into
+the deploy log, and a non-zero exit **fails the deploy**: nothing cuts over, and the
+version that was already serving keeps serving.
+
+```json
+{
+  "releaseCommands": ["php artisan migrate --force"]
+}
+```
+
+Nothing is injected for you. A framework's release set is a choice, so an app with no
+`releaseCommands` runs no release phase at all. The equivalents elsewhere:
+
+| Stack   | Typical release commands             |
+| ------- | ------------------------------------ |
+| Laravel | `php artisan migrate --force`        |
+| Rails   | `bundle exec rails db:prepare`       |
+| Django  | `python manage.py migrate --noinput` |
+
+Rails uses `db:prepare` rather than `db:migrate` because it also creates the database and
+loads the schema when it is empty, which is exactly the state of a first deploy.
+
+Set these commands in **Build settings → Before activation**, `openship.json`, or the
+project API/SDK. A repository scan seeds a new project; existing projects keep their saved
+commands, including an explicit empty list. The list is frozen on each deployment.
+
+Each command gets the same environment variables as your start command and a 10-minute
+budget. It runs once per forward deployment attempt, in list order. Failure, timeout, or
+cancellation stops activation and leaves the previous application running.
+
+On Docker, each command runs in a temporary container using the candidate image, the
+project's persistent mounts, and its connected-service networks. It publishes no ports
+and does not restart. Openship removes the container and its anonymous scratch volumes
+afterwards. On Bare, commands run in the staged release directory **after persistent
+paths are linked**, before the supervisor changes the running app. When a forward deploy
+reuses a retained Bare release, the command gets a temporary copy so it cannot edit the
+live application's files.
+
+<Callout title="Use persistent storage for data" type="warn">
+Only database and mounted-volume changes survive a Docker release container. Put
+image-local cache generation, symlinks, and collected assets in the build or start
+command. Store SQLite files under a declared persistent path, such as `storage/`, so the
+release command and app use the same database on both Docker and Bare.
+</Callout>
+
+<Callout title="Runtime support" type="warn">
+Release commands run on single-app Docker or Bare deployments, including portless
+workers. On self-hosted Docker and Desktop, one inherited source app can also have
+private image-based infrastructure in the same project, such as PostgreSQL or Redis.
+Openship prepares those services first, waits for their declared health checks and
+startup stability, then runs the candidate image's commands on the shared project
+network before starting its roles and activating web. Configure meaningful service
+health checks; container readiness does not prove your application credentials work.
+
+The primary app must retain its inherited project build/runtime settings. Multiple
+source apps, explicit Compose projects, public attached apps, and primary service-row
+command/environment/volume overrides remain on the general service pipeline. The primary
+app keeps its project port; additional service-row ports and explicit cross-service
+path tables also remain on the general pipeline. A database
+in its own connected project continues to work without changing the app's shape.
+
+Full Compose/monorepo deployments, static sites, and runtimes without one-off command
+support **fail before activation** when commands are configured. Per-service release
+commands are not implemented. An action explicitly targeting only selected services skips
+the main app's release commands.
+</Callout>
+
+<Callout title="Rollbacks and database changes" type="warn">
+App rollbacks and roles-only configuration carry the current attached infrastructure;
+they do not restore old database credentials, configuration or data. Attached service
+changes become independently live before the app activates and remain live if a later
+migration or role startup fails. Unchanged infrastructure keeps its container and volumes.
+Use the migration workflow to move the app and its attached data to another server.
+
+After a completed app build fails during activation, **Retry deployment** reuses that exact
+image and the saved release commands and roles without source or a rebuild. Confirmed
+attached infrastructure remains running, including after a failed first deployment.
+
+Rollbacks skip release commands, including rollbacks that rebuild from Git. Other redeploys
+run the commands saved on that deployment, even when they reuse an existing image.
+
+Use idempotent commands and schema changes compatible with the previous application.
+**Rolling code back does not undo database changes**, and a command may have made partial
+changes before failing. Openship does not promise a transaction across multiple commands.
+</Callout>
+
+## Runtime roles
+
+`roles` declares extra long-running processes that run **beside your web app, from the
+same built image**: queue workers and schedulers. Each replica is its own container, so a
+worker can scale without scaling the web app, and a scheduler runs exactly once.
+
+```json
+{
+  "roles": [
+    {
+      "name": "queue",
+      "kind": "worker",
+      "command": "exec php artisan queue:work --tries=3",
+      "replicas": 2,
+      "stopGracePeriod": "90s"
+    },
+    {
+      "name": "scheduler",
+      "kind": "scheduler",
+      "command": "exec php artisan schedule:work"
+    }
+  ]
+}
+```
+
+Roles are read from `openship.json` when a project is created from a repository scan.
+Like release commands, an existing project
+keeps the roles it has saved, so change those through the project API/SDK (`roles`; send
+`[]` to remove them). The list is frozen on each deployment, and a project holds at most
+20 roles.
+
+### Fields
+
+| Field             | Rules                                                                                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | Required. A DNS label: lowercase letters, digits and dashes, starting and ending with a letter or digit, at most 63 characters. Unique within the project.             |
+| `kind`            | Required. `worker` or `scheduler`. `web` is rejected: the web process always comes from `startCommand`.                                                                |
+| `command`         | Required, non-empty. Runs under `sh -c` in the same image as the web app.                                                                                              |
+| `replicas`        | Optional, workers only. An integer from 1 to 100. Defaults to 1. Cannot be above 1 on a singleton.                                                                     |
+| `singleton`       | Optional. Run exactly one instance. A `scheduler` is always a singleton, so `replicas` above 1 on a scheduler is an error.                                              |
+| `health`          | Optional. `{ "kind": "process" }` or `{ "kind": "exec", "command": "..." }`. `exec` requires a non-empty `command`. `http` is rejected, because roles have no port.   |
+| `stopSignal`      | Optional. A signal name such as `SIGQUIT`, or a positive integer. When omitted, the image's `STOPSIGNAL` applies, or `SIGTERM` if the image sets none.                 |
+| `stopGracePeriod` | Optional. How long to wait after the stop signal before the process is killed: `90s`, `1m30s`, `10m`, or a bare number of seconds. When omitted, the Docker daemon's default stop timeout applies. |
+
+### Where roles run
+
+Source scans expose matching framework roles as `rolePresets`. These are suggestions,
+separate from enabled `roles`; scanning a repository never starts a queue or scheduler.
+An explicit `roles` array, including `[]`, suppresses suggestions. Presets use file and
+dependency evidence, which can include development dependencies: review a suggested
+command before enabling it. Explicit roles remain the saved project configuration.
+Alternative queue backends share a preset slot; if both match, neither is suggested.
+Independent workers do not exclude each other merely because both are workers.
+
+Roles run on **single-app projects deployed to a Docker server**, including the bounded
+one-source-app plus private image-infrastructure arrangement described above. A deploy that declares
+roles is refused **before the build starts**, with no build, release command or container
+run, on:
+
+- Openship Cloud
+- direct (bare) hosts
+- Kubernetes
+- general multi-service projects (Compose or multiple source apps)
+- static sites
+
+Moving a project that has roles to another server is refused as well.
+
+### What a role container gets
+
+A role container starts from the same image as the web container and gets:
+
+- the web container's environment variables, **without `PORT`**
+- the project's persistent storage
+- the same resource limits and restart policy
+
+It publishes **no port, gets no route and no network alias**: only the web container
+answers to the app's network name. It joins the project network and the networks of any
+connected services **before its process starts**, so a worker can reach the database from
+its first instruction.
+
+### Deploy order
+
+1. The build runs.
+2. Release commands run.
+3. Roles start.
+4. The web container goes live.
+
+**Workers** start beside the previous version's workers. The old ones keep running, and
+are removed only once the new web container is live.
+
+**Singletons** (schedulers, or `singleton: true`) hand over stop-first. A new role continues
+a previous one only when it keeps the name, effective singleton status (`kind: "scheduler"` or
+`singleton: true`) and the command. For a continued singleton, the old container is stopped
+and retained before the new one starts.
+
+Continuation compares saved role fields. It does not detect changes in behavior caused by a
+new deployment image, environment, inherited image settings or application code behind an
+unchanged command.
+
+A previous singleton that no new role continues is outgoing. A rename, a command change, a
+name swap or a change to a scalable worker each make a singleton outgoing. When the deploy
+also adds or changes a role, Openship stops and retains each outgoing singleton after the
+unchanged workers pass their startup check, and before any added or changed role starts.
+Otherwise an outgoing singleton keeps running until the new web container is live.
+
+When unwinding a failed deploy, Openship attempts to remove the new containers and restore
+retained singletons. A continued singleton is restored only after its replacement is
+confirmed removed. An outgoing singleton is restored only after every added or changed role
+is confirmed removed.
+
+This ordering uses the previous deployment's saved role definitions. Without them, only a
+singleton that keeps its name hands over stop-first. Runtime failures or an interrupted
+deploy can leave containers unresolved. Reconcile them, and restart the scheduler if needed,
+before redeploying. A handover does not guarantee exactly-once scheduled execution, so keep
+application-level guards such as Laravel's `onOneServer()`.
+
+### Startup check
+
+Every role container must stay up through the stabilization window, **15 seconds** by
+default. This check always runs for roles, whatever the project's readiness settings,
+because a role has no port to probe. If the role declares an `exec` health command, it
+runs once, after the window. A failed startup check fails the deploy and triggers the
+rollback attempt described above. The startup check runs only during a deploy.
+Afterward, container monitoring watches each recorded role replica through the same
+health checks, incident history and notifications as the web container. It checks
+process state and restarts; it does not repeatedly execute a role's `health.command`.
+Deployments, intentionally stopped projects and loss of the observer's network use
+the same alert suppression rules as other workloads.
+
+<Callout title="Use exec so the stop signal reaches your process" type="warn">
+The command runs under `sh -c`. Without `exec`, the shell stays as the main process and
+the stop signal never reaches your worker, so it is killed after the grace period instead
+of finishing its job. Write `exec php artisan queue:work`, not `php artisan queue:work`,
+and set `stopSignal` and `stopGracePeriod` to match how long a job can run.
+
+`exec` lets the stop signal reach your process. Whether the process exits depends on the
+command. For example, Laravel 12.70.0's `schedule:work`, running as PID 1, kept ticking after
+SIGTERM until it was killed at the end of the grace period. A longer grace period only delayed
+scheduler replacement there.
+</Callout>
+
+### Lifecycle
+
+- Pausing, resuming and restarting the project act on its roles too.
+- Deleting a deployment removes its role containers.
+- Clearing a project's roles retires the running ones on the next deploy.
+- Failed retirement produces a deployment warning naming the affected roles and
+  containers. Deployment reconciliation retries incomplete handover cleanup.
+  Retention does not reclaim its records or artifacts while recovery is pending.
+
+### Interrupted deployments
+
+New deployments record role identities before Docker creation and record a
+singleton stop intent before sending its stop request. After a controller restart,
+an unpublished handover removes its replacements before restoring the still-active
+predecessor. Once the new web release passed readiness and routing and commit was
+recorded, recovery finishes forward instead of restarting an older scheduler.
+
+An unreachable server or uncertain cleanup keeps the handover pending. Another
+rollout, project edit or runtime write is refused until recovery finishes, so a
+timeout cannot authorize a second scheduler. Explicitly kept containers remain
+untouched; deleting that cancelled deployment discards its replacements safely.
+
+Older releases have no handover journal. If an earlier untracked role process is
+still present, a new role rollout stops with the container IDs requiring review.
+Openship does not delete them solely because their labels name another release.
+
+### Status and logs
+
+**Apps & Services** and **Topology** show the active deployment's roles, their replica
+counts, live status, and observed restart counts. Open **View logs** on a replica to
+read its output under **Monitoring & Logs**. The runtime log picker also lists role
+replicas alongside the application and its companion services.
+
+Status checks only inspect the runtime; they do not start processes or run health
+commands. An unreachable server shows unknown status with Retry. A saved log link
+is pinned to its deployment, so it cannot silently open a newer release's container.
+
+Role configuration is still set in `openship.json` or through the project API. The SDK
+exposes the same read-only inventory and log selection:
+
+```ts
+const projectId = "proj_example";
+const runtime = await ship.projects.getRuntimeRoles(projectId);
+if (runtime.deploymentId) {
+  const logs = await ship.projects.runtimeLogs(projectId, {
+    role: "queue",
+    replica: 1,
+    deploymentId: runtime.deploymentId,
+    tail: 100,
+  });
+}
+```
+
+From the CLI:
+
+```bash
+openship project roles proj_example
+openship project logs proj_example --role queue --replica 1 --follow
+```
+
+On the server, role containers are named
+`openship-<project slug>-<deployment id>-<role>-<replica>`; `docker logs <name>`
+remains available for direct inspection.
 
 ## Persistent storage
 
@@ -120,7 +606,7 @@ share one. On a bare (non-container) deploy the same paths are kept outside the 
 directory and symlinked in. Openship Cloud has no volume primitive: a declared mount is
 reported and skipped there, so use object storage for uploads instead.
 
-Compose services declare their own mounts under [`services[].volumes`](#services).
+Compose services declare their own mounts under [`services[].volumes`](#services-compose).
 
 ## Environment variables
 
@@ -186,26 +672,24 @@ automatically; a value saved in the dashboard or CLI for the same key overrides 
 CPU/memory limits for the project's containers — a named tier, **or** explicit values (which become
 the `custom` tier). See [Sleep mode & resources](/docs/guides/sleep-mode-resources).
 
-<Callout title="Self-hosted defaults to no limits">
-On a self-hosted instance the default is **`unlimited`** — the machine is the ceiling, because it's
-your hardware. Set a tier or explicit values only when you deliberately want to cap a container.
-A non-zero value is validated against the **target machine's real capacity**, so a 64 GB box can
-hand a container 64 GB.
+<Callout title="Full server capacity by default">
+The default is **`unlimited`** on both connected and managed Cloud servers. A container
+can use the host's available CPU and memory, shared with the other applications on that
+server. Select a tier or explicit values only when you want an additional container cap.
 
-On Openship Cloud a workspace is metered and must be sized, so `unlimited` isn't available there and
-an omitted value falls back to the `low` tier.
-
+The Cloud subscription sets the server's allocation separately. Changing a project's
+resource tier never creates or resizes a server.
 </Callout>
 
 <TypeTable
   type={{
     tier: {
-      type: '"unlimited" | "micro" | "low" | "medium" | "high"',
-      description: 'Named sizing tier. "unlimited" = no caps (self-hosted only).',
+      type: '"unlimited" | "micro" | "low" | "medium" | "high" | "xlarge"',
+      description: 'Named container limit. "unlimited" uses the server’s available capacity.',
     },
     cpuCores: { type: "number", description: "Fractional vCPU cores. 0 = no limit." },
     memoryMb: { type: "integer", description: "RAM in MB. 0 = no limit." },
-    diskMb: { type: "integer", description: "Disk in MB (cloud workspaces only). 0 = no limit." },
+    diskMb: { type: "integer", description: "Resource metadata in MB. Managed server disk allocation is set by its subscription, not by this project field." },
   }}
 />
 
@@ -281,7 +765,7 @@ re-read on every deploy, and `build:` contexts resolve relative to it, exactly a
     resources: {
       type: "object",
       description:
-        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits.",
+        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits. swapDisabled runs the container without swap and requires a positive memory limit.",
     },
   }}
 />
@@ -300,11 +784,32 @@ A compose file's own limits are honored too — Openship reads `mem_limit` / `cp
 `deploy.resources.limits.{memory,cpus}` off each service and applies them over the project-wide
 setting.
 
+Set a service's `resources.swapDisabled` to `true` to disable swap for its Docker container.
+It needs a positive `memoryMb` on that service or inherited from the project. Openship
+rejects edits that remove a required memory limit and refuses hosts whose swap-limit
+support cannot be verified before replacing the running container. This does not change
+the host's swap configuration or build-container limits. An explicit `false` enables
+normal Docker swap behavior on the next deployment; an omitted setting preserves a
+saved service override during Compose sync.
+
+
 ## Monorepo
 
 `monorepo` overrides Openship's detected sub-apps. Entries in `apps[]` are matched to detected
 sub-apps by `rootDirectory` and override their build settings — they don't declare apps from
 scratch (the detector finds the apps).
+
+Each override must have a different normalized `rootDirectory`. Declaring a web
+process and a worker at the same root is not a supported multi-app declaration.
+`openship config validate` rejects duplicate roots; source scans report unmatched
+apps and workspace overrides in the configuration diagnostics.
+
+Create a monorepo through the repository import flow, which supplies the detected
+app metadata. The API/SDK also accepts that metadata as `monorepoApps`. Setting
+`projectType: "monorepo"` (or CLI `project create --type monorepo`) without it now
+fails before creating a project. A local CLI import scans the workspace first.
+For independent processes without containers, use separate projects pointed at
+the required roots and start commands.
 
 ```json
 {
@@ -348,13 +853,15 @@ scratch (the detector finds the apps).
 
 | `openship.json`                                                                                                | Deploy wizard / API                               |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `productionPaths`, `rootDirectory` | Build settings                                    |
+| `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `runtimeVersion`, `runtimeImage`, `productionPaths`, `rootDirectory` | Build settings                                    |
 | `port`, `productionMode`, `runtime`                                                                            | Runtime settings (`hasServer`, runtime isolation) |
+| `releaseCommands`                                                                                              | Build settings → Before activation                  |
+| `roles`                                                                                                        | No dashboard field: set in `openship.json` or the project API |
 | `volumes`                                                                                                      | Configuration → Persistent storage                |
 | `env`                                                                                                          | Environment variables (seeded as editable rows)   |
 | `domains`                                                                                                      | Public endpoints / custom domains                 |
 | `routes`                                                                                                       | Reverse-proxy routing (`routingConfig`)           |
-| `resources`                                                                                                    | Cloud resource tier / custom sizing               |
+| `resources`                                                                                                    | Optional container resource limits               |
 | `services`                                                                                                     | Compose services                                  |
 | `monorepo`                                                                                                     | Monorepo sub-apps + workspace                     |
 
@@ -362,3 +869,42 @@ scratch (the detector finds the apps).
 
 - [Guide: deploy with openship.json](/docs/guides/openship-json)
 - [Deploy from GitHub](/docs/guides/deploy-from-github) · [Auto-deploy on push](/docs/guides/auto-deploy)
+
+## Edit running role configuration
+
+For a supported Docker app, open **Apps & Services → Configure roles** to
+add workers or schedulers and adjust worker replicas. Apply creates a configuration
+deployment using the active container's immutable image and frozen environment.
+It does not rebuild, run release commands, restart web, or rewrite domains. Unchanged
+replicas keep their container identities; changed roles use the normal readiness,
+singleton handover, cancellation, monitoring and recovery flow. A scheduler remains
+one instance. Inspect the configuration deployment's logs if cleanup needs attention.
+
+The editor starts from the **active release's** definitions. Saving also updates the
+project's desired roles for later deployments. An explicit `roles` array in
+`openship.json` overrides those project settings on the next source deployment;
+update the repository when that file is your source of truth. Failed configuration
+attempts leave the active release unchanged; its frozen roles remain authoritative.
+A normal rollback restores the target release's frozen role definitions and replica
+counts through the existing retained-image deployment path.
+
+The SDK exposes `ship.projects.getRuntimeRoleConfiguration(id)` and
+`ship.projects.configureRuntimeRoles(id, { expectedDeploymentId, expectedUpdatedAt, roles })`.
+The expected release and project timestamp come from the configuration read and
+prevent stale edits. CLI equivalents are `openship project role-config <id>` and
+`openship project configure-roles <id> <file>`. The JSON file contains the same
+three fields. These controls do not enable runtime roles on Cloud, bare, cluster,
+static or general multi-service deployments. The one-primary-app plus private image
+infrastructure arrangement described above uses the same role configuration controls.
+
+
+## Automatic deploy paths
+
+`autoDeployPaths` optionally contains `include` and `exclude` arrays of repository-relative paths, with
+at most 50 patterns per array. Patterns support `*` and `**`; traversal, absolute paths and other glob
+operators are rejected. The selected app's file takes precedence over the repository-root file.
+
+This is a push-impact policy rather than a runtime setting. `include` replaces inferred workspace paths;
+`exclude` removes matching changes. Root build configuration, explicit shared paths and force-deploy
+requests still deploy. Omit `include` to keep automatic workspace dependency detection.
+See [Auto-deploy on push](/docs/guides/auto-deploy#monorepos-deploy-the-app-that-changed) for behavior and examples.

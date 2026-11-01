@@ -20,6 +20,7 @@ export const useOptionalDeployment = () => useContext(DeploymentContext);
 export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const {
     config,
+    isRescanning,
     setConfig,
     updateConfig,
     updateOptions,
@@ -28,6 +29,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     initializeFromUpload,
     initializeFromProject,
     rescanWithComposePath,
+    rescanWithBranch,
   } = useDeploymentConfig();
 
   const {
@@ -44,12 +46,14 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     reset,
     onTerminalReady,
     respondToPrompt,
+    resolvePortCheck,
     maybeOpenCredentialModal,
     _setContainerFailed,
   } = useDeploymentBuild(config, setConfig);
 
   const value: DeploymentContextType = {
     config,
+    isRescanning,
     state,
     terminalRef,
     canStreamContainer,
@@ -60,6 +64,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     initializeFromUpload,
     initializeFromProject,
     rescanWithComposePath,
+    rescanWithBranch,
     startDeployment,
     connectToBuild,
     loadBuildSession,
@@ -68,6 +73,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     reset,
     onTerminalReady,
     respondToPrompt,
+    resolvePortCheck,
     maybeOpenCredentialModal,
     steps,
     deploymentStatus,

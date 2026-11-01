@@ -57,7 +57,7 @@ vi.mock("@repo/db", () => ({
     backupRestore: { findById: vi.fn(async () => null) },
   },
 }));
-vi.mock("../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
 import { assert, checkPermissionOnResource } from "../../src/lib/permission";
 

@@ -19,7 +19,7 @@ function repoRoot(): string {
 // command construction + DNS patching from the on-VPS JSON plumbing. The
 // mutator is applied to an in-memory fake so we can assert the persisted shape.
 let fakeState: Record<string, unknown>;
-vi.mock("../mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: vi.fn(async () => fakeState),
   mutateState: vi.fn(
     async (_exec: unknown, _serverId: string, mutator: (s: Record<string, unknown>) => Record<string, unknown>) => {
@@ -29,14 +29,14 @@ vi.mock("../mail-state", () => ({
   ),
 }));
 // Deterministic, env-free encryption stub.
-vi.mock("../../../lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   encrypt: (s: string) => `enc(${s})`,
   decrypt: (s: string) => s.replace(/^enc\(|\)$/g, ""),
 }));
 // Mock psql-runner: (a) its real transitive imports (ssh-manager/env) throw in
 // tests, (b) capturing the SQL lets us assert sender_relayhost routing directly.
 const pg = vi.hoisted(() => ({ sqlCalls: [] as string[] }));
-vi.mock("./psql-runner", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/psql-runner", () => ({
   execute: async (_exec: unknown, sql: string) => {
     pg.sqlCalls.push(sql);
     return "";
@@ -51,8 +51,8 @@ import {
   relaySpfInclude,
   withSpfInclude,
   withoutSpfInclude,
-} from "./outbound-relay.service";
-import { MailConfigPermissionError } from "../mail-engine";
+} from "@repo/platform/engine/modules/mail/admin/outbound-relay.service";
+import { MailConfigPermissionError } from "@repo/platform/engine/modules/mail/mail-engine";
 
 type Flavor = "container" | "host";
 
@@ -132,10 +132,14 @@ function makeExec(
         ].join("\n");
       }
       if (cmd.includes("docker inspect")) {
-        return flavor === "container" ? "true\topenship/mail:test" : "";
+        if (flavor !== "container") throw new Error("Error: No such object: openship-mail");
+        return "true\topenship/mail:test";
       }
       if (cmd.includes("systemctl show")) {
-        return flavor === "host" ? HOST_UNITS_ACTIVE : "";
+        return flavor === "host"
+          ? HOST_UNITS_ACTIVE
+          : HOST_UNITS_ACTIVE.replaceAll("LoadState=loaded", "LoadState=not-found")
+              .replaceAll("ActiveState=active", "ActiveState=inactive");
       }
       execCalls.push(cmd);
       return "";
@@ -562,7 +566,7 @@ describe("relay TLS is scoped to the hop, not the server", () => {
       expect(joined).not.toContain("smtp_tls_security_level=encrypt");
       expect(joined).not.toContain("smtp_tls_wrappermode=yes");
       // A box that previously relayed everything via :465 has the flag set.
-      expect(joined).toContain("postconf -X smtp_tls_wrappermode");
+      expect(joined).toContain("smtp_tls_wrappermode=no");
 
       const policyTmp = renames.find((r) => r.to === TLS_MAP[flavor].write)?.from;
       const policy = writes.find((w) => w.path === policyTmp);
@@ -626,6 +630,7 @@ describe("relay TLS is scoped to the hop, not the server", () => {
       masterCf.indexOf("# smtp port used by Amavisd"),
     );
     expect(entry).toContain("-o smtp_tls_security_level=none");
+    expect(entry).toContain("-o smtp_tls_wrappermode=no");
   });
 
   test("merges into an operator's existing policy map instead of clobbering it", async () => {
@@ -826,4 +831,35 @@ describe("applyRelayToState (SES-DNS survival)", () => {
     expect(dns.spf.value).toContain("include:amazonses.com");
     expect(add["y.com"].records.spf.value).not.toContain("amazonses.com");
   });
+});
+
+
+describe("relay TLS transitions and repair failures (#392)", () => {
+  const base = { provider: "custom" as const, host: "relay.example.test", port: 465, username: "sender", password: "secret" };
+  for (const flavor of ["container", "host"] as Flavor[]) {
+    test(`[${flavor}] switching 465 to 587 clears implicit TLS while still requiring STARTTLS`, async () => {
+      const { exec, execCalls } = makeExec(flavor);
+      await configureOutboundRelay(exec, base);
+      const boundary = execCalls.length;
+      await configureOutboundRelay(exec, { ...base, port: 587 });
+      const update = execCalls.slice(boundary).find((command) => command.includes("postconf -e") && command.includes("relayhost="));
+      expect(update).toContain("smtp_tls_wrappermode=no");
+      expect(update).toContain("smtp_tls_security_level=encrypt");
+      expect(execCalls.slice(boundary).some((command) => command.includes("smtp-amavis/unix/smtp_tls_wrappermode=no"))).toBe(true);
+    });
+
+    test(`[${flavor}] stops before changing credentials if the content-filter repair fails`, async () => {
+      const { exec, execCalls, writes } = makeExec(flavor);
+      const underlying = exec as unknown as { exec: (command: string) => Promise<string> };
+      const original = underlying.exec;
+      underlying.exec = async (command) => {
+        if (command.includes("postconf -P")) throw new Error("cannot write master.cf");
+        return original(command);
+      };
+      await expect(configureOutboundRelay(exec, base)).rejects.toThrow("cannot write master.cf");
+      expect(writes).toEqual([]);
+      expect(execCalls.some((command) => command.includes("postfix reload"))).toBe(false);
+      expect(fakeState.outboundRelay).toBeUndefined();
+    });
+  }
 });

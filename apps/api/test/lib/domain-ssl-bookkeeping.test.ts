@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppError } from "@repo/core";
 
 /**
  * A throw from certbot is NOT proof that no certificate was issued.
@@ -22,18 +23,24 @@ const VALID_EXPIRY = new Date(Date.now() + 89 * 86_400_000).toISOString();
 const NEAR_EXPIRY = new Date(Date.now() + 3 * 86_400_000).toISOString();
 
 const h = vi.hoisted(() => ({
+  provider: false,
+  updateDomain: vi.fn(),
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
+  recordSslFailure: vi.fn(),
   provisionCert: vi.fn(),
   renewCert: vi.fn(),
   verifyCert: vi.fn(),
+  activateCert: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
     domain: {
+      update: h.updateDomain,
       findByHostname: vi.fn(async (hostname: string) => h.domains.get(hostname) ?? null),
       updateSsl: h.updateSsl,
+      recordSslFailure: h.recordSslFailure,
     },
     project: {
       findById: vi.fn(async (id: string) => ({
@@ -43,22 +50,30 @@ vi.mock("@repo/db", () => ({
       })),
     },
     deployment: {
-      findById: vi.fn(async (id: string) => ({ id, organizationId: "org_1", meta: {} })),
+      listPendingRoleHandovers: async () => [],
+      findById: vi.fn(async (id: string) => ({
+        id,
+        projectId: "proj_1",
+        organizationId: "org_1",
+        meta: {},
+      })),
     },
     server: { findLocal: vi.fn(async () => null) },
   },
 }));
 
-vi.mock("../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   // domain-ssl resolves a platform for the SSL provider only, then releases the
   // docker transport it eagerly bound — a no-op stub here.
   disposePlatform: () => {},
   resolveDeploymentPlatform: vi.fn(async () => ({
     platform: {
       ssl: {
+        ...(h.provider ? { certificateManagement: "provider" as const } : {}),
         provisionCert: h.provisionCert,
         renewCert: h.renewCert,
         verifyCert: h.verifyCert,
+        activateCert: h.activateCert,
       },
     },
   })),
@@ -68,15 +83,15 @@ vi.mock("../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "selfhosted", runtime: {} }),
 }));
 
-vi.mock("../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: <T,>(fn: () => Promise<T>) => fn() }),
 }));
 
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: false, DEPLOY_MODE: "selfhosted" },
 }));
 
-import { manageDomainSsl, provisionDomainCertForVerify } from "../../src/lib/domain-ssl";
+import { manageDomainSsl, provisionDomainCertForVerify } from "@repo/platform/engine/lib/domain-ssl";
 
 const HOST = "app.example.com";
 
@@ -109,11 +124,79 @@ const POST_ISSUE_ERROR = new Error(
 );
 
 beforeEach(() => {
+  h.provider = false;
+  h.updateDomain.mockReset();
   h.domains.clear();
   h.updateSsl.mockReset();
+  h.recordSslFailure.mockReset();
   h.provisionCert.mockReset();
   h.renewCert.mockReset();
-  h.verifyCert.mockReset();
+  h.activateCert.mockReset().mockResolvedValue(undefined);
+  h.verifyCert.mockReset().mockResolvedValue({
+    domain: HOST,
+    expiresAt: "",
+    issuer: "certbot",
+    verified: false,
+    reason: "missing",
+  });
+});
+
+describe("provider TLS observations", () => {
+  it("preserves routing recovery guidance without issuing a certificate or invalidating DNS", async () => {
+    h.provider = true;
+    domain({ sslStatus: "active" });
+    const message = "This domain has no Cloud route for this project. Retry routing from Domains & Routes, then verify HTTPS.";
+    h.verifyCert.mockRejectedValue(new AppError(message, 409, "CLOUD_DOMAIN_NOT_CONNECTED"));
+    expect(await manageDomainSsl(HOST, { action: "provision" })).toMatchObject({
+      verified: false, reason: "read_error", detail: message,
+    });
+    expect(h.recordSslFailure).toHaveBeenCalledExactlyOnceWith("dom_1", message, "unknown");
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.renewCert).not.toHaveBeenCalled();
+    expect(h.updateDomain).not.toHaveBeenCalled();
+    expect(h.updateSsl).not.toHaveBeenCalled();
+  });
+  it("reports an edge mismatch without repeatedly issuing a certificate", async () => {
+    h.provider = true;
+    domain({ sslStatus: "active" });
+    h.verifyCert.mockResolvedValue({ domain: HOST, verified: false, expiresAt: VALID_EXPIRY, issuer: "provider", reason: "edge_invalid", detail: "Wrong hostname served" });
+    expect(await manageDomainSsl(HOST, { action: "provision" })).toMatchObject({ verified: false, reason: "edge_invalid" });
+    expect(h.recordSslFailure).toHaveBeenCalledWith("dom_1", "Wrong hostname served", "invalid");
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.renewCert).not.toHaveBeenCalled();
+    expect(h.updateSsl).not.toHaveBeenCalled();
+  });
+
+  it("does not initiate an order because a Cloud check is unreachable", async () => {
+    h.provider = true;
+    domain({ sslStatus: "active" });
+    h.verifyCert.mockResolvedValue({ domain: HOST, verified: false, expiresAt: "", issuer: "", reason: "read_error" });
+    await manageDomainSsl(HOST, { action: "provision" });
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.renewCert).not.toHaveBeenCalled();
+    expect(h.updateSsl).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith("dom_1", expect.stringContaining("could not be read"), "unknown");
+  });
+
+  it("does not initiate an order when the provider API cannot be read", async () => {
+    h.provider = true;
+    domain({ sslStatus: "provisioning" });
+    h.verifyCert.mockRejectedValue(new Error("Provider API unavailable"));
+    expect(await manageDomainSsl(HOST, { action: "provision" })).toMatchObject({ reason: "read_error" });
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.renewCert).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith("dom_1", expect.any(String), "unknown");
+  });
+
+  it("keeps an accepted renewal pending even when an old expiry exists", async () => {
+    h.provider = true;
+    domain({ sslStatus: "error" });
+    h.renewCert.mockResolvedValue({ domain: HOST, verified: false, expiresAt: VALID_EXPIRY, issuer: "provider", reason: "pending" });
+    expect(await manageDomainSsl(HOST, { action: "renew" })).toMatchObject({ verified: false, reason: "pending" });
+    expect(h.updateSsl).toHaveBeenCalledWith("dom_1", expect.objectContaining({ sslStatus: "provisioning" }));
+    expect(h.recordSslFailure).not.toHaveBeenCalled();
+    expect(h.updateSsl).not.toHaveBeenCalledWith("dom_1", expect.objectContaining({ sslStatus: "active" }));
+  });
 });
 
 describe.each([
@@ -133,11 +216,19 @@ describe.each([
     // force skips the reuse pre-check, so verifyCert is reached only by recovery.
     run: () => provisionDomainCertForVerify(HOST, { force: true }),
   },
-])("$label — a cert that got issued is never left unrecorded", ({ failingSpy, run }) => {
+])("$label — a cert that got issued is never left unrecorded", ({ label, failingSpy, run }) => {
   it("records the expiry read off the edge when the step after issuance throws", async () => {
     domain();
     failingSpy().mockRejectedValue(POST_ISSUE_ERROR);
     onDisk(VALID_EXPIRY);
+    if (label === "manageDomainSsl(provision)")
+      h.verifyCert.mockResolvedValueOnce({
+        domain: HOST,
+        expiresAt: "",
+        issuer: "certbot",
+        verified: false,
+        reason: "missing",
+      });
 
     const result = await run();
 
@@ -182,10 +273,40 @@ describe.each([
 
     await expect(run()).rejects.toThrow(POST_ISSUE_ERROR);
   });
+
+  it("does not mistake a readable certificate for a recovered route activation", async () => {
+    domain();
+    failingSpy().mockRejectedValue(POST_ISSUE_ERROR);
+    onDisk(VALID_EXPIRY);
+    h.activateCert.mockRejectedValue(new Error("Edge reload failed"));
+    await expect(run()).rejects.toThrow("Edge reload failed");
+    expect(h.updateSsl).not.toHaveBeenCalledWith("dom_1", expect.objectContaining({ sslStatus: "active" }));
+  });
 });
 
 describe("the happy path is untouched", () => {
-  it("persists a normal successful issuance without consulting the edge again", async () => {
+  it("repairs stale SSL metadata from the existing certificate without opening another ACME order", async () => {
+    domain();
+    onDisk(VALID_EXPIRY);
+    h.provisionCert.mockRejectedValue(new Error("An existing valid certificate must be reused"));
+    const log = vi.fn();
+
+    await expect(manageDomainSsl(HOST, { action: "provision", onLog: log })).resolves.toMatchObject(
+      { verified: true, expiresAt: VALID_EXPIRY },
+    );
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.activateCert).toHaveBeenCalledWith(HOST);
+    expect(h.updateSsl).toHaveBeenCalledWith(
+      "dom_1",
+      expect.objectContaining({
+        sslStatus: "active",
+        sslExpiresAt: new Date(VALID_EXPIRY),
+      }),
+    );
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("reusing it"));
+  });
+
+  it("checks for an existing certificate and persists a new issuance without another read", async () => {
     domain();
     h.provisionCert.mockResolvedValue({
       domain: HOST,
@@ -198,7 +319,7 @@ describe("the happy path is untouched", () => {
     const result = await manageDomainSsl(HOST, { action: "provision" });
 
     expect(result.reason).toBe("issued");
-    expect(h.verifyCert).not.toHaveBeenCalled();
+    expect(h.verifyCert).toHaveBeenCalledOnce();
     expect(h.updateSsl).toHaveBeenCalledWith("dom_1", {
       sslStatus: "active",
       sslIssuer: "R11",
@@ -206,3 +327,12 @@ describe("the happy path is untouched", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));

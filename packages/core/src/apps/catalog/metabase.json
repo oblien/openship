@@ -2,7 +2,7 @@
   "available": true,
   "id": "metabase",
   "name": "Metabase",
-  "description": "Open-source business intelligence — dashboards and questions over your data. Create your admin account in the browser on first visit.",
+  "description": "Business intelligence, questions, and dashboards over your existing data.",
   "kind": "template",
   "logo": "metabase",
   "category": "analytics",
@@ -64,5 +64,21 @@
       "note": "Complete the setup wizard immediately: it is unauthenticated, so whoever opens this URL first becomes the admin. Metabase can take a minute to finish migrations on first boot."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Questions and charts",
+        "description": "Explore data through queries and visualizations."
+      },
+      {
+        "title": "Dashboards",
+        "description": "Bring business views into one place."
+      },
+      {
+        "title": "Data sources",
+        "description": "Connect the databases your team uses."
+      }
+    ]
+  }
 }

@@ -120,7 +120,9 @@ const useComposeEditor = ({
   myInfo,
   sender,
   autofocus = false,
+  ariaLabel,
 }: {
+  ariaLabel?: string;
   initialValue?: Record<string, unknown> | string | null;
   isReadOnly?: boolean;
   placeholder?: string;
@@ -269,6 +271,7 @@ const useComposeEditor = ({
     onBlur: isReadOnly ? undefined : onBlur,
     editorProps: {
       attributes: {
+        ...(ariaLabel ? { role: 'textbox', 'aria-label': ariaLabel, 'aria-multiline': 'true' } : {}),
         class: cn(
           'prose dark:prose-invert prose-headings:font-title focus:outline-none max-w-full',
           isReadOnly && 'pointer-events-none select-text',

@@ -80,7 +80,7 @@ export function summarizeInfraFleet(
       }
     }
     const edgeAbsent =
-      g.server.projectCount > 0 && !g.components.some((r) => r.component === "edge");
+      (g.server.edgeRequired ?? g.server.projectCount > 0) && !g.components.some((r) => r.component === "edge");
     const bucket: InfraBucket =
       down.length + missing.length > 0 || edgeAbsent || applyingDown > 0
         ? "attention"

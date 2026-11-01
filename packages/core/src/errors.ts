@@ -1,3 +1,4 @@
+import { redactUrlCredentials } from "./url-credentials";
 /**
  * Shared error classes used across the monorepo.
  */
@@ -100,8 +101,10 @@ export class DeployError extends AppError {
  * entries.
  */
 export function safeErrorMessage(err: unknown): string {
+  // Also strip URL userinfo / bare GitHub tokens: a failed clone's message can
+  // quote the credentialed clone URL, and this is the logging/persisting path.
   if (err instanceof Error) {
-    return err.message.slice(0, 2000);
+    return redactUrlCredentials(err.message).slice(0, 2000);
   }
-  return String(err).slice(0, 2000);
+  return redactUrlCredentials(String(err)).slice(0, 2000);
 }

@@ -15,24 +15,26 @@
   },
   "exports": {
     "./trpc": "./src/trpc/index.ts",
-    "./schemas": "./src/lib/schemas.ts"
+    "./schemas": "./src/lib/schemas.ts",
+    "./signatures": "./src/lib/signature.ts"
   },
   "dependencies": {
     "@hono/trpc-server": "^0.3.4",
     "@trpc/client": "^11.4.4",
     "@trpc/server": "^11.4.4",
     "cheerio": "1.1.0",
+    "css-tree": "^3.2.1",
     "date-fns": "^4.1.0",
     "dedent": "^1.6.0",
     "drizzle-orm": "^0.45.1",
     "email-addresses": "^5.0.0",
     "hono": "^4.7.8",
     "imapflow": "^1.0.169",
-    "mailparser": "^3.7.2",
+    "mailparser": "^3.10.0",
     "mime-types": "3.0.1",
     "mimetext": "^3.0.27",
     "nanoid": "^5.0.9",
-    "nodemailer": "^9.0.1",
+    "nodemailer": "^10.1.7",
     "sanitize-html": "^2.16.0",
     "string-strip-html": "^13.4.12",
     "superjson": "^2.2.2",
@@ -40,12 +42,14 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
-    "@types/mailparser": "^3.4.6",
+    "@types/css-tree": "^3.2.0",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^22.9.0",
-    "@types/nodemailer": "^8.0.1",
     "@types/sanitize-html": "2.13.0",
     "drizzle-kit": "^0.31.9",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "nodemailer": "^10.1.7"
   }
 }

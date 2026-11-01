@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("failed deployment domain cleanup (#675)", () => {
   it("tracks only authoritatively-created, non-custom domains for rollback", () => {
     const source = readFileSync(
-      resolve(import.meta.dirname, "../../../src/modules/deployments/build-pipeline.ts"),
+      resolve(import.meta.dirname, "../../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts"),
       "utf8",
     );
 

@@ -1,38 +1,21 @@
-/**
- * Dev script - watches source files and auto-restarts Electron.
- *
- *  1. `tsc --watch` recompiles main + preload on change
- *  2. `electronmon .` auto-restarts when out/ changes
- */
-
+/** Watch the same bundled main/preload used in the packaged app. */
 import { spawn } from "node:child_process";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { context } from "esbuild";
+import { desktopBuildOptions, desktopRoot } from "../build/options.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-// 1. TypeScript watch for main + preload
-const tsc = spawn("npx", ["tsc", "--watch", "--preserveWatchOutput"], {
-  cwd: root,
-  stdio: "inherit",
-});
-
-// 2. Start electronmon (auto-restarts on out/ changes)
-// Small delay to let initial tsc --watch settle
-setTimeout(() => {
-  const em = spawn("npx", ["electronmon", "."], {
-    cwd: root,
-    stdio: "inherit",
-    env: process.env,
-  });
-
-  em.on("close", (code) => {
-    tsc.kill();
-    process.exit(code ?? 0);
-  });
-}, 2000);
-
-process.on("SIGINT", () => {
-  tsc.kill();
-  process.exit(0);
-});
+const contexts = await Promise.all(desktopBuildOptions.map(options => context(options)));
+await Promise.all(contexts.map(builder => builder.rebuild()));
+await Promise.all(contexts.map(builder => builder.watch()));
+const electron = spawn("npx", ["electronmon", "."], { cwd: desktopRoot, stdio: "inherit", env: process.env });
+let stopping = false;
+async function stop(code = 0) {
+  if (stopping) return;
+  stopping = true;
+  electron.kill();
+  await Promise.all(contexts.map(builder => builder.dispose()));
+  process.exit(code);
+}
+electron.on("error", () => void stop(1));
+electron.on("close", code => void stop(code ?? 0));
+process.on("SIGINT", () => void stop());
+process.on("SIGTERM", () => void stop());

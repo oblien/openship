@@ -1,0 +1,20 @@
+{
+  "wordpress": {
+    "dockerfile": "FROM wordpress:7.1.3-php8.3-apache\nCOPY --from=wordpress:cli-2.12.0-php8.3 /usr/local/bin/wp /usr/local/bin/wp\nCOPY wordpress/openship-entrypoint.sh /usr/local/bin/openship-entrypoint.sh\nRUN chmod 755 /usr/local/bin/openship-entrypoint.sh\nENTRYPOINT [\"openship-entrypoint.sh\"]\nCMD [\"apache2-foreground\"]\n",
+    "files": [
+      {
+        "path": "openship-entrypoint.sh",
+        "content": "#!/bin/sh\nset -eu\n# The official image's init-only entry point installs files and wp-config.php.\n# Apache starts only after the generated owner account exists.\ndocker-ensure-installed.sh\nattempt=0\nuntil php -r 'mysqli_report(MYSQLI_REPORT_OFF); $db = @new mysqli(getenv(\"WORDPRESS_DB_HOST\"), getenv(\"WORDPRESS_DB_USER\"), getenv(\"WORDPRESS_DB_PASSWORD\"), getenv(\"WORDPRESS_DB_NAME\")); exit($db->connect_errno ? 1 : 0);'; do\n  attempt=$((attempt + 1))\n  [ \"$attempt\" -lt 60 ] || exit 1\n  sleep 2\ndone\nsu -s /bin/sh www-data -c 'wp core is-installed' || su -s /bin/sh www-data -c 'wp core install --url=\"$OPENSHIP_PUBLIC_URL\" --title=\"$OPENSHIP_SITE_TITLE\" --admin_user=\"$OPENSHIP_ADMIN_USER\" --admin_password=\"$OPENSHIP_ADMIN_PASSWORD\" --admin_email=\"$OPENSHIP_ADMIN_EMAIL\" --skip-email'\nexec docker-entrypoint.sh \"$@\"\n"
+      }
+    ]
+  },
+  "odoo": {
+    "dockerfile": "FROM odoo:19.0-20260926\nCOPY odoo/openship-start.py /usr/local/bin/openship-start.py\nCMD [\"python3\", \"/usr/local/bin/openship-start.py\"]\n",
+    "files": [
+      {
+        "path": "openship-start.py",
+        "content": "import configparser\nimport os\nimport subprocess\nimport time\nfrom pathlib import Path\nimport psycopg2\n\nenv = os.environ\ndeadline = time.monotonic() + 120\nwhile True:\n    try:\n        connection = psycopg2.connect(host=env['HOST'], user=env['USER'], password=env['PASSWORD'], dbname='postgres', connect_timeout=5)\n        break\n    except psycopg2.OperationalError:\n        if time.monotonic() >= deadline:\n            raise RuntimeError('PostgreSQL did not become ready') from None\n        time.sleep(2)\nwith connection, connection.cursor() as cursor:\n    cursor.execute('SELECT 1 FROM pg_database WHERE datname = %s', ('odoo',))\n    exists = cursor.fetchone() is not None\nconnection.close()\nconfig = configparser.ConfigParser(interpolation=None)\nconfig['options'] = {'admin_passwd': env['OPENSHIP_MASTER_PASSWORD'], 'data_dir': '/var/lib/odoo', 'addons_path': '/mnt/extra-addons', 'db_host': env['HOST'], 'db_user': env['USER'], 'db_password': env['PASSWORD'], 'db_port': '5432'}\npath = '/var/lib/odoo/openship.conf'\nwith open(path, 'w') as file:\n    os.chmod(path, 0o600)\n    config.write(file)\nif not exists:\n    result = subprocess.run(['odoo', 'db', '--config', path, 'init', 'odoo', '--username', env['OPENSHIP_ADMIN_EMAIL'], '--password', env['OPENSHIP_ADMIN_PASSWORD']])\n    if result.returncode:\n        raise RuntimeError('Odoo database initialization failed; existing data has been preserved')\n# Never delete, recreate, or reset credentials in an existing database.\nos.execvp('odoo', ['odoo', '--config', path, '--database=odoo', '--db-filter=^odoo$', '--no-database-list', '--proxy-mode'])\n"
+      }
+    ]
+  }
+}

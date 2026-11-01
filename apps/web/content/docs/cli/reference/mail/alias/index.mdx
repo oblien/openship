@@ -1,0 +1,81 @@
+---
+title: mail alias
+description: Commands, arguments, and options for openship mail alias.
+cliGroup: openship mail alias
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship mail alias
+
+Manage forwards and catch-all addresses
+
+```text
+openship mail alias [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options] <server>`](/docs/cli/reference/mail/alias#openship-mail-alias-list) | List aliases for a domain |
+| [`create [options] <id> [file]`](/docs/cli/reference/mail/alias#openship-mail-alias-create) | Create a forwarding or catch-all address |
+| [`update [options] <parent> <id> [file]`](/docs/cli/reference/mail/alias#openship-mail-alias-update) | Enable or disable an alias |
+| [`remove [options] <server> <alias>`](/docs/cli/reference/mail/alias#openship-mail-alias-remove) | Remove an alias by its numeric ID |
+
+## openship mail alias create
+
+Create a forwarding or catch-all address
+
+```text
+openship mail alias create [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship mail alias list
+
+List aliases for a domain
+
+```text
+openship mail alias list [options] <server>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--domain <domain>` | Mail domain |
+
+## openship mail alias remove
+
+Remove an alias by its numeric ID
+
+```text
+openship mail alias remove [options] <server> <alias>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm removal |
+
+## openship mail alias update
+
+Enable or disable an alias
+
+```text
+openship mail alias update [options] <parent> <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `parent` | Parent resource ID |
+| `id` | Resource ID or name |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

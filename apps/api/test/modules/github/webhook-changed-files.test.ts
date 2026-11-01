@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   extractChangedFiles,
   projectMatchesChanges,
-} from "../../../src/modules/github/webhook-changed-files";
+} from "@repo/platform/engine/modules/github/webhook-changed-files";
 
 describe("projectMatchesChanges", () => {
   it("ignores a sibling project while matching the selected project", () => {

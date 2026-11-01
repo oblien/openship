@@ -1,6 +1,13 @@
 import { createAuthClient } from "better-auth/react";
-import { organizationClient, emailOTPClient } from "better-auth/client/plugins";
+import {
+  organizationClient,
+  emailOTPClient,
+  twoFactorClient,
+  genericOAuthClient,
+} from "better-auth/client/plugins";
+import { passkeyClient } from "@better-auth/passkey/client";
 import { getAuthBaseUrl } from "@/lib/api/urls";
+import { reportClientError } from "./error-reporting";
 
 /**
  * API base URL - auth requests go directly to the selected API origin.
@@ -13,6 +20,9 @@ const AUTH_BASE_URL = getAuthBaseUrl();
 export const authClient = createAuthClient({
   baseURL: AUTH_BASE_URL,
   fetchOptions: {
+    onError: (context) => {
+      if (!context.response?.headers.get("X-Request-ID")) reportClientError(context.error, { component: "auth-client" });
+    },
     credentials: "include",
     // Disable retry to prevent infinite loops on 429
     retry: {
@@ -21,8 +31,21 @@ export const authClient = createAuthClient({
       delay: 0,
     },
   },
-  plugins: [organizationClient(), emailOTPClient()],
+  plugins: [
+    organizationClient(),
+    emailOTPClient(),
+    passkeyClient(),
+    twoFactorClient(),
+    genericOAuthClient(),
+  ],
 });
+
+/** Password creation for a freshly authenticated OAuth-only account. */
+export function setAccountPassword(newPassword: string) {
+  return authClient.$fetch<{ status: boolean }>("/account-security/set-password", {
+    method: "POST", body: { newPassword },
+  });
+}
 
 export const {
   signIn,

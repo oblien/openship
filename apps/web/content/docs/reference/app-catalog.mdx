@@ -53,15 +53,19 @@ autocomplete field names rather than typing them from memory.
     id: { type: 'string', description: 'Stable kebab-case slug. Must match the filename and be globally unique.', required: true },
     name: { type: 'string', description: 'Display name shown in the catalog.', required: true },
     description: { type: 'string', description: 'One-line summary shown on the catalog card.', required: true },
+    marketplace: { type: 'AppMarketplaceContent', description: 'Optional public feature summaries and a Markdown article. Presentation only; never changes installation.' },
     kind: { type: '"template" | "flow"', description: 'template instantiates services; flow points at a bespoke wizard.', required: true },
     logo: { type: 'string', description: 'A simpleicons slug, or an id mapped to a vendored SVG. See Add an app.', required: true },
     category: { type: '"backend" | "database" | "cms" | "mail" | "analytics" | "automation" | "other"', description: 'Catalog grouping. Closed enum — an unknown value fails validation.', required: true },
     tags: { type: 'string[]', description: 'Free-form keywords used for catalog search.' },
     framework: { type: 'string', description: 'Stack slug for the created project. Usually "docker-compose" for template apps.' },
     services: { type: 'TemplateServiceSpec[]', description: 'The containers to run. Required in practice for template apps.' },
+    supportsCloud: { type: 'boolean', description: 'Defaults to true. Set false for self-hosted-only apps. The installer rejects managed Cloud before creating a project. Requires schemaVersion 2.' },
+    gpu: { type: '"recommended" | "required"', description: 'NVIDIA GPU placement. Recommended offers CPU or NVIDIA mode; services with GPU requests default to required. Requires schemaVersion 2.' },
     configFields: { type: 'AppConfigField[]', description: 'Machine-generated or derived env. Never rendered as a form input.' },
     flowHref: { type: 'string', description: 'For kind:"flow" — internal route of the bespoke wizard. Must start with "/".' },
     settings: { type: 'AppSettingGroup[]', description: 'The curated settings form, and the install wizard inputs.' },
+    installLayout: { type: '{ settings: "single" | "split" | "grouped", columns?: 1 | 2 }', description: 'Optional install-form grouping and responsive field columns. See Form layout.' },
     management: { type: 'object', description: 'Override how the installed app is managed. See Management.' },
     prepare: { type: 'PrepareStep[]', description: 'Commands run inside a service container after start.' },
     connection: { type: 'object', description: 'The post-install Connection card. See Connection.' },
@@ -73,13 +77,49 @@ autocomplete field names rather than typing them from memory.
     unlisted: { type: 'boolean', description: 'Hidden from the catalog grid but fully installable by id — for an app reached through another app\'s wizard. Ignored on custom uploads (the grid is their only entry point).' },
     verified: { type: 'boolean', description: 'Curated-catalog marker. Forced by the server on custom uploads — authoring it has no effect.' },
     hosting: { type: '"self-hosted" | "experimental"', description: 'experimental → an ⚗ badge on the card and a heads-up in the wizard: it runs, but it is heavy or not production-grade upstream.' },
-    minResources: { type: '{ memoryMb?, cpuCores? }', description: 'What the app needs from the machine. Shown against the chosen destination in the install wizard and enforced by deploy preflight. See Host requirements.' },
+    minResources: { type: '{ memoryMb?, cpuCores? }', description: 'What the app needs from the machine. Shown against the chosen self-hosted destination as an advisory recommendation. See Host requirements.' },
     schemaVersion: { type: 'number', description: 'JSON shape revision. Defaults to 1. See Stability and versioning.' },
     minEngine: { type: 'string (semver)', description: 'Minimum Openship version required to install this app.' },
     updatedAt: { type: 'string', description: 'Informational last-updated stamp.' },
     repository: { type: 'string (URL)', description: 'Upstream source repository. Must be a valid URL.' },
   }}
 />
+
+## Public app pages
+
+The public [Apps directory](/apps) uses the same catalog as the installer. `name`, `description`,
+`logo`, `category`, and `tags` provide its cards and search. `unlisted` entries stay hidden;
+`available: false` entries appear as coming soon without an install button. Deployment settings
+and generated credentials are never included in the website's client data.
+
+Add optional `marketplace` content for the app's detail page:
+
+```json
+{
+  "marketplace": {
+    "features": [
+      { "title": "Private analytics", "description": "Understand your audience without tracking individual visitors." },
+      { "title": "Your own database", "description": "Keep analytics data on the infrastructure you choose." }
+    ],
+    "articleFile": "articles/umami.md"
+  }
+}
+```
+
+`features` contains short titles with optional descriptions. For a longer overview, author
+`packages/core/src/apps/catalog/articles/umami.md` and reference it with `articleFile`.
+The filename must follow `articles/<slug>.md`; paths outside that directory are rejected.
+Alternatively, use an inline `article` Markdown string. Choose one article source, not both.
+
+Run `bun scripts/gen-catalog.ts` from `packages/core` after editing the JSON or Markdown.
+The generator embeds the file as `marketplace.article` in the published `catalog.json` and
+removes the authoring path. No separate article request is needed. The website renders
+Markdown headings, lists, code, images, and safe links; raw HTML is displayed as text.
+Apps without an article still have an overview, their feature summaries, and included services.
+
+Development uses the bundled catalog to preview unpublished changes. Production reads the
+published GitHub artifact with a ten-minute cache and falls back to the bundled catalog if
+the fetch fails. Marketplace content is presentation only and never changes installation.
 
 ## Services
 
@@ -95,6 +135,11 @@ name, never an IP or a localhost address.
   type={{
     name: { type: 'string', description: 'Service name, and its hostname on the project network.', required: true },
     image: { type: 'string', description: 'Prebuilt image to pull. Pin a version — unpinned tags are rejected in review. Exactly one of image | build per service.' },
+    replacesImages: { type: 'string[]', description: 'Exact retired image names eligible for explicit operator-reviewed repair. Never automatically applied to installed services.' },
+    gpus: { type: 'ComposeGpu | ComposeGpu[]', description: 'NVIDIA requests applied in GPU mode; uses the same count/deviceIds/capabilities/options validation as Compose and the service API. Requires schemaVersion 2.' },
+    shmSize: { type: 'number', description: 'Private container /dev/shm size in bytes (1 byte–1 TiB). No host IPC or privileged mode. Requires schemaVersion 2.' },
+    replacesBuilds: { type: 'string[]', description: 'SHA-256 fingerprints of exact retired inline recipes eligible for explicit operator-reviewed conversion to this image. The repair tool requires the same official base and preserves custom recipes.' },
+    resources: { type: '{ cpuCores, memoryMb, diskMb }', description: 'Advisory sizing recommendation: CPU at least 0.25, whole MB of RAM at least 128, and whole MB of disk at least 64. All three fields are required when supplied. Never copied into installed container limits.' },
     build: { type: 'ServiceBuild', description: 'Inline Docker build context — for a service Openship must BUILD rather than pull. Mutually exclusive with image. See Building an image.' },
     ports: { type: 'string[]', description: 'Compose-style port strings, e.g. ["2368:2368"].' },
     exposedPort: { type: 'number', description: 'The container port that receives the public route.' },
@@ -107,16 +152,42 @@ name, never an IP or a localhost address.
     healthcheck: { type: 'ComposeHealthcheck', description: '{ test, interval, timeout, retries, startPeriod, disable }. disable:true turns off an image baked-in check.' },
     restart: { type: '"no" | "always" | "on-failure" | "unless-stopped"', description: 'Restart policy.' },
     command: { type: 'string', description: 'Override the container command.' },
+    entrypointArgv: { type: 'string[]', description: 'Exact image entrypoint override, mapped to the existing Compose entrypoint. An empty array clears it. Requires minEngine >= 0.9.2.' },
+    commandArgv: { type: 'string[]', description: 'Exact container command arguments; useful for invoking a mounted startup script through its interpreter.' },
   }}
 />
 
+### Service sizing recommendations
+
+Catalog `resources` profiles are advisory. They never become installed CPU or memory
+limits on Cloud, Desktop or a connected server, and retrying an installation does not
+copy them into saved settings. `minResources` describes recommended host capacity.
+
+Installed services use the user's saved service limits, inheriting project limits only
+for omitted dimensions. Without either setting, Docker receives no additional CPU or
+memory cap. Existing saved settings and frozen deployment snapshots remain unchanged;
+reset a service's limits explicitly to Full capacity if an older installer saved a
+catalog profile there.
+
+Cloud services share the selected managed server. Its purchased VM capacity and billing
+remain independent of per-container limits. Automatic builds have no additional Docker
+CPU or memory limits; Cloud admission keeps them from overlapping other builds on the
+same server. A catalog update cannot resize the server or grant credits.
+
 ## Building an image
 
-Most services **pull** a prebuilt `image`. Some can't: the upstream ships a base image that still
-needs extra packages and a provisioning entrypoint baked in — Neon's compute node is the canonical
-case. For those, set `build` instead of `image`. It is an inline Docker build context that Openship
+Prefer a published `image` with its supported environment settings. Use top-level `files` and
+`commandArgv` when a setup script can run with tools already in that image. WordPress and Odoo
+follow this path: their startup helpers are mounted read-only and run before the application
+starts, so the customer does not need an image build. Initial account creation must finish
+before exposing a public installer, and redeployment must preserve existing accounts and data.
+
+Use `build` when the image actually needs additional software or compiled assets, as with
+PocketBase's binary installation. It is an inline Docker build context that Openship
 materializes at deploy time and builds on the deploy host through the normal compose build pipeline.
-Building subsumes an entrypoint override: the Dockerfile sets its own `ENTRYPOINT`.
+Use `entrypointArgv` with a read-only startup file when a published image has an executable
+entrypoint that cannot invoke the helper. Keep its native initialization behavior and gate
+the template to Openship 0.9.2 or newer. A build can also set its own `ENTRYPOINT`.
 
 Set **exactly one** of `image` or `build` per service. Neither (nothing to run) and both (ambiguous)
 are rejected — `service "<name>" must set exactly one of image|build`.
@@ -217,6 +288,7 @@ Groups:
     id: { type: 'string', description: 'Stable group id.', required: true },
     label: { type: 'string', description: 'Group heading.', required: true },
     description: { type: 'string', description: 'Group help text.' },
+    columns: { type: '1 | 2', description: 'Field columns when space allows. Applies to installed settings and grouped installs; narrow containers always stack.' },
     fields: { type: 'AppSettingField[]', description: 'The fields in this group.', required: true },
   }}
 />
@@ -240,6 +312,7 @@ Fields:
     patternError: { type: 'string', description: 'Message shown when pattern fails.' },
     default: { type: 'string', description: 'Prefilled value.' },
     placeholder: { type: 'string', description: 'Input placeholder.' },
+    fullWidth: { type: 'boolean', description: 'Span the whole row in a two-column form.' },
     secret: { type: 'boolean', description: 'Store encrypted and mask on display.' },
     trueValue: { type: 'string', description: 'For type:"boolean" — env value written when on (e.g. "1", "yes").' },
     falseValue: { type: 'string', description: 'For type:"boolean" — env value written when off.' },
@@ -250,6 +323,41 @@ Fields:
     showIf: { type: '{ field, service?, equals?, truthy? }', description: 'Conditional visibility. equals or truthy only — no expressions.' },
   }}
 />
+
+### Form layout
+
+The catalog controls grouping and field widths. The dashboard supplies the controls, spacing,
+colors, and responsive behavior through the same form renderer used for installed app settings.
+Fields remain defined once in `settings`; only fields with `installStep: true` appear at install.
+
+For a compact install such as Convex, add this at the top level:
+
+```json
+{
+  "installLayout": {
+    "settings": "split"
+  }
+}
+```
+
+`split` puts the editable project name and install fields in two adjacent cards, stacking them
+when the available width is too small. Field labels identify each input without an extra card
+heading. This suits small forms such as Convex's Name and Instance name.
+
+`single` combines the name and install fields in one card. `grouped` keeps a separate name card
+and renders each visible settings group with its label and description. Empty groups are omitted.
+Without `installLayout`, the existing separate name card and single vertical settings card remain.
+When reopening a draft, its project name stays hidden and the remaining settings use the full width.
+
+`columns` defaults to `1`. Set it to `2` for fields that fit side by side; the form stacks them
+when its available width is too small, including when dashboard navigation takes more room.
+In grouped mode, a group's own `columns` overrides the install default. That group setting also
+applies after installation. Set `fullWidth: true` on a field such as a long textarea to span both
+columns. Field order follows the catalog; conditional and advanced visibility still apply.
+
+These optional hints are returned in the catalog API for consumers to render. They do not change
+environment values, required-field validation, or routing, and older clients can ignore them.
+Use these supported hints rather than CSS classes or executable layout expressions in catalog JSON.
 
 ## Connection
 
@@ -331,8 +439,20 @@ pre-run database initialization use [`files`](#files) to write into
 
 ## Endpoints
 
-What the install wizard asks you about — how to ship each port. Omit `endpoints` entirely and
-Openship derives one `http` endpoint per exposed service.
+What the install wizard asks you about — how to reach each port. Omit `endpoints` entirely and
+Openship derives one public `http` endpoint per declared route of each exposed service.
+
+Defaults follow the app's intended use on every deployment target:
+
+- Public HTTP endpoints, such as dashboards and APIs, start with **Domain** routing.
+- Raw TCP endpoints, such as databases, start **Internal only** unless their `scope` is `public`.
+- An explicit `defaultMode` overrides these defaults within `allowedModes`. Use it for choices
+  such as a port-only API. Local or internal HTTP endpoints default to port-only access.
+
+A Cloud connection only selects the domain provider: a managed free domain when connected,
+or a custom domain when disconnected. It does not switch a public UI to port-only routing.
+Custom domains still need a hostname and DNS setup. Users can choose another allowed mode;
+saved draft choices take precedence over fresh-install defaults.
 
 <TypeTable
   type={{
@@ -341,8 +461,8 @@ Openship derives one `http` endpoint per exposed service.
     label: { type: 'string', description: 'How the wizard names this endpoint.', required: true },
     kind: { type: '"http" | "tcp"', description: 'http is domain-routable; tcp is a raw port such as a database, with no domain.', required: true },
     required: { type: 'boolean', description: 'The user must choose an exposure for it.' },
-    scope: { type: '"public" | "internal" | "local"', description: 'Declares reachability intent.' },
-    defaultMode: { type: '"domain" | "port" | "publish" | "internal"', description: 'Preselected exposure.' },
+    scope: { type: '"public" | "internal" | "local"', description: 'Declares reachability intent. Defaults to public for HTTP and internal for TCP.' },
+    defaultMode: { type: '"domain" | "port" | "publish" | "internal"', description: 'Preselected routing mode, constrained by allowedModes. Independent of the deployment target.' },
     allowedModes: { type: 'string[]', description: 'Restrict which exposures are offered.' },
   }}
 />
@@ -362,6 +482,7 @@ same-org source picker and wires it in one shot. Same-org only, and always user-
     'requires[].label': { type: 'string | localized', description: 'How the wizard names what is needed.', required: true },
     'requires[].envKey': { type: 'string', description: 'Env key the chosen connection is written to.', required: true },
     'requires[].category': { type: 'string', description: 'Restrict candidate sources to this category.' },
+    'requires[].bundleId': { type: 'string', description: 'Match a specific provides bundle and use its first output. Prevents wiring an incompatible backend from the same category. Requires schemaVersion 2.' },
     'requires[].mode': { type: '"internal" | "public"', description: 'Which form of the source value to wire in.' },
     'requires[].optional': { type: 'boolean', description: 'Install can proceed without it.' },
   }}
@@ -369,9 +490,9 @@ same-org source picker and wires it in one shot. Same-org only, and always user-
 
 ## Host requirements
 
-`minResources` is what the app needs from the machine it lands on. Declare it only when the app
-genuinely will not work below a floor — a nine-container analytics stack, a Postgres fork that
-wants 8 GB. Most apps should declare nothing, and an app that declares nothing is never checked.
+`minResources` describes the host capacity recommended for the app. Declare it when
+upstream documents a meaningful requirement, such as 8 GB for a multi-service analytics stack.
+It does not set container limits.
 
 ```json
 {
@@ -379,37 +500,22 @@ wants 8 GB. Most apps should declare nothing, and an app that declares nothing i
 }
 ```
 
-<TypeTable
-  type={{
-    memoryMb: { type: 'number', description: 'Total RAM the app needs, in MB.' },
-    cpuCores: { type: 'number', description: 'vCPU the app needs.' },
-  }}
-/>
+On self-hosted destinations, the installer and deployment preflight compare these
+recommendations with the destination's Docker daemon (`NCPU`, `MemTotal`). A shortfall
+shows a warning; it never prevents a first installation or redeployment. An unavailable
+capacity reading means unknown, and no shortfall is inferred. A 10% tolerance accounts
+for memory reserved by the operating system on machines sold with round RAM sizes.
 
-The declaration is matched against what the destination's Docker daemon reports (`NCPU`,
-`MemTotal`), in two places that share one comparison:
+On Cloud, the installer checks the runtime configuration, including service overrides,
+against the organization's plan. It offers an upgrade when the allocation does not fit.
+Advanced setup remains available to adjust the configuration. Source builds use the
+remaining shared pool capacity reported by Oblien, with optional saved build caps;
+image-only templates need no source builder. Deployment checks again before queuing work,
+and Oblien enforces live capacity atomically when allocating or resizing a workspace.
 
-- **The install wizard** shows the floor next to the destination picker, and names the shortfall
-  before anything is created. You can query it directly — see
-  [`GET /apps/catalog/{id}/host-fit`](/docs/api/apps).
-- **Deploy preflight** enforces it: a **first** deploy onto a machine that is short is refused
-  with `HOST_RESOURCES_INSUFFICIENT`.
-
-Three rules keep the check from being a footgun of its own:
-
-<Callout title="A shortfall never blocks a redeploy">
-Refusing a redeploy would strand an app already running on a box that turned out to be
-undersized — the operator's way out of that is a deploy, not a refusal. After the first
-successful deploy a shortfall is a warning only.
-</Callout>
-
-- **An unmeasurable machine never fails.** A box Openship could not probe means it did not look,
-  not that the hardware is too small.
-- **Round numbers pass the box they name.** A "16 GB" machine reports ~15.6 GB once firmware and
-  the kernel take their cut, so a tenth under the declared figure still passes — declare the
-  round number an operator recognises.
-- **Openship Cloud is skipped.** A cloud workspace is sized from the tier table, not from host
-  hardware.
+[`GET /apps/catalog/{id}/host-fit`](/docs/api/apps) exposes this preview. Pass `projectId`
+to include an existing draft's saved resource settings. The preview does not modify the
+project, allocate resources, or grant a deployment allowance.
 
 ## Files
 

@@ -70,8 +70,6 @@ Click a card to open it. **Add mail server** starts a new provision/adopt. The t
 list**) detaches a stale or mis-marked entry — this is dashboard-only and re-adoptable; it never uninstalls
 anything on the server.
 
-<Callout title="Screenshot">Mail servers list — cards with domain, host, and Installing/Running/Incomplete pill; **Add mail server** and the per-row trash button. *(screenshot pending)*</Callout>
-
 ## Set up a new mail server
 
 The setup form is titled **Mail Server Setup**. You fill in two things:
@@ -91,8 +89,6 @@ anti-spam), a Let's Encrypt **SSL Certificate**, **DNS Configuration** (DKIM, SP
 - Outbound port 25 allowed by your provider, plus inbound TCP 25, 465, 587, and 993 allowed in the
   provider firewall/security group/security list/NSG.
 - A clean Ubuntu/Debian server (recommended).
-
-<Callout title="Screenshot">Mail Server Setup form — Domain and Admin Password fields, **Start Setup**, and the "What gets installed" / "Prerequisites" sidebar. *(screenshot pending)*</Callout>
 
 ### Watching the install
 
@@ -130,8 +126,6 @@ SSL-certificate step.
 Namecheap, Google Cloud DNS). Direct API push is not shipped yet — each provider currently shows a
 "coming soon" note, so publish the records manually for now.
 
-<Callout title="Screenshot">DNS hold banner — the record cards with copy buttons, **Auto-configure DNS**, and **I've set the records - continue**. *(screenshot pending)*</Callout>
-
 ### PTR hold — set reverse DNS
 
 After you acknowledge DNS, a sky-blue banner appears: **Set reverse DNS (PTR) before continuing**. This is
@@ -146,8 +140,6 @@ The banner shows an **IPv4 PTR** (required) and, if present, an **IPv6 PTR** (re
 IP and the hostname to point it at (`mail.<domain>`). It also gives you a verify command —
 `dig +short -x <ip>` should return `mail.<domain>.`. When it's set, click **I've set the PTRs - continue**
 and the install finishes with SSL.
-
-<Callout title="Screenshot">PTR hold banner — IPv4/IPv6 PTR cards, the `dig` verify hint, and **I've set the PTRs - continue**. *(screenshot pending)*</Callout>
 
 ## Adopt an existing mail server
 
@@ -190,8 +182,6 @@ Below that, **Setup guides** deep-links to client walkthroughs (iOS &amp; macOS 
 Desktop clients, Send via code). The right column shows **Mail stats** (Domains, Mailboxes, Aliases,
 Storage, Messages) and **Quick actions** (Add a mailbox, Add a domain, Review DNS records).
 
-<Callout title="Screenshot">Overview tab — mail server hostname card with **Open webmail** / **Deploy webmail**, Setup guides, and the Mail stats / Quick actions sidebar. *(screenshot pending)*</Callout>
-
 ### Domains
 
 A table of every domain this server hosts, with columns **Domain**, **Mailboxes**, **Aliases**, **Default
@@ -201,8 +191,6 @@ its MX/SPF/DKIM/DMARC records before mail flows. Row actions let you **Edit** (d
 active) or **Delete** (with a cascade checkbox when a domain still has mailboxes or aliases). Newly-added
 domains show a reputation warm-up banner.
 
-<Callout title="Screenshot">Domains tab — the domains table with Add domain, edit/delete row actions, and a pending-DNS banner for a new domain. *(screenshot pending)*</Callout>
-
 ### Mailboxes
 
 Always scoped to one domain via the picker at the top (defaults to the primary domain; the choice mirrors to
@@ -210,8 +198,6 @@ Always scoped to one domain via the picker at the top (defaults to the primary d
 the bootstrap account. **Add mailbox** collects the local part, full name, a password (with **Generate**),
 and a quota. Deleting offers **soft delete** (deactivates and queues cleanup) or **hard delete** (removes DB
 rows and the Maildir immediately); the postmaster account is protected from hard delete.
-
-<Callout title="Screenshot">Mailboxes tab — domain picker, the mailboxes table, and the Add mailbox modal. *(screenshot pending)*</Callout>
 
 ### Aliases
 
@@ -258,9 +244,11 @@ add at your DNS provider. **Published records check** runs a live public-DNS loo
 **Verify** (or **Rescan**) and each record comes back **Pass**, **Warning**, or **Fail**, with expected vs.
 actual values when something's off.
 
-<Callout title="Screenshot">DNS tab — domain picker, the "Records for publishing" card, and the "Published records check" results with pass/warn/fail pills. *(screenshot pending)*</Callout>
-
 ### Health
+
+If Openship cannot read the server, **Mail status unavailable** offers **Retry status**. Saved details
+remain visible when available, and current health is unknown until a check succeeds. A failed
+connection does not offer setup or engine repair, or start and stop mail services.
 
 The single "is everything working?" screen. A banner at the top aggregates a verdict across four sections:
 
@@ -278,8 +266,6 @@ rules, Azure NSGs, or another provider firewall. A row that says **Blocked** whi
 usually means this outer layer is dropping the connection.
 </Callout>
 
-<Callout title="Screenshot">Health tab — the summary banner, Daemons, Public mail ports, Outbound delivery, and DNS scan. *(screenshot pending)*</Callout>
-
 ### Backup
 
 Backups run through Openship's general backup system, so the mail server is just another backup source.
@@ -295,9 +281,22 @@ Pick a **Destination** (managed on the [Backups](/docs/dashboard/backups) page) 
 schedule (Manual only / Daily / Weekly), then **Save settings** or **Back up now**. **Recent backups** lists
 each run; successful runs offer **Restore** (in place) and **Migrate** (onto another server).
 
-<Callout title="Screenshot">Backup tab — the include checkboxes, destination/schedule selectors, and the Recent backups list with Restore/Migrate. *(screenshot pending)*</Callout>
-
 ### Advanced
+
+**Mail certificate** shows expiry and the certificate served by SMTP (465/587) and IMAP (993).
+**Check certificate** refreshes those observations. **Renew certificate** uses the existing Openship
+edge to obtain a certificate when due, reloads Postfix and Dovecot, and checks the served certificates.
+A certificate that is still valid is reused, so repeated clicks do not create extra ACME orders.
+
+**Automatic renewal** is enabled by default for each mail server. It uses the shared **SSL certificate
+renewal** job; disabling the mail toggle leaves certificate monitoring active. Expiry, failed renewal,
+and services still serving an old certificate appear in **Health** and global **Monitoring**.
+The checks share a five-minute cache; Monitoring's re-scan refreshes them immediately.
+
+The Openship control plane must remain running for scheduled renewal. In Desktop, keep Openship open;
+for unattended operation, run a self-hosted control plane. When adopting a legacy mail host, Openship
+retires a host Certbot timer only if it manages this mail certificate alone. A timer that also manages
+other certificates is left unchanged and reported for migration.
 
 The power-user surface, top to bottom:
 
@@ -309,8 +308,6 @@ The power-user surface, top to bottom:
   clears Openship's tracking but leaves the running stack intact), and **Remove mail server** (**Remove** —
   drops it from the list only, re-adoptable later).
 - **Install metadata** — Server ID, Primary domain, and the Started / Finished timestamps.
-
-<Callout title="Screenshot">Advanced tab — Protocol settings, Mail-stack tools, the Danger zone cards, and Install metadata. *(screenshot pending)*</Callout>
 
 ## Related
 

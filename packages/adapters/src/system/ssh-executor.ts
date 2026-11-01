@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm as fsRm, stat } from "node:fs/promises";
@@ -184,7 +185,7 @@ export class SshExecutor implements CommandExecutor {
 
       client.on("close", () => onTransportDown());
       client.on("end", () => onTransportDown());
-      client.on("error", (err: Error) => onTransportDown(err));
+      client.on("error", (err: Error) => { observeCaughtError(err, "adapters/system/ssh-executor"); return onTransportDown(err); });
 
       this.client = client;
       return client;
@@ -227,7 +228,8 @@ export class SshExecutor implements CommandExecutor {
     );
     this.rejectInflight(err);
     for (const cb of [...this.disconnectListeners]) {
-      try { cb(err); } catch { /* a listener bug must not break disconnect handling */ }
+      try { cb(err); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* a listener bug must not break disconnect handling */ }
     }
   }
 
@@ -235,7 +237,8 @@ export class SshExecutor implements CommandExecutor {
     const aborts = [...this.inflight];
     this.inflight.clear();
     for (const abort of aborts) {
-      try { abort(err); } catch { /* per-op settle guard handles double-settle */ }
+      try { abort(err); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* per-op settle guard handles double-settle */ }
     }
   }
 
@@ -263,7 +266,8 @@ export class SshExecutor implements CommandExecutor {
       channel.once("error", onError);
       try {
         close();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
         finish(false);
       }
     });
@@ -294,10 +298,14 @@ export class SshExecutor implements CommandExecutor {
       client.once("close", done);
       client.once("end", done);
     });
-    try { client.end(); } catch {}
+    try { client.end(); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+    }
     // `end()` is graceful and can itself wait behind a wedged subsystem.
     // Destroy the socket as the authoritative bounded cancellation fallback.
-    try { client.destroy(); } catch {}
+    try { client.destroy(); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+    }
     await Promise.race([
       closePromise,
       new Promise<void>((resolve) => {
@@ -406,7 +414,9 @@ export class SshExecutor implements CommandExecutor {
       // A cancelled/timed-out opener may complete late.  Never publish that
       // orphan channel into the next deployment's fresh transport lifecycle.
       if (this.client !== client || this.sftpChannel !== opening) {
-        try { wrapper.end(); } catch {}
+        try { wrapper.end(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+        }
         throw new SshDisconnectedError("SFTP channel opened after its SSH transport was reset");
       }
       const drop = () => {
@@ -420,7 +430,8 @@ export class SshExecutor implements CommandExecutor {
       this.sftpWrapper = wrapper;
       return wrapper;
     });
-    opening.catch(() => {
+    opening.catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
       if (this.sftpChannel === opening) this.sftpChannel = null;
     });
     this.sftpChannel = opening;
@@ -433,7 +444,11 @@ export class SshExecutor implements CommandExecutor {
     const ch = this.sftpChannel;
     this.sftpChannel = null;
     this.sftpWrapper = null;
-    if (ch) ch.then((w) => { try { w.end(); } catch {} }).catch(() => {});
+    if (ch) ch.then((w) => { try { w.end(); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+    } }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+    });
   }
 
   /**
@@ -442,8 +457,12 @@ export class SshExecutor implements CommandExecutor {
   private resetConnection(): void {
     this.dropSftp();
     if (this.client) {
-      try { this.client.end(); } catch {}
-      try { this.client.destroy(); } catch {}
+      try { this.client.end(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+      }
+      try { this.client.destroy(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+      }
       this.client = null;
     }
     this.connecting = null;
@@ -554,7 +573,13 @@ export class SshExecutor implements CommandExecutor {
       }
 
       timer = setTimeout(
-        () => terminate(new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`)),
+        () =>
+          terminate(
+            new DOMException(
+              `Command timed out after ${timeout}ms: ${commandForError(command)}`,
+              "TimeoutError",
+            ),
+          ),
         timeout,
       );
       timer.unref?.();
@@ -563,7 +588,9 @@ export class SshExecutor implements CommandExecutor {
         if (err) return finish(() => reject(tagExecRequestError(err)));
         channel = stream;
         if (terminating) {
-          try { stream.close(); } catch {}
+          try { stream.close(); } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+          }
           return;
         }
 
@@ -577,7 +604,7 @@ export class SshExecutor implements CommandExecutor {
         stream.stderr.on("data", (data: Buffer) => {
           stderr += data.toString();
         });
-        stream.on("error", (error: Error) => finish(() => reject(error)));
+        stream.on("error", (error: Error) => { observeCaughtError(error, "adapters/system/ssh-executor"); return finish(() => reject(error)); });
 
         stream.on("close", (code: number) => {
           finish(() => {
@@ -677,7 +704,9 @@ export class SshExecutor implements CommandExecutor {
         channel = stream;
         // The abort may have fired between the check above and the channel opening.
         if (terminating || signal?.aborted) {
-          try { stream.close(); } catch {}
+          try { stream.close(); } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+          }
           return;
         }
 
@@ -693,7 +722,7 @@ export class SshExecutor implements CommandExecutor {
 
         stream.on("data", (data: Buffer) => onChunk(data, "info"));
         stream.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
-        stream.on("error", (error: Error) => finish(() => reject(error)));
+        stream.on("error", (error: Error) => { observeCaughtError(error, "adapters/system/ssh-executor"); return finish(() => reject(error)); });
 
         // ssh2's 'close' often carries no code; the real exit status arrives on
         // 'exit'. A close with NO exit status means the channel was torn down
@@ -777,6 +806,7 @@ export class SshExecutor implements CommandExecutor {
           else finish(() => resolve(value as T));
         });
       } catch (error) {
+        observeCaughtError(error, "adapters/system/ssh-executor");
         finish(() => reject(error));
       }
     });
@@ -786,7 +816,8 @@ export class SshExecutor implements CommandExecutor {
     const dir = remoteDirname(path);
     try {
       await this.exec(`mkdir -p ${sq(dir)}`);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
       // Best effort
     }
 
@@ -855,7 +886,8 @@ export class SshExecutor implements CommandExecutor {
   async rm(path: string): Promise<void> {
     try {
       await this.exec(`rm -rf ${sq(path)}`);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
       // Already gone
     }
   }
@@ -878,7 +910,9 @@ export class SshExecutor implements CommandExecutor {
             stdout: stream,
             stderr: stream.stderr,
             onClose,
-            kill: () => { try { stream.close(); } catch {} },
+            kill: () => { try { stream.close(); } catch (diagnosticFailure) {
+              observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+            } },
           });
         });
       });
@@ -894,57 +928,64 @@ export class SshExecutor implements CommandExecutor {
    */
   execWithInput(command: string, body: Readable): Promise<{ code: number; stderr: string; stdout: string }> {
     return (async () => {
+      this.throwIfAborted("stdin command");
+      const signal = this.operationSignal();
       const client = await this.connect();
+      this.throwIfAborted("stdin command", signal);
       return new Promise<{ code: number; stderr: string; stdout: string }>((resolve, reject) => {
         let settled = false;
-        const abort = (err: Error) => finish(() => reject(err));
+        let channel: ClientChannel | undefined;
         const finish = (act: () => void) => {
           if (settled) return;
           settled = true;
           this.inflight.delete(abort);
+          signal?.removeEventListener("abort", onAbort);
+          body.off("error", abort);
+          if (channel) body.unpipe(channel);
           act();
         };
+        const abort = (error: Error) => finish(() => {
+          try { channel?.close(); } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* channel already closed */ }
+          reject(error);
+        });
+        const onAbort = () => abort(abortError("stdin command", signal!));
         this.inflight.add(abort);
+        body.on("error", abort);
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) { onAbort(); return; }
+        if (body.errored) { abort(body.errored); return; }
 
         client.exec(command, (err, stream) => {
-          if (err) return finish(() => reject(err));
-
+          if (settled) {
+            try { stream?.close(); } catch (diagnosticFailure) {
+              observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* late channel after cancellation */ }
+            return;
+          }
+          if (err) return abort(err);
+          channel = stream;
           let stderr = "";
-          stream.stderr.on("data", (d: Buffer) => {
-            stderr += d.toString();
-            if (stderr.length > 16 * 1024) stderr = stderr.slice(-16 * 1024);
-          });
-          // Capture stdout (docker load prints "Loaded image( ID)?: <ref>", which
-          // the caller needs to retag) AND keep the channel flowing so it doesn't
-          // stall on an unread buffer.
           let stdout = "";
-          stream.on("data", (d: Buffer) => {
-            stdout += d.toString();
-            if (stdout.length > 16 * 1024) stdout = stdout.slice(-16 * 1024);
+          stream.stderr.on("data", (data: Buffer) => {
+            stderr = (stderr + data.toString()).slice(-16 * 1024);
           });
-
+          stream.stderr.on("error", abort);
+          stream.on("data", (data: Buffer) => {
+            stdout = (stdout + data.toString()).slice(-16 * 1024);
+          });
           let exitCode: number | null = null;
-          stream.on("exit", (code: number | null) => {
-            exitCode = code;
-          });
-          stream.on("close", (code: number | null) => {
-            finish(() => {
-              const final = typeof code === "number" ? code : exitCode;
-              if (final == null) {
-                reject(
-                  new Error(
-                    "remote channel closed without an exit status — the SSH connection was terminated mid-command",
-                  ),
-                );
-              } else {
-                resolve({ code: final, stderr: stderr.trim(), stdout: stdout.trim() });
-              }
-            });
-          });
-
-          // body → channel stdin; end() sends EOF so the reader exits.
-          body.on("error", (e) => finish(() => { try { stream.close(); } catch {} reject(e); }));
-          stream.on("error", (e: Error) => finish(() => reject(e)));
+          stream.on("exit", (code: number | null) => { exitCode = code; });
+          stream.on("close", (code: number | null) => finish(() => {
+            const final = typeof code === "number" ? code : exitCode;
+            if (final == null) {
+              reject(new Error("remote channel closed without an exit status — the SSH connection was terminated mid-command"));
+            } else {
+              resolve({ code: final, stderr: stderr.trim(), stdout: stdout.trim() });
+            }
+          }));
+          stream.on("error", abort);
+          // EOF alone cannot cancel a loader blocked after reading its input.
+          // The scoped signal above closes only this command's channel.
           body.pipe(stream);
         });
       });
@@ -981,7 +1022,8 @@ export class SshExecutor implements CommandExecutor {
       if (closed) return;
       closed = true;
       for (const cb of closeListeners) {
-        try { cb(code, signal); } catch { /* listener bug shouldn't kill cleanup */ }
+        try { cb(code, signal); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* listener bug shouldn't kill cleanup */ }
       }
     };
 
@@ -992,7 +1034,7 @@ export class SshExecutor implements CommandExecutor {
       fireClose(code, signal);
     });
     channel.on("close", () => fireClose(null));
-    channel.on("error", () => fireClose(null));
+    channel.on("error", (eventDiagnosticError: unknown) => { observeCaughtError(eventDiagnosticError, "adapters/system/ssh-executor"); return fireClose(null); });
 
     return {
       stdin: channel,
@@ -1001,11 +1043,14 @@ export class SshExecutor implements CommandExecutor {
       setWindow: (c: number, r: number) => {
         const sc = clampWindow(c, 80, 1, 1000);
         const sr = clampWindow(r, 24, 1, 500);
-        try { channel.setWindow(sr, sc, 0, 0); } catch { /* channel may be closing */ }
+        try { channel.setWindow(sr, sc, 0, 0); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* channel may be closing */ }
       },
       close: (_signal?: string) => {
-        try { channel.end(); } catch { /* already ending */ }
-        try { channel.close(); } catch { /* already closed */ }
+        try { channel.end(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* already ending */ }
+        try { channel.close(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* already closed */ }
       },
       onClose: (cb) => { closeListeners.push(cb); },
     };
@@ -1080,7 +1125,8 @@ export class SshExecutor implements CommandExecutor {
         await new Promise<void>((resolve) => {
           try {
             client.unforwardIn("127.0.0.1", port, () => resolve());
-          } catch {
+          } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
             resolve();
           }
         });
@@ -1096,7 +1142,8 @@ export class SshExecutor implements CommandExecutor {
       const handler = this.reverseHandlers.get(details.destPort);
       if (!handler) {
         // No relay registered on this port — refuse rather than leak a channel.
-        try { reject(); } catch { /* already gone */ }
+        try { reject(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor"); /* already gone */ }
         return;
       }
       const channel = accept();
@@ -1156,8 +1203,12 @@ export class SshExecutor implements CommandExecutor {
 
       await extractRemoteArchive((command) => this.exec(command), remoteArchive, remotePath, totalBytes, onLog);
     } finally {
-      await cleanupTarList().catch(() => {});
-      await fsRm(tmpLocalDir, { recursive: true, force: true }).catch(() => {});
+      await cleanupTarList().catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+      });
+      await fsRm(tmpLocalDir, { recursive: true, force: true }).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
+      });
     }
   }
 
@@ -1165,7 +1216,8 @@ export class SshExecutor implements CommandExecutor {
     try {
       await this.exec(`command -v ${command} >/dev/null 2>&1 && echo ok`, { timeout: 5_000 });
       return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
       return false;
     }
   }
@@ -1199,7 +1251,8 @@ export class SshExecutor implements CommandExecutor {
         );
         if (size === totalBytes) return; // already fully uploaded
         if (size < totalBytes) offset = size; // resume from here (size > total → restart at 0)
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/ssh-executor");
         offset = 0; // no remote file yet
       }
 
@@ -1216,6 +1269,7 @@ export class SshExecutor implements CommandExecutor {
         await this.sftpStreamFrom(sftp, localArchive, remoteArchive, offset, totalBytes, STALL_MS, onLog);
         return;
       } catch (err) {
+        observeCaughtError(err, "adapters/system/ssh-executor");
         lastErr = err instanceof Error ? err : new Error(String(err));
         onLog?.(logEntry(`SFTP upload interrupted: ${lastErr.message}`, "warn"));
       }
@@ -1273,8 +1327,8 @@ export class SshExecutor implements CommandExecutor {
           onLog?.(logEntry(`  ~${pct}% · ${formatBytes(transferred)} · ${mbps.toFixed(1)} MB/s`));
         }
       });
-      read.on("error", (e) => finish(() => reject(e)));
-      write.on("error", (e: Error) => finish(() => reject(e)));
+      read.on("error", (e) => { observeCaughtError(e, "adapters/system/ssh-executor"); return finish(() => reject(e)); });
+      write.on("error", (e: Error) => { observeCaughtError(e, "adapters/system/ssh-executor"); return finish(() => reject(e)); });
       write.on("close", () =>
         finish(() =>
           transferred >= totalBytes

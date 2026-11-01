@@ -9,7 +9,8 @@
       "health": "Sistem Sağlığı",
       "backup": "Yedekleme",
       "sending": "Gönderim",
-      "advanced": "Gelişmiş"
+      "advanced": "Gelişmiş",
+      "aliases": "Takma Adlar"
     },
     "ariaLabel": "E-posta yönetim bölümleri"
   },
@@ -22,7 +23,7 @@
     "edit": "Düzenle",
     "emptyTitle": "Henüz bildirim kuralı yok",
     "emptyBody": "Bu sunucudaki bir posta kutusuna veya alan adına posta geldiğinde Slack, Telegram, Discord ya da bir webhook üzerinden bildirim almak için bir kural ekleyin.",
-    "noChannels": "Henüz doğrulanmış bildirim kanalınız yok. Ayarlar → Bildirimler kısmından bir kanal ekleyip doğrulayın, ardından kural oluşturmak için buraya dönün.",
+    "noChannels": "İzleme → Bildirimler bölümünde bir kanal ekleyip doğrulayın, ardından kural oluşturmak için geri dönün.",
     "addChannel": "Bildirim kanalı ekle",
     "manageChannels": "Kanalları yönet",
     "fieldName": "Ad",
@@ -121,7 +122,18 @@
     "saveFailed": "Aktarım güncellenemedi.",
     "disableFailed": "Aktarım devre dışı bırakılamadı.",
     "dnsHint": "Sağlayıcının aktarım kayıtları artık DNS sekmesinde görünüyor. En iyi teslim edilebilirlik için bunları yayınlayıp doğrulayın.",
-    "testLiveNote": "Şu anda etkin olan yol üzerinden gönderir; yukarıdaki kaydedilmemiş değişiklikler kullanılmaz."
+    "testLiveNote": "Şu anda etkin olan yol üzerinden gönderir; yukarıdaki kaydedilmemiş değişiklikler kullanılmaz.",
+    "pathTitle": "Giden posta yolu",
+    "setUpRelay": "Bir aktarma yapılandır",
+    "directActive": "Giden postalar bu sunucudan doğrudan ayrılır. Yapılandırılacak bir şey yok — teslim edilebilirlik sorun olursa yukarıdan bir aktarma seçin.",
+    "switchToDirect": "Doğrudan teslimata geç",
+    "switchToDirectHint": "Smarthost'u ve saklanan kimlik bilgilerini kaldırır ve aktarmanın SPF include yönergesini DNS'inizden siler. Giden postalar tekrar doğrudan her alıcının sunucusuna gider.",
+    "senderPlaceholder": "contact@example.com",
+    "port465Blocked": "Bağlantı noktası 465 (örtük TLS) sunucu genelinde bir ayardır, bu nedenle yalnızca bazı göndericiler aktarma yaparken kullanılamaz. Sağlayıcının STARTTLS bağlantı noktasını kullanın — genellikle 587.",
+    "spfIncludeLabel": "SPF include yönergesi",
+    "spfIncludeHint": "Sağlayıcınızın yayınlamanızı söylediği include: mekanizmasını yapıştırın. Boş bırakılırsa SPF kaydınıza dokunmayız — ancak SPF'nin listelemediği bir ana makineden aktarılan postalar SPF doğrulamasından geçemez.",
+    "spfNone": "Yok",
+    "guidanceSystem": "Sistem postaları (şifre sıfırlama, davetler, bildirimler) de bu aktarma üzerinden gönderilir — Ayarlar → E-posta bölümünde ayrı bir gönderici ayarlamadığınız sürece."
   },
   "overview": {
     "mailServer": "E-posta sunucusu",
@@ -357,8 +369,19 @@
       "notListeningHint": "Bu portta dinleyen işlem yok.",
       "notExposedHint": "Yalnızca loopback üzerinde dinliyor; uzak istemciler bağlanamaz.",
       "unknownHint": "Genel erişilebilirlik doğrulanamadı.",
-      "ports": { "smtp": "Gelen SMTP", "smtps": "SMTP gönderimi (TLS)", "submission": "SMTP gönderimi (STARTTLS)", "imaps": "IMAP erişimi (TLS)" },
-      "status": { "reachable": "Erişilebilir", "blocked": "Engelli", "not_listening": "Dinlemiyor", "not_exposed": "Dışa açık değil", "unknown": "Bilinmiyor" }
+      "ports": {
+        "smtp": "Gelen SMTP",
+        "smtps": "SMTP gönderimi (TLS)",
+        "submission": "SMTP gönderimi (STARTTLS)",
+        "imaps": "IMAP erişimi (TLS)"
+      },
+      "status": {
+        "reachable": "Erişilebilir",
+        "blocked": "Engelli",
+        "not_listening": "Dinlemiyor",
+        "not_exposed": "Dışa açık değil",
+        "unknown": "Bilinmiyor"
+      }
     },
     "delivery": {
       "title": "Giden teslim",
@@ -468,7 +491,8 @@
       "partSignatures": "{names} çalışmıyor - virüs imzaları artık güncellenmiyor, bu nedenle posta eskiyen bir imza kümesiyle taranıyor",
       "partAdvisory": "{names} çalışmıyor",
       "almostSubQueueOne": "{count} mesaj çıkmayı bekliyor - aşağıdaki Giden teslim bölümüne bakın.",
-      "almostSubQueueOther": "{count} mesaj çıkmayı bekliyor - aşağıdaki Giden teslim bölümüne bakın."
+      "almostSubQueueOther": "{count} mesaj çıkmayı bekliyor - aşağıdaki Giden teslim bölümüne bakın.",
+      "partCertificate": "Posta sertifikasının kontrol edilmesi gerekiyor"
     },
     "time": {
       "secondsAgo": "{n}sn önce",
@@ -704,5 +728,74 @@
     "loadingLogs": "Günlükler yükleniyor…",
     "noLogLines": "Bu bileşen için henüz günlük satırı yok.",
     "rowActions": "{name} için işlemler"
+  },
+  "certificate": {
+    "title": "Posta sertifikası",
+    "manage": "Sertifikayı yönet",
+    "check": "Sertifikayı kontrol et",
+    "checking": "Kontrol ediliyor…",
+    "renew": "Sertifikayı yenile",
+    "renewing": "Yenileniyor…",
+    "autoRenew": "Otomatik yenileme",
+    "autoRenewHint": "Süresi dolmadan yenile ve posta hizmetlerini yeniden yükle.",
+    "desktopHint": "Otomatik yenileme için Openship açık kalmalıdır.",
+    "jobDisabled": "Ortak SSL yenileme görevi devre dışı.",
+    "manageJob": "Yenileme görevini aç",
+    "failed": "Posta sertifikası güncellenemedi.",
+    "notChecked": "Kontrol edilmedi",
+    "expires": "Son geçerlilik: {date}",
+    "checked": "Kontrol: {time}",
+    "status": {
+      "ok": "Geçerli",
+      "warn": "Yenileme gerekli",
+      "fail": "İlgilenilmesi gerekiyor",
+      "unknown": "Doğrulanmadı"
+    }
+  },
+  "aliases": {
+    "heading": "Takma Adlar",
+    "description": "Postaları bir adresten diğerine iletin veya bir etki alanındaki eşleşmeyen tüm adresleri yakalayın. Kaydettiğiniz anda etkinleşir — yeniden başlatma gerekmez.",
+    "addAlias": "Takma ad ekle",
+    "domainLabel": "Etki alanı",
+    "loading": "Yükleniyor…",
+    "activeCount": "{active} / {total} etkin",
+    "colSource": "Kaynak",
+    "colDestination": "Şuraya iletilir:",
+    "colType": "Tür",
+    "colStatus": "Durum",
+    "typeAlias": "Takma Ad",
+    "typeCatchAll": "Catch-all",
+    "active": "Etkin",
+    "disabled": "Devre Dışı",
+    "activateAction": "Etkinleştir",
+    "deactivateAction": "Devre Dışı Bırak",
+    "deleteAction": "Sil",
+    "loadDomainsFailed": "Etki alanları yüklenemedi",
+    "loadFailed": "Takma adlar yüklenemedi",
+    "emptyTitle": "Henüz takma ad yok",
+    "emptyDesc": "{domain} için bir adresi iletin veya bir catch-all ayarlayın.",
+    "create": {
+      "title": "Yeni takma ad · {domain}",
+      "description": "Posta sunucusunun iletme tablosunda bir satır oluşturur. Postfix bunu anında okur — yeniden başlatma gerekmez.",
+      "submit": "Takma ad oluştur",
+      "submitting": "Oluşturuluyor…",
+      "catchAllLabel": "Bu etki alanı için catch-all",
+      "catchAllHint": "{domain} adresinde gerçek bir posta kutusu veya başka bir takma adla eşleşmeyen her adresi iletir. Bu etki alanı için var olan tüm catch-all kurallarının yerini alır.",
+      "localPartLabel": "Yerel kısım",
+      "localPartHint": "@ işaretinden önceki kısım. Küçük harf, alfasayısal.",
+      "destinationLabel": "Şuraya iletilir:",
+      "destinationHint": "Herhangi bir geçerli e-posta adresi — bu sunucudaki bir posta kutusu veya harici (örneğin Gmail)."
+    },
+    "deleteForm": {
+      "title": "Bu takma ad silinsin mi?",
+      "sourceCatchAll": "{domain} için catch-all",
+      "description": "İletme satırını hemen kaldırır. {source} adresine gelen postalar geri döner veya bir sonraki eşleşen kurala geçer; bir sonraki iletiden itibaren geçerlidir.",
+      "submit": "Takma adı sil",
+      "submitting": "Siliniyor…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} gerçek bir posta kutusudur — burada bir takma ad oluşturmak postalarını yönlendirir. Bunun yerine posta kutusunu düzenleyin veya silin.",
+      "alreadyExists": "Bu yönlendirme zaten mevcut."
+    }
   }
 }

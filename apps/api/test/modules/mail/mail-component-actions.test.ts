@@ -16,8 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const runMailCommand = vi.fn();
-vi.mock("../../../src/modules/mail/mail-engine", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/modules/mail/mail-engine")>()),
+vi.mock("@repo/platform/engine/modules/mail/mail-engine", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/mail/mail-engine")>()),
   runMailCommand: (...args: unknown[]) => runMailCommand(...args),
 }));
 

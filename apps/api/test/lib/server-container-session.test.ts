@@ -16,7 +16,7 @@ import {
   finishContainerApplySession,
   getActiveContainerApplySession,
   listContainerApplySessions,
-} from "../../src/lib/server-container-session";
+} from "@repo/platform/engine/lib/server-container-session";
 
 /** Unique per case: the store is module-global and shared across this file. */
 let next = 0;

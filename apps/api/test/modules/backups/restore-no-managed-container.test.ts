@@ -59,9 +59,13 @@ const h = vi.hoisted(() => ({
   liveContainerId: null as string | null,
   /** Force listSources to fail, standing in for an unreachable host. */
   probeError: null as string | null,
+  offlineVolumeRestore: true,
   /** Force receiveStream to fail with a PLAIN Error, the way a tar failure,
    *  an ENOSPC or the idle watchdog does — after the target was cleared. */
   receiveError: null as string | null,
+  receiveOpenError: null as string | null,
+  applyReadError: null as string | null,
+  applyBody: null as Readable | null,
   /** What `redis-cli CONFIG GET appendonly` reports. "yes" means the RDB would
    *  be ignored at startup, so the restore must refuse rather than no-op. */
   appendonly: "no",
@@ -74,6 +78,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
@@ -124,6 +129,7 @@ vi.mock("@repo/db", () => ({
     project: {
       findById: async () => ({
         id: "prj_1",
+        organizationId: "org_1",
         name: "shop",
         slug: "shop",
         activeDeploymentId: h.activeDeploymentId,
@@ -146,7 +152,7 @@ vi.mock("@repo/db", () => ({
       listByProject: async () => h.serviceIds.map((id) => ({ id })),
     },
     deployment: {
-      findById: async () => ({ id: "dep_1", containerId: h.depContainerId, meta: {} }),
+      findById: async () => ({ id: "dep_1", projectId: "prj_1", organizationId: "org_1", containerId: h.depContainerId, meta: {} }),
     },
   },
 }));
@@ -160,6 +166,7 @@ vi.mock("@repo/db", () => ({
  * that matching exists to prevent.
  */
 class TestExecutor extends DockerBackupExecutor {
+  get supportsOfflineVolumeRestore() { return h.offlineVolumeRestore; }
   async listSources(service: ServiceHandle) {
     if (h.probeError) throw new Error(h.probeError);
     return super.listSources(service);
@@ -177,6 +184,7 @@ class TestExecutor extends DockerBackupExecutor {
       throw new Error(`Restore target "${targetSourceId}" not found on service ${service.name}`);
     }
     h.calls.push(`receive:${source.source}`);
+    if (h.receiveOpenError) throw new Error(h.receiveOpenError);
     // Drain, so the apply-time hasher sees the whole archive as a real extract
     // would. A stub that ignored the body would silently disable that check.
     for await (const chunk of body) void chunk;
@@ -208,7 +216,7 @@ class TestExecutor extends DockerBackupExecutor {
   /**
    * Producers also plain-exec for probes — the redis one asks `CONFIG GET appendonly`
    * before it will write, because an AOF-enabled Redis loads its append-only file at
-   * startup and would ignore a restored RDB entirely. `h.execStdout` scripts the answer.
+   * startup and would ignore a restored RDB entirely. Use the real --raw reply shape.
    */
   async execStream(
     _service: ServiceHandle,
@@ -217,7 +225,8 @@ class TestExecutor extends DockerBackupExecutor {
   ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
     const joined = cmd.join(" ");
     h.calls.push(`probe:${joined.includes("appendonly") ? "appendonly" : "config"}`);
-    const out = joined.includes("appendonly") ? h.appendonly : "";
+    const out = joined.includes("appendonly") ? `appendonly\n${h.appendonly}\n`
+      : joined.includes("CONFIG GET save") ? "save\n3600 1\n" : "OK\n";
     return {
       stdout: Readable.from([Buffer.from(out)]),
       awaitExit: Promise.resolve({ code: 0, stderr: "" }),
@@ -255,17 +264,25 @@ vi.mock("@repo/adapters", async (importOriginal) => {
     ...actual,
     resolveDestination: () => ({
       head: async () => ({ sizeBytes: ARCHIVE.byteLength, uploadedAt: new Date(0) }),
-      get: async () => Readable.from([ARCHIVE]),
+      get: async () => {
+        if (h.row?.status !== "applying") return Readable.from([ARCHIVE]);
+        h.applyBody = h.applyReadError
+          ? new Readable({ read() { this.destroy(new Error(h.applyReadError!)); } })
+          : h.receiveOpenError
+            ? new Readable({ read() { this.push(ARCHIVE); } })
+            : Readable.from([ARCHIVE]);
+        return h.applyBody;
+      },
     }),
-    resolveExecutor: () => new TestExecutor({ docker: fakeDaemon } as never),
+    resolveExecutor: () => new TestExecutor({ docker: fakeDaemon, assertBackupAccess: async () => {} } as never),
   };
 });
 
-vi.mock("../../../src/modules/backups/restore.sse", () => ({
+vi.mock("@repo/platform/engine/modules/backups/restore.sse", () => ({
   restoreRunBus: { publish: () => {}, subscribe: () => () => {} },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   // The orchestrator releases the runtime it resolved when the run ends; these
   // stubs hold no transport, so the release is a no-op here.
   disposeRuntime: () => {},
@@ -273,22 +290,22 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "docker" } } }),
   resolveTargetPlatform: async () => ({ runtime: { name: "bare" } }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: () => {} },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => h.liveContainerId,
   liveContainerForService: async () => ({ containerId: h.liveContainerId, running: null }),
 }));
 
-import { RestoreOrchestrator } from "../../../src/modules/backups/restore.orchestrator";
+import { RestoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 
 const TOKEN = "t".repeat(32);
 const CTX = { organizationId: "org_1", userId: "usr_1" } as never;
@@ -354,7 +371,11 @@ beforeEach(() => {
   h.depContainerId = null;
   h.liveContainerId = null;
   h.probeError = null;
+  h.offlineVolumeRestore = true;
   h.receiveError = null;
+  h.receiveOpenError = null;
+  h.applyReadError = null;
+  h.applyBody = null;
   h.appendonly = "no";
   h.artifacts = [];
   h.calls.length = 0;
@@ -364,6 +385,16 @@ beforeEach(() => {
 });
 
 describe("the unrunnable shapes fail in prepare, in seconds", () => {
+  it("refuses an offline volume restore when stopping the service stops filesystem access", async () => {
+    h.offlineVolumeRestore = false;
+    h.volumes = ["pgdata:/var/lib/postgresql/data"];
+    h.artifacts = [volumeArtifact("openship-shop-pgdata")];
+    const last = await prepare();
+    expect(last.status).toBe("failed");
+    expect(last.patch?.errorMessage).toContain("filesystem connection stops with it");
+    expect(h.calls).toEqual([]);
+    expect(h.transitions.map(t => t.status)).not.toContain("applying");
+  });
   it("names both missing facts when there is no container and no declared volume", async () => {
     // #434's row, exactly: nothing on the host, nothing on the service.
     h.artifacts = [volumeArtifact("openship-shop-pgdata")];
@@ -666,6 +697,37 @@ describe("a payload restored THROUGH the container must not have it stopped firs
     expect(String(terminal.patch?.errorMessage)).toContain("partial data");
   });
 
+  it("fails cleanly when the backup download breaks during apply", async () => {
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [volumeArtifact("vol_a")];
+    h.applyReadError = "backup download connection reset";
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(terminal.patch?.errorMessage).toContain(h.applyReadError);
+    expect(terminal.patch?.meta).toMatchObject({ partialWrite: true, serviceLeftStopped: true });
+    expect(h.calls).not.toContain("start");
+    expect(h.applyBody?.destroyed).toBe(true);
+  }, 2_000);
+
+  it("closes the backup download if the target refuses its input", async () => {
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [volumeArtifact("vol_a")];
+    h.receiveOpenError = "restore helper unavailable";
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(terminal.patch?.errorMessage).toContain(h.receiveOpenError);
+    expect(h.applyBody?.destroyed).toBe(true);
+    expect(h.calls).not.toContain("start");
+  });
+
   it("BOUNCES a running redis after writing dump.rdb, so the write takes effect", async () => {
     // redis_rdb is in NEEDS_LIVE_CONTAINER because the write needs a live container
     // (`cat > /data/dump.rdb` through pipeIntoCommand). That made `stoppedByUs` false
@@ -699,7 +761,7 @@ describe("a payload restored THROUGH the container must not have it stopped firs
     expect(h.containers.get("ctr_redis")!.Running).toBe(true);
   });
 
-  it("refuses an RDB restore into an AOF-enabled redis instead of no-oping", async () => {
+  it.each(["yes", "unknown"])("refuses an unsafe RDB restore without claiming data was changed (appendonly: %s)", async (appendonly) => {
     // With `appendonly yes` Redis loads its append-only file at startup and never
     // looks at dump.rdb, so even a correct write plus a correct bounce changes
     // nothing. `CONFIG SET appendonly no` does not help either — the container's own
@@ -708,7 +770,7 @@ describe("a payload restored THROUGH the container must not have it stopped firs
     h.containers.set("ctr_redis", { Running: true, Mounts: [] });
     h.liveContainerId = "ctr_redis";
     h.activeDeploymentId = "dep_1";
-    h.appendonly = "yes";
+    h.appendonly = appendonly;
     h.artifacts = [
       {
         name: "redis-dump.rdb",
@@ -724,6 +786,9 @@ describe("a payload restored THROUGH the container must not have it stopped firs
 
     expect(terminal.status).toBe("failed");
     expect(String(terminal.patch?.errorMessage)).toContain("AOF persistence");
+    expect(String(terminal.patch?.errorMessage)).not.toContain("partial data");
+    expect(terminal.patch?.meta).not.toMatchObject({ partialWrite: true });
+    expect(terminal.patch?.meta).not.toMatchObject({ destructive: true });
     // Refused BEFORE writing anything, so nothing was touched.
     expect(h.calls).not.toContain("exec:running");
     expect(h.containers.get("ctr_redis")!.Running).toBe(true);

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
-import { SetSleepModeBody, LinkRepoBody, SetOptionsBody } from "../../../src/modules/projects/project.schema";
-import { CreateChannelBody, UpsertSubscriptionBody } from "../../../src/modules/notifications/notification.schema";
-import { CreateConnectionBody, CreateBundleBody } from "../../../src/modules/projects/project-connection.schema";
-import { PrepareDeployBody, BuildRespondBody } from "../../../src/modules/deployments/deployment.schema";
+import { SetSleepModeBody, LinkRepoBody, SetOptionsBody } from "@repo/contracts";
+import { CreateChannelBody, UpsertSubscriptionBody } from "@repo/contracts";
+import { CreateConnectionBody, CreateBundleBody } from "@repo/contracts";
+import { PrepareDeployBody, BuildRespondBody } from "@repo/contracts";
 
 /**
  * The MCP write-tool body schemas are wired via `spec.body`, so they both
@@ -61,8 +61,14 @@ describe("MCP write-tool body schemas", () => {
 
   it("deploy prepare/respond: prepare all-optional, respond needs action", () => {
     expect(ok(PrepareDeployBody, {})).toBe(true);
-    expect(ok(PrepareDeployBody, { source: "github", owner: "a", repo: "b", branch: "main" })).toBe(true);
+    expect(ok(PrepareDeployBody, { source: "github", owner: "a", repo: "b", branch: "main" })).toBe(
+      true,
+    );
     expect(ok(PrepareDeployBody, { source: "svn" })).toBe(false);
+    for (const rootDirectory of [".", "./apps/web/", "apps/my app"])
+      expect(ok(PrepareDeployBody, { rootDirectory })).toBe(true);
+    for (const rootDirectory of ["/etc", "../other", "apps/../../other", "C:/other", "apps\\other"])
+      expect(ok(PrepareDeployBody, { rootDirectory })).toBe(false);
     expect(ok(BuildRespondBody, { action: "approve" })).toBe(true);
     expect(ok(BuildRespondBody, {})).toBe(false);
   });

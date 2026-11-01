@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor, LogEntry } from "../types";
 import { EXECUTOR_DELEGATE } from "./elevated-executor";
 import { logEntry, sq } from "./local-shell";
@@ -21,10 +22,10 @@ export function containerCommand(container: string, command: string): string {
 async function diagnoseEdgeDown(inner: CommandExecutor, container: string): Promise<string> {
   const status = await inner
     .exec(`docker inspect -f '{{.State.Status}}' ${sq(container)} 2>/dev/null`)
-    .catch(() => null);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return null; });
   const logs = await inner
     .exec(`docker logs --tail 40 ${sq(container)} 2>&1`)
-    .catch(() => null);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return null; });
   return explainEdgeDown({
     container,
     status: status?.trim() || null,
@@ -83,13 +84,13 @@ export async function readMaybeInContainer(
   path: string,
   container?: EdgeContainerRef,
 ): Promise<string> {
-  const direct = await exec.readFile(path).catch(() => "");
+  const direct = await exec.readFile(path).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return ""; });
   if (direct.trim()) return direct;
   // Resolved only NOW, on the miss: the overwhelmingly common case is a host hit,
   // and it must not pay for a `docker ps` to answer a question it never asks.
   const name = await resolveRef(container);
   if (!name) return "";
-  return exec.exec(containerCommand(name, `cat ${sq(path)}`)).catch(() => "");
+  return exec.exec(containerCommand(name, `cat ${sq(path)}`)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return ""; });
 }
 
 /**
@@ -114,13 +115,17 @@ async function writeEdgeFileIn(
   if (!container) return;
   const visible = await inner
     .exec(containerCommand(container, `test -e ${sq(path)} && echo visible`))
-    .catch(() => "");
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return ""; });
   if (visible.trim() === "visible") return;
   const dir = path.replace(/\/[^/]*$/, "");
   if (dir && dir !== path) {
-    await inner.exec(containerCommand(container, `mkdir -p ${sq(dir)}`)).catch(() => {});
+    await inner.exec(containerCommand(container, `mkdir -p ${sq(dir)}`)).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor");
+    });
   }
-  await inner.exec(`docker cp ${sq(path)} ${sq(`${container}:${path}`)}`).catch(() => {});
+  await inner.exec(`docker cp ${sq(path)} ${sq(`${container}:${path}`)}`).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor");
+  });
 }
 
 /**
@@ -129,7 +134,7 @@ async function writeEdgeFileIn(
  * resolved only if the host read misses.
  */
 export function readEdgeFile(exec: CommandExecutor, path: string): Promise<string> {
-  return readMaybeInContainer(exec, path, () => resolveOurEdgeContainer(exec).catch(() => null));
+  return readMaybeInContainer(exec, path, () => resolveOurEdgeContainer(exec).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return null; }));
 }
 
 /**
@@ -142,7 +147,7 @@ export async function writeEdgeFile(
   path: string,
   content: string,
 ): Promise<void> {
-  const container = await resolveOurEdgeContainer(exec).catch(() => null);
+  const container = await resolveOurEdgeContainer(exec).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return null; });
   return writeEdgeFileIn(exec, container, path, content);
 }
 
@@ -223,7 +228,7 @@ export function edgeContainerExecutor<E extends CommandExecutor>(
       writeFile: (path: string, content: string, writeOpts?: { mode?: number }) =>
         writeEdgeFileIn(inner, container, path, content, writeOpts),
       exists: async (path: string) => {
-        if (await inner.exists(path).catch(() => false)) return true;
+        if (await inner.exists(path).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return false; })) return true;
         // `test` reports absence via exit code — an answer, not a failure.
         const { code } = await inner.streamExec(inContainer(`test -e ${sq(path)}`), () => {});
         return code === 0;
@@ -232,7 +237,7 @@ export function edgeContainerExecutor<E extends CommandExecutor>(
       // write itself, so it follows readFile/writeFile — host first, container only
       // when the host can't see the file.
       rename: async (from: string, to: string) => {
-        if (await inner.exists(from).catch(() => false)) {
+        if (await inner.exists(from).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return false; })) {
           if (inner.rename) return inner.rename(from, to);
           await inner.exec(`mv ${sq(from)} ${sq(to)}`);
           return;
@@ -243,11 +248,15 @@ export function edgeContainerExecutor<E extends CommandExecutor>(
       // get them unconditionally rather than paying a probe to decide.
       mkdir: async (path: string) => {
         await inner.mkdir(path);
-        await inner.exec(inContainer(`mkdir -p ${sq(path)}`)).catch(() => {});
+        await inner.exec(inContainer(`mkdir -p ${sq(path)}`)).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor");
+        });
       },
       rm: async (path: string) => {
         await inner.rm(path);
-        await inner.exec(inContainer(`rm -rf ${sq(path)}`)).catch(() => {});
+        await inner.exec(inContainer(`rm -rf ${sq(path)}`)).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor");
+        });
       },
     } satisfies Partial<CommandExecutor>);
   }

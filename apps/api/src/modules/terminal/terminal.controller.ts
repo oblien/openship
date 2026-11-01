@@ -27,10 +27,18 @@
  *           code, signal } | { type: "error", code, message } | { type: "pong" }
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import { sshManager } from "../../lib/ssh-manager";
-import { auth } from "../../lib/auth";
-import { trustedOrigins } from "../../config/env";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
+import {
+  TERMINAL_SUBPROTOCOL_PREFIX as SUBPROTOCOL_PREFIX,
+  TERMINAL_RESUME_SUBPROTOCOL_PREFIX as RESUME_SUBPROTOCOL_PREFIX,
+  TERMINAL_COLS_MAX as COLS_MAX, TERMINAL_ROWS_MAX as ROWS_MAX,
+} from "@repo/contracts";
+import { openServerShell } from "@repo/platform/engine/lib/server-execution";
+import { prepareCloudTerminal, cloudTerminalHandlers } from "../../lib/cloud/terminal-bridge";
+import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
+import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
@@ -49,8 +57,10 @@ import {
   unregisterSession,
 } from "../../lib/terminal-session-manager";
 import { getRequestContext } from "../../lib/request-context";
-import { resolveActiveOrganizationId } from "../../middleware/active-organization";
-import { permission, checkPermission } from "../../lib/permission";
+import { resolveTerminalContext, watchTerminalAuthorization } from "../../lib/terminal-authorization";
+import { permission } from "../../lib/permission";
+import { authorization } from "@repo/platform/engine/lib/authorization";
+import type { ExecutionContext } from "@repo/platform";
 import {
   safeWsSend,
   safeWsClose,
@@ -60,11 +70,10 @@ import {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const SUBPROTOCOL_PREFIX = "openship.terminal.v1+";
 const HEARTBEAT_INTERVAL_MS = 25_000;
 // Sane bounds applied client-side AND server-side - never trust the wire.
-const COLS_MIN = 1, COLS_MAX = 1000;
-const ROWS_MIN = 1, ROWS_MAX = 500;
+const COLS_MIN = 1;
+const ROWS_MIN = 1;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -104,16 +113,17 @@ type ErrorCode =
   | "resume_failed"
   | "server_error";
 
-const RESUME_SUBPROTOCOL_PREFIX = "openship.terminal.resume+";
 
 // ─── Ticket endpoint (POST /api/terminal/ticket) ────────────────────────────
 
 export async function issueTicket(c: Context) {
   const ctx = getRequestContext(c);
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller"); return ({}); });
   const serverId = typeof body?.serverId === "string" ? body.serverId : "";
   if (!serverId) return c.json({ error: "serverId required" }, 400);
+  const cloud = await prepareCloudTerminal(ctx, "server", serverId);
+  if (cloud) return c.json({ success: true, ...issueTerminalTicket(ctx, serverId, cloud) });
 
   // Primary gate: opening a PTY is administrative. Even at ticket-mint
   // time we want to reject restricted users without an admin grant — the
@@ -166,6 +176,7 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   const tokenProto = protocols.find((p) => p.startsWith(SUBPROTOCOL_PREFIX));
   const token = tokenProto ? tokenProto.slice(SUBPROTOCOL_PREFIX.length) : "";
   const ticket = token ? consumeTerminalTicket(token) : null;
+  if (tokenProto && !ticket) return openInitFailure("ssh_auth", "Invalid or expired terminal ticket", 4401);
 
   const resumeProto = protocols.find((p) => p.startsWith(RESUME_SUBPROTOCOL_PREFIX));
   const resumeToken = resumeProto
@@ -176,59 +187,24 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   // Only used when no ticket was presented. Browsers WILL send cookies
   // on a same-origin WS upgrade, but we still prefer the ticket because
   // it binds (userId, serverId) together.
-  let userId: string | null = null;
-  let ticketServerId: string | null = null;
-  // Resolve activeOrganizationId here — the WS upgrade route deliberately
-  // skips the HTTP authMiddleware (auth happens inside this factory), so
-  // it's not pre-set on the Hono context. Two paths, mirroring the
-  // sibling service-terminal controller:
-  //   - Ticket path: the ticket carries (userId, orgId, serverId) baked
-  //     in at mint time, when authMiddleware HAD resolved the org. Use
-  //     that org — re-deriving it here would scope the socket to a
-  //     different tenant than the one the mint-time checks passed in.
-  //   - Cookie path: no ticket, so re-derive from the session through
-  //     resolveActiveOrganizationId (the canonical resolver from
-  //     middleware/active-organization.ts), applying the same
-  //     team-org-preferred + memberships[0] fallback as every other
-  //     authed request.
-  // Foreground non-WS callers must NOT duplicate this pattern — they
-  // read ctx.organizationId, which authMiddleware already populated.
-  let activeOrgId: string | null = null;
-  if (ticket) {
-    userId = ticket.userId;
-    ticketServerId = ticket.serverId;
-    activeOrgId = ticket.organizationId;
-  } else {
-    try {
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      if (session?.user?.id) {
-        userId = session.user.id;
-        const sessOrgId =
-          (session.session as { activeOrganizationId?: string | null } | null)
-            ?.activeOrganizationId ?? null;
-        activeOrgId = await resolveActiveOrganizationId(userId, sessOrgId).catch(() => null);
-      }
-    } catch {
-      // fall through to reject below
-    }
+  let actor;
+  try {
+    actor = await resolveTerminalContext(c.req.raw.headers, ticket?.context);
+  } catch (error) {
+    observeCaughtError(error, "api/lib/terminal-authorization");
+    return openInitFailure("ssh_auth", "Unauthorized", 4401);
   }
-  if (!userId) return openInitFailure("ssh_auth", "Unauthorized", 4401);
-  if (!activeOrgId) return openInitFailure("ssh_auth", "No active organization", 4401);
+  const { userId, organizationId: activeOrgId } = actor;
 
   // ── 3. Server existence + path-binding sanity ──────────────────────────
   const pathServerId = c.req.param("serverId");
   if (!pathServerId) return openInitFailure("server_not_found", "serverId required", 4400);
   // If we authenticated via ticket, ensure the ticket's serverId matches
   // the path - prevents a ticket for server A being replayed against B.
-  if (ticketServerId && ticketServerId !== pathServerId) {
+  if (ticket && ticket.serverId !== pathServerId) {
     return openInitFailure("ssh_auth", "Ticket / path mismatch", 4401);
   }
-  // Primary gate: opening a PTY is administrative. We call the pure
-  // resolver (no Hono context) directly here because the WS upgrade path
-  // resolves userId + activeOrgId manually above (authMiddleware is
-  // bypassed for the upgrade). 404-shape on deny via openInitFailure so
-  // we don't leak existence to non-admins.
-  const allowed = await checkPermission(userId, activeOrgId, {
+  const allowed = await authorization.checkPermissionOnResource(actor, {
     resourceType: "server",
     resourceId: pathServerId,
     action: "admin",
@@ -236,14 +212,16 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   if (!allowed) {
     return openInitFailure("server_not_found", "Server not found", 4404);
   }
+  if (ticket?.cloud) return cloudTerminalHandlers({ kind: "server", id: pathServerId,
+    context: ticket.context, cloud: ticket.cloud, resumeToken });
   // Org-scoped lookup: returns 404 indistinguishably whether the server
   // doesn't exist or belongs to a different org. This is the cross-tenant
-  // SSH PTY gate (defense in depth alongside the permission check above).
+  // host-shell gate (defense in depth alongside the permission check above).
   const server = await repos.server.getInOrganization(pathServerId, activeOrgId);
   if (!server) return openInitFailure("server_not_found", "Server not found", 4404);
 
   // ── 4. Per-user concurrent session cap (skipped for resumes) ──────────
-  // A resume reuses an existing audit row + ssh channel, so it doesn't
+  // A resume reuses an existing audit row and shell, so it doesn't
   // count against the cap as a new session. The fresh-shell path runs
   // the cap check; the resume path defers to per-session ownership.
   if (!resumeToken) {
@@ -251,6 +229,7 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
     if (inMemoryCount >= maxSessionsPerUser()) {
       return openInitFailure("max_sessions", "Too many active sessions", 4429);
     }
+    if (env.CLOUD_MODE) await repos.terminalSession.closeExpiredForUser(userId, new Date(Date.now() - env.TERMINAL_HARD_CAP_MS));
     const dbCount = await repos.terminalSession.countActiveByUser(userId);
     if (dbCount >= maxSessionsPerUser()) {
       return openInitFailure("max_sessions", "Too many active sessions", 4429);
@@ -264,8 +243,11 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   // ── 6. Open the PTY (lazy — happens in onOpen so the failure path
   //       can send a structured error frame before close) ────────────────
   const ctx: HandshakeCtx = {
+    actor: ticket?.context ?? actor,
     userId,
     serverId: pathServerId,
+    organizationId: activeOrgId,
+    managed: !!server.workspaceId,
     clientIp,
     userAgent,
     // Echo the subprotocol back so the browser accepts the upgrade.
@@ -279,7 +261,10 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
 // ─── Per-connection state container ─────────────────────────────────────────
 
 interface HandshakeCtx {
+  actor: ExecutionContext;
   userId: string;
+  organizationId: string;
+  managed?: boolean;
   serverId: string;
   clientIp: string | null;
   userAgent: string | null;
@@ -294,6 +279,7 @@ export interface ConnState {
   shell: ShellSession | null;
   ws: WSLike | null;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
+  stopAuthorizationWatch?: () => void;
   /** True when this WebSocket connection has detached; stops its data pump and incoming messages. */
   closed: boolean;
   /** True when this connection's session has been fully ended (shell killed, audit row closed). */
@@ -325,16 +311,25 @@ function buildHandlers(ctx: HandshakeCtx) {
     userTerminated: false,
   };
 
+  function watchAuthorization(ws: WSLike) {
+    state.stopAuthorizationWatch = watchTerminalAuthorization(ctx.actor, { resourceType: "server", resourceId: ctx.serverId }, () => {
+      sendControl(ws, { type: "error", code: "ssh_auth", message: "Terminal authorization expired. Reconnect to continue." });
+      state.userTerminated = true;
+      safeWsClose(ws, 4401, "authorization_expired");
+      void teardown(state, "client_close", null, false, true);
+    });
+  }
+
   return {
     /**
      * The handshake has succeeded. Two paths from here:
      *
      *   RESUME: the client presented a valid resume token. Reattach
-     *           the WS to the parked session's shell — no new SSH
-     *           channel, no new audit row, no cap consumption.
+     *           the WS to the parked session's shell — no new
+     *           connection, audit row, or cap consumption.
      *
-     *   FRESH:  open a new ssh2 PTY shell, write the audit row,
-     *           register in the session manager, set up the timers
+     *   FRESH:  reserve the session slot and audit row, open a shell
+     *           through the server's executor, then register timers
      *           and the data pump.
      *
      * Both paths converge on (a) wiring shell.onClose, (b) starting
@@ -352,7 +347,8 @@ function buildHandlers(ctx: HandshakeCtx) {
       // ── RESUME path ──────────────────────────────────────────────
       if (ctx.resumeToken) {
         const existing = getSessionByResumeToken(ctx.resumeToken, ctx.userId);
-        if (!existing) {
+        // The handshake authorized this server, not every session the user owns.
+        if (!existing || existing.serverId !== ctx.serverId) {
           // Token doesn't match a live session (expired, idle/cap
           // fired, server restarted, or wrong user). Tell the client
           // so it can drop the stale token from localStorage and try
@@ -381,23 +377,19 @@ function buildHandlers(ctx: HandshakeCtx) {
         };
         touchSession(existing.sessionId);
 
-        // Wire up shell-exit / heartbeat from the resumed channel.
-        // (Note: existing.shell.onClose subscribers from the PREVIOUS
-        // WS attachment are stale - they reference a dead `ws`. We
-        // can't unsubscribe from ssh2's channel events, but those
-        // closures are guarded by `state.ended` / `state.closed` and
-        // `alreadyUnregistered`, so they cannot double-close the audit
-        // row. The new onClose subscriber below is the live one.)
-        existing.shell.onClose((code: number | null, signal?: string) => {
+        existing.onExit = (code, signal) => {
           sendControl(ws, { type: "exit", code, signal });
           safeWsClose(ws, 1000, "remote_exit");
-          void teardown(state, "remote_exit", code);
-        });
+          void teardown(state, "remote_exit", code, true, true);
+        };
+
+        if (state.closed || state.ended) return;
 
         state.heartbeatTimer = setInterval(() => {
           sendControl(ws, { type: "pong" });
         }, HEARTBEAT_INTERVAL_MS);
         (state.heartbeatTimer as { unref?: () => void }).unref?.();
+        watchAuthorization(ws);
 
         sendControl(ws, {
           type: "ready",
@@ -410,52 +402,65 @@ function buildHandlers(ctx: HandshakeCtx) {
 
       // ── FRESH path ───────────────────────────────────────────────
       let shell: ShellSession;
+      let release: () => Promise<void>;
       let auditId: string | null = null;
+      // Reserve the audit row and concurrent-session slot together, across API
+      // replicas. A failed audit write must not open an untracked host terminal.
       try {
-        sshManager.retain(ctx.serverId);
-        shell = await sshManager.withExecutor(ctx.serverId, async (exec) => {
-          if (!exec.openShell) {
-            throw Object.assign(new Error("PTY shell not supported on this executor"), {
-              code: "server_error",
-            });
-          }
-          return exec.openShell({ cols: 80, rows: 24, term: "xterm-256color" });
+        const row = await createProvisionLock(`terminal:user:${ctx.userId}`).run(async () => {
+          if (env.CLOUD_MODE) await repos.terminalSession.closeExpiredForUser(ctx.userId, new Date(Date.now() - env.TERMINAL_HARD_CAP_MS));
+          if (countActiveSessionsByUser(ctx.userId) >= maxSessionsPerUser() || await repos.terminalSession.countActiveByUser(ctx.userId) >= maxSessionsPerUser()) return null;
+          return repos.terminalSession.open({ userId: ctx.userId, serverId: ctx.serverId, clientIp: ctx.clientIp, userAgent: ctx.userAgent });
         });
+        if (!row) {
+          sendControl(ws, { type: "error", code: "max_sessions", message: "Too many active sessions" });
+          safeWsClose(ws, 4429, "max_sessions");
+          return;
+        }
+        auditId = row.id;
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
+        sendControl(ws, { type: "error", code: "server_error", message: "Could not reserve a terminal session. Retry to reconnect." });
+        safeWsClose(ws, 1011, "server_error");
+        return;
+      }
+      if (state.closed) {
+        await repos.terminalSession.close(auditId, { exitReason: "client_close" });
+        return;
+      }
+      try {
+        ({ shell, release } = await openServerShell(ctx.organizationId, ctx.serverId, { cols: 80, rows: 24, term: "xterm-256color" }));
       } catch (err: any) {
-        sshManager.release(ctx.serverId);
-        const code: ErrorCode = classifySshError(err);
-        sendControl(ws, { type: "error", code, message: err?.message || "SSH failure" });
+        observeCaughtError(err, "api/modules/terminal/terminal.controller");
+        await repos.terminalSession.close(auditId, { exitReason: "server_error" }).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
+        });
+        const code: ErrorCode = ctx.managed ? "server_error" : classifySshError(err);
+        sendControl(ws, { type: "error", code, message: err?.message || "Server connection failed" });
         safeWsClose(ws, 1011, code);
         return;
       }
 
       state.shell = shell;
 
-      // Audit row open — only after the SSH channel actually succeeded.
-      try {
-        const row = await repos.terminalSession.open({
-          userId: ctx.userId,
-          serverId: ctx.serverId,
-          clientIp: ctx.clientIp,
-          userAgent: ctx.userAgent,
-        });
-        auditId = row.id;
-      } catch {
-        // Failing to write the audit row should NOT kill an authenticated
-        // session - log it and proceed. Boot sweep will not see this
-        // session anyway (no row), which is the worst case.
-        // eslint-disable-next-line no-console
-        console.error("[terminal] failed to write audit open row");
+      if (state.closed) {
+        await release();
+        await repos.terminalSession.close(auditId, { exitReason: "client_close" });
+        return;
       }
-
-      state.sessionId = auditId;
-
-      const sessionId = auditId ?? `transient-${Date.now()}`;
+      const sessionId = auditId;
+      state.sessionId = sessionId;
       const session = registerSession({
         sessionId,
         userId: ctx.userId,
         serverId: ctx.serverId,
         shell,
+        release,
+        onExit: (code, signal) => {
+          sendControl(ws, { type: "exit", code, signal });
+          safeWsClose(ws, 1000, "remote_exit");
+          void teardown(state, "remote_exit", code, true, true);
+        },
         onTimeout: (_sid, reason) => {
           sendControl(ws, { type: "error", code: reason as ErrorCode, message: reason });
           safeWsClose(ws, 1011, reason);
@@ -463,26 +468,40 @@ function buildHandlers(ctx: HandshakeCtx) {
           void teardown(state, reason, null, /* alreadyUnregistered */ true, /* forceClose */ true);
         },
       });
-      state.sessionId = sessionId;
+
+      // The WS can go away while we await the host shell and the audit-row
+      // insert — @hono/node-ws registers its 'close' listener as soon as this
+      // async onOpen suspends, so onClose runs against a state that has no
+      // sessionId yet. The client never received `ready`, so it holds no
+      // resumeToken and can never reattach: parking would strand the shell and
+      // leave the audit row open forever, permanently burning a slot in the
+      // per-user cap (which counts rows with endedAt IS NULL).
+      if (state.closed) {
+        unregisterSession(sessionId);
+        await teardown(
+          state,
+          "client_close",
+          null,
+          /* alreadyUnregistered */ true,
+          /* forceClose */ true,
+        );
+        return;
+      }
 
       // Pipe remote stdout/stderr → ws via the session manager's
-      // dispatcher. The dispatcher drops bytes while the session is
-      // parked (no WS attached) - so the parked-shell output doesn't
-      // pile up in memory or pump into a dead WS.
+      // dispatcher. While parked it retains only bounded scrollback and
+      // does not send bytes to the disconnected WebSocket.
       attachWs(sessionId, dataPump);
       shell.stdout.on("data", (chunk: Buffer) => dispatchStdout(sessionId, chunk));
       shell.stderr.on("data", (chunk: Buffer) => dispatchStdout(sessionId, chunk));
 
-      shell.onClose((code: number | null, signal?: string) => {
-        sendControl(ws, { type: "exit", code, signal });
-        safeWsClose(ws, 1000, "remote_exit");
-        void teardown(state, "remote_exit", code, false, /* forceClose */ true);
-      });
+      if (state.closed || state.ended) return;
 
       state.heartbeatTimer = setInterval(() => {
         sendControl(ws, { type: "pong" });
       }, HEARTBEAT_INTERVAL_MS);
       (state.heartbeatTimer as { unref?: () => void }).unref?.();
+      watchAuthorization(ws);
 
       sendControl(ws, {
         type: "ready",
@@ -581,13 +600,13 @@ function writeStdin(state: ConnState, buf: Buffer): void {
  *
  *   forceClose=true   → really tear down (remote shell exit, idle/cap
  *                       timeout, server error). The PTY is killed, the
- *                       SSH retain released, the audit row finalized.
+ *                       connection released, the audit row finalized.
  *
  *   forceClose=false  → PARK the session: detach the WS but keep the
  *                       PTY + audit row alive so the client can resume
  *                       on the next reconnect. Heartbeat is stopped
- *                       (no WS to send pongs to); shell + sshManager
- *                       retain are preserved. The session manager's
+ *                       (no WS to send pongs to); shell and connection
+ *                       lease are preserved. The session manager's
  *                       idle + hard-cap timers continue running.
  *
  * `state.closed` tracks whether this WebSocket connection has detached.
@@ -597,14 +616,19 @@ function writeStdin(state: ConnState, buf: Buffer): void {
  * still close the DB row. Stale handlers from a previous WS (e.g. after a
  * resume) are rejected by the `state.closed && !alreadyUnregistered` guard.
  */
-export async function teardown(
+export function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
 ) {
+  return trackBackgroundWork(teardownConnection(state, reason, exitCode, alreadyUnregistered, forceClose));
+}
+
+async function teardownConnection(state: ConnState, reason: TerminalExitReason, exitCode: number | null, alreadyUnregistered: boolean, forceClose: boolean) {
   // Full teardown already completed for this connection.
+  state.stopAuthorizationWatch?.();
   if (state.ended) return;
 
   // The WS side of this connection is already gone and this is not the
@@ -620,8 +644,15 @@ export async function teardown(
     state.heartbeatTimer = null;
   }
 
+  // No session registered yet: onOpen is still awaiting the host shell /
+  // audit-row insert and owns the lifecycle of what it is about to create.
+  // Marking this connection `ended` here would make onOpen's abort check —
+  // and any later idle/cap timeout — a no-op, orphaning the audit row. Leave
+  // `closed` set: that is the flag onOpen reads to abort.
+  if (!state.sessionId) return;
+
   // PARK path - keep the shell + audit row alive for resume.
-  if (!forceClose && state.sessionId) {
+  if (!forceClose) {
     parkSession(state.sessionId);
     return;
   }
@@ -636,7 +667,7 @@ export async function teardown(
   }
 
   // unregisterSession is the SINGLE definitive session-end. It owns releasing
-  // the SSH retain (acquired at openShell) — reached from every path including
+  // the connection lease (acquired at openServerShell) — reached from every path including
   // the idle/cap timeout, which unregisters BEFORE this teardown runs. Doing the
   // release there (not here) keeps it atomic with session lifetime: the park path
   // never reaches this, so a parked-then-resumed session keeps its connection
@@ -645,16 +676,17 @@ export async function teardown(
     unregisterSession(state.sessionId);
   }
 
-  // Finalize the audit row if we wrote one.
-  if (state.sessionId && !state.sessionId.startsWith("transient-")) {
+  // Every registered session has an audit row.
+  if (state.sessionId) {
     try {
       await repos.terminalSession.close(state.sessionId, {
         exitCode,
         exitReason: reason,
       });
-    } catch {
-      // No way to recover; the boot-time sweep will eventually close it
-      // with reason='server_error' on a future restart.
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
+      // Admission expires rows past the hard cap on Cloud; self-hosted
+      // startup also sweeps rows abandoned by a previous process.
     }
   }
 }

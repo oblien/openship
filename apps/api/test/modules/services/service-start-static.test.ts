@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   },
   deployment: {
     id: "dep_1",
+    organizationId: "org_1",
     projectId: "proj_1",
     environment: "production",
     meta: { framework: "vite", startCommand: "" },
@@ -73,17 +74,17 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/deployment-runtime")>();
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>();
   return {
     ...actual,
     resolveDeploymentRuntimeForRead: h.resolveDeploymentRuntimeForRead,
   };
 });
 
-vi.mock("../../../src/modules/services/service-container", async (importOriginal) => {
+vi.mock("@repo/platform/engine/modules/services/service-container", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../src/modules/services/service-container")>();
+    await importOriginal<typeof import("@repo/platform/engine/modules/services/service-container")>();
   return {
     ...actual,
     liveContainerIdWithRuntime: h.liveContainerIdWithRuntime,
@@ -91,16 +92,16 @@ vi.mock("../../../src/modules/services/service-container", async (importOriginal
   };
 });
 
-vi.mock("../../../src/modules/deployments/compose/deploy.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () => ({
   deployComposeServices: h.deployComposeServices,
 }));
 
-vi.mock("../../../src/lib/plan-guard", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/plan-guard")>();
+vi.mock("@repo/platform/engine/lib/plan-guard", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/plan-guard")>();
   return { ...actual, assertPlanAllowsServices: h.assertPlanAllowsServices };
 });
 
-import { startServiceContainer } from "../../../src/modules/services/service.service";
+import { startServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 

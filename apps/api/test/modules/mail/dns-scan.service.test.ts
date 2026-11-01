@@ -71,13 +71,13 @@ const BASE_STATE = {
  */
 let state: Record<string, unknown> = BASE_STATE;
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: async (_serverId: string, fn: (exec: unknown) => unknown) => fn({}),
   },
 }));
 
-vi.mock("../../../src/modules/mail/mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: async () => state,
 }));
 
@@ -301,7 +301,7 @@ describe("DKIM key comparison", () => {
  */
 const DKIM_CNAME = { name: "abc._domainkey.example.com", value: "abc.dkim.amazonses.com" };
 const MAIL_FROM = "bounce.example.com";
-const SES_MX = "feedback-smtp.us-east-1.amazonaws.com";
+const SES_MX = "feedback-smtp.us-east-1.amazonses.com";
 
 /** BASE_STATE with sending moved to a provider — the shape applyRelayToState writes. */
 const RELAY_STATE = {

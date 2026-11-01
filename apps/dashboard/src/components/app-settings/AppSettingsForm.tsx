@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useId, useRef } from "react";
 import {
   flattenSettingFields,
   envToSettingValue,
@@ -14,9 +14,11 @@ import {
   type AppSettingGroup,
 } from "@repo/core";
 import type { AppSettingsView } from "@/lib/api/apps";
+import { cn } from "@/lib/utils";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Input, inputVariants } from "@/components/ui/input";
 
-/** A catalog app whose template exposes curated (schema) settings — drives the
- *  "App settings" mode of the Configuration tab + the install-wizard step. */
+/** A catalog app with curated fields for project Settings and the install wizard. */
 export function isSchemaAppTemplate(appTemplateId?: string): boolean {
   if (!appTemplateId) return false;
   const tpl = getAppTemplate(appTemplateId);
@@ -35,6 +37,21 @@ export type FormValue = string | boolean;
 
 /** Stable form-state key. Service names + env keys never contain spaces. */
 export const fk = (service: string, key: string) => `${service} ${key}`;
+
+/** Seed newly received catalog fields without resetting edits, including empty values. */
+export function withSettingDefaults(
+  fields: readonly AppSettingField[],
+  values: Record<string, FormValue> = {},
+): Record<string, FormValue> {
+  let next = values;
+  for (const field of fields) {
+    const key = fk(field.service, field.key);
+    if (next[key] !== undefined) continue;
+    if (next === values) next = { ...values };
+    next[key] = envToSettingValue(field, undefined);
+  }
+  return next;
+}
 
 /** Seed controlled form state from a settings view (secrets always start blank). */
 export function seedFormValues(view: AppSettingsView): Record<string, FormValue> {
@@ -94,6 +111,10 @@ interface AppSettingsFormProps {
   flat?: boolean;
   /** Heading for `flat` mode. */
   title?: string;
+  /** Default field columns; individual groups can override this outside flat mode. */
+  columns?: 1 | 2;
+  /** An extra field before the settings in flat mode, such as the install's project name. */
+  leadingContent?: React.ReactNode;
   /** Reported whenever validity of the visible fields changes (install wizard
    *  gates Install on this; the day-2 tab omits it). */
   onValidityChange?: (v: FormValidity) => void;
@@ -109,6 +130,8 @@ export function AppSettingsForm({
   filter,
   flat = false,
   title,
+  columns = 1,
+  leadingContent,
   onValidityChange,
 }: AppSettingsFormProps) {
   // A field is shown when it passes the caller's filter + advanced gate AND its
@@ -155,28 +178,45 @@ export function AppSettingsForm({
     />
   );
 
-  if (flat) {
-    const fields = visibleAll;
-    if (fields.length === 0) return null;
-    return (
-      <div className="bg-card rounded-2xl border border-border/50 p-5">
-        {title && <h3 className="text-sm font-semibold text-foreground">{title}</h3>}
-        <div className={`space-y-4 ${title ? "mt-4" : ""}`}>{fields.map(renderField)}</div>
-      </div>
-    );
-  }
+  const cards = flat
+    ? [
+        {
+          id: "flat",
+          label: title,
+          description: undefined,
+          columns,
+          fields: visibleAll,
+          leadingContent,
+        },
+      ]
+    : groups.map((group) => ({
+        ...group,
+        columns: group.columns ?? columns,
+        fields: group.fields.filter(shown),
+        leadingContent: undefined,
+      }));
+  const visibleCards = cards.filter((group) => group.fields.length > 0 || group.leadingContent);
+  if (visibleCards.length === 0) return null;
+
   return (
     <div className="space-y-5">
-      {groups.map((group) => {
-        const visible = group.fields.filter(shown);
-        if (visible.length === 0) return null;
+      {visibleCards.map((group) => {
         return (
-          <div key={group.id} className="bg-card rounded-2xl border border-border/50 p-5">
-            <h3 className="text-sm font-semibold text-foreground">{group.label}</h3>
+          <div key={group.id} className="@container/app-settings rounded-2xl bg-card p-5">
+            {group.label && <h3 className="text-sm font-semibold text-foreground">{group.label}</h3>}
             {group.description && (
               <p className="mt-1 text-xs text-muted-foreground">{group.description}</p>
             )}
-            <div className="mt-4 space-y-4">{visible.map(renderField)}</div>
+            <div
+              className={cn(
+                "grid grid-cols-1 items-start gap-4",
+                (group.label || group.description) && "mt-4",
+                group.columns === 2 && "@min-[32rem]/app-settings:grid-cols-2",
+              )}
+            >
+              {group.leadingContent}
+              {group.fields.map(renderField)}
+            </div>
           </div>
         );
       })}
@@ -207,13 +247,10 @@ function Field({
   secretSetLabel: string;
   onChange: (v: FormValue) => void;
 }) {
-  // Same field treatment as the surfaces this form sits on (the app-install
-  // wizard's "Name" box, project settings): `border-border/50` + a focus ring.
-  // `border-input` is double the alpha on dark, so a settings field read as an
-  // outlined box next to its borderless neighbours.
-  const base =
-    "w-full rounded-xl border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25";
-  const inputCls = `${base} ${error ? "border-danger" : "border-border/50"}`;
+  const inputId = useId();
+  const labelId = `${inputId}-label`;
+  const isChoiceGroup = field.type === "radio" || field.type === "multiselect";
+  const errorClassName = error ? "ring-1 ring-danger" : undefined;
   const str = typeof value === "string" ? value : "";
   // Password type OR an explicitly-secret field masks (fixes the old bug where a
   // type:"password" non-secret field rendered as visible text).
@@ -227,14 +264,19 @@ function Field({
   };
 
   return (
-    <div>
+    <div className={cn("min-w-0", field.fullWidth && "col-span-full")}>
       <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium text-foreground">
+        <label
+          id={labelId}
+          htmlFor={isChoiceGroup ? undefined : inputId}
+          className="text-sm font-medium text-foreground"
+        >
           {field.label}
           {field.required && <span className="ms-0.5 text-danger">*</span>}
         </label>
         {field.type === "boolean" && (
           <button
+            id={inputId}
             type="button"
             role="switch"
             aria-checked={value === true}
@@ -253,15 +295,19 @@ function Field({
       </div>
 
       {field.type === "boolean" ? null : field.type === "select" ? (
-        <select className={`${inputCls} mt-2`} value={str} onChange={(e) => onChange(e.target.value)}>
-          {(field.options ?? []).map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <CustomSelect
+          id={inputId}
+          aria-label={field.label}
+          className="mt-2"
+          variant="filled"
+          triggerClassName={cn("bg-muted/60 hover:bg-muted", errorClassName)}
+          value={str}
+          options={[...(field.options ?? [])]}
+          onChange={onChange}
+          placeholder={field.placeholder}
+        />
       ) : field.type === "radio" ? (
-        <div className="mt-2 space-y-1.5">
+        <div role="radiogroup" aria-labelledby={labelId} className="mt-2 space-y-1.5">
           {(field.options ?? []).map((o) => (
             <label key={o.value} className="flex items-center gap-2 text-sm text-foreground">
               <input
@@ -275,7 +321,7 @@ function Field({
           ))}
         </div>
       ) : field.type === "multiselect" ? (
-        <div className="mt-2 space-y-1.5">
+        <div role="group" aria-labelledby={labelId} className="mt-2 space-y-1.5">
           {(field.options ?? []).map((o) => (
             <label key={o.value} className="flex items-center gap-2 text-sm text-foreground">
               <input
@@ -289,15 +335,22 @@ function Field({
         </div>
       ) : field.type === "textarea" ? (
         <textarea
-          className={`${inputCls} mt-2 min-h-24 font-mono`}
+          id={inputId}
+          className={cn(
+            inputVariants({ variant: "filled" }),
+            "mt-2 h-auto min-h-24 font-mono",
+            errorClassName,
+          )}
           value={str}
           placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
-        <input
+        <Input
+          id={inputId}
           type={masked ? "password" : field.type === "number" ? "number" : "text"}
-          className={`${inputCls} mt-2`}
+          variant="filled"
+          className={cn("mt-2", errorClassName)}
           value={str}
           placeholder={field.placeholder}
           autoComplete={masked ? "new-password" : undefined}

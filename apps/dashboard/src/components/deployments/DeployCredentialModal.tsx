@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Unified clone-credential modal.
  *
@@ -64,7 +67,6 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Github, HardDrive, Key, Loader2, ExternalLink, Server } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import { openAuthWindow } from "@/utils/authWindow";
 import { settingsApi, type CloneStrategyPreference } from "@/lib/api";
@@ -98,7 +100,7 @@ export interface DeployCredentialModalProps {
    *  server's Security tab where the per-server credential is configured. */
   serverId?: string | null;
   /** Where is the deploy headed? Affects copy. */
-  deployTarget: "local" | "server" | "cloud" | null | undefined;
+  deployTarget: "local" | "server" | "cloud" | "cluster" | null | undefined;
   /** Current build strategy. We hide "Build locally" when it's already
    *  local (would be a no-op). */
   buildStrategy: "local" | "server" | null | undefined;
@@ -153,7 +155,8 @@ export function DeployCredentialModal({
       if (trigger !== "preflight-gate") return;
       try {
         await settingsApi.updateCloneStrategyPreference(pref);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/deployments/DeployCredentialModal");
         // Silent — non-fatal, the deploy can still proceed without it.
       }
     },
@@ -224,11 +227,9 @@ export function DeployCredentialModal({
   // when the App/cloud round-trip isn't wanted.
   const showConnectServer = deployTarget === "server" && !!serverId;
   const showAddToken = !!projectId;
-  // "Build locally" makes no sense for a local target (clone is already
-  // local) or when buildStrategy is already local. Otherwise show it for
-  // both server AND cloud targets — the cloud runtime supports local-build
-  // + artifact upload via CloudRuntime.build.
-  const showBuildLocal = targetIsRemote && buildStrategy !== "local";
+  // Only an operator-owned API can build locally and transfer the artifact.
+  // Cloud tenants must execute on their selected managed server.
+  const showBuildLocal = selfHosted && targetIsRemote && buildStrategy !== "local";
   // Used in the build-local sub-copy to acknowledge the gh CLI session
   // explicitly when it's logged in — clarifies that picking "build
   // locally" will use the user's existing gh session as one of the
@@ -272,9 +273,9 @@ export function DeployCredentialModal({
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 {busy === "install-app" ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Github className="size-4" />
+                  <UiIcon name="github" className="size-4" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -291,7 +292,7 @@ export function DeployCredentialModal({
                   long-lived PATs to manage, safe to ship to remote workers.
                 </p>
               </div>
-              <ExternalLink className="size-4 text-muted-foreground shrink-0" />
+              <UiIcon name="external-link" className="size-4 text-muted-foreground shrink-0" />
             </div>
           </button>
         )}
@@ -306,9 +307,9 @@ export function DeployCredentialModal({
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-500">
                 {busy === "connect-server-github" ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Server className="size-4" />
+                  <UiIcon name="server" className="size-4" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -321,7 +322,7 @@ export function DeployCredentialModal({
                   round-trip. Best when you deploy here often.
                 </p>
               </div>
-              <ExternalLink className="size-4 text-muted-foreground shrink-0" />
+              <UiIcon name="external-link" className="size-4 text-muted-foreground shrink-0" />
             </div>
           </button>
         )}
@@ -336,9 +337,9 @@ export function DeployCredentialModal({
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-500">
                 {busy === "add-token" ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <Key className="size-4" />
+                  <UiIcon name="key" className="size-4" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -367,9 +368,9 @@ export function DeployCredentialModal({
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
                 {busy === "build-local" ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                 ) : (
-                  <HardDrive className="size-4" />
+                  <UiIcon name="hard-drive" className="size-4" />
                 )}
               </div>
               <div className="min-w-0 flex-1">

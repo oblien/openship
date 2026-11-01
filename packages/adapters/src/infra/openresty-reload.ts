@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { safeErrorMessage } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import {
@@ -20,7 +21,7 @@ async function canonicalRemotePath(
 ): Promise<string | null> {
   const resolved = await executor
     .exec(`readlink -f ${sq(path)} 2>/dev/null || true`, { timeout: 5_000 })
-    .catch(() => "");
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-reload"); return ""; });
   return resolved.trim() || null;
 }
 
@@ -44,7 +45,7 @@ async function processStartTime(executor: CommandExecutor, pid: number): Promise
       `awk '{ line=$0; sub(/^.*\\) /, "", line); split(line, fields, " "); print fields[20] }' /proc/${pid}/stat 2>/dev/null || true`,
       { timeout: 5_000 },
     )
-    .catch(() => "");
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-reload"); return ""; });
   return /^\d+$/.test(value.trim()) ? value.trim() : null;
 }
 
@@ -104,11 +105,11 @@ async function resolveListeningNginxMaster(
 
   const rawParent = await executor
     .exec(`awk '/^PPid:/{print $2}' /proc/${occupant.pid}/status 2>/dev/null || true`)
-    .catch(() => "");
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-reload"); return ""; });
   const parentPid = Number.parseInt(rawParent.trim(), 10);
   if (!Number.isInteger(parentPid) || parentPid <= 1) return occupant;
 
-  const parent = await describeProcess(executor, parentPid).catch(() => null);
+  const parent = await describeProcess(executor, parentPid).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-reload"); return null; });
   if (!parent) return occupant;
   const parentDescription = `${parent.rawCommand ?? ""} ${parent.command}`;
   return NGINX_MASTER_RE.test(parentDescription) ? parent : occupant;
@@ -216,7 +217,7 @@ export async function reloadBareOpenResty(
     // listener/master description would let a replacement process inherit the
     // old process's `-c` arguments. Bracket the refreshed description with the
     // same starttime so it and the identity proof refer to one process lifetime.
-    const refreshedMaster = await describeProcess(executor, master.pid).catch(() => null);
+    const refreshedMaster = await describeProcess(executor, master.pid).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-reload"); return null; });
     const confirmedStartTime = await processStartTime(executor, master.pid);
     if (
       !refreshedMaster ||
@@ -296,6 +297,7 @@ export async function reloadBareOpenResty(
       { timeout: 5_000 },
     )
     .catch((err) => {
+      observeCaughtError(err, "adapters/infra/openresty-reload");
       throw new Error(`Safe bare-host OpenResty reload failed: ${safeErrorMessage(err)}`);
     });
 }

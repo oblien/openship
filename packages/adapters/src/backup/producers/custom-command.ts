@@ -19,6 +19,7 @@
 
 import { payloadSpec } from "@repo/core";
 import { registerProducer } from "../registry";
+import { yieldArtifact } from "../common/artifact-stream";
 import { isRedactedCommand } from "../common/artifact-metadata";
 import type {
   Artifact,
@@ -54,7 +55,7 @@ class CustomCommandProducerImpl implements BackupProducer {
       produceCommand,
     ]);
 
-    yield {
+    yield* yieldArtifact({
       name: opts.artifactName ?? "custom-backup.bin",
       stream: stdout,
       payloadKind: "custom_command",
@@ -65,14 +66,7 @@ class CustomCommandProducerImpl implements BackupProducer {
         // run unrestorable.
         restoreCommand: opts.restoreCommand ?? null,
       },
-    };
-
-    const exit = await awaitExit;
-    if (exit.code !== 0) {
-      throw new Error(
-        `custom produceCommand exited ${exit.code}: ${exit.stderr.slice(0, 500)}`,
-      );
-    }
+    }, awaitExit, exit => `custom produceCommand exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
   }
 
   async restore(

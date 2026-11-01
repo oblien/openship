@@ -14,9 +14,11 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
-import { ImapFlow } from 'imapflow';
 import { env } from '../env';
 import { getSession } from '../lib/session';
+import { bridgeImapIdle } from '../lib/imap-idle';
+import { createImapClient } from '../lib/imap';
+import { folderToMailbox, normalizeFolderSlug } from '../lib/imap-driver';
 
 export const idleRoute = new Hono();
 
@@ -26,61 +28,23 @@ idleRoute.get('/idle', async (c) => {
   const session = await getSession(sid);
   if (!session) return c.text('Unauthorized', 401);
 
-  const folder = c.req.query('folder') || 'INBOX';
+  const view = c.req.query('view');
+  const folder = view !== undefined
+    ? folderToMailbox(normalizeFolderSlug(view))
+    : c.req.query('folder') || 'INBOX';
 
+  // Nginx/OpenResty must forward each notification as it arrives.
+  c.header('X-Accel-Buffering', 'no');
   return streamSSE(c, async (stream) => {
-    const client = new ImapFlow({
+    const client = createImapClient({
       host: session.imapHost,
       port: session.imapPort,
-      secure: session.imapPort === 993,
-      auth: { user: session.email, pass: session.password },
-      logger: false,
+      user: session.email,
+      pass: session.password,
+    }, {
+      disableAutoIdle: true,
+      maxIdleTime: 25 * 60 * 1000,
     });
-
-    const send = async (event: string, data: unknown) => {
-      await stream.writeSSE({ event, data: JSON.stringify(data) });
-    };
-
-    const onChange = () => {
-      void send('mailbox', { folder, at: new Date().toISOString() });
-    };
-
-    try {
-      await client.connect();
-      await client.mailboxOpen(folder);
-      client.on('exists', onChange);
-      client.on('expunge', onChange);
-      client.on('flags', onChange);
-      await client.idle();
-
-      stream.onAbort(async () => {
-        try {
-          await client.logout();
-        } catch {
-          /* ignore */
-        }
-      });
-
-      // Keep the response open until aborted. `idle()` returns when
-      // the IDLE is broken; loop so brief disconnects don't end the
-      // stream.
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        await new Promise((r) => setTimeout(r, 1000 * 60 * 25));
-        try {
-          await client.noop();
-        } catch {
-          break;
-        }
-      }
-    } catch (err) {
-      await send('error', { message: (err as Error).message });
-    } finally {
-      try {
-        await client.logout();
-      } catch {
-        /* ignore */
-      }
-    }
+    await bridgeImapIdle(client, stream, folder, c.req.raw.signal);
   });
 });

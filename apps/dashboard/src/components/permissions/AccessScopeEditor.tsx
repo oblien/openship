@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Left column: the editor. Always visible for a scoped template — the brief was
  * "left column = the resource list he can edit", so it is not hidden behind a
@@ -15,7 +17,6 @@
  *      suppressed for the same reason.
  */
 
-import { PlusCircle } from "lucide-react";
 import { ResourcePicker } from "./ResourcePicker";
 import { Switch } from "@/components/ui/Switch";
 import {
@@ -38,6 +39,7 @@ export function AccessScopeEditor({
   orgKey,
   disabled,
   showCreateCapability = true,
+  showCapabilities = true,
   onCatalogLoaded,
   suppressWildcardTypes = ["project"],
   onPickerChange,
@@ -51,6 +53,8 @@ export function AccessScopeEditor({
   /** Member grants hide it: the grants API's permission whitelist has no "create",
    *  so the switch would offer a capability the server drops. */
   showCreateCapability?: boolean;
+  /** Per-resource capability toggles (`domains:delete`). Token grants only. */
+  showCapabilities?: boolean;
   onCatalogLoaded?: (type: ResourceType, entries: CatalogEntry[]) => void;
   /** Defaults to ["project"] — see the picker call below. */
   suppressWildcardTypes?: ResourceType[];
@@ -106,7 +110,7 @@ export function AccessScopeEditor({
       </p>
       <div className="mb-5 flex items-start gap-3 rounded-xl border border-border/50 p-3.5">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground">
-          <PlusCircle className="size-4" strokeWidth={1.8} />
+          <UiIcon name="plus-circle" className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">{m.createProjectsTitle}</p>
@@ -144,6 +148,7 @@ export function AccessScopeEditor({
         // project wildcard.
         suppressWildcardTypes={suppressWildcardTypes}
         levels={levels}
+        capabilities={showCapabilities}
         onCatalogLoaded={onCatalogLoaded}
         disabled={disabled}
       />

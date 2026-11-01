@@ -103,6 +103,12 @@
     "cloneTokenFailed": "Klonlama jetonu oluşturulamadı",
     "newEnvironment": "Yeni ortam",
     "selectBranch": "Dal seçin",
+    "searchBranches": "Dalları ara...",
+    "noBranchesMatch": "Eşleşen dal yok",
+    "loadingBranches": "Dallar yükleniyor...",
+    "loadMoreBranches": "Daha fazla dal yükle",
+    "loadBranchesFailed": "Dallar yüklenemedi.",
+    "retryBranches": "Tekrar dene",
     "saving": "Kaydediliyor…",
     "saveChanges": "Değişiklikleri kaydet",
     "deploying": "Dağıtılıyor…",
@@ -212,7 +218,11 @@
     "backupSummaryConfigured": "{count} yedek kuralı · dağıtım öncesi: {preDeploy}",
     "backupManage": "Yedekleri yönet",
     "on": "açık",
-    "off": "kapalı"
+    "off": "kapalı",
+    "previewTitle": "Dağıtım önizlemesi",
+    "previewHint": "Uygulamanızı yapılandırmak için devam edin. Dağıtım sonraki sayfadan başlatılır.",
+    "back": "Geri",
+    "gpuBadge": "GPU"
   },
   "summary": {
     "buildAndDeploy": "Derle ve Dağıt:",
@@ -231,8 +241,8 @@
     "rollbackOne": "{count} sürüm",
     "rollbackOther": "{count} sürüm",
     "rollbackAuto": "Geri alma: otomatik",
-    "rollbackSnapshotHint": "Her sürümün bir kopyası saklanır, böylece geri alma asla yeniden derlemez. Gelişmiş bölümünden değiştirin.",
-    "rollbackGitHint": "Kaç önceki sürümün geri yüklenebilir kaldığı. Gelişmiş bölümünden değiştirin."
+    "rollbackSnapshotHint": "Her sürümün kopyası tutulur; geri alma yeniden derleme gerektirmez. Dağıtım ayarlarından değiştirin.",
+    "rollbackGitHint": "Geri yüklenebilen eski sürüm sayısı. Dağıtım ayarlarından değiştirin."
   },
   "power": {
     "heading": "Performans Gücü",
@@ -296,7 +306,12 @@
     "legacyBody": "Webmail'i imaj yerine paket olarak dağıtan eski bir Openship sürümü tarafından kurulduğu için yeniden dağıtılamaz. Şimdi dağıtmak onu kaldırır - projeyi, konteyneri ve oturum veritabanını - ve yerine webmail uygulamasını kurar. Oturum açmış olan herkesin oturumu kapanır ve kullanıcıya özel webmail ayarları kaybolur.",
     "legacyKept": "Posta kutuları, e-posta verileri ve tüm iletiler e-posta sunucusunda dokunulmadan kalır.",
     "deployFailedTitle": "Dağıtım başarısız",
-    "deployFailed": "Dağıtım başlatılamadı"
+    "deployFailed": "Dağıtım başlatılamadı",
+    "reconnectTitle": "Mevcut webmail uygulamasını yeniden bağla",
+    "reconnectBody": "Posta sunucusu bağlantısı eksik. Projeyi, kimlik bilgilerini ve kayıtlı ayarları korumak için mevcut uygulamayı seçin.",
+    "reconnectChoose": "Devam etmeden önce yeniden bağlanacak webmail uygulamasını seçin.",
+    "reconnectPlacement": "Mevcut sunucu ve ana makine adı korunur. Hedefi daha sonra değiştirebilirsiniz.",
+    "reconnectButton": "Bağla ve dağıt"
   },
   "serveMode": {
     "heading": "How it's served",

@@ -125,7 +125,32 @@ For anything that isn't itself a vulnerability report, see the
 - Repository revision: `de877cb96180af31fa524662d89f9945952b23ad`
 - Scope: shared API routes, deployment/runtime selection, tenant references imported through the cloud API, and background consumers of those references.
 
-## Review status
+## Follow-up — September 16, 2026
+
+Revalidated against main at `4e66349c27b48df13697c1b6d4a95f7a6cf4a3d6`:
+
+- **SEC-01 is already fixed on main.** Shared token management rejects scoped
+  credential delegation and enforces the caller's read-only and expiry limits.
+- **SEC-02 is fixed in [PR #892](https://github.com/oblien/openship/pull/892),
+  awaiting merge into main.** Local execution and Docker reads require the
+  host-owning organization on a self-hosted instance. Desktop and explicitly
+  permitted native execution retain their existing policies; the cloud control
+  plane cannot select itself as a local target.
+- **SEC-03 is fixed in PR #892, awaiting merge into main.** Active deployment
+  lookups, batch consumers, service-container references and rollback predecessors
+  validate both project and organization ownership. Full remapped restores and
+  project-import preview/apply share validation of active deployment bindings.
+
+Isolated regressions exercise authorized and mismatched references through logs,
+terminal tickets, monitoring and imports. Eighteen API cases and three dump
+validation cases fail against main and pass with the fixes. No tests used
+production infrastructure or other users' workloads. This follow-up addresses
+these findings; it is not an exhaustive security certification.
+
+The September 5 report below is retained as historical evidence. Its file paths
+refer to that revision, before the shared engine moved into `packages/platform`.
+
+## Original review status — September 5
 
 This is a source-code audit, not a penetration-test report. Three high-severity authorization gaps were identified through code-path tracing. No live exploitation, runtime operations against application infrastructure, or automated test execution was performed. Deployment-specific impact still requires validation in an isolated environment. No production code was changed.
 

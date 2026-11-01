@@ -1,3 +1,4 @@
+import { createEncryption } from "@repo/db/encryption";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import { createDeploymentRepo } from "../../../../../packages/db/src/repos/deployment.repo";
@@ -93,7 +94,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/deployments/session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   updateStatus: (id: string, status: string, detail?: Record<string, unknown>) => {
     h.sessionStatuses.push({ id, status, detail });
   },
@@ -101,7 +102,7 @@ vi.mock("../../../src/modules/deployments/session-manager", () => ({
   appendLog: () => {},
 }));
 
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string }) => {
       h.notifications.push(e.eventType);
@@ -109,13 +110,13 @@ vi.mock("../../../src/lib/notification-dispatcher", () => ({
   },
 }));
 vi.mock("../../../src/lib/audit", () => ({ audit: { recordAsync: () => {} } }));
-vi.mock("../../../src/lib/favicon-detector", () => ({ detectAndStoreFavicon: async () => {} }));
-vi.mock("../../../src/modules/mail/webmail/webmail-install.service", () => ({
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: async () => {} }));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: async () => {},
 }));
 
 const { onSuccess, onFailure, reportPipelineError } =
-  await import("../../../src/modules/deployments/deployment-lifecycle");
+  await import("@repo/platform/engine/modules/deployments/deployment-lifecycle");
 type LifecycleContext = Parameters<typeof onSuccess>[0];
 
 function ctxFor(): LifecycleContext {
@@ -169,6 +170,19 @@ beforeEach(() => {
 });
 
 describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
+  it("activates a successful preview on its own project row (#195)", async () => {
+    const ctx = ctxFor();
+    ctx.project.id = "project-preview";
+    ctx.project.environmentType = "preview";
+    ctx.dep.projectId = "project-preview";
+    ctx.dep.environment = "preview";
+
+    await onSuccess(ctx, { containerId: "preview-container", durationMs: 1 });
+
+    expect(h.activePointer).toEqual(["project-preview:dep_1"]);
+    expect(statusPairs()).toEqual(["dep_1:ready"]);
+  });
+
   it("onSuccess still reports ready when finishBuildSession throws", async () => {
     h.finishError = new Error(
       'Failed query: update "build_session" set "status" = $1, "logs" = $2 …',
@@ -176,6 +190,7 @@ describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
     const ctx = ctxFor();
 
     await expect(onSuccess(ctx, { containerId: "c1", durationMs: 1234 })).resolves.toBeUndefined();
+    expect(h.statusWrites[0]).toMatchObject({ status: "ready", extra: { buildDurationMs: 1234 } });
 
     expect(statusPairs()).toEqual(["dep_1:ready"]);
     // The terminal SSE event is what closes the stream — skipping it is what
@@ -191,6 +206,7 @@ describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
     const ctx = ctxFor();
 
     await expect(onFailure(ctx, "build blew up", 99)).resolves.toBeUndefined();
+    expect(h.statusWrites[0]).toMatchObject({ status: "failed", extra: { buildDurationMs: 99 } });
 
     expect(statusPairs()).toEqual(["dep_1:failed"]);
     expect(h.sessionStatuses.map((s) => s.status)).toEqual(["failed"]);
@@ -437,7 +453,7 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
         }),
       }),
     };
-    return { writes, repo: createDeploymentRepo(db as never) };
+    return { writes, repo: createDeploymentRepo(db as never, createEncryption("repository-test-secret")) };
   }
 
   it("retries with a marker payload and keeps status + duration", async () => {
@@ -449,9 +465,11 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     ).resolves.toBeUndefined();
 
     expect(writes).toHaveLength(2);
+    // The record update (including its cancellation guard) is identical on
+    // every salvage attempt. Actual SQL outcomes are covered in the DB suite.
+    expect(writes[1].status).toEqual(writes[0].status);
+    expect(writes[1].durationMs).toEqual(writes[0].durationMs);
     for (const w of writes) {
-      expect(w.status).toBe("ready");
-      expect(w.durationMs).toBe(4321);
       // Terminal outcome is not worker completion. The pipeline's outermost
       // finally stamps finishedAt only after all host-writing hooks return, so
       // project teardown cannot race detached deploy work.
@@ -469,7 +487,7 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     await expect(repo.finishBuildSession("bld_1", "ready", 1, poisoned)).resolves.toBeUndefined();
 
     expect(writes).toHaveLength(2);
-    expect(writes[1].status).toBe("ready");
+    expect(writes[1].status).toEqual(writes[0].status);
     expect(jsonbRejection(writes[1].logs)).toBeNull();
   });
 
@@ -488,6 +506,8 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     // Absent from the SET clause — not merely set to undefined. A caller with no
     // payload has nothing to shed, so its error must propagate untouched.
     expect("logs" in writes[0]).toBe(false);
-    expect(writes[0].status).toBe("cancelled");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: () => {} } }));

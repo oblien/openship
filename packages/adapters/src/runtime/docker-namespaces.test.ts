@@ -40,7 +40,11 @@ function baseConfig(overrides: Partial<MultiServiceDeployConfig> = {}): MultiSer
 function recordingDaemon() {
   const creates: Array<Record<string, any>> = [];
   const docker = {
-    getContainer: () => ({ remove: async () => undefined }),
+    getContainer: () => ({
+      inspect: async () => { throw Object.assign(new Error("No such container"), { statusCode: 404 }); },
+      stop: async () => undefined,
+      remove: async () => undefined,
+    }),
     createContainer: async (args: Record<string, any>) => {
       creates.push(args);
       return {
@@ -66,6 +70,28 @@ async function createWith(config: MultiServiceDeployConfig) {
 }
 
 describe("deployServiceWorkload — shared namespaces", () => {
+  it("maps a backend hostname to the daemon's host gateway without joining the host network", async () => {
+    const args = await createWith(baseConfig({ advanced: { extraHosts: { "mail.example.com": "host-gateway", db: "10.1.2.3" } } }));
+    expect(args.HostConfig.ExtraHosts).toEqual(["mail.example.com:host-gateway", "db:10.1.2.3"]);
+    expect(args.HostConfig.NetworkMode).toBe(GROUP.id);
+    expect(args.NetworkingConfig.EndpointsConfig[GROUP.id].Aliases).toEqual(["app", "web"]);
+  });
+
+  it("rejects malformed mappings and shared network mappings before removing a live container", async () => {
+    const { docker } = recordingDaemon();
+    let removed = false;
+    docker.getContainer = () => ({
+      inspect: async () => { throw Object.assign(new Error("No such container"), { statusCode: 404 }); },
+      stop: async () => undefined,
+      remove: async () => { removed = true; },
+    });
+    const runtime = await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" });
+    (runtime as unknown as { _docker: unknown })._docker = docker;
+    await expect(runtime.deployServiceWorkload(GROUP, baseConfig({ advanced: { extraHosts: { mail: "invalid" } } }))).rejects.toThrow(/addresses/);
+    await expect(runtime.deployServiceWorkload(GROUP, baseConfig({ namespaces: { network: "container:other" }, advanced: { extraHosts: { mail: "host-gateway" } } }))).rejects.toThrow(/shared/);
+    expect(removed).toBe(false);
+  });
+
   it("puts a normal service on the project network, with ports, alias, and hostname", async () => {
     const args = await createWith(baseConfig());
     expect(args.HostConfig.NetworkMode).toBe(GROUP.id);

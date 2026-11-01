@@ -1101,6 +1101,7 @@
   .cp-grid { grid-template-columns: 1fr; }
 }
 .cp-item {
+  display: block;
   position: relative;
   padding: 22px 24px;
   background: rgba(255,255,255,.05);
@@ -1108,6 +1109,244 @@
   transition: background .25s ease;
 }
 .cp-item:hover { background: rgba(255,255,255,.075); }
+
+.cp-item:focus-visible,
+.cp-all-link:focus-visible,
+.cp-group-heading a:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 5px;
+}
+.cp-all-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+}
+.cp-all-link:hover {
+  color: #fff;
+}
+.cp-item-arrow {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.35);
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+.cp-item:hover .cp-item-arrow {
+  color: #fff;
+  transform: translateX(3px);
+}
+
+/* Homepage app catalog */
+.ha-section {
+  padding: clamp(80px, 10vw, 140px) 24px 40px;
+  scroll-margin-top: 100px;
+}
+.ha-container {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 0.85fr 1.4fr;
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+}
+.ha-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--th-text-muted);
+}
+.ha-title {
+  margin-top: 24px;
+  font-size: clamp(2.25rem, 4.4vw, 3.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  font-weight: 500;
+  color: var(--th-text-heading);
+}
+.ha-title span {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--th-text-secondary);
+}
+.ha-description {
+  margin-top: 24px;
+  max-width: 390px;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--th-text-body);
+}
+.ha-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 999px;
+  padding: 13px 24px;
+  margin-top: 28px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.ha-note {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--th-text-muted);
+}
+.ha-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 30px;
+  max-width: 390px;
+}
+.ha-categories a {
+  padding: 7px 11px;
+  font-size: 12px;
+  border: 1px solid var(--th-card-bd);
+  border-radius: 999px;
+  color: var(--th-text-secondary);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+.ha-categories a:hover {
+  background: var(--th-sf-04);
+  border-color: var(--th-bd-strong);
+}
+.ha-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.ha-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 18px;
+  border: 1px solid var(--th-card-bd);
+  border-radius: 18px;
+  background: var(--th-card-bg);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.ha-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--th-bd-strong);
+  box-shadow: 0 16px 30px -24px rgba(0, 0, 0, 0.3);
+}
+.ha-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ha-card .marketplace-logo {
+  display: flex;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  background: var(--th-sf-04);
+  border: 1px solid var(--th-on-06);
+  border-radius: 13px;
+}
+.ha-card-arrow {
+  color: var(--th-text-muted);
+  transition: transform 0.2s ease;
+}
+.ha-card:hover .ha-card-arrow {
+  transform: translateX(3px);
+}
+.ha-card h3 {
+  margin-top: 17px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text-heading);
+  letter-spacing: -0.01em;
+}
+.ha-card p {
+  margin: 8px 0 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ha-card-category {
+  margin-top: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+}
+.ha-catalog-link {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--th-text-secondary);
+}
+.ha-card:focus-visible,
+.ha-cta:focus-visible,
+.ha-categories a:focus-visible,
+.ha-catalog-link:focus-visible {
+  outline: 2px solid var(--th-text-heading);
+  outline-offset: 4px;
+}
+@media (max-width: 1050px) {
+  .ha-container {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .ha-description {
+    max-width: 560px;
+  }
+  .ha-categories {
+    max-width: none;
+  }
+}
+@media (max-width: 560px) {
+  .ha-section {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .ha-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .ha-card {
+    padding: 18px 14px;
+  }
+  .ha-card p {
+    -webkit-line-clamp: 2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ha-card,
+  .ha-card-arrow,
+  .cp-item-arrow {
+    transition: none;
+  }
+  .ha-card:hover,
+  .ha-card:hover .ha-card-arrow,
+  .cp-item:hover .cp-item-arrow {
+    transform: none;
+  }
+}
 
 .cp-item-head {
   display: flex;
@@ -1810,981 +2049,429 @@
 
 
 /* ═══════════════════════════════════════════════════════════════
-   PRICING PAGE (pp-*) - fancy multi-section pricing
+   PRICING PAGE (pp-*)
    ═══════════════════════════════════════════════════════════════ */
 .pp-root {
   background: var(--th-bg-page);
-  /* One rhythm for the whole page instead of a different clamp per section. The
-     page previously used three similar-but-different vertical scales, which reads
-     as six sections that all look alike — deliberate contrast between a MAJOR
-     break and a MINOR one is what gives a long page structure. */
-  --pp-gap-major: clamp(72px, 9vw, 128px);
-  --pp-gap-minor: clamp(40px, 5vw, 64px);
-  /* Digits in prices and allowances line up in a column. The whole model is
-     numbers now, so proportional figures wobbling against each other is the most
-     visible lapse available on this page. */
   font-variant-numeric: tabular-nums;
 }
-/**
- * 1280px + 1.5rem, which is Tailwind's `max-w-7xl px-6` — the EXACT box the navbar
- * (`navbar.tsx`) and the footer (`footer.tsx`) already use.
- *
- * It was 1180px, so every row on this page sat 50px inside the logo above it and
- * the footer below it. Match the site's existing landmark instead of picking a
- * third width: the alignment is only correct while these agree, and "wider" is a
- * side effect of agreeing, not the goal.
- */
 .pp-container {
-  margin: 0 auto;
   max-width: 1280px;
-  padding: 0 1.5rem;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.pp-root a:focus-visible,
+.pp-faq-item summary:focus-visible {
+  outline: 2px solid var(--th-clr-plum);
+  outline-offset: 5px;
+  border-radius: 8px;
 }
 .pp-eyebrow {
   display: inline-block;
-  padding: 5px 14px;
-  margin-bottom: 24px;
-  border-radius: 999px;
-  border: 1px solid var(--th-bd-default);
-  background: var(--th-card-bg);
-  font-size: 11.5px;
+  margin-bottom: 16px;
+  font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--th-text-secondary);
+  letter-spacing: .04em;
+  color: var(--th-clr-plum);
 }
-
-/* ── Hero ────────────────────────────────────────────────────── */
 .pp-hero {
   position: relative;
-  padding: clamp(120px, 14vw, 200px) 0 clamp(72px, 8vw, 104px);
-  text-align: center;
   overflow: hidden;
-  border-bottom: 1px solid var(--th-bd-subtle);
+  padding: 132px 0 44px;
+  text-align: center;
 }
-/**
- * Hero ground: a hairline grid that fades out, with one quiet plum wash over it.
- *
- * The grid earns its place — this page sells servers and containers, and ruled
- * infrastructure is the subject's own vocabulary. It replaced a lone blurred
- * violet radial, which is the single most generic hero treatment on the web and
- * said nothing about what Openship is.
- *
- * `mask-image` fades the rules out rather than a second stacked gradient: the
- * lines have to vanish before the headline, or they read as noise behind text.
- */
 .pp-hero-glow {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
-  background-image:
-    linear-gradient(to right, rgba(0,0,0,.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0,0,0,.022) 1px, transparent 1px);
-  background-size: 56px 56px;
-  background-position: center top;
-  /* Two masks multiplied: the radial keeps it centred, the linear holds the rules
-     OFF the top 96px so they never sit behind the navbar. First pass used one
-     radial at full strength from y=0 and the grid read as an unfinished wireframe
-     across the header, strongest exactly where the page has nothing to say. */
-  -webkit-mask-image:
-    radial-gradient(90% 62% at 50% 12%, #000 0%, transparent 74%),
-    linear-gradient(to bottom, transparent 0, #000 96px);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    radial-gradient(90% 62% at 50% 12%, #000 0%, transparent 74%),
-    linear-gradient(to bottom, transparent 0, #000 96px);
-  mask-composite: intersect;
+  background: radial-gradient(ellipse 55% 100% at 50% 0%, var(--th-clr-plum-bg), transparent 80%);
 }
-/* The wash sits ABOVE the rules so it tints them, not beside them. */
-.pp-hero-glow::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(52% 58% at 50% -8%, var(--th-clr-plum-wash) 0%, transparent 68%);
-}
-.pp-hero-inner {
-  position: relative;
-  z-index: 1;
-}
+.pp-hero-inner { position: relative; }
 .pp-headline {
-  font-size: clamp(2.75rem, 8vw, 5.25rem);
+  font-size: clamp(38px, 4.8vw, 60px);
   font-weight: 500;
-  letter-spacing: -0.045em;
-  line-height: 1;
-  color: var(--th-text-heading);
+  letter-spacing: -.045em;
+  line-height: 1.12;
   text-wrap: balance;
+  color: var(--th-text-heading);
 }
-.pp-headline-soft { color: var(--th-on-40); }
+.pp-headline span { color: var(--th-clr-plum); }
 .pp-sub {
-  margin: 28px auto 0;
-  max-width: 36rem;
-  font-size: 16.5px;
-  line-height: 1.65;
+  max-width: 54rem;
+  margin: 20px auto 0;
+  font-size: 17px;
+  line-height: 1.6;
   color: var(--th-text-body);
-  /* Stops the last line landing as one orphaned word under a centered block. */
   text-wrap: pretty;
 }
-
-/* Toggle */
-.pp-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 44px;
-  padding: 5px;
-  border-radius: 999px;
-  background: var(--th-card-bg);
-  border: 1px solid var(--th-bd-default);
-}
-.pp-toggle-btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 22px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--th-text-secondary);
-  cursor: pointer;
-  transition: color .2s ease, background .2s ease;
-}
-.pp-toggle-btn:hover { color: var(--th-text-heading); }
-.pp-toggle-btn--on {
-  color: var(--th-btn-text);
-  background: var(--th-btn-bg);
-}
-.pp-toggle-btn--on:hover { color: var(--th-btn-text); }
-.pp-toggle-save {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.18);
-  color: inherit;
-}
-.pp-toggle-btn:not(.pp-toggle-btn--on) .pp-toggle-save {
-  background: rgba(34,197,94,.12);
-  color: rgb(21,128,61);
-}
-
-/* ── Hero trust strip - dot-separated reassurance line ────────── */
 .pp-hero-trust {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 24px;
-  margin: 36px auto 0;
-  max-width: 760px;
-  font-size: 13px;
-  color: var(--th-text-muted);
+  gap: 12px 24px;
+  margin-top: 22px;
+  font-size: 14px;
+  color: var(--th-text-strong);
 }
-.pp-hero-trust li { display: inline-flex; align-items: center; gap: 6px; }
-.pp-hero-trust li + li::before {
-  content: "";
-  display: inline-block;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--th-on-20);
-  margin-right: 4px;
+.pp-hero-trust li,
+.pp-plan-support {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-
-/* ── Self-hosted band - the promise, stated before any price ─── */
-/* Bottom padding is no longer 0: the cloud section below now opens with its own
-   hairline and tinted ground, and a band butted straight against that rule reads
-   as one run-on block instead of two statements. */
-.pp-selfhost-section {
-  padding: var(--pp-gap-major) 0;
-}
-.pp-selfhost {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 32px;
-  padding: clamp(28px, 5vw, 48px);
-  border: 1px solid var(--th-clr-plum-bdr);
-  border-radius: 24px;
-  background: var(--th-clr-plum-wash);
-  /* A plum-tinted shadow rather than a neutral one — a grey drop shadow under a
-     tinted surface is the detail that makes a coloured panel look pasted on. */
-  box-shadow: 0 1px 2px rgba(108,92,231,.04), 0 18px 44px rgba(108,92,231,.05);
-}
-@media (min-width: 900px) {
-  .pp-selfhost {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 56px;
-    align-items: center;
-  }
-}
-.pp-selfhost-tag {
-  display: inline-block;
-  margin-bottom: 14px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+.pp-plan-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   color: var(--th-clr-plum);
 }
-.pp-selfhost-name {
-  font-size: clamp(1.75rem, 3.6vw, 2.375rem);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.1;
-  color: var(--th-text-heading);
-}
-.pp-selfhost-lead {
-  margin-top: 12px;
-  max-width: 34rem;
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--th-text-body);
-}
-.pp-selfhost-price {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  margin-top: 24px;
-}
-.pp-selfhost-amt {
-  font-size: clamp(2rem, 3.6vw, 2.5rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1;
-  color: var(--th-text-heading);
-}
-.pp-selfhost-note {
-  font-size: 12.5px;
-  color: var(--th-text-muted);
-}
-.pp-selfhost-features {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.pp-selfhost-features li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 14.5px;
-  line-height: 1.55;
-  color: var(--th-text-strong);
-}
-
-/* Filled CTA on a LIGHT surface. `.pp-btn--primary` is white-on-dark and goes
-   invisible here, so this one uses the theme's own primary button tokens. */
-.pp-solid-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 26px;
-  padding: 13px 26px;
-  border-radius: 999px;
-  font-size: 14.5px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  background: var(--th-btn-bg);
-  color: var(--th-btn-text);
-  border: 1px solid transparent;
-  transition: background .15s ease, transform .12s ease;
-}
-.pp-solid-cta:hover {
-  background: var(--th-btn-bg-hover);
-  transform: translateY(-1px);
-}
-
-/* ── Plan cards ──────────────────────────────────────────────── */
-/**
- * The cloud section sits on a faintly tinted ground with hairlines top and bottom.
- *
- * This is the fix for the flattest thing about the page: the cards used
- * `--th-bg-page`, the exact colour behind them, so four tiers were outlined in
- * hairline on white with nothing between "plain card" and the inverted popular
- * one. Tinting the SECTION instead of darkening the cards lets them stay white and
- * simply lift, which also makes this the page's main event without shouting.
- */
-.pp-plans-section {
-  padding: var(--pp-gap-major) 0;
-  background: var(--th-bg-subtle);
-  border-top: 1px solid var(--th-bd-subtle);
-  border-bottom: 1px solid var(--th-bd-subtle);
-}
+.pp-plans-section { padding: 0 0 72px; }
 .pp-plans-head {
-  text-align: center;
-  margin: 0 auto var(--pp-gap-minor);
-  max-width: 40rem;
-}
-.pp-plans-title {
-  /* Larger than the FAQ's heading on purpose. Both were clamped to nearly the same
-     size, so the page's main event and its footer utility carried equal weight. */
-  font-size: clamp(2.125rem, 5vw, 3.25rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
-  color: var(--th-text-heading);
-  text-wrap: balance;
-}
-.pp-plans-note {
-  margin-top: 16px;
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--th-text-body);
-  text-wrap: pretty;
-}
-/* ── Campaign notice ─────────────────────────────────────────────
-   Only in the DOM while the catalog has a live campaign, so it costs nothing
-   the rest of the year. Terra reads as an offer without competing with the
-   plum brand accent used by the self-hosted band. */
-.pp-campaign {
-  margin-top: 20px;
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 8px 8px 8px 12px;
-  border-radius: 999px;
-  background: var(--th-clr-terra-bg);
-  border: 1px solid var(--th-clr-terra-bdr);
-}
-.pp-campaign-badge {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--th-clr-terra);
-}
-.pp-campaign-ends {
-  font-size: 12.5px;
-  color: var(--th-text-body);
-  padding-right: 6px;
-}
-
-/* Mobile-first: one column, then 2-up, then the full ladder side by side.
-   `minmax(0, 1fr)` (not `1fr`) so a long feature line can't push a column past
-   its track and give the page a horizontal scrollbar. */
-.pp-plans {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
-}
-@media (min-width: 620px) {
-  .pp-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 1000px) {
-  .pp-plans { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-.pp-plan {
-  position: relative;
   display: flex;
-  flex-direction: column;
-  /* Top padding clears the absolutely-placed "most popular" ribbon, and is
-     uniform so a non-popular card's name still sits on the same baseline. */
-  padding: 44px 26px 30px;
-  /* White ON the section's tinted ground — see .pp-plans-section. */
-  background: var(--th-card-bg);
-  border: 1px solid var(--th-bd-subtle);
-  border-radius: 22px;
-  box-shadow: var(--th-card-shadow);
-  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
-}
-.pp-plan:hover {
-  border-color: var(--th-bd-default);
-  transform: translateY(-2px);
-  box-shadow: 0 2px 4px rgba(0,0,0,.03), 0 12px 28px rgba(0,0,0,.06);
-}
-.pp-plan--highlight {
-  background: #0c0d12;
-  color: rgba(255,255,255,.85);
-  border-color: rgba(255,255,255,.08);
-  /* The plum ring is what makes this card read as CHOSEN rather than merely
-     inverted — the dark fill alone is a colour change, not an endorsement. */
-  box-shadow:
-    0 0 0 1px var(--th-clr-plum-bg),
-    0 4px 12px rgba(0,0,0,.05),
-    0 28px 60px rgba(12,13,18,.22);
-}
-.pp-plan--highlight:hover {
-  border-color: rgba(255,255,255,.18);
-  box-shadow:
-    0 0 0 1px rgba(108,92,231,.28),
-    0 4px 12px rgba(0,0,0,.05),
-    0 32px 68px rgba(12,13,18,.26);
-}
-/* Only lift once the whole ladder is on one row - in the 2-up stack a lifted
-   card just breaks the baseline. */
-@media (min-width: 1000px) {
-  .pp-plan--highlight { transform: translateY(-12px); }
-  /* MUST restate the lift for hover. `.pp-plan:hover` is (0,2,0) and beats
-     `.pp-plan--highlight` (0,1,0) whatever the source order, so without this the
-     popular card DROPS from -12px to the generic -2px the moment you point at it. */
-  .pp-plan--highlight:hover { transform: translateY(-14px); }
-}
-.pp-plan-ribbon {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.10);
-  color: rgba(255,255,255,.95);
-  border: 1px solid rgba(255,255,255,.16);
-}
-.pp-plan-name {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-  color: var(--th-text-heading);
-}
-.pp-plan--highlight .pp-plan-name { color: rgba(255,255,255,.98); }
-.pp-plan-lead {
-  margin-top: 10px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--th-text-body);
-}
-.pp-plan--highlight .pp-plan-lead { color: rgba(255,255,255,.6); }
-.pp-plan-price {
-  margin-top: 24px;
-  padding: 18px 0;
-  border-top: 1px solid var(--th-bd-subtle);
-  border-bottom: 1px solid var(--th-bd-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.pp-plan--highlight .pp-plan-price {
-  border-top-color: rgba(255,255,255,.08);
-  border-bottom-color: rgba(255,255,255,.08);
-}
-.pp-plan-amt {
-  display: inline-flex;
+  justify-content: space-between;
   align-items: baseline;
-  gap: 6px;
-  font-size: clamp(2rem, 3vw, 2.375rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 20px;
+}
+.pp-plans-head h2 {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -.02em;
   color: var(--th-text-heading);
 }
-.pp-plan--highlight .pp-plan-amt { color: rgba(255,255,255,.98); }
-.pp-plan-per {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--th-text-muted);
+.pp-plans-head p {
+  font-size: 14px;
+  color: var(--th-text-body);
 }
-.pp-plan--highlight .pp-plan-per { color: rgba(255,255,255,.45); }
-.pp-plan-pricenote {
-  font-size: 12.5px;
-  color: var(--th-text-muted);
-}
-.pp-plan--highlight .pp-plan-pricenote { color: rgba(255,255,255,.45); }
-
-/* ── Campaign, per card ──────────────────────────────────────────
-   `align-self: start` keeps the pill hugging its text instead of stretching
-   across the flex column. Both rules also carry a light-on-dark variant, since
-   the popular card inverts. */
-.pp-plan-save {
-  align-self: start;
-  margin-bottom: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--th-clr-terra);
-  background: var(--th-clr-terra-bg);
-  border: 1px solid var(--th-clr-terra-bdr);
-}
-.pp-plan--highlight .pp-plan-save {
-  color: var(--th-clr-terra-soft);
-  background: rgba(255,255,255,.08);
-  border-color: rgba(255,255,255,.16);
-}
-.pp-plan-was {
-  font-size: 12.5px;
-  color: var(--th-text-muted);
-}
-/* Strike only the money, not the whole "was $39" phrase — the label is copy, the
-   number is what is being replaced. */
-.pp-plan-was s {
-  text-decoration-line: line-through;
-  text-decoration-thickness: 1px;
-}
-.pp-plan--highlight .pp-plan-was { color: rgba(255,255,255,.45); }
-.pp-plan-ends {
-  display: block;
-  margin-top: 2px;
-}
-
-.pp-plan-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 24px;
-  padding: 13px 22px;
-  border-radius: 999px;
-  font-size: 14.5px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  background: transparent;
-  color: var(--th-text-heading);
-  border: 1px solid var(--th-bd-default);
-  transition: background .15s ease, border-color .15s ease, transform .12s ease;
-}
-.pp-plan-cta:hover { border-color: var(--th-bd-strong); transform: translateY(-1px); }
-.pp-plan--highlight .pp-plan-cta {
-  color: rgba(255,255,255,.92);
-  border-color: rgba(255,255,255,.16);
-}
-.pp-plan--highlight .pp-plan-cta:hover { border-color: rgba(255,255,255,.32); }
-.pp-plan-cta--filled {
-  background: #ffffff !important;
-  color: #0c0d12 !important;
-  border-color: transparent !important;
-}
-.pp-plan-cta--filled:hover { background: rgba(255,255,255,.92) !important; }
-
-.pp-plan-features {
-  margin-top: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-}
-.pp-plan-features li {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--th-text-strong);
-}
-.pp-plan--highlight .pp-plan-features li { color: rgba(255,255,255,.78); }
-/**
- * Ticks are plum, not near-black.
- *
- * At `--th-text-heading` every tick carried the same weight as the sentence beside
- * it, so a card read as sixteen dark marks instead of a list you scan. The accent
- * both lightens the column and is the one place the brand colour appears at full
- * strength, which is enough — this page spends its boldness on the popular card.
- */
-.pp-plan-check {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  /* Soft plum, not full-strength: there are up to nine ticks per card and four
-     cards, so at `--th-clr-plum` the page carried thirty-odd saturated marks and
-     the boldness that belongs to the popular card was spent on punctuation. */
-  color: var(--th-clr-plum-soft);
-}
-.pp-plan--highlight .pp-plan-check { color: var(--th-clr-plum-soft); }
-
-/* "Everything in X, plus:" — the list's lead-in. Quiet, uppercase-adjacent weight,
-   and no tick, because it is not one of the things you get. */
-.pp-plan-inherits {
-  margin-top: 24px;
-  font-size: 12.5px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  color: var(--th-text-muted);
-}
-.pp-plan--highlight .pp-plan-inherits { color: rgba(255,255,255,.5); }
-/* When the lead-in is present it owns the top margin, so the list tightens up
-   under it instead of opening a second full gap. */
-.pp-plan-inherits + .pp-plan-features { margin-top: 12px; }
-
-/**
- * "In every plan" — a footnote to the grid, NOT another tier.
- *
- * It was a rounded, bordered, tinted panel, i.e. pixel-for-pixel the Enterprise
- * strip below it, so a shared footnote and a purchasable tier read as siblings.
- * Now it is an unboxed band on a hairline with its label set to the side, which
- * gives the section a third register instead of a second copy of the second one.
- *
- * The items FLOW rather than sitting in a 3-column grid: five items in three
- * columns left a hole under the last one, and the hole read as a missing feature.
- */
-.pp-standard {
-  margin-top: 26px;
-  padding-top: 26px;
-  border-top: 1px solid var(--th-bd-default);
+.pp-plans {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
-@media (min-width: 900px) {
-  .pp-standard {
-    grid-template-columns: 160px minmax(0, 1fr);
-    gap: 40px;
-    align-items: start;
-  }
-}
-.pp-standard-title {
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--th-text-muted);
-  line-height: 1.5;
-}
-.pp-standard-features {
+.pp-plan {
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px 30px;
-}
-.pp-standard-features li {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--th-text-body);
-}
-
-/**
- * Enterprise — a real tier, given the weight of one.
- *
- * It shares the tier cards' white surface and shadow rather than the old flat
- * tinted panel, so the eye files it with the four above it instead of with the
- * footnote band. `align-items: start` replaces `center`: with three columns of
- * unequal height, centring left the name floating in the middle of its column and
- * the CTA adrift in the middle of its own.
- */
-.pp-ent {
-  margin-top: 26px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 28px;
-  padding: clamp(28px, 4vw, 40px) clamp(24px, 4vw, 40px);
-  background: var(--th-card-bg);
+  flex-direction: column;
+  padding: 26px 24px;
   border: 1px solid var(--th-bd-subtle);
-  border-radius: 22px;
-  box-shadow: var(--th-card-shadow);
+  border-radius: 24px;
+  background: var(--th-bg-card);
 }
-@media (min-width: 900px) {
-  .pp-ent {
-    grid-template-columns: minmax(0, .9fr) minmax(0, 1.25fr) auto;
-    gap: 48px;
-    align-items: start;
-  }
+.pp-plan--highlight {
+  border-color: var(--th-clr-plum-bdr);
+  background: linear-gradient(160deg, var(--th-clr-plum-bg), var(--th-clr-plum-wash));
 }
-.pp-ent-name {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  color: var(--th-text-heading);
-}
-.pp-ent-lead {
-  margin-top: 10px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--th-text-body);
-  text-wrap: pretty;
-}
-/**
- * "Custom" reads as a price, because it IS this tier's price.
- *
- * At 16px it was quieter than the body copy beside it, so the one tier without a
- * number looked like it had lost its number. It is set BELOW the name, not above:
- * at price scale on top it outweighed the word "Enterprise" and the tier read as
- * though it were called "Custom".
- */
-.pp-ent-price {
-  margin-top: 16px;
-  font-size: 1.625rem;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1;
-  color: var(--th-text-heading);
-}
-/* Matches .pp-plan-inherits, so the strip's list opens the same way a card's does. */
-.pp-ent-inherits {
-  margin-bottom: 12px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--th-text-muted);
-}
-.pp-ent-features {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px 28px;
-}
-@media (min-width: 620px) {
-  .pp-ent-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-.pp-ent-features li {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--th-text-strong);
-}
-.pp-ent .pp-solid-cta { margin-top: 0; }
-
-/* ── Matrix ──────────────────────────────────────────────────── */
-.pp-matrix-section {
-  padding: clamp(80px, 10vw, 140px) 0;
-  background: var(--th-sf-01);
-  border-top: 1px solid var(--th-bd-subtle);
-  border-bottom: 1px solid var(--th-bd-subtle);
-}
-.pp-matrix-head {
-  text-align: center;
-  margin: 0 auto clamp(48px, 7vw, 72px);
-  max-width: 40rem;
-}
-.pp-matrix-title {
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
-  color: var(--th-text-heading);
-}
-.pp-matrix {
-  position: relative;
-  margin: 0 auto;
-  max-width: 1080px;
-  background: var(--th-bg-page);
-  border: 1px solid var(--th-bd-default);
-  border-radius: 20px;
-  overflow: hidden;
-}
-.pp-matrix-highlight {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  /* grid: 1.6fr feat + 1fr × 3 options = 4.6fr; Cloud is 2nd option */
-  left: calc(((100% - 1px) / 4.6) * (1.6 + 1));
-  width: calc(((100% - 1px) / 4.6) * 1);
-  background: linear-gradient(180deg, rgba(139,92,246,.06) 0%, rgba(139,92,246,.02) 100%);
-  pointer-events: none;
-  z-index: 0;
-}
-.pp-matrix-row {
-  display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
-  position: relative;
-  z-index: 1;
-}
-.pp-matrix-row + .pp-matrix-row { border-top: 1px solid var(--th-bd-subtle); }
-.pp-matrix-row--head {
-  background: rgba(0,0,0,.02);
-  border-bottom: 1px solid var(--th-bd-default);
-}
-.pp-matrix-row--group {
-  background: rgba(0,0,0,.015);
-  border-top: 1px solid var(--th-bd-default);
-}
-.pp-matrix-cell {
-  padding: 18px 22px;
-  font-size: 14.5px;
-  line-height: 1.45;
-  color: var(--th-text-body);
-}
-.pp-matrix-cell--feat {
-  padding: 18px 26px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--th-text-heading);
-  border-right: 1px solid var(--th-bd-subtle);
-}
-.pp-matrix-row--group .pp-matrix-cell--feat {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--th-text-muted);
-}
-.pp-matrix-row--head .pp-matrix-cell {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--th-text-muted);
-}
-.pp-matrix-row--head .pp-matrix-cell--win {
-  color: var(--th-text-heading);
-}
-.pp-matrix-cell--win {
-  color: var(--th-text-heading);
-  font-weight: 500;
-}
-@media (max-width: 820px) {
-  .pp-matrix-highlight { display: none; }
-  .pp-matrix-row { grid-template-columns: 1fr; padding: 12px 0; }
-  .pp-matrix-row--head { display: none; }
-  .pp-matrix-cell { padding: 10px 22px; }
-  .pp-matrix-cell--feat {
-    font-size: 12.5px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--th-text-muted);
-    border-right: none;
-    padding-bottom: 4px;
-  }
-  .pp-matrix-row--group .pp-matrix-cell--feat {
-    font-size: 14px;
-    letter-spacing: 0.18em;
-    color: var(--th-text-heading);
-    padding-top: 24px;
-  }
-  .pp-matrix-cell:nth-child(2)::before { content: "Hobby · "; color: var(--th-text-muted); }
-  .pp-matrix-cell--win::before { content: "Cloud · "; color: var(--th-text-muted); }
-  .pp-matrix-cell:nth-child(4)::before { content: "Business · "; color: var(--th-text-muted); }
-  .pp-matrix-row--group .pp-matrix-cell:nth-child(2)::before,
-  .pp-matrix-row--group .pp-matrix-cell--win::before,
-  .pp-matrix-row--group .pp-matrix-cell:nth-child(4)::before { content: ""; }
-}
-
-/* ── FAQ ─────────────────────────────────────────────────────── */
-.pp-faq-section {
-  padding: var(--pp-gap-major) 0;
-}
-.pp-faq-head {
-  text-align: center;
-  margin: 0 auto var(--pp-gap-minor);
-  max-width: 40rem;
-}
-.pp-faq-title {
-  /* Deliberately SMALLER than .pp-plans-title. The two were within a hair of each
-     other, which gave the page two competing main events; the FAQ is support
-     material and should read as support material. */
-  font-size: clamp(1.75rem, 3.6vw, 2.375rem);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.1;
-  color: var(--th-text-heading);
-  text-wrap: balance;
-}
-.pp-faq-list {
-  margin: 0 auto;
-  max-width: 760px;
-  border-top: 1px solid var(--th-bd-default);
-}
-.pp-faq-item {
-  border-bottom: 1px solid var(--th-bd-default);
-}
-.pp-faq-q {
+.pp-plan-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 22px 4px;
-  font-size: 16.5px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 28px;
+}
+.pp-plan-name {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -.025em;
   color: var(--th-text-heading);
-  cursor: pointer;
-  list-style: none;
 }
-.pp-faq-q::-webkit-details-marker { display: none; }
-/* The whole row is the hit target, so the whole row has to acknowledge the
-   pointer — only the chevron reacted before, on a 760px-wide click area. */
-.pp-faq-q:hover .pp-faq-icon { background: var(--th-sf-05); color: var(--th-text-heading); }
-.pp-faq-q:focus-visible {
-  outline: 2px solid var(--th-clr-plum);
-  outline-offset: 4px;
-  border-radius: 8px;
+.pp-plan-ribbon {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--th-clr-plum-bg);
+  color: var(--th-clr-plum);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
-.pp-faq-icon {
+.pp-plan-lead {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--th-text-body);
+  text-wrap: pretty;
+}
+.pp-plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 24px;
+}
+.pp-plan-amt {
+  font-size: 46px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -.055em;
+  color: var(--th-text-heading);
+}
+.pp-plan-per {
+  font-size: 15px;
+  color: var(--th-text-body);
+}
+.pp-plan-credits {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--th-text-body);
+}
+.pp-plan-credits strong {
+  font-weight: 500;
+  color: var(--th-text-title);
+}
+.pp-plan-cta,
+.pp-solid-cta {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--th-sf-03);
-  color: var(--th-text-secondary);
-  transition: transform .2s ease, background .2s ease;
-  flex-shrink: 0;
-}
-.pp-faq-icon svg { width: 14px; height: 14px; }
-details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-05); }
-.pp-faq-a {
-  padding: 0 4px 24px;
-  margin: -4px 0 0;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--th-text-body);
-  max-width: 60ch;
-}
-
-/* ── End CTA ─────────────────────────────────────────────────── */
-.pp-end {
-  /* Extra bottom room before the footer — the one place the rhythm is deliberately
-     asymmetric, because a dark card butted against the footer loses its edge. */
-  padding: 0 0 var(--pp-gap-major);
-}
-.pp-end-card {
-  position: relative;
-  margin: 0 auto;
-  max-width: 760px;
-  padding: clamp(48px, 8vw, 80px) clamp(24px, 4vw, 56px);
-  text-align: center;
-  background: #0c0d12;
-  color: rgba(255,255,255,.85);
-  border-radius: 28px;
-  overflow: hidden;
-}
-.pp-end-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(50% 80% at 50% 100%, rgba(139,92,246,.18), transparent 70%);
-  pointer-events: none;
-}
-.pp-end-card > * { position: relative; z-index: 1; }
-.pp-end-title {
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
-  color: rgba(255,255,255,.98);
-}
-.pp-end-sub {
-  margin: 18px auto 0;
-  max-width: 28rem;
-  font-size: 16px;
-  line-height: 1.6;
-  color: rgba(255,255,255,.6);
-}
-.pp-end-cta-row {
-  display: inline-flex;
-  flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
-  margin-top: 32px;
+  min-height: 46px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 500;
+  text-align: center;
+  transition: background .15s ease;
 }
-.pp-btn {
+.pp-plan-cta {
+  margin-top: 22px;
+  background: var(--th-sf-05);
+  color: var(--th-text-title);
+}
+.pp-plan-cta:hover { background: var(--th-sf-08); }
+.pp-plan-cta--filled {
+  background: var(--th-clr-plum);
+  color: var(--th-btn-text);
+}
+.pp-plan-cta--filled:hover {
+  background: color-mix(in srgb, var(--th-clr-plum), var(--th-text-heading) 10%);
+}
+.pp-solid-cta {
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+}
+.pp-solid-cta:hover { background: var(--th-btn-bg-hover); }
+.pp-plan-resources {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+  color: var(--th-text-title);
+}
+.pp-plan-capacity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 16px 12px;
+  border-radius: 14px;
+  background: var(--th-sf-04);
+}
+.pp-plan-capacity > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.pp-plan-capacity dt {
+  order: 1;
+  font-size: 12px;
+  color: var(--th-text-body);
+}
+.pp-plan-capacity dd {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.pp-plan-capacity-fallback {
+  font-size: 14px;
+  color: var(--th-text-body);
+}
+.pp-plan-limits {
+  display: grid;
+  gap: 10px;
+}
+.pp-plan-limit {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.pp-plan-limit dt { color: var(--th-text-body); }
+.pp-plan-limit dd { font-weight: 500; }
+.pp-plan-support {
+  margin-top: auto;
+  padding-top: 22px;
+  font-size: 14px;
+  color: var(--th-text-strong);
+}
+.pp-usage-note {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin-top: 22px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.pp-usage-note p { flex: 1 1 36rem; }
+.pp-usage-note a,
+.pp-option a,
+.pp-faq-head a {
   display: inline-flex;
   align-items: center;
-  padding: 13px 26px;
-  border-radius: 999px;
-  font-size: 14.5px;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: -0.005em;
-  border: 1px solid transparent;
-  transition: transform .12s ease, border-color .15s ease;
+  color: var(--th-text-title);
 }
-.pp-btn--primary { background: #ffffff; color: #0c0d12; }
-.pp-btn--primary:hover { transform: translateY(-1px); }
-.pp-btn--ghost {
-  background: transparent;
-  color: rgba(255,255,255,.92);
-  border-color: rgba(255,255,255,.18);
+.pp-usage-note a:hover,
+.pp-option a:hover,
+.pp-faq-head a:hover { color: var(--th-clr-plum); }
+.pp-standard {
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--th-bd-subtle);
 }
-.pp-btn--ghost:hover { border-color: rgba(255,255,255,.32); }
+.pp-standard h3 {
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--th-text-title);
+}
+.pp-standard ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+}
+.pp-standard li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--th-text-body);
+}
+.pp-standard .pp-plan-check { margin-top: 2px; }
+.pp-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 40px;
+  padding-top: 32px;
+  border-top: 1px solid var(--th-bd-subtle);
+}
+.pp-option h3 {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+  color: var(--th-text-heading);
+}
+.pp-option p {
+  max-width: 29rem;
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.pp-option a { margin-top: 14px; }
+.pp-unavailable {
+  padding: 40px 24px;
+  border-radius: 24px;
+  background: var(--th-bg-card);
+  text-align: center;
+}
+.pp-unavailable h3 { font-size: 20px; color: var(--th-text-heading); }
+.pp-unavailable p { margin: 12px 0 24px; font-size: 15px; }
+.pp-faq-section { padding: 64px 0; background: var(--th-bg-subtle); }
+.pp-faq-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+}
+.pp-faq-head h2 {
+  font-size: clamp(28px, 3vw, 36px);
+  font-weight: 500;
+  letter-spacing: -.035em;
+  line-height: 1.15;
+  color: var(--th-text-heading);
+}
+.pp-faq-head a { margin-top: 24px; }
+.pp-faq-item { border-bottom: 1px solid var(--th-bd-default); }
+.pp-faq-item:first-child { border-top: 1px solid var(--th-bd-default); }
+.pp-faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 21px 0;
+  cursor: pointer;
+  list-style: none;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--th-text-title);
+}
+.pp-faq-item summary::-webkit-details-marker { display: none; }
+.pp-faq-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--th-text-body);
+  transition: transform .2s ease;
+}
+.pp-faq-item[open] .pp-faq-icon { transform: rotate(180deg); }
+.pp-faq-item p {
+  padding: 0 30px 22px 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--th-text-body);
+}
+.pp-end { padding: 64px 0; }
+.pp-end-card {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: clamp(28px, 4vw, 44px);
+  border-radius: 24px;
+  background: var(--th-clr-plum-wash);
+}
+.pp-end-card h2 {
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 500;
+  letter-spacing: -.035em;
+  color: var(--th-text-heading);
+}
+.pp-end-card p { margin-top: 10px; font-size: 16px; color: var(--th-text-body); }
+@media (min-width: 620px) {
+  .pp-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pp-plan-lead { min-height: 4.5em; }
+  .pp-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 900px) {
+  .pp-faq-layout { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 64px; }
+}
+@media (min-width: 1100px) {
+  .pp-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 619px) {
+  .pp-hero { padding: 112px 0 32px; }
+  .pp-hero-trust { gap: 10px 18px; font-size: 13px; }
+  .pp-sub { font-size: 16px; }
+  .pp-plans-section { padding-bottom: 48px; }
+  .pp-faq-section, .pp-end { padding: 44px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pp-root *, .pp-root *::before, .pp-root *::after { transition: none; }
+}
 
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3046,3 +2733,28 @@ details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-
   .hiw-step { grid-template-columns: 46px 1fr; gap: 16px; }
   .hiw-step::before { left: 22px; }
 }
+
+.pp-email-note {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.pp-email-note strong {
+  font-weight: 500;
+  color: var(--th-text-title);
+}
+
+/* Both hosting choices keep the same pricing cards and responsive grid. */
+.pp-product-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 28px; }
+.pp-product-tabs button { padding: 12px 20px; border: 0; border-radius: 12px; background: transparent; color: var(--th-text-body); font: inherit; cursor: pointer; }
+.pp-product-tabs button[aria-pressed="true"] { background: var(--th-bg-card, #202020); color: var(--th-text-heading); }
+.pp-product-tabs button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.pp-plan-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+.pp-plan-controls .pp-product-tabs { margin-bottom: 0; }
+.pp-billing-interval { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 14px; background: var(--th-bg-card); }
+.pp-billing-interval button { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-radius: 10px; background: transparent; color: var(--th-text-body); font: inherit; cursor: pointer; }
+.pp-billing-interval button[aria-pressed="true"] { background: var(--th-text-heading); color: var(--th-bg-page); }
+.pp-billing-interval button:focus-visible { outline: 2px solid var(--th-text-heading); outline-offset: 3px; }
+.pp-billing-interval span { font-size: 12px; }
+.pp-plans--management { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }

@@ -1,8 +1,8 @@
 import { describe, it, expect, afterAll } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { safeFetch } from "../../src/lib/safe-fetch";
-import { SsrfError } from "../../src/lib/ssrf-guard";
+import { safeFetch } from "@repo/platform/engine/lib/safe-fetch";
+import { SsrfError } from "@repo/platform/engine/lib/ssrf-guard";
 
 // A local echo server so the happy path exercises the real node:http transport.
 const server = http.createServer((req, res) => {

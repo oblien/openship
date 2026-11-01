@@ -49,11 +49,11 @@ vi.mock("@repo/adapters", async () => ({
 
 // isLocalHostRow decides "is this row THIS box". Keyed off the fixture flag so the
 // test doesn't depend on env/loopback resolution.
-vi.mock("./box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: vi.fn(async (row: { isLocal?: boolean }) => Boolean(row?.isLocal)),
 }));
 
-import { sshManager } from "./ssh-manager";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 
 /** Reach into the pool — there's no public accessor, and the whole point is to
  *  assert the cache state that the leak was a symptom of. */

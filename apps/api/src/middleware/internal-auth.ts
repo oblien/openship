@@ -1,6 +1,7 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { timingSafeEqual } from "node:crypto";
 import type { Context, Next } from "hono";
-import { env } from "../config";
+import { env } from "@repo/platform/engine/config/index";
 import { isLoopbackRequest, peerAddress } from "./loopback-peer";
 
 /**
@@ -35,7 +36,7 @@ export async function internalAuth(c: Context, next: Next) {
     // Boot guard in env.ts already prevents this on non-desktop. If
     // we still get here without a token in any non-desktop mode, refuse.
     if (env.DEPLOY_MODE !== "desktop") {
-      console.error(
+      errorDiagnostics.error("api/middleware/internal-auth",
         "[internal-auth] INTERNAL_TOKEN unset on non-desktop deployment — refusing.",
       );
       return c.json({ error: "Unauthorized" }, 401);
@@ -45,7 +46,7 @@ export async function internalAuth(c: Context, next: Next) {
     // Electron child process talking to its bundled API on 127.0.0.1
     // is the only caller we accept without a token.
     if (!isLoopbackRequest(c)) {
-      console.warn(
+      errorDiagnostics.warn("api/middleware/internal-auth",
         `[internal-auth] desktop loopback gate refused peer=${peerAddress(c) ?? "<unknown>"}`,
       );
       return c.json({ error: "Unauthorized" }, 401);

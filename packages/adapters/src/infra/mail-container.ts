@@ -91,9 +91,32 @@ export const MAIL_DB_CONTAINER_DATA_DIR = "/var/lib/postgresql/data";
 export const MAIL_DB_PGDATA = `${MAIL_DB_CONTAINER_DATA_DIR}/pgdata`;
 export const MAIL_DB_NAME = "vmail";
 export const MAIL_DB_USER = "vmail";
-/** Loopback only — the host-networked engine reaches it at 127.0.0.1:5432. */
+/** Loopback only — the host-networked engine reaches it at 127.0.0.1. */
 export const MAIL_DB_HOST_BIND = "127.0.0.1";
-export const MAIL_DB_PORT = 5432;
+export const MAIL_DB_DEFAULT_PORT = 5432;
+export const MAIL_DB_FALLBACK_PORT = 5433;
+export const MAIL_DB_PORT_RANGE_MAX = 5460;
+export const MAIL_DB_INTERNAL_PORT = 5432;
+
+/**
+ * Resolve the host port the mail database listens on.
+ * Reads `OPENSHIP_MAIL_DB_PORT` at setup time. An invalid explicit setting must
+ * fail instead of silently connecting the mail engine to a different database.
+ */
+export function resolveMailDbPort(
+  raw: string | number | undefined = process.env.OPENSHIP_MAIL_DB_PORT,
+): number {
+  if (raw === undefined || raw === "") return MAIL_DB_DEFAULT_PORT;
+  const value = String(raw).trim();
+  const n = Number(value);
+  if (!/^[0-9]+$/.test(value) || !Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new Error("OPENSHIP_MAIL_DB_PORT must be a decimal port between 1 and 65535.");
+  }
+  return n;
+}
+
+/** Legacy default constant; runtime host bindings use resolveMailDbPort(). */
+export const MAIL_DB_PORT = MAIL_DB_DEFAULT_PORT;
 
 /**
  * Host-side paths for the files the admin layer writes with `exec.writeFile`

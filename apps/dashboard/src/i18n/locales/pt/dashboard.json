@@ -55,6 +55,10 @@
     "appsEmptyDesc": "Um clique, totalmente auto-hospedado — bancos de dados, automação, analytics, cofres de senhas e mais, rodando nos seus servidores."
   },
   "nav": {
+    "affiliates": "Ganhe",
+    "resources": "Espaços Cloud",
+    "support": "Suporte",
+    "scale": "Escalabilidade",
     "home": "Início",
     "new-project": "Novo Projeto",
     "projects": "Projetos",
@@ -73,6 +77,7 @@
     "addMailbox": "Adicionar caixa de correio",
     "webmail": "Webmail",
     "sections": {
+      "help": "Ajuda",
       "main": "Principal",
       "settings": "Configurações",
       "infrastructure": "Infraestrutura",
@@ -82,7 +87,9 @@
       "account": "Conta"
     },
     "apps": "Apps",
-    "jobs": "Tarefas"
+    "jobs": "Tarefas",
+    "workspaces": "Espaços de trabalho",
+    "actions": "Ações"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",
@@ -126,7 +133,27 @@
         "analytics": "Analytics",
         "automation": "Automação",
         "mail": "E-mail",
-        "other": "Ferramentas"
+        "other": "Ferramentas",
+        "ai": "IA e modelos"
+      },
+      "addCustom": "Adicionar personalizada",
+      "howToAddApp": "Como adicionar um aplicativo",
+      "removeCustomApp": "Remover aplicativo personalizado",
+      "needsUpdateDesc": "Atualize sua instância do Openship para instalar este aplicativo.",
+      "needsUpdateBadge": "Requer atualização",
+      "needsVersionBadge": "Requer v{version}",
+      "removedToast": "\"{name}\" removido.",
+      "removeFailedToast": "Não foi possível remover o aplicativo.",
+      "gpu": {
+        "recommended": "GPU recomendada",
+        "required": "GPU NVIDIA necessária",
+        "mode": "Processamento",
+        "cpu": "Somente CPU",
+        "nvidia": "GPU NVIDIA",
+        "hint": "O modo NVIDIA requer um driver compatível e NVIDIA Container Toolkit no seu servidor.",
+        "cloudUnsupported": "Este app exige hospedagem própria. Escolha um servidor próprio conectado.",
+        "selfHostedOnly": "Somente hospedagem própria",
+        "noGpu": "Nenhuma GPU detectada. Verifique o driver NVIDIA e Container Toolkit ou escolha CPU."
       }
     },
     "projects": {

@@ -1,12 +1,9 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { getRouteRegistry, isPublicSpec } from "../../../src/lib/route-permission";
+// Route loading is module setup; do not put its cold transform inside a timed hook.
+import "../../../src/modules/apps/app.routes";
 
 describe("apps routes are permission-scoped correctly", () => {
-  beforeAll(async () => {
-    // Importing the route module populates the global secure-router registry.
-    await import("../../../src/modules/apps/app.routes");
-  });
-
   it("POST /api/apps/custom is a collection-scoped write route", () => {
     const route = getRouteRegistry().find(
       (r) => r.method === "POST" && r.path === "/api/apps/custom",

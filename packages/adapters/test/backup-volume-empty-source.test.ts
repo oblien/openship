@@ -79,7 +79,7 @@ describe("a service with no backupable source fails the run", () => {
         executorWith([{ id: "pgdata", source: "pgdata", target: "/var/lib", type: "volume" }]),
         { sourceIds: ["typo-data"] },
       ),
-    ).rejects.toThrow(/selects typo-data, none of which is a source.*pgdata \(volume\)/s);
+    ).rejects.toThrow(/Selected backup source "typo-data" is missing.*No partial snapshot/s);
   });
 
   it("still produces normally when there IS a volume", async () => {
@@ -96,7 +96,7 @@ describe("a service with no backupable source fails the run", () => {
 
     const artifacts = await produce(service({ containerId: "c1" }), exec);
     expect(artifacts).toHaveLength(1);
-    expect(artifacts[0]!.name).toBe("volume-pgdata.tar.zst");
+    expect(artifacts[0]!.name).toMatch(/^volume-openship-pgdata-[a-f0-9]{16}\.tar\.zst$/);
   });
 
   it("forwards quiesce to the executor and records what the archive IS", async () => {

@@ -9,6 +9,7 @@
  * marker, but installs under ~/.openship/cli/<tag>/ (a live run target, not the
  * cache) so the current symlink can be repointed atomically on update.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -47,7 +48,8 @@ function assetName(tag: string): string {
 function repoint(link: string, targetTag: string): void {
   try {
     if (lstatSync(link)) rmSync(link, { recursive: true, force: true });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/cli-payload");
     /* no existing link */
   }
   // Relative target so the symlink survives a moved/renamed home.
@@ -59,7 +61,8 @@ function prune(activeTag: string): void {
   let entries: string[];
   try {
     entries = readdirSync(CLI_DIR);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/cli-payload");
     return;
   }
   const tags = entries.filter((e) => e !== "current" && existsSync(join(CLI_DIR, e, ".extracted")));
@@ -77,7 +80,8 @@ function prune(activeTag: string): void {
 function safeMtime(p: string): number {
   try {
     return lstatSync(p).mtimeMs;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/cli-payload");
     return 0;
   }
 }

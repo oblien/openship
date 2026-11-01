@@ -23,6 +23,7 @@
  *   OPSH-EIO <msg>                         — cannot journal (disk/input) → refuse
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../types";
 import { envOps, HOST_STATE_DIR } from "./environment-ops";
 import { resolveEnvironment } from "./environment";
@@ -204,7 +205,8 @@ export async function ensureRemoteJournal(
       { timeout: 10_000 },
     );
     current = Number.parseInt(out.trim(), 10);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/remote-journal");
     current = -1; // missing / unreadable
   }
 
@@ -222,7 +224,8 @@ export async function ensureRemoteJournal(
     await exec.exec(`OPSH_BASE=${sq(baseDir)} sh ${sq(runner)} --gc 2>/dev/null`, {
       timeout: 15_000,
     });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/remote-journal");
     /* GC is best-effort */
   }
 }

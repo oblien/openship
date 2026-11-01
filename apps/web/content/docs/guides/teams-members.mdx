@@ -20,6 +20,17 @@ opens different doors (their **role**). Some keys open everything; some only ope
 
 ## Invite someone
 
+If you use Desktop locally, open **Settings → Instance → Move to a server** first.
+Choose **Use through Desktop** for an API-only installation, or **Desktop + browser**
+to publish the dashboard too. Desktop stays connected to the same remote data,
+and invitations and webhooks use that server while your computer is offline.
+See [Move your control plane](/docs/guides/migrate-control-plane).
+
+For an API-only instance, the invitation page explains how to open Desktop and
+paste the invitation link into **Settings → Instance → More instance options → Connect to an instance**.
+The recipient signs in with their own account, accepts the invitation, and joins
+the team with their assigned role. The team appears in the organization switcher.
+
 <Steps>
 
 <Step>
@@ -28,8 +39,6 @@ opens different doors (their **role**). Some keys open everything; some only ope
 
 In the dashboard, go to **Settings** and choose the **Team** tab from the sidebar. This page lists
 everyone who currently has access, plus any invitations that haven't been accepted yet.
-
-<Callout title="Screenshot">Settings → Team tab, showing the "Active members" list and the **Invite member** button in the top-right. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -60,23 +69,22 @@ build and deploy.
 
 ### Send the invite
 
-Press **Send invite**. Openship emails that address a link to join this organization. The new person
-shows up under **Pending invitations** until they accept.
+Choose **Email** to send through the instance's configured mail service, or **Copy link**
+to share the invitation yourself. Both options invite the same email address with
+the selected role. When email is unavailable, **Copy link** is selected for you.
 
-If the selected email transport is unavailable, the action changes to **Create invite link**. Create
-it, then use **Copy** beside the pending invitation and send the link yourself.
-
-<Callout title="Screenshot">The "Invite a member" panel: the email field, the Member / Admin / Restricted role cards, and the **Send invite** button. *(screenshot pending)*</Callout>
+Press **Send invite** or **Create invite link**. The panel shows the shareable link,
+and the invitation stays under **Pending invitations** until it is accepted or revoked.
 
 </Step>
 
 </Steps>
 
 <Callout title="Self-hosting Openship?" type="info">
-On a self-hosted install you'll also see a **Send via** choice in the invite window: **Your mail
-server** (the mail server you run yourself) or **Openship Cloud**. Pick "Your mail server" only if
-you've set one up; otherwise "Openship Cloud" sends the invite for you. On Openship Cloud this choice
-doesn't appear — invites always go out for you.
+In **Email** mode, the delivery menu shows which mail service will send the invite.
+Use your configured mail service or, when connected, Openship Cloud. The panel links
+to setup if the selected service is unavailable. Copyable links use the instance's
+published address, including when you manage it from Desktop.
 </Callout>
 
 ## What each role can do
@@ -137,10 +145,10 @@ This is what the *invited* person does after you send it.
 
 <Step>
 
-### Open the link in the email
+### Open the invitation link
 
-The invite email contains a link. Clicking it opens a page that says **You're invited** (or **Join
-[workspace name]** once you're signed in).
+Open the link from the email or the person who invited you. It opens a page that says
+**You're invited** (or **Join [workspace name]** once you're signed in).
 
 </Step>
 
@@ -154,8 +162,6 @@ address the invite was sent to** — Openship checks that they match.
 On self-hosted Openship, the instance administrator can create a brand-new user through this
 invitation page. Workspace admins can invite users who already have an account, but they cannot mint
 new instance accounts; ask the instance administrator to send the first invitation in that case.
-
-<Callout title="Screenshot">The accept-invite page showing "You're invited", the workspace name, and the **Sign in** / **Create account** buttons. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -194,7 +200,7 @@ you want a shared space that isn't tangled up with your own experiments — or y
 grow — create a team organization.
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“This invite is for … You're logged in as …”" type="warn">
 The invite was sent to one email but you're signed in with a different one. Sign out, then sign back
@@ -203,9 +209,10 @@ ask an owner or admin to copy it from **Pending invitations** or send a fresh on
 </Callout>
 
 <Callout title="The invite email never arrived" type="warn">
-Check the spam folder first. If you're self-hosting and chose **Your mail server** as the send method
-but haven't set one up, switch the invite to **Openship Cloud** and send again. You can also use
-**Create invite link**, then **Copy** it from the pending invitation and send it directly.
+Check the spam folder first, then check the instance's selected mail service.
+You can copy the existing link from **Pending invitations** and send it directly;
+there is no need to create another invitation. For new invitations, choose **Copy link**
+if email delivery is unavailable.
 </Callout>
 
 <Callout title="“Failed to send invite”" type="error">
@@ -214,7 +221,7 @@ already a member. Confirm your own role on the Team tab, and check the **Active 
 **Pending invitations** lists to see if they're already there.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Permissions & roles" href="/docs/security/permissions" description="The full picture of how Openship decides who can do what, including per-resource grants." />

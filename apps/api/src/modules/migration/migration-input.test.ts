@@ -7,7 +7,7 @@ import {
   sanitizeServiceEnv,
   sanitizeCustomPaths,
   sanitizeRoutes,
-} from "./migration-input";
+} from "@repo/platform/engine/modules/migration/migration-input";
 
 describe("sanitizeCustomPaths", () => {
   it("keeps well-formed absolute source→dest pairs, trimmed", () => {
@@ -158,13 +158,28 @@ describe("sanitizeRoutes", () => {
     });
   });
 
-  it("omits a root ('/') targetPath and rejects `..` traversal → root (no targetPath)", () => {
+  it("omits a root targetPath but refuses traversal instead of broadening it to root", () => {
     expect(sanitizeRoutes({ a: { domainType: "custom", customDomain: "x.com", targetPath: "/" } })).toEqual({
       a: { domainType: "custom", customDomain: "x.com" },
     });
-    expect(sanitizeRoutes({ a: { domainType: "custom", customDomain: "x.com", targetPath: "/../etc" } })).toEqual({
-      a: { domainType: "custom", customDomain: "x.com" },
-    });
+    expect(() => sanitizeRoutes({ a: { domainType: "custom", customDomain: "x.com", targetPath: "/../etc" } })).toThrow(/path segments/);
+  });
+
+  it("preserves the trailing slash of a path matcher instead of widening /api/ to /api", () => {
+    expect(sanitizeRoutes({ a: { domainType: "custom", customDomain: "x.com", targetPath: "/api/" } }))
+      .toEqual({ a: { domainType: "custom", customDomain: "x.com", targetPath: "/api/" } });
+  });
+
+  it("retains every route submitted by a service, including aliases and exact paths", () => {
+    expect(sanitizeRoutes({ "container-id": [
+      { domainType: "custom", customDomain: "APP.example.com", exposedPort: 8080 },
+      { domainType: "custom", customDomain: "www.example.com", exposedPort: 8080 },
+      { domainType: "custom", customDomain: "app.example.com", targetPath: "/rpc", exposedPort: 9000, exact: true },
+    ] })).toEqual({ "container-id": [
+      { domainType: "custom", customDomain: "app.example.com", exposedPort: "8080" },
+      { domainType: "custom", customDomain: "www.example.com", exposedPort: "8080" },
+      { domainType: "custom", customDomain: "app.example.com", exposedPort: "9000", targetPath: "/rpc", exact: true },
+    ] });
   });
 
   it("preserves exact matching, including an exact root path", () => {

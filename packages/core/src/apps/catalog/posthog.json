@@ -8,7 +8,7 @@
   },
   "id": "posthog",
   "name": "PostHog",
-  "description": "Self-hosted PostHog — product analytics, session replay, and feature flags, with real event ingestion. This mirrors PostHog's own hobby topology: a Caddy path router in front of the Django app, the Rust capture/flags/hypercache/persons services, the Node ingestion consumers, ClickHouse + Kafka + Postgres + Redis + Valkey + S3. Heavy: 21 containers, roughly 4 vCPU / 16 GB RAM and 30+ GB disk. PostHog ships no tagged releases for self-hosting and rebuilds `latest` hourly, so this tracks a moving upstream.",
+  "description": "Product analytics, session replay, and feature flags in a self-hosted hobby stack.",
   "repository": "https://github.com/PostHog/posthog",
   "kind": "template",
   "logo": "posthog",
@@ -775,5 +775,22 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Product analytics",
+        "description": "Collect events and understand usage."
+      },
+      {
+        "title": "Session replay",
+        "description": "Explore interactions with your application."
+      },
+      {
+        "title": "Feature flags",
+        "description": "Manage feature delivery within the stack."
+      }
+    ],
+    "articleFile": "articles/posthog.md"
+  }
 }

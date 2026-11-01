@@ -1,0 +1,147 @@
+---
+title: server network
+description: Commands, arguments, and options for openship server network.
+cliGroup: openship server network
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server network
+
+Manage private networks and reviewed network operations
+
+```text
+openship server network [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`capabilities`](/docs/cli/reference/server/network#openship-server-network-capabilities) | Show network providers and available operations |
+| [`list`](/docs/cli/reference/server/network#openship-server-network-list) | List private networks |
+| [`get <id>`](/docs/cli/reference/server/network#openship-server-network-get) | Read network members, revision and verification |
+| [`inspect-host <server>`](/docs/cli/reference/server/network#openship-server-network-inspect-host) | Inspect a server's interfaces and network readiness |
+| [`create [options] [file]`](/docs/cli/reference/server/network#openship-server-network-create) | Register a private network and its existing host interfaces |
+| [`update [options] [file]`](/docs/cli/reference/server/network#openship-server-network-update) | Update a network using its exact current revision |
+| [`verify [options] [file]`](/docs/cli/reference/server/network#openship-server-network-verify) | Verify connectivity and optional throughput at a saved revision |
+| [`remove [options] <id>`](/docs/cli/reference/server/network#openship-server-network-remove) | Remove this network if its current state permits it |
+| [`events [options]`](/docs/cli/reference/server/network#openship-server-network-events) | Stream changes to private networks |
+| [`preparation`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation) | Prepare managed networking and recover interrupted preparation |
+| [`operation`](/docs/cli/reference/server/network/operation#openship-server-network-operation) | Review and execute an exact managed-network plan |
+
+## openship server network capabilities
+
+Show network providers and available operations
+
+```text
+openship server network capabilities [options]
+```
+
+## openship server network create
+
+Register a private network and its existing host interfaces
+
+```text
+openship server network create [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship server network events
+
+Stream changes to private networks
+
+```text
+openship server network events [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |
+
+## openship server network get
+
+Read network members, revision and verification
+
+```text
+openship server network get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Network ID |
+
+## openship server network inspect-host
+
+Inspect a server's interfaces and network readiness
+
+```text
+openship server network inspect-host [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server network list
+
+List private networks
+
+```text
+openship server network list [options]
+```
+
+## openship server network remove
+
+Remove this network if its current state permits it
+
+```text
+openship server network remove [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Network ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--revision <number>` | Revision from network get |
+| `-y, --yes` | Confirm removal |
+
+## openship server network update
+
+Update a network using its exact current revision
+
+```text
+openship server network update [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship server network verify
+
+Verify connectivity and optional throughput at a saved revision
+
+```text
+openship server network verify [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

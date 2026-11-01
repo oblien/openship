@@ -1,5 +1,10 @@
 {
   "wizard": {
+    "edgeReview": {
+      "detected": "{proxy} algılandı",
+      "handoff": "Aşağıda eşleştirilen alan adlarını inceleyin. Taşıma, hedef sunucunun yönlendirmesini kurar ve mevcut bir proxy değiştirilecekse onayınızı ister.",
+      "warnings": "{count} keşif bildirimini inceleyin"
+    },
     "title": "Uygulamaları taşı",
     "intro": "Bu sunucunun Docker yapısını inceleyin ve konteynerlerini bir Openship projesine aktarın. İnceleme salt okunurdur — siz dağıtım yapana kadar sunucuda hiçbir şey değişmez.",
     "selectServer": "Bir sunucu seçin",
@@ -57,7 +62,53 @@
       "conflictKeep": "Koru",
       "conflictKeepHint": "Mevcut veriyi kullan",
       "measuring": "Aktarım boyutu ölçülüyor…"
-    }
+    },
+    "steps": {
+      "mapNoRepo": "Algılanan kapsayıcıları hizmetleriyle eşlemek için bir depo bağlayın (isteğe bağlı).",
+      "linkRepoDesc": "Sonraki derlemeler ve otomatik dağıtımlar için Git kullanın.",
+      "repoOnSourceHint": "Sonraki adımda bir depo bağlayın.",
+      "mapHint": "Kapsayıcıları depodaki hizmetleriyle eşleştirin.",
+      "select": "Seç",
+      "source": "Kaynak",
+      "domains": "Yapılandır",
+      "next": "İleri",
+      "back": "Geri",
+      "sourceHint": "İsteğe bağlı olarak bir depoyu bağlayın ve kapsayıcılarınızı compose hizmetleriyle eşleyin — çalışan imaj yine de yeniden kullanılır.",
+      "linkRepo": "Depoyu bağla",
+      "repoOptional": "isteğe bağlı",
+      "connectGithub": "GitHub'ı bağla",
+      "selectRepo": "Bir depo seçin",
+      "repoUrlPlaceholder": "veya github.com/sahip/depo yapıştırın",
+      "repoUrlInvalid": "GitHub deposunu sahip/depo veya github.com URL'si olarak girin.",
+      "repoUrlAdd": "Ekle",
+      "branch": "Dal",
+      "unlinkRepo": "Kaldır",
+      "mapTitle": "Kapsayıcıları compose hizmetleriyle eşleyin",
+      "mapToService": "Hizmet seçin",
+      "notInRepo": "Depoda yok",
+      "composeServicesTitle": "Depo hizmetleri",
+      "noComposeFound": "Bu depoda docker-compose bulunamadı — depo proje düzeyinde bağlanır.",
+      "mapSkipHint": "Bir depoyu bağlamak isteğe bağlıdır — devam etmek için atlayın (çalışan imaj olduğu gibi yeniden kullanılır).",
+      "mapField": "Depo hizmeti",
+      "repoConnectHint": "Depolarınıza göz atmak için panelde GitHub'ı bağlayın — veya bir depo URL'si yapıştırın.",
+      "repoPasteHint": "Veya bir depo URL'si yapıştırın.",
+      "parsingCompose": "Compose ayrıştırılıyor…",
+      "envTitle": "Ortam değişkenleri",
+      "publishDomains": "Etki alanlarını yayınla",
+      "routeTitle": "Rota",
+      "routeKeep": "Koru",
+      "routeNone": "Yok",
+      "sslOn": "SSL",
+      "sslOff": "SSL yok",
+      "internalOnly": "Yalnızca dahili — herkese açık değil.",
+      "serviceNewBadge": "Yeni",
+      "deployActionReuse": "İmajı yeniden kullan",
+      "deployActionBuild": "Derlenecek",
+      "deployActionPull": "Çekilecek"
+    },
+    "flatDocker": "Düz liste",
+    "flatDockerHint": "Openship etiketlerini yoksay — her şeyi (Openship tarafından yönetilen kapsayıcılar dahil) düz Docker olarak dahil et.",
+    "flatDockerShort": "Openship tarafından yönetilen kapsayıcıları da dahil et."
   },
   "run": {
     "title": "Teknoloji yığınınız taşınıyor",
@@ -77,18 +128,19 @@
     "addDomains": "Alan adları ekle",
     "viewDeployLogs": "Dağıtım günlüklerini görüntüle",
     "deployDetail": "Dağıtım günlükleri",
-    "routeHint": "Servisleriniz içe aktarıldı ancak henüz herkese açık değil. Alan Adları sekmesinde her servis için bir alan adı ekleyin — Openship edge servisini (OpenResty) kurmak üzere otomatik dağıtım yapar; eski proxy'niz hâlâ 80/443 portlarını kullanıyorsa devralmayı teklif eder.",
-    "downtimeNote": "Orijinal konteynerler taşıma sırasında durdurulur; yeni dağıtım canlıya geçene kadar kısa bir kesinti beklenir.",
+    "routeHint": "Rotalar yapılandırılana kadar hizmetleriniz özel kalır. Projenin Alan Adları sekmesinden alan adlarını ekleyin veya inceleyin.",
+    "downtimeNote": "Veriler kopyalanırken ve hedef başlatılırken seçilen kaynak konteynerler durur. Kesinti süresini planlayın.",
     "movingImage": "imaj",
     "movingVolume": "disk birimi",
     "partial": "Kısmi — bazı yollar taşınmadı"
   },
   "cutover": {
     "title": "Taşımayı tamamla",
-    "warning": "Yeni dağıtım hedef sunucuda yayında. Kaynak konteynerleri şimdi durdurup kaldırabilir veya güvenlik önlemi olarak durdurulmuş hâlde tutup daha sonra kaldırabilirsiniz.",
+    "warning": "Hedef yayında. Orijinal konteynerleri kaldırabilir veya durdurulmuş olarak tutabilirsiniz. Kaynak birimler korunur.",
     "stopRemove": "Kaynak konteynerleri durdur ve kaldır",
     "keep": "Kaynak konteynerleri tut",
-    "working": "İşleniyor…"
+    "working": "İşleniyor…",
+    "warningRestart": "Hedef yayında. Orijinalleri tut, önceden çalışan kaynak konteynerleri bağımsız kopyalar olarak yeniden başlatır. Orijinalleri kaldır, bunları siler. Kaynak birimler korunur."
   },
   "discover": {
     "buildBlocked": "Kaynaktan derlenmiş — henüz taşınamıyor (önce bir imaj yayınlayın)",
@@ -127,7 +179,21 @@
     "envFromImage": "{n} değişken imajdan geliyor",
     "envFromImageHint": "Yapılandırma olarak içe aktarılmadı — imaj bunları çalışma zamanında sağlıyor. Kaynaktan yeniden derlemeden önce değerleri sabitlemek için içe aktarın.",
     "envFromImageImport": "Yine de içe aktar",
-    "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı."
+    "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı.",
+    "chooseProject": "İçe aktarılacakları seçin",
+    "chooseHint": "Bir Compose projesi veya ayrı hizmetler seçin.",
+    "topology": "Topoloji",
+    "cards": "Kartlar",
+    "viewLabel": "Sonuç görünümü",
+    "topologyHint": "Çizgiler algılanan başlatma bağımlılıklarını gösterir.",
+    "unavailable": "Kullanılamıyor",
+    "selected": "Seçildi",
+    "selectService": "Hizmeti seç",
+    "selectNamedService": "{name} seç",
+    "selectProject": "{name} içindeki tüm hizmetleri seç",
+    "clearSelection": "Seçimi temizle",
+    "selectionKeyboard": "Bir hizmet seçmek için Enter veya Boşluk tuşuna basın.",
+    "expandProject": "{name} hizmetleri"
   },
   "reimport": {
     "title": "Openship projeleri bulundu",
@@ -139,7 +205,19 @@
     "openProject": "Projeyi aç",
     "alreadyManaged": "{n} konteyner zaten bu kurulum tarafından yönetiliyor.",
     "finalizeNote": "Tekrar içe aktarma proje kayıtlarını geri yükler; çalışan konteynerleri tamamen yönetim altına almak için projeden yeniden dağıtın.",
-    "failed": "Tekrar içe aktarma başarısız oldu"
+    "failed": "Tekrar içe aktarma başarısız oldu",
+    "review": "Projeyi kurtar",
+    "reviewNamed": "{name} projesini kurtar",
+    "groupLabel": "Openship projesi",
+    "recoverHint": "Ayarları geri yükleyin ve çalışan kapsayıcıları yeniden bağlayın.",
+    "configuration": "Yapılandırma",
+    "snapshot": "Kayıtlı anlık görüntü",
+    "containerMetadata": "Kapsayıcılardan",
+    "checkSettings": "Kurtarma sonrasında derleme ayarlarını gözden geçirmeniz gerekebilir.",
+    "chooseHint": "Ayarlarını ve çalışan hizmetlerini kurtarmak için bir proje seçin.",
+    "lastSeen": "Son dağıtım {when}",
+    "fullRestore": "Tam geri yükleme",
+    "bestEffort": "Kısmi geri yükleme"
   },
   "scanFailed": "Docker incelemesi başarısız oldu",
   "adoptFailed": "Proje oluşturulamadı",
@@ -147,7 +225,7 @@
     "cardTitle": "Mevcut servisler",
     "cardDesc": "Çalışan bir Docker veya Compose dağıtımını Openship'e taşıyın.",
     "action": "Uygulamaları taşı",
-    "tab": "Mevcut sunucu",
+    "tab": "Mevcut projeyi içe aktar",
     "comingSoon": "Docker taşıma özelliği yakında geliyor"
   },
   "tab": {
@@ -190,13 +268,52 @@
     "resume": "Geçişi sürdür",
     "resuming": "Sürdürülüyor…",
     "editRetry": "Düzenle ve yeniden dene",
-    "safetyTitle": "Yıkıcı değil, geri alınabilir.",
-    "safetyBody": "Kaynağınız tüm süreç boyunca çalışmaya devam eder — veriler kopyalanır, taşınmaz. Başarılı bir geçişten sonra bile hiçbir şey silinmez: orijinal kapsayıcılarınız, geçiş anında açıkça kaldırana kadar (güvenlik ağı olarak durdurulmuş halde) kalır.",
+    "safetyTitle": "Kaynak veriler korunur.",
+    "safetyBody": "Veriler kopyalanır. Seçilen kaynak konteynerler aktarım sırasında durur; verileri kaynakta kalır. Orijinal konteynerlerin kaldırılması onayınızı gerektirir.",
     "cleanupTarget": "Hedefe kopyalanan veriyi kaldır",
     "retryRun": "Yeniden dene",
     "changeTarget": "Hedefi değiştir"
   },
   "plan": {
     "missing": "bulunamadı"
+  },
+  "sources": {
+    "title": "Taşıma kaynağı bağla",
+    "connect": "Kaynağı bağla",
+    "disconnect": "Kaynak bağlantısını kes",
+    "empty": "İçe aktarmak istediğiniz sunucuyu bağlayın.",
+    "hint": "Yalnızca taşıma için. İşiniz bittiğinde bağlantıyı kaldırabilirsiniz.",
+    "importHint": "Uygulamaları ve verileri yönetilen bir Openship sunucusuna kopyalayın. Geçişi onaylayana kadar kaynak korunur."
+  },
+  "review": {
+    "progress": "İçe aktarma ilerlemesi",
+    "title": "Hizmetleri inceleyin",
+    "hint": "Taşımadan önce erişimi ve verileri inceleyin.",
+    "expandAll": "Tümünü genişlet",
+    "collapseAll": "Tümünü daralt",
+    "configureService": "{name} yapılandır",
+    "internal": "Yalnızca dahili",
+    "detected": "Algılandı",
+    "finishRoute": "Yönlendirmeyi tamamlayın",
+    "finishRouteHint": "Alan adını ve bağlantı noktasını tamamlayın veya Yalnızca dahili seçin.",
+    "routingTitle": "Alan adları ve yönlendirme",
+    "scanOptions": "Tarama seçenekleri",
+    "destination": "Hedef",
+    "summary": "İçe aktarma özeti",
+    "publicServices": "Dışa açık hizmetler",
+    "internalServices": "Dahili hizmetler",
+    "dataMounts": "Veri bağlamaları",
+    "destinationNext": "Sonraki adımda bu hizmetlerin nerede çalışacağını seçin.",
+    "importDetails": "İçe aktarma ayrıntıları",
+    "detectProjects": "Projeleri algıla",
+    "includeManaged": "Yönetilen kapsayıcıları dahil et"
+  },
+  "view": {
+    "tabView": "Hizmetleri görüntüle",
+    "tabMigrate": "Geçir",
+    "adoptedGroup": "{project} tarafından yönetiliyor",
+    "openProject": "Projeyi aç",
+    "migrateToManage": "Yönetmek için geçir",
+    "back": "Hizmetlere geri dön"
   }
 }

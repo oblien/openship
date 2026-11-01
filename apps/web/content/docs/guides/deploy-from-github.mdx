@@ -15,7 +15,7 @@ the kitchen that cooks it and serves the meal. You point Openship at the recipe 
 - That's it. You do **not** need Docker, a server, or any config files — Openship figures those out.
 </Callout>
 
-## The click-by-click way
+## Steps
 
 <Steps>
 
@@ -27,8 +27,6 @@ Openship needs permission to read your repository. You only do this one time.
 
 Go to **Settings → Git** and choose a GitHub connection method. A GitHub window may open asking "do you allow
 this?" — say yes. When it closes, you're connected.
-
-<Callout title="Screenshot">Settings → Git with the GitHub connection choices. *(screenshot pending)*</Callout>
 
 <Callout title="Self-hosted: two ways to connect (no Openship account required)" type="info">
 On a self-hosted instance you're never forced through Openship Cloud. **Settings → Git** offers:
@@ -58,8 +56,6 @@ Pick whichever fits; Openship never substitutes its own GitHub identity for your
 
 Open the **Library** page (the "New project" button takes you here too). Choose the **Repositories** tab —
 you'll see a list of your GitHub repos. Click the one you want.
-
-<Callout title="Screenshot">Library page, **Repositories** tab, list of GitHub repos each with an "Import"/select action. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -100,8 +96,6 @@ of apps — you only override things when you have a specific reason.
 You land on the build screen, which streams the logs live — like watching the oven through the glass door.
 When it finishes, you get a link. Click it, and your app is online. 🎉
 
-<Callout title="Screenshot">The live build screen showing streamed build steps and, at the end, the live URL. *(screenshot pending)*</Callout>
-
 </Step>
 
 </Steps>
@@ -114,7 +108,36 @@ GitHub**, turn on auto-deploy:
 Open your project → **Source** tab → switch on **Auto-deploy**. From now on, every `git push` to your
 deploy branch rebuilds and ships automatically.
 
-## Prefer the terminal?
+## GitHub deployment Checks
+
+GitHub-backed projects report their deployment result and individual service results on the
+deployed commit by default, on both self-hosted Openship and Openship Cloud. This requires a
+connected GitHub App with **Checks: Read and write** access to the repository. A clone token
+alone does not enable this integration.
+
+Open **Project → Source → GitHub deployment checks**, or use the same control in the deployment
+wizard. Turn reporting off, or expand **Customize checks** to select the overall result,
+all services, specific services, and whether to include failure details. These settings apply
+to new deployment attempts. Turning reporting off also closes pending Checks from an active attempt.
+
+Checks show queued, running and completed outcomes, including failed builds, cancellations and
+partial service failures. Each links to its deployment in Openship. Failure details are redacted
+summaries visible to people who can read the repository; full build logs are not attached.
+Delivery retries in the background if GitHub is unavailable and never blocks the deployment.
+Connection problems appear beside these settings.
+
+Check names include the project and environment: `Openship / <project> / <environment>`.
+Service Checks append ` / <service>`. If a GitHub repository rule requires an older
+`build:<service>` Check, select the new name after its first report.
+
+GitHub's **Re-run** action retries the recorded commit. A service Check retries that service;
+the overall Check retries the project. The instance must be reachable by GitHub webhooks to
+receive this action. Reporting results itself only needs an outbound GitHub connection.
+
+These deployment results are separate from workflow Checks required before deployment. Configure
+those in [Project Actions](/docs/guides/actions).
+
+## CLI
 
 Everything above works from the CLI too:
 
@@ -129,7 +152,7 @@ openship deploy
 openship project git auto-deploy my-app --enable
 ```
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“Connect GitHub” does nothing / no repos show up" type="warn">
 Your GitHub connection didn't finish, or Openship has no permission for that repo. Go back to
@@ -143,7 +166,7 @@ are one of: a missing build command, a missing environment variable, or the app 
 port. See [Troubleshooting → Deployments](/docs/troubleshooting/deployments) for the fixes.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Add a custom domain" href="/docs/guides/custom-domains" description="Put your app on your own yourname.com address with automatic HTTPS." />

@@ -66,20 +66,22 @@ export interface RoutingConfig {
 }
 
 /**
- * A domain served by path fan-out across services: one root upstream at `/` plus
- * extra path-prefix locations, each pointing at a (possibly different) service.
+ * A domain served by path fan-out across services: an optional root upstream at
+ * `/` plus literal-path locations pointing at a (possibly different) service.
  * Persisted on the project so the composition is RE-EMITTED from live upstreams
  * on every redeploy (like `RoutingConfig`), not just at first publish. Populated
- * by a cross-server migration that adopted a multi-upstream vhost
- * (e.g. `api.onvo.me` `/` → web, `/v3` → api).
+ * by a migration that adopted a multi-upstream vhost
+ * (e.g. `api.example.com` `/` → web, `/v3` → api), or explicit paths without a root.
  */
 export interface ProjectCompositeRoute {
   hostname: string;
   isCustomDomain: boolean;
-  /** Service served at `/` (the route's primary upstream). */
-  rootServiceId: string;
+  /** Service served at `/`. Omitted when unmatched paths must return 404. */
+  rootServiceId?: string;
+  /** Explicit listen port when a service has several upstreams. */
+  rootPort?: number;
   /** Extra literal-path locations, resolved to their service's upstream at deploy. */
-  locations: { pathPrefix: string; serviceId: string; exact?: boolean }[];
+  locations: { pathPrefix: string; serviceId: string; port?: number; exact?: boolean }[];
 }
 
 /**
@@ -115,6 +117,13 @@ export interface DeploymentMetadata {
    * (e.g. render.yaml's startCommand) that shouldn't beat a package.json script.
    */
   fillOnly?: boolean;
+  /**
+   * Opt-in Laravel web-role cache warming (issue #19). Only openship.json sets
+   * it, from the native config's top-level `optimize`. The consumer prefixes the
+   * FINAL web command with `php artisan optimize && ` when the resolved stack is
+   * `laravel` and this is true. Default/absent keeps a byte-identical command.
+   */
+  optimize?: boolean;
 }
 
 export interface MetadataParser {

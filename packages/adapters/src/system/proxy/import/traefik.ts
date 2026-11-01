@@ -10,9 +10,8 @@
  * container's labels + its resolved IP. This module is PURE (no I/O) — the
  * docker-inspect that gathers the inputs lives in the scan wrapper.
  *
- * An OpenResty vhost carries ONE upstream per host, so only the Host() part
- * migrates; PathPrefix / Headers / Method / middlewares / HostRegexp are
- * surfaced as coverage warnings ("re-add manually"), never silently dropped.
+ * Host/Path/PathPrefix rules become the shared per-location route model.
+ * Unsupported matchers are reported rather than widened into a Host-only route.
  *
  * Three things here exist because the naive reading of labels loses sites:
  *
@@ -32,6 +31,7 @@
 import type { CommandExecutor } from "../../../types";
 import type { ImportedSite, ProxyScanResult } from "../../types";
 import { collapseByHost, tryExec } from "./parse-utils";
+import { parseTraefikRule } from "./traefik-rules";
 
 export interface TraefikContainer {
   /** Container name — for the ImportedSite.source trace. */
@@ -44,8 +44,8 @@ export interface TraefikContainer {
   /** network name → IP. Needed because a container on several networks has
    *  several IPs and `traefik.docker.network` says which one Traefik dials. */
   networks?: Record<string, string>;
-  /** Exposed container ports ("3000/tcp"). Traefik falls back to the single
-   *  exposed port when no service port label is given, so we must too. */
+  /** Exposed container ports ("3000/tcp"). Traefik selects the lowest TCP port
+   *  when no service port label is given. */
   exposedPorts?: string[];
   /** The container's command line — only read for the Traefik container itself,
    *  to spot static-config flags that change what we're allowed to conclude. */
@@ -73,19 +73,10 @@ function extractHosts(rule: string): string[] {
   return [...new Set(hosts)];
 }
 
-/** Matchers other than Host() that a single-upstream OpenResty vhost can't express. */
-function extraMatchers(rule: string): string[] {
-  const found = new Set<string>();
-  for (const m of rule.matchAll(
-    /\b(PathPrefix|PathRegexp|Path|HeadersRegexp|Headers|Method|Query|ClientIP|HostRegexp)\b/gi,
-  )) {
-    found.add(m[1]);
-  }
-  return [...found];
-}
-
 interface ServiceDef {
   port?: string;
+  container: TraefikContainer;
+  ambiguous?: boolean;
   /** `https` when the backend speaks TLS — the upstream URL scheme must follow,
    *  or the proxy talks plaintext to a TLS port and every request fails. */
   scheme?: string;
@@ -111,18 +102,17 @@ function collectDefinitions(containers: TraefikContainer[]): Definitions {
   const services = new Map<string, ServiceDef>();
   const redirectMiddlewares = new Set<string>();
   const streamRouters: string[] = [];
-  let fileProvider = false;
-  let exposedByDefault = true;
+  const fileProvider = containers.some((c) => /--?providers\.file/i.test(c.cmd ?? ""));
+  const exposedByDefault = !containers.some((c) => /--?providers\.docker\.exposedbydefault[= ]?false/i.test(c.cmd ?? ""));
 
   for (const c of containers) {
     const labels = lowerKeys(c.labels);
-    // A disabled container's SERVICE definitions still count — Traefik merges
-    // label config globally and `traefik.enable=false` only stops that container
-    // being exposed as a route target of its own.
+    if (labels["traefik.enable"] === "false" || (!exposedByDefault && labels["traefik.enable"] !== "true")) continue;
     for (const [k, v] of Object.entries(labels)) {
       let m = k.match(/^traefik\.http\.services\.([^.]+)\.loadbalancer\.server\.(port|scheme)$/);
       if (m) {
-        const def = services.get(m[1]) ?? {};
+        const def: ServiceDef = services.get(m[1]) ?? { container: c };
+        if (def.container !== c) def.ambiguous = true;
         if (m[2] === "port") def.port = v;
         else def.scheme = v;
         services.set(m[1], def);
@@ -137,11 +127,6 @@ function collectDefinitions(containers: TraefikContainer[]): Definitions {
       if (m) streamRouters.push(`${m[1]} router "${m[2]}"`);
     }
 
-    // Static config lives on Traefik's own command line (or its env), not in
-    // labels. Both flags below change what the label set can be trusted to mean.
-    const cmd = c.cmd ?? "";
-    if (/--?providers\.file/i.test(cmd)) fileProvider = true;
-    if (/--?providers\.docker\.exposedbydefault[= ]?false/i.test(cmd)) exposedByDefault = false;
   }
 
   return { services, redirectMiddlewares, streamRouters, fileProvider, exposedByDefault };
@@ -165,13 +150,12 @@ interface Candidate {
   url: string;
   container: string;
   router: string;
-  rule: string;
+  path: string;
+  exact?: boolean;
   middlewares: string[];
   /** Every middleware on it is a scheme redirect → this is the throwaway
    *  http→https half, not a site. */
   redirectOnly: boolean;
-  /** Port had to be guessed — worth saying so, since a wrong port is a 502. */
-  portGuessed: boolean;
 }
 
 export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanResult {
@@ -209,27 +193,42 @@ export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanRes
         continue;
       }
 
-      const ip = resolveIp(c, labels);
+      const matches = parseTraefikRule(rule);
+      if (!matches || matches.some((match) => !match.hosts?.length)) {
+        warnings.push(`traefik: router "${rname}" uses an unsupported rule (${rule}) — it must be recreated manually; no broader Host-only route was imported`);
+        continue;
+      }
+
+      const serviceRef = props.service?.toLowerCase();
+      if (serviceRef?.includes("@") && !serviceRef.endsWith("@docker")) {
+        warnings.push(`traefik: router "${rname}" uses ${props.service} outside the Docker provider — configure its upstream manually`);
+        continue;
+      }
+      const svc = serviceRef?.replace(/@docker$/, "");
+      const ownServices = [...defs.services.values()].filter((def) => def.container === c);
+      const def = svc ? defs.services.get(svc) : ownServices.length === 1 ? ownServices[0] : undefined;
+      if ((svc && !def) || def?.ambiguous || (!svc && ownServices.length > 1)) {
+        warnings.push(`traefik: router "${rname}" has no unambiguous Docker service — configure its upstream manually`);
+        continue;
+      }
+      const target = def?.container ?? c;
+      const ip = resolveIp(target, lowerKeys(target.labels));
       if (!ip) {
         warnings.push(
-          `traefik: ${hosts.join(", ")} — couldn't resolve container ${c.name}'s IP; re-add the upstream manually`,
+          `traefik: ${hosts.join(", ")} — couldn't resolve container ${target.name}'s IP; re-add the upstream manually`,
         );
         continue;
       }
 
-      // Port: the router's own service → the only service defined anywhere → the
-      // container's only exposed port (what Traefik itself falls back to) → 80.
-      const svc = props.service?.replace(/@.*$/, "");
-      const def =
-        (svc ? defs.services.get(svc) : undefined) ??
-        (defs.services.size === 1 ? [...defs.services.values()][0] : undefined);
-      const onlyExposed =
-        c.exposedPorts?.length === 1 ? c.exposedPorts[0].split("/")[0] : undefined;
-      const rawPort = def?.port ?? onlyExposed;
-      // The port originates from a container label — accept only digits so it
-      // can't inject characters into the generated proxy target (defence-in-depth;
-      // the nginx layer rejects them too).
-      const port = /^\d{1,5}$/.test(String(rawPort)) ? String(rawPort) : "80";
+      // Docker provider fallback: the lowest exposed TCP port of the BACKEND.
+      const exposed = (target.exposedPorts ?? []).filter((port) => /^\d+\/tcp$/.test(port))
+        .map((port) => Number(port.split("/")[0])).sort((a, b) => a - b);
+      const rawPort = def?.port ?? exposed[0];
+      const port = Number(rawPort);
+      if (!/^\d{1,5}$/.test(String(rawPort)) || !Number.isInteger(port) || port < 1 || port > 65535) {
+        warnings.push(`traefik: router "${rname}" has no valid backend port — configure its upstream manually`);
+        continue;
+      }
       const scheme = def?.scheme?.toLowerCase() === "https" ? "https" : "http";
 
       const middlewares = (props.middlewares ?? "")
@@ -237,17 +236,17 @@ export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanRes
         .map((m) => m.trim().replace(/@.*$/, ""))
         .filter(Boolean);
 
-      candidates.push({
-        hosts,
-        ssl: Object.keys(props).some((p) => p === "tls" || p.startsWith("tls.")),
-        url: `${scheme}://${ip}:${port}`,
-        container: c.name,
+      for (const match of matches) candidates.push({
+        hosts: match.hosts!,
+        path: match.path ?? "/",
+        ...(match.exact ? { exact: true } : {}),
+        ssl: props.tls !== "false" && Object.keys(props).some((p) => p === "tls" || p.startsWith("tls.")),
+        url: `${scheme}://${ip.includes(":") ? `[${ip}]` : ip}:${port}`,
+        container: target.name,
         router: rname,
-        rule,
         middlewares,
         redirectOnly:
           middlewares.length > 0 && middlewares.every((m) => defs.redirectMiddlewares.has(m)),
-        portGuessed: rawPort === undefined,
       });
     }
   }
@@ -256,8 +255,8 @@ export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanRes
   // all-redirect group the first is kept by source order — same as before);
   // among real routers the TLS one wins, ties keep source order.
   const { kept: sites, dropped } = collapseByHost(
-    candidates,
-    (c) => c.hosts,
+    candidates.flatMap((candidate) => candidate.hosts.map((host) => ({ ...candidate, hosts: [host] }))),
+    (c) => [`${c.hosts[0]}\0${c.path}\0${Boolean(c.exact)}`],
     (c) => (c.redirectOnly ? 0 : c.ssl ? 2 : 1),
   );
 
@@ -265,21 +264,10 @@ export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanRes
   // "uses middleware(s) redirect-to-https — not migrated", which is noise about
   // config we reproduce natively.
   for (const cand of sites) {
-    const extras = extraMatchers(cand.rule);
-    if (extras.length > 0) {
-      warnings.push(
-        `traefik: ${cand.hosts.join(", ")} also matches ${extras.join(", ")} — only the Host() part is migrated; re-add path/header rules manually`,
-      );
-    }
     const carried = cand.middlewares.filter((m) => !defs.redirectMiddlewares.has(m));
     if (carried.length > 0) {
       warnings.push(
         `traefik: ${cand.hosts.join(", ")} uses middleware(s) "${carried.join(", ")}" — not migrated`,
-      );
-    }
-    if (cand.portGuessed) {
-      warnings.push(
-        `traefik: ${cand.hosts.join(", ")} — no service port label and no single exposed port on ${cand.container}; assumed :80, check the upstream`,
       );
     }
   }
@@ -287,7 +275,9 @@ export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanRes
     // Not silent: the operator should know we recognised it, not wonder if it
     // was missed. Distinct wording from a real loss.
     warnings.push(
-      `traefik: ${d.hosts.join(", ")} router "${d.router}" is an http→https redirect — Openship's edge does that itself (nothing to migrate)`,
+      d.redirectOnly
+        ? `traefik: ${d.hosts.join(", ")} router "${d.router}" is an http→https redirect — Openship's edge does that itself (nothing to migrate)`
+        : `traefik: ${d.hosts.join(", ")} router "${d.router}" duplicates the same hostname/path — the preferred router was retained`,
     );
   }
   for (const s of defs.streamRouters) {
@@ -299,26 +289,39 @@ export function parseTraefikLabels(containers: TraefikContainer[]): ProxyScanRes
     );
   }
 
+  const grouped = new Map<string, Candidate[]>();
+  for (const candidate of sites) {
+    const group = grouped.get(candidate.hosts[0]) ?? [];
+    group.push(candidate);
+    grouped.set(candidate.hosts[0], group);
+  }
+  const imported = new Map<string, ImportedSite>();
+  for (const [hostname, routes] of grouped) {
+    const root = routes.find((route) => route.path === "/" && !route.exact);
+    // The primary target identifies the site; only the explicit route table
+    // defines its paths. Takeover uses a 404 root when no catch-all was found.
+    const primary = root ?? routes[0]!;
+    const site: ImportedSite = {
+      serverNames: [hostname],
+      ssl: routes.some((route) => route.ssl),
+      target: { kind: "proxy", url: primary.url },
+      ...(!root || routes.length > 1 ? { routes: routes.map((route) => ({
+        path: route.path, url: route.url, ...(route.exact ? { exact: true } : {}),
+      })) } : {}),
+      source: `traefik container ${primary.container}`,
+    };
+    const key = JSON.stringify([site.target, site.ssl, site.routes, site.source]);
+    const alias = imported.get(key);
+    if (alias) alias.serverNames.push(hostname);
+    else imported.set(key, site);
+  }
   return {
     proxy: "traefik",
-    sites: sites.map((cand) => ({
-      serverNames: cand.hosts,
-      ssl: cand.ssl,
-      target: { kind: "proxy" as const, url: cand.url },
-      source: `traefik container ${cand.container}`,
-    })),
+    sites: [...imported.values()],
     warnings,
   };
 }
 
-/**
- * One vhost per hostname downstream, so two routers sharing a Host() collide and
- * the loser is silently gone. Resolve it here: drop the redirect-only halves when
- * a real router exists for the same host, then prefer TLS.
- *
- * Keeps a redirect-only router if it is the ONLY thing serving that host —
- * dropping it would lose the hostname entirely.
- */
 /**
  * I/O wrapper: gather every running container's labels + IP via `docker inspect`
  * (traefik routers can live on ANY container, not just the traefik one), then

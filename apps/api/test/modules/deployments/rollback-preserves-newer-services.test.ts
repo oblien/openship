@@ -21,7 +21,7 @@
 import { repos } from "@repo/db";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { newerThanRestoredRelease } from "../../../src/modules/deployments/compose/project-services";
+import { newerThanRestoredRelease } from "@repo/platform/engine/modules/deployments/compose/project-services";
 import {
   seedDeployment,
   seedOrg,

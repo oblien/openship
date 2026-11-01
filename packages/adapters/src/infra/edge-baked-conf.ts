@@ -26,6 +26,7 @@
  * they can't open is how a load-bearing block gets deleted as decoration.
  */
 
+import { ROUTE_AUTH_THREAD_POOL, ROUTE_AUTH_VM_POOL, ROUTE_AUTH_STATE } from "./route-protection";
 import { edgeRealIpConf } from "./edge-real-ip";
 import { EDGE_NOT_FOUND_LOCATION } from "./edge-not-found";
 import {
@@ -80,6 +81,7 @@ export function bakedEdgeNginxConf(): string {
 # Nothing here is edited at runtime: the api writes managed vhosts into
 # sites-enabled/*.conf (a host bind mount) and reloads via \`docker exec\`.
 worker_processes auto;
+${ROUTE_AUTH_THREAD_POOL}
 error_log ${LOGS_DIR}/error.log warn;
 pid ${OPENRESTY_DEFAULT_PATHS.pidPath};
 
@@ -88,6 +90,8 @@ events {
 }
 
 http {
+    ${ROUTE_AUTH_VM_POOL}
+    ${ROUTE_AUTH_STATE}
     include       mime.types;
     default_type  application/octet-stream;
     sendfile      on;

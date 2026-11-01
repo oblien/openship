@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "E-postalar",
+    "subtitle": "Mevcut posta kutularınızı Openship Webmail ile kullanın.",
+    "connectTitle": "Posta sunucunuzu bağlayın",
+    "description": "Herhangi bir IMAP/SMTP sunucusunu bağlayın. Posta kutularınız ve e-posta teslimatı sağlayıcınızda kalır.",
+    "connectAction": "Mevcut posta sunucusunu bağla",
+    "signInHint": "Webmail’e posta kutunuzun e-posta adresi ve parolasıyla giriş yapın.",
+    "manageAction": "Webmail uygulamalarını yönet"
+  },
+  "cloudComingSoon": {
+    "title": "Yönetilen e-posta",
+    "badge": "Yakında",
+    "description": "Openship Cloud üzerinde yönetilen e-posta yakında kullanıma sunulacak. Cloud sunucu planları uygulama barındırmak içindir ve e-posta sunucusu oluşturmaz.",
+    "selfHosted": "Kendi sunucunuzda barındırdığınız Openship kurulumu ile e-posta hizmeti kullanabilirsiniz."
+  },
   "page": {
     "title": "E-posta Sunucusu",
     "subtitle": "Birkaç tıkla kendi sunucunuzda barındırılan bir e-posta sunucusu kurun",
@@ -140,7 +155,9 @@
     "hide": "Gizle",
     "reveal": "Göster",
     "generateTitle": "Güçlü rastgele bir şifre oluşturun",
-    "generate": "Oluştur"
+    "generate": "Oluştur",
+    "startFailed": "E-posta motoru kurulumu başlatılamadı.",
+    "startFailedFallback": "Kurulumu başlatmak için bağlantı kurulamadı. SSH erişimini doğrulayın ve tekrar deneyin."
   },
   "sidebar": {
     "portConflict": {

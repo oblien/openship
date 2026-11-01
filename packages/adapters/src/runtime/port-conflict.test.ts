@@ -1,9 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { CommandExecutor } from "../types";
 import type { BuildLogger } from "./build-pipeline";
 import type { PromptPayload, PromptUserFn } from "./deploy-pipeline";
 import {
   ensurePortAvailable,
+  isDockerHostPortAvailable,
   portOccupantDetails,
   probeListeningPort,
   probeListeningPortOwners,
@@ -256,6 +257,7 @@ function recordingHost(rules: () => Rule[]) {
         return out;
       }
     }
+    if (cmd.includes("{{json .Id}} {{json .Config.Labels}}")) return `"${CID}" {}`;
     return "";
   };
   return { seen, executor: { exec } as unknown as CommandExecutor };
@@ -352,6 +354,141 @@ function promptSpy(answer: string): PromptSpy {
     },
   };
 }
+
+describe("operator-selected host port", () => {
+  const occupiedHost = () => recordingHost(() => [[`--filter publish=${PORT}`, OWNED_LINE]]);
+
+  test("offers an available alternative and applies it only after the exact choice", async () => {
+    const host = occupiedHost();
+    const apply = vi.fn(async () => true);
+    const promptUser = vi.fn(async (prompt: PromptPayload) => {
+      expect(apply).not.toHaveBeenCalled();
+      expect(prompt.actions[0]).toEqual({
+        id: "use_port:20002",
+        label: "Use port 20002",
+        variant: "primary",
+      });
+      expect(prompt.message).toContain("Port 20002 is available");
+      expect(prompt.message).toContain("future deployments");
+      expect(prompt.details).toMatchObject({
+        port: PORT,
+        alternativePort: 20002,
+        containerId: CID,
+      });
+      return "use_port:20002";
+    });
+
+    await ensurePortAvailable(host.executor, PORT, fakeLogger().logger, promptUser, {
+      suggestAlternative: async () => ({ port: 20002, apply }),
+    });
+
+    expect(apply).toHaveBeenCalledOnce();
+    expect(host.seen.filter((command) => /docker (stop|update)|\bkill\b/.test(command))).toEqual(
+      [],
+    );
+  });
+
+  test.each(["abort", "use_port:20003"])("does not change the port for %s", async (answer) => {
+    const host = occupiedHost();
+    const apply = vi.fn(async () => true);
+    await expect(
+      ensurePortAvailable(host.executor, PORT, fakeLogger().logger, promptSpy(answer).promptUser, {
+        suggestAlternative: async () => ({ port: 20002, apply }),
+      }),
+    ).rejects.toThrow("Deploy aborted");
+    expect(apply).not.toHaveBeenCalled();
+    expect(host.seen.filter((command) => /docker (stop|update)|\bkill\b/.test(command))).toEqual(
+      [],
+    );
+  });
+
+  test("asks again when the suggested port is taken while the dialog is open", async () => {
+    const host = occupiedHost();
+    const first = vi.fn(async () => false);
+    const next = vi.fn(async () => true);
+    const prompts: PromptPayload[] = [];
+    const suggest = vi.fn(async (excluded: ReadonlySet<number>) => {
+      expect(excluded.has(PORT)).toBe(true);
+      return excluded.has(20002) ? { port: 20003, apply: next } : { port: 20002, apply: first };
+    });
+    await ensurePortAvailable(
+      host.executor,
+      PORT,
+      fakeLogger().logger,
+      async (prompt) => {
+        prompts.push(prompt);
+        expect(next).not.toHaveBeenCalled();
+        return prompt.actions[0]!.id;
+      },
+      { suggestAlternative: suggest },
+    );
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]!.promptId).not.toBe(prompts[0]!.promptId);
+    expect(prompts[1]!.message).toContain("Could not confirm port 20002");
+    expect(prompts[1]!.actions.map((action) => action.id)).not.toContain("use_port:20002");
+    expect(first).toHaveBeenCalledOnce();
+    expect(next).toHaveBeenCalledOnce();
+    expect(host.seen.filter((command) => /docker (stop|update)|\bkill\b/.test(command))).toEqual(
+      [],
+    );
+  });
+
+  test("offers an alternative for a protected edge without offering to stop it", async () => {
+    const host = recordingHost(() => [["--filter publish=80", psLine({ name: "openship-edge" })]]);
+    const apply = vi.fn(async () => true);
+    const spy = promptSpy("use_port:20002");
+    await ensurePortAvailable(host.executor, 80, fakeLogger().logger, spy.promptUser, {
+      suggestAlternative: async () => ({ port: 20002, apply }),
+    });
+    expectRefusalPrompt(spy);
+    expect(apply).toHaveBeenCalledOnce();
+    expect(host.seen.filter((command) => /docker (stop|update)|\bkill\b/.test(command))).toEqual(
+      [],
+    );
+  });
+
+  test("keeps existing choices when no alternative can be verified", async () => {
+    const host = occupiedHost();
+    const spy = promptSpy("abort");
+    await expect(
+      ensurePortAvailable(host.executor, PORT, fakeLogger().logger, spy.promptUser, {
+        suggestAlternative: async () => null,
+      }),
+    ).rejects.toThrow("Deploy aborted");
+    expect(spy.calls[0]!.actions.map((action) => action.id)).toEqual(["free_port", "abort"]);
+  });
+});
+
+describe("isDockerHostPortAvailable", () => {
+  test("requires both the socket table and Docker to confirm the port is free", async () => {
+    const host = recordingHost(() => [["__OPENSHIP_PORT_FREE__", "__OPENSHIP_PORT_FREE__"]]);
+    expect(await isDockerHostPortAvailable(host.executor, 20002)).toBe(true);
+  });
+
+  test("detects a Docker DNAT publish even without a host listener", async () => {
+    const host = recordingHost(() => [
+      ["--filter publish=20002", OWNED_LINE],
+      ["__OPENSHIP_PORT_FREE__", "__OPENSHIP_PORT_FREE__"],
+    ]);
+    expect(await isDockerHostPortAvailable(host.executor, 20002)).toBe(false);
+  });
+
+  test.each(["socket", "docker"])(
+    "does not call a port available when %s is unreadable",
+    async (probe) => {
+      const host = recordingHost(() => [
+        ["--filter publish=20002", probe === "docker" ? null : ""],
+        ["/proc/net/tcp", probe === "socket" ? null : ""],
+        [
+          "__OPENSHIP_PORT_FREE__",
+          probe === "socket" ? "__OPENSHIP_PORT_UNAVAILABLE__" : "__OPENSHIP_PORT_FREE__",
+        ],
+      ]);
+      expect(await isDockerHostPortAvailable(host.executor, 20002)).toBeNull();
+    },
+  );
+});
 
 describe("ensurePortAvailable — docker-published port (#628)", () => {
   test("a stale Openship container is stopped by id, and the daemon is never touched", async () => {
@@ -669,6 +806,46 @@ describe("ensurePortAvailable — systemd occupants keep working", () => {
       ensurePortAvailable(host.executor, PORT, logger, spy.promptUser),
     ).resolves.toBeUndefined();
     expect(host.seen.some((c) => c.includes(`systemctl stop '${UNIT}'`))).toBe(true);
+  });
+
+  // #1038: a bare redeploy probes its ports while the release it replaces still binds
+  // them. Bare runs stop-first, so the pipeline stops that release in the next step.
+  test("the outgoing deployment's own unit holds the port: no prompt, nothing stopped", async () => {
+    const host = recordingHost(() => [
+      [`sport = :${PORT}`, `LISTEN 0 511 *:${PORT} *:* users:(("node",pid=702,fd=18))`],
+      ["-p 702 -o args=", "next-server (v16.3.1)"],
+      ["/proc/702/cgroup", "0::/system.slice/openship-dep_Old1.service"],
+      ["--property=Description", "Openship deployment dep_Old1"],
+    ]);
+    const { logger } = fakeLogger();
+    const spy = promptSpy("free_port");
+
+    await expect(
+      ensurePortAvailable(host.executor, PORT, logger, spy.promptUser, {
+        outgoingDeploymentId: "dep_Old1",
+      }),
+    ).resolves.toBeUndefined();
+    expect(spy.calls).toEqual([]);
+    expect(forbiddenCommands(host.seen)).toEqual([]);
+  });
+
+  test("another Openship deployment on the port is still prompted for", async () => {
+    const host = recordingHost(() => [
+      [`sport = :${PORT}`, `LISTEN 0 511 *:${PORT} *:* users:(("node",pid=703,fd=18))`],
+      ["-p 703 -o args=", "node /srv/other/server.js"],
+      ["/proc/703/cgroup", "0::/system.slice/openship-dep_Other.service"],
+      ["--property=Description", "Openship deployment dep_Other"],
+    ]);
+    const { logger } = fakeLogger();
+    const spy = promptSpy("abort");
+
+    await expect(
+      ensurePortAvailable(host.executor, PORT, logger, spy.promptUser, {
+        outgoingDeploymentId: "dep_Old1",
+      }),
+    ).rejects.toThrow(/Deploy aborted/);
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.calls[0]!.details).toMatchObject({ deploymentId: "dep_Other" });
   });
 });
 

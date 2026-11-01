@@ -1,13 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
-import { Terminal, FolderOutput, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer, BoxSelect, ShieldCheck } from "lucide-react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useId, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { getPublicEndpointHosts, getRecommendedSingleAppBuildImage, workloadOf, type PublicEndpoint } from "@/context/deployment/types";
-import type { WorkloadType } from "@repo/core";
+import { getRuntimeVersionPolicy, supportsBuildImageOverride, supportsRuntimeImageOverride, runtimeProjectUpdate, runtimeNeedsInstall, getRuntimeImage, STACKS, type StackId, type WorkloadType } from "@repo/core";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { CommandEnvironmentNotice } from "./CommandEnvironmentNotice";
 
 interface InputField {
   key: string;
@@ -23,8 +30,9 @@ interface InputField {
 }
 
 interface BuildSettingsProps {
-  variant?: 'deploy' | 'import';
-  mode?: 'simple' | 'advanced';
+  allowWorker?: boolean;
+  variant?: "deploy" | "import";
+  mode?: "simple" | "advanced";
   buildData?: any;
   onSave?: (field: string, value: string) => Promise<void>;
   loading?: { [key: string]: boolean };
@@ -33,7 +41,8 @@ interface BuildSettingsProps {
 }
 
 const BuildSettings: React.FC<BuildSettingsProps> = ({
-  mode = 'simple',
+  mode = "simple",
+  allowWorker = true,
   buildData: externalBuildData,
   onSave,
   loading = {},
@@ -49,13 +58,15 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const { baseDomain } = usePlatform();
   const { t } = useI18n();
   const bs = t.importProject.buildSettings;
+  const runtimePolicy = getRuntimeVersionPolicy(config?.framework);
 
-  const [isEditing] = useState(mode === 'simple');
+  const fieldPrefix = useId();
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [tempValues, setTempValues] = useState<{ [key: string]: string }>({});
   const [expanded, setExpanded] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
   const buildData = mode === 'advanced' ? externalBuildData : config?.options;
   const needsBuild = config?.framework !== "node" && config?.framework !== "static";
@@ -73,24 +84,15 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     { value: "worker", label: bs.modeWorker },
     { value: "static", label: bs.modeStatic },
   ];
-  const workloadHint =
-    workload === "web"
-      ? (buildData?.productionPort
-          ? interpolate(bs.serverOnPort, { port: String(buildData.productionPort) })
-          : bs.serverPortNotSet)
-      : workload === "worker"
-        ? bs.workerModeDesc
-        : bs.staticFromEdge;
   // Only a host the config actually names. The old fallback labelled the port
   // field "Port for <projectName>.<baseDomain>" for a config with no chosen
   // route at all — a hostname nobody created.
-  const primaryEndpointHost = getPublicEndpointHosts(config?.publicEndpoints, baseDomain)[0] ?? "";
-  const additionalServerEndpoints: PublicEndpoint[] = hasServer
-    ? (config?.publicEndpoints ?? []).slice(1)
-    : [];
-  const staticEndpoints: PublicEndpoint[] = hasServer
-    ? []
-    : (config?.publicEndpoints ?? []);
+  const servingEndpoints: PublicEndpoint[] = (config?.publicEndpoints ?? []).filter(
+    (endpoint: PublicEndpoint) => !endpoint.redirectTo,
+  );
+  const primaryEndpointHost = getPublicEndpointHosts(servingEndpoints, baseDomain)[0] ?? "";
+  const additionalServerEndpoints = hasServer ? servingEndpoints.slice(1) : [];
+  const staticEndpoints = hasServer ? [] : servingEndpoints;
   const recommendedBuildImage = getRecommendedSingleAppBuildImage({
     framework: config?.framework || "unknown",
     packageManager: config?.packageManager || "npm",
@@ -112,7 +114,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       placeholder: 'bun install',
       description: bs.installCommandDesc,
       type: 'text',
-      icon: <Package className="size-4" />
+      icon: <UiIcon name="terminal" className="size-4" />
     },
     ...(needsBuild ? [
       {
@@ -121,7 +123,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         placeholder: 'npm run build',
         description: bs.buildCommandDesc,
         type: 'text' as const,
-        icon: <Terminal className="size-4" />
+        icon: <UiIcon name="terminal" className="size-4" />
       },
       {
         key: 'outputDirectory',
@@ -129,7 +131,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         placeholder: '.next',
         description: bs.outputDirectoryDesc,
         type: 'text' as const,
-        icon: <FolderOutput className="size-4" />
+        icon: <UiIcon name="folder-out" className="size-4" />
       },
     ] : []),
   ];
@@ -143,17 +145,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       description: bs.sourceFolderDesc,
       type: 'text',
       optional: true,
-      icon: <FolderOutput className="size-4" />
-    },
-    {
-      key: 'buildImage',
-      label: bs.buildImageLabel,
-      placeholder: recommendedBuildImage,
-      description: bs.buildImageDesc,
-      type: 'text',
-      optional: true,
-      icon: <BoxSelect className="size-4" />,
-      source: 'config',
+      icon: <UiIcon name="folder-out" className="size-4" />
     },
     ...(needsBuild ? [
       {
@@ -163,7 +155,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
         description: bs.productionPathsDesc,
         type: 'text' as const,
         optional: true,
-        icon: <ShieldCheck className="size-4" />
+        icon: <UiIcon name="shield-check" className="size-4" />
       },
     ] : []),
   ];
@@ -176,7 +168,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       placeholder: 'npm start',
       description: bs.startCommandDesc,
       type: 'text',
-      icon: <Play className="size-4" />
+      icon: <UiIcon name="play" className="size-4" />
     },
     {
       key: 'productionPort',
@@ -187,9 +179,46 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       min: 1,
       max: 65535,
       optional: true,
-      icon: <Hash className="size-4" />
+      icon: <UiIcon name="hash" className="size-4" />
     },
   ];
+
+  const buildImageSupported = supportsBuildImageOverride(config ?? {});
+  const buildImageField: InputField = {
+    key: 'buildImage',
+    label: bs.buildImageLabel,
+    placeholder: recommendedBuildImage,
+    description: bs.buildImageDesc,
+    type: 'text',
+    optional: true,
+    icon: <UiIcon name="select" className="size-4" />,
+    source: 'config',
+  };
+  const runtimeImageSupported = supportsRuntimeImageOverride({ ...config, workloadType: workload });
+  const hasRuntimeOverrides = config?.runtimeVersion != null || config?.runtimeImage != null;
+  const runtimeImageField: InputField = {
+    key: 'runtimeImage',
+    label: bs.runtimeImageLabel,
+    placeholder: runtimePolicy
+      ? runtimePolicy.images(runtimePolicy.versions.includes(config?.runtimeVersion) ? config.runtimeVersion : runtimePolicy.defaultVersion).runtimeImage
+      : getRuntimeImage((config?.framework && Object.hasOwn(STACKS, config.framework) ? config.framework : 'unknown') as StackId, config?.packageManager, config?.buildImage),
+    description: bs.runtimeImageDesc,
+    type: 'text',
+    optional: true,
+    icon: <UiIcon name="select" className="size-4" />,
+    source: 'config',
+  };
+  const runtimeDescription = runtimeImageSupported
+    ? bs.runtimeDesc
+    : config?.runtimeMode === "bare"
+      ? bs.runtimeBareDesc
+      : workload === "static"
+        ? bs.runtimeStaticDesc
+        : config?.sourceKind === "image"
+          ? bs.runtimePrebuiltDesc
+          : config?.projectType === "docker" || config?.buildKind === "dockerfile"
+            ? bs.runtimeDockerfileDesc
+            : bs.runtimeServicesDesc;
 
   // ── General fields (always visible) ──────────────────────────────
   const generalFields: InputField[] = [];
@@ -214,7 +243,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const handleChange = (field: InputField, value: string) => {
     if (mode === 'simple' && updateOptions) {
       if (field.key === 'productionPort' && config?.options?.hasServer && updateConfig) {
-        const [primaryEndpoint, ...remainingEndpoints] = config.publicEndpoints || [];
+        const primaryEndpoint = servingEndpoints[0];
         updateConfig({
           productionPortTouched: true,
           lastAutoDetectedEnvPort: null,
@@ -223,17 +252,15 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             productionPort: value,
           },
           publicEndpoints: primaryEndpoint
-            ? [{
-                ...primaryEndpoint,
-                port: value,
-              }, ...remainingEndpoints]
+            ? config.publicEndpoints.map((endpoint: PublicEndpoint) => endpoint.id === primaryEndpoint.id
+              ? { ...endpoint, port: value } : endpoint)
             : config.publicEndpoints,
         } as any);
         return;
       }
 
       if (field.source === 'config' && updateConfig) {
-        updateConfig({ [field.key]: value } as any);
+        updateConfig({ [field.key]: field.key === "runtimeImage" && !value.trim() ? null : value } as any);
         return;
       }
 
@@ -257,24 +284,35 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     if (mode === 'simple') {
       return (
         <div key={field.key}>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+          <label htmlFor={`${fieldPrefix}-${field.key}`} className="text-sm font-medium text-foreground mb-1.5 block">
             {field.label}
             {field.optional && (
-              <span className="text-muted-foreground/50 ms-1">{bs.optional}</span>
+              <span className="text-xs text-muted-foreground ms-1">{bs.optional}</span>
             )}
           </label>
-          <input
+          <Input
+            dir="ltr"
+            id={`${fieldPrefix}-${field.key}`}
+            variant="filled"
             type={field.type}
             min={field.min}
             max={field.max}
             value={displayValue || ''}
             onChange={(e) => handleChange(field, e.target.value)}
-            readOnly={!isEditing}
             placeholder={field.placeholder}
-            className={`w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground transition-all ${isEditing
-              ? 'bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-text'
-              : 'bg-muted/20 cursor-not-allowed text-muted-foreground'
-              }`}
+            onBlur={field.key === 'runtimeImage' || (field.key === 'buildImage' && config?.runtimeVersion != null) ? (event) => {
+              try {
+                const value = event.currentTarget.value;
+                runtimeProjectUpdate(config, {
+                  [field.key]: field.key === 'runtimeImage' && !value.trim() ? null : value,
+                });
+                setRuntimeError(null);
+              } catch (error) {
+                observeCaughtError(error, "dashboard/components/import-project/BuildSettings");
+                setRuntimeError(error instanceof Error ? error.message : bs.runtimeVersionDesc);
+              }
+            } : undefined}
+            className={field.type === 'text' ? "min-w-0 font-mono" : "min-w-0"}
           />
         </div>
       );
@@ -290,52 +328,138 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
         {isCurrentlyEditing ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl border border-border/50">
-              {field.icon}
-              <input
+            <div className="relative">
+              <span className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">{field.icon}</span>
+              <Input
+                dir="ltr"
+                variant="filled"
+                aria-label={typeof field.label === 'string' ? field.label : undefined}
                 type={field.type}
                 min={field.min}
                 max={field.max}
                 value={displayValue || ''}
                 onChange={(e) => setTempValues({ ...tempValues, [field.key]: e.target.value })}
                 placeholder={field.placeholder}
-                className="flex-1 text-sm bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground/50"
+                className="min-w-0 ps-10 font-mono"
                 autoFocus
               />
             </div>
             <div className="flex gap-2">
-              <button
+              <Button
+                type="button"
                 onClick={() => handleSave(field.key)}
                 disabled={loading[field.key]}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {bs.save}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
                 onClick={() => handleCancel(field.key, value)}
-                className="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-sm font-medium transition-all"
               >
                 {bs.cancel}
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
-          <div className="relative p-3 bg-muted/30 rounded-xl group hover:bg-muted/50 transition-all">
+          <div className="relative p-3 bg-background rounded-xl group">
             <div className="flex items-center gap-3">
               {field.icon}
-              <p className="text-sm font-medium text-foreground flex-1">{displayValue || field.placeholder}</p>
+              <p className="min-w-0 flex-1 truncate pe-8 font-mono text-sm text-foreground">{displayValue || field.placeholder}</p>
             </div>
             <button
               onClick={() => handleEdit(field.key, value)}
               className="absolute end-3 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/50 hover:text-primary transition-colors"
             >
-              <Pencil className="size-4" />
+              <UiIcon name="edit" className="size-4" />
             </button>
           </div>
         )}
       </div>
     );
   };
+
+  const renderRuntimeSettings = () => (
+    <section aria-labelledby={`${fieldPrefix}-runtime-title`} className="space-y-4">
+      <div className="flex items-center gap-2 rounded-xl bg-card px-3 py-3">
+        <UiIcon name="play" className="size-3.5 shrink-0 text-muted-foreground" />
+        <h3 id={`${fieldPrefix}-runtime-title`} className="text-sm font-medium text-foreground">{bs.runtimeTitle}</h3>
+      </div>
+      <p className="text-xs text-muted-foreground">{runtimeDescription}</p>
+      {(buildImageSupported || runtimeImageSupported) && (
+        <div className="grid gap-5 @min-[40rem]/build-settings:grid-cols-2">
+          {runtimeImageSupported && (runtimePolicy || config?.runtimeVersion != null) && (
+            <div className="space-y-1.5">
+              <label
+                htmlFor={`${fieldPrefix}-runtime-version`}
+                className="block text-sm font-medium text-foreground"
+              >
+                {bs.runtimeVersionLabel}
+              </label>
+              <CustomSelect
+                id={`${fieldPrefix}-runtime-version`}
+                variant="filled"
+                triggerClassName="bg-muted/60 hover:bg-muted"
+                value={config.runtimeVersion ?? ""}
+                options={[
+                  { value: "", label: runtimePolicy ? `${bs.runtimeVersionDefault} (${runtimePolicy.defaultVersion})` : bs.runtimeVersionDefault },
+                  ...(config.runtimeVersion && !runtimePolicy?.versions.includes(config.runtimeVersion)
+                    ? [{ value: config.runtimeVersion, label: config.runtimeVersion }]
+                    : []),
+                  ...(runtimePolicy?.versions ?? []).map((version) => ({
+                    value: version,
+                    label: `${runtimePolicy!.label} ${version}`,
+                  })),
+                ]}
+                onChange={(value) => {
+                  const runtimeVersion = value || null;
+                  try {
+                    const runtime = !runtimePolicy && runtimeVersion == null
+                      ? { runtimeVersion: null }
+                      : runtimeProjectUpdate(config, { runtimeVersion });
+                    // Keep Composer enabled on first selection, even if detection
+                    // found no separate JavaScript asset build.
+                    updateConfig?.({
+                      ...runtime,
+                      ...(!config.runtimeVersion && !hasBuild && runtimeNeedsInstall(config.framework, runtimeVersion, config.options?.installCommand)
+                        ? { options: { ...config.options, hasBuild: true } }
+                        : {}),
+                    });
+                    setRuntimeError(null);
+                  } catch (error) {
+                    observeCaughtError(error, "dashboard/components/import-project/BuildSettings");
+                    setRuntimeError(error instanceof Error ? error.message : bs.runtimeVersionDesc);
+                  }
+                }}
+              />
+              <p className="text-xs text-muted-foreground">{bs.runtimeVersionDesc}</p>
+            </div>
+          )}
+
+          {buildImageSupported && <div className="space-y-1.5">
+            {renderInput(buildImageField)}
+            <p className="text-xs text-muted-foreground">{bs.buildImageDesc}</p>
+          </div>}
+          {runtimeImageSupported && <div className="space-y-1.5">
+            {renderInput(runtimeImageField)}
+            <p className="text-xs text-muted-foreground">{bs.runtimeImageDesc}</p>
+          </div>}
+        </div>
+      )}
+      {!runtimeImageSupported && hasRuntimeOverrides && (
+        <div className="space-y-3 rounded-xl bg-card p-3">
+          <p className="text-xs text-muted-foreground">{bs.runtimeOverrideUnused}</p>
+          {config.runtimeVersion != null && <p className="text-sm text-foreground">{bs.runtimeVersionLabel}: {config.runtimeVersion}</p>}
+          {config.runtimeImage != null && <p dir="ltr" className="break-all font-mono text-xs text-foreground">{config.runtimeImage}</p>}
+          <Button type="button" variant="secondary" onClick={() => {
+            updateConfig?.({ runtimeVersion: null, runtimeImage: null });
+            setRuntimeError(null);
+          }}>{bs.clearRuntimeOverrides}</Button>
+        </div>
+      )}
+      {runtimeError && <p role="alert" className="text-xs text-danger">{runtimeError}</p>}
+    </section>
+  );
 
   const visibleBuildFields = hasBuild ? buildFields : [];
   // web → start command + port; worker → start command only (no port); static → none.
@@ -409,18 +533,20 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
         return (
           <div key={endpoint.id}>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+            <label htmlFor={`${fieldPrefix}-port-${endpoint.id}`} className="text-sm font-medium text-foreground mb-1.5 block">
               {bs.portForPrefix} <span className="text-foreground font-semibold">{hostname}</span>
-              <span className="text-muted-foreground/50 ms-1">{bs.optional}</span>
+              <span className="text-xs text-muted-foreground ms-1">{bs.optional}</span>
             </label>
-            <input
+            <Input
+              dir="ltr"
+              id={`${fieldPrefix}-port-${endpoint.id}`}
+              variant="filled"
               type="number"
               min={1}
               max={65535}
               value={endpoint.port || ''}
               onChange={(event) => handleAdditionalEndpointPortChange(endpoint.id, event.target.value)}
               placeholder={config?.options?.productionPort || bs.enterPort}
-              className="w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
         );
@@ -436,17 +562,20 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
       return (
         <div key={endpoint.id}>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+          <label htmlFor={`${fieldPrefix}-path-${endpoint.id}`} className="text-sm font-medium text-foreground mb-1.5 block">
             {bs.pathForPrefix} <span className="text-foreground font-semibold">{hostname}</span>
           </label>
-          <input
+          <Input
+            dir="ltr"
+            id={`${fieldPrefix}-path-${endpoint.id}`}
+            variant="filled"
             type="text"
             value={endpoint.targetPath || '/'}
             onChange={(event) => handleEndpointTargetPathChange(endpoint.id, event.target.value)}
             placeholder="/"
-            className="w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="font-mono"
           />
-          <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-relaxed">{bs.staticPathHint}</p>
+          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{bs.staticPathHint}</p>
         </div>
       );
     });
@@ -454,106 +583,199 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
   if (mode === 'simple') {
     return (
-      <div className="bg-card rounded-2xl border border-border/50">
+      <div className="@container/build-settings bg-card rounded-2xl">
+        <CommandEnvironmentNotice commands={buildData ?? {}} migrateDraft={(commands, variables) => {
+          const existing = config.envVars ?? [];
+          for (const [key, value] of Object.entries(variables)) {
+            const row = existing.find((item: { key: string }) => item.key === key);
+            if (row && row.value !== value) throw new Error(`Environment already has a different or masked value for ${key}. Resolve it before migrating.`);
+          }
+          updateConfig({ options: { ...config.options, ...commands }, envVars: [...existing, ...Object.entries(variables).filter(([key]) => !existing.some((row: { key: string }) => row.key === key)).map(([key, value]) => ({ key, value, isSecret: true }))] });
+        }} />
         <button
+          type="button"
+          aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between px-5 py-4 text-start"
+          className="w-full flex items-center justify-between gap-3 rounded-2xl px-5 py-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center">
-              <Settings2 className="size-[18px] text-orange-500" />
+            <div className="size-9 shrink-0 rounded-xl bg-warning-bg flex items-center justify-center">
+              <UiIcon name="sliders" className="size-[18px] text-warning" />
             </div>
             <div>
-              <p className="text-[15px] font-semibold text-foreground">{bs.deployConfig}</p>
-              <p className="text-sm text-muted-foreground">
-                {config?.framework ? interpolate(bs.defaultsApplied, { framework: config.framework }) : bs.configureOptions}
+              <p className="text-sm font-semibold text-foreground">{bs.deployConfig}</p>
+              <p className="text-xs text-muted-foreground">
+                {config?.framework
+                  ? interpolate(bs.defaultsApplied, { framework: config.framework })
+                  : bs.configureOptions}
               </p>
             </div>
           </div>
           {expanded ? (
-            <ChevronUp className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-up" className="size-4 text-muted-foreground" />
           ) : (
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
           )}
         </button>
 
         {expanded && (
-          <div className="px-5 pb-5 border-t border-border/50 pt-4">
-            <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-5 px-5 pb-5 border-t border-border/50 pt-4">
+            <div className="grid @min-[40rem]/build-settings:grid-cols-2 gap-5">
               {/* ── Build column ──────────────────────────────── */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
-                  <div className="flex items-center gap-2">
-                    <Hammer className="w-3.5 h-3.5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{bs.build}</p>
-                      <p className="text-sm text-muted-foreground leading-tight">
-                        {hasBuild
-                          ? (config?.buildImage ? interpolate(bs.installBuildIn, { image: config.buildImage }) : bs.installBuildCommands)
-                          : bs.deploySourceDirectly}
-                      </p>
-                    </div>
-                  </div>
-                  <Toggle checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+              <div className="flex min-h-12 min-w-0 items-center justify-between gap-3 rounded-xl bg-card px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <UiIcon name="wrench" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">{bs.build}</p>
                 </div>
+                <Toggle
+                  aria-label={bs.build}
+                  checked={hasBuild}
+                  onChange={(v: boolean) => updateOptions?.({ hasBuild: v })}
+                />
+              </div>
+              <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-1 @min-[40rem]/build-settings:row-start-2">
                 {visibleBuildFields.map(renderInput)}
                 {generalFields.map(renderInput)}
-
-                {/* ── Advanced (collapsible) ──────────────────── */}
-                {advancedFields.length > 0 && (
-                  <div className="border border-border/30 rounded-lg overflow-hidden">
-                    <button
-                      onClick={() => setAdvancedOpen(!advancedOpen)}
-                      className="w-full flex items-center justify-between px-3 py-2 text-start hover:bg-muted/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-xs font-medium text-muted-foreground">{bs.advanced}</span>
-                      </div>
-                      {advancedOpen ? (
-                        <ChevronUp className="size-3 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="size-3 text-muted-foreground" />
-                      )}
-                    </button>
-                    {advancedOpen && (
-                      <div className="px-3 pb-3 space-y-3">
-                        {advancedFields.map(renderInput)}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* ── Start column (Server / Worker / Static, #538) ── */}
-              <div className="space-y-3">
-                <div className="p-2.5 bg-muted/30 rounded-lg border border-border/50 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <Play className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">{bs.start}</p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 p-0.5 bg-muted/40 rounded-lg">
-                    {workloadOptions.map((opt) => (
+              <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl bg-card px-3 py-2 @min-[40rem]/build-settings:col-start-2 @min-[40rem]/build-settings:row-start-1">
+                <div className="flex shrink-0 items-center gap-2">
+                  <UiIcon name="play" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">{bs.start}</p>
+                </div>
+                <div
+                  role="group"
+                  aria-label={bs.start}
+                  className={`grid ${allowWorker ? "grid-cols-3" : "grid-cols-2"} gap-1`}
+                >
+                  {workloadOptions
+                    .filter((opt) => allowWorker || opt.value !== "worker")
+                    .map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
                         onClick={() => setWorkload(opt.value)}
-                        className={`px-2 py-1.5 text-xs font-medium rounded-md transition-all ${
+                        aria-pressed={workload === opt.value}
+                        className={`px-2 py-1.5 text-sm font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                           workload === opt.value
-                            ? "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
+                            ? "bg-foreground text-background"
+                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                         }`}
                       >
                         {opt.label}
                       </button>
                     ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-tight">{workloadHint}</p>
                 </div>
+              </div>
+              <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-2 @min-[40rem]/build-settings:row-start-2">
                 {visibleStartFields.map(renderInput)}
                 {renderEndpointTargetInputs()}
               </div>
             </div>
+
+            {renderRuntimeSettings()}
+
+            {/* ── Advanced (collapsible) ──────────────────── */}
+            {advancedFields.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  aria-expanded={advancedOpen}
+                  onClick={() => setAdvancedOpen(!advancedOpen)}
+                  className="w-full flex items-center justify-between gap-2 rounded-xl bg-card px-3 py-3 text-start hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <UiIcon
+                      name="shield-check"
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="shrink-0 text-sm font-medium text-foreground">
+                      {bs.advanced}
+                    </span>
+                    {(config?.releaseCommands?.length ?? 0) > 0 && (
+                      <span
+                        className="truncate rounded-md bg-background px-2 py-0.5 text-xs text-foreground"
+                        title={bs.releaseTitle}
+                      >
+                        {bs.releaseTitle} · {config.releaseCommands.length}
+                      </span>
+                    )}
+                  </div>
+                  {advancedOpen ? (
+                    <UiIcon name="chevron-up" className="size-3 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground" />
+                  )}
+                </button>
+                {advancedOpen && (
+                  <div className="grid gap-5 pt-4 @min-[40rem]/build-settings:grid-cols-2">
+                    {advancedFields.map(renderInput)}
+                    {(workload !== "static" || config?.releaseCommands?.length > 0) && (
+                      <div className="space-y-2 @min-[40rem]/build-settings:col-span-2">
+                        <p className="text-sm font-medium text-foreground">{bs.releaseTitle}</p>
+                        <p className="text-xs text-muted-foreground">{bs.releaseDescription}</p>
+                        {(config?.releaseCommands ?? []).map((command: string, index: number) => (
+                          <div key={index} className="flex items-start gap-2">
+                            <Textarea
+                              dir="ltr"
+                              variant="filled"
+                              aria-label={interpolate(bs.releaseCommand, {
+                                number: String(index + 1),
+                              })}
+                              rows={1}
+                              maxLength={1000}
+                              value={command}
+                              spellCheck={false}
+                              onChange={(event) =>
+                                updateConfig({
+                                  releaseCommands: config.releaseCommands.map(
+                                    (value: string, at: number) =>
+                                      at === index ? event.target.value : value,
+                                  ),
+                                })
+                              }
+                              className="min-w-0 flex-1 font-mono"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              type="button"
+                              aria-label={interpolate(bs.removeReleaseCommand, {
+                                number: String(index + 1),
+                              })}
+                              onClick={() =>
+                                updateConfig({
+                                  releaseCommands: config.releaseCommands.filter(
+                                    (_: string, at: number) => at !== index,
+                                  ),
+                                })
+                              }
+                              className="shrink-0"
+                            >
+                              <UiIcon name="close" className="size-4" />
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={(config?.releaseCommands?.length ?? 0) >= 20}
+                          onClick={() =>
+                            updateConfig({
+                              releaseCommands: [...(config?.releaseCommands ?? []), ""],
+                            })
+                          }
+                        >
+                          <UiIcon name="plus" className="size-3.5" />
+                          {bs.addReleaseCommand}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -561,9 +783,12 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   }
 
   // Advanced mode
-  const allVisibleFields = [...visibleBuildFields, ...visibleStartFields, ...generalFields];
+  const allVisibleFields = [...visibleBuildFields, ...visibleStartFields, ...generalFields,
+    ...(buildImageSupported ? [buildImageField] : []),
+    ...(runtimeImageSupported || hasRuntimeOverrides ? [runtimeImageField] : []),
+  ];
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-6">
+    <div className="bg-card rounded-2xl p-5">
       <h2 className="text-lg font-semibold text-foreground mb-6">
         {bs.buildSettingsTitle}
       </h2>
@@ -580,9 +805,9 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             onClick={() => setAdvancedOpen(!advancedOpen)}
             className="flex items-center gap-2 mb-4 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ShieldCheck className="size-4" />
+            <UiIcon name="shield-check" className="size-4" />
             <span className="font-medium">{bs.advanced}</span>
-            {advancedOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+            {advancedOpen ? <UiIcon name="chevron-up" className="size-3.5" /> : <UiIcon name="chevron-down" className="size-3.5" />}
           </button>
           {advancedOpen && (
             <div className="grid md:grid-cols-2 gap-5">

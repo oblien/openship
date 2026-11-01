@@ -11,6 +11,7 @@ import {
 import { servers } from "./servers";
 import { project } from "./project";
 import { organization } from "./organization";
+import type { MailCertificateHealth } from "@repo/core";
 
 /**
  * Mail-server install record.
@@ -55,6 +56,12 @@ export const mailServers = pgTable("mail_servers", {
    * against MAIL_SETUP_STEPS, so only the id is stored here.
    */
   resumeStep: integer("resume_step"),
+
+  /** The shared ssl:renew job owns renewal; checking remains enabled when this is off. */
+  certificateAutoRenew: boolean("certificate_auto_renew").notNull().default(true),
+  /** Cached disk + SMTP/IMAP observations for Health and the read-only issue feed. */
+  certificateHealth: jsonb("certificate_health").$type<MailCertificateHealth>(),
+  certificateRenewalError: text("certificate_renewal_error"),
 
   /**
    * The webmail project serving this mail server, when one was installed from

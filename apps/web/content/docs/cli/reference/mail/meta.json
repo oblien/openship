@@ -1,0 +1,10 @@
+{
+  "title": "mail",
+  "pages": [
+    "index",
+    "alias",
+    "domain",
+    "inbound",
+    "mailbox"
+  ]
+}

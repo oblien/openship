@@ -51,27 +51,22 @@ You can do it from any of three surfaces:
 
 | Surface | How |
 |---|---|
-| **Dashboard** | **Settings → Instance**, the **Export** and **Import** cards (self-hosted, owner only) |
+| **Dashboard** | **Settings → Instance**, the **Export** and **Import** cards (self-hosted, instance administrator only) |
 | **CLI** | `openship system data-transfer export` and `openship system data-transfer import` |
 | **API** | `POST /api/system/data-transfer/export` and `POST /api/system/data-transfer/import` |
 
-<Callout title="Screenshot">Settings → Instance tab, showing the "Export data" and "Import data" cards with the passphrase fields. *(screenshot pending)*</Callout>
-
 ### What's in the file
 
-The export contains every table in your instance — users, projects, deployments, domains, servers,
-settings, and so on. Secrets (environment variable values, access tokens, SSH credentials, backup-destination
-keys, webhook secrets) are stored *encrypted* in your database at rest. During export they are **never left
-as raw ciphertext in the file**: Openship lifts each secret out and re-seals the whole set in a separate
-bundle locked with a **passphrase you choose**. The passphrase is run through a slow, memory-hard key
-derivation (scrypt) and the bundle is sealed with AES-256-GCM, so only someone with the passphrase can open
-it. On import, the destination install re-encrypts every secret under **its own** key.
+The export contains the instance or selected projects and their chosen dependencies. Secrets such as
+environment values, access tokens, SSH credentials and backup keys are encrypted in the database.
+Current downloads include selected secrets as **plaintext JSON**, preserving empty values. On import,
+Openship encrypts those values with the destination's key.
 
-<Callout title="The passphrase is optional — but read this first" type="warn">
-If you **skip** the passphrase, the export carries **no secrets at all** — you'll re-enter environment
-variables and credentials by hand after importing. If you **set** one, guard it: the passphrase is the only
-thing that opens the sealed secrets, and a wrong (or lost) passphrase can't be recovered. It's checked
-*before* any data is written, so a bad passphrase aborts the import cleanly.
+<Callout title="Keep export files private" type="warn">
+Anyone who can read a current export can read its included credentials. The CLI creates the output
+file with owner-only permissions and refuses to overwrite an existing file. Omit credentials with
+`includeSecrets: false` in the export selection when they are not needed. Older encrypted exports
+remain importable with their original passphrase.
 </Callout>
 
 ### Import modes
@@ -79,7 +74,7 @@ thing that opens the sealed secrets, and a wrong (or lost) passphrase can't be r
 When you import, you choose how it merges with whatever is already there:
 
 - **Replace (wipe)** — clears the instance and loads the file wholesale. This replaces the current user and
-  session, so the dashboard reloads afterward to sign you in against the imported data. This is the default.
+  session, so the dashboard reloads afterward to sign you in against the imported data. The CLI requires confirmation.
 - **Merge** — inserts only rows that don't already exist, and re-hydrates secrets **only** for the rows it
   actually added, so a row already on the destination is never clobbered.
 
@@ -91,11 +86,10 @@ When you import, you choose how it merges with whatever is already there:
 
 ### Export from the old install
 
-Open **Settings → Instance**, and in the **Export data** card set a passphrase (typed twice to confirm),
-then press **Export & download**. Your browser saves an `openship-export-…json` file. From the terminal it's:
+Open **Settings → Instance**, review the export selection, then download the file. Your browser saves an `openship-export-…json` file. From the terminal it's:
 
 ```bash
-openship system data-transfer export --passphrase 'your-secret' --out openship-export.json
+openship system data-transfer export --out openship-export.json
 ```
 
 </Step>
@@ -104,12 +98,12 @@ openship system data-transfer export --passphrase 'your-secret' --out openship-e
 
 ### Import on the new install
 
-Install Openship on the new machine, sign in as the owner, then go to **Settings → Instance** and press
-**Import from file…**. Pick the file, enter the same passphrase, choose **Replace everything** for a clean
+Install Openship on the new machine, sign in as the instance administrator, then go to **Settings → Instance** and press
+**Import from file…**. Pick the file and choose **Replace everything** for a clean
 move, and confirm. Or from the CLI:
 
 ```bash
-openship system data-transfer import --file openship-export.json --passphrase 'your-secret' --mode wipe
+openship system data-transfer import --file openship-export.json --mode wipe --yes
 ```
 
 </Step>
@@ -118,7 +112,7 @@ openship system data-transfer import --file openship-export.json --passphrase 'y
 
 ### You're done
 
-The new instance now holds your projects, settings, and (if you used a passphrase) your secrets — re-encrypted
+The new instance now holds your projects, settings, and any included secrets — re-encrypted
 under the new install's key. Everything that pointed at the old machine still points at it, so redeploy when
 you're ready.
 
@@ -162,7 +156,7 @@ The desktop database is the same format as every other self-host, so the **Expor
 server, a Docker stack, or another desktop with no conversion step.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Cloud-as-source" href="/docs/architecture/cloud-as-source" description="How cloud projects stay canonical on Openship Cloud while your instance acts as a gateway." />

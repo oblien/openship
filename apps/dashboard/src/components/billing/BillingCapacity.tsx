@@ -1,245 +1,201 @@
 "use client";
 
-import React from "react";
-import { Cloud } from "lucide-react";
-import { PLANS, RESOURCE_TIER_SPECS, formatCpuCores, formatMemoryMb } from "@repo/core";
+import { cloudSpaceHref } from "@/lib/cloud-spaces";
+import { Icon as UiIcon } from "@repo/ui/icons";
+import { PLANS, planServiceResources, formatCpuCores, formatMemoryMb } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import type { BillingState, CapacityMeter } from "@/lib/api/billing";
+import type { BillingState } from "@/lib/api/billing";
+import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
+import { cloudUsagePercent, hasUnlimitedCloudCredits, isNewCloudCustomer } from "@/lib/billing-presentation";
+import { ResourceLabel, ResourceMeter, ResourceRing } from "./ResourceMeter";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { CloudActivationSteps } from "./CloudActivationSteps";
 
 export type { BillingState };
 
-/* ------------------------------------------------------------------ */
-/*  Capacity & usage panel                                            */
-/*                                                                    */
-/*  A per-resource "used vs maximum capacity" view that renders for    */
-/*  every tier (free included). Ceilings come from the tier's `limits` */
-/*  in the pricing catalog — the same numbers enforcement reads — so   */
-/*  the panel is meaningful immediately; live consumption (and         */
-/*  cloud-only ceilings like free routes) fills in from               */
-/*  `state.capacity` once Openship Cloud reports it. Any meter still   */
-/*  awaiting cloud data shows a "syncing" hint rather than a fake zero.*/
-/*                                                                    */
-/*  EVERY METER HERE CAN FILL. The vCPU / RAM / disk rows this panel   */
-/*  used to draw took their ceiling from `oblienLimits`, which are     */
-/*  PER-WORKSPACE caps rather than a namespace pool — a used/max bar   */
-/*  was the wrong shape for them at any value, and their `used` was    */
-/*  never reported, so they were four permanently-empty rows. The      */
-/*  bandwidth row was worse: nothing enforced it. Per-service machine  */
-/*  size is now a plain labelled VALUE at the foot of the panel, which */
-/*  is what it actually is.                                            */
-/* ------------------------------------------------------------------ */
-
-interface RowSpec {
-  key: string;
-  label: string;
-  meter: CapacityMeter;
-  /** Render a raw resource value (already in display units) → string. */
-  format: (n: number) => string;
-  /** Unit suffix shown after formatted values (e.g. "GB"). */
-  unit?: string;
-}
-
-function fmtInt(n: number): string {
-  return Math.round(n).toLocaleString();
-}
-function fmtCredits(n: number): string {
-  // Values arrive in milli-credits. The result is read as COMPUTE MINUTES: one
-  // compute minute is one credit (`MILLI_PER_COMPUTE_MINUTE`), which is why the
-  // divisor is unchanged even though the label now says compute — the plans
-  // publish minutes, so the meter beside them has to speak minutes too.
-  return Math.floor(n / 1000).toLocaleString();
-}
-
-function pct(used: number, max: number): number {
-  if (max <= 0) return 0;
-  return Math.min(100, Math.max(0, (used / max) * 100));
-}
-
-/** Threshold tone — same scale the overview ring uses. Applied as a text color
- *  so the bar fill can inherit it via `bg-current`. */
-function toneClass(p: number): string {
-  if (p >= 90) return "text-danger";
-  if (p >= 75) return "text-warning";
-  return "text-primary";
-}
-
-function MeterRow({ label, meter, format, unit }: Omit<RowSpec, "key">) {
-  const { t } = useI18n();
-  const c = t.billing.capacity;
-  const suffix = unit ? ` ${unit}` : "";
-
-  const hasMax = meter.max != null;
-  const hasUsed = meter.used != null;
-  const p = hasMax && hasUsed ? pct(meter.used!, meter.max!) : 0;
-  const tone = toneClass(p);
-
-  return (
-    <div className="py-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        <span className="text-sm tabular-nums text-muted-foreground">
-          {hasUsed ? (
-            <>
-              <span className="font-semibold text-foreground">
-                {format(meter.used!)}
-                {suffix}
-              </span>
-              {hasMax ? (
-                <span className="ms-1">
-                  {interpolate(c.of, { max: `${format(meter.max!)}${suffix}` })}
-                </span>
-              ) : (
-                <span className="ms-1">· {c.unlimited}</span>
-              )}
-            </>
-          ) : hasMax ? (
-            // Ceiling known (from the plan), live usage not yet reported.
-            <span className="inline-flex items-center gap-1">
-              <Cloud className="size-3" />
-              {c.syncing}
-              <span className="ms-1 text-foreground">
-                · {format(meter.max!)}
-                {suffix}
-              </span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1">
-              <Cloud className="size-3" />
-              {c.syncing}
-            </span>
-          )}
-        </span>
-      </div>
-
-      {/* Track — filled only when we have both used + max. */}
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        {hasMax && hasUsed ? (
-          <div
-            className={`${tone} h-full rounded-full bg-current transition-[width] duration-500`}
-            style={{ width: `${p}%` }}
-          />
-        ) : hasMax ? (
-          // Ceiling known but no usage yet — show a faint indeterminate hint.
-          <div className="h-full w-1/4 rounded-full bg-border/60" />
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/** A ceiling with no meter: a labelled value, no bar. Used for figures that are
- *  a per-unit SIZE rather than a pool — drawing a progress track under one would
- *  imply a total that gets consumed. */
-function ValueRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-3">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <span className="text-sm font-semibold tabular-nums text-foreground">{value}</span>
-    </div>
-  );
-}
-
-export const BillingCapacity: React.FC<{ state: BillingState }> = ({ state }) => {
-  const { t } = useI18n();
-  const c = t.billing.capacity;
-  const h = t.billing.header;
-  // Customer-facing ceilings, from the same catalog entry enforcement reads.
-  const limits = PLANS[state.tier]?.limits ?? null;
+/** Provider allocations and host measurements remain separate from metered consumption. */
+export function BillingCapacity({ state }: { state: BillingState }) {
+  const { t, locale } = useI18n();
+  const copy = t.billing.resourcesGuide;
+  const limits = state.plan?.limits ?? PLANS[state.tier].limits;
   const cap = state.capacity;
+  const number = (value: number) => formatBillingNumber(value, locale);
+  const serviceCeiling = planServiceResources(limits);
+  const spec = state.maxServiceMachine === undefined ? serviceCeiling : state.maxServiceMachine;
+  const buildMeter = cap?.buildMinutes ?? {
+    used: state.buildTimeMinutes,
+    max: limits.buildMinutesPerMonth,
+  };
+  const rows = [
+    {
+      label: copy.projects,
+      hint: copy.projectsHint,
+      meter: cap?.projects ?? { used: null, max: limits.maxProjects },
+      Icon: "folder-open" as const,
+    },
+    {
+      label: copy.apps,
+      hint: copy.appsHint,
+      meter: cap?.services ?? { used: null, max: limits.runningServices },
+      Icon: "layers" as const,
+    },
+    {
+      label: copy.buildTime,
+      hint: state.compute?.billingMode === "monthly" ? t.billing.compute.buildHint : copy.buildHint,
+      meter: buildMeter,
+      unit: t.billing.header.min,
+      Icon: "clock" as const,
+      footnote: buildMeter.max === null ? t.billing.resourceOverview.measuredUsage : undefined,
+    },
+    {
+      label: t.billing.capacity.routes,
+      hint: copy.routesHint,
+      meter: cap?.routes ?? { used: null, max: limits.freeSubdomains },
+      Icon: "globe" as const,
+    },
+  ];
+  const percent = cloudUsagePercent(state);
+  const unlimited = hasUnlimitedCloudCredits(state);
+  const resetAt = state.buildMinutesResetAt ? new Date(state.buildMinutesResetAt) : null;
+  const savedProjects = cap?.projects?.used ?? 0;
 
-  // Merge cloud-reported meters with the plan's ceilings. Cloud wins for the
-  // ceiling when present; otherwise fall back to the tier's `limits` so the max
-  // is never blank for a resource we know the plan caps. `null` on either side
-  // is meaningful — see CapacityMeter.
-  const meter = (
-    reported: CapacityMeter | undefined,
-    fallbackMax: number | null,
-  ): CapacityMeter => ({
-    used: reported?.used ?? null,
-    max: reported?.max ?? fallbackMax,
-  });
-
-  const rows: RowSpec[] = [];
-
-  // Compute minutes — fully live from the balance (the primary allowance meter).
-  // The quota behind it is the tier's whole derived grant, app runtime PLUS its
-  // build allowance (see `planMonthlyCredits`), which is why the build row below is
-  // a view of the same pool rather than a second, independent budget.
-  rows.push({
-    key: "credits",
-    label: h.credits,
-    meter: { used: state.balance.quotaUsed, max: state.balance.quotaLimit },
-    format: fmtCredits,
-  });
-
-  // Build minutes — the allowance a deploy is actually refused on, so it sits
-  // directly under credits rather than at the bottom with the informational rows.
-  if (cap?.buildMinutes) {
-    rows.push({
-      key: "buildMinutes",
-      label: h.build,
-      meter: meter(cap.buildMinutes, null),
-      format: fmtInt,
-      unit: h.min,
-    });
-  }
-
-  // Running services — one Oblien workspace each, and the ceiling a customer
-  // actually feels. Rendered for every tier: the catalog supplies the max even
-  // before the cloud reports usage, and "0 of 3" is a real statement.
-  rows.push({
-    key: "services",
-    label: c.runningServices,
-    meter: meter(cap?.services, limits?.runningServices ?? null),
-    format: fmtInt,
-  });
-
-  // Projects — Openship-enforced; Oblien has no project concept at all.
-  rows.push({
-    key: "projects",
-    label: c.projects,
-    meter: meter(cap?.projects, limits?.maxProjects ?? null),
-    format: fmtInt,
-  });
-
-  // Free edge routes — cloud-only concept (no static plan ceiling).
-  if (cap?.routes) {
-    rows.push({ key: "routes", label: c.routes, meter: meter(cap.routes, null), format: fmtInt });
-  }
-
-  /**
-   * Largest machine a single service may select on this tier. Deliberately not a
-   * meter — it is a PER-SERVICE size, so there is no pool to fill.
-   *
-   * The label is borrowed from the project's own machine-power section
-   * (`projectSettings.resources.title`, translated in all nine locales) so the
-   * size quoted on the billing page and the size in the picker are named the same
-   * thing, with no new dictionary key. The VALUE is the spec itself rather than
-   * the tier's name: `RESOURCE_TIER_SPECS` is keyed by every `FixedResourceTier`,
-   * so reading it can't go stale when a tier is added, whereas a per-tier name
-   * lookup in a dictionary silently would. `null` = the negotiated tier, where no
-   * size cap applies.
-   */
-  const sizeTier = limits?.maxResourceTier ?? null;
-  const spec = sizeTier ? RESOURCE_TIER_SPECS[sizeTier] : null;
-  const machineSize = spec
-    ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`
-    : c.unlimited;
+  // An expired subscription can still have a server and historical usage.
+  // Keep those visible without presenting free-tier limits as purchased capacity.
+  if (state.tier === "free")
+    return (
+      <>
+        {isNewCloudCustomer(state) ? <CloudActivationSteps /> : state.workspace?.serverId && (
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-5">
+            <p className="text-sm font-medium">{state.workspace.name || t.servers.resources.space}</p>
+            <Button asChild variant="secondary" size="sm"><Link href={cloudSpaceHref(state.workspace.serverId)}>{t.billing.workspaces.openWorkspace}</Link></Button>
+          </section>
+        )}
+        {(savedProjects > 0 || (state.balance.quotaRemaining ?? 0) !== 0) && (
+          <section className="space-y-3 rounded-2xl bg-card p-5 text-sm text-muted-foreground">
+            {savedProjects > 0 && (
+              <p>
+                {interpolate(t.billing.workspaces.projectCount, { count: number(savedProjects) })}
+              </p>
+            )}
+            {(state.balance.quotaRemaining ?? 0) !== 0 && (
+              <>
+                <p className="font-medium tabular-nums text-foreground">
+                  {(state.balance.quotaRemaining ?? 0) > 0 ? t.billing.onboarding.savedCredits : t.billing.usage.kpi.balance}:{" "}
+                  {formatMilliCredits(state.balance.quotaRemaining, locale)}
+                </p>
+                {(state.balance.quotaRemaining ?? 0) > 0 && <p>{t.billing.onboarding.savedCreditsHint}</p>}
+              </>
+            )}
+          </section>
+        )}
+      </>
+    );
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-card p-6">
-      <div className="mb-2">
-        <h2 className="text-base font-semibold text-foreground">{c.title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{c.subtitle}</p>
-      </div>
-      <div className="divide-y divide-border/50">
-        {rows.map(({ key, ...row }) => (
-          <MeterRow key={key} {...row} />
-        ))}
-        <ValueRow label={t.projectSettings.resources.title} value={machineSize} />
-      </div>
-    </div>
+    <>
+      <section className="@container/capacity rounded-2xl bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-medium text-foreground">{copy.includedTitle}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t.billing.resourceOverview.overviewHint}
+            </p>
+          </div>
+          {state.workspace?.serverId ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={cloudSpaceHref(state.workspace.serverId)}>
+                {t.billing.workspaces.openWorkspace}
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 @min-[28rem]/capacity:grid-cols-2 @min-[48rem]/capacity:grid-cols-3">
+          {rows.map(({ meter, Icon, ...row }) => (
+            <ResourceMeter
+              key={row.label}
+              {...row}
+              {...meter}
+              icon={<UiIcon name={Icon} className="size-4" aria-hidden="true" />}
+            />
+          ))}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <ResourceLabel label={copy.machine} hint={copy.machineHint} />
+          <p className="font-medium tabular-nums text-foreground">
+            <bdi>
+              {spec
+                ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`
+                : serviceCeiling === null
+                  ? copy.unlimited
+                  : "—"}
+            </bdi>
+          </p>
+        </div>
+        {limits.buildMinutesPerMonth !== null && resetAt && Number.isFinite(resetAt.getTime()) && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {interpolate(copy.reset, {
+              date: resetAt.toLocaleDateString(locale, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              }),
+            })}
+          </p>
+        )}
+        {!state.compute && <details className="group mt-4 rounded-xl bg-muted/35 p-3">
+          <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+            <ResourceRing large label={copy.usageAllowance} used={percent} max={100}>
+              <span className="text-sm font-medium tabular-nums">
+                {percent === null ? "—" : `${number(percent)}%`}
+              </span>
+            </ResourceRing>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-foreground">{copy.usageAllowance}</h3>
+              <p className="mt-1 text-sm tabular-nums text-muted-foreground">
+                {unlimited
+                  ? copy.unlimited
+                  : percent === null
+                    ? t.billing.resourceOverview.unavailable
+                    : interpolate(t.billing.resourceOverview.remaining, {
+                        amount: `${number(Math.max(0, 100 - percent))}%`,
+                      })}
+              </p>
+            </div>
+            <span className="hidden text-xs text-muted-foreground @min-[28rem]/capacity:block">
+              {copy.usageDetails}
+            </span>
+            <UiIcon
+              name="chevron-down"
+              className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="mt-3 space-y-2 border-t border-border/40 px-1 pt-3 text-sm text-muted-foreground">
+            <p className="font-medium tabular-nums text-foreground">
+              {unlimited
+                ? copy.unlimited
+                : `${formatMilliCredits(state.balance.quotaRemaining, locale)} ${t.billing.overview.creditsLeft}`}
+            </p>
+            <p className="tabular-nums">
+              {t.billing.overview.usedThisPeriod}:{" "}
+              {formatMilliCredits(state.balance.quotaUsed, locale)}
+              {state.balance.quotaLimit != null && (
+                <>
+                  {" "}
+                  {interpolate(t.billing.capacity.of, {
+                    max: formatMilliCredits(state.balance.quotaLimit, locale),
+                  })}
+                </>
+              )}
+            </p>
+            <p className="text-xs leading-relaxed">{copy.creditUnitsHint}</p>
+            <p className="text-xs leading-relaxed">{copy.topupCapacityHint}</p>
+          </div>
+        </details>}
+      </section>
+    </>
   );
-};
+}
 
 export default BillingCapacity;

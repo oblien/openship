@@ -1,4 +1,5 @@
 import { AppError } from "@repo/core";
+import { normalizeProjectDeleteOptions } from "@repo/contracts";
 
 export interface ProjectDeleteOptions {
   force: boolean;
@@ -69,12 +70,5 @@ export function parseProjectDeleteOptions(
     wipeVolumes: parseDeleteBoolean("wipeVolumes", query.wipeVolumes, record.wipeVolumes),
     recordOnly: parseDeleteBoolean("recordOnly", query.recordOnly, record.recordOnly),
   };
-  if (options.recordOnly && (options.wipeVolumes || options.forceOrphan)) {
-    throw new AppError(
-      "recordOnly cannot be combined with wipeVolumes or forceOrphan",
-      400,
-      "INVALID_DELETE_OPTIONS",
-    );
-  }
-  return options;
+  return normalizeProjectDeleteOptions(options);
 }

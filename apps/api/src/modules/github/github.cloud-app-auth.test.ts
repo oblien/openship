@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   // Deliberately invalid for Cloud. The real env module rejects this at boot;
   // the resolver must still fail closed if it receives such configuration.
   env: {
@@ -18,16 +18,16 @@ vi.mock("@repo/db", () => ({
   eq: vi.fn(),
   and: vi.fn(),
 }));
-vi.mock("../../lib/auth", () => ({ auth: { api: {} } }));
-vi.mock("../../lib/cache-store", () => ({ cacheStore: vi.fn() }));
-vi.mock("../../lib/org-actor", () => ({ resolveOrgOwner: vi.fn() }));
-vi.mock("./github.http", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: { api: {} } }));
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({ cacheStore: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({ resolveOrgOwner: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
   ghFetch: vi.fn(),
   ghFetchPublic: vi.fn(),
   ghFetchSoft: vi.fn(),
 }));
 
-import { getGitHubAuthMode, resolveGitHubAuthMode } from "./github.auth";
+import { getGitHubAuthMode, resolveGitHubAuthMode } from "@repo/platform/engine/modules/github/github.auth";
 
 describe("Cloud GitHub auth mode", () => {
   it("cannot be switched away from the canonical Openship App", async () => {

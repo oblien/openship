@@ -34,6 +34,7 @@ vi.mock("./system/proxy/detect", async (importOriginal) => ({
 }));
 
 import { createPlatform } from "./platform";
+import { containerEdgeProvider } from "./system/proxy/ensure-container-edge";
 
 function stubExecutor() {
   return {
@@ -55,6 +56,22 @@ afterEach(() => {
 });
 
 describe("local-host edge selection", () => {
+  it("selects the future container edge on a fresh remote host before it is installed", async () => {
+    const executor = stubExecutor();
+    executor.exists.mockResolvedValue(false);
+
+    const platform = await createPlatform({
+      target: "selfhosted",
+      runtime: "bare",
+      executor: executor as never,
+    });
+
+    expect(platform.routing).toEqual({ marker: "remote-container-edge" });
+    expect(platform.ssl).toBe(platform.routing);
+    expect(containerEdgeProvider).toHaveBeenCalledWith(executor, "openship-edge", undefined);
+    expect(executor.writeFile).not.toHaveBeenCalled();
+  });
+
   it("uses the shared container edge when the target is THIS machine", async () => {
     vi.stubEnv("OPENSHIP_EDGE_MODE", "docker");
     const executor = stubExecutor();

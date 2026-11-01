@@ -17,9 +17,13 @@
  * execution context is CONFINED, and that a new runtime fails by omitting.
  */
 
+import "../../../src/modules/system/server-resource.routes";
 import { describe, it, expect, vi } from "vitest";
 import { BareRuntime } from "@repo/adapters";
 import type { RuntimeCapability } from "@repo/adapters";
+import "../../../src/modules/system/system.routes";
+import "../../../src/modules/services/service.routes";
+import { getRouteRegistry } from "../../../src/lib/route-permission";
 
 describe("the runtimes' isolation claims", () => {
   it("Bare does NOT claim isolatedExec — its exec context is the host", () => {
@@ -81,10 +85,6 @@ describe("the exec surface is split by privilege tier", () => {
   it("host exec is server:admin; container exec is project:service:write", async () => {
     // Pins the tiers themselves: if someone ever lowers host exec to server:write, or
     // raises container exec, the two endpoints stop meaning what their docs claim.
-    await import("../../../src/modules/system/system.routes");
-    await import("../../../src/modules/services/service.routes");
-    const { getRouteRegistry } = await import("../../../src/lib/route-permission");
-
     const host = getRouteRegistry().find(
       (r) => r.method === "POST" && r.path === "/api/system/servers/:id/exec",
     );
@@ -102,6 +102,6 @@ describe("the exec surface is split by privilege tier", () => {
     expect((container!.spec as { body?: unknown }).body).toBeTruthy();
 
     // Host exec is self-hosted-only, so it is never advertised on the control plane.
-    expect((host!.spec as { localOnly?: boolean }).localOnly).toBe(true);
+    expect((host!.spec as { localOnly?: boolean }).localOnly).not.toBe(true);
   });
 });

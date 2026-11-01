@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Standard card with a header (icon + title + optional description) and
  * an optional right-side action slot. Use this everywhere instead of
@@ -16,12 +18,11 @@
  */
 
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
 
 interface SectionCardProps {
   title: string;
   description?: string;
-  icon?: LucideIcon;
+  icon?: IconName;
   action?: React.ReactNode;
   density?: "soft" | "split";
   className?: string;
@@ -48,9 +49,8 @@ export function SectionCard({
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50">
           <div className="flex items-center gap-2.5 min-w-0">
             {Icon && (
-              <Icon
+              <UiIcon name={Icon}
                 className="size-4 text-muted-foreground shrink-0"
-                strokeWidth={2}
               />
             )}
             <div className="min-w-0">
@@ -81,9 +81,8 @@ export function SectionCard({
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 min-w-0">
           {Icon && (
-            <Icon
+            <UiIcon name={Icon}
               className="size-4 text-muted-foreground shrink-0"
-              strokeWidth={2}
             />
           )}
           <h3 className="font-semibold text-foreground text-sm truncate">

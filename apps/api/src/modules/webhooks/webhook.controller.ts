@@ -10,9 +10,10 @@
  * `constructEvent`), so it is intentionally absent from the allowlist below.
  */
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import { getWebhookProvider } from "./webhook.service";
-import type { WebhookProviderName } from "./webhook.types";
+import { getWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
+import type { WebhookProviderName } from "@repo/platform/engine/modules/webhooks/webhook.types";
 
 /** Allowed provider names - rejects anything else at the route level. */
 const ALLOWED_PROVIDERS = new Set<string>(["github"]);
@@ -59,13 +60,13 @@ async function dispatchProvider(c: Context, providerName: WebhookProviderName) {
   }
 
   try {
-    const result = await provider.handle(payload, headers);
-    // Always return 200 for verified webhooks - returning 4xx/5xx causes
-    // GitHub to retry, which can trigger duplicate deployments on transient errors.
-    return c.json(result, 200);
+    const result = await provider.handle(payload, headers, verification);
+    // A valid signature proves who sent the delivery, not that its action ran.
+    // Failed dispatches must remain visible and redeliverable at the provider.
+    return c.json(result, result.success ? 200 : 500);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal handler error";
-    console.error(`[Webhook] ${providerName} handler error:`, err);
-    return c.json({ success: false, error: message }, 200);
+    errorDiagnostics.error("api/modules/webhooks/webhook.controller", `[Webhook] ${providerName} handler error:`, err);
+    return c.json({ success: false, error: message }, 500);
   }
 }

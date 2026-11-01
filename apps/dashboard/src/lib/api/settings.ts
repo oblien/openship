@@ -1,5 +1,7 @@
+import type { AppearancePreferences } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
+import { notifyGitHubSourcesChanged } from "./github";
 
 export type BuildMode = "auto" | "server" | "local";
 /**
@@ -18,7 +20,7 @@ export interface CloneCredentialsState {
   hasToken: boolean;
   /** ISO timestamp when the token was last set, or null if never. */
   setAt: string | null;
-  /** Whether the saved token should be used by default during clone. */
+  /** Whether the saved token is enabled for repository browsing and cloning. */
   asDefault: boolean;
 }
 
@@ -43,6 +45,9 @@ export interface DeployDefaultsResponse {
 }
 
 export const settingsApi = {
+  getAppearance: () => api.get<{ appearance: AppearancePreferences | null }>("settings/appearance"),
+  setAppearance: (appearance: AppearancePreferences | null) =>
+    api.put<{ appearance: AppearancePreferences | null }>("settings/appearance", { appearance }),
   /** Get the current user's platform settings */
   get: () => api.get<UserSettingsResponse>(endpoints.settings.get),
 
@@ -56,12 +61,14 @@ export const settingsApi = {
 
   /** Update only the default edge→app route strategy */
   updateRouteStrategy: (routeStrategy: RouteStrategy) =>
-    api.patch<{ routeStrategy: RouteStrategy }>(endpoints.settings.routeStrategy, { routeStrategy }),
+    api.patch<{ routeStrategy: RouteStrategy }>(endpoints.settings.routeStrategy, {
+      routeStrategy,
+    }),
 
   /**
    * Update (or clear) the default deploy target.
-   * Pass `defaultDeployTarget: null` to clear. When target='server',
-   * `defaultServerId` is required.
+   * Pass `defaultDeployTarget: null` to clear. Otherwise `defaultServerId`
+   * identifies the connected or managed destination.
    */
   updateDeployDefaults: (data: {
     defaultDeployTarget: DefaultDeployTarget | null;
@@ -71,14 +78,17 @@ export const settingsApi = {
   /**
    * Update the user-global clone credentials.
    *   - token: null/empty → clear
-   *   - token: string     → encrypt + store
-   *   - asDefault         → whether `resolveCloneToken` should use it
+   *   - token: string     → validate + encrypt + store
+   *   - asDefault         → enable browsing/cloning (first save defaults to true)
    */
-  updateCloneCredentials: (data: { token?: string | null; asDefault?: boolean }) =>
-    api.patch<{
+  updateCloneCredentials: async (data: { token?: string | null; asDefault?: boolean }) => {
+    const result = await api.patch<{
       cloneToken: CloneCredentialsState;
       cloneStrategyPreference: CloneStrategyPreference;
-    }>(endpoints.settings.cloneCredentials, data),
+    }>(endpoints.settings.cloneCredentials, data);
+    notifyGitHubSourcesChanged();
+    return result;
+  },
 
   /** Save the first-time-deploy nudge choice. */
   updateCloneStrategyPreference: (preference: CloneStrategyPreference) =>

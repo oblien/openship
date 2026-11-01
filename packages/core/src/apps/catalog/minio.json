@@ -17,7 +17,8 @@
   "services": [
     {
       "name": "minio",
-      "image": "minio/minio:latest",
+      "image": "cgr.dev/chainguard/minio@sha256:88df627ed94cddb2a0417f6248e6024cb614128fd213e1097c283b31f4170b73",
+      "replacesImages": ["minio/minio:latest", "docker.io/minio/minio:latest"],
       "commandArgv": [
         "server",
         "/data",
@@ -84,6 +85,7 @@
       "service": "minio",
       "command": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" > /dev/null && mc mb --ignore-existing \"local/$OPENSHIP_BUCKET\" > /dev/null && printf '%s' \"$OPENSHIP_BUCKET\"",
       "capture": "bucket",
+      "mustSucceed": true,
       "phase": "post-ready",
       "readiness": {
         "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
@@ -166,5 +168,22 @@
       ],
       "category": "database"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "S3-compatible API",
+        "description": "Connect existing S3 clients and SDKs."
+      },
+      {
+        "title": "Object storage",
+        "description": "Store uploads, assets, and application files."
+      },
+      {
+        "title": "Web console",
+        "description": "Inspect buckets and objects through a browser."
+      }
+    ],
+    "articleFile": "articles/minio.md"
+  }
 }

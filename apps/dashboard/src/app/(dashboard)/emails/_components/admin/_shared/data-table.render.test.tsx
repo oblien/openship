@@ -1,7 +1,7 @@
-// No DOM needed: renderToStaticMarkup runs no effects and both primitives are pure.
+import { Icon as UiIcon } from "@repo/ui/icons";
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Trash2 } from "lucide-react";
 import { DataTable, RowActionsMenu, type DataTableColumn } from "./data-table";
 import { StatusPill } from "./status-pill";
 
@@ -32,7 +32,7 @@ function renderTable() {
             {
               id: "delete",
               label: "Delete",
-              icon: <Trash2 className="size-4" />,
+              icon: <UiIcon name="trash" className="size-4" />,
               variant: "danger",
               onClick: () => {},
             },
@@ -44,6 +44,37 @@ function renderTable() {
 }
 
 describe("DataTable row actions", () => {
+  it("exposes complete table, row and cell relationships to assistive technology", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderTable();
+    const table = container.querySelector('[role="table"]');
+    expect(table).not.toBeNull();
+    const header = table!.querySelector('[role="row"]');
+    expect(header!.querySelectorAll('[role="columnheader"]')).toHaveLength(2);
+    const body = table!.querySelector('[role="rowgroup"]');
+    expect(body).not.toBeNull();
+    const bodyRows = body!.querySelectorAll('[role="row"]');
+    expect(bodyRows).toHaveLength(2);
+    for (const row of bodyRows) {
+      expect(row.querySelectorAll('[role="cell"]')).toHaveLength(2);
+      expect(row.querySelector('button')!.closest('[role="cell"]')).not.toBeNull();
+    }
+  });
+
+  it("reports loading without presenting placeholder rows as data", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderToStaticMarkup(
+      <DataTable columns={columns} rows={[]} rowKey={(r) => r.id} loading />,
+    );
+    const table = container.querySelector('[role="table"]');
+    expect(table?.getAttribute("aria-busy")).toBe("true");
+    const body = table!.querySelector('[role="rowgroup"]');
+    expect(body?.children).toHaveLength(5);
+    for (const placeholder of body!.children) {
+      expect(placeholder.getAttribute("aria-hidden")).toBe("true");
+    }
+  });
+
   it("puts every row action behind one ⋯ trigger, closed at rest", () => {
     const html = renderTable();
     expect(html).toContain('aria-label="Actions for hydra@oblien.com"');

@@ -1,0 +1,84 @@
+---
+title: notification channel
+description: Commands, arguments, and options for openship notification channel.
+cliGroup: openship notification channel
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship notification channel
+
+Configure notification delivery channels
+
+```text
+openship notification channel [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/notification/channel#openship-notification-channel-list) | List your channels |
+| [`create <file>`](/docs/cli/reference/notification/channel#openship-notification-channel-create) | Create a channel; any returned signing secret is shown once |
+| [`update <id> <file>`](/docs/cli/reference/notification/channel#openship-notification-channel-update) | Update a channel |
+| [`test <id>`](/docs/cli/reference/notification/channel#openship-notification-channel-test) | Send a test notification to this channel |
+| [`remove\|rm [options] <id>`](/docs/cli/reference/notification/channel#openship-notification-channel-remove) | Remove a notification channel |
+
+## openship notification channel create
+
+Create a channel; any returned signing secret is shown once
+
+```text
+openship notification channel create [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON object containing kind, label and provider config |
+
+## openship notification channel list
+
+List your channels
+
+```text
+openship notification channel list [options]
+```
+
+## openship notification channel remove
+
+Remove a notification channel
+
+```text
+openship notification channel remove|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Channel ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip confirmation |
+
+## openship notification channel test
+
+Send a test notification to this channel
+
+```text
+openship notification channel test [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Channel ID |
+
+## openship notification channel update
+
+Update a channel
+
+```text
+openship notification channel update [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Channel ID |
+| `file` | JSON patch containing label, enabled or config |

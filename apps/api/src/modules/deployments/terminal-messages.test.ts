@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { terminalMessages } from "./terminal-messages";
+import { terminalMessages } from "@repo/platform/engine/modules/deployments/terminal-messages";
 
 /**
  * The status read's terminal prose. This gate used to be `effectiveStatus ===

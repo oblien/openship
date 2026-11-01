@@ -1,9 +1,12 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Interactive terminal surface for a single server.
  *
- *   xterm.js (with stdin enabled)  ←→  usePtyConnection (WebSocket)  ←→  /api/terminal/ws/:serverId  ←→  ssh2 PTY shell
+ *   xterm.js (with stdin enabled)  ←→  usePtyConnection (WebSocket)  ←→  /api/terminal/ws/:serverId  ←→  server shell
  *
  * Side-by-side with the existing read-only TerminalSurface (which has
  * disableStdin:true and no keystroke path back to the server). We do
@@ -29,8 +32,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { RotateCw, Terminal as TerminalIcon } from "lucide-react";
+import { readTerminalTheme as themeFor, observeTerminalAppearance } from "@/lib/terminal-appearance";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
+import { Button } from "@/components/ui/button";
 import type { TerminalErrorCode } from "@/lib/api";
 import "@xterm/xterm/css/xterm.css";
 
@@ -76,62 +80,10 @@ interface ServerTerminalProps {
   className?: string;
 }
 
-const darkTheme = {
-  background: "#0a0a0a",
-  foreground: "#e5e5e5",
-  cursor: "#ffffff",
-  cursorAccent: "#0a0a0a",
-  selectionBackground: "#3a3a3a",
-  black: "#000000",
-  red: "#cd3131",
-  green: "#0dbc79",
-  yellow: "#e5e510",
-  blue: "#2472c8",
-  magenta: "#bc3fbc",
-  cyan: "#11a8cd",
-  white: "#e5e5e5",
-  brightBlack: "#666666",
-  brightRed: "#f14c4c",
-  brightGreen: "#23d18b",
-  brightYellow: "#f5f543",
-  brightBlue: "#3b8eea",
-  brightMagenta: "#d670d6",
-  brightCyan: "#29b8db",
-  brightWhite: "#e5e5e5",
-};
-
-const lightTheme = {
-  background: "#ffffff",
-  foreground: "#1a1a1a",
-  cursor: "#000000",
-  cursorAccent: "#ffffff",
-  selectionBackground: "#d1d5da",
-  black: "#1a1a1a",
-  red: "#d73a49",
-  green: "#22863a",
-  yellow: "#b08800",
-  blue: "#0366d6",
-  magenta: "#6f42c1",
-  cyan: "#1b7c83",
-  white: "#6a737d",
-  brightBlack: "#959da5",
-  brightRed: "#cb2431",
-  brightGreen: "#22863a",
-  brightYellow: "#dbab09",
-  brightBlue: "#0366d6",
-  brightMagenta: "#6f42c1",
-  brightCyan: "#1b7c83",
-  brightWhite: "#1a1a1a",
-};
-
-function themeFor(mode: TerminalTheme) {
-  return mode === "light" ? lightTheme : darkTheme;
-}
-
 function humanizeError(code: TerminalErrorCode | string): string {
   switch (code) {
-    case "ssh_auth": return "SSH authentication failed. Check the server's stored credentials.";
-    case "ssh_connect": return "Could not reach the server over SSH.";
+    case "ssh_auth": return "Authentication failed for this server terminal.";
+    case "ssh_connect": return "Could not connect to this server.";
     case "server_not_found": return "Server not found.";
     case "max_sessions": return "Too many active terminal sessions. Close one and try again.";
     case "idle_timeout": return "Session ended due to inactivity.";
@@ -250,7 +202,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
         fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
         fontSize: 13,
         lineHeight: 1.15,
-        theme: themeFor(theme),
+        theme: themeFor(containerRef.current),
         cursorBlink: true,
         scrollback: 5000,
         allowProposedApi: true,
@@ -272,12 +224,21 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
         if (!cancelled) {
           const webgl = new WebglAddon();
           webgl.onContextLoss(() => {
-            try { webgl.dispose(); } catch { /* already gone → DOM renderer */ }
+            try { webgl.dispose(); } catch (diagnosticFailure) {
+              observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal"); /* already gone → DOM renderer */ }
           });
           terminal.loadAddon(webgl);
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal");
         /* WebGL not available → default DOM renderer, still fully works */
+      }
+
+      // Unmounted while the WebGL addon loaded: the effect cleanup already
+      // ran, so nothing would dispose this terminal later.
+      if (cancelled || !containerRef.current) {
+        terminal.dispose();
+        return;
       }
 
       xtermRef.current = terminal;
@@ -300,7 +261,8 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
         selectionTimer = setTimeout(() => {
           const sel = terminal.getSelection();
           if (!sel) return;
-          try { void navigator.clipboard?.writeText?.(sel); } catch { /* no perms */ }
+          try { void navigator.clipboard?.writeText?.(sel); } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal"); /* no perms */ }
         }, 150);
       });
 
@@ -312,7 +274,8 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
         if (!visibleRef.current) return;
         const el = containerRef.current;
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
-        try { fitAddon.fit(); } catch { /* container not yet sized */ }
+        try { fitAddon.fit(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal"); /* container not yet sized */ }
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
           const cols = terminal.cols;
@@ -325,15 +288,18 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
       const ro = new ResizeObserver(fit);
       ro.observe(containerRef.current);
       window.addEventListener("resize", fit);
+      const stopAppearance = observeTerminalAppearance(terminal, containerRef.current, fit);
 
       setTerminalReady(true);
 
       cleanup = () => {
         ro.disconnect();
         window.removeEventListener("resize", fit);
+        stopAppearance();
         if (resizeTimer) clearTimeout(resizeTimer);
         if (selectionTimer) clearTimeout(selectionTimer);
-        try { terminal.dispose(); } catch { /* already disposed */ }
+        try { terminal.dispose(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal"); /* already disposed */ }
         if (xtermRef.current === terminal) {
           xtermRef.current = null;
           fitAddonRef.current = null;
@@ -375,11 +341,13 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
     const t = window.setTimeout(() => {
       const el = containerRef.current;
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
-      try { fitAddon.fit(); } catch { /* not sized yet */ }
+      try { fitAddon.fit(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal"); /* not sized yet */ }
       if (xterm.cols && xterm.rows) {
         ptyRef.current.sendResize(xterm.cols, xterm.rows);
       }
-      try { xterm.focus(); } catch { /* not focusable */ }
+      try { xterm.focus(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServerTerminal"); /* not focusable */ }
     }, 30);
     return () => window.clearTimeout(t);
   }, [visible]);
@@ -387,7 +355,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
   // Apply theme changes after mount.
   useEffect(() => {
     const xterm = xtermRef.current;
-    if (xterm) xterm.options.theme = themeFor(theme);
+    if (xterm) xterm.options.theme = themeFor(containerRef.current);
   }, [theme]);
 
   // ── Status banner ───────────────────────────────────────────────────────
@@ -406,7 +374,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
     if (pty.lastError) {
       return {
         tone: "error" as const,
-        message: humanizeError(pty.lastError),
+        message: pty.lastErrorMessage || humanizeError(pty.lastError),
         showReconnect: pty.lastError !== "max_sessions" && pty.lastError !== "server_not_found",
       };
     }
@@ -425,7 +393,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
       };
     }
     return null;
-  }, [pty.lastError, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
+  }, [pty.lastError, pty.lastErrorMessage, pty.isConnecting, pty.reconnectAttempts, exitInfo]);
 
   const handleReconnect = useCallback(() => {
     setExitInfo(null);
@@ -438,28 +406,30 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
       {/* Status banner overlay */}
       {banner && (
         <div
+          role={banner.tone === "error" ? "alert" : "status"}
           className={
             "flex items-center justify-between gap-3 border-b px-4 py-2 text-xs " +
             (banner.tone === "error"
               ? "border-danger-border bg-danger-bg text-danger"
-              : banner.tone === "info"
-                ? "border-border/60 bg-zinc-900/80 text-zinc-300"
-                : "border-border/60 bg-zinc-900/80 text-zinc-400")
+              : "border-border/50 bg-muted text-muted-foreground")
           }
         >
-          <div className="flex items-center gap-2">
-            <TerminalIcon className="size-3.5" />
-            <span>{banner.message}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <UiIcon name="terminal" className="size-3.5 shrink-0" />
+            <span className="min-w-0 break-words">{banner.message}</span>
           </div>
           {banner.showReconnect && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={handleReconnect}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-background/60"
+              disabled={pty.isConnecting}
+              className="shrink-0"
             >
-              <RotateCw className="size-3" />
+              <UiIcon name="refresh" className="size-3" />
               Reconnect
-            </button>
+            </Button>
           )}
         </div>
       )}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RuntimeAdapter } from "@repo/adapters";
-import { resolveReadinessTarget } from "../../../src/modules/deployments/readiness-target";
+import { resolveReadinessTarget } from "@repo/platform/engine/modules/deployments/readiness-target";
 
 function runtime(options: {
   name?: string;

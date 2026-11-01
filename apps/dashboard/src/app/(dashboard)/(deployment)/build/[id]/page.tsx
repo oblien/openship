@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +14,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
 import { BUILD_SESSION_ERROR_FALLBACK } from "@/context/deployment/load-session";
 import { ResourceNotFound } from "@/components/resource-not-found";
-import { Rocket, Home, PackageX, RotateCcw, TriangleAlert } from "lucide-react";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { cloudDeployFailure, cloudDeployCapacityFailure } from "@/lib/cloud-deploy-pricing";
 
 const BuildPage: React.FC = () => {
   const params = useParams();
@@ -22,6 +25,7 @@ const BuildPage: React.FC = () => {
   const deploymentId = params.id as string;
   const { state, config, connectToBuild, loadBuildSession, redeploy, maybeOpenCredentialModal } = useDeployment();
   const { t } = useI18n();
+  const showCloudPricing = useCloudDeployPricing(config.workspaceId);
   const initializedDeploymentRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   /** Load failure that is NOT a missing deployment — a hydration exception,
@@ -67,7 +71,7 @@ const BuildPage: React.FC = () => {
         return;
       }
       const result = await loadBuildSession(deploymentId);
-      if (!result.success) {
+      if (!result.success && !result.superseded) {
         // Only the server saying "this doesn't exist" (soft-failed status or
         // HTTP 404) renders the not-found screen. Anything else — a throw while
         // hydrating a successful response, a 5xx, a network blip — keeps the
@@ -112,8 +116,8 @@ const BuildPage: React.FC = () => {
   // racy: if the POST stalled or transiently failed, the reconnect gate
   // (`hasConnected || !lastStartBuild`) refused to retry and the user
   // saw an empty terminal until they hit refresh.
-  const handleRedeploy = useCallback(async (): Promise<string | null> => {
-    const newDeploymentId = await redeploy(deploymentId);
+  const handleRedeploy = useCallback(async (options?: { reuseBuild?: boolean }): Promise<string | null> => {
+    const newDeploymentId = await redeploy(deploymentId, options);
 
     if (newDeploymentId) {
       initializedDeploymentRef.current = newDeploymentId;
@@ -144,24 +148,31 @@ const BuildPage: React.FC = () => {
   // with no next step.
   useEffect(() => {
     if (!state.deploymentFailed || !state.errorCode) return;
+    // Capacity diagnosis remains visible in the build view; pricing opens on click.
+    if (config.deployTarget === "cloud" && state.errorDetails?.workspaceId && cloudDeployCapacityFailure(state)) return;
     // De-dupe — same deployment + same code shouldn't reopen the modal on every
     // state tick. The shared handler (useDeploymentBuild.maybeOpenCredentialModal)
     // owns the modal + its options; here we just pass the build-fail trigger and
     // an auto-redeploy on the user's fix.
     const key = `${deploymentId}:${state.errorCode}`;
     if (shownModalRef.current === key) return;
+    const cloudFailure = cloudDeployFailure(state);
+    if (cloudFailure && showCloudPricing(cloudFailure, handleRedeploy)) {
+      shownModalRef.current = key;
+      return;
+    }
     const opened = maybeOpenCredentialModal(state.errorCode, {
       trigger: "build-fail",
       onResolved: () => void handleRedeploy(),
     });
     if (opened) shownModalRef.current = key;
-  }, [state.deploymentFailed, state.errorCode, deploymentId, maybeOpenCredentialModal, handleRedeploy]);
+  }, [state.deploymentFailed, state.errorCode, state.errorDetails, state.projectId, config.deployTarget, deploymentId, maybeOpenCredentialModal, handleRedeploy, showCloudPricing]);
 
   if (loadError) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <ResourceNotFound
-          icon={<TriangleAlert className="size-7" />}
+          icon={<UiIcon name="warning" className="size-7" />}
           title={t.chrome.error.title}
           description={
             <>
@@ -174,13 +185,13 @@ const BuildPage: React.FC = () => {
           actions={[
             {
               label: t.chrome.error.tryAgain,
-              icon: <RotateCcw className="size-4" />,
+              icon: <UiIcon name="rotate-left" className="size-4" />,
               onClick: retryLoadSession,
             },
             {
               href: "/deployments",
               label: t.misc.buildPage.viewDeployments,
-              icon: <Rocket className="size-4" />,
+              icon: <UiIcon name="rocket" className="size-4" />,
             },
             {
               href: "/",
@@ -197,7 +208,7 @@ const BuildPage: React.FC = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <ResourceNotFound
-          icon={<PackageX className="size-7" />}
+          icon={<UiIcon name="file-warning" className="size-7" />}
           title={t.misc.buildPage.notFoundTitle}
           description={t.misc.buildPage.notFoundDescription}
           detail={deploymentId}
@@ -206,12 +217,12 @@ const BuildPage: React.FC = () => {
             {
               href: "/deployments",
               label: t.misc.buildPage.viewDeployments,
-              icon: <Rocket className="size-4" />,
+              icon: <UiIcon name="rocket" className="size-4" />,
             },
             {
               href: "/",
               label: t.misc.buildPage.goHome,
-              icon: <Home className="size-4" />,
+              icon: <UiIcon name="home" className="size-4" />,
               variant: "secondary",
             },
           ]}

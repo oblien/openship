@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AUDIT_CATEGORIES,
@@ -27,18 +27,28 @@ import {
  * The drift that motivated this: the old file mapped `deployment.canceled` while
  * the API emitted `deployment.cancelled`, and ~15 emitted types had no entry at
  * all. That is a class of bug only a coverage test catches, so the emitted types
- * are enumerated FROM apps/api's source and pushed through the real lookup.
+ * are enumerated from the HTTP API and shared engine and pushed through the
+ * real lookup.
  */
 
 const API_SRC = fileURLToPath(new URL("../../../apps/api/src", import.meta.url));
+const ENGINE_SRC = fileURLToPath(new URL("../../platform/src/engine", import.meta.url));
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+const SOURCE_ROOTS = [API_SRC, ENGINE_SRC];
 
-/** Every `.ts` file under apps/api/src. */
-function apiSourceFiles(dir: string): string[] {
+/** Production TypeScript under the HTTP API and its retained shared engine.
+ * Provider events and deliberately invalid event names in test fixtures are
+ * not audit emissions and must not expand the customer-facing catalog. */
+function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...apiSourceFiles(full));
-    else if (entry.name.endsWith(".ts")) out.push(full);
+    if (entry.isDirectory()) {
+      if (!["test", "tests", "__tests__", "__fixtures__"].includes(entry.name))
+        out.push(...sourceFiles(full));
+    } else if (entry.name.endsWith(".ts") && !/\.(?:test|spec|d)\.ts$/.test(entry.name)) {
+      out.push(full);
+    }
   }
   return out;
 }
@@ -64,7 +74,7 @@ function apiSourceFiles(dir: string): string[] {
  */
 function emittedEventTypes(): Map<string, string> {
   const found = new Map<string, string>();
-  for (const file of apiSourceFiles(API_SRC)) {
+  for (const file of SOURCE_ROOTS.flatMap(sourceFiles)) {
     for (const line of readFileSync(file, "utf8").split("\n")) {
       if (/^\s*\*/.test(line)) continue; // jsdoc example, not a call site
       const at = line.indexOf("eventType:");
@@ -87,7 +97,7 @@ function emittedEventTypes(): Map<string, string> {
  * real lookup, same as the literals.
  */
 function incidentEventTypes(): string[] {
-  const file = join(API_SRC, "modules/monitoring/incident.service.ts");
+  const file = join(ENGINE_SRC, "modules/monitoring/incident.service.ts");
   if (!existsSync(file)) return [];
   const src = readFileSync(file, "utf8");
   const start = src.indexOf("const EVENT_TYPE: Record<IncidentKind, string> = {");
@@ -167,8 +177,10 @@ describe("audit event catalog", () => {
   });
 });
 
-describe("every event type apps/api emits is catalogued", () => {
-  const present = existsSync(API_SRC);
+describe("every event type the HTTP API or shared engine emits is catalogued", () => {
+  // A standalone core checkout may lack both trees. A partially missing
+  // workspace must fail the scan instead of silently skipping coverage.
+  const present = SOURCE_ROOTS.some(existsSync);
 
   it.skipIf(!present)("literal `eventType:` call sites", () => {
     const emitted = emittedEventTypes();
@@ -177,7 +189,7 @@ describe("every event type apps/api emits is catalogued", () => {
     expect(emitted.size).toBeGreaterThan(50);
     const uncatalogued = [...emitted]
       .filter(([type]) => !(type in AUDIT_EVENTS))
-      .map(([type, file]) => `${type}  (${file.slice(API_SRC.length + 1)})`);
+      .map(([type, file]) => `${type}  (${relative(REPO, file)})`);
     expect(
       uncatalogued,
       "New audit event types with no entry in AUDIT_EVENTS — add one so the row " +

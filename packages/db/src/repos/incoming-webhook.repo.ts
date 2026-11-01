@@ -1,7 +1,8 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull, sql, inArray, or } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { incomingWebhook } from "../schema";
+import { incomingWebhook, project } from "../schema";
+import { withProjectConfigurationWrite } from "./project-work-admission";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,8 @@ export type NewIncomingWebhook = typeof incomingWebhook.$inferInsert;
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createIncomingWebhookRepo(db: Database) {
+  const ownerPredicate = (id: string) => inArray(project.id,
+    db.select({ id: incomingWebhook.projectId }).from(incomingWebhook).where(eq(incomingWebhook.id, id)));
   return {
     async findById(id: string): Promise<IncomingWebhook | undefined> {
       return db.query.incomingWebhook.findFirst({ where: eq(incomingWebhook.id, id) });
@@ -26,23 +29,41 @@ export function createIncomingWebhookRepo(db: Database) {
 
     async create(data: Omit<NewIncomingWebhook, "id">): Promise<IncomingWebhook> {
       const id = generateId("iwh");
-      const row = { id, ...data };
-      await db.insert(incomingWebhook).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as IncomingWebhook;
+      const [row] = await withProjectConfigurationWrite(db, eq(project.id, data.projectId), async (tx) =>
+        tx.insert(incomingWebhook).values({ ...data, id }).returning());
+      return row!;
     },
 
     async update(id: string, data: Partial<NewIncomingWebhook>): Promise<void> {
-      await db
+      const predicate = or(ownerPredicate(id), data.projectId ? eq(project.id, data.projectId) : undefined)!;
+      await withProjectConfigurationWrite(db, predicate, async (tx) => tx
         .update(incomingWebhook)
         .set({ ...data, updatedAt: new Date() })
-        .where(eq(incomingWebhook.id, id));
+        .where(eq(incomingWebhook.id, id)));
+    },
+
+    /** Credential disclosure must apply to the exact action that was authorized. */
+    async updateIfUnchanged(expected: IncomingWebhook, data: Partial<NewIncomingWebhook>): Promise<IncomingWebhook | null> {
+      const nullable = (column: typeof incomingWebhook.tokenEncrypted | typeof incomingWebhook.hmacSecretEncrypted, value: string | null) => value === null ? isNull(column) : eq(column, value);
+      const predicate = or(eq(project.id, expected.projectId), data.projectId ? eq(project.id, data.projectId) : undefined)!;
+      const [row] = await withProjectConfigurationWrite(db, predicate, async (tx) => tx.update(incomingWebhook).set({ ...data, updatedAt: new Date() }).where(and(
+        eq(incomingWebhook.id, expected.id), eq(incomingWebhook.projectId, expected.projectId),
+        eq(incomingWebhook.actionType, expected.actionType), eq(incomingWebhook.authMode, expected.authMode),
+        eq(incomingWebhook.enabled, expected.enabled), eq(incomingWebhook.name, expected.name),
+        sql`${incomingWebhook.actionConfig} = ${JSON.stringify(expected.actionConfig ?? {})}::jsonb`,
+        nullable(incomingWebhook.tokenEncrypted, expected.tokenEncrypted),
+        nullable(incomingWebhook.hmacSecretEncrypted, expected.hmacSecretEncrypted),
+        expected.executionAuthority == null ? isNull(incomingWebhook.executionAuthority)
+          : sql`${incomingWebhook.executionAuthority} = ${JSON.stringify(expected.executionAuthority)}::jsonb`,
+      )).returning());
+      return row ?? null;
     },
 
     /** Scoped delete — guards the mutation to the hook's own project. */
     async removeForProject(projectId: string, id: string): Promise<void> {
-      await db
+      await withProjectConfigurationWrite(db, eq(project.id, projectId), async (tx) => tx
         .delete(incomingWebhook)
-        .where(and(eq(incomingWebhook.projectId, projectId), eq(incomingWebhook.id, id)));
+        .where(and(eq(incomingWebhook.projectId, projectId), eq(incomingWebhook.id, id))));
     },
 
     async markFired(id: string): Promise<void> {

@@ -5,14 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // this file guards ONLY the mail→provider mapping and the ack-on-success rule.
 const planRecords = vi.fn().mockResolvedValue({ status: "none", records: [] });
 const provisionRecords = vi.fn();
-vi.mock("../../../src/modules/dns/dns-credential.service", () => ({
+vi.mock("@repo/platform/engine/modules/dns/dns-credential.service", () => ({
   planRecords: (...a: unknown[]) => planRecords(...a),
   provisionRecords: (...a: unknown[]) => provisionRecords(...a),
 }));
 
 const getDomainDnsState = vi.fn();
 const acknowledgeDomainDns = vi.fn().mockResolvedValue(undefined);
-vi.mock("../../../src/modules/mail/admin/domain-dns.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domain-dns.service", () => ({
   getDomainDnsState: (...a: unknown[]) => getDomainDnsState(...a),
   acknowledgeDomainDns: (...a: unknown[]) => acknowledgeDomainDns(...a),
 }));

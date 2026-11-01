@@ -1,0 +1,145 @@
+name: Catalog health
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "packages/core/src/apps/**"
+      - "packages/core/src/app-templates.ts"
+      - "apps/dashboard/src/app/**/local-service-catalog.ts"
+      - "apps/api/test/e2e/cockroach-catalog.e2e.test.ts"
+      - "scripts/*catalog*"
+      - "scripts/fixtures/catalog-retired-builds.json"
+      - "packages/platform/src/engine/modules/deployments/compose/app-prepare.ts"
+      - ".github/workflows/catalog-health.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/core/src/apps/**"
+      - "apps/dashboard/src/app/**/local-service-catalog.ts"
+      - "apps/api/test/e2e/cockroach-catalog.e2e.test.ts"
+      - "scripts/*catalog*"
+      - "scripts/fixtures/catalog-retired-builds.json"
+      - "packages/platform/src/engine/modules/deployments/compose/app-prepare.ts"
+      - ".github/workflows/catalog-health.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    name: Catalog image availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: docker/setup-buildx-action@v4
+      - run: bun scripts/check-catalog-images.ts
+
+  minio:
+    name: MinIO setup and persistence (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Test the image and hooks from the catalog
+        env:
+          CATALOG_TEST_PLATFORM: ${{ matrix.platform }}
+        run: bun scripts/smoke-catalog-minio.ts
+
+  cockroachdb:
+    name: CockroachDB startup and persistence (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Test the service recipe through the Docker runtime
+        env:
+          RUN_DOCKER_E2E: "1"
+        run: bun run --cwd apps/api test:e2e test/e2e/cockroach-catalog.e2e.test.ts
+
+  apps:
+    name: App setup and persistence (${{ matrix.app }}, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        app:
+          [
+            wordpress,
+            odoo,
+            postgresql,
+            mariadb,
+            rabbitmq,
+            authentik,
+            nextcloud,
+            paperless-ngx,
+            wiki-js,
+            homepage,
+            immich,
+            jellyfin,
+            ollama,
+            open-webui,
+          ]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: docker/setup-buildx-action@v4
+      - name: Test the canonical stack and generated credentials
+        run: bun scripts/smoke-catalog-apps.ts ${{ matrix.app }}
+      - name: Test conversion from the retired build on existing data
+        if: matrix.app == 'wordpress' || matrix.app == 'odoo'
+        env:
+          CATALOG_TEST_FROM_RETIRED_BUILD: "1"
+        run: bun scripts/smoke-catalog-apps.ts ${{ matrix.app }}
+      - name: Save sanitized startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: catalog-${{ matrix.app }}-${{ matrix.arch }}-diagnostics
+          path: /tmp/openship-catalog-smoke*failure.log
+          if-no-files-found: ignore
+          retention-days: 5

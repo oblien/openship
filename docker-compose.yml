@@ -43,11 +43,18 @@
 # LAN IP. Prefer fronting with a proxy over binding 0.0.0.0.
 # ──────────────────────────────────────────────────────────
 
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   # ─── Database (storage, private) ──────────────────────
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-openship}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openship}
@@ -67,6 +74,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     # PRIVATE: not published to the host. api reaches it at redis:6379.
     expose:
@@ -85,6 +93,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     ports:
       # Loopback by default (nothing exposed off-box); OPENSHIP_BIND_ADDR opts
       # into a public/LAN interface. See the "BIND INTERFACE" note above.
@@ -106,7 +115,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -118,6 +127,7 @@ services:
       context: .
       dockerfile: apps/dashboard/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
     env_file:
@@ -125,6 +135,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "${DASHBOARD_PORT:-3001}"
+      HOSTNAME: "0.0.0.0"
       INTERNAL_API_URL: http://api:${API_PORT:-4000}
     depends_on:
       api:
@@ -136,6 +147,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${WEB_PORT:-3000}:${WEB_PORT:-3000}"
     environment:

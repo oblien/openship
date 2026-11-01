@@ -1,6 +1,7 @@
 import { ApiError, api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsPlanResult, DnsProvisionResult } from "./dns";
+import type { Domain, DomainDiagnostics, DomainDnsChallenge, StartDomainDnsChallenge } from "@repo/contracts";
 
 export interface DomainVerifyResult {
   verified: boolean;
@@ -31,6 +32,7 @@ export interface DomainSslVerifyResult {
   expiresAt?: string | null;
   issuer?: string | null;
   verified: boolean;
+  message?: string;
 }
 
 /** One domain row's verify + SSL state (GET /domains/:id). */
@@ -42,11 +44,21 @@ export interface DomainState {
   sslStatus?: string | null;
   sslExpiresAt?: string | null;
   lastVerifyError?: string | null;
+  diagnostics?: DomainDiagnostics | null;
   redirectTo?: string | null;
   redirectStatus?: number | null;
 }
 
 export const domainsApi = {
+  dnsChallenge: (domainId: string) =>
+    api.get<{ data: DomainDnsChallenge | null }>(`${endpoints.domains.byId(domainId)}/dns/challenge`),
+  startDnsChallenge: (domainId: string, input: StartDomainDnsChallenge) =>
+    api.post<{ data: DomainDnsChallenge }>(`${endpoints.domains.byId(domainId)}/dns/challenge`, input),
+  checkDnsChallenge: (domainId: string, attemptId: string) =>
+    api.post<{ data: DomainDnsChallenge }>(`${endpoints.domains.byId(domainId)}/dns/challenge/check`, { attemptId }),
+  cancelDnsChallenge: (domainId: string, attemptId: string) =>
+    api.post<{ data: DomainDnsChallenge }>(`${endpoints.domains.byId(domainId)}/dns/challenge/cancel`, { attemptId }),
+  list: (projectId: string) => api.get<{ data: Domain[] }>("domains", { params: { projectId } }),
   /**
    * Read one domain's current verify/SSL state. The recovery read for a flow
    * whose live stream dropped before reporting: the operation itself finished

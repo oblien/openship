@@ -1,6 +1,8 @@
+import { Value } from "@sinclair/typebox/value";
+import { ProjectDetailsSchema } from "@repo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// domain.ts calls the api-client directly (no local login guard); the config
+// domain.ts uses the named SDK operations (no local login guard); the config
 // seam supplies the base URL + token, caps is stubbed self-hosted.
 const h = vi.hoisted(() => ({ token: "tok" as string | null }));
 vi.mock("../../src/lib/config", () => ({
@@ -15,8 +17,15 @@ vi.mock("../../src/lib/caps", () => ({
 import { domainCommand } from "../../src/commands/domain";
 import { setJsonMode } from "../../src/lib/output";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
+import { domainFixture } from "../../../../packages/contracts/test/fixtures";
 
 const API = "http://api.test/api";
+
+const projectInfo = Value.Create(ProjectDetailsSchema);
+projectInfo.project.port = 3000;
+projectInfo.project.options.hasServer = true;
+projectInfo.project.options.workloadType = "web";
+projectInfo.project.options.productionPort = "3000";
 
 let fetchStub: FetchStub;
 beforeEach(() => {
@@ -31,8 +40,8 @@ afterEach(() => {
 
 describe("openship domain list", () => {
   const DOMAINS = [
-    { id: "d1", hostname: "app.example.com", domainType: "primary", isPrimary: true, verified: true, status: "active", sslStatus: "issued" },
-    { id: "d2", hostname: "www.example.com", verified: false, status: "pending" },
+    { ...domainFixture("d1"), hostname: "app.example.com", domainType: "primary", isPrimary: true, verified: true, status: "active", sslStatus: "issued" },
+    { ...domainFixture("d2"), hostname: "www.example.com", verified: false, status: "pending" },
   ];
 
   it("GETs /domains for the project and tabulates the rows", async () => {
@@ -65,12 +74,16 @@ describe("openship domain list", () => {
 
 describe("openship domain add", () => {
   const ADDED = {
-    data: { id: "d9", hostname: "app.example.com" },
-    records: { mode: "selfhosted", records: [{ type: "CNAME", host: "app", value: "edge.example.net" }] },
+    data: domainFixture("d9"),
+    records: { mode: "selfhosted", records: [{ type: "CNAME", host: "app", name: "app.example.com", value: "edge.example.net" }] },
   };
 
   it("POSTs the hostname to /domains and points the user at verify", async () => {
-    fetchStub = stubFetch(() => ({ status: 201, json: ADDED }));
+    fetchStub = stubFetch((request) => request.url.endsWith("/info")
+      ? { json: { data: projectInfo } }
+      : request.method === "PATCH"
+        ? { json: { data: projectInfo.project } }
+        : { status: 201, json: ADDED });
     const { err, code } = await runCommand(domainCommand, ["add", "app.example.com", "-p", "prj1"]);
     expect(code).toBe(0);
     expect(fetchStub.calls[0].method).toBe("POST");
@@ -80,14 +93,22 @@ describe("openship domain add", () => {
   });
 
   it("sets isPrimary when --primary is passed", async () => {
-    fetchStub = stubFetch(() => ({ status: 201, json: ADDED }));
+    fetchStub = stubFetch((request) => request.url.endsWith("/info")
+      ? { json: { data: projectInfo } }
+      : request.method === "PATCH"
+        ? { json: { data: projectInfo.project } }
+        : { status: 201, json: ADDED });
     await runCommand(domainCommand, ["add", "app.example.com", "-p", "prj1", "--primary"]);
     expect(fetchStub.calls[0].body).toMatchObject({ isPrimary: true });
   });
 
   it("emits the domain and its DNS records as JSON in json mode", async () => {
     setJsonMode(true);
-    fetchStub = stubFetch(() => ({ status: 201, json: ADDED }));
+    fetchStub = stubFetch((request) => request.url.endsWith("/info")
+      ? { json: { data: projectInfo } }
+      : request.method === "PATCH"
+        ? { json: { data: projectInfo.project } }
+        : { status: 201, json: ADDED });
     const { out } = await runCommand(domainCommand, ["add", "app.example.com", "-p", "prj1"]);
     expect(JSON.parse(out)).toEqual({ domain: ADDED.data, records: ADDED.records });
   });
@@ -96,7 +117,7 @@ describe("openship domain add", () => {
 // ─── preview (no changes saved) ──────────────────────────────────────────────
 
 describe("openship domain preview", () => {
-  const PREVIEW = { data: { mode: "cloud", records: [{ type: "TXT", host: "_openship", value: "verify=abc" }] } };
+  const PREVIEW = { data: { mode: "cloud", records: [{ type: "TXT", host: "_openship", name: "_openship.example.com", value: "verify=abc" }] } };
 
   it("POSTs the hostname to /domains/preview and prints the record table", async () => {
     fetchStub = stubFetch(() => ({ json: PREVIEW }));
@@ -138,12 +159,12 @@ describe("openship domain verify", () => {
     expect(err).toContain("route/CNAME: missing");
   });
 
-  it("prints the raw result and does NOT exit 1 in json mode even when unverified", async () => {
+  it("prints the raw result and exits 1 in JSON mode when unverified", async () => {
     setJsonMode(true);
     const body = { verified: false, cnameVerified: false, txtVerified: false };
     fetchStub = stubFetch(() => ({ status: 422, json: body }));
     const { out, code } = await runCommand(domainCommand, ["verify", "d1"]);
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(JSON.parse(out)).toEqual(body);
   });
 
@@ -158,7 +179,7 @@ describe("openship domain verify", () => {
 // ─── primary ─────────────────────────────────────────────────────────────────
 
 describe("openship domain primary", () => {
-  const PRIMARY = { data: { id: "d1", hostname: "app.example.com", isPrimary: true } };
+  const PRIMARY = { data: { ...domainFixture("d1"), isPrimary: true } };
 
   it("POSTs /domains/:id/primary", async () => {
     fetchStub = stubFetch(() => ({ json: PRIMARY }));
@@ -179,7 +200,7 @@ describe("openship domain primary", () => {
 // ─── records ─────────────────────────────────────────────────────────────────
 
 describe("openship domain records", () => {
-  const RECORDS = { data: { mode: "selfhosted", records: [{ type: "A", host: "@", value: "203.0.113.5" }] } };
+  const RECORDS = { data: { mode: "selfhosted", records: [{ type: "A", host: "@", name: "example.com", value: "203.0.113.5" }] } };
 
   it("GETs the existing DNS records for a domain", async () => {
     fetchStub = stubFetch(() => ({ json: RECORDS }));
@@ -239,12 +260,12 @@ describe("openship domain verify-ssl", () => {
     expect(code).toBe(1);
   });
 
-  it("does NOT exit 1 in json mode even when the cert is not valid", async () => {
+  it("prints the certificate result and exits 1 in JSON mode when invalid", async () => {
     setJsonMode(true);
     const data = { domain: "app.example.com", sslStatus: "pending", verified: false };
     fetchStub = stubFetch(() => ({ json: { data } }));
     const { out, code } = await runCommand(domainCommand, ["verify-ssl", "d1"]);
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(JSON.parse(out)).toEqual(data);
   });
 });

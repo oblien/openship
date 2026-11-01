@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import type { DiscoveredService } from "./docker-reconcile";
+import type { DiscoveredService } from "@repo/platform/engine/modules/migration/docker-reconcile";
 
 const getFileContent = vi.hoisted(() => vi.fn());
 
-vi.mock("../github/github.service", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getFileContent,
 }));
@@ -12,7 +12,7 @@ import {
   buildAdoptedServiceRows,
   parseRepoCompose,
   type RepoComposeService,
-} from "./migrate.service";
+} from "@repo/platform/engine/modules/migration/migrate.service";
 
 const repoSvc = (over: Partial<RepoComposeService> & { name: string }): RepoComposeService => ({
   ports: [],
@@ -344,12 +344,13 @@ describe("buildAdoptedServiceRows — two same-named picks stay distinct (#584 c
   });
 
   it("applies each service's env override to its own row", () => {
-    const { rows } = buildAdoptedServiceRows([OURS, THEIRS], undefined, {
+    const { rows, environments } = buildAdoptedServiceRows([OURS, THEIRS], undefined, {
       "c-a": { WHICH: "ours" },
       "c-b": { WHICH: "theirs" },
     });
-    expect(rows[0]!.environment).toMatchObject({ WHICH: "ours" });
-    expect(rows[1]!.environment).toMatchObject({ WHICH: "theirs" });
+    expect(environments[rows[0]!.name]).toEqual({ WHICH: "ours" });
+    expect(environments[rows[1]!.name]).toEqual({ WHICH: "theirs" });
+    expect(rows.every((row) => Object.keys(row.environment ?? {}).length === 0)).toBe(true);
   });
 
   it("renames only the service the operator mapped", () => {
@@ -362,10 +363,10 @@ describe("buildAdoptedServiceRows — two same-named picks stay distinct (#584 c
 
   it("still keys by name for a client that sends name keys", () => {
     // One pick, no ambiguity — the legacy shape must keep working unchanged.
-    const { rows, renames } = buildAdoptedServiceRows([THEIRS], undefined, {
+    const { rows, renames, environments } = buildAdoptedServiceRows([THEIRS], undefined, {
       postgres: { WHICH: "legacy" },
     });
-    expect(rows[0]!.environment).toMatchObject({ WHICH: "legacy" });
+    expect(environments[rows[0]!.name]).toEqual({ WHICH: "legacy" });
     expect(renames["c-b"]).toBe("postgres");
   });
 });

@@ -1,0 +1,83 @@
+---
+title: billing subscription
+description: Commands, arguments, and options for openship billing subscription.
+cliGroup: openship billing subscription
+---
+
+See the [workflow guide](/docs/cli/cloud) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship billing subscription
+
+Purchase, inspect or change a managed server subscription
+
+```text
+openship billing subscription [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get [options]`](/docs/cli/reference/billing/subscription#openship-billing-subscription-get) | Read the current subscription and renewal state |
+| [`create [options] <plan>`](/docs/cli/reference/billing/subscription#openship-billing-subscription-create) | Create a checkout; complete payment at the returned URL |
+| [`cancel [options]`](/docs/cli/reference/billing/subscription#openship-billing-subscription-cancel) | Cancel renewal of this subscription |
+| [`resume [options]`](/docs/cli/reference/billing/subscription#openship-billing-subscription-resume) | Resume renewal of this subscription |
+
+## openship billing subscription cancel
+
+Cancel renewal of this subscription
+
+```text
+openship billing subscription cancel [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `-y, --yes` | Confirm the renewal change |
+
+## openship billing subscription create
+
+Create a checkout; complete payment at the returned URL
+
+```text
+openship billing subscription create [options] <plan>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `plan` | Plan ID from billing plans |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `--interval <period>` | Billing interval (choices: "monthly", "annual", default: "monthly") |
+| `--custom <file>` | JSON resources and quoteReference from billing quote |
+| `--idempotency-key <key>` | Reuse this key when recovering the same checkout request |
+
+## openship billing subscription get
+
+Read the current subscription and renewal state
+
+```text
+openship billing subscription get [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+
+## openship billing subscription resume
+
+Resume renewal of this subscription
+
+```text
+openship billing subscription resume [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Use this managed server's billing workspace |
+| `--workspace <id>` | Billing workspace ID, including retained subscriptions |
+| `-y, --yes` | Confirm the renewal change |

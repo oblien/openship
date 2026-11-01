@@ -75,6 +75,9 @@
       "onFailureWarn": "Manter o deploy no ar e sinalizá-lo para revisão",
       "onFailureFail": "Falhar o deploy e manter a versão anterior a servir"
     },
+    "runtimeVersionLabel": "Versão do runtime",
+    "runtimeVersionDefault": "Padrão",
+    "runtimeVersionDesc": "Usa imagens de compilação e execução compatíveis com a versão selecionada. Requer uma compilação Docker gerada pelo Openship.",
     "buildImageLabel": "Imagem de Build",
     "buildImageDesc": "Imagem de container do compilador para builds em cloud ou servidor. Substitua-a quando a imagem base detectada estiver incorreta.",
     "productionPathsLabel": "Caminhos de Produção",
@@ -105,7 +108,24 @@
     "modeWorker": "Worker",
     "modeStatic": "Estático",
     "workerModeDesc": "Executa continuamente sem porta nem URL pública — um consumidor de fila, cron ou bot.",
-    "buildSettingsTitle": "Configurações de Build"
+    "buildSettingsTitle": "Configurações de Build",
+    "releaseTitle": "Antes da ativação",
+    "releaseDescription": "Comandos opcionais após o build. Uma falha interrompe a implantação. Apenas apps Docker e Bare.",
+    "releaseCommand": "Comando {number}",
+    "addReleaseCommand": "Adicionar comando",
+    "removeReleaseCommand": "Remover comando {number}",
+    "runtimeImageLabel": "Imagem de execução",
+    "runtimeImageDesc": "Imagem base de produção opcional para Docker. Deve ser compatível com o runtime e a receita gerada; deixe em branco para usar o padrão.",
+    "staticPathHint": "Servido como arquivos estáticos a partir da borda — nada é executado como processo.",
+    "runtimeTitle": "Ambiente de execução",
+    "runtimeDesc": "Escolha a imagem que executa a app. Atualizar imagens mantém a versão e os digests fixados.",
+    "runtimeBareDesc": "Esta app executa diretamente no servidor. Gira aí o ambiente instalado.",
+    "runtimeStaticDesc": "A imagem de compilação prepara os ficheiros estáticos. Nenhum ambiente da app é executado após a implementação.",
+    "runtimeDockerfileDesc": "O seu Dockerfile define a imagem de execução.",
+    "runtimeServicesDesc": "Escolha as imagens de execução de cada serviço em Serviços.",
+    "runtimePrebuiltDesc": "A imagem da aplicação selecionada inclui o seu ambiente de execução.",
+    "runtimeOverrideUnused": "Estas substituições guardadas não se aplicam a esta implementação. Limpe-as antes de guardar.",
+    "clearRuntimeOverrides": "Limpar substituições guardadas"
   },
   "projectSettings": {
     "framework": "Framework",
@@ -123,6 +143,7 @@
     "noneSet": "Nenhuma definida",
     "pasteEnv": "Colar .env",
     "uploadEnv": "Enviar .env",
+    "downloadEnv": "Baixar .env",
     "edit": "Editar",
     "cancel": "Cancelar",
     "saving": "Salvando...",
@@ -144,6 +165,7 @@
       "interpolated": "Interpolado"
     },
     "toast": {
+      "downloadFailed": "Não foi possível baixar as variáveis de ambiente.",
       "title": "Variáveis de Ambiente",
       "added": "{count} adicionada(s)",
       "updated": "{count} atualizada(s)",
@@ -173,7 +195,9 @@
       "domainLabel": "Domínio",
       "free": "Grátis",
       "custom": "Personalizado",
-      "routingTrafficPrefix": "Roteando tráfego para a porta"
+      "routingTrafficPrefix": "Roteando tráfego para a porta",
+      "duplicateTitle": "Domínio duplicado",
+      "duplicateDescription": "Duas rotas apontam para o mesmo domínio — altere uma para que cada rota tenha o seu:"
     },
     "shared": {
       "title": "Ambiente compartilhado",
@@ -205,9 +229,9 @@
       "volumes": "Volumes",
       "statefulWarnPart1": "Serviço com estado na cloud: os dados ficam no disco persistente do workspace (sobrevivem a reinicializações), mas ",
       "statefulWarnBold": "não são mantidos entre rebuilds",
-      "statefulWarnPart2": " a menos que os backups estejam ativados. As montagens de volume do Docker não se aplicam.",
+      "statefulWarnPart2": ". Faça o backup e a restauração dos dados explicitamente antes de substituir o workspace.",
       "volumeHint": "Volume nomeado ou caminho do host → caminho do container.",
-      "volumeCloudNote": "Na cloud essas montagens não se aplicam — os dados persistem no disco do workspace (não entre rebuilds sem backups).",
+      "volumeCloudNote": "O Openship Cloud não oferece suporte a montagens de volumes persistentes. Escolha um servidor para cargas que precisam de volumes.",
       "sourcePlaceholder": "Origem",
       "containerPathPlaceholder": "Caminho do container",
       "readOnlyMount": "Montagem somente leitura",
@@ -285,7 +309,51 @@
       "singleDesc": "Promove o comando de build + início de uma sub-aplicação, expondo a porta de todas as aplicações a partir de um único runtime."
     },
     "deploymentMode": "Modo de implantação",
-    "deploymentModeDesc": "{mode} · Alterne entre runtimes por aplicação e tratamento de aplicação única."
+    "deploymentModeDesc": "{mode} · Alterne entre runtimes por aplicação e tratamento de aplicação única.",
+    "selection": {
+      "title": "Apps para implantar",
+      "chooseApps": "Escolher apps",
+      "changeSelection": "Alterar seleção",
+      "selected": "{count} selecionados",
+      "chooseHint": "Escolha os apps que deseja executar. Ferramentas CLI, apps móveis e pacotes compartilhados podem ficar desmarcados.",
+      "applySelection": "Usar apps selecionados",
+      "manualReview": "Revisar configuração",
+      "detectedApp": "App detectado",
+      "empty": "Escolha apps deste repositório ou adicione uma pasta. Nada será implantado até ser selecionado.",
+      "addFromRepo": "Adicionar app do repositório",
+      "addMore": "Adicionar mais",
+      "cancel": "Cancelar",
+      "addApp": "Adicionar app",
+      "chooseFolder": "Alterar pasta",
+      "useFolder": "Usar esta pasta",
+      "folderHint": "Escolha a pasta do app. As compilações mantêm acesso aos pacotes compartilhados e arquivos de bloqueio do repositório.",
+      "appFolder": "Pasta do app",
+      "invalidPath": "Insira uma pasta relativa ao repositório, como apps/web ou .",
+      "alreadyAdded": "Esta pasta já está na lista. Use Alterar seleção para incluí-la.",
+      "browseError": "Não foi possível carregar as pastas do repositório.",
+      "scanError": "Não foi possível inspecionar esta pasta.",
+      "composeFolder": "Esta pasta define uma pilha Compose. Importe esse arquivo Compose como um projeto.",
+      "scanning": "Inspecionando…",
+      "inspect": "Inspecionar pasta",
+      "parentFolder": "Pasta superior",
+      "retry": "Tentar novamente",
+      "loadingFolders": "Carregando pastas…",
+      "noSubfolders": "Sem subpastas. Você pode selecionar esta pasta.",
+      "reviewHint": "Adicione este app para revisar seu framework, comandos e ambiente antes de implantar.",
+      "domains": "Domínios",
+      "manage": "Gerenciar",
+      "domainNeeded": "Domínio necessário",
+      "viewAll": "Ver todos os {count} domínios",
+      "domainHint": "Estes domínios serão aplicados na implantação.",
+      "privateHint": "Os apps selecionados não têm domínios públicos.",
+      "done": "Concluído",
+      "private": "Privado",
+      "publicAccess": "Acesso público",
+      "accessHint": "Desative para que o app fique acessível apenas dentro do projeto.",
+      "app": "App",
+      "appLimit": "Este projeto já tem 50 apps. Crie outro projeto para adicionar mais.",
+      "folderMismatch": "Esta pasta aponta para outra configuração de projeto. Selecione essa pasta ou edite seu openship.json."
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Cloud",
@@ -315,7 +383,7 @@
       "successful": "Implantação Bem-sucedida",
       "deploying": "Implantando..."
     },
-    "visitSite": "Visitar Site",
+    "openSite": "Abrir site",
     "warningTitle": "A implantação foi concluída, mas alguns serviços ainda precisam de atenção.",
     "productionLogs": "Logs de Produção",
     "buildTerminal": "Terminal de Build",
@@ -325,7 +393,7 @@
     "stopDeployment": "Parar Implantação",
     "redeploy": "Reimplantar",
     "goToProject": "Ir para o projeto",
-    "openDashboard": "Abrir Dashboard",
+    "openProject": "Abrir projeto",
     "edit": "Editar",
     "status": {
       "cancelled": "Cancelada",
@@ -342,7 +410,38 @@
     "detailFramework": "Framework",
     "detailBranch": "Branch",
     "detailDomains": "Domínios",
-    "detailDomain": "Domínio"
+    "detailDomain": "Domínio",
+    "portAdvisory": {
+      "loopbackTitle": "O app não consegue receber tráfego roteado",
+      "loopbackNote": "O deploy está em execução, mas uma porta roteada precisa de atenção.",
+      "loopbackBody": "A porta {port} só escuta dentro do contêiner.",
+      "loopbackBodyService": "O serviço \"{service}\" só escuta dentro do contêiner na porta {port}.",
+      "loopbackHelp": "Para um app que recebe tráfego roteado, escute em 0.0.0.0 e faça o deploy novamente, ou direcione o tráfego ao proxy previsto.",
+      "openSettings": "Abrir configurações",
+      "skipError": "Não foi possível dispensar este aviso. Tente novamente.",
+      "title": "Aviso de incompatibilidade de porta",
+      "bannerTitle": "Incompatibilidade de porta do contêiner detectada",
+      "review": "Revisar porta",
+      "note": "O roteador de borda está apontando para a porta {port}, mas sua aplicação não respondeu lá.",
+      "body": "Nada respondeu na porta {port}. Se sua aplicação escuta em uma porta diferente, atualize-a abaixo.",
+      "bodyService": "Serviço \"{service}\": nada respondeu na porta {port}. Se escutar em uma porta diferente, defina a correta aqui.",
+      "newPortLabel": "Porta correta",
+      "changePort": "Alterar porta",
+      "skip": "Pular",
+      "applied": "Roteamento atualizado para a porta {port}.",
+      "changeError": "Não foi possível atualizar a porta. Tente novamente."
+    }
+  },
+  "deploymentHealth": {
+    "recheck": "Verificar saúde",
+    "checking": "Verificando…",
+    "healthy": "Os serviços estão saudáveis",
+    "atDeployment": "Aviso na implantação",
+    "currentHealth": "Estado atual dos serviços",
+    "startupHint": "Se o app ainda estiver iniciando, aguarde e verifique novamente. Se reiniciar ou apresentar um erro, abra os logs para encontrar a causa.",
+    "viewLogs": "Ver logs",
+    "unavailable": "Não foi possível verificar a saúde. Tente novamente quando o servidor estiver acessível.",
+    "historical": "Esta implantação não está mais ativa. Abra o projeto para ver os serviços atuais."
   },
   "composeDeployment": {
     "title": {
@@ -416,12 +515,12 @@
     "rowType": "Tipo"
   },
   "configDiagnostics": {
-    "title": "Parte do openship.json deste repositório não foi aplicada",
-    "description": "Os campos listados abaixo foram ignorados; o resto do arquivo foi aplicado. O deploy vai continuar.",
+    "title": "Algumas configurações de implantação do repositório não foram aplicadas",
+    "description": "Revise as configurações ignoradas abaixo antes de implantar.",
     "titleWholeFile": "O openship.json deste repositório foi ignorado",
     "descriptionWholeFile": "Nada do arquivo foi aplicado. O deploy vai continuar com as configurações que o Openship detectou.",
     "refused": "Recusado",
     "unrecognized": "Não reconhecido",
-    "hint": "Execute `openship config validate` no repositório para verificar o arquivo antes do próximo deploy."
+    "hint": "Verifique os arquivos de configuração indicados e atualize as configurações não suportadas antes da próxima implantação."
   }
 }

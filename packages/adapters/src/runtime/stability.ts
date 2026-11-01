@@ -25,6 +25,8 @@
  */
 
 /** One inspect reading, normalized away from any one runtime's field names. */
+import { SERVICE_STARTING_HEALTH_WARNING } from "@repo/core";
+
 export interface ContainerStabilitySample {
   /** Docker's `State.Status`; "missing" when the container is gone entirely. */
   state:
@@ -243,7 +245,7 @@ export function classifyStability(
     ...(restarts > 0
       ? [`restarted ${plural(restarts, "time")} during startup before settling`]
       : []),
-    ...(latest.health === "starting" ? ["healthcheck has not reported healthy yet"] : []),
+    ...(latest.health === "starting" ? [SERVICE_STARTING_HEALTH_WARNING] : []),
   ];
   return {
     status: "stable",

@@ -1,0 +1,242 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": false,
+  "minEngine": "0.9.0",
+  "id": "postgresql",
+  "name": "PostgreSQL + pgAdmin",
+  "description": "A persistent PostgreSQL database with pgAdmin for browser-based administration and SQL queries.",
+  "kind": "template",
+  "logo": "postgresql",
+  "category": "database",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "postgres",
+      "restart": "unless-stopped",
+      "image": "postgres:17.11-alpine",
+      "environment": {
+        "POSTGRES_USER": "openship",
+        "POSTGRES_DB": "app"
+      },
+      "volumes": ["postgres_data:/var/lib/postgresql/data"],
+      "secretEnv": ["POSTGRES_PASSWORD", "OPENSHIP_APP_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "pgadmin",
+      "restart": "unless-stopped",
+      "image": "dpage/pgadmin4:9.18",
+      "environment": {
+        "PGADMIN_DISABLE_POSTFIX": "1",
+        "PGADMIN_LISTEN_PORT": "5050"
+      },
+      "volumes": ["pgadmin_data:/var/lib/pgadmin"],
+      "exposedPort": 5050,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 5050
+        }
+      ],
+      "dependsOn": ["postgres"],
+      "secretEnv": ["PGADMIN_DEFAULT_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5050/misc/ping"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "60s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "service": "postgres",
+      "key": "POSTGRES_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "pgadmin",
+      "key": "PGADMIN_DEFAULT_PASSWORD",
+      "label": "pgAdmin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "PGADMIN_DEFAULT_EMAIL",
+      "service": "pgadmin",
+      "label": "pgAdmin email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "key": "OPENSHIP_APP_PASSWORD",
+      "service": "postgres",
+      "label": "Application database password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to PostgreSQL + pgAdmin",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "pgAdmin",
+        "source": "publicUrl:pgadmin",
+        "kind": "url"
+      },
+      {
+        "id": "email",
+        "label": "pgAdmin email",
+        "source": "env:pgadmin:PGADMIN_DEFAULT_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "adminPassword",
+        "label": "pgAdmin password",
+        "source": "env:pgadmin:PGADMIN_DEFAULT_PASSWORD",
+        "secret": true,
+        "width": "half"
+      },
+      {
+        "id": "url",
+        "label": "Database URL",
+        "source": "template:postgresql://app:{{env:postgres:OPENSHIP_APP_PASSWORD}}@postgres:5432/app",
+        "service": "postgres",
+        "secret": true,
+        "envKey": "DATABASE_URL",
+        "recommended": true
+      },
+      {
+        "id": "password",
+        "label": "Database administrator password",
+        "source": "env:postgres:POSTGRES_PASSWORD",
+        "secret": true,
+        "help": "Use with the preloaded openship administrator in pgAdmin."
+      },
+      {
+        "id": "appPassword",
+        "label": "Application database password",
+        "source": "env:postgres:OPENSHIP_APP_PASSWORD",
+        "secret": true
+      }
+    ],
+    "guide": {
+      "defaultMode": "internal",
+      "useHint": "Use the private connection URL for projects on this server, or Open in localhost for a client on your machine."
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "pgadmin",
+      "port": 5050,
+      "label": "pgAdmin",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "port"]
+    },
+    {
+      "service": "postgres",
+      "port": 5432,
+      "label": "PostgreSQL",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "PostgreSQL",
+        "description": "A private relational database for your application."
+      },
+      {
+        "title": "pgAdmin",
+        "description": "Browse tables, run SQL, and administer the database in a browser."
+      },
+      {
+        "title": "Application connections",
+        "description": "Use the private database URL from another project or a local tunnel."
+      }
+    ],
+    "articleFile": "articles/postgresql.md"
+  },
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "Setup",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "pgadmin",
+          "key": "PGADMIN_DEFAULT_EMAIL",
+          "label": "pgAdmin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+          "fullWidth": true
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "service": "pgadmin",
+      "path": "/pgadmin4/servers.json",
+      "content": "{\"Servers\": {\"1\": {\"Name\": \"PostgreSQL\", \"Group\": \"Openship\", \"Host\": \"postgres\", \"Port\": 5432, \"MaintenanceDB\": \"app\", \"Username\": \"openship\", \"SSLMode\": \"prefer\"}}}"
+    },
+    {
+      "service": "postgres",
+      "path": "/docker-entrypoint-initdb.d/openship-app-role.sh",
+      "content": "#!/bin/sh\nset -eu\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" --set app_password=\"$OPENSHIP_APP_PASSWORD\" <<'SQL'\nCREATE ROLE app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'app_password';\nALTER DATABASE app OWNER TO app;\nGRANT USAGE, CREATE ON SCHEMA public TO app;\nSQL\n"
+    }
+  ],
+  "provides": [
+    {
+      "id": "postgres",
+      "category": "database",
+      "outputRefs": ["url"]
+    }
+  ],
+  "repository": "https://github.com/postgres/postgres",
+  "minResources": {
+    "cpuCores": 1.0,
+    "memoryMb": 1024
+  },
+  "tags": ["postgres", "sql", "pgadmin", "relational"]
+}

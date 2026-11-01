@@ -30,6 +30,7 @@
  *   GET /health                        - 200 ok
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { answered, refused, safeErrorMessage } from "@repo/core";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -117,6 +118,8 @@ export const EDGE_SHARED_DICTS: ReadonlyArray<{ name: string; size: string }> = 
    *  by rules_guard.lua in the access phase. The DB (route_rule) is the source
    *  of truth, so losing this dict costs a re-push, not a ruleset. */
   { name: "rules", size: "32m" },
+  /** Bounded sign-in attempts only. Policy never lives in this evictable zone. */
+  { name: "route_auth_limits", size: "1m" },
   /** Rate-limit COUNTERS, kept apart from `rules` so a high-cardinality flood (a
    *  fresh key per source IP per second) can't LRU-evict the rulesets and
    *  silently disable enforcement mid-attack.
@@ -409,7 +412,8 @@ async function ensureEdgeDefaultCert(
     if ((await executor.exists(certPath)) && (await executor.exists(keyPath))) {
       return { certPath, keyPath };
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua");
     return null;
   }
 
@@ -441,14 +445,14 @@ async function ensureEdgeDefaultCert(
     if (!(await executor.exists(certPath)) || !(await executor.exists(keyPath))) return null;
     return { certPath, keyPath };
   } catch (err) {
-    console.warn(
+    errorDiagnostics.warn("adapters/infra/openresty-lua",
       `[openresty] could not create the edge's default certificate — an unrouted HTTPS host ` +
         `will get a TLS error instead of the "service not found" page ` +
-        `(is openssl installed?): ${safeErrorMessage(err)}`,
+        `(is openssl installed?): ${safeErrorMessage(err)}`, err,
     );
     return null;
   } finally {
-    await executor.rm(staging).catch(() => undefined);
+    await executor.rm(staging).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua"); return undefined; });
   }
 }
 
@@ -495,14 +499,14 @@ export async function ensureOpenRestyConfig(
   const hasCorrectInclude = await executor
     .exec(`grep -qF 'include ${paths.sitesDir}/' ${paths.confPath}`)
     .then(() => true)
-    .catch(() => false);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua"); return false; });
 
   if (!hasCorrectInclude) {
     // Check if a WRONG sites-enabled include exists (different directory)
     const hasWrongInclude = await executor
       .exec(`grep -q 'include.*sites-enabled' ${paths.confPath}`)
       .then(() => true)
-      .catch(() => false);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua"); return false; });
 
     if (hasWrongInclude) {
       // Replace the wrong include path with the correct one
@@ -530,7 +534,7 @@ export async function ensureOpenRestyConfig(
   const hasBodySize = await executor
     .exec(`grep -qE '^[[:space:]]*client_max_body_size' ${paths.confPath}`)
     .then(() => true)
-    .catch(() => false);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua"); return false; });
   if (!hasBodySize) {
     await executor.exec(
       `sed -i '/http *{/a \\    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};' ${paths.confPath}`,
@@ -950,6 +954,10 @@ const LUA_SCRIPTS = [
   "maxminddb.lua",
   "rules_lib.lua",
   "rules_guard.lua",
+  "route_auth.lua",
+  "route_auth_crypto.lua",
+  "route_auth_login.lua",
+  "route_auth_headers.lua",
 ] as const;
 
 /** Version stamp so the self-heal detects a STALE box (an upgrade shipped new
@@ -993,7 +1001,7 @@ export async function ensureLuaScripts(
     if (!luaSourceAvailable()) {
       // Only reachable if the embedded module was gutted. Do NOT throw — the
       // vhost builder omits the *_by_lua_file directives so sites stay up.
-      console.error(
+      errorDiagnostics.error("adapters/infra/openresty-lua",
         "[openresty] Lua unavailable in this build (not on disk or embedded) — edge " +
           "rules/logging disabled. Run `bun run embed:lua` in packages/adapters.",
       );
@@ -1007,7 +1015,7 @@ export async function ensureLuaScripts(
     // metachar-free constant; single-quote it anyway per the remote-exec rule.
     const listing = await executor
       .exec(`ls -1 '${OPENRESTY_LUA_DIR}' 2>/dev/null || true`)
-      .catch(() => "");
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua"); return ""; });
     const present = new Set(
       listing
         .split("\n")
@@ -1016,7 +1024,7 @@ export async function ensureLuaScripts(
     );
     const missing = LUA_SCRIPTS.filter((name) => !present.has(name));
     // Read the marker directly (it's a dotfile, so `ls -1` won't list it).
-    const onBoxVersion = (await executor.readFile(LUA_VERSION_MARKER).catch(() => "")).trim();
+    const onBoxVersion = (await executor.readFile(LUA_VERSION_MARKER).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua"); return ""; })).trim();
 
     if (missing.length === 0 && onBoxVersion === expected) {
       return { repaired: [], available: true }; // happy path: present + current
@@ -1031,18 +1039,18 @@ export async function ensureLuaScripts(
     await executor.writeFile(LUA_VERSION_MARKER, expected);
 
     const reason = missing.length ? `missing: ${missing.join(", ")}` : "version changed";
-    console.warn(`[openresty] (re)installed Lua (${reason}) — reloading edge.`);
+    errorDiagnostics.warn("adapters/infra/openresty-lua", `[openresty] (re)installed Lua (${reason}) — reloading edge.`);
     // Reload so OpenResty picks up the scripts (a vhost that had been 500ing on
     // a missing file recovers; fresh workers get a fresh Lua VM). Best-effort.
     await reloadBareOpenResty(executor, paths).catch((err) => {
-      console.error(`[openresty] reload after Lua (re)install failed: ${safeErrorMessage(err)}`);
+      errorDiagnostics.error("adapters/infra/openresty-lua", `[openresty] reload after Lua (re)install failed: ${safeErrorMessage(err)}`, err);
     });
 
     return { repaired: missing.length ? missing : [...LUA_SCRIPTS], available: true };
   } catch (err) {
     // Contract: never throw. A repair failure must not abort the deploy.
-    console.error(
-      `[openresty] ensureLuaScripts failed (deploy continues): ${safeErrorMessage(err)}`,
+    errorDiagnostics.error("adapters/infra/openresty-lua",
+      `[openresty] ensureLuaScripts failed (deploy continues): ${safeErrorMessage(err)}`, err,
     );
     return { repaired: [], available: false };
   }
@@ -1067,7 +1075,7 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
   // then yum, then apk) that simply RAN OUT on anything else: nothing installed,
   // nothing logged, and geo_country then returned nil for every lookup with no trace
   // of why. The host answers which package it wants; a host that can't answer says so.
-  const profile = await resolveEnvironment(executor).catch((err) => safeErrorMessage(err));
+  const profile = await resolveEnvironment(executor).catch((err) => { observeCaughtError(err, "adapters/infra/openresty-lua"); return safeErrorMessage(err); });
   const install =
     typeof profile === "string"
       ? refused(`the host profile could not be read: ${profile}`)
@@ -1081,12 +1089,12 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
 
   if (install.supported) {
     await executor.exec(opScript(install.value)).catch((err) => {
-      console.warn(
-        `[openresty] libmaxminddb install failed — geo lookups return nil: ${safeErrorMessage(err)}`,
+      errorDiagnostics.warn("adapters/infra/openresty-lua",
+        `[openresty] libmaxminddb install failed — geo lookups return nil: ${safeErrorMessage(err)}`, err,
       );
     });
   } else {
-    console.warn(
+    errorDiagnostics.warn("adapters/infra/openresty-lua",
       `[openresty] libmaxminddb not installed — geo lookups return nil: ${install.reason}`,
     );
   }
@@ -1098,7 +1106,8 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
       await executor.mkdir(GEOIP_DIR);
       await executor.exec(`curl -fsSL -o ${GEOIP_DB_PATH} "${GEOIP_DB_URL}"`);
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/infra/openresty-lua");
     // Non-fatal
   }
 }

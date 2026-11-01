@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { AlertTriangle, ArrowRight, ArrowUpCircle, X } from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
-import type { SystemIssue } from "@/lib/api/issues";
+import Link from "next/link";
+
+import { isMonitoringConnectionIssue, type SystemIssue } from "@/lib/api/issues";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { IssueRow } from "@/components/issues/IssueRow";
 import AlertPanel, { type AlertTone } from "./AlertPanel";
@@ -42,7 +43,7 @@ const HIDE_BUTTON =
 interface CardProps {
   issues: SystemIssue[];
   /** Id of the row whose fix is currently running, if any. */
-  busyId?: string | null;
+  busyIds?: ReadonlySet<string>;
   onResolve: (issue: SystemIssue) => void;
   onInfraFix: (issue: SystemIssue) => void;
   /**
@@ -60,13 +61,13 @@ function AttentionCard({
   subtitle,
   max,
   issues,
-  busyId,
+  busyIds,
   onResolve,
   onInfraFix,
   onHide,
 }: CardProps & {
   tone: AlertTone;
-  icon: typeof AlertTriangle;
+  icon: IconName;
   title: string;
   subtitle: string;
   max: number;
@@ -98,7 +99,7 @@ function AttentionCard({
             aria-label={c.hide}
             className={HIDE_BUTTON}
           >
-            <X className="size-3.5" />
+            <UiIcon name="close" className="size-3.5" />
           </button>
         )
       }
@@ -108,7 +109,7 @@ function AttentionCard({
       footer={
         <Link href="/monitoring" className={FOOTER_LINK}>
           {hidden > 0 ? interpolate(c.more, { n: String(hidden) }) : t.dashboard.home.viewAll}
-          <ArrowRight className="size-3.5 rtl:rotate-180" />
+          <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
         </Link>
       }
     >
@@ -117,7 +118,7 @@ function AttentionCard({
           <IssueRow
             key={issue.id}
             issue={issue}
-            busy={busyId === issue.id}
+            busy={busyIds?.has(issue.id) ?? false}
             onResolve={onResolve}
             onInfraFix={onInfraFix}
           />
@@ -141,14 +142,15 @@ export function IssuesCard(props: CardProps) {
   const tone: AlertTone = props.issues.some((i) => i.severity === "outage")
     ? "danger"
     : "warning";
+  const connectionOnly = props.issues.length > 0 && props.issues.every(isMonitoringConnectionIssue);
 
   return (
     <AttentionCard
       {...props}
       tone={tone}
-      icon={AlertTriangle}
-      title={c.attentionTitle}
-      subtitle={c.attentionSubtitle}
+      icon={connectionOnly ? "plug" : "warning"}
+      title={connectionOnly ? c.connectionTitle : c.attentionTitle}
+      subtitle={connectionOnly ? c.connectionSubtitle : c.attentionSubtitle}
       max={MAX_ISSUE_ROWS}
     />
   );
@@ -171,7 +173,7 @@ export function UpdatesCard(props: CardProps) {
     <AttentionCard
       {...props}
       tone="warning"
-      icon={ArrowUpCircle}
+      icon={"arrow-up-circle"}
       title={c.updatesTitle}
       subtitle={c.updatesSubtitle}
       max={MAX_UPDATE_ROWS}

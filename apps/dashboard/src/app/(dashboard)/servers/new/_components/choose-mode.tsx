@@ -1,4 +1,4 @@
-import { Zap, ListChecks, Activity, ChevronRight } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import type { SetupMode } from "./types";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -21,7 +21,7 @@ export function ChooseMode({
       >
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <Zap className="size-6 text-primary" />
+            <UiIcon name="bolt" className="size-6 text-primary" />
           </div>
           <div className="flex-1">
             <p className="text-[15px] font-semibold text-foreground">{t.servers.setup.autoTitle}</p>
@@ -29,7 +29,7 @@ export function ChooseMode({
               {t.servers.setup.autoDesc}
             </p>
           </div>
-          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:rotate-180" />
+          <UiIcon name="chevron-right" className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:rotate-180" />
         </div>
       </button>
 
@@ -40,7 +40,7 @@ export function ChooseMode({
       >
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
-            <ListChecks className="size-6 text-orange-500" />
+            <UiIcon name="list-check" className="size-6 text-orange-500" />
           </div>
           <div className="flex-1">
             <p className="text-[15px] font-semibold text-foreground">{t.servers.setup.stepTitle}</p>
@@ -48,7 +48,7 @@ export function ChooseMode({
               {t.servers.setup.stepDesc}
             </p>
           </div>
-          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:rotate-180" />
+          <UiIcon name="chevron-right" className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:rotate-180" />
         </div>
       </button>
 
@@ -59,7 +59,7 @@ export function ChooseMode({
       >
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center shrink-0">
-            <Activity className="size-6 text-muted-foreground" />
+            <UiIcon name="activity" className="size-6 text-muted-foreground" />
           </div>
           <div className="flex-1">
             <p className="text-[15px] font-semibold text-foreground">{t.servers.setup.skipTitle}</p>
@@ -67,7 +67,7 @@ export function ChooseMode({
               {t.servers.setup.skipDesc}
             </p>
           </div>
-          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:rotate-180" />
+          <UiIcon name="chevron-right" className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:rotate-180" />
         </div>
       </button>
     </div>

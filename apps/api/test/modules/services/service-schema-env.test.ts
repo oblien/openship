@@ -6,7 +6,7 @@ import {
   SetServiceEnvVarsBody,
   SyncServicesBody,
   UpdateServiceBody,
-} from "../../../src/modules/services/service.schema";
+} from "@repo/contracts";
 
 /**
  * `environment` is nullable on UPDATE only (#619), and that asymmetry is load-bearing

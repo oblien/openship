@@ -1,0 +1,1237 @@
+/**
+ * BackupOrchestrator — the FSM that glues Executor + Producer +
+ * Destination + Trigger together. Pure orchestration: no concrete
+ * adapter imports, everything resolves through the registry.
+ *
+ * Flow per backup run:
+ *   queued → preparing → snapshotting → uploading → verifying → succeeded
+ *                                                         ↘     ↗
+ *                                                          failed/server_error
+ *
+ * Pre-hook errors abort (locked design decision — the most common
+ * pre-hook produces the consistent dump the snapshot depends on).
+ * Post-hook errors warn but don't fail (post-hook = cleanup).
+ *
+ * Chunk 1: the worker runs in-process via `setImmediate` (no BullMQ
+ * yet). Chunk 2 replaces this with a BullMQ worker; the orchestrator
+ * surface stays identical.
+ */
+
+import { enrichErrorContext } from "@repo/core/diagnostics/node";
+import { reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import {
+  repos,
+  type Project,
+  type Service,
+  type BackupRunStatus,
+  type BackupPolicy,
+  type BackupDestination,
+} from "@repo/db";
+import { liveContainerForService } from "../services/service-container";
+import { backupRunBus } from "./backup.sse";
+import { getJobRunner } from "../../lib/job-runner/index";
+import { deferBackgroundWork } from "../../lib/background-work";
+import { assertNativeJobs } from "../../native/execution-policy";
+import { toAdapterRow } from "../backup-destinations/hydrate-server";
+import {
+  HashingPassthrough,
+  artifactKey,
+  buildManifest,
+  manifestKey,
+  PRESERVED_ARTIFACT_METADATA_KEYS,
+  resolveDestination,
+  resolveExecutor,
+  resolveProducer,
+  resolveProducerForService,
+  runPrefix,
+  sanitizeProducerOpts,
+  uploadIncrementalArtifact,
+  type Artifact,
+  type BackupExecutor,
+  type BackupTrigger,
+  type PayloadKind,
+  type RuntimeAdapter,
+  type ServiceHandle,
+} from "@repo/adapters";
+import { Readable } from "node:stream";
+import {
+  disposeRuntime,
+  resolveDeploymentPlatform,
+  resolveTargetPlatform,
+} from "../../lib/deployment-runtime";
+import { notification } from "../../lib/notification-dispatcher";
+import { prunePolicy } from "./retention-prune";
+import { assertPlausibleBackupSizes } from "./backup-size-check";
+import { withBackupPolicyLock } from "./backup-lock";
+import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import { serviceHandleFor, withContainerEnv } from "./service-handle";
+import { resolveSourceExecutor } from "./source-platform";
+import { projectBackupVolumes, resolveProjectBackupSource } from "./project-source";
+import crypto from "node:crypto";
+import { detectDbImage, incrementalBackupStorage, payloadSpec, safeErrorMessage, ValidationError } from "@repo/core";
+import {
+  boundedStorableText,
+  sanitizeStorableStringsExceptKeys,
+} from "../deployments/build-log-sanitize";
+
+/**
+ * The artifacts list, made safe for jsonb WITHOUT scrubbing the recorded commands.
+ *
+ * The generic scrubber redacts URL userinfo, which is right for a log line and wrong
+ * here: `restoreCommand` is the only record of how to put the artifact back, so
+ * rewriting its DSN to `://***@` left a run that looked restorable and failed on
+ * authentication — see PRESERVED_ARTIFACT_METADATA_KEYS. NULs and lone surrogates are
+ * still repaired, because this value shares its write with the run's terminal status.
+ */
+function storableArtifacts<T>(artifacts: T): T {
+  return sanitizeStorableStringsExceptKeys(artifacts, PRESERVED_ARTIFACT_METADATA_KEYS);
+}
+
+const TRUNCATE_ERROR = 4096;
+const TRUNCATE_HOOK_LOG = 64 * 1024;
+/** Cap on waiting for a finished hook's stdout to drain (see runHook). */
+const HOOK_DRAIN_TIMEOUT_MS = 500;
+
+/**
+ * A service is eligible for project-level backup fan-out if:
+ * 1. The policy specifies custom_command or path payloads, OR
+ * 2. The service runs a recognized database engine (PostgreSQL, MySQL, Redis, MongoDB), OR
+ * 3. The service has declared volumes in its service definition.
+ *
+ * Stateless services without volumes or databases are skipped during project fan-out
+ * so they do not fail the backup batch (#859).
+ */
+export function isBackupCandidateService(
+  service: Pick<Service, "image" | "volumes">,
+  policy: Pick<BackupPolicy, "payloadKind">,
+): boolean {
+  if (policy.payloadKind === "custom_command" || policy.payloadKind === "path") {
+    return true;
+  }
+  if (detectDbImage(service.image) !== null) {
+    return true;
+  }
+  if (Array.isArray(service.volumes) && service.volumes.length > 0) {
+    return true;
+  }
+  return false;
+}
+/**
+ * Minimum gap between mid-upload progress writes. The stream reports per
+ * chunk; a chunk storm must not become a DB-write storm. One write per second
+ * per run keeps the SSE counter live and `lastEventAt` current. Artifact
+ * boundaries always persist through the `uploading` transition regardless of
+ * this window.
+ */
+const UPLOAD_PROGRESS_INTERVAL_MS = 1_000;
+/** Short form for the notification payload + destination verify note. */
+const TRUNCATE_ERROR_SUMMARY = 500;
+/** A `PutResult.etag` in this shape is a sha256 we can compare ours against. */
+const SHA256_HEX = /^[0-9a-f]{64}$/i;
+
+/** A different writer reached a terminal verdict first. The repository owns
+ *  that verdict; this worker must clean up and stop without publishing a
+ *  contradictory state. */
+class BackupRunFinalizedElsewhereError extends Error {
+  constructor(runId: string, attemptedStatus: BackupRunStatus) {
+    super(`Backup run ${runId} was finalized before transition to ${attemptedStatus}`);
+    this.name = "BackupRunFinalizedElsewhereError";
+  }
+}
+
+// ─── Public surface ──────────────────────────────────────────────────────────
+
+export interface RunBackupInput {
+  /** policyId resolves the (project, service?, destination) tuple +
+   *  the payload kind + hooks. */
+  policyId: string;
+  trigger: BackupTrigger;
+  /** Concrete service to back up. Set by the project-default fan-out to spawn
+   *  one child run per service; omitted for direct per-service / mail / cron
+   *  triggers (the source is then derived from the policy). */
+  serviceId?: string;
+}
+
+/** Source-agnostic context the shared upload/manifest pipeline needs,
+ *  produced by resolving either a project service or a mail server. */
+interface RunContext {
+  projectSlug: string;
+  projectName: string;
+  serviceName: string;
+  manifest: {
+    projectId: string;
+    serviceId: string;
+    serviceName: string;
+    serviceImage: string | null;
+    ports: string[];
+    command: string | null;
+    environmentKeys: string[];
+  };
+}
+
+export class BackupOrchestrator {
+  /**
+   * Create a backup_run row in 'queued' state and kick off the
+   * execution in the background. Returns the run id immediately —
+   * callers (HTTP handlers, BullMQ workers, webhook receivers) get
+   * back a handle they can poll via the DB.
+   *
+   * In Chunk 1 the actual work runs via setImmediate. Chunk 2 swaps
+   * to BullMQ.add() — this method's contract doesn't change.
+   */
+  async enqueue(input: RunBackupInput): Promise<{ runId: string; runIds: string[] }> {
+    assertNativeJobs();
+    const policy = await repos.backupPolicy.findById(input.policyId);
+    if (!policy) {
+      throw new Error(`Backup policy ${input.policyId} not found`);
+    }
+    if (!policy.enabled) {
+      throw new Error(`Backup policy ${input.policyId} is disabled`);
+    }
+    const destination = await repos.backupDestination.findById(policy.destinationId);
+    if (!destination) {
+      throw new Error(`Destination ${policy.destinationId} not found for policy ${policy.id}`);
+    }
+
+    // Derive the org scope from the policy's project first, fall back
+    // to the destination's org. Both should agree (ownership-aligned);
+    // the explicit fallback keeps cron/webhook triggers working when
+    // a destination has a NULL organizationId. Mail-server policies have
+    // no project, so they always fall through to the destination's org.
+    const policyProject = policy.projectId ? await repos.project.findById(policy.projectId) : null;
+    const organizationId = policyProject?.organizationId ?? destination.organizationId ?? null;
+    // One call to enqueue is one logical backup attempt. Project-default
+    // policies fan out below, so every child needs a durable identity that
+    // cannot be confused with another trigger that happened nearby in time.
+    const batchId = `bkb_${crypto.randomUUID()}`;
+    const batchStartedAt = new Date();
+
+    // Resolve which SOURCE(s) this trigger backs up:
+    //  - explicit serviceId (a fan-out child call) → that one service
+    //  - mail_server policy → the mail server
+    //  - per-service policy → its service
+    //  - project-default policy (no serviceId) → fan out to every ENABLED
+    //    service of the project, or its standalone app's persistent storage.
+    if (input.serviceId) {
+      const service = await repos.service.findById(input.serviceId);
+      if (!service || service.projectId !== policy.projectId ||
+        (policy.serviceId && policy.serviceId !== input.serviceId) || policy.sourceKind !== "service") {
+        throw new ValidationError("The selected service does not belong to this backup policy");
+      }
+      const runIds = await this.spawnRuns(
+        policy,
+        destination,
+        organizationId,
+        batchId,
+        batchStartedAt,
+        [{ serviceId: input.serviceId }],
+        input.trigger,
+      );
+      return { runId: runIds[0]!, runIds };
+    }
+    if (policy.sourceKind === "mail_server") {
+      const runIds = await this.spawnRuns(
+        policy,
+        destination,
+        organizationId,
+        batchId,
+        batchStartedAt,
+        [{ mailServerId: policy.mailServerId ?? null }],
+        input.trigger,
+      );
+      return { runId: runIds[0]!, runIds };
+    }
+    if (policy.serviceId) {
+      const runIds = await this.spawnRuns(
+        policy,
+        destination,
+        organizationId,
+        batchId,
+        batchStartedAt,
+        [{ serviceId: policy.serviceId }],
+        input.trigger,
+      );
+      return { runId: runIds[0]!, runIds };
+    }
+
+    // Project-default: fan out across the project's enabled services.
+    if (!policy.projectId) {
+      throw new Error(`Backup policy ${policy.id} has neither a service nor a project to back up`);
+    }
+    const rows = await repos.service.listByProject(policy.projectId);
+    if (policyProject && projectBackupVolumes(policyProject, rows).length > 0) {
+      const runIds = await this.spawnRuns(
+        policy, destination, organizationId, batchId, batchStartedAt,
+        [{ projectId: policyProject.id }], input.trigger,
+      );
+      return { runId: runIds[0]!, runIds };
+    }
+    const services = rows.filter((s) => s.enabled);
+    if (services.length === 0) {
+      throw new Error("Project has no services to back up — add a service or pick one.");
+    }
+    const candidates = services.filter((svc) => isBackupCandidateService(svc, policy));
+    if (candidates.length === 0) {
+      throw new ValidationError(
+        "Project has no services with persistent storage (volumes or databases) to back up.",
+      );
+    }
+    const runIds = await this.spawnRuns(
+      policy, destination, organizationId, batchId, batchStartedAt,
+      candidates.map(service => ({ serviceId: service.id })), input.trigger,
+    );
+    return { runId: runIds[0], runIds };
+  }
+
+  /**
+   * Create the queued rows for every concrete source and hand them to the JobRunner. The runner is BullMQ-backed
+   * when Redis is reachable, in-process otherwise — the backup_run row is the
+   * crash-safe record either way (stale-run sweep on boot reconciles). Falls
+   * back to inline execution if the runner enqueue throws. Returns every run id.
+   */
+  private async spawnRuns(
+    policy: BackupPolicy,
+    destination: BackupDestination,
+    organizationId: string,
+    batchId: string,
+    batchStartedAt: Date,
+    targets: Array<{ serviceId: string } | { mailServerId: string | null } | { projectId: string }>,
+    trigger: BackupTrigger,
+  ): Promise<string[]> {
+    const rows = targets.map(target => ({
+      id: `bkr_${crypto.randomUUID()}`,
+      batchId,
+      policyId: policy.id,
+      destinationId: destination.id,
+      sourceKind: "projectId" in target ? "project" : policy.sourceKind,
+      projectId: policy.projectId,
+      serviceId: "serviceId" in target ? target.serviceId : null,
+      mailServerId: "mailServerId" in target ? target.mailServerId : null,
+      organizationId,
+      status: "queued",
+      triggeredBy: trigger.source,
+      triggeredByUserId:
+        trigger.source === "manual" || trigger.source === "webhook" ? trigger.userId : null,
+      clientIp: trigger.clientIp ?? null,
+      startedAt: batchStartedAt,
+    }));
+    // A database failure must never leave a silently incomplete project backup.
+    // Persist the whole batch atomically, then hand each durable row to a worker.
+    await repos.backupRun.createBatch(rows);
+    for (const { id: runId } of rows) {
+      try {
+        const runner = await getJobRunner();
+        await runner.enqueueRun(runId);
+      } catch (err) {
+        errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator",
+          `[backup-orchestrator] runner enqueue failed for ${runId}; falling back to inline: ${safeErrorMessage(err)}`, err,
+        );
+        void deferBackgroundWork(() => this.execute(runId)).catch((execErr) => {
+          errorDiagnostics.error("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId} crashed: ${safeErrorMessage(execErr)}`, execErr);
+        });
+      }
+    }
+    return rows.map(row => row.id);
+  }
+
+  /**
+   * Atomically claim and drive a queued run through its FSM. Exported so every
+   * worker backend uses the same database-owned execution boundary.
+   */
+  async execute(runId: string): Promise<void> {
+    const pending = await repos.backupRun.findById(runId);
+    if (!pending || pending.status !== "queued") return;
+    // Freeze the settings used by this worker; a policy edit applies to the next run.
+    const policy = pending.policyId ? await repos.backupPolicy.findById(pending.policyId) : null;
+    const work = () => pending.projectId
+      ? withProjectRuntimeLock(pending.projectId, () => this.executeRun(runId, policy ?? null))
+      : this.executeRun(runId, policy ?? null);
+    const completed = policy?.payloadConfig?.incremental === true
+      ? await withBackupPolicyLock(policy.id, work)
+      : await work();
+    // Pruning takes the same lock as incremental capture, after capture releases it.
+    if (completed) {
+      try { await prunePolicy(completed); }
+      catch (error) {
+        errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId} succeeded; retention cleanup deferred: ${safeErrorMessage(error)}`, error);
+      }
+    }
+  }
+
+  private async executeRun(runId: string, policySnapshot: BackupPolicy | null): Promise<BackupPolicy | undefined> {
+    const run = await repos.backupRun.findById(runId);
+    if (!run) {
+      errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId} disappeared`);
+      return;
+    }
+    if (run.status !== "queued") {
+      errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId} already in status=${run.status}`);
+      return;
+    }
+    enrichErrorContext({ runId, organizationId: run.organizationId, projectId: run.projectId ?? undefined });
+
+    // More than one delivery is normal here: the in-process fast path races its
+    // DB poller, BullMQ retries, and an enqueue that reached Redis but timed out
+    // also schedules the inline fallback. The durable conditional update — not
+    // any runner-local Set/jobId — is the one execution owner across all of them.
+    const claim = await repos.backupRun.claimExecution(runId, run.projectId, run.organizationId);
+    if (claim === "project_unavailable") {
+      // Returning success here makes BullMQ drop its only delivery while the DB
+      // row remains queued forever. Throw so the durable queue retries after a
+      // graceful delete releases its short-lived admission fence; force delete
+      // atomically cancels the queued row before the retry.
+      throw new Error(`Backup run ${runId} is temporarily blocked by project deletion`);
+    }
+    if (claim !== "claimed") {
+      errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId} execution refused: ${claim}`);
+      return;
+    }
+    this.publishTransition(runId, "preparing");
+
+    let policy = null as Awaited<ReturnType<typeof repos.backupPolicy.findById>> | null;
+    let ctx: RunContext | null = null;
+    let executor: BackupExecutor | null = null;
+    let serviceHandle: ServiceHandle | null = null;
+    // The runtime the BackupExecutor wraps. Held for the whole run (it shells into
+    // the container to produce the dump) and released in the `finally` — on a
+    // remote server it carries a Docker-over-SSH loopback bridge that only
+    // `dispose()` closes, so a scheduled policy would otherwise strand one per run.
+    let sourceRuntime: RuntimeAdapter | null = null;
+    /** Did `destination.preflight()` succeed this run? Gates the failure path's
+     *  verdict on the destination — see the catch block. */
+    let destinationProven = false;
+    /**
+     * Keys this run actually put at the destination, for the failure path to reclaim.
+     *
+     * Run-scoped rather than local to the upload loop because retention only ever prunes
+     * runs whose status is `succeeded` (`retention-prune.ts`), so ANYTHING a failed run
+     * uploaded is orphaned permanently — unrestorable, since a run without a manifest is
+     * not a restore point, and never collected. A nightly policy that fails after its
+     * first artifact would leak that artifact every single night.
+     */
+    const uploadedKeys: string[] = [];
+    let destination: ReturnType<typeof resolveDestination> | null = null;
+    /** Serialized because stream callbacks cannot await. */
+    let progressInFlight: Promise<void> | null = null;
+    let pendingProgress: { bytesTransferred: number; currentArtifact: string } | null = null;
+    const hookLog: string[] = [];
+    let postHookDue = false;
+    const finishHook = async () => {
+      if (!postHookDue || !policy?.postHook || !serviceHandle || !executor) return;
+      postHookDue = false;
+      try { await this.runHook(serviceHandle, executor, policy.postHook, "post", hookLog, policy.hookTimeoutSeconds); }
+      catch (error) {
+        observeCaughtError(error, "platform/engine/modules/backups/backup.orchestrator"); hookLog.push(`[post-hook] continued past failure: ${safeErrorMessage(error)}`); }
+    };
+
+    try {
+      // 1. Reload policy + destination + service.
+      if (!run.policyId) throw new Error("Run has no policyId");
+      policy = policySnapshot;
+      if (!policy) throw new Error(`Policy ${run.policyId} disappeared`);
+      if (!run.destinationId) throw new Error("Run has no backup destination");
+      const destinationRow = await repos.backupDestination.findById(run.destinationId);
+      if (!destinationRow) throw new Error(`Destination ${run.destinationId} disappeared`);
+
+      // 2. Resolve the destination up front (shared by both source kinds).
+      //    toAdapterRow handles openship_server by hydrating creds from the
+      //    user's `servers` row; other kinds are a straight passthrough.
+      const adapterRow = await toAdapterRow(destinationRow);
+      destination = resolveDestination(adapterRow);
+      const preflight = await destination.preflight();
+      if (!preflight.ok) {
+        throw new Error(`Destination preflight failed: ${preflight.reason}`);
+      }
+      await repos.backupDestination.setLastVerified(destinationRow.id, true);
+      // Preflight is THE destination health signal, and it just passed. Remembered so
+      // the catch below does not undo it over a failure that says nothing about the
+      // destination — see there.
+      destinationProven = true;
+
+      // 3. Resolve the source app, service or mail server to a ServiceHandle,
+      //    an executor and the key/manifest metadata the shared pipeline needs.
+      if (policy.sourceKind === "mail_server") {
+        if (!policy.mailServerId) throw new Error("mail_server policy has no mailServerId");
+        const built = await this.buildMailSource(
+          policy.mailServerId,
+          destinationRow.organizationId,
+        );
+        serviceHandle = built.handle;
+        executor = built.executor;
+        sourceRuntime = built.runtime;
+        ctx = built.ctx;
+      } else {
+        // The durable run identifies its source. A null service FK on an old
+        // service run must never fall back to the standalone app.
+        if (run.sourceKind !== "project" && !run.serviceId) {
+          throw new Error(`Backup run ${run.id} has no service to back up`);
+        }
+        const app = run.sourceKind === "project"
+          ? await resolveProjectBackupSource(run.projectId, run.organizationId)
+          : null;
+        const serviceRow = app ? null : await repos.service.findById(run.serviceId!);
+        if (!app && !serviceRow) throw new Error(`Service ${run.serviceId} disappeared`);
+
+        const project = app?.project ?? await repos.project.findById(serviceRow!.projectId);
+        if (!project) throw new Error(`Project ${run.projectId} disappeared`);
+
+        // Defense-in-depth: project + destination must be in the same org.
+        if (project.organizationId !== destinationRow.organizationId) {
+          throw new Error(
+            `Org mismatch — refusing to run: project.org=${project.organizationId}, destination.org=${destinationRow.organizationId}`,
+          );
+        }
+        if (project.id !== policy.projectId || (app && (policy.serviceId || run.serviceId))) {
+          throw new Error(
+            `Backup source does not belong to policy's project ${policy.projectId}`,
+          );
+        }
+
+        serviceHandle = app?.handle ?? await this.buildServiceHandle(serviceRow!);
+
+        const activeDeployment = app?.deployment ?? (project.activeDeploymentId
+          ? await findActiveDeployment(project)
+          : null);
+        // Resolved from the SERVICE, not just the snapshot: an adopted service (the
+        // control plane's own compose stack above all) is a container whose adopt
+        // deployment is recorded as bare, and the bare executor cannot see into a
+        // container. See source-platform.ts for the rule and its guards.
+        const source = await resolveSourceExecutor({
+          meta: activeDeployment?.meta ?? {},
+          organizationId: destinationRow.organizationId,
+          containerId: serviceHandle.containerId,
+          serviceName: serviceHandle.name,
+        });
+        sourceRuntime = source.runtime;
+        executor = source.executor;
+        // Enrich BEFORE the producer is chosen: `detects()` reads this env, so a
+        // service whose credentials live only in its container must have them here
+        // or it is misdetected as "not a database" and silently volume-snapshotted.
+        serviceHandle = await withContainerEnv(serviceHandle, executor);
+
+        ctx = {
+          projectSlug: project.slug,
+          projectName: project.name,
+          serviceName: serviceHandle.name,
+          manifest: {
+            projectId: project.id,
+            serviceId: serviceHandle.id,
+            serviceName: serviceHandle.name,
+            serviceImage: serviceHandle.image,
+            ports: (serviceRow?.ports as string[] | null) ?? [],
+            command: serviceRow?.command ?? null,
+            environmentKeys: Object.keys(
+              (serviceRow?.environment as Record<string, string> | null) ?? (app ? serviceHandle.env : {}),
+            ),
+          },
+        };
+      }
+
+      const producer =
+        policy.payloadKind === "auto"
+          ? resolveProducerForService(serviceHandle)
+          : resolveProducer(policy.payloadKind as PayloadKind);
+
+      // 4. Snapshot. Pre-hook runs first; failure aborts.
+      postHookDue = true;
+      if (policy.preHook) {
+        await this.transition(runId, "snapshotting");
+        await this.runHook(
+          serviceHandle,
+          executor,
+          policy.preHook,
+          "pre",
+          hookLog,
+          policy.hookTimeoutSeconds,
+        );
+      } else {
+        await this.transition(runId, "snapshotting");
+      }
+
+      // No pathPrefix here: the destination applies its own on every put/get/delete,
+      // and passing it a second time is what stored every prefixed S3/SFTP artifact
+      // one level deeper than the key this run records. See key-builder.ts.
+      const baseKey = {
+        projectSlug: ctx.projectSlug,
+        serviceName: ctx.serviceName,
+        runId,
+      };
+      const keyPrefix = runPrefix(baseKey);
+      await this.transition(runId, "uploading", {
+        objectKeyPrefix: keyPrefix,
+      });
+
+      // 5. Iterate the producer's artifacts. Each one streams through
+      //    the destination + a sha256 hasher in parallel.
+      const artifactsRecorded: Array<{
+        name: string;
+        key: string;
+        sizeBytes: number;
+        sha256: string;
+        payloadKind: PayloadKind;
+        metadata: Record<string, unknown>;
+      }> = [];
+      let totalBytes = 0;
+
+      // D5: forward the payloadConfig WHOLE. Hand-picking sourceIds/command/
+      // exclude here dropped every custom_command key — produceCommand,
+      // restoreCommand, artifactName — which is exactly what a mail-server
+      // policy writes, so every mail backup captured an unrestorable artifact.
+      // The producer's own cast hid it from the typechecker; the keys are
+      // declared on ProducerOpts now, and this forwards unfiltered so a new
+      // payload key can never be silently lost again.
+      // Through `sanitizeProducerOpts`, not a bare cast: the cast asserted that jsonb
+      // matched the declared field types and nothing checked it, so a `compression`
+      // value outside the codec vocabulary reached the shell layer and produced an
+      // artifact whose recorded codec no restore can read. See that function.
+      const producerOpts = sanitizeProducerOpts(policy.payloadConfig);
+      const incremental = producerOpts.incremental === true;
+      // Compress blocks independently so editing one file does not change a
+      // compressor's state for the remainder of a filesystem archive.
+      if (incremental && payloadSpec(producer.kind).shape === "filesystem") producerOpts.compression = "none";
+      const previous = incremental
+        ? await repos.backupRun.latestSucceededForSource(policy.id, destinationRow.id, run.serviceId, run.mailServerId, run.sourceKind)
+        : undefined;
+      const previousArtifacts = (previous?.artifacts ?? []) as typeof artifactsRecorded;
+      const artifactNames = new Set<string>();
+
+      // Live upload progress. Cumulative across the WHOLE run — the current
+      // artifact's moving count rides on top of the bytes every finished
+      // artifact already landed, so the counter never resets per file.
+      let finishedArtifactBytes = 0;
+      let lastProgressWriteAt = 0;
+      const flushUploadProgress = () => {
+        if (progressInFlight) return;
+        progressInFlight = (async () => {
+          while (pendingProgress) {
+            const progress = pendingProgress;
+            pendingProgress = null;
+            await this.persistUploadProgress(
+              runId,
+              progress.bytesTransferred,
+              progress.currentArtifact,
+            );
+          }
+        })().finally(() => {
+          progressInFlight = null;
+        });
+      };
+      const reportUploadProgress = (artifactBytes: number, artifactName: string) => {
+        const now = Date.now();
+        if (now - lastProgressWriteAt < UPLOAD_PROGRESS_INTERVAL_MS) return;
+        lastProgressWriteAt = now;
+        pendingProgress = {
+          bytesTransferred: finishedArtifactBytes + artifactBytes,
+          currentArtifact: artifactName,
+        };
+        flushUploadProgress();
+      };
+
+      for await (const artifact of producer.produce(serviceHandle, executor, producerOpts)) {
+        const key = artifactKey(baseKey, artifact.name);
+        if (artifactNames.has(key) || key === manifestKey(baseKey)) {
+          artifact.stream.destroy();
+          throw new Error(`Backup produced a duplicate or reserved artifact name: ${artifact.name}`);
+        }
+        artifactNames.add(key);
+        // Register BEFORE put: even a failed upload or digest check can leave an object.
+        if (!incremental) uploadedKeys.push(key);
+        const onBytes = (n: number) => reportUploadProgress(n, artifact.name);
+        const recorded = incremental
+          ? await uploadIncrementalArtifact(destination, baseKey, artifact, [...previousArtifacts, ...artifactsRecorded], uploadedKeys, onBytes)
+          : await this.uploadArtifact(destination, baseKey, artifact, onBytes);
+        artifactsRecorded.push(recorded);
+        totalBytes += incrementalBackupStorage(recorded)?.uploadedBytes ?? recorded.sizeBytes;
+        finishedArtifactBytes = totalBytes;
+        // A throttled write may still be waiting on the database. Settle it
+        // before broadcasting the exact artifact boundary, otherwise its older
+        // SSE value could arrive afterwards and move the dashboard backward.
+        await progressInFlight;
+        await this.transition(runId, "uploading", {
+          artifacts: storableArtifacts(artifactsRecorded),
+          bytesTransferred: totalBytes,
+        });
+      }
+
+      // 5b. A run that captured nothing is a FAILED run, whichever producer ran.
+      //
+      // This is the backstop behind #611: the volume producer used to return
+      // silently when it found no sources and the run went to `succeeded` with
+      // `bytesTransferred: 0` and `artifacts: []`, so a nightly policy on the
+      // control plane's own postgres reported green forever while uploading nothing
+      // but a manifest describing nothing. A failed run is strictly safer than a
+      // succeeded-empty one: it pages someone, and it cannot be mistaken later for
+      // a restore point that exists.
+      //
+      // Deliberately here rather than only in each producer: the producers that can
+      // hit this now say so themselves with a specific reason, but "the payload was
+      // empty" must not depend on every future producer remembering to check. Both
+      // shapes are caught — no artifacts at all, and artifacts that carry no bytes
+      // (an exec whose command wrote nothing to stdout, which no dump ever does).
+      if (artifactsRecorded.length === 0) {
+        throw new Error(
+          `Backup captured nothing: the ${producer.kind} payload produced no artifacts for ` +
+            `service "${ctx.serviceName}". Nothing was uploaded, so this run is not a restore ` +
+            `point.`,
+        );
+      }
+      const empty = artifactsRecorded.filter((a) => a.sizeBytes === 0);
+      if (empty.length > 0) {
+        // No reclaim here — the run-level catch owns that for EVERY failure path, not
+        // just this one. A copy in each branch is how the next branch forgets.
+        const allEmpty = empty.length === artifactsRecorded.length;
+        throw new Error(
+          `Backup captured nothing: ${allEmpty ? "every" : `${empty.length} of ${artifactsRecorded.length}`} ` +
+            `${producer.kind} artifact${allEmpty && empty.length === 1 ? "" : "s"} for service ` +
+            `"${ctx.serviceName}" ${empty.length === 1 ? "is" : "are"} 0 bytes ` +
+            `(${empty.map((a) => a.name).join(", ")}). An empty artifact cannot be restored from, ` +
+            `so this run is not a restore point.`,
+        );
+      }
+
+      // Producer iteration above has awaited its exit status. Before publishing
+      // a restore point, also reject an implausibly small full PostgreSQL dump.
+      if (artifactsRecorded.some((artifact) => artifact.payloadKind === "pg_dump")) {
+        const recent = await repos.backupRun.recentSucceededForSource(
+          policy.id,
+          destinationRow.id,
+          run.serviceId,
+          run.mailServerId,
+          run.sourceKind,
+        );
+        assertPlausibleBackupSizes(artifactsRecorded, recent);
+      }
+
+      // 6. Manifest last.
+      //
+      //    It is a CROSS-CHECK, not the commit marker — worth stating precisely, because
+      //    the comment here used to claim restore "considers a run complete iff its
+      //    manifest exists" and it does not: a missing manifest records
+      //    `meta.manifest: "missing"` and falls back to verifying against the recorded
+      //    artifact list. The actual gate is the run's STATUS — `beginPrepare` refuses
+      //    anything but `succeeded` ("Can only restore from a succeeded backup run").
+      //
+      //    That is what makes capture atomic, and it is also why the terminal-status guard
+      //    in `backup.repo.ts` matters: without it a racing writer could flip a partial
+      //    `failed` run to `succeeded`, and a partial run becoming restorable is the whole
+      //    failure this module is built to prevent. The manifest's job is to catch the
+      //    destination disagreeing with the DB, which is a different question.
+      await this.transition(runId, "verifying");
+      const manifest = buildManifest({
+        runId,
+        projectId: ctx.manifest.projectId,
+        projectSlug: ctx.projectSlug,
+        serviceId: ctx.manifest.serviceId,
+        serviceName: ctx.manifest.serviceName,
+        serviceImage: ctx.manifest.serviceImage,
+        capturedAt: new Date(),
+        artifacts: artifactsRecorded,
+        envVarKeys: Object.keys(serviceHandle.env),
+        serviceConfig: {
+          image: ctx.manifest.serviceImage,
+          ports: ctx.manifest.ports,
+          command: ctx.manifest.command,
+          environmentKeys: ctx.manifest.environmentKeys,
+        },
+      });
+      const manifestK = manifestKey(baseKey);
+      const manifestBody = Buffer.from(JSON.stringify(manifest, null, 2));
+      uploadedKeys.push(manifestK);
+      await destination.put(manifestK, Readable.from([manifestBody]), {
+        contentType: "application/json",
+        // Buffered, so both the real length and the digest are knowable up
+        // front. That makes this the one put in this file that can hand the
+        // destination a sha256 to gate on (the previous `size: 0` also lied to
+        // S3's multipart threshold), and the manifest is the file restore keys
+        // "is this run complete" off.
+        size: manifestBody.byteLength,
+        sha256: crypto.createHash("sha256").update(manifestBody).digest("hex"),
+      });
+
+      // 7. Post-hook. Failure is logged but doesn't fail the run.
+      await finishHook();
+
+      // Flush the last throttled progress write before the terminal one: the
+      // value below is the exact uploaded total, and no in-flight estimate may
+      // land after it (the repo would refuse, but the run ends cleaner when the
+      // chain is settled — no pending write outlives the run).
+      await progressInFlight;
+      await this.transition(runId, "succeeded", {
+        manifestKey: manifestK,
+        bytesTransferred: totalBytes,
+        artifacts: storableArtifacts(artifactsRecorded),
+        hookLog: boundedStorableText(hookLog.join("\n"), TRUNCATE_HOOK_LOG),
+      });
+
+      notification.emit({
+        organizationId: destinationRow.organizationId,
+        eventType: "backup_run.succeeded",
+        resourceType: "backup_run",
+        resourceId: runId,
+        payload: {
+          projectName: ctx.projectName,
+          serviceName: ctx.serviceName,
+          policyId: policy.id,
+          destinationId: destinationRow.id,
+          destinationName: destinationRow.name,
+          bytesTransferred: totalBytes,
+          artifactCount: artifactsRecorded.length,
+        },
+      });
+      return policy;
+    } catch (err) {
+      // Settle any throttled progress write before the failed transition
+      reportError(err, { kind: "background", component: "backup-orchestrator", runId,
+        organizationId: run.organizationId, projectId: run.projectId ?? undefined, handled: true });
+      // stamps `bytesTransferred: 0` — an in-flight estimate must not be the
+      // last byte count this run records (terminal-guarded in the repo too).
+      await progressInFlight;
+      await finishHook();
+      // Both forms are scrubbed independently: a second `.slice` over an
+      // already-scrubbed string can split a surrogate pair back open.
+      const raw = safeErrorMessage(err);
+      const message = boundedStorableText(raw, TRUNCATE_ERROR);
+      const summary = boundedStorableText(raw, TRUNCATE_ERROR_SUMMARY);
+      const finalizedElsewhere = err instanceof BackupRunFinalizedElsewhereError;
+      if (finalizedElsewhere) {
+        errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId}: ${message}`, err);
+      } else {
+        errorDiagnostics.error("platform/engine/modules/backups/backup.orchestrator", `[backup-orchestrator] run ${runId} failed: ${message}`, err);
+      }
+
+      // A duplicate worker can lose to a genuinely succeeded run. Its keys are
+      // the same run-scoped keys as the winner's, so deleting them would destroy
+      // a valid restore point. For other known terminal verdicts the objects are
+      // unusable and should still be reclaimed. If the winner cannot be read,
+      // preserve data rather than risk deleting a successful backup.
+      const winningRun = finalizedElsewhere
+        ? await repos.backupRun.findById(runId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/backups/backup.orchestrator"); return undefined; })
+        : undefined;
+      const mayReclaimObjects = finalizedElsewhere
+        ? winningRun !== undefined && winningRun.status !== "succeeded"
+        : true;
+
+      // Reclaim every object this run put at the destination, whatever went wrong.
+      //
+      // A failed run is not a restore point — restore requires a manifest, and retention
+      // skips non-succeeded runs — so these bytes can only ever be billed, never used.
+      // ONE place, so a future failure path cannot forget. Best-effort by construction: a
+      // cleanup that fails must never replace the operator's real error.
+      if (mayReclaimObjects && destination && uploadedKeys.length > 0) {
+        // `deleteMany` reports per-key failures instead of throwing, so catching alone
+        // saw only a total collapse — a bucket policy that denies delete on half the
+        // keys resolved cleanly and the orphans went unnamed.
+        await destination
+          .deleteMany(uploadedKeys)
+          .then(({ failed }) => {
+            if (failed.length === 0) return;
+            errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator",
+              `[backup-orchestrator] run ${runId}: ${failed.length}/${uploadedKeys.length} ` +
+                `object(s) could not be reclaimed after the failure and are now orphaned ` +
+                `at the destination: ` +
+                failed.map((f) => `${f.key}: ${f.error}`).join("; "), err,
+            );
+          })
+          .catch((cleanupErr) =>
+            errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator",
+              `[backup-orchestrator] run ${runId}: ${uploadedKeys.length} object(s) could not ` +
+                `be reclaimed after the failure and are now orphaned at the destination: ` +
+                `${safeErrorMessage(cleanupErr)}`, cleanupErr,
+            ),
+          );
+      }
+
+      // The row is already terminal. Cleanup above still matters because this
+      // worker may have uploaded objects before losing the race, but the winning
+      // writer exclusively owns the status, SSE verdict, and notification.
+      if (finalizedElsewhere) return;
+
+      // Only a destination that failed PREFLIGHT is marked unhealthy. Once preflight
+      // has passed, this run has proved the destination reachable and writable, and
+      // everything that can still go wrong is about the SOURCE — a dump command that
+      // exited non-zero, a service with no volumes, a container that vanished.
+      //
+      // Flipping the flag on any failure conflated the two, and one destination is
+      // shared by many policies: a single project-default policy fanning out over a
+      // stateless service ("nothing to back up") would mark the destination every
+      // other project backs up to as unverified, and the UI would tell the operator
+      // their storage is broken when it is fine. The run's own errorMessage carries
+      // the real reason either way.
+      if (run.destinationId && !destinationProven) {
+        await repos.backupDestination
+          .setLastVerified(run.destinationId, false, summary)
+          .catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "platform/engine/modules/backups/backup.orchestrator");
+          });
+      }
+
+      // The artifact list goes with the bytes.
+      //
+      // `artifacts` is written INCREMENTALLY as each one uploads (step 5), so a capture
+      // that refuses on its third folder — or on its first, once the producer's exit
+      // status arrives after an empty payload stream — leaves entries naming objects the
+      // reclaim above just deleted. Every reader treats that list as real: the restore
+      // path reads it (`recordedArtifacts`), retention derives delete keys from it, the
+      // `restoreCommand` backfill scans it with no status filter, and the restore wizard
+      // shows its LENGTH to the operator as "N artifacts". A failed run advertising an
+      // artifact whose key 404s is the same lie as a green run that captured nothing,
+      // pointed the other way.
+      //
+      // `bytesTransferred` for the same reason: storage accounting already counts only
+      // succeeded runs (`backup.repo.ts` `storedBytes`), and the run cards render this
+      // number as the size of what was captured. Nothing was.
+      //
+      // Objects the reclaim could NOT delete stay named in the warning it logs — this
+      // row is not their record, because retention skips non-succeeded runs and would
+      // never act on them anyway.
+      await this.transition(runId, "failed", {
+        errorMessage: message,
+        artifacts: [],
+        bytesTransferred: 0,
+        hookLog: boundedStorableText(hookLog.join("\n"), TRUNCATE_HOOK_LOG),
+      });
+
+      // Fan-out to subscribers. Look up destination by policy or run.
+      const destId = run.destinationId;
+      const destForNotify = destId
+        ? await repos.backupDestination.findById(destId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/backups/backup.orchestrator"); return null; })
+        : null;
+      const organizationId = run.organizationId ?? destForNotify?.organizationId;
+      if (organizationId) {
+        notification.emit({
+          organizationId,
+          eventType: "backup_run.failed",
+          resourceType: "backup_run",
+          resourceId: runId,
+          payload: {
+            destinationName: destForNotify?.name ?? null,
+            destinationId: destId ?? null,
+            policyId: policy?.id ?? run.policyId ?? null,
+            projectName: ctx?.projectName ?? null,
+            serviceName: ctx?.serviceName ?? null,
+            errorMessage: summary,
+          },
+        });
+      }
+    } finally {
+      disposeRuntime(sourceRuntime);
+      // Status says what happened; this acknowledgement says the worker can no
+      // longer mutate project resources. It must be the last durable write in
+      // the outermost worker boundary so project teardown never treats an early
+      // terminal/stale verdict as quiescence.
+      await repos.backupRun.acknowledgeExecutionFinished(runId);
+    }
+  }
+
+  // ── Private helpers ──────────────────────────────────────────────────
+
+  /**
+   * Persist a state transition AND publish it to the SSE bus.
+   * Centralizes the two-write pattern so every transition stays
+   * subscriber-visible. If the bus emit throws (no subscribers, or
+   * downstream error), we swallow — the DB write is what matters.
+   */
+  private async transition(
+    runId: string,
+    status: BackupRunStatus,
+    patch?: Parameters<typeof repos.backupRun.transition>[2],
+  ): Promise<void> {
+    const applied = await repos.backupRun.transition(runId, status, patch);
+    if (applied === false) {
+      throw new BackupRunFinalizedElsewhereError(runId, status);
+    }
+    this.publishTransition(runId, status, patch);
+  }
+
+  /** Publish a transition already persisted by either the FSM or atomic claim. */
+  private publishTransition(
+    runId: string,
+    status: BackupRunStatus,
+    patch?: Parameters<typeof repos.backupRun.transition>[2],
+  ): void {
+    try {
+      backupRunBus.publish(runId, {
+        type: "transition",
+        status,
+        bytesTransferred:
+          typeof patch?.bytesTransferred === "number" ? patch.bytesTransferred : undefined,
+        artifacts: Array.isArray(patch?.artifacts) ? (patch.artifacts as unknown[]) : undefined,
+      });
+      const TERMINAL: BackupRunStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
+      if (TERMINAL.includes(status)) {
+        backupRunBus.publish(runId, {
+          type: "complete",
+          status: status as "succeeded" | "failed" | "cancelled" | "server_error",
+          errorMessage: typeof patch?.errorMessage === "string" ? patch.errorMessage : undefined,
+        });
+      }
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/backups/backup.orchestrator");
+      // bus failures never block the FSM
+    }
+  }
+
+  /**
+   * One throttled progress write + its SSE echo. Telemetry, not FSM: a failed
+   * write is logged and swallowed — progress must never fail the backup it
+   * describes, and the bus must not either. Monotonicity and terminal refusal
+   * live in the repo (`recordUploadProgress`), so a late or reordered delivery
+   * is harmless by construction; callers coalesce and serialize samples so
+   * the SSE stream reads in order without a queue growing behind a slow DB.
+   */
+  private async persistUploadProgress(
+    runId: string,
+    bytesTransferred: number,
+    currentArtifact: string,
+  ): Promise<void> {
+    let applied: boolean;
+    try {
+      applied = await repos.backupRun.recordUploadProgress(runId, bytesTransferred);
+    } catch (err) {
+      errorDiagnostics.warn("platform/engine/modules/backups/backup.orchestrator",
+        `[backup-orchestrator] run ${runId}: progress write failed: ${safeErrorMessage(err)}`, err,
+      );
+      return;
+    }
+    // Never amplify a value the source of truth refused. Besides status races,
+    // this suppresses an older estimate that lost to an artifact-boundary write.
+    if (!applied) return;
+    try {
+      backupRunBus.publish(runId, { type: "progress", bytesTransferred, currentArtifact });
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/backups/backup.orchestrator");
+      // bus failures never block the FSM
+    }
+  }
+
+  private async uploadArtifact(
+    destination: ReturnType<typeof resolveDestination>,
+    baseKey: { projectSlug: string; serviceName: string; runId: string },
+    artifact: Artifact,
+    /** Per-chunk cumulative byte count for THIS artifact (throttled + aggregated
+     *  into the run total by the caller). */
+    onBytes?: (bytesWritten: number) => void,
+  ): Promise<{
+    name: string;
+    key: string;
+    sizeBytes: number;
+    sha256: string;
+    payloadKind: PayloadKind;
+    metadata: Record<string, unknown>;
+  }> {
+    const key = artifactKey(baseKey, artifact.name);
+    const hasher = new HashingPassthrough({ onBytes });
+
+    // Pipe artifact stream → hasher → destination. The hasher computes
+    // sha256 + byte count as bytes flow.
+    //
+    // The error forward is not optional. `pipe()` does not carry errors, and the
+    // executor destroys its stdout stream with an Error on every abnormal end — an
+    // idle-timeout, a ceiling, a desynchronized frame boundary. With no listener
+    // that is an unhandled 'error' event, i.e. the API process dies mid-backup; and
+    // if it somehow survived, `hasher` would never end and `put()` would wait on an
+    // EOF that is never coming. Destroying the hasher instead turns a broken
+    // producer into a rejected upload, which is a failed run — the only honest
+    // outcome for an artifact whose bytes stopped early.
+    artifact.stream.on("error", (err: Error) => { observeCaughtError(err, "platform/engine/modules/backups/backup.orchestrator"); return hasher.destroy(err); });
+    artifact.stream.pipe(hasher);
+
+    // S3 stores each metadata key as an `x-amz-meta-*` HTTP header, and
+    // header values may only contain printable ASCII — no newlines. Some
+    // producers (e.g. custom_command) stash multiline shell commands in
+    // metadata for restore, so only header-safe values go to the put call.
+    // The unfiltered `artifact.metadata` is still recorded on the backup
+    // run below (`recorded.metadata`), which is what restore reads from.
+    const headerSafeMetadata = Object.fromEntries(
+      Object.entries(artifact.metadata ?? {}).filter(
+        ([, v]) => typeof v === "string" && /^[\x20-\x7e]*$/.test(v),
+      ),
+    );
+
+    try {
+      const result = await destination.put(key, hasher, {
+        size: artifact.sizeHint,
+        contentType: "application/octet-stream",
+        metadata: headerSafeMetadata as Record<string, string>,
+      });
+
+      const { sha256, bytesWritten } = hasher.summary();
+      if (result.bytesWritten !== bytesWritten) {
+        throw new Error(`Artifact "${artifact.name}" was not fully stored: sent ${bytesWritten} bytes, destination recorded ${result.bytesWritten}`);
+      }
+
+      // An artifact's digest doesn't exist until its bytes have already been
+      // written, so it can't be handed to `put` as a precondition (see
+      // PutOpts.sha256). Where the destination reports one back — local hashes as
+      // it lands the file — compare: a disagreement means what's stored is not
+      // what we hashed, and recording OUR digest would make restore's verification
+      // pass against corrupt bytes. S3's ETag is an MD5/multipart composite and
+      // SFTP reports none, so the shape guard keeps this to destinations where the
+      // comparison means something.
+      if (result?.etag && SHA256_HEX.test(result.etag) && result.etag.toLowerCase() !== sha256) {
+        throw new Error(
+          `Artifact "${artifact.name}" changed in transit: hashed ${sha256} on the way out, destination stored ${result.etag.toLowerCase()}`,
+        );
+      }
+
+      return {
+        name: artifact.name,
+        key,
+        sizeBytes: bytesWritten,
+        sha256,
+        payloadKind: artifact.payloadKind,
+        metadata: artifact.metadata,
+      };
+    } finally {
+      // A destination can reject before consuming the producer. Close both ends
+      // so its Docker/SSH helper is not left running or frozen behind backpressure.
+      artifact.stream.unpipe(hasher);
+      artifact.stream.destroy();
+      hasher.destroy();
+    }
+  }
+
+  private async runHook(
+    service: ServiceHandle,
+    executor: BackupExecutor,
+    command: string,
+    phase: "pre" | "post",
+    log: string[],
+    timeoutSeconds: number,
+  ): Promise<void> {
+    log.push(`[${phase}-hook] $ ${command}`);
+    const { stdout, awaitExit } = await executor.execStream(service, ["sh", "-c", command], {
+      timeoutMs: timeoutSeconds * 1000,
+    });
+    // Collect stdout for the hook log.
+    const chunks: Buffer[] = [];
+    stdout.on("data", (chunk: Buffer) => {
+      if (chunks.length < 64) chunks.push(chunk);
+    });
+    // `awaitExit` can settle before the stream has delivered its buffered chunks,
+    // which loses the hook's output entirely for a hook that finishes fast. Wait
+    // for the stream as well — bounded, because a killed exec can leave it open
+    // forever and a hook log must never hold up the backup.
+    const drained = new Promise<void>((resolve) => {
+      stdout.once("end", () => resolve());
+      stdout.once("close", () => resolve());
+      stdout.once("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "platform/engine/modules/backups/backup.orchestrator"); return resolve(); });
+    });
+    const exit = await awaitExit;
+    let drainTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      drained,
+      new Promise<void>((resolve) => {
+        drainTimer = setTimeout(resolve, HOOK_DRAIN_TIMEOUT_MS);
+      }),
+    ]);
+    if (drainTimer) clearTimeout(drainTimer);
+    const stdoutText = Buffer.concat(chunks)
+      .toString("utf8")
+      .slice(0, 8 * 1024);
+    log.push(stdoutText);
+    if (exit.stderr) log.push(`[${phase}-hook stderr] ${exit.stderr.slice(0, 4 * 1024)}`);
+    // An UNKNOWN exit status is not success. Executors can surface a null exit
+    // code (docker reports ExitCode: null while an exec is still reaping, ssh2
+    // reports none when a channel dies), and the pre-hook is what guarantees the
+    // snapshot is consistent — reading "don't know" as 0 would ship a torn dump.
+    const code: number | null | undefined = exit.code;
+    if (code !== 0) {
+      throw new Error(
+        `${phase}-hook exited with code ${code ?? "unknown (no exit status reported)"}`,
+      );
+    }
+  }
+
+  /**
+   * Materialize a mail server as a backup source. A mail server is a bare
+   * SSH host (no project/service), so we build a synthetic ServiceHandle
+   * from the `mail_servers` + `servers` rows and resolve the `bare`
+   * executor bound to that server. resolveTargetPlatform enforces org
+   * membership (throws if the server isn't in the destination's org).
+   */
+  private async buildMailSource(
+    mailServerId: string,
+    destinationOrgId: string,
+  ): Promise<{ handle: ServiceHandle; executor: BackupExecutor; runtime: RuntimeAdapter; ctx: RunContext }> {
+    const mailRow = await repos.mailServer.get(mailServerId);
+    if (!mailRow) throw new Error(`Mail server ${mailServerId} not found`);
+    const domain = mailRow.domain ?? "mail";
+    const slug = (domain.replace(/[^a-zA-Z0-9.-]/g, "-").toLowerCase() || "mail").slice(0, 63);
+
+    const targetPlatform = await resolveTargetPlatform(
+      "server",
+      "bare",
+      mailServerId,
+      destinationOrgId,
+    );
+    const executor = resolveExecutor(targetPlatform.runtime.name, targetPlatform.runtime);
+
+    const handle: ServiceHandle = {
+      id: mailServerId,
+      projectId: "",
+      name: "mail",
+      image: null,
+      env: {},
+      volumes: ["/var/vmail"],
+      containerId: null,
+      projectSlug: slug,
+      namespaceVolumes: false,
+    };
+
+    return {
+      handle,
+      executor,
+      runtime: targetPlatform.runtime,
+      ctx: {
+        projectSlug: slug,
+        projectName: domain,
+        serviceName: "mail",
+        manifest: {
+          projectId: mailServerId,
+          serviceId: mailServerId,
+          serviceName: "mail",
+          serviceImage: null,
+          ports: [],
+          command: null,
+          environmentKeys: [],
+        },
+      },
+    };
+  }
+
+  private async buildServiceHandle(serviceRow: Service): Promise<ServiceHandle> {
+    const project = await repos.project.findById(serviceRow.projectId);
+    if (!project) throw new Error(`Project ${serviceRow.projectId} not found`);
+
+    const live = await this.resolveServiceContainer(project, serviceRow);
+    return serviceHandleFor(serviceRow, {
+      projectSlug: project.slug,
+      containerId: live.containerId,
+      containerRunning: live.running,
+      environment: live.environment,
+    });
+  }
+
+  /** Find the live container for a service, via the shared resolver — verified
+   *  against the host, so a backup never targets a container a redeploy already
+   *  replaced. The RUNNING flag rides along because a logical dump has to exec
+   *  inside the container, and a stopped one still has an id; the ENVIRONMENT rides
+   *  along because the producer's env has to be read at the scope the running
+   *  container was built from. */
+  private async resolveServiceContainer(
+    project: Project,
+    serviceRow: Service,
+  ): Promise<{ containerId: string | null; running: boolean | null; environment?: string }> {
+    if (!project.activeDeploymentId) return { containerId: null, running: null };
+    const dep = await findActiveDeployment(project);
+    if (!dep) return { containerId: null, running: null };
+    const live = await liveContainerForService(project, dep, serviceRow, {
+      projectId: project.id,
+    });
+    return { ...live, environment: dep.environment ?? undefined };
+  }
+}
+
+export const backupOrchestrator = new BackupOrchestrator();

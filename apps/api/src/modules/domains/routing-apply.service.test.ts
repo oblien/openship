@@ -1,9 +1,15 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn(), listByDeployment: vi.fn() }));
-const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn() }));
+const domainRepo = vi.hoisted(() => ({
+  listByProject: vi.fn(),
+  findByHostname: vi.fn(),
+  findOrCreateWithStatus: vi.fn(),
+  update: vi.fn(),
+}));
 
 const resolveDeploymentRuntime = vi.hoisted(() => vi.fn());
 const usesManagedRouting = vi.hoisted(() => vi.fn().mockReturnValue(false));
@@ -26,24 +32,299 @@ vi.mock("@repo/db", async (importOriginal) => {
 // The service resolves a PLATFORM now (`{platform:{routing,runtime}}`) and releases
 // its docker transport when done, so the flat stub above is adapted to that shape
 // rather than re-written per test.
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   usesManagedRouting,
+  resolveDeploymentStaticRoot: () => undefined,
   disposePlatform: () => {},
   resolveDeploymentPlatform: async (...args: unknown[]) => {
     const flat = (await resolveDeploymentRuntime(...args)) as Record<string, unknown>;
     return { platform: flat, effectiveTarget: flat.effectiveTarget, serverId: flat.serverId };
   },
 }));
-vi.mock("../../lib/route-apply.service", () => ({ reconcileProjectRoutes }));
+vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({ reconcileProjectRoutes }));
+vi.mock("@repo/platform/engine/lib/domain-claims", () => ({
+  routableWithoutOwnership: async () => false,
+}));
 vi.mock("../../lib/controller-helpers", () => ({ platform: () => ({ target: "selfhosted" }) }));
 
-import { applyProjectRouting } from "./routing-apply.service";
+import { CloudInfraProvider } from "@repo/adapters";
+import {
+  applyCloudRouting,
+  applyProjectRouting,
+} from "@repo/platform/engine/modules/domains/routing-apply.service";
 
 function emittedRegisters() {
   expect(reconcileProjectRoutes).toHaveBeenCalledTimes(1);
   const [, opts] = reconcileProjectRoutes.mock.calls[0];
   return opts.registers;
 }
+
+beforeEach(() => {
+  domainRepo.findByHostname.mockReset().mockResolvedValue(undefined);
+  domainRepo.findOrCreateWithStatus.mockReset().mockImplementation(async (input) => ({
+    domain: { id: `dom_${input.hostname}`, sslStatus: "none", ...input },
+    created: true,
+  }));
+  domainRepo.update.mockReset().mockResolvedValue(undefined);
+});
+
+describe("Cloud Docker route tables", () => {
+  const publish = vi.fn();
+  const target = vi.fn();
+  const routing = Object.assign(Object.create(CloudInfraProvider.prototype), {
+    publishRoute: publish,
+    resolveRoutingTarget: target,
+  }) as CloudInfraProvider;
+  const web = {
+    id: "web",
+    name: "web",
+    projectId: "stack",
+    kind: "compose",
+    enabled: true,
+    exposed: true,
+    exposedPort: "8080",
+    ports: ["8080", "9090"],
+    domainType: "free",
+    domain: "stack",
+    publicEndpoints: [
+      { port: 8080, domainType: "free", domain: "stack" },
+      { port: 9090, domainType: "free", domain: "stack-console" },
+    ],
+  };
+  const api = {
+    ...web,
+    id: "api",
+    name: "api",
+    ports: ["8080"],
+    publicEndpoints: [{ port: 8080, domainType: "free", domain: "stack-api" }],
+  };
+  const base = {
+    id: "stack",
+    organizationId: "tenant",
+    slug: "stack",
+    port: 8080,
+    routingConfig: null,
+    compositeRoutes: null,
+    workspaceId: "shared-vm",
+  };
+  const liveRows = [
+    { serviceId: "web", containerId: "web-container" },
+    { serviceId: "api", containerId: "api-container" },
+  ];
+  const apply = (project: Record<string, unknown> = base, defs: unknown[] = [web, api]) =>
+    applyCloudRouting({
+      project: project as never,
+      defs: defs as never,
+      liveRows: liveRows as never,
+      routing,
+    });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    projectRepo.findById.mockResolvedValue(base);
+    domainRepo.listByProject.mockResolvedValue([]);
+    publish.mockResolvedValue(undefined);
+    target.mockImplementation(async (container: string, port: number) => {
+      const published = (
+        {
+          "web-container:8080": 30001,
+          "web-container:9090": 30002,
+          "api-container:8080": 30003,
+        } as Record<string, number>
+      )[`${container}:${port}`];
+      if (!published) throw new Error("service port is not published");
+      return { workspace: "shared-vm", port: published };
+    });
+  });
+  it("repairs an existing single static container route without rebuilding", async () => {
+    const registerRoute = vi.fn().mockResolvedValue(undefined);
+    const savedDomain = {
+      id: "static-domain",
+      projectId: "stack",
+      hostname: "static.opsh.io",
+      targetPath: "/",
+      targetPort: null,
+      domainType: "free",
+      verified: true,
+      isPrimary: true,
+    };
+    domainRepo.listByProject.mockResolvedValue([savedDomain]);
+    domainRepo.findByHostname.mockResolvedValue(savedDomain);
+    target.mockResolvedValue({ workspace: "shared-vm", port: 30000 });
+    await applyCloudRouting({
+      project: { ...base, workloadType: "static", hasServer: false, port: 3000 } as never,
+      deployment: {
+        id: "release",
+        containerId: "static-container",
+        meta: {
+          runtimeMode: "docker",
+          workload: "static",
+          port: 3000,
+          serviceDeploymentMode: "single",
+        },
+      } as never,
+      defs: [],
+      liveRows: [],
+      routing: Object.assign(Object.create(CloudInfraProvider.prototype), {
+        certificateManagement: "provider",
+        registerRoute,
+        resolveRoutingTarget: target,
+      }),
+    });
+    expect(target).toHaveBeenCalledWith("static-container", 3000);
+    expect(registerRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: "static.opsh.io",
+        targetUrl: "http://127.0.0.1:30000",
+      }),
+    );
+  });
+  it("routes each free endpoint through its live host port on the same VM", async () => {
+    await apply();
+    expect(publish.mock.calls.map((call) => call.slice(0, 3))).toEqual([
+      ["stack.opsh.io", 30001, false],
+      ["stack-console.opsh.io", 30002, false],
+      ["stack-api.opsh.io", 30003, false],
+    ]);
+    expect(publish.mock.calls.map((call) => call[3].routes[0].action)).toEqual([
+      { kind: "proxy", workspace: "shared-vm", port: 30001 },
+      { kind: "proxy", workspace: "shared-vm", port: 30002 },
+      { kind: "proxy", workspace: "shared-vm", port: 30003 },
+    ]);
+  });
+  it("resolves project-level domains to their service's exact published port", async () => {
+    domainRepo.listByProject.mockResolvedValue([
+      {
+        hostname: "console.example.com",
+        targetPort: 9090,
+        domainType: "custom",
+        serviceId: null,
+        verified: true,
+      },
+    ]);
+    await apply();
+    expect(publish).toHaveBeenCalledWith(
+      "console.example.com",
+      30002,
+      true,
+      expect.objectContaining({
+        routes: [
+          expect.objectContaining({
+            action: { kind: "proxy", workspace: "shared-vm", port: 30002 },
+          }),
+        ],
+      }),
+    );
+  });
+  it("publishes one complete table when a composite shares a service's hostname", async () => {
+    await apply({
+      ...base,
+      compositeRoutes: [
+        {
+          hostname: "stack.opsh.io",
+          isCustomDomain: false,
+          rootServiceId: "web",
+          locations: [
+            { pathPrefix: "/api/", serviceId: "api" },
+            { pathPrefix: "/api/status", serviceId: "web", exact: true },
+          ],
+        },
+      ],
+    });
+    const writes = publish.mock.calls.filter((call) => call[0] === "stack.opsh.io");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]![3].routes).toEqual([
+      {
+        match: { path: "/api/status", type: "exact" },
+        action: { kind: "proxy", workspace: "shared-vm", port: 30001 },
+      },
+      {
+        match: { path: "/api/", type: "prefix" },
+        action: { kind: "proxy", workspace: "shared-vm", port: 30003 },
+      },
+      {
+        match: { path: "/", type: "prefix" },
+        action: { kind: "proxy", workspace: "shared-vm", port: 30001 },
+      },
+    ]);
+  });
+  it("publishes a project-owned path-only domain with no catch-all cloud rule", async () => {
+    domainRepo.listByProject.mockResolvedValue([{
+      projectId: "stack", hostname: "api.onvo.me", serviceId: null, targetPort: null, domainType: "custom",
+    }]);
+    await apply({
+      ...base,
+      compositeRoutes: [{
+        hostname: "api.onvo.me", isCustomDomain: true,
+        locations: [{ pathPrefix: "/v3", serviceId: "api" }],
+      }],
+    });
+    expect(publish).toHaveBeenCalledWith("api.onvo.me", undefined, true, {
+      routes: [{ match: { path: "/v3", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30003 } }],
+    });
+  });
+  it("keeps the old composite table if any path target is missing, while updating other hosts", async () => {
+    await expect(
+      apply({
+        ...base,
+        compositeRoutes: [
+          {
+            hostname: "stack.opsh.io",
+            isCustomDomain: false,
+            rootServiceId: "web",
+            locations: [{ pathPrefix: "/api/", serviceId: "missing" }],
+          },
+        ],
+      }),
+    ).rejects.toThrow("stack.opsh.io");
+    expect(publish.mock.calls.map((call) => call[0])).toEqual([
+      "stack-console.opsh.io",
+      "stack-api.opsh.io",
+    ]);
+  });
+  it("includes the default internal API path for a static frontend and backend", async () => {
+    await apply(base, [
+      { ...web, kind: "monorepo", framework: "vite", startCommand: null },
+      {
+        ...api,
+        kind: "monorepo",
+        framework: "express",
+        startCommand: "node server.js",
+        exposed: false,
+      },
+    ]);
+    const rules = publish.mock.calls.find((call) => call[0] === "stack.opsh.io")![3].routes;
+    expect(rules).toEqual([
+      {
+        match: { path: "/api/", type: "prefix" },
+        action: { kind: "proxy", workspace: "shared-vm", port: 30003 },
+      },
+      {
+        match: { path: "/", type: "prefix" },
+        action: { kind: "proxy", workspace: "shared-vm", port: 30001 },
+      },
+    ]);
+  });
+  it("keeps a saved canonical redirect in front of a composite's proxy rules", async () => {
+    domainRepo.listByProject.mockResolvedValue([
+      {
+        hostname: "stack.opsh.io",
+        serviceId: "web",
+        redirectTo: "stack-api.opsh.io",
+        redirectStatus: 307,
+      },
+    ]);
+    await apply({
+      ...base,
+      compositeRoutes: [
+        { hostname: "stack.opsh.io", isCustomDomain: false, rootServiceId: "web", locations: [] },
+      ],
+    });
+    expect(publish.mock.calls.find((call) => call[0] === "stack.opsh.io")![3].routes[0]).toEqual({
+      match: { path: "/(.*)", type: "wildcard" },
+      action: { kind: "redirect", status: 307, to: "https://stack-api.opsh.io/$1" },
+    });
+  });
+});
 
 /** The topology-aware writer is intentionally last for a shared hostname. */
 function emittedRegister() {
@@ -99,6 +380,7 @@ function storeRow(row: {
 
 const project = (routeStrategy = "auto") => ({
   id: "proj_1",
+  organizationId: "org_1",
   activeDeploymentId: "dep_1",
   routeStrategy,
   routingConfig: null,
@@ -106,7 +388,7 @@ const project = (routeStrategy = "auto") => ({
     { hostname: "app.example.com", isCustomDomain: true, rootServiceId: "svc_1", locations: [] },
   ],
   slug: "app",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   webhookDomain: null,
 });
 
@@ -118,6 +400,7 @@ describe("applyProjectRouting — upstream resolution", () => {
 
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1",
       organizationId: "org_1",
       meta: { deployTarget: "local", runtimeMode: "docker" },
     });
@@ -153,6 +436,94 @@ describe("applyProjectRouting — upstream resolution", () => {
       hostname: "app.example.com",
       targetUrl: "http://172.19.0.2:3001",
     });
+    expect(domainRepo.findOrCreateWithStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "proj_1",
+        serviceId: "svc_1",
+        hostname: "app.example.com",
+        targetPort: 3001,
+        domainType: "custom",
+        verified: false,
+        status: "pending",
+        verificationToken: expect.any(String),
+      }),
+    );
+  });
+  it("reapplies project-owned path-only routes from live containers without exposing a root endpoint", async () => {
+    projectRepo.findById.mockResolvedValue({
+      ...project(),
+      compositeRoutes: [{ hostname: "api.onvo.me", isCustomDomain: true,
+        locations: [{ pathPrefix: "/v3", serviceId: "svc_1", port: 3001 }] }],
+    });
+    serviceRepo.listByProject.mockResolvedValue([{
+      id: "svc_1", projectId: "proj_1", name: "api", enabled: true, exposed: false, ports: ["3001"], kind: "compose",
+    }]);
+    domainRepo.listByProject.mockResolvedValue([{
+      projectId: "proj_1", hostname: "api.onvo.me", serviceId: null, domainType: "custom", targetPort: null,
+    }]);
+    await applyProjectRouting("proj_1");
+    expect(emittedRegister()).toEqual({
+      hostname: "api.onvo.me", isCustomDomain: true, notFound: true,
+      proxyLocations: [{ pathPrefix: "/v3", targetUrl: "http://172.19.0.2:3001" }],
+    });
+  });
+
+  it("routes service and composite hosts to a started replacement before its DB commit", async () => {
+    const getContainerInfo = vi.fn(async (id: string) => ({
+      containerId: id,
+      status: id === "replacement" ? "running" : "stopped",
+      ip: "172.19.0.9",
+    }));
+    resolveDeploymentRuntime.mockResolvedValue({
+      runtime: {
+        name: "docker",
+        supports: () => true,
+        getContainerInfo,
+        getContainerIp: async (id: string) => (id === "replacement" ? "172.19.0.9" : null),
+      },
+      routing: { registerRoute: vi.fn() },
+      effectiveTarget: "local",
+    });
+    await applyProjectRouting("proj_1", {
+      serviceRuntime: {
+        serviceId: "svc_1",
+        containerId: "replacement",
+        ip: "172.19.0.9",
+      },
+    });
+    expect(emittedRegister()).toMatchObject({
+      hostname: "app.example.com",
+      targetUrl: "http://172.19.0.9:3001",
+    });
+    expect(getContainerInfo.mock.calls.every(([id]) => id === "replacement")).toBe(true);
+    expect((await serviceRepo.listByDeployment())[0].containerId).toBe("container_1");
+  });
+
+  it("does not route a foreign hostname through either the service or its composite overlay", async () => {
+    domainRepo.findByHostname.mockResolvedValue({ id: "foreign", projectId: "other-project" });
+    const onWarning = vi.fn();
+    await applyProjectRouting("proj_1", { onWarning });
+    expect(onWarning).toHaveBeenCalledWith(expect.stringContaining("another project"));
+    expect(domainRepo.findOrCreateWithStatus).not.toHaveBeenCalled();
+    expect(reconcileProjectRoutes).not.toHaveBeenCalled();
+  });
+
+  it("keeps a migrated domain's complete route when any path upstream is unavailable", async () => {
+    projectRepo.findById.mockResolvedValue({
+      ...project(),
+      compositeRoutes: [
+        {
+          hostname: "app.example.com",
+          isCustomDomain: true,
+          rootServiceId: "svc_1",
+          locations: [{ pathPrefix: "/api/", serviceId: "missing-service" }],
+        },
+      ],
+    });
+    const onWarning = vi.fn();
+    await applyProjectRouting("proj_1", { onWarning });
+    expect(onWarning).toHaveBeenCalledWith(expect.stringContaining("app.example.com/api/"));
+    expect(reconcileProjectRoutes).not.toHaveBeenCalled();
   });
 
   /**
@@ -422,6 +793,7 @@ describe("applyProjectRouting — static frontend composite", () => {
     projectRepo.findById.mockResolvedValue({ ...project(), compositeRoutes: [] });
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1",
       organizationId: "org_1",
       meta: { deployTarget: "local", runtimeMode: "docker" },
     });
@@ -437,12 +809,9 @@ describe("applyProjectRouting — static frontend composite", () => {
     await applyProjectRouting("proj_1");
 
     const registers = emittedRegisters();
-    expect(registers).toHaveLength(2);
-    expect(registers[0]).toMatchObject({
-      hostname: "app.example.com",
-      staticRoot: RELEASE_DIR,
-    });
-    expect(registers[0].proxyLocations).toBeUndefined();
+    // Never publish a root-only intermediate route: it would briefly send /api
+    // to the frontend, and leave it there if the second write failed.
+    expect(registers).toHaveLength(1);
     const register = registers.at(-1);
     expect(register).toMatchObject({
       hostname: "app.example.com",
@@ -466,7 +835,7 @@ describe("applyProjectRouting — static frontend composite", () => {
 
   it("says why when the composite still cannot be built", async () => {
     rows(null);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
 
     await applyProjectRouting("proj_1");
 
@@ -499,16 +868,23 @@ describe("applyProjectRouting — static frontend composite", () => {
       },
     ]);
     runtimeReturning({ ip: null });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
 
     await applyProjectRouting("proj_1");
 
-    expect(emittedRegisters()).toMatchObject([
-      { hostname: "app.example.com", staticRoot: RELEASE_DIR },
-    ]);
+    expect(reconcileProjectRoutes).not.toHaveBeenCalled();
     const logged = warn.mock.calls.flat().join(" ");
     expect(logged).toMatch(/backend has no live upstream/);
     expect(logged).not.toMatch(/frontend has neither/);
     warn.mockRestore();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted" }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "selfhosted" }),
+}));

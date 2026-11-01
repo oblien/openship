@@ -8,7 +8,7 @@ import {
   resolveInternalEndpoint,
   isValidEnvKey,
 } from "@repo/core";
-import { toInternalUrl, isNetworkUrl } from "./project-connection.util";
+import { toInternalUrl, isNetworkUrl } from "@repo/platform/engine/modules/projects/project-connection.util";
 
 // Minimal templates — getAppEndpoints reads `endpoints` when present.
 const MONGO = {

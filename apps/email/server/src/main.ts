@@ -35,6 +35,7 @@ import { getSession } from './lib/session';
 import { getBranding, assetsDir } from './lib/branding';
 import { renderIndexHtml } from './lib/index-html';
 import { brandingAdminRoute } from './routes/branding-admin';
+import type { Server } from 'bun';
 
 const app = new Hono();
 
@@ -168,7 +169,19 @@ app.get('/index.html', sendIndexHtml);
 // Static files: assets, fonts, manifest, etc. serveStatic falls through to
 // the next handler when a path doesn't resolve to a file on disk, which is
 // what lets the SPA fallback below handle client-side routes.
-app.use('/*', serveStatic({ root: clientBuildDir }));
+app.use('/*', serveStatic({
+  root: clientBuildDir,
+  precompressed: true,
+  onFound: (_path, c) => {
+    if (/^\/assets\/[^/]+-[\w-]{8}\.[^/]+$/.test(c.req.path)) {
+      c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+    // Hono adds Vary for compressed files; identity responses vary too.
+    if (!c.res.headers.has('Content-Encoding')) {
+      c.header('Vary', 'Accept-Encoding', { append: true });
+    }
+  },
+}));
 
 // SPA fallback - any unmatched GET serves index.html so React Router can
 // take over routing on the client. Registered last so it never shadows API
@@ -182,5 +195,13 @@ console.log(`[zero] listening on http://localhost:${port}`);
 
 export default {
   port,
-  fetch: app.fetch,
+  async fetch(request: Request, server: Server<unknown>) {
+    const response = await app.fetch(request);
+    // Quiet SSE responses outlive Bun's default ten-second idle timeout.
+    // Keep ordinary request timeouts intact.
+    if (response.headers.get('Content-Type')?.startsWith('text/event-stream')) {
+      server.timeout(request, 0);
+    }
+    return response;
+  },
 };

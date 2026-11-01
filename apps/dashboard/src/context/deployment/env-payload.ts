@@ -13,8 +13,8 @@ function sourceEnvRows(env?: Record<string, string>): EnvironmentVariable[] {
     key,
     value,
     visible: true,
-    // Source values are masked at every read boundary. Preserve the sentinel so
-    // deploy can recover the value from its own trusted source read.
+    // Metadata-only scans can still contain masks. Preserve those sentinels so
+    // deploy can recover values from its trusted source read.
     preserveValue: isMaskedValue(value) || undefined,
   }));
 }

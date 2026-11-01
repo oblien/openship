@@ -1,12 +1,12 @@
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-
 /** Shared run formatting/status helpers for the jobs UI (list, detail, logs). */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export function formatTime(iso: string | null): string {
   if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/components/jobs/jobFormat");
     return "—";
   }
 }
@@ -21,5 +21,5 @@ export function statusTone(status: string): string {
 }
 
 export function statusIcon(status: string) {
-  return status === "success" ? CheckCircle2 : status === "failed" ? XCircle : Loader2;
+  return status === "success" ? "check-circle" : status === "failed" ? "x-circle" : "spinner";
 }

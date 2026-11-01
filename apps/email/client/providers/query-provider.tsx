@@ -12,6 +12,7 @@ import { CACHE_BURST_KEY } from '@/lib/constants';
 import { signOut } from '@/lib/auth-client';
 import { get, set, del } from 'idb-keyval';
 import superjson from 'superjson';
+import { shouldPersistQuery } from '@/lib/query-persistence';
 
 function createIDBPersister(idbValidKey: IDBValidKey = 'zero-query-cache') {
   return {
@@ -133,13 +134,7 @@ export function QueryProvider({
         // update entirely if IDB hadn't synced yet). Settings, labels,
         // and connection data are slow-changing and safe to persist.
         dehydrateOptions: {
-          shouldDehydrateQuery: (query) => {
-            const head = query.queryKey?.[0];
-            const path = Array.isArray(head) ? head : [];
-            const root = typeof path[0] === 'string' ? path[0] : '';
-            if (root === 'mail' || root === 'drafts') return false;
-            return true;
-          },
+          shouldDehydrateQuery: shouldPersistQuery,
         },
       }}
       onSuccess={() => {

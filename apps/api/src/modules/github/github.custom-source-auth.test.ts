@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   cacheSet: vi.fn(),
   cloudConnected: vi.fn(),
   cloudInstallations: vi.fn(),
+  cloudUserStatus: vi.fn(),
   cloudInstallationToken: vi.fn(),
   findByOrgAndOwner: vi.fn(),
   findByOrgOwnerAndInstallationId: vi.fn(),
@@ -13,7 +14,7 @@ const h = vi.hoisted(() => ({
   appFetch: vi.fn(),
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     CLOUD_MODE: false,
     GITHUB_AUTH_MODE: "auto",
@@ -38,44 +39,46 @@ vi.mock("@repo/db", () => ({
   and: vi.fn(),
 }));
 
-vi.mock("../../lib/auth", () => ({ auth: { api: { getAccessToken: vi.fn() } } }));
-vi.mock("../../lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: { api: { getAccessToken: vi.fn() } } }));
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: vi.fn(async () => ({
     get: h.cacheGet,
     set: h.cacheSet,
     invalidateByPrefix: vi.fn(),
   })),
 }));
-vi.mock("../../lib/org-actor", () => ({ resolveOrgOwner: vi.fn() }));
-vi.mock("../../lib/cloud/session", () => ({
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({ resolveOrgOwner: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/cloud/session", () => ({
   isCloudConnectedForOrg: h.cloudConnected,
   isCloudConnected: h.cloudConnected,
 }));
-vi.mock("../../lib/cloud/client", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/scope", () => ({ assertCloudTenantScope: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({
   cloudClient: vi.fn(() => ({
     github: {
       installations: h.cloudInstallations,
+      userStatus: h.cloudUserStatus,
       installationToken: h.cloudInstallationToken,
     },
   })),
 }));
-vi.mock("./github.http", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({
   ghFetch: vi.fn(),
   ghFetchPublic: vi.fn(),
   ghFetchSoft: vi.fn(),
 }));
-vi.mock("./github.app-client", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.app-client", () => ({
   generateGitHubAppJwt: vi.fn(),
   githubAppFetch: h.appFetch,
 }));
-vi.mock("./github-source.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github-source.service", () => ({
   createSourceInstallUrl: vi.fn(),
   hasActiveGitHubSource: h.hasActiveSource,
   resolveGitHubApiBaseUrl: vi.fn(),
   resolveGitHubSourceCredentialsForInstallation: h.resolveSourceCredentials,
 }));
 
-import { getInstallationId, getInstallationToken, resolveGitHubAuthMode } from "./github.auth";
+import { getInstallationId, getInstallationToken, resolveGitHubAuthMode, getUserStatus, getUserInstallations } from "@repo/platform/engine/modules/github/github.auth";
 
 const ctx = {
   userId: "user_1",
@@ -168,5 +171,19 @@ describe("mixed custom and legacy GitHub source resolution", () => {
     );
     expect(h.cloudInstallationToken).toHaveBeenCalledWith("legacy-owner", undefined);
     expect(h.appFetch).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("hosted App workspace identity", () => {
+  it("reads status with the same org-owner Cloud identity as installation discovery", async () => {
+    h.hasActiveSource.mockResolvedValue(false);
+    h.cloudConnected.mockResolvedValue(true);
+    h.cloudUserStatus.mockResolvedValue({ connected: true, login: "workspace-owner" });
+    h.cloudInstallations.mockResolvedValue([{ id: 99, login: "workspace-owner", avatarUrl: "", type: "User" }]);
+    const { cloudClient } = await import("@repo/platform/engine/lib/cloud/client");
+    expect(await getUserStatus("local-member-with-a-different-cloud-login", ctx)).toMatchObject({ connected: true, login: "workspace-owner" });
+    expect(await getUserInstallations(ctx)).toHaveLength(1);
+    expect(vi.mocked(cloudClient).mock.calls.slice(-2).map(call => call[0])).toEqual([{ organizationId: "org_1" }, { organizationId: "org_1" }]);
   });
 });

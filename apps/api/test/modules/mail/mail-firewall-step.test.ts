@@ -40,7 +40,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
 });
 
 import { MAIL_PORTS } from "@repo/adapters";
-import { stepOpenMailFirewall } from "../../../src/modules/mail/mail.service";
+import { stepOpenMailFirewall } from "@repo/platform/engine/modules/mail/mail.service";
 
 function fakeExecutor(fail?: (cmd: string) => string | undefined) {
   const commands: string[] = [];

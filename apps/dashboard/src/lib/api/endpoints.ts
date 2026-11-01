@@ -6,6 +6,10 @@
  */
 
 export const endpoints = {
+  instance: {
+    status: "system/instance",
+    action: (action: "preflight" | "offer" | "move" | "provision" | "resume" | "cancel" | "pair" | "connect" | "disconnect" | "return") => `system/instance/${action}`,
+  },
   /* ---------------------------------------------------------------- */
   /*  Projects                                                        */
   /* ---------------------------------------------------------------- */
@@ -57,6 +61,7 @@ export const endpoints = {
     sleepMode: (id: string | number) => `projects/${id}/sleep-mode`,
     deployments: (id: string | number) => `projects/${id}/deployments`,
     logs: (id: string | number) => `projects/${id}/logs`,
+    roles: (id: string | number) => `projects/${id}/roles`,
     logsStream: (id: string | number) => `projects/${id}/logs/stream`,
     serverLogsRecent: (id: string | number) => `projects/${id}/server-logs/recent`,
     serverLogsStreamToken: (id: string | number) => `projects/${id}/server-logs/stream-token`,
@@ -66,7 +71,6 @@ export const endpoints = {
     folderScan: (sessionId: string) => `projects/folder/scan/${sessionId}`,
     // #336: POST { service, keys } — real (unmasked) values for one folder-scan
     // service's named keys.
-    folderEnvReveal: (sessionId: string) => `projects/folder/scan/${sessionId}/env-reveal`,
     folderUpload: (sessionId: string) => `projects/folder/upload/${sessionId}`,
   },
 
@@ -106,6 +110,8 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/stop`,
     restart: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/restart`,
+    applyEnvironment: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/apply-env`,
     driftAccept: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/drift/accept`,
     driftKeep: (projectId: string | number, serviceId: string) =>
@@ -116,6 +122,8 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/logs/stream`,
     envGet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
+    environment: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/environment`,
     envSet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
     // #336: POST { keys } — real (unmasked) values for the named keys only.
@@ -193,6 +201,18 @@ export const endpoints = {
     run: (key: string) => `jobs/${encodeURIComponent(key)}/run`,
     runDetail: (runId: string) => `jobs/runs/${encodeURIComponent(runId)}`,
     runStream: (runId: string) => `jobs/runs/${encodeURIComponent(runId)}/stream`,
+  },
+
+  actions: {
+    workflows: "actions/workflows",
+    workflow: (id: string) => `actions/workflows/${encodeURIComponent(id)}`,
+    runs: "actions/runs",
+    run: (id: string) => `actions/runs/${encodeURIComponent(id)}`,
+    runners: "actions/runners",
+    runner: (id: string) => `actions/runners/${encodeURIComponent(id)}`,
+    events: (id: string) => `actions/jobs/${encodeURIComponent(id)}/events`,
+    discover: "actions/discover",
+    preview: "actions/preview",
   },
 
   /* ---------------------------------------------------------------- */
@@ -372,6 +392,8 @@ export const endpoints = {
       export: "system/data-transfer/export",
       import: "system/data-transfer/import",
       importSession: "system/data-transfer/import/session",
+      importPreview: (sessionId: string) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/preview`,
       importChunk: (sessionId: string, index: number) =>
         `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/chunk/${index}`,
       importFinalizeStream: (sessionId: string) =>
@@ -399,6 +421,7 @@ export const endpoints = {
     portsCheck: "mail/ports/check",
     portsResolve: "mail/ports/resolve",
     admin: {
+      certificate: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/certificate`,
       domains: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/domains`,
       domain: (serverId: string, domain: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}`,
@@ -460,6 +483,9 @@ export const endpoints = {
   /*  Docker migration (inspect + adopt an existing Docker server)    */
   /* ---------------------------------------------------------------- */
   dockerMigration: {
+    sources: "migration/sources",
+    testSource: "migration/sources/test",
+    source: (id: string) => `migration/sources/${encodeURIComponent(id)}`,
     scan: "migration/scan",
     scanStream: "migration/scan/stream",
     revealEnv: "migration/reveal-env",
@@ -474,6 +500,7 @@ export const endpoints = {
     migration: (id: string) => `migration/migrations/${id}`,
     cutover: (id: string) => `migration/migrations/${id}/cutover`,
     cancel: (id: string) => `migration/migrations/${id}/cancel`,
+    respond: (id: string) => `migration/migrations/${id}/respond`,
     resume: (id: string) => `migration/migrations/${id}/resume`,
     cleanupTarget: (id: string) => `migration/migrations/${id}/cleanup-target`,
     active: "migration/active",
@@ -527,6 +554,8 @@ export const endpoints = {
     behind: "updates?behind=1",
     scan: "updates/scan",
     apply: (projectId: string) => `updates/${projectId}/apply`,
+    runtime: (projectId: string) => `updates/${projectId}/runtime`,
+    runtimeCheck: (projectId: string) => `updates/${projectId}/runtime/check`,
   },
 
   /* ---------------------------------------------------------------- */
@@ -535,6 +564,8 @@ export const endpoints = {
   issues: {
     open: "issues",
     resolved: "issues?status=resolved",
+    clearHistory: "issues/history",
+    summary: "issues/summary",
     health: "issues/health",
     healthScan: "issues/health/scan",
     rescan: "issues/rescan",
@@ -574,6 +605,8 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   backupDestinations: {
     list: "backup-destinations",
+    history: "backup-destinations/history",
+    runs: (id: string) => `backup-destinations/${id}/runs`,
     create: "backup-destinations",
     get: (id: string) => `backup-destinations/${id}`,
     update: (id: string) => `backup-destinations/${id}`,
@@ -584,14 +617,30 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
-  /*  Billing (Stripe-backed cloud billing — SaaS + local-proxy)      */
+  /*  Billing (Oblien-managed — SaaS + local proxy)                  */
   /* ---------------------------------------------------------------- */
   billing: {
+    actions: "billing/actions",
+    actionsPurchase: "billing/actions/purchase",
+    actionsCheckout: "billing/actions/checkout",
+    actionsResume: "billing/actions/checkout/resume",
+    checkouts: "billing/checkouts",
+    checkoutResume: "billing/checkout/resume",
+    checkoutCancel: "billing/checkout/cancel",
+    changePreview: "billing/subscription/change/preview",
+    change: "billing/subscription/change",
+    changeCancel: "billing/subscription/change/cancel",
+    customQuote: "billing/subscription/quote",
+    checkout: "billing/checkout",
     plans: "billing/plans",
     state: "billing/state",
+    creditAlerts: "billing/credit-alerts",
     usage: "billing/usage",
+    resources: "billing/resources",
     topupPacks: "billing/topup-packs",
     subscription: "billing/subscription",
+    cancel: "billing/cancel",
+    resume: "billing/resume",
     topup: "billing/topup",
     portal: "billing/portal",
   },

@@ -10,6 +10,7 @@
  *   - Linux   → systemd unit (system when root, else --user + linger), Restart=always
  *   - Windows → Scheduled Task at logon (best-effort; see docs)
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -416,7 +417,9 @@ function sweepOrphanPorts(): void {
     for (const token of q.out.split(/\s+/).filter(Boolean)) {
       const pid = Number(token);
       if (Number.isInteger(pid) && pid > 1 && pid !== self) {
-        try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+        try { process.kill(pid, "SIGKILL"); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "cli/lib/service");
+ /* already gone */ }
       }
     }
   }

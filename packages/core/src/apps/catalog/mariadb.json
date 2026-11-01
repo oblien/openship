@@ -1,0 +1,190 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": false,
+  "minEngine": "0.9.0",
+  "id": "mariadb",
+  "name": "MariaDB + Adminer",
+  "description": "A MySQL-compatible database with a lightweight Adminer control panel for queries, tables, and exports.",
+  "kind": "template",
+  "logo": "mariadb",
+  "category": "database",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "mariadb",
+      "restart": "unless-stopped",
+      "image": "mariadb:11.4.13",
+      "environment": {
+        "MARIADB_USER": "openship",
+        "MARIADB_DATABASE": "app"
+      },
+      "volumes": ["mariadb_data:/var/lib/mysql"],
+      "secretEnv": ["MARIADB_ROOT_PASSWORD", "MARIADB_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "30s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "adminer",
+      "restart": "unless-stopped",
+      "image": "adminer:6.1.1",
+      "environment": {
+        "ADMINER_DEFAULT_SERVER": "mariadb"
+      },
+      "exposedPort": 8080,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "dependsOn": ["mariadb"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "php -r \"exit(@file_get_contents('http://127.0.0.1:8080/') === false ? 1 : 0);\""
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 8,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 256,
+        "diskMb": 1024
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "service": "mariadb",
+      "key": "MARIADB_ROOT_PASSWORD",
+      "label": "Database root password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "mariadb",
+      "key": "MARIADB_PASSWORD",
+      "label": "Application database password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to MariaDB + Adminer",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Adminer",
+        "source": "publicUrl:adminer",
+        "kind": "url"
+      },
+      {
+        "id": "username",
+        "label": "Database user",
+        "source": "env:mariadb:MARIADB_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Database password",
+        "source": "env:mariadb:MARIADB_PASSWORD",
+        "secret": true,
+        "width": "half"
+      },
+      {
+        "id": "url",
+        "label": "Database URL",
+        "source": "template:mysql://openship:{{env:mariadb:MARIADB_PASSWORD}}@mariadb:3306/app",
+        "service": "mariadb",
+        "secret": true,
+        "envKey": "DATABASE_URL",
+        "recommended": true
+      },
+      {
+        "id": "rootPassword",
+        "label": "Database root password",
+        "source": "env:mariadb:MARIADB_ROOT_PASSWORD",
+        "secret": true
+      }
+    ],
+    "guide": {
+      "defaultMode": "internal",
+      "useHint": "Use the private connection URL for projects on this server, or Open in localhost for a client on your machine."
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "adminer",
+      "port": 8080,
+      "label": "Adminer",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "mariadb",
+      "port": 3306,
+      "label": "MariaDB",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "MySQL-compatible",
+        "description": "Connect your existing MySQL clients and frameworks."
+      },
+      {
+        "title": "Adminer",
+        "description": "Run queries and manage tables through the browser."
+      },
+      {
+        "title": "Separated credentials",
+        "description": "The application user and database root account have different generated passwords."
+      }
+    ],
+    "articleFile": "articles/mariadb.md"
+  },
+  "provides": [
+    {
+      "id": "mysql",
+      "category": "database",
+      "outputRefs": ["url"]
+    }
+  ],
+  "repository": "https://github.com/MariaDB/server",
+  "minResources": {
+    "cpuCores": 1.0,
+    "memoryMb": 768
+  },
+  "files": [
+    {
+      "service": "adminer",
+      "path": "/var/www/html/plugins-enabled/openship-servers.php",
+      "content": "<?php\nrequire_once __DIR__ . '/../plugins/login-servers.php';\nreturn new AdminerLoginServers(['MariaDB' => ['server' => 'mariadb', 'driver' => 'server']]);\n"
+    }
+  ],
+  "tags": ["mysql", "sql", "adminer", "relational"]
+}

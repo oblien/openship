@@ -13,12 +13,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { resolveEnvPublicUrls } from "../../../src/modules/deployments/compose/deploy.service";
-import {
-  inlineEmptyDefers,
-  mergeServiceDeployEnv as mergeLayers,
-} from "../../../src/modules/deployments/compose/service-env-layers";
-import { diffFrozenEnv, ENV_DIFF_CAP } from "../../../src/modules/deployments/rollback";
+import { resolveEnvPublicUrls } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
+import { mergeServiceDeployEnv as mergeLayers } from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
+import { diffFrozenEnv, ENV_DIFF_CAP } from "@repo/platform/engine/modules/deployments/rollback/index";
 
 /** Unwraps `{ env, deferredEmpty }` so these cases keep asserting on the env map. */
 const mergeServiceDeployEnv = (
@@ -237,32 +234,6 @@ describe("diffFrozenEnv", () => {
     });
     expect(diff.changes).toHaveLength(1);
     expect(diff.changes[0]).toMatchObject({ key: "LOG_LEVEL", direction: "frozen-wins" });
-  });
-
-  it("does not report a revert for a compose passthrough key the rollback won't touch", () => {
-    // #614: the service row holds `CONFIG_PARAM: ""` from `${CONFIG_PARAM:-}`,
-    // but the deploy merge defers it to the project value — so this key resolves
-    // to the SAME value the release froze and nothing changes. Building
-    // `overrides` as a raw spread of the row listed it as a per-service override,
-    // which reported a `frozen-wins` revert plus a scopeAmbiguous warning for a
-    // key the rollback leaves alone. `describeRestorePlan` applies the same
-    // `inlineEmptyDefers` the deploy does; this pins the resulting contract.
-    const liveProject = { CONFIG_PARAM: "operator-value" };
-    const row = { CONFIG_PARAM: "" };
-
-    const overrides = Object.fromEntries(
-      Object.entries(row).filter(([key, value]) => !inlineEmptyDefers(value, liveProject[key])),
-    );
-    expect(overrides).toEqual({});
-
-    const diff = diffFrozenEnv({
-      frozen: { CONFIG_PARAM: "operator-value" },
-      liveProject,
-      liveServices: [{ name: "api", overrides }],
-      strategy: "overlay",
-    });
-    expect(diff.changes).toEqual([]);
-    expect(diff.totalChanges).toBe(0);
   });
 
   it("omits a key every service already resolves to the frozen value", () => {

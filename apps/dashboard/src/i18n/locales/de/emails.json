@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "E-Mails",
+    "subtitle": "Nutze deine vorhandenen Postfächer mit Openship Webmail.",
+    "connectTitle": "Mailserver verbinden",
+    "description": "Verbinde einen beliebigen IMAP/SMTP-Server. Postfächer und E-Mail-Zustellung bleiben bei deinem Anbieter.",
+    "connectAction": "Vorhandenen Mailserver verbinden",
+    "signInHint": "Melde dich mit deiner E-Mail-Adresse und dem Postfachpasswort bei Webmail an.",
+    "manageAction": "Webmail-Apps verwalten"
+  },
+  "cloudComingSoon": {
+    "title": "Verwaltete E-Mail",
+    "badge": "Demnächst",
+    "description": "Verwaltete E-Mail auf Openship Cloud kommt demnächst. Cloud-Server-Tarife dienen dem Hosting von Anwendungen und stellen keinen Mailserver bereit.",
+    "selfHosted": "E-Mail auf Ihrem eigenen Server ist mit einer selbst gehosteten Openship-Installation verfügbar."
+  },
   "page": {
     "title": "E-Mail-Server",
     "subtitle": "Richte mit wenigen Klicks einen selbst gehosteten Mailserver ein",
@@ -132,7 +147,17 @@
     "hide": "Verbergen",
     "reveal": "Anzeigen",
     "generateTitle": "Ein starkes, zufälliges Passwort generieren",
-    "generate": "Generieren"
+    "generate": "Generieren",
+    "relay": {
+      "toggle": "Ausgehende E-Mails über einen E-Mail-Anbieter weiterleiten (Relay)",
+      "hint": "Empfohlen. Versand über vertrauenswürdige IPs eines Anbieters — IPs neuer Server stehen oft auf Blocklisten und viele Hoster blockieren den ausgehenden Port 25. Der Empfang verbleibt auf diesem Server.",
+      "region": "Region",
+      "username": "SMTP-Benutzername",
+      "password": "SMTP-Passwort",
+      "perDomainNote": "Gilt für alle Domains. Das Routing pro Domain und die DKIM- / MAIL FROM-Einträge des Anbieters für jede Domain werden nach der Installation im Reiter „Versand“ konfiguriert."
+    },
+    "startFailed": "Die Einrichtung der E-Mail-Engine konnte nicht gestartet werden.",
+    "startFailedFallback": "Verbindung zum Starten der Einrichtung fehlgeschlagen. Überprüfen Sie den SSH-Zugriff und versuchen Sie es erneut."
   },
   "sidebar": {
     "portConflict": {

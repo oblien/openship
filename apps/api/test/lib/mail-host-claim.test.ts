@@ -29,7 +29,7 @@ vi.mock("@repo/db", () => ({
 }));
 
 import { mailHostBaseDomain } from "@repo/core";
-import { mailHostRoutableByProject } from "../../src/lib/mail-host-claim";
+import { mailHostRoutableByProject } from "@repo/platform/engine/lib/mail-host-claim";
 
 const MAIL_ROW = {
   hostname: "mail.example.com",

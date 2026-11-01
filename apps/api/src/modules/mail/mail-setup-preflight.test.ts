@@ -4,9 +4,9 @@ import { connOk, connFail } from "@repo/core";
 // The real built-in checks drag in the ssh manager and the db; the preflight only
 // cares that it routes through the registry, so stub the side-effect import and
 // register the `ssh-server` kind ourselves (later registrations win).
-vi.mock("../../lib/connectivity-checks", () => ({}));
+vi.mock("@repo/platform/engine/lib/connectivity-checks", () => ({}));
 
-import { registerConnectivityCheck } from "../../lib/connectivity";
+import { registerConnectivityCheck } from "@repo/platform/engine/lib/connectivity";
 import { preflightMailSetup } from "./mail-setup-preflight";
 
 /**

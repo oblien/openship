@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["test/e2e/update-from-previous-release.e2e.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

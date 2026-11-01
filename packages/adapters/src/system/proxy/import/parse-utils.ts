@@ -74,6 +74,37 @@ export function extractBlocks(text: string, keyword: string): string[] {
   return blocks;
 }
 
+/** Read the first named directive in a comment-stripped block body. */
+export function firstDirective(body: string, name: string): string | undefined {
+  const m = body.match(new RegExp(`(?:^|[;{\\s])${name}\\s+([^;]+);`));
+  return m?.[1]?.trim();
+}
+
+/**
+ * Every `location <path> { … }` in a server block with its body, in source order.
+ * Balanced-brace matched so a nested `if {}` / `types {}` inside a location doesn't
+ * truncate it.
+ */
+export function locationBlocks(serverBody: string): { path: string; body: string }[] {
+  const out: { path: string; body: string }[] = [];
+  const re = /(?:^|[\s;}])location\s+([^{]+?)\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(serverBody)) !== null) {
+    const path = m[1].trim();
+    const openIdx = m.index + m[0].length - 1; // the `{`
+    let depth = 1;
+    let i = openIdx + 1;
+    for (; i < serverBody.length && depth > 0; i++) {
+      if (serverBody[i] === "{") depth++;
+      else if (serverBody[i] === "}") depth--;
+    }
+    if (depth !== 0) break; // unbalanced — stop
+    out.push({ path, body: serverBody.slice(openIdx + 1, i - 1) });
+    re.lastIndex = i;
+  }
+  return out;
+}
+
 /**
  * Single-quote a value for safe interpolation into a POSIX shell command
  * (wraps in `'…'` and escapes embedded quotes). Used to quote file paths fed to

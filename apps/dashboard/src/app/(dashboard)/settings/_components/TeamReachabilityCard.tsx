@@ -1,19 +1,22 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Inline team-invite guidance for a self-hosted instance with no public URL yet.
  *
  * Instead of dead-ending invites, we tell the operator exactly what to do based
  * on the instance-reachability detector (the single source of truth from the API
- * `getInstanceReachability`): install Openship as an app, or add a domain to it —
- * with a direct link to the Openship app's Domains tab. Renders nothing once the
+ * `getInstanceReachability`): move through Instance location, or finish an
+ * existing Openship app's domain. Renders nothing once the
  * instance is reachable (then invites are on).
  */
 
 import Link from "next/link";
-import { Globe, ArrowRight } from "lucide-react";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
+import { InstanceMoveLink } from "@/components/instance/InstanceMoveLink";
 
 export interface TeamReachability {
   configured: boolean;
@@ -25,16 +28,23 @@ export interface TeamReachability {
   selfAppHasVerifiedDomain: boolean;
 }
 
-export function TeamReachabilityCard({ reachability }: { reachability: TeamReachability | null }) {
+export function TeamReachabilityCard({
+  reachability,
+  canMigrate,
+}: {
+  reachability: TeamReachability | null;
+  canMigrate: boolean;
+}) {
   const { t } = useI18n();
   const w = t.settings.team.reachability;
+  const copy = t.settings.instance.location;
   const r = reachability;
 
   // Reachable → nothing to guide; the invite UI is enabled.
   if (r?.configured) return null;
 
-  let title = w.notInstalledTitle;
-  let body = w.notInstalledBody;
+  let title = copy.teamAccessTitle;
+  let body = copy.teamAccessHint;
   let href: string | null = null;
   let action = "";
 
@@ -55,22 +65,25 @@ export function TeamReachabilityCard({ reachability }: { reachability: TeamReach
 
   return (
     <SettingsSection
-      icon={Globe}
+      icon={"globe"}
       title={title}
-      description={w.description}
+      description={body}
       iconBg="bg-primary/10"
       iconColor="text-primary"
     >
-      <div className="space-y-4">
-        <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
+      <div className="flex flex-wrap items-center gap-2">
         {href && (
-          <Link
-            href={href}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            {action}
-            <ArrowRight className="size-4 rtl:rotate-180" />
-          </Link>
+          <Button asChild size="sm">
+            <Link href={href}>
+              {action}
+              <UiIcon name="arrow-right" className="rtl:rotate-180" />
+            </Link>
+          </Button>
+        )}
+        {canMigrate ? (
+          <InstanceMoveLink variant={href ? "ghost" : "secondary"} />
+        ) : (
+          <p className="text-xs text-muted-foreground">{copy.adminRequired}</p>
         )}
       </div>
     </SettingsSection>

@@ -241,4 +241,25 @@ describeDockerE2E("mail engine DB bootstrap (real postgres)", () => {
     const r = await docker(["exec", RUNNER, "bash", "-c", "exit 3"], { allowFail: true });
     expect(r.code).toBe(3);
   }, 60_000);
+
+  it("bootstraps a database on a configured non-default SQL port", async () => {
+    const custom = `${DB}-custom-port`;
+    try {
+      await docker([
+        "run", "-d", "--name", custom, "--network", NET,
+        "--env", `POSTGRES_PASSWORD=${PG_PASSWORD}`, "--env", "POSTGRES_DB=vmail",
+        DB_IMAGE, "postgres", "-p", "5544",
+      ]);
+      const result = await runBootstrap({ OPENSHIP_MAIL_DB_HOST: custom, OPENSHIP_MAIL_DB_PORT: "5544" });
+      expect(result.code, result.log).toBe(0);
+      const state = await docker([
+        "exec", "--env", `PGPASSWORD=${PG_PASSWORD}`, RUNNER,
+        "psql", "-h", custom, "-p", "5544", "-U", "postgres", "-d", "vmail", "-tAc",
+        "SELECT current_setting('port') || ':' || count(*) FROM mailbox WHERE password <> ''",
+      ]);
+      expect(state.stdout.trim()).toBe("5544:1");
+    } finally {
+      await docker(["rm", "-fv", custom], { allowFail: true });
+    }
+  }, 120_000);
 });

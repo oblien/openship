@@ -11,6 +11,7 @@ import ja from "./locales/ja/emailsAdmin.json";
 import pt from "./locales/pt/emailsAdmin.json";
 import tr from "./locales/tr/emailsAdmin.json";
 import zh from "./locales/zh/emailsAdmin.json";
+import ru from "./locales/ru/emailsAdmin.json";
 
 /**
  * The Outbound delivery card is the one place in the mail panel where a wrong
@@ -28,7 +29,7 @@ import zh from "./locales/zh/emailsAdmin.json";
  *      where the diagnosis belongs.
  */
 
-const LOCALES = Object.entries({ ar, de, es, fr, ja, pt, tr, zh });
+const LOCALES = Object.entries({ ar, de, es, fr, ja, pt, tr, zh, ru });
 
 /** Every leaf under a subtree, as dotted path → string. */
 function leaves(node: unknown, prefix: string): Record<string, string> {

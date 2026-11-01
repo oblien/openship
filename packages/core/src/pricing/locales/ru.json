@@ -1,0 +1,95 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Развёртывание статических сайтов в Openship Cloud бесплатно."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Для вашего первого полноценного приложения — контейнеры, базы данных и всё необходимое."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Для рабочих приложений, которым требуется пространство для роста."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Для команд с высокой нагрузкой на общей инфраструктуре."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Индивидуальные лимиты, выделенная инфраструктура и SLA."
+    },
+    "hobby": {
+      "name": "Hobby",
+      "tagline": "Небольшой управляемый сервер для личных проектов и повседневных приложений."
+    }
+  },
+  "features": {
+    "everythingIn": "Всё из плана {inherited}, а также:",
+    "staticOnly": "Только статические сайты — SSG, SPA и чистый HTML",
+    "anyWorkload": "Любые нагрузки — контейнеры, Compose, воркеры, Postgres, Redis",
+    "runningServices": "{runningServices} запущенных приложений, баз данных или воркеров",
+    "buildMinutes": "{buildMinutes} минут сборки в месяц",
+    "sharedBuilds": "Сборки используют мощности вашего сервера без месячного ограничения по времени",
+    "power": "До {powerCpu} vCPU и {powerRamGb} ГБ RAM на приложение",
+    "projects": "{maxProjects} проектов",
+    "freeSubdomains": "{freeSubdomains} бесплатных поддоменов {freeDomainSuffix}",
+    "freeSubdomainsUnlimited": "Неограниченное количество бесплатных поддоменов {freeDomainSuffix}",
+    "gitDeploys": "Деплой из GitHub, GitLab или любого Git-репозитория",
+    "customDomains": "Неограниченно пользовательских доменов с поддержкой TLS",
+    "deployLogs": "Логи сборки и деплоя в реальном времени",
+    "auditLog": "Журнал аудита всех изменений",
+    "unlimitedSeats": "Неограниченное число участников команды — без платы за место",
+    "sso": "SSO и SAML",
+    "customLimits": "Индивидуальные лимиты, согласованные в договоре",
+    "dedicatedInfra": "Выделенная инфраструктура и регионы",
+    "onboarding": "Персональный онбординг и помощь с миграцией",
+    "communitySupport": "Поддержка сообщества",
+    "emailSupport": "Поддержка по email",
+    "prioritySupport": "Приоритетная поддержка",
+    "dedicatedSupport": "Выделенная поддержка с SLA",
+    "selfHostedOpenSource": "Вся платформа с открытым исходным кодом (Apache 2.0)",
+    "selfHostedUnlimited": "Без ограничений по деплоям, проектам, серверам и доменам",
+    "selfHostedServices": "Все управляемые сервисы — Postgres, Redis, почта",
+    "selfHostedClients": "CLI, веб-интерфейс и десктоп — единый бэкенд",
+    "selfHostedFreeSubdomains": "{freeSubdomains} бесплатных поддоменов {freeDomainSuffix} при подключении к Cloud",
+    "monthlyCoverage": "CPU, RAM и диск включены в стоимость оплаченного периода",
+    "namespaceCapacity": "Всего: {namespaceCpu} vCPU, {namespaceRamGb} ГБ RAM, {namespaceDiskGb} ГБ диска"
+  },
+  "selfHosted": {
+    "name": "Собственный сервер",
+    "tagline": "Запуск всей платформы на собственных серверах. Любой Linux-сервер, любой провайдер, любой регион. Без ограничений, учета мест и телеметрии.",
+    "priceLabel": "Бесплатно",
+    "priceNote": "Apache 2.0 — навсегда бесплатно, без банковской карты",
+    "cta": "Начать установку"
+  },
+  "creditPacks": {
+    "pack_5k": "{credits} кредитов",
+    "pack_25k": "{credits} кредитов",
+    "pack_100k": "{credits} кредитов",
+    "pack_500": "{credits} кредитов",
+    "pack_2k": "{credits} кредитов",
+    "pack_400": "{credits} кредитов",
+    "pack_1700": "{credits} кредитов",
+    "pack_4500": "{credits} кредитов"
+  },
+  "ui": {
+    "perMonth": "/мес",
+    "perYear": "/год",
+    "custom": "Индивидуально",
+    "free": "Бесплатно",
+    "unlimited": "Без ограничений",
+    "mostPopular": "Популярный",
+    "monthsFree": "{months} мес. бесплатно",
+    "ctaStart": "Начать бесплатно",
+    "ctaChoose": "Выбрать {name}",
+    "ctaContact": "Связаться с отделом продаж",
+    "billedMonthly": "оплата помесячно, отмена в любой момент",
+    "campaignBadge": "Скидка {percentOff}%",
+    "campaignEnds": "Предложение действует до {date}",
+    "wasPrice": "было {price}",
+    "standardTitle": "В каждом плане",
+    "creditPackNote": "Применяется к оплате потребления в Cloud; срок зависит от рабочей нагрузки."
+  }
+}

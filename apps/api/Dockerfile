@@ -1,13 +1,26 @@
 # syntax=docker/dockerfile:1
+ARG NODE_IMAGE=node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS node-build
+FROM --platform=$BUILDPLATFORM golang:1.26.9-bookworm AS actions-runner
+WORKDIR /runner
+COPY packages/actions-runner/go.mod packages/actions-runner/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY packages/actions-runner/ ./
+COPY --from=node-build /usr/local/bin/node /usr/local/bin/node
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    node build.mjs
+
 # ─── Build stage ────────────────────────────────────────
-# Pin bun (was :latest — non-deterministic; drifted to 1.3.14) to .bun-version.
-FROM oven/bun:1.3.3 AS builder
+# Keep the dependency installer on .bun-version.
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS builder
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
 COPY tsconfig.base.json ./
+COPY patches/ ./patches/
 COPY packages/ ./packages/
 COPY apps/ ./apps/
+COPY --from=actions-runner /runner/dist ./packages/actions-runner/dist
 
 # The build died in "Resolving dependencies" — bun's network metadata resolution
 # for the whole monorepo, slow enough to trip the build's idle timeout.
@@ -20,7 +33,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
  && cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────
-FROM oven/bun:1.3.3 AS runner
+FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
 # Remote-server management from the containerized control plane:
@@ -35,24 +48,13 @@ WORKDIR /app
 #     — so a containerized install could not deploy a private repo at all unless
 #     the server had its own credential. It is a build dependency of the control
 #     plane, not an optional extra.
-#   • ca-certificates — the TRUST STORE that `git` needs and `bun` does not.
-#     Bun embeds its own CA bundle, so every API call (repo listing, token mint,
-#     GitHub REST) worked from this image while `git clone https://…` died with
-#     `server certificate verification failed. CAfile: none CRLfile: none` —
-#     libcurl looks for a bundle ON DISK and this base image ships none. It is a
-#     Recommends of `git`, so `--no-install-recommends` (rightly kept, for
-#     everything else) is exactly what dropped it. Naming it explicitly means the
-#     flag can't take it away again. Symptom to recognise: authenticated in the
-#     UI, repos listing fine, every clone failing at the TLS handshake — before
-#     any credential is even presented.
+#   • ca-certificates provides the OS trust store used by git and SSH helpers.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-client rsync git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# @repo/* are TypeScript-SOURCE workspace packages (package.json main =
-# src/index.ts) resolved via the ROOT package.json "workspaces" field — there
-# is NO node_modules/@repo; bun points straight at packages/*. tsup externalizes
-# them (dist does `import { repos } from "@repo/db"`), so the runner MUST ship
+# @repo/* exports TypeScript source through workspace links under packages/.
+# tsup leaves those imports external, so the runner must ship
 # the whole workspace, not just apps/api/dist:
 #   • root manifests (the "workspaces" field is what resolves @repo/*)
 #   • packages/ — incl. packages/db/drizzle, which the DB client auto-migrates
@@ -72,4 +74,5 @@ COPY --from=builder /app/apps/email/engine ./apps/email/engine
 
 ENV NODE_ENV=production
 EXPOSE 4000
-CMD ["bun", "run", "apps/api/dist/index.js"]
+# tsx loads the TypeScript workspace packages that tsup leaves external.
+CMD ["node", "--import", "tsx", "apps/api/dist/index.js"]

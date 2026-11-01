@@ -19,21 +19,21 @@ const h = vi.hoisted(() => ({
   custom: [] as unknown[],
 }));
 
-vi.mock("./catalog-source", () => ({
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({
   getRuntimeCatalog: () => h.runtime,
   listOrgCustomApps: async () => h.custom,
   getTemplateForOrg: async () => undefined,
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("../projects/project-crud.service", () => ({ createProject: vi.fn() }));
-vi.mock("../services/service.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-crud.service", () => ({ createProject: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/services/service.service", () => ({
   createService: vi.fn(),
   updateService: vi.fn(),
   setServiceEnvVars: vi.fn(),
 }));
 
-const { getAppCatalog } = await import("./app-install.service");
+const { getAppCatalog } = await import("@repo/platform/engine/modules/apps/app-install.service");
 
 const ctx = { organizationId: "org1" } as RequestContext;
 

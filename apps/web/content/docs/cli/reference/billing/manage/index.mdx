@@ -1,0 +1,140 @@
+---
+title: billing manage
+description: Commands, arguments, and options for openship billing manage.
+cliGroup: openship billing manage
+---
+
+See the [workflow guide](/docs/cli/cloud) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship billing manage
+
+Hosted management for your own servers; scoped to the active organization
+
+```text
+openship billing manage [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/billing/manage#openship-billing-manage-get) | Show the paid allowance, subscription, pending checkout and changes |
+| [`purchase [options]`](/docs/cli/reference/billing/manage#openship-billing-manage-purchase) | Create a payment link or preview an allowance change without confirming it |
+| [`apply [options] <quote>`](/docs/cli/reference/billing/manage#openship-billing-manage-apply) | Confirm a reviewed allowance quote and its amount due |
+| [`cancel-change [options]`](/docs/cli/reference/billing/manage#openship-billing-manage-cancel-change) | Cancel the pending Manage allowance change |
+| [`cancel [options]`](/docs/cli/reference/billing/manage#openship-billing-manage-cancel) | Cancel Manage renewal? Apps and data stay on your servers. |
+| [`resume [options]`](/docs/cli/reference/billing/manage#openship-billing-manage-resume) | Resume Manage renewal at its saved price |
+| [`portal`](/docs/cli/reference/billing/manage#openship-billing-manage-portal) | Open payment details and invoices for Manage |
+| [`checkout`](/docs/cli/reference/billing/manage#openship-billing-manage-checkout) | Recover or cancel the saved Manage checkout |
+
+## openship billing manage apply
+
+Confirm a reviewed allowance quote and its amount due
+
+```text
+openship billing manage apply [options] <quote>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `quote` | Exact quote ID from manage purchase |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm this subscription change |
+
+## openship billing manage cancel
+
+Cancel Manage renewal? Apps and data stay on your servers.
+
+```text
+openship billing manage cancel [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm this subscription change |
+
+## openship billing manage cancel-change
+
+Cancel the pending Manage allowance change
+
+```text
+openship billing manage cancel-change [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm this subscription change |
+
+## openship billing manage checkout
+
+Recover or cancel the saved Manage checkout
+
+```text
+openship billing manage checkout [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`resume`](/docs/cli/reference/billing/manage#openship-billing-manage-checkout-resume) | Resume the existing checkout without another purchase |
+| [`cancel [options]`](/docs/cli/reference/billing/manage#openship-billing-manage-checkout-cancel) | Cancel the saved unpaid Manage checkout |
+
+## openship billing manage checkout cancel
+
+Cancel the saved unpaid Manage checkout
+
+```text
+openship billing manage checkout cancel [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm checkout cancellation |
+
+## openship billing manage checkout resume
+
+Resume the existing checkout without another purchase
+
+```text
+openship billing manage checkout resume [options]
+```
+
+## openship billing manage get
+
+Show the paid allowance, subscription, pending checkout and changes
+
+```text
+openship billing manage get [options]
+```
+
+## openship billing manage portal
+
+Open payment details and invoices for Manage
+
+```text
+openship billing manage portal [options]
+```
+
+## openship billing manage purchase
+
+Create a payment link or preview an allowance change without confirming it
+
+```text
+openship billing manage purchase [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--servers <count>` | Total connected-server allowance |
+| `--idempotency-key <key>` | Reuse this key to recover the same purchase |
+
+## openship billing manage resume
+
+Resume Manage renewal at its saved price
+
+```text
+openship billing manage resume [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm this subscription change |

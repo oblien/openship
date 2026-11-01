@@ -8,6 +8,7 @@ import * as schema from "../schema";
 import type { Database } from "../client";
 import { createGitInstallationRepo } from "./git-installation.repo";
 import { createGitSourceRepo } from "./git-source.repo";
+import { createGithubInstallStateRepo } from "./github-install-state.repo";
 
 const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
 
@@ -101,6 +102,7 @@ describe("gitInstallation workspace boundary", () => {
       state: "nonce_rebind",
       userId: "user_rebind",
       organizationId: "org_rebind",
+      payload: { sessionId: "session_rebind" },
       expiresAt: new Date(Date.now() + 60_000),
     });
     await expect(
@@ -125,7 +127,14 @@ describe("gitInstallation workspace boundary", () => {
       db.query.githubInstallState.findFirst({
         where: (table, { eq }) => eq(table.state, "nonce_rebind"),
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ flow: "complete", payload: {} });
+    // Completion remains observable to the initiating browser, while the
+    // consumed nonce cannot authorize a second claim.
+    const stateRepo = createGithubInstallStateRepo(db);
+    await expect(stateRepo.progress("nonce_rebind", "user_rebind", "org_rebind")).resolves.toEqual({
+      status: "complete",
+    });
+    await expect(stateRepo.find("nonce_rebind")).resolves.toBeNull();
     await expect(
       repo.claimWithState("nonce_rebind", row("org_rebind", "user_rebind", 100)),
     ).resolves.toBeNull();

@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Entry-point organization picker.
  *
@@ -17,13 +20,13 @@
  * org client at module scope so its identity is stable.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { buildAuthPageHref, validateReturnTo } from "@/lib/cloud-auth";
 import { authClient, signOut } from "@/lib/auth-client";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import { AuthShell } from "@/components/auth-shell";
-import { Building2, ChevronRight, Loader2, Plus, User } from "lucide-react";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 
@@ -84,7 +87,13 @@ function roleLabel(role: MemberRole | null): string {
 }
 
 export default function SelectOrganizationPage() {
+  return <Suspense><SelectOrganization /></Suspense>;
+}
+
+function SelectOrganization() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const destination = validateReturnTo(searchParams.get("returnTo")) ?? "/";
   const [loading, setLoading] = useState(true);
   const [orgs, setOrgs] = useState<DecoratedOrg[]>([]);
   const [picking, setPicking] = useState<string | null>(null);
@@ -95,6 +104,7 @@ export default function SelectOrganizationPage() {
     (async () => {
       try {
         const listRes = await orgClient.list();
+        if (cancelled) return;
         const list = listRes.data ?? [];
 
         // Edge cases: no orgs (shouldn't happen — personal org auto-created
@@ -106,9 +116,11 @@ export default function SelectOrganizationPage() {
         }
         if (list.length === 1) {
           const only = list[0];
-          await orgClient.setActive({ organizationId: only.id });
+          const result = await orgClient.setActive({ organizationId: only.id });
+          if (result.error) throw new Error(result.error.message ?? "Failed to switch organization.");
+          if (cancelled) return;
           setActiveOrganizationId(only.id);
-          router.replace("/");
+          router.replace(destination);
           return;
         }
 
@@ -121,7 +133,7 @@ export default function SelectOrganizationPage() {
             orgClient
               .getFullOrganization({ organizationId: o.id })
               .then((r) => r.data ?? null)
-              .catch(() => null),
+              .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(auth)/select-organization/page"); return null; }),
           ),
         );
 
@@ -168,6 +180,7 @@ export default function SelectOrganizationPage() {
           setLoading(false);
         }
       } catch (err) {
+        observeCaughtError(err, "dashboard/app/(auth)/select-organization/page");
         if (!cancelled) {
           setError(
             err instanceof Error
@@ -181,7 +194,7 @@ export default function SelectOrganizationPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, destination]);
 
   const handlePick = async (orgId: string) => {
     if (picking) return;
@@ -194,8 +207,9 @@ export default function SelectOrganizationPage() {
         return;
       }
       setActiveOrganizationId(orgId);
-      router.push("/");
+      router.push(destination);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/select-organization/page");
       setError(
         err instanceof Error
           ? err.message
@@ -209,7 +223,7 @@ export default function SelectOrganizationPage() {
     try {
       await signOut();
     } finally {
-      router.push("/login");
+      router.push(buildAuthPageHref("/login", searchParams));
     }
   };
 
@@ -225,11 +239,11 @@ export default function SelectOrganizationPage() {
 
   // No orgs (defensive). Personal org is auto-created on signup so this
   // should be unreachable in practice — render a settling spinner.
-  if (!loading && orgs.length === 0) {
+  if (!loading && orgs.length === 0 && !error) {
     return (
       <AuthShell maxWidth="max-w-[440px]">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
           <p className="mt-4 text-sm text-muted-foreground">
             Setting up your workspace...
           </p>
@@ -258,12 +272,12 @@ export default function SelectOrganizationPage() {
       <div className="overflow-hidden rounded-2xl border border-border">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <ul className="max-h-[440px] divide-y divide-border overflow-y-auto">
             {sorted.map((o) => {
-              const Icon = o.isTeam ? Building2 : User;
+              const Icon = o.isTeam ? "building" : "user";
               const isPicking = picking === o.id;
               const disabled = picking !== null && !isPicking;
               return (
@@ -275,7 +289,7 @@ export default function SelectOrganizationPage() {
                     className="flex w-full items-center gap-3 px-4 py-3.5 text-start transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-                      <Icon className="size-5 text-foreground" />
+                      <UiIcon name={Icon} className="size-5 text-foreground" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] font-medium text-foreground">
@@ -291,9 +305,9 @@ export default function SelectOrganizationPage() {
                       </p>
                     </div>
                     {isPicking ? (
-                      <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                      <UiIcon name="spinner" className="size-4 shrink-0 animate-spin text-muted-foreground" />
                     ) : (
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+                      <UiIcon name="chevron-right" className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
                     )}
                   </button>
                 </li>
@@ -307,7 +321,7 @@ export default function SelectOrganizationPage() {
         href="/settings?tab=team"
         className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
       >
-        <Plus className="size-4" />
+        <UiIcon name="plus" className="size-4" />
         Create new organization
       </Link>
 

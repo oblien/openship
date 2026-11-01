@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { sanitizeMailHtml, blockRemoteImages } from '../src/lib/sanitize';
+import { sanitizeMailHtml, blockRemoteContent } from '../src/lib/sanitize';
 
 const TRANSPARENT_GIF =
   'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
@@ -62,6 +62,9 @@ describe('sanitizeMailHtml', () => {
       '<img src=x onerror=alert(1)>',
       '<svg onload=alert(1)>',
       '<a href="javascript:alert(1)">x</a>',
+      '<a href="java&#x73;cript:alert(1)">x</a>',
+      '<a href="jav&#x09;ascript:alert(1)">x</a>',
+      '<ScRiPt>alert(1)</ScRiPt><P oNcLiCk="alert(1)">readable',
       '<iframe src="javascript:alert(1)"></iframe>',
       '<body onload=alert(1)>',
       '<base href="https://evil.tld/">',
@@ -91,10 +94,11 @@ describe('sanitizeMailHtml', () => {
     });
 
     it('forces target/rel on links', () => {
-      const out = sanitizeMailHtml('<a href="https://example.com">x</a>');
-
-      expect(out).toContain('target="_blank"');
-      expect(out).toContain('rel="noopener noreferrer"');
+      for (const attributes of ['', 'target="_top" rel="opener"']) {
+        const out = sanitizeMailHtml(`<a href="https://example.com" ${attributes}>x</a>`);
+        expect(out).toContain('target="_blank"');
+        expect(out).toContain('rel="noopener noreferrer"');
+      }
     });
 
     it('keeps inline (cid: and data:) attachment images', () => {
@@ -134,9 +138,9 @@ describe('sanitizeMailHtml', () => {
   });
 });
 
-describe('blockRemoteImages', () => {
+describe('blockRemoteContent', () => {
   it('replaces remote <img src> and flags it', () => {
-    const { html, blocked } = blockRemoteImages('<img src="https://tracker.tld/px.gif">');
+    const { html, blocked } = blockRemoteContent('<img src="https://tracker.tld/px.gif">');
 
     expect(blocked).toBe(true);
     expect(html).not.toContain('tracker.tld');
@@ -146,14 +150,14 @@ describe('blockRemoteImages', () => {
   // Each of these fetched from the sender's server with the setting ON,
   // and left hasBlockedImages false so no banner was shown.
   it('blocks srcset', () => {
-    const { html, blocked } = blockRemoteImages('<img srcset="https://tracker.tld/px.gif 1x">');
+    const { html, blocked } = blockRemoteContent('<img srcset="https://tracker.tld/px.gif 1x">');
 
     expect(blocked).toBe(true);
     expect(html).not.toContain('tracker.tld');
   });
 
   it('blocks srcset even when src is also present', () => {
-    const { html, blocked } = blockRemoteImages(
+    const { html, blocked } = blockRemoteContent(
       '<img src="https://tracker.tld/a.gif" srcset="https://tracker.tld/b.gif 2x">',
     );
 
@@ -162,14 +166,14 @@ describe('blockRemoteImages', () => {
   });
 
   it('blocks protocol-relative sources', () => {
-    const { blocked, html } = blockRemoteImages('<img src="//tracker.tld/px.gif">');
+    const { blocked, html } = blockRemoteContent('<img src="//tracker.tld/px.gif">');
 
     expect(blocked).toBe(true);
     expect(html).not.toContain('tracker.tld');
   });
 
   it('blocks remote url() in a style attribute', () => {
-    const { html, blocked } = blockRemoteImages(
+    const { html, blocked } = blockRemoteContent(
       `<div style="background:url('https://tracker.tld/px.gif') no-repeat">x</div>`,
     );
 
@@ -186,7 +190,7 @@ describe('blockRemoteImages', () => {
       `<div style='background-image:url("https://tracker.tld/px.gif")'>x</div>`,
       `<div style="background-image:url(//tracker.tld/px.gif)">x</div>`,
     ]) {
-      const { html, blocked } = blockRemoteImages(el);
+      const { html, blocked } = blockRemoteContent(el);
 
       expect(blocked).toBe(true);
       expect(html).not.toContain('tracker.tld');
@@ -194,7 +198,7 @@ describe('blockRemoteImages', () => {
   });
 
   it('leaves local content alone and does not flag it', () => {
-    const { html, blocked } = blockRemoteImages(
+    const { html, blocked } = blockRemoteContent(
       '<img src="cid:logo@1"><div style="color:red">x</div>',
     );
 
@@ -203,8 +207,71 @@ describe('blockRemoteImages', () => {
     expect(html).toContain('color:red');
   });
 
+  it.each([
+    String.raw`u\72l('https://tracker.tld/escaped-function.gif')`,
+    String.raw`url('\68ttps://tracker.tld/escaped-scheme.gif')`,
+    `image-set('https://tracker.tld/set.gif' 1x)`,
+    String.raw`image\2d set('https://tracker.tld/escaped-set.gif' 1x)`,
+    `-webkit-image-set('https://tracker.tld/prefixed-set.gif' 1x)`,
+    `url('/relative/pixel.gif')`,
+  ])('blocks a browser-interpreted image value: %s', (value) => {
+    const clean = sanitizeMailHtml(`<div style="color:red;background-image:${value}">body</div>`);
+    const { html, blocked } = blockRemoteContent(clean);
+
+    expect(blocked).toBe(true);
+    expect(html).not.toContain('tracker.tld');
+    expect(html).not.toContain('/relative/');
+    expect(html).toContain('color:red');
+    assertInert(html);
+  });
+
+  it('blocks substitution of a custom-property string into image-set', () => {
+    const clean = sanitizeMailHtml(
+      `<div style="--pixel:'https://tracker.tld/variable.gif';color:red;background-image:image-set(var(--pixel) 1x)">body</div>`,
+    );
+    const result = blockRemoteContent(clean);
+
+    expect(result.blocked).toBe(true);
+    expect(result.html).not.toContain('var(');
+    expect(result.html).toContain('color:red');
+  });
+
+  it('keeps inline CSS images, type metadata and literal text intact', () => {
+    const clean = sanitizeMailHtml(
+      `<div style="color:red;background-image:image-set('data:image/gif;base64,AAAA' type('image/gif') 1x);content:'url(https://tracker.tld/text-only)'">body</div>`,
+    );
+    const result = blockRemoteContent(clean);
+
+    expect(result.blocked).toBe(false);
+    expect(result.html).toBe(clean);
+  });
+
+  it.each([
+    '<img src="/relative/pixel.gif">',
+    '<img src="\u2000data:image/gif;base64,AAAA">',
+    '<img srcset="data:image/gif;base64,AAAA 1x, /relative/pixel.gif 2x">',
+    '<img alt="x src=\'data:,\'" src="https://tracker.tld/decoy.gif">',
+  ])('blocks parsed image attributes without trusting a decoy: %s', (input) => {
+    const result = blockRemoteContent(sanitizeMailHtml(input));
+
+    expect(result.blocked).toBe(true);
+    expect(result.html).not.toContain('/relative/');
+    expect(result.html).not.toContain('tracker.tld');
+    expect(result.html).not.toContain('srcset=');
+  });
+
+  it('keeps an all-inline srcset with embedded commas', () => {
+    const clean = sanitizeMailHtml(
+      '<img src="cid:logo" srcset="data:image/svg+xml,%3Csvg,%20viewBox%3E 1x, cid:logo-large 2x">',
+    );
+    const result = blockRemoteContent(clean);
+
+    expect(result.blocked).toBe(false);
+    expect(result.html).toContain('srcset="data:image/svg+xml,%3Csvg,%20viewBox%3E 1x, cid:logo-large 2x"');
+  });
+
   it('does not flag a body with no images at all', () => {
-    expect(blockRemoteImages('<p>plain text</p>').blocked).toBe(false);
+    expect(blockRemoteContent('<p>plain text</p>').blocked).toBe(false);
   });
 
   // The <style>-block leaks from the advisory (@import, background url())

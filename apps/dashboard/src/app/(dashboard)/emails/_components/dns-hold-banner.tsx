@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Full-width DNS hold banner. Renders ABOVE the two-column grid when the
  * install is paused after step 11 (DKIM) waiting for the user to publish
@@ -14,7 +16,6 @@
  */
 
 import { useState } from "react";
-import { Globe, Loader2, Sparkles, ChevronRight, ArrowLeft } from "lucide-react";
 import type { DnsRecords } from "@/lib/api";
 import { useModal } from "@/context/ModalContext";
 import { DnsRecordsView } from "@/components/shared/DnsRecordsView";
@@ -107,7 +108,7 @@ export function DnsHoldBanner({
     <div className="bg-warning-bg border border-warning-border rounded-2xl p-6 mb-6">
       <div className="flex items-start gap-3 mb-5">
         <div className="w-10 h-10 rounded-xl bg-warning-bg flex items-center justify-center shrink-0">
-          <Globe className="size-5 text-warning" strokeWidth={1.75} />
+          <UiIcon name="globe" className="size-5 text-warning" />
         </div>
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-warning">
@@ -128,7 +129,7 @@ export function DnsHoldBanner({
           onClick={openAutoConfigure}
           className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-warning-border text-warning hover:bg-warning-bg transition-colors"
         >
-          <Sparkles className="size-4" />
+          <UiIcon name="sparkles" className="size-4" />
           {t.emails.dns.autoConfigure}
         </button>
         <button
@@ -137,9 +138,9 @@ export function DnsHoldBanner({
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-warning-solid text-white hover:bg-warning-solid/90 transition-colors disabled:opacity-50"
         >
           {acknowledging ? (
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
           ) : (
-            <Globe className="size-4" />
+            <UiIcon name="globe" className="size-4" />
           )}
           {t.emails.dns.action}
         </button>
@@ -173,7 +174,7 @@ function AutoConfigureModal({ onClose }: { onClose: () => void }) {
     <div className="p-6">
       <div className="mb-5">
         <div className="flex items-center gap-2.5 mb-1">
-          <Sparkles className="size-4 text-warning" />
+          <UiIcon name="sparkles" className="size-4 text-warning" />
           <h3 className="text-base font-semibold text-foreground">
             {t.emails.dns.autoConfigure}
           </h3>
@@ -195,7 +196,7 @@ function AutoConfigureModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center shrink-0">
-            <Globe className="size-4 text-muted-foreground" />
+            <UiIcon name="globe" className="size-4 text-muted-foreground" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-foreground">
@@ -235,7 +236,7 @@ function ProviderRow({
             {description}
           </div>
         </div>
-        <ChevronRight className="size-4 text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0 rtl:rotate-180" />
+        <UiIcon name="chevron-right" className="size-4 text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0 rtl:rotate-180" />
       </div>
     </button>
   );
@@ -278,7 +279,7 @@ function ProviderComingSoon({
           onClick={onBack}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors mb-3"
         >
-          <ArrowLeft className="size-3.5 rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-3.5 rtl:rotate-180" />
           {t.emails.dns.pickAnother}
         </button>
         <div className="flex items-center gap-3">

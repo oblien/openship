@@ -2,7 +2,7 @@
   "available": true,
   "id": "ghost",
   "name": "Ghost",
-  "description": "Modern publishing platform for blogs, newsletters, and membership sites. Claim the owner account on your first visit.",
+  "description": "Publishing for blogs, newsletters, and membership sites, with a focused editor and your own database.",
   "kind": "template",
   "logo": "ghost",
   "category": "cms",
@@ -100,5 +100,21 @@
       "note": "Claim the owner account at /ghost/ immediately — it is unauthenticated until you do, so the first visitor owns the blog. Ghost may restart a few times on first boot while MySQL initialises; that is expected."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Publishing",
+        "description": "Create and publish articles in a focused editor."
+      },
+      {
+        "title": "Newsletters",
+        "description": "Build a publication around your audience."
+      },
+      {
+        "title": "Membership sites",
+        "description": "Create an experience for readers and members."
+      }
+    ]
+  }
 }

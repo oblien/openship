@@ -18,14 +18,14 @@ const reachabilityMocks = vi.hoisted(() => ({
   check: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: (id: string, fn: (e: unknown) => unknown) => withExecutor(id, fn),
   },
 }));
-vi.mock("../../../src/modules/mail/mail-port-reachability.service", async (importOriginal) => {
+vi.mock("@repo/platform/engine/modules/mail/mail-port-reachability.service", async (importOriginal) => {
   const actual = await importOriginal<
-    typeof import("../../../src/modules/mail/mail-port-reachability.service")
+    typeof import("@repo/platform/engine/modules/mail/mail-port-reachability.service")
   >();
   return {
     ...actual,
@@ -44,10 +44,10 @@ vi.mock("../../../src/lib/request-context", () => ({
 }));
 
 import { getHealth } from "../../../src/modules/mail/mail.controller";
-import { forgetMailEngine } from "../../../src/modules/mail/mail-engine";
-import type { MailComponentHealth } from "../../../src/modules/mail/mail-health.service";
+import { forgetMailEngine } from "@repo/platform/engine/modules/mail/mail-engine";
+import type { MailComponentHealth } from "@repo/platform/engine/modules/mail/mail-health.service";
 import type { MailDeliveryHealth } from "../../../src/modules/mail/mail-delivery.service";
-import type { MailPortReachability } from "../../../src/modules/mail/mail-port-reachability.service";
+import type { MailPortReachability } from "@repo/platform/engine/modules/mail/mail-port-reachability.service";
 
 const SERVER = "srv_1";
 
@@ -223,3 +223,19 @@ describe("GET /mail/health — outbound delivery", () => {
     expect(body.error).toContain("ETIMEDOUT");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn().mockResolvedValue(undefined) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
+});
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  isServerInOrg: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  isServerInOrg: vi.fn().mockResolvedValue(true),
+}));

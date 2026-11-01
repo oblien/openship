@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * A DERIVED `local` target and the `isLocal` "This Server" row are the SAME machine,
@@ -36,6 +36,11 @@ const h = vi.hoisted(() => ({
   findCalls: 0,
   findRejects: false,
   ensureCalls: 0,
+  target: "selfhosted" as "selfhosted" | "desktop" | "cloud",
+  owningOrg: vi.fn(async (): Promise<string | null> => "org1"),
+  docker: vi.fn(async () => ({ name: "docker" })),
+  routes: vi.fn(async () => {}),
+  adoptMeta: { deployTarget: "local", runtimeMode: "bare", adopt: true } as Record<string, unknown>,
 }));
 
 vi.mock("@repo/adapters", async (importOriginal) => ({
@@ -44,12 +49,21 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   createPlatform: async (config: Record<string, unknown>) => {
     h.configs.push(config);
-    return { target: "selfhosted" };
+    return {
+      target: "selfhosted",
+      routing: {},
+      runtime: { name: config.runtime, supports: () => false },
+    };
   },
   createHostExecutor: () => h.hostExecutor(),
+  DockerRuntime: { create: h.docker },
 }));
 
-vi.mock("./startup/self-server", () => ({
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: h.target, runtime: { name: "docker" } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({
   findLocalServer: async () => {
     h.findCalls++;
     if (h.findRejects) throw new Error("db unavailable");
@@ -65,6 +79,27 @@ vi.mock("./startup/self-server", () => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    deployment: {
+      findById: async () => ({
+        id: "dashboard-adopt",
+        projectId: "dashboard",
+        organizationId: "cloud-org",
+        containerId: "dashboard-adopt",
+        meta: h.adoptMeta,
+      }),
+    },
+    domain: {
+      listByProject: async () => [
+        {
+          id: "dashboard-domain",
+          hostname: "panel.example.com",
+          serviceId: null,
+          targetPort: 3001,
+          domainType: "custom",
+        },
+      ],
+    },
+    service: { listByDeployment: async () => [], listByProject: async () => [] },
     server: {
       getInOrganization: async (id: string) => ({
         id,
@@ -80,25 +115,170 @@ vi.mock("@repo/db", () => ({
 
 // The row IS this box; keyed off the flag so the test doesn't depend on loopback
 // resolution or env.
-vi.mock("./box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
+  boxOwningOrgId: h.owningOrg,
 }));
 
-vi.mock("./ssh-manager", () => ({
-  sshManager: { acquire: h.acquire, acquireHostChannel: h.acquireHostChannel },
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
+  sshManager: {
+    acquire: h.acquire,
+    acquireHostChannel: h.acquireHostChannel,
+    retainExecutor: () => () => {},
+  },
   buildSshConfig: async () => ({ host: "127.0.0.1", port: 22, username: "root" }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: (name: string) => ({ name, run: (f: () => unknown) => f() }),
 }));
 
-const { resolveTargetPlatform } = await import("./deployment-runtime");
+vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({
+  reconcileProjectRoutes: h.routes,
+}));
+vi.mock("@repo/platform/engine/modules/route-rules/route-rule.service", () => ({
+  pushProjectRules: async () => {},
+}));
+vi.mock("@repo/platform/engine/modules/analytics/analytics-config.service", () => ({
+  pushProjectAnalyticsConfig: async () => {},
+}));
+
+const { reapplyProjectLiveRoutes } =
+  await import("@repo/platform/engine/modules/domains/project-route.service");
+const { resolveTargetPlatform, resolveDeploymentRuntimeForRead } = await import("@repo/platform/engine/lib/deployment-runtime");
 const { HostChannelUnavailableError } = await import("@repo/adapters");
 
 const last = () => h.configs[h.configs.length - 1] as Record<string, unknown>;
 
+const dashboardProject = {
+  id: "dashboard",
+  slug: "openship",
+  appTemplateId: "openship",
+  port: 3001,
+  workspaceId: null,
+  activeDeploymentId: "dashboard-adopt",
+  organizationId: "cloud-org",
+  webhookDomain: null,
+  hasServer: true,
+  workloadType: "service" as const,
+  outputDirectory: null,
+  routingConfig: null,
+  routeStrategy: null,
+};
+
+describe("self-app routing host ownership", () => {
+  it.each([true, false])(
+    "repairs a dashboard in a linked organization only on the trusted self-app path (%s)",
+    async (authorized) => {
+      const repair = reapplyProjectLiveRoutes(dashboardProject, [], { isSelfApp: authorized });
+      if (authorized) {
+        await repair;
+        expect(h.routes).toHaveBeenCalledWith(
+          dashboardProject,
+          expect.objectContaining({
+            registers: [
+              expect.objectContaining({
+                hostname: "panel.example.com",
+                targetUrl: "http://127.0.0.1:3001",
+              }),
+            ],
+          }),
+        );
+        expect(h.acquireHostChannel).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(repair).rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
+        expect(h.acquireHostChannel).not.toHaveBeenCalled();
+        expect(h.routes).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("keeps server-bound self-app repair scoped to the deployment organization", async () => {
+    h.adoptMeta = {
+      deployTarget: "server",
+      serverId: "local-row",
+      runtimeMode: "bare",
+      adopt: true,
+    };
+    await expect(
+      reapplyProjectLiveRoutes(dashboardProject, [], { isSelfApp: true }),
+    ).rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
+    expect(h.acquire).not.toHaveBeenCalled();
+    expect(h.routes).not.toHaveBeenCalled();
+  });
+});
+
+describe("local host authorization", () => {
+  it.each([undefined, "another-org"])("denies an implicit local target for %s before acquiring the host", async (organizationId) => {
+    await expect(resolveTargetPlatform("local", "docker", undefined, organizationId))
+      .rejects.toMatchObject({ statusCode: 403, code: "LOCAL_HOST_ACCESS_DENIED" });
+    expect(h.acquire).not.toHaveBeenCalled();
+    expect(h.acquireHostChannel).not.toHaveBeenCalled();
+    expect(h.configs).toHaveLength(0);
+  });
+
+  it("does not turn a missing/deleted server binding into another organization's host access", async () => {
+    await expect(resolveDeploymentRuntimeForRead({ meta: {}, organizationId: "another-org" }))
+      .rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
+    expect(h.docker).not.toHaveBeenCalled();
+  });
+
+  it("checks the same ownership for a selected local server row", async () => {
+    await expect(resolveTargetPlatform("server", "docker", "local-row", "another-org"))
+      .rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
+    expect(h.acquire).not.toHaveBeenCalled();
+    expect(h.configs).toHaveLength(0);
+  });
+
+  it("refuses an unknown owner or failed ownership lookup", async () => {
+    h.owningOrg.mockResolvedValueOnce(null);
+    await expect(resolveTargetPlatform("local", "docker", undefined, "org1"))
+      .rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
+    h.owningOrg.mockRejectedValueOnce(new Error("ownership database unavailable"));
+    await expect(resolveTargetPlatform("local", "docker", undefined, "org1"))
+      .rejects.toThrow("ownership database unavailable");
+    expect(h.acquireHostChannel).not.toHaveBeenCalled();
+  });
+
+  it("allows the owning organization to open its local read-only runtime", async () => {
+    await resolveDeploymentRuntimeForRead({ meta: {}, organizationId: "org1" });
+    expect(h.docker).toHaveBeenCalledWith({ transport: "socket" });
+  });
+
+  it("keeps the desktop user's local deployment path", async () => {
+    h.target = "desktop";
+    await resolveTargetPlatform("local", "docker", undefined, "desktop-org");
+    expect(h.acquireHostChannel).toHaveBeenCalledTimes(1);
+    expect(h.owningOrg).not.toHaveBeenCalled();
+  });
+
+  it("never permits local execution on a cloud control plane", async () => {
+    h.target = "cloud";
+    await expect(resolveTargetPlatform("local", "docker", undefined, "org1"))
+      .rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
+    expect(h.acquireHostChannel).not.toHaveBeenCalled();
+  });
+
+  it("applies the native host-execution policy to read-only Docker access too", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "false");
+    await expect(resolveDeploymentRuntimeForRead({ meta: {}, organizationId: "native-org" }))
+      .rejects.toMatchObject({ code: "HOST_EXECUTION_DISABLED" });
+    expect(h.docker).not.toHaveBeenCalled();
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "true");
+    await resolveDeploymentRuntimeForRead({ meta: {}, organizationId: "native-org" });
+    expect(h.docker).toHaveBeenCalledTimes(1);
+    expect(h.owningOrg).not.toHaveBeenCalled();
+  });
+});
+
 beforeEach(() => {
+  vi.stubEnv("OPENSHIP_NATIVE", "false");
+  h.target = "selfhosted";
+  h.owningOrg.mockReset().mockResolvedValue("org1");
+  h.docker.mockClear();
+  h.routes.mockClear();
+  h.adoptMeta = { deployTarget: "local", runtimeMode: "bare", adopt: true };
   h.configs = [];
   h.localRow = null;
   h.findCalls = 0;
@@ -111,11 +291,12 @@ beforeEach(() => {
   h.hostExecutor.mockReset();
   h.hostExecutor.mockImplementation(() => ({ tag: "direct-host-executor" }));
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("derived local target — one machine, one executor path", () => {
   it("resolves THROUGH this box's isLocal row when it has one", async () => {
     h.localRow = { id: "srv-local" };
-    await resolveTargetPlatform("local", "docker");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
 
     // Pooled, keyed on the canonical row: that pool is what stops one deploy from
     // leaving an sshd session behind (#291), and it is the row's own id — never a
@@ -153,19 +334,19 @@ describe("derived local target — one machine, one executor path", () => {
 
   it("keeps the box as THIS machine, not a remote one", async () => {
     h.localRow = { id: "srv-local" };
-    await resolveTargetPlatform("local", "docker");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
     // `createPlatform` infers "this machine" from `localHost ?? !executor`, so an
     // injected executor without this reads as REMOTE — which switches off the
     // containerized edge provider and the same-path-mount rule for the local box.
     expect(last().localHost).toBe(true);
     expect(last().ssh).toBeUndefined();
     // The container workload still goes over the mounted socket, as before.
-    expect(last().docker).toEqual({ transport: "socket" });
+    expect(last().docker).toMatchObject({ transport: "socket" });
   });
 
   it("bare runtime asks for no docker transport at all", async () => {
     h.localRow = { id: "srv-local" };
-    await resolveTargetPlatform("local", "bare");
+    await resolveTargetPlatform("local", "bare", undefined, "org1");
     expect(last().docker).toBeUndefined();
     expect(last().localHost).toBe(true);
   });
@@ -173,11 +354,11 @@ describe("derived local target — one machine, one executor path", () => {
 
 describe("derived local target — boxes with no isLocal row", () => {
   it("takes the same pooled host channel, never an unpooled executor", async () => {
-    // Desktop, the SaaS, and `--no-host-control` all legitimately have no row. The
+    // Desktop and `--no-host-control` can have no row. After authorization, the
     // row id is bookkeeping (the borrow marker); WHICH executor this box gets must
     // not depend on it, and it must never be a fresh `createHostExecutor()` outside
     // the pool, the concurrent-acquire dedup and the channel-health gate.
-    await resolveTargetPlatform("local", "docker");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
     expect(h.acquireHostChannel).toHaveBeenCalledTimes(1);
     expect(h.acquire).not.toHaveBeenCalled();
     expect(h.hostExecutor).not.toHaveBeenCalled();
@@ -187,7 +368,7 @@ describe("derived local target — boxes with no isLocal row", () => {
 
   it("a failed row lookup degrades to that same channel, it does not fail the deploy", async () => {
     h.findRejects = true;
-    await resolveTargetPlatform("local", "docker");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
     expect(h.acquireHostChannel).toHaveBeenCalledTimes(1);
     expect(last().executor).toBe(h.channel);
   });
@@ -198,8 +379,8 @@ describe("derived local target — boxes with no isLocal row", () => {
     // public-IP detection (an outbound request) onto a resolve that also runs for
     // plain runtime reads. `ensureLocalServer` belongs to boot and the
     // admin-establishing endpoints.
-    await resolveTargetPlatform("local", "docker");
-    await resolveTargetPlatform("local", "bare");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
+    await resolveTargetPlatform("local", "bare", undefined, "org1");
     expect(h.findCalls).toBe(2);
     expect(h.ensureCalls).toBe(0);
   });
@@ -216,7 +397,7 @@ describe("derived local target — a dead host channel", () => {
         "no host channel is configured. Re-run `openship up` to provision the host channel.",
       ),
     );
-    const platform = await resolveTargetPlatform("local", "docker");
+    const platform = await resolveTargetPlatform("local", "docker", undefined, "org1");
     expect(platform).toBeTruthy();
 
     const executor = last().executor as {
@@ -232,7 +413,7 @@ describe("derived local target — a dead host channel", () => {
   it("an AUTH failure is still a real failure, not a degrade", async () => {
     h.localRow = { id: "srv-local" };
     h.acquire.mockRejectedValue(new Error("All configured authentication methods failed"));
-    await expect(resolveTargetPlatform("local", "docker")).rejects.toThrow(
+    await expect(resolveTargetPlatform("local", "docker", undefined, "org1")).rejects.toThrow(
       /authentication methods failed/,
     );
   });

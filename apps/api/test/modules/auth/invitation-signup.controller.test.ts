@@ -30,19 +30,19 @@ const h = vi.hoisted(() => ({
   createInvitedUser: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   get isSaasDeployment() {
     return h.isSaas;
   },
 }));
-vi.mock("@/lib/invitation-claim", () => ({
+vi.mock("@repo/platform/engine/lib/invitation-claim", () => ({
   resolveInvitationClaim: vi.fn(async () => h.claim),
 }));
 vi.mock("@repo/db", () => ({
   repos: { user: { findByEmail: vi.fn(async () => h.existingUser) } },
 }));
 vi.mock("better-auth/crypto", () => ({ hashPassword: h.hashPassword }));
-vi.mock("@/lib/invitation-signup", () => ({
+vi.mock("@repo/platform/engine/lib/invitation-signup", () => ({
   createInvitedUserWithCredential: h.createInvitedUser,
 }));
 

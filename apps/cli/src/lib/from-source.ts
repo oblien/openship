@@ -16,6 +16,7 @@
  * This is an UNVERIFIED dev/preview build (no signed release asset, no
  * checksum) — the caller surfaces that; it must not become a production path.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -47,7 +48,8 @@ export interface FromSourceRun {
 export function has(cmd: string): boolean {
   try {
     return spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/from-source");
     return false;
   }
 }
@@ -129,7 +131,8 @@ export async function prepareFromSource(opts: {
     await run("git", ["checkout", ref], sourceDir);
     // Fast-forward to the remote tip on a branch; a tag/sha stays pinned (the
     // pull is best-effort so a detached ref doesn't hard-fail the build).
-    await run("git", ["pull", "--ff-only", "origin", ref], sourceDir).catch(() => {
+    await run("git", ["pull", "--ff-only", "origin", ref], sourceDir).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "cli/lib/from-source");
       console.log("  (pinned ref — not fast-forwarding)");
     });
   }

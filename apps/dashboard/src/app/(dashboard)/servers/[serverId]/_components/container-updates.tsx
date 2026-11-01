@@ -1,7 +1,9 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, RefreshCw } from "lucide-react";
 import { systemApi, type ServerContainerStatus } from "@/lib/api/system";
 import { ContainerStatusRow, EdgeInstallRow } from "@/components/infra/ContainerStatusRow";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -29,13 +31,15 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<ServerContainerStatus[]>([]);
   const [projectCount, setProjectCount] = useState(0);
+  const [edgeRequired, setEdgeRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setRows(await systemApi.listServerContainers(serverId));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/[serverId]/_components/container-updates");
       setRows([]);
     } finally {
       setLoading(false);
@@ -80,13 +84,19 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
   );
   useReattachActiveFix({ containerTargets: applyTargets });
 
-  // projectCount decides whether an ABSENT edge is an issue (box hosts projects)
-  // or just an offer — same rule the fleet view uses. Read once; cheap.
+  // Reuse the fleet's cached routing requirement; private projects need no edge.
   useEffect(() => {
-    void systemApi
-      .getServerById(serverId)
-      .then((s) => setProjectCount(s.projectCount ?? 0))
-      .catch(() => {});
+    let active = true;
+    setProjectCount(0);
+    setEdgeRequired(false);
+    void systemApi.getServerById(serverId).then((server) => {
+      if (!active) return;
+      setProjectCount(server.projectCount ?? 0);
+      setEdgeRequired(server.edgeRequired ?? (server.projectCount ?? 0) > 0);
+    }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/[serverId]/_components/container-updates");
+    });
+    return () => { active = false; };
   }, [serverId]);
 
   const scan = useCallback(async () => {
@@ -94,7 +104,8 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
     try {
       await systemApi.scanServerContainers(serverId);
       await load();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/[serverId]/_components/container-updates");
       // Best-effort: a transient probe failure leaves the cached rows in place
       // (the server never wipes a row it couldn't re-confirm), so keep showing them.
     } finally {
@@ -116,7 +127,7 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
     <div className="mb-5 rounded-2xl border border-border/50 bg-card">
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         <div className="flex size-9 items-center justify-center rounded-xl bg-muted">
-          <Boxes className="size-[18px] text-muted-foreground" />
+          <UiIcon name="server-settings" className="size-[18px] text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold text-foreground">
@@ -136,7 +147,7 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
           disabled={scanning}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
         >
-          <RefreshCw className={`size-3.5 ${scanning ? "animate-spin" : ""}`} />
+          <UiIcon name="refresh" className={`size-3.5 ${scanning ? "animate-spin" : ""}`} />
           {scanning ? c.scanning : c.scan}
         </button>
       </div>
@@ -148,12 +159,12 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
           <>
             <EdgeInstallRow
               serverId={serverId}
-              emphasize={projectCount > 0}
+              emphasize={edgeRequired}
               onInstalled={() => void load()}
             />
             {/* Says WHY the row is emphasized — the colour alone doesn't tell an
                 operator that live projects are the reason. */}
-            {projectCount > 0 && (
+            {edgeRequired && (
               <p className="px-3.5 text-xs text-warning">
                 {interpolate(
                   projectCount === 1 ? c.edgeAbsentImpactOne : c.edgeAbsentImpactMany,

@@ -10,7 +10,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const h = vi.hoisted(() => ({ env: { CLOUD_MODE: false, DEPLOY_MODE: "docker" as string } }));
 
-vi.mock("../config/env", () => ({ env: h.env }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env }));
 // Only the probe is stubbed: the impact copy the banner prints is shared (#490), and a
 // test that asserted against a mocked copy would pass while the real lines said anything.
 vi.mock("@repo/adapters", async (importOriginal) => ({

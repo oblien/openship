@@ -46,7 +46,7 @@ export async function readSseTerminalEvent(
       if (done) break;
     }
   } finally {
-    await reader.cancel().catch(() => undefined);
+    await reader.cancel().catch(() => { /* diagnostics-ignore: Reader cancellation during cleanup is expected; the stream verdict is reported by its caller. */ return undefined; });
   }
 
   throw new Error("The event stream ended without a terminal result.");

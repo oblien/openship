@@ -1,3 +1,4 @@
+import { collectComposeRoutePortDemands } from "@repo/platform/engine/modules/deployments/compose/route-port-demands";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,7 +6,7 @@ import {
   deriveBackendPrefix,
   buildCompositeProxyLocations,
   buildCompositeRegistration,
-} from "../../src/modules/deployments/compose/composite-route";
+} from "@repo/platform/engine/modules/deployments/compose/composite-route";
 
 const web = { id: "web", name: "web", kind: "monorepo", framework: "vite", startCommand: "", enabled: true };
 const api = { id: "api", name: "api", kind: "monorepo", framework: "express", startCommand: "npm start", enabled: true };
@@ -186,4 +187,29 @@ describe("buildCompositeRegistration — static frontend served from disk", () =
     });
     expect(reg).toBeNull();
   });
+});
+
+it("does not allocate a composite backend port until a hostname actually routes to it", () => {
+  const services = [
+    {
+      ...web,
+      exposed: false,
+      ports: [],
+      exposedPort: "8080",
+      domainType: "custom",
+      customDomain: "web.example.com",
+    },
+    { ...api, exposed: false, ports: [], exposedPort: "3000" },
+  ];
+  const plan = () =>
+    collectComposeRoutePortDemands({
+      project: { id: "private", slug: "private" } as never,
+      services: services as never,
+      domainRows: [],
+      runtimeName: "docker",
+      usesManagedRouting: false,
+    });
+  expect([...plan()]).toEqual([]);
+  services[0]!.exposed = true;
+  expect(plan().get(api.id)).toEqual(new Set([3000]));
 });

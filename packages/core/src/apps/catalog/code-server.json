@@ -3,7 +3,7 @@
   "verified": true,
   "id": "code-server",
   "name": "code-server",
-  "description": "Run VS Code in your browser, on your server. Sign in with the auto-generated password below.",
+  "description": "VS Code in your browser, running against a workspace on your own server.",
   "repository": "https://github.com/coder/code-server",
   "kind": "template",
   "logo": "code-server",
@@ -95,5 +95,21 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Browser editor",
+        "description": "Use VS Code through a web browser."
+      },
+      {
+        "title": "Server workspace",
+        "description": "Work with files and tools on your server."
+      },
+      {
+        "title": "Protected access",
+        "description": "The template generates an editor password."
+      }
+    ]
+  }
 }

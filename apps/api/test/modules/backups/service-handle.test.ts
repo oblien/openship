@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The crypto helpers only need BETTER_AUTH_SECRET; the full zod env refuses to
 // load outside desktop mode without INTERNAL_TOKEN.
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { BETTER_AUTH_SECRET: "test-secret-for-service-handle-unit-tests" },
 }));
 
@@ -55,8 +55,11 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { encrypt } from "../../../src/lib/encryption";
-import { serviceHandleFor, withContainerEnv } from "../../../src/modules/backups/service-handle";
+import { encrypt } from "@repo/platform/engine/lib/encryption";
+import {
+  serviceHandleFor,
+  withContainerEnv,
+} from "@repo/platform/engine/modules/backups/service-handle";
 
 type ServiceRow = Parameters<typeof serviceHandleFor>[0];
 
@@ -118,12 +121,76 @@ describe("serviceHandleFor", () => {
     );
     expect(handle.env.POSTGRES_DB).toBe("inline-compose");
 
-    h.envVars = [projectVar("POSTGRES_DB", "project-level"), serviceVar("POSTGRES_DB", "service-scoped")];
+    h.envVars = [
+      projectVar("POSTGRES_DB", "project-level"),
+      serviceVar("POSTGRES_DB", "service-scoped"),
+    ];
     handle = await serviceHandleFor(
       serviceRow({ environment: { POSTGRES_DB: "inline-compose" } }),
       TARGET,
     );
     expect(handle.env.POSTGRES_DB).toBe("service-scoped");
+  });
+
+  it("resolves Compose database credentials against the current scoped values", async () => {
+    h.envVars = [
+      projectVar("POSTGRES_USER", "shopadmin"),
+      projectVar("DATABASE_NAME", "project-db"),
+      serviceVar("DATABASE_NAME", "service-db"),
+      serviceVar("POSTGRES_PASSWORD", "service-password"),
+    ];
+
+    const handle = await serviceHandleFor(
+      serviceRow({
+        environment: {
+          POSTGRES_USER: "${POSTGRES_USER}",
+          POSTGRES_DB: "${DATABASE_NAME:-postgres}",
+          POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?password required}",
+        },
+        advanced: {
+          environmentTemplateKeys: ["POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD"],
+        },
+      }),
+      TARGET,
+    );
+
+    expect(handle.env).toMatchObject({
+      POSTGRES_USER: "shopadmin",
+      POSTGRES_DB: "service-db",
+      POSTGRES_PASSWORD: "service-password",
+    });
+  });
+
+  it("preserves configured values for legacy blanks but honors authored empty literals", async () => {
+    h.envVars = [projectVar("POSTGRES_USER", "shopadmin")];
+    const legacy = await serviceHandleFor(
+      serviceRow({ environment: { POSTGRES_USER: "" } }),
+      TARGET,
+    );
+    expect(legacy.env.POSTGRES_USER).toBe("shopadmin");
+
+    const authored = await serviceHandleFor(
+      serviceRow({
+        environment: { POSTGRES_USER: "" },
+        advanced: { environmentTemplateKeys: [] },
+      }),
+      TARGET,
+    );
+    expect(authored.env.POSTGRES_USER).toBe("");
+  });
+
+  it("refuses unresolved required credentials without exposing Compose error text", async () => {
+    await expect(
+      serviceHandleFor(
+        serviceRow({
+          environment: { POSTGRES_PASSWORD: "${DB_PASSWORD:?private-operator-message}" },
+          advanced: { environmentTemplateKeys: ["POSTGRES_PASSWORD"] },
+        }),
+        TARGET,
+      ),
+    ).rejects.toMatchObject({
+      message: 'Service "db" is missing required Compose environment variables: DB_PASSWORD',
+    });
   });
 
   it("never reads ANOTHER service's env rows", async () => {
@@ -196,10 +263,7 @@ describe("serviceHandleFor", () => {
   });
 
   it("reads a null environment and a null volumes column as empty", async () => {
-    const handle = await serviceHandleFor(
-      serviceRow({ environment: null, volumes: null }),
-      TARGET,
-    );
+    const handle = await serviceHandleFor(serviceRow({ environment: null, volumes: null }), TARGET);
 
     expect(handle.env).toEqual({});
     expect(handle.volumes).toEqual([]);

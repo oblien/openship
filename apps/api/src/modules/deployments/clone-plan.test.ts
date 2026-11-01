@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveClonePlan, type ClonePlanInput } from "./clone-plan";
+import { resolveClonePlan, type ClonePlanInput } from "@repo/platform/engine/modules/deployments/clone-plan";
 
 const base: ClonePlanInput = {
   effectiveTarget: "server",

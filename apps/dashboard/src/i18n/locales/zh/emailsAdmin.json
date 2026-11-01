@@ -9,7 +9,8 @@
       "dns": "DNS",
       "health": "健康状态",
       "backup": "备份",
-      "advanced": "高级"
+      "advanced": "高级",
+      "aliases": "别名"
     },
     "ariaLabel": "邮件管理分区"
   },
@@ -22,7 +23,7 @@
     "edit": "编辑",
     "emptyTitle": "暂无通知规则",
     "emptyBody": "添加一条规则，当邮件送达此服务器上的某个邮箱或域名时，即可在 Slack、Telegram、Discord 或 webhook 中收到通知。",
-    "noChannels": "你还没有已验证的通知渠道。请先在 设置 → 通知 中添加并验证一个，然后回来创建规则。",
+    "noChannels": "在监控 → 通知中添加并验证渠道，然后返回创建规则。",
     "addChannel": "添加通知渠道",
     "manageChannels": "管理渠道",
     "fieldName": "名称",
@@ -66,7 +67,73 @@
     "confirmDelete": "删除规则“{name}”？除非仍有其他规则需要，否则将停止捕获其地址的邮件。"
   },
   "sending": {
-    "testLiveNote": "通过当前生效的路径发送，而不是上方尚未保存的更改。"
+    "testLiveNote": "通过当前生效的路径发送，而不是上方尚未保存的更改。",
+    "title": "出站发送",
+    "subtitle": "邮件接收仍在此服务器上。选择出站邮件的发送方式。",
+    "modeDirectTitle": "直接投递",
+    "modeDirectDesc": "此服务器自行投递出站邮件。配置简单，但新 VPS IP 通常会被列入黑名单，且许多主机服务商会阻止出站 25 端口 — 邮件可能会进入垃圾邮件箱或发送失败。",
+    "modeRelayTitle": "通过服务商中继",
+    "modeRelayDesc": "将出站邮件移交给智能主机（SES、SendGrid、Mailgun、Postmark、Resend 或任意 SMTP 服务器）。送达率最高。您的收件箱及所有接收 DNS 均保持原样。",
+    "pathTitle": "出站路径",
+    "setUpRelay": "设置中继",
+    "directActive": "出站邮件直接从此服务器发出。无需配置 — 如果送达率出现问题，请在上方选择中继。",
+    "switchToDirect": "切换至直接投递",
+    "switchToDirectHint": "移除智能主机及其存储的凭据，并从 DNS 中删除中继的 SPF include。出站邮件将再次直接发送至每个收件人的服务器。",
+    "statusOn": "中继已启用",
+    "statusOff": "直接投递（默认）",
+    "sendersTitle": "哪些发件人使用中继？",
+    "scopeAll": "所有发件人",
+    "scopeSelected": "选定的发件人",
+    "scopeAllHint": "此服务器上的所有域名均通过中继发送。",
+    "scopeSelectedHint": "仅您选择的发件人使用中继；其他所有发件人继续直接投递。",
+    "sendersDomains": "完整域名",
+    "sendersAddresses": "单个发件人",
+    "sendersAddressesHint": "中继单个邮箱而无需中继其整个域名 — contact@example.com 可以通过您的服务商发送，同时仍在此处通过 IMAP 接收。",
+    "senderPlaceholder": "contact@example.com",
+    "addSender": "添加",
+    "removeSender": "移除",
+    "senderInvalid": "请输入一个纯邮箱地址，例如 contact@example.com — 无需显示名称。",
+    "noSenders": "请至少选择一个要中继的域名或发件人地址。",
+    "noDomains": "此服务器上尚未找到任何域名。",
+    "credentialsTitle": "服务商与凭据",
+    "provider": "服务商",
+    "regionFor": "{provider} 区域",
+    "host": "SMTP 主机",
+    "port": "端口",
+    "username": "SMTP 用户名",
+    "password": "SMTP 密码",
+    "passwordKeep": "留空以保留当前密码",
+    "port465Blocked": "端口 465（隐式 TLS）是服务器范围的设置，因此仅在部分发件人中继时无法使用。请使用服务商的 STARTTLS 端口 — 通常为 587。",
+    "spfIncludeLabel": "include: 值",
+    "spfIncludeHint": "粘贴服务商要求您发布的 include: 机制。如果留空，我们将不会修改您的 SPF 记录 — 但通过未在 SPF 中列出的主机中继的邮件将无法通过 SPF 验证。",
+    "spfNone": "无",
+    "mailFromDomain": "自定义 MAIL FROM 域名",
+    "mailFromHint": "可选。用于 SPF/退信对齐的子域名（如 bounce.example.com）。请在服务商处同步配置。",
+    "identityTitle": "每个域名的 {provider} 身份",
+    "identityHint": "{provider} 分别验证每个发送域名。粘贴每个中继域名的记录（可选 — amavis 已经进行了签名，因此无需这些记录即可实现 DMARC 对齐，但服务商在发送前需要验证该域名）。",
+    "identityPrimary": "主域名",
+    "dkimRecords": "{provider} DKIM 记录",
+    "dkimRecordsHint": "粘贴服务商显示的 CNAME 记录（SES：控制台 → 验证身份 → 您的域名 → DKIM）。我们将在 DNS 标签页中呈现并验证它们。",
+    "dkimName": "CNAME 名称",
+    "dkimValue": "CNAME 值",
+    "summaryTitle": "摘要",
+    "summaryTarget": "智能主机",
+    "summarySenders": "发件人",
+    "summaryUpdated": "上次保存",
+    "guidanceTitle": "生效前准备",
+    "guidanceVerify": "在 Amazon SES 控制台中验证您的域名。",
+    "guidanceSandbox": "申请生产访问权限 — SES 初始处于沙箱环境中，仅能向已验证的地址发送邮件。",
+    "guidanceCreds": "使用 SES SMTP 凭据（IAM SMTP 用户）— 而不是您的 AWS 访问密钥。",
+    "guidanceDns": "在 DNS 标签页发布 DNS 记录，然后重新扫描以确认。",
+    "guidanceSystem": "系统邮件（密码重置、邀请、通知）也通过此中继发送 — 除非您在“设置 → 邮件”中单独配置了发件人。",
+    "save": "启用中继",
+    "update": "保存更改",
+    "disable": "禁用中继",
+    "saved": "出站中继已更新。",
+    "disabled": "中继已禁用 — 恢复直接投递。",
+    "saveFailed": "无法更新中继。",
+    "disableFailed": "无法禁用中继。",
+    "dnsHint": "服务商的发送跃点记录现在显示在 DNS 标签页中。请发布并验证它们以确保最佳送达率。"
   },
   "overview": {
     "mailServer": "邮件服务器",
@@ -98,7 +165,9 @@
     "quickActions": "快捷操作",
     "addMailbox": "添加邮箱",
     "addDomain": "添加域名",
-    "reviewDns": "查看 DNS 记录"
+    "reviewDns": "查看 DNS 记录",
+    "legacyWebmail": "由旧版 Openship 部署 — 可以替换为 Web 邮件应用，该应用会随您的版本一同更新。",
+    "upgradeWebmail": "替换 Web 邮件"
   },
   "webmail": {
     "title": "网页邮箱",
@@ -300,8 +369,19 @@
       "notListeningHint": "没有进程监听此端口。",
       "notExposedHint": "仅监听回环地址，远程客户端无法连接。",
       "unknownHint": "无法验证公网可达性。",
-      "ports": { "smtp": "入站 SMTP", "smtps": "SMTP 提交 (TLS)", "submission": "SMTP 提交 (STARTTLS)", "imaps": "IMAP 访问 (TLS)" },
-      "status": { "reachable": "可访问", "blocked": "已阻止", "not_listening": "未监听", "not_exposed": "未公开", "unknown": "未知" }
+      "ports": {
+        "smtp": "入站 SMTP",
+        "smtps": "SMTP 提交 (TLS)",
+        "submission": "SMTP 提交 (STARTTLS)",
+        "imaps": "IMAP 访问 (TLS)"
+      },
+      "status": {
+        "reachable": "可访问",
+        "blocked": "已阻止",
+        "not_listening": "未监听",
+        "not_exposed": "未公开",
+        "unknown": "未知"
+      }
     },
     "delivery": {
       "title": "外发投递",
@@ -411,7 +491,8 @@
       "partSignatures": "{names} 未运行 - 病毒特征库不再更新，邮件将使用逐渐过期的特征库进行扫描",
       "partAdvisory": "{names} 未运行",
       "almostSubQueueOne": "{count} 封邮件等待外发 - 请查看下方的外发投递。",
-      "almostSubQueueOther": "{count} 封邮件等待外发 - 请查看下方的外发投递。"
+      "almostSubQueueOther": "{count} 封邮件等待外发 - 请查看下方的外发投递。",
+      "partCertificate": "邮件证书需要处理"
     },
     "time": {
       "secondsAgo": "{n} 秒前",
@@ -647,5 +728,74 @@
     "loadingLogs": "正在加载日志…",
     "noLogLines": "此组件暂无日志内容。",
     "rowActions": "{name} 的操作"
+  },
+  "certificate": {
+    "title": "邮件证书",
+    "manage": "管理证书",
+    "check": "检查证书",
+    "checking": "正在检查…",
+    "renew": "续期证书",
+    "renewing": "正在续期…",
+    "autoRenew": "自动续期",
+    "autoRenewHint": "在到期前续期并重新加载邮件服务。",
+    "desktopHint": "自动续期需要保持 Openship 运行。",
+    "jobDisabled": "共享 SSL 续期任务已禁用。",
+    "manageJob": "打开续期任务",
+    "failed": "无法更新邮件证书。",
+    "notChecked": "尚未检查",
+    "expires": "到期日期：{date}",
+    "checked": "检查时间：{time}",
+    "status": {
+      "ok": "有效",
+      "warn": "需要续期",
+      "fail": "需要处理",
+      "unknown": "未验证"
+    }
+  },
+  "aliases": {
+    "heading": "别名",
+    "description": "将邮件从一个地址转发到另一个地址，或捕获域名下所有未匹配的地址。保存即生效 — 无需重启。",
+    "addAlias": "添加别名",
+    "domainLabel": "域名",
+    "loading": "加载中…",
+    "activeCount": "{total} 个中 {active} 个处于活动状态",
+    "colSource": "来源",
+    "colDestination": "转发至",
+    "colType": "类型",
+    "colStatus": "状态",
+    "typeAlias": "别名",
+    "typeCatchAll": "全捕获 (Catch-all)",
+    "active": "活跃",
+    "disabled": "已禁用",
+    "activateAction": "启用",
+    "deactivateAction": "停用",
+    "deleteAction": "删除",
+    "loadDomainsFailed": "加载域名失败",
+    "loadFailed": "加载别名失败",
+    "emptyTitle": "暂无别名",
+    "emptyDesc": "为 {domain} 设置地址转发或全捕获。",
+    "create": {
+      "title": "新建别名 · {domain}",
+      "description": "在邮件服务器的转发表中创建一条记录。Postfix 实时读取 — 无需重启。",
+      "submit": "创建别名",
+      "submitting": "正在创建…",
+      "catchAllLabel": "此域名的全捕获",
+      "catchAllHint": "转发 {domain} 下与真实邮箱或其他别名均不匹配的所有地址。替换此域名现有的任何全捕获规则。",
+      "localPartLabel": "用户名部分",
+      "localPartHint": "@ 之前的部分。小写字母与数字。",
+      "destinationLabel": "转发至",
+      "destinationHint": "任意有效邮箱地址 — 此服务器上的邮箱或外部邮箱（例如 Gmail）。"
+    },
+    "deleteForm": {
+      "title": "删除此别名？",
+      "sourceCatchAll": "{domain} 的全捕获",
+      "description": "立即移除转发记录。发往 {source} 的邮件将退信或回退到下一个匹配规则，自下一封邮件起生效。",
+      "submit": "删除别名",
+      "submitting": "正在删除…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} 是真实邮箱 — 在此处创建别名会重定向其邮件。请改为编辑或删除该邮箱。",
+      "alreadyExists": "该转发规则已存在。"
+    }
   }
 }

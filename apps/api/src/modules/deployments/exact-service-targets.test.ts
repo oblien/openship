@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertExactServiceTargets, type ExactServiceTargetRow } from "./exact-service-targets";
+import { assertExactServiceTargets, type ExactServiceTargetRow } from "@repo/platform/engine/modules/deployments/exact-service-targets";
 
 const services: ExactServiceTargetRow[] = [
   { id: "svc-vpn", name: "vpn", enabled: true, advanced: null },

@@ -20,7 +20,7 @@ const engine = vi.hoisted(() => ({
   domains: ["acme.com", "beta.com"],
 }));
 
-vi.mock("../../../src/modules/mail/inbound/capture", () => ({
+vi.mock("@repo/platform/engine/modules/mail/inbound/capture", () => ({
   armDomain: vi.fn(async (_s: string, d: string) => {
     engine.armed.push(d);
     return "tok";
@@ -34,7 +34,7 @@ vi.mock("../../../src/modules/mail/inbound/capture", () => ({
   ForeignBccError: class extends Error {},
 }));
 
-vi.mock("../../../src/modules/mail/inbound/read", () => ({
+vi.mock("@repo/platform/engine/modules/mail/inbound/read", () => ({
   runInboundForServer: vi.fn(async () => ({ read: 0, emitted: 0, dropped: 0, errors: [] })),
 }));
 
@@ -193,3 +193,23 @@ describe("inbound rule mutations release the BCC they orphan (GH-559)", () => {
     expect(engine.disarmed).toEqual(["acme.com"]);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn(async () => undefined) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
+});
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  param: (_c: unknown, name: string) => (name === "serverId" ? "srv1" : "r1"),
+  isServerInOrg: vi.fn(async () => true),
+  assertNotCloud: () => null,
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  param: (_c: unknown, name: string) => (name === "serverId" ? "srv1" : "r1"),
+  isServerInOrg: vi.fn(async () => true),
+  assertNotCloud: () => null,
+}));

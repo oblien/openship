@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Server,
-  ArrowLeft,
-  Loader2,
-  KeyRound,
-  Network,
-  Info,
-} from "lucide-react";
+import { useCloud } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
+import { ServerAcquisitionPicker } from "@/components/servers/ServerAcquisition";
+import { newServerBillingHref } from "@/lib/billing-links";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, ServerInfo } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -68,7 +67,41 @@ function getMissingComponentNames(components: ComponentState[]): string[] {
     .map((component) => component.name);
 }
 
+/** One sidebar in both setup modes; on narrow screens only the choices move
+ * before the form, while supporting guidance follows it. */
+function ServerSetupLayout({ choice, guidance, children }: {
+  choice?: ReactNode;
+  guidance: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-1 items-start gap-6 @min-[60rem]/server-create:grid-cols-[minmax(0,1fr)_340px]">
+      <aside className="contents @min-[60rem]/server-create:block @min-[60rem]/server-create:col-start-2 @min-[60rem]/server-create:row-start-1 @min-[60rem]/server-create:space-y-4 @min-[60rem]/server-create:sticky @min-[60rem]/server-create:top-6">
+        {choice && <div className="order-first">{choice}</div>}
+        <div className="order-last min-w-0">{guidance}</div>
+      </aside>
+      <div className="min-w-0 @min-[60rem]/server-create:col-start-1 @min-[60rem]/server-create:row-start-1">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function AddServerPage() {
+  const { selfHosted } = usePlatform();
+  const router = useRouter();
+  const { requireCloud } = useCloud();
+
+  return (
+    <ConnectedServerSetup choice={
+      <ServerAcquisitionPicker value="connected" stacked onChange={async (mode) => {
+        if (mode === "managed" && (!selfHosted || await requireCloud("billing"))) router.push(newServerBillingHref());
+      }} />
+    } />
+  );
+}
+
+function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
   const router = useRouter();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -101,7 +134,8 @@ export default function AddServerPage() {
           const result = await systemApi.checkServer(currentServerId);
           setComponents((current) => buildComponentStates(result.components, current));
           setOverallReady(result.ready);
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page");
           // Keep whatever we have from the stream
         }
         if (event.status === "completed") {
@@ -135,16 +169,17 @@ export default function AddServerPage() {
 
         let session: Awaited<ReturnType<typeof systemApi.getInstallSession>> | null = null;
         try {
-          session = await systemApi.getInstallSession();
-        } catch {
+          session = await systemApi.getInstallSession(undefined, editId ?? undefined);
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page");
           /* no active session */
         }
 
         let existing: ServerInfo | null = null;
         if (editId) {
-          existing = await systemApi.getServerById(editId).catch(() => null);
+          existing = await systemApi.getServerById(editId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page"); return null; });
         } else if (session?.active && session.status === "running" && session.serverId) {
-          existing = await systemApi.getServerById(session.serverId).catch(() => null);
+          existing = await systemApi.getServerById(session.serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page"); return null; });
         }
 
         if (existing) {
@@ -163,7 +198,8 @@ export default function AddServerPage() {
             void setupStream.attachToSession(session.sessionId);
           }
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page");
         /* fresh form */
       } finally {
         setLoaded(true);
@@ -273,7 +309,7 @@ export default function AddServerPage() {
   if (!loaded) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -368,13 +404,13 @@ export default function AddServerPage() {
   }
 
   return (
-    <PageContainer>
+    <PageContainer className="@container/server-create">
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => router.push("/servers")}
             className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
           >
-            <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+            <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
           </button>
           <div>
             <h1
@@ -389,20 +425,11 @@ export default function AddServerPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
-          <div className="space-y-6 min-w-0">
-            <ServerForm
-              key={initialServer?.id ?? "new"}
-              server={initialServer}
-              onSaved={handleSaved}
-            />
-          </div>
-
-          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+        <ServerSetupLayout choice={!hasExistingServer && choice} guidance={
             <div className="bg-card rounded-2xl border border-border/50">
               <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
                 <div className="w-9 h-9 bg-warning-bg rounded-xl flex items-center justify-center">
-                  <Info className="size-[18px] text-warning" />
+                  <UiIcon name="info" className="size-[18px] text-warning" />
                 </div>
                 <div>
                   <h2 className="font-semibold text-foreground text-[15px]">
@@ -414,17 +441,17 @@ export default function AddServerPage() {
               <div className="p-5">
                 <ul className="space-y-3 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
-                    <Network className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <UiIcon name="network" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                     <span>
                       {t.servers.setup.needServer}
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <KeyRound className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <UiIcon name="key" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                     <span>{t.servers.setup.needAuth}</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <Server className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <UiIcon name="server" className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                     <span>
                       {t.servers.setup.needChecks}
                     </span>
@@ -432,8 +459,13 @@ export default function AddServerPage() {
                 </ul>
               </div>
             </div>
-          </div>
-        </div>
+        }>
+          <ServerForm
+            key={initialServer?.id ?? "new"}
+            server={initialServer}
+            onSaved={handleSaved}
+          />
+        </ServerSetupLayout>
     </PageContainer>
   );
 }

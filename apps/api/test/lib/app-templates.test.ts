@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 import { APP_TEMPLATES, getAppTemplate } from "@repo/core";
 
 describe("app catalog", () => {
-  it("has no legacy/marketing entries (no WordPress)", () => {
-    const ids = APP_TEMPLATES.map((t) => t.id);
-    expect(ids).not.toContain("wordpress");
-  });
-
   it("surfaces Mail as a first-class flow app (hands off to the mail provider wizard)", () => {
     // v0.2.2: Mail is a catalog "flow" app that routes to /apps/new/mail
     // (the mail-provider wizard), not a compose template deployed only via

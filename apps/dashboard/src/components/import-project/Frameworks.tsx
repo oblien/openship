@@ -99,7 +99,7 @@ export const getFrameworkConfig = (frameworkId: string): FrameworkConfig => {
   const existing = frameworks.find((fw) => fw.id === frameworkId);
   if (existing) return existing;
 
-  const stack = STACKS[frameworkId as StackId];
+  const stack = Object.hasOwn(STACKS, frameworkId) ? STACKS[frameworkId as StackId] : undefined;
   if (stack) {
     return {
       id: frameworkId as StackId,
@@ -115,6 +115,6 @@ export const getFrameworkConfig = (frameworkId: string): FrameworkConfig => {
     };
   }
 
-  return frameworks.find((fw) => fw.id === "static")!;
+  return getFrameworkConfig("unknown");
 };
 

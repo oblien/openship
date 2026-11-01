@@ -1,3 +1,5 @@
+import type { ExecutionContext, PermissionInput } from "@repo/platform";
+import type { Context } from "hono";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 /**
@@ -11,7 +13,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
  */
 
 const h = vi.hoisted(() => ({
-  assert: vi.fn(async () => {}),
+  assert: vi.fn(async (_ctx: ExecutionContext, _input: PermissionInput) => {}),
   withExecutor: vi.fn(async (_id: string, _fn: unknown) => [] as unknown),
   diagnose: vi.fn(async () => ({
     reachable: false,
@@ -26,7 +28,7 @@ vi.mock("@repo/db", () => ({
   repos: {
     server: {
       get: vi.fn(async () => undefined),
-      getInOrganization: vi.fn(async () => null),
+      getInOrganization: vi.fn(async (id: string) => ({ id, organizationId: "org1", isLocal: false, sshHost: "203.0.113.10", sshAuthMethod: "key", sshPrivateKey: "supplied-test-key" })),
       list: vi.fn(async () => []),
     },
     member: { find: vi.fn(async () => null) },
@@ -36,9 +38,9 @@ vi.mock("@repo/db", () => ({
 
 // The real module, minus its singleton: `isTransportFailure` is the gate on the
 // diagnosis and a stand-in for it would keep passing after the two stopped agreeing.
-vi.mock("../../lib/ssh-manager", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  sshManager: { withExecutor: h.withExecutor, diagnoseReachability: h.diagnose },
+  sshManager: { acquire: vi.fn(async () => ({})), retain: vi.fn(), release: vi.fn(), withExecutor: h.withExecutor, diagnoseReachability: h.diagnose },
 }));
 
 vi.mock("../../lib/permission", () => ({ permission: { assert: h.assert } }));
@@ -46,12 +48,17 @@ vi.mock("../../lib/request-context", () => ({
   getRequestContext: () => ({ userId: "u1", organizationId: "org1", role: "member" }),
 }));
 
-import { checkServer } from "./server-check.controller";
+import { checkServer as checkServerHandler } from "./server-check.controller";
 
 /** Enough of a Hono context for this handler: a JSON body in, a JSON reply out. */
 function context(body: unknown) {
   const sent: { body: unknown; status: number } = { body: undefined, status: 0 };
+  const vars = new Map<string, unknown>();
   const c = {
+    set: (key: string, value: unknown) => vars.set(key, value),
+    get: (key: string) => vars.get(key),
+    header: vi.fn(),
+    res: new Response(),
     req: { json: async () => body },
     json: (payload: unknown, status = 200) => {
       sent.body = payload;
@@ -103,7 +110,7 @@ describe("checkServer — the gate runs before the diagnosis", () => {
     const { c, sent } = context({ serverId: "s1", components: "docker" });
     await checkServer(c);
     expect(sent.status).toBe(400);
-    expect(sent.body).toMatchObject({ error: "components must be an array" });
+    expect(sent.body).toMatchObject({ code: "VALIDATION_ERROR" });
     expect(h.withExecutor).not.toHaveBeenCalled();
     expect(h.diagnose).not.toHaveBeenCalled();
   });
@@ -165,3 +172,31 @@ describe("checkServer — only a transport failure earns a diagnosis", () => {
     expect(sent.body).not.toHaveProperty("rule");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: ExecutionContext, input: PermissionInput) => { await h.assert(ctx, input); return ctx; } },
+}));
+
+vi.mock("../../lib/operation-context", () => ({
+  operationContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
+  operationData: async (_c: unknown, work: Promise<{ data: unknown }>) => (await work).data,
+}));
+vi.mock("@repo/platform/engine/lib/platform", async () => {
+  const { createServerOperations } = await import("@repo/platform");
+  const { serverDependencies } = await import("@repo/platform/engine/modules/system/server.operations");
+  const { authorization } = await import("@repo/platform/engine/lib/authorization");
+  const servers = createServerOperations(authorization, serverDependencies);
+  return { getPlatformKernel: () => ({ servers }) };
+});
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn() }, operationAuditContext: () => ({}) }));
+
+import { OperationError, ValidationError } from "@repo/contracts";
+import { handleApiError } from "../../middleware/error-handler";
+const checkServer = async (c: Context): Promise<Response> => {
+  try { return await checkServerHandler(c); }
+  catch (error) {
+    if (error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
+    throw error;
+  }
+};

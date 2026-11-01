@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -66,6 +66,22 @@ describe("acquirePgliteLock", () => {
 
     await acquirePgliteLock(dir, { waitMs: 200 });
 
+    expect(JSON.parse(readFileSync(lk(dir), "utf8")).pid).toBe(process.pid);
+  });
+
+  it.each(["", '{"pid":'])("does not steal a lock whose owner may still be publishing its record: %j", async text => {
+    const dir = freshDir();
+    writeFileSync(lk(dir), text);
+    await expect(acquirePgliteLock(dir, { waitMs: 0, takeover: false })).rejects.toThrow("initialization in progress");
+    expect(readFileSync(lk(dir), "utf8")).toBe(text);
+  });
+
+  it("reclaims a stale incomplete record left by a writer that crashed", async () => {
+    const dir = freshDir();
+    writeFileSync(lk(dir), '{"pid":');
+    const stale = new Date(Date.now() - 11_000);
+    utimesSync(lk(dir), stale, stale);
+    await acquirePgliteLock(dir, { waitMs: 0, takeover: false });
     expect(JSON.parse(readFileSync(lk(dir), "utf8")).pid).toBe(process.pid);
   });
 

@@ -1,7 +1,8 @@
+import { valid, validRange, satisfies } from "semver";
+
 /**
- * Minimal semver utilities — patch-level compare + range matching, no deps.
- * Prerelease/build suffixes are ignored (releases are stable X.Y.Z). This is
- * the single source of truth; the desktop updater used to duplicate it.
+ * Shared stable-release comparison and strict semver advisory matching.
+ * Release ordering ignores suffixes; advisory ranges use standard semver rules.
  */
 
 /** Parse "v1.2.3-rc.1" → [1, 2, 3] (leading v + prerelease/build stripped). */
@@ -23,26 +24,9 @@ export function compareSemver(a: string, b: string): number {
 }
 
 /**
- * Does `version` satisfy `range`? `range` is a space-separated list of
- * comparators, ALL of which must hold (AND): `<=`, `>=`, `<`, `>`, `=`, or a
- * bare version (exact). Examples: "<=0.1.8", ">=0.1.0 <0.1.9", "0.1.8".
- * Returns false for an empty or unparseable range.
+ * Standard semver ranges, including disjoint release branches with `||`.
+ * Unknown/invalid versions and empty ranges never count as a match.
  */
 export function satisfiesRange(version: string, range: string): boolean {
-  const comparators = (range ?? "").trim().split(/\s+/).filter(Boolean);
-  if (comparators.length === 0) return false;
-  return comparators.every((comp) => {
-    const m = comp.match(/^(<=|>=|<|>|=)?\s*(.+)$/);
-    if (!m) return false;
-    const op = m[1] ?? "=";
-    const cmp = compareSemver(version, m[2]!);
-    switch (op) {
-      case "<": return cmp < 0;
-      case "<=": return cmp <= 0;
-      case ">": return cmp > 0;
-      case ">=": return cmp >= 0;
-      case "=": return cmp === 0;
-      default: return false;
-    }
-  });
+  return !!version && !!range?.trim() && !!valid(version) && !!validRange(range) && satisfies(version, range);
 }

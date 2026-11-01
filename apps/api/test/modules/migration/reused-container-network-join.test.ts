@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildNetworkAliases } from "@repo/adapters";
-import { serviceAliasExtras } from "../../../src/lib/deployable-service";
+import { serviceAliasExtras } from "@repo/platform/engine/lib/deployable-service";
 
 /**
  * A migration that ATTACHES a running container in place has to leave it
@@ -14,12 +14,12 @@ const joinServiceGroupContainers = vi.hoisted(() => vi.fn());
 const dispose = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const createServerDockerRuntime = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/deployment-runtime")>();
-  return { ...actual, createServerDockerRuntime };
+vi.mock("@repo/platform/engine/modules/migration/migration-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/modules/migration/migration-runtime")>();
+  return { ...actual, createMigrationDockerRuntime: createServerDockerRuntime };
 });
 
-const { joinReusedContainersToGroup } = await import("../../../src/modules/migration/migrate.service");
+const { joinReusedContainersToGroup } = await import("@repo/platform/engine/modules/migration/migrate.service");
 
 const discovered = (name: string, containerId: string) =>
   ({ name, containerId, source: "container", running: true, ports: [], env: {}, volumes: [], networks: [], dependsOn: [], warnings: [] }) as never;

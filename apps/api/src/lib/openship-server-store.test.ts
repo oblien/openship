@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { describe, it, expect, vi } from "vitest";
 import { envOps, type CommandExecutor } from "@repo/adapters";
 
@@ -13,7 +14,7 @@ import {
   openshipFileExists,
   readOpenshipFile,
   writeOpenshipFile,
-} from "./openship-server-store";
+} from "@repo/platform/engine/lib/openship-server-store";
 
 /**
  * Privilege for the server state store.
@@ -116,7 +117,7 @@ describe("openship-server-store privilege", () => {
     // cannot work, and the shell cannot say so: `cat … || echo ""` exits 0 either way, so
     // "forbidden" came back as a successful empty answer and `scan` read it as a server
     // with no Openship projects. The distinction is only visible before the command is sent.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     try {
       const { executor, stored } = fakeHost(
         probeOutput({
@@ -133,7 +134,7 @@ describe("openship-server-store privilege", () => {
       // Not attempted, rather than attempted and discarded — the point is that the answer
       // was never going to mean anything.
       expect(stored().some((c) => c.includes("cat "))).toBe(false);
-      expect(String(warn.mock.calls[0]?.[0])).toMatch(/no route to root/);
+      expect(String(warn.mock.calls[0]?.[1])).toMatch(/no route to root/);
     } finally {
       warn.mockRestore();
     }
@@ -155,7 +156,7 @@ describe("openship-server-store privilege", () => {
     // The compromise the line above makes is that the VALUE is ambiguous. The log
     // must not be: a host that merely denies elevation otherwise reads as a host
     // with no Openship state, and `scan` re-imports our own projects off that.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     try {
       const read = fakeHost(NON_ROOT_NO_SUDO);
       expect(await readOpenshipFile(read.executor, "manifest.json")).toBe("");
@@ -163,7 +164,7 @@ describe("openship-server-store privilege", () => {
       const stat = fakeHost(NON_ROOT_NO_SUDO);
       expect(await openshipFileExists(stat.executor, "manifest.json")).toBe(false);
 
-      const messages = warn.mock.calls.map((call) => String(call[0]));
+      const messages = warn.mock.calls.map((call) => call.slice(1).map(String).join(" "));
       expect(messages).toHaveLength(2);
       for (const message of messages) {
         expect(message).toContain("manifest.json");
@@ -206,7 +207,7 @@ describe("openship-server-store privilege", () => {
   it("stays quiet when the file is genuinely absent", async () => {
     // A missing file is answered inside the shell (`|| echo ""`), so it must not
     // reach the refusal log — otherwise the warning means nothing.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     try {
       const host = fakeHost(ROOT, "");
       expect(await readOpenshipFile(host.executor, "manifest.json")).toBe("");

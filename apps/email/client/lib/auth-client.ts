@@ -94,8 +94,11 @@ function mapSession(s: ServerSession | null): Session | null {
   };
 }
 
-async function fetchSession(): Promise<Session | null> {
-  const res = await fetch(`${BASE}/auth/session`, { credentials: 'include' });
+async function fetchSession(signal?: AbortSignal): Promise<Session | null> {
+  const res = await fetch(`${BASE}/auth/session`, {
+    credentials: 'include',
+    ...(signal ? { signal } : {}),
+  });
   if (!res.ok) return null;
   const body = (await res.json()) as ServerSession | null;
   return mapSession(body);
@@ -150,24 +153,59 @@ export interface SignInInput {
 }
 
 async function signInEmail(input: SignInInput): Promise<{ error: { message: string } | null }> {
-  const res = await fetch(`${BASE}/auth/sign-in`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
+  // Cover both credential verification and session confirmation with one
+  // deadline. The server's IMAP operation budget is normally 30 seconds; a
+  // broken network must not leave the form pending until the browser gives up.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 40_000);
+  try {
+    return await performSignIn(input, controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function performSignIn(
+  input: SignInInput,
+  signal: AbortSignal,
+): Promise<{ error: { message: string } | null }> {
+  const connectionError = { error: { message: 'Cannot reach webmail. Check your connection and try again.' } };
+  const timeoutError = { error: { message: 'Sign in timed out. Please try again.' } };
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/sign-in`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal,
+    });
+  } catch {
+    return signal.aborted ? timeoutError : connectionError;
+  }
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({ error: 'Sign in failed' }))) as {
-      error?: string;
-    };
-    return { error: { message: body.error ?? 'Sign in failed' } };
+    const body = await res.json().catch(() => null) as { error?: unknown } | null;
+    if (signal.aborted) return timeoutError;
+    const fallback = res.status >= 500
+      ? 'Webmail is temporarily unavailable. Try again shortly.'
+      : 'Sign in failed. Please try again.';
+    return { error: { message: typeof body?.error === 'string' && body.error ? body.error : fallback } };
   }
   // Don't purge IDB here. The server now supports multi-account: the
   // existing user(s) keep their session, and the freshly-signed-in user
   // gets their own IDB slot (the persist key is namespaced by session
   // id via the companion cookie). The caller is responsible for the
   // hard navigate that re-mounts root.tsx with the new connection id.
-  cache = await fetchSession();
+  let signedInSession: Session | null;
+  try {
+    signedInSession = await fetchSession(signal);
+  } catch {
+    return signal.aborted ? timeoutError : connectionError;
+  }
+  if (!signedInSession || signedInSession.user.email.toLowerCase() !== input.email.toLowerCase()) {
+    return { error: { message: 'Could not confirm your sign-in. Please try again.' } };
+  }
+  cache = signedInSession;
   notify();
   return { error: null };
 }

@@ -17,11 +17,12 @@
  * failure leaves the old rows exactly where they were.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos, type DnsCredential } from "@repo/db";
-import { registerStartupHook } from "./index";
+import { registerStartupHook } from "@repo/platform/engine/lib/startup/index";
 import { safeErrorMessage } from "@repo/core";
 
-import { decryptSecretField, encryptSecretField } from "../credential-encryption";
+import { decryptSecretField, encryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 
 /** What the DNS provider entry calls its secret field, per CREDENTIAL_PROVIDERS. */
 const CLOUDFLARE_SECRET_FIELD = "apiToken";
@@ -37,6 +38,7 @@ async function moveOne(row: DnsCredential): Promise<string | null> {
   try {
     token = decryptSecretField(row.apiTokenEnc);
   } catch (err) {
+    observeCaughtError(err, "api/lib/startup/credential-backfill");
     // A rotated BETTER_AUTH_SECRET. The token is unrecoverable either way, so the old row
     // is LEFT IN PLACE rather than deleted — an operator who restores the previous secret
     // can still migrate it, and deleting would destroy the only copy.
@@ -51,7 +53,9 @@ async function moveOne(row: DnsCredential): Promise<string | null> {
   // name) and a previous partial run may already hold this label. Treat an existing row as
   // done rather than failing the boot.
   if (await repos.credential.nameTaken(row.organizationId, "cloudflare", null, row.name)) {
-    await repos.dnsCredential.delete(row.organizationId, row.id).catch(() => {});
+    await repos.dnsCredential.delete(row.organizationId, row.id).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/lib/startup/credential-backfill");
+    });
     return null;
   }
 
@@ -94,20 +98,20 @@ export async function backfillDnsCredentials(): Promise<{ moved: number; skipped
         const why = await moveOne(row);
         if (why) {
           skipped += 1;
-          console.warn(`[credential-backfill] left ${row.id} in place: ${why}`);
+          errorDiagnostics.warn("api/lib/startup/credential-backfill", `[credential-backfill] left ${row.id} in place: ${why}`);
         } else {
           moved += 1;
         }
       } catch (err) {
         skipped += 1;
-        console.warn(`[credential-backfill] ${row.id} failed: ${safeErrorMessage(err)}`);
+        errorDiagnostics.warn("api/lib/startup/credential-backfill", `[credential-backfill] ${row.id} failed: ${safeErrorMessage(err)}`, err);
       }
     }
     if (moved > 0) {
       console.log(`[credential-backfill] moved ${moved} DNS credential(s) into the credential store`);
     }
   } catch (err) {
-    console.warn(`[credential-backfill] skipped: ${safeErrorMessage(err)}`);
+    errorDiagnostics.warn("api/lib/startup/credential-backfill", `[credential-backfill] skipped: ${safeErrorMessage(err)}`, err);
   }
   return { moved, skipped };
 }
@@ -125,7 +129,7 @@ export function registerCredentialBackfill(): void {
     run: async () => {
       const { skipped } = await backfillDnsCredentials();
       if (skipped > 0) {
-        console.warn(
+        errorDiagnostics.warn("api/lib/startup/credential-backfill",
           `[credential-backfill] ${skipped} DNS credential(s) could not be moved and were left ` +
             `in place. Re-connect them from Settings → Credentials; the old rows are dropped in a ` +
             `later release.`,

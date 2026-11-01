@@ -6,7 +6,7 @@ import {
   MILLI_PER_CREDIT,
   OBLIEN_QUOTA_MAX_CREDITS,
   OBLIEN_QUOTA_MAX_MILLI,
-} from "./billing-credit-units";
+} from "@repo/platform/engine/modules/billing/billing-credit-units";
 
 describe("credit-unit boundary", () => {
   it("divides milli → Oblien credits (÷1000)", () => {
@@ -43,11 +43,12 @@ describe("credit-unit boundary", () => {
     }
   });
 
-  // Guard the "tune before launch" tier/pack numbers: every non-null tier
-  // allowance and every top-up pack must convert without tripping the ceiling.
-  it("every tier's monthlyCredits stays within the Oblien ceiling", () => {
+  // Legacy positive allowances still fit the converter. No-plan customers get
+  // zero; hosted Cloud grants now come from Oblien's catalog and paid events.
+  it("every paid tier's monthlyCredits stays within the Oblien ceiling", () => {
+    expect(PLANS.free.monthlyCredits).toBe(0);
     for (const plan of Object.values(PLANS)) {
-      if (plan.monthlyCredits === null) continue;
+      if (plan.id === "free" || plan.monthlyCredits === null) continue;
       expect(() => toOblienCredits(plan.monthlyCredits as number)).not.toThrow();
       expect(toOblienCredits(plan.monthlyCredits as number)).toBeLessThanOrEqual(
         OBLIEN_QUOTA_MAX_CREDITS,

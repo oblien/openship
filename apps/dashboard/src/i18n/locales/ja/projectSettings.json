@@ -1,4 +1,139 @@
 {
+  "appInstall": {
+    "configurationLoading": "アプリの設定を読み込み中…",
+    "catalogLoadFailed": "アプリの詳細を読み込めませんでした。インストールする前に再試行してください。",
+    "routingLoadFailed": "保存済みのルーティング設定を読み込めませんでした。インストールする前に再試行してください。",
+    "retryConfiguration": "再試行",
+    "hostFitHint": "このまま続行できますが、このマシンでは性能が制限される場合があります。",
+    "cloudFitTitle": "このアプリには上位のCloudプランが必要です",
+    "upgradePlan": "プランをアップグレード",
+    "checkingCapacity": "容量を確認中…",
+    "checkCapacityAgain": "再確認",
+    "cloudFitUnavailable": "容量を確認できませんでした。デプロイ時に再確認します。",
+    "withoutDomainsTitle": "ドメインなしで続行しますか？",
+    "withoutDomainsBody": "これらの Web エンドポイントには公開ポートからのみアクセスできます。ドメインは後からプロジェクトで追加できます。",
+    "withoutDomainsCloudBody": "これらの Web エンドポイントには Cloud 上の公開 URL が設定されません。このアプリ内の他のサービスからは引き続きアクセスできます。ドメインは後からプロジェクトで追加できます。",
+    "addDomains": "ドメインを追加",
+    "continueWithoutDomains": "ドメインなしで続行",
+    "generatedDomainsTitle": "無料ドメインを使用しますか？",
+    "generatedDomainsBody": "これらのエンドポイントに無料の公開URLが割り当てられます。インストール前に名前を指定することもできます。",
+    "useGeneratedDomains": "無料ドメインを使用",
+    "editDomains": "ドメインを編集",
+    "routePortCloudDesc": "この Cloud ワークスペース内でのみアクセスできます。公開 URL を使うにはドメインを追加してください。",
+    "exposeTitle": "ドメインとルーティング",
+    "install": "インストール",
+    "installing": "インストール中…",
+    "advanced": "高度なデプロイオプション",
+    "nameLabel": "名前",
+    "nameHint": "Openship でのこのアプリの表示名。",
+    "domainTitle": "公開先",
+    "domainFree": "無料のサブドメイン",
+    "domainFreeHint": "{domain} 上の無料サブドメイン",
+    "domainCustom": "独自のドメイン",
+    "domainCustomPlaceholder": "app.example.com",
+    "domainNone": "公開 URL なし",
+    "domainNoneHint": "内部専用 — 公開アドレスはありません。",
+    "customRequired": "ドメインを入力するか、別のオプションを選択してください。",
+    "progressPreparing": "準備中…",
+    "progressDeploying": "デプロイ中…",
+    "progressLive": "アプリが稼働しました",
+    "openApp": "アプリを開く",
+    "goToApp": "アプリへ移動",
+    "installFailed": "インストールに失敗しました",
+    "installFailedBody": "すべてのプロセスが起動する前に停止しました。詳細なビルドログは技術詳細に記載されています。",
+    "installCancelledSelf": "このインストールを停止しました。",
+    "installCancelledBody": "作成されたコンテナとイメージは削除されましたが、データボリュームは保持されているため、再インストール時に再利用されます。既に稼働しているものはそのまま残ります。",
+    "settledAtPhase": "{phase} で停止しました",
+    "viewDetails": "技術詳細を表示",
+    "showLogs": "ログを表示",
+    "hideLogs": "ログを非表示",
+    "deployLogs": "デプロイログ",
+    "logsWaiting": "出力を待機中…",
+    "logsEmpty": "出力は記録されませんでした。",
+    "back": "戻る",
+    "phaseImages": "イメージの準備中",
+    "phaseServices": "サービスの起動中",
+    "phaseAppSetup": "セットアップの完了中",
+    "phaseReady": "稼働中",
+    "phaseQueued": "キュー待機中…",
+    "stepperTitle": "インストール手順",
+    "firstLoginTitle": "初回ログイン",
+    "firstLoginUser": "ユーザー名",
+    "firstLoginPassword": "パスワード",
+    "destinationTitle": "インストール先",
+    "destinationHint": "このアプリを実行するサーバーまたはクラウドを選択します。",
+    "descMore": "詳細",
+    "descLess": "閉じる",
+    "needsTitle": "必要なリソース",
+    "needsMemory": "{value} メモリ",
+    "needsCpu": "{value}",
+    "hostFitTitle": "このサーバーは {app} に必要なスペックを満たしていません",
+    "hostFitMemory": "{needed} のメモリが必要 — このサーバーの空きは {available}",
+    "hostFitCpu": "{needed} が必要 — このサーバーの空きは {available}",
+    "routePortLabel": "ポートのみ（ドメインなし）",
+    "routePortDesc": "ホストのアドレスとポートでアクセス可能 — ドメインや Cloud は不要です。",
+    "routeFreeLabel": "無料のサブドメイン",
+    "routeFreeDesc": "{domain} 上の無料サブドメイン（Openship Cloud 経由でルーティング）。",
+    "routeFreeNeedsCloud": "無料サブドメインを使用するには Openship Cloud を接続してください。",
+    "routeCustomLabel": "独自のドメイン",
+    "routeCustomDesc": "所有しているドメインをこのアプリに向けます。",
+    "routeDomainLabel": "ドメイン",
+    "routeDomainDesc": "ドメイン（無料サブドメインまたは独自ドメイン）でアクセスします。",
+    "httpBadge": "Web",
+    "tcpBadge": "データベース",
+    "tcpPublishLabel": "ポートを公開",
+    "tcpPublishDesc": "外部ツールから接続できるようにホスト上でポートを公開します。",
+    "tcpInternalLabel": "内部専用",
+    "tcpInternalDesc": "このアプリ内の他のサービスからのみアクセスできます。",
+    "tcpFirewallNote": "外部から接続するには、サーバーのファイアウォールでポート {port} を開放してください。",
+    "desktopReachNote": "デスクトップでは localhost で開くことができます — またはリモートサーバーの場合は「サーバー」→「ポート」からポートを転送します。",
+    "statusInstalling": "インストール中",
+    "statusLive": "稼働中",
+    "statusCancelled": "キャンセル済み",
+    "statusFailed": "失敗",
+    "stopInstall": "インストールを停止",
+    "stopping": "停止中…",
+    "installCancelled": "インストールがキャンセルされました",
+    "startOver": "最初からやり直す",
+    "breadcrumbApps": "アプリ",
+    "appEyebrow": "アプリ",
+    "stopFailed": "インストールを停止できませんでした",
+    "progressStep": "ステップ {current} / {total}",
+    "progressServicesReady": "{total} 個中 {done} 個のサービスが準備完了",
+    "summaryTitle": "構成",
+    "summaryDestination": "配置先",
+    "summaryServices": "サービス",
+    "mail": {
+      "title": "メールの設定",
+      "subtitle": "独自ドメインに Web メールをデプロイするか、既存のメールボックスを接続します。",
+      "chooseSelf": "自前でメールサーバーを運用",
+      "chooseSelfDesc": "サーバー上で完全な SMTP/IMAP + Web メール (iRedMail) を運用 — すべて自動でプロビジョニングされます。",
+      "chooseConnect": "既存のメールボックスを接続",
+      "chooseConnectDesc": "Web メール UI のみをデプロイし、任意の外部 SMTP/IMAP プロバイダー（Amazon SES、Oracle Cloud、Gmail、Fastmail など）に向けます。",
+      "provider": "プロバイダー",
+      "presets": {
+        "custom": "カスタム",
+        "ses": "Amazon SES",
+        "gmail": "Gmail",
+        "fastmail": "Fastmail"
+      },
+      "sendOnlyNote": "{provider} は送信専用です — メールボックスは保持しません。IMAP はメールが実際に保存されている場所を指す必要があります。",
+      "sendOnlyNoInbox": "受信トレイがまだありませんか？ ここでメールサーバーをセットアップし、送信を {provider} 経由でリレーします →",
+      "imapOnOurServer": "メールボックスは {host}（このインスタンス独自のメールサーバー）から読み取られます。送信のみが {provider} を経由します。",
+      "relayNote": "このインスタンスは既にメールサーバーを実行しています。メールボックスがそのサーバー上にある場合は、「配信」→「送信」タブから送信リレーを設定してください。IMAP はローカルのまま、送信のみがドメインまたはアドレス単位で {provider} に送られ、独自の Web メールも引き続き動作します。",
+      "relayCta": "代わりにリレーを設定 →",
+      "hostname": "Web メールアドレス",
+      "hostnameHint": "メールを読むためにユーザーが開く公開 URL（例: mail.example.com）。",
+      "imapHost": "IMAP ホスト",
+      "imapPort": "IMAP ポート",
+      "smtpHost": "SMTP ホスト",
+      "smtpPort": "SMTP ポート",
+      "deploy": "Web メールをデプロイ",
+      "deploying": "デプロイ中…",
+      "hostnameRequired": "Web メールアドレスを入力してください。",
+      "hostsRequired": "IMAP と SMTP の両方のホストを入力してください。"
+    }
+  },
   "settingSection": {
     "edit": "編集",
     "save": "保存",
@@ -240,28 +375,34 @@
         "failed": "内部ホスト名を更新できませんでした",
         "invalid": "英字または数字を 1 文字以上入力してください"
       }
+    },
+    "export": {
+      "title": "プロジェクトのエクスポート",
+      "description": "すべてのプロジェクト設定、環境変数、資格情報を JSON 形式でダウンロードします。"
     }
   },
   "backup": {
     "live": {
-      "title": "ライブバックアップ",
+      "title": "バックアップのアクティビティ",
       "description": "開始したばかりの実行のリアルタイムの進捗です。ページを更新しても保持されます。",
       "dismiss": "閉じる"
     },
     "destinations": {
       "title": "バックアップ先",
-      "description": "ユーザーごとのストレージ先。S3互換バケット、SFTPサーバー、ローカルディスクを追加できます。",
+      "description": "このプロジェクトで利用できる保存先。",
       "manage": "管理",
       "loading": "読み込み中…",
       "emptyPrefix": "まだバックアップ先がありません。",
       "emptyLink": "作成する",
       "emptySuffix": " とバックアップを開始できます。",
       "verified": "検証済み",
-      "failed": "失敗"
+      "failed": "失敗",
+      "emptyHint": "S3バケット、SFTPホスト、または既存のサーバーに接続します。",
+      "inUse": "使用中"
     },
     "services": {
-      "title": "サービスとポリシー",
-      "description": "各サービスは独自のバックアップポリシー（スケジュール＋バックアップ先）を持てます。プロジェクトレベルのデフォルトは Chunk 2 で提供されます。",
+      "title": "バックアップポリシー",
+      "description": "バックアップ対象、実行日時、保存先を選択します。",
       "refresh": "更新",
       "empty": "このプロジェクトにはまだサービスがありません。サービスを追加すると、サービスレベルのバックアップがここに表示されます。",
       "policyLabel": "ポリシー:",
@@ -273,22 +414,54 @@
       "editPolicy": "ポリシーを編集",
       "addDestinationFirst": "先にバックアップ先を追加してください",
       "createPolicyHint": "このサービスのバックアップポリシーを作成します",
-      "createPolicy": "ポリシーを作成"
+      "createPolicy": "ポリシーを作成",
+      "projectHint": "このプロジェクトの全サービスに適用するポリシー。",
+      "includedInProject": "プロジェクトのポリシーに含まれています。",
+      "retainCount": "{count}件のバックアップを保持",
+      "retainDays": "最大{days}日間"
     },
     "recent": {
+      "loadOlder": "以前のバックアップを読み込む",
       "title": "最近のバックアップ",
-      "description": "このプロジェクトの全サービスにわたる直近25件の実行です。",
+      "description": "最近の実行結果と復元オプション。",
       "loading": "読み込み中…",
       "empty": "まだバックアップがありません。",
       "protectedTitle": "保持期間による削除から保護",
       "protected": "保護済み",
       "restoreTitle": "このバックアップから復元",
       "allowPrune": "保持期間による削除を許可",
-      "protectFrom": "保持期間から保護"
+      "protectFrom": "保持期間から保護",
+      "emptyHint": "ポリシーを作成して、ここから最初のバックアップを実行してください。",
+      "backup": "バックアップ",
+      "viewDetails": "詳細を表示",
+      "restore": "復元",
+      "triggers": {
+        "manual": "手動実行",
+        "cron": "定期実行",
+        "webhook": "Webhook",
+        "pre_deploy": "デプロイ前"
+      }
     },
     "toast": {
       "runFailed": "バックアップの実行に失敗しました",
       "toggleProtectionFailed": "保護の切り替えに失敗しました"
+    },
+    "overview": {
+      "description": "バックアップをスケジュールし、プロジェクトのデータを復元します。",
+      "lastBackup": "最後に成功したバックアップ",
+      "noRecentBackup": "最近のバックアップなし",
+      "scheduledPolicies": "スケジュール済みポリシー",
+      "projectScope": "プロジェクト全体",
+      "serviceBackup": "サービスのバックアップ",
+      "paused": "一時停止中",
+      "loadFailed": "バックアップを読み込めませんでした"
+    },
+    "schedule": {
+      "daily": "毎日 {time}",
+      "weekly": "毎週 {day} {time}",
+      "monthly": "毎月{day}日 {time}",
+      "custom": "カスタムスケジュール",
+      "timezone": "サーバーのタイムゾーンを使用します。"
     }
   },
   "build": {
@@ -365,16 +538,16 @@
       "appliesOnDeploy": "次回のデプロイで適用されます。"
     },
     "env": {
-      "title": "環境変数",
-      "description": "保存時に暗号化されます。シークレットはマスクされたまま保持され、変更した値のみが書き込まれます。",
+      "title": "プロジェクト環境（ビルドと共有ランタイム）",
+      "description": "イメージのビルドと共有ランタイムの入力に使用します。実行時は Compose の値とサービス固有の値が優先されます。シークレットはマスクされます。",
       "edit": "編集"
     }
   },
   "envVars": {
     "cancel": "キャンセル",
     "saveChanges": "変更を保存",
-    "title": "環境変数",
-    "description": "本番環境。保存時に暗号化されます。シークレットは設定済みと表示されます。置き換えるには入力し、そのまま保持するには空欄にしてください。",
+    "title": "プロジェクト環境（ビルドと共有ランタイム）",
+    "description": "プロジェクトの本番環境変数です。シークレットはマスクされます。保存済みのシークレットを維持するには空欄にします。同じキーではサービスの実行時の値が優先されます。",
     "empty": "まだ環境変数がありません。",
     "keyPlaceholder": "KEY",
     "secretPlaceholder": "•••••••• （設定済み — 入力して置き換え）",
@@ -394,14 +567,21 @@
       "saveFailed": "環境変数の保存に失敗しました",
       "saveFailedTitle": "保存に失敗しました",
       "noChanges": "保存する変更はありません — 保存済みの値はそのまま維持されます。",
-      "noChangesTitle": "保存する変更なし"
+      "noChangesTitle": "保存する変更なし",
+      "applying": "新しい環境変数でサービスを再起動しています（再ビルドなし）。",
+      "applyingTitle": "適用中",
+      "applyFailed": "実行中のサービスに環境変数を適用できませんでした",
+      "applyFailedTitle": "適用に失敗しました"
     },
     "linkedBadge": "リンク済み",
     "linkedManaged": "{app} 経由",
     "linkedTitle": "リンクされた統合",
     "linkedBody": "この値は {app} の接続から取得されます。そのアプリ側で管理してください — ここでの変更は保存されません。",
     "unlink": "接続を削除",
-    "close": "閉じる"
+    "close": "閉じる",
+    "applyText": "保存しました。実行時の変更は再起動で適用します。イメージのビルドで使用する値は、再ビルドして再デプロイしてください。",
+    "applyTitle": "再ビルドなしで適用",
+    "applyButton": "適用（再起動のみ、再ビルドなし）"
   },
   "gitInfo": {
     "autoDeploy": "自動デプロイ"
@@ -429,6 +609,7 @@
       "install": "GitHub App をインストール"
     },
     "webhookBanner": {
+      "summary": "公開エンドポイントが必要です",
       "title": "自動デプロイを有効にする",
       "description": "自動デプロイには直接の webhook エンドポイントが必要です。この Openship API を公開 URL で公開するか、直接配信用の検証済み webhook ドメインを設定してください。"
     },
@@ -445,6 +626,11 @@
       "updating": "更新中...",
       "select": "ドメインを選択...",
       "clear": "選択をクリア"
+    },
+    "buildQueue": {
+      "label": "古いビルドをキャンセル",
+      "description": "保留中の最新のプッシュのみを保持します。有効にすると、新しいプッシュはリリース処理の開始前に古い自動ビルドもキャンセルします。手動デプロイとロールバックは維持されます。",
+      "saveFailed": "ビルドのキャンセル設定を保存できませんでした"
     },
     "autoDeployCard": {
       "title": "自動デプロイ",
@@ -467,13 +653,13 @@
       "title": "ロールバック戦略",
       "rebuild": "再ビルド（git）",
       "instant": "即時（スナップショット）",
-      "descRebuild": "イメージがホストに残っていない場合は、以前のコミットを再ビルドします。",
-      "descInstant": "各バージョンのイメージを保持するため、復元で再ビルドは発生しません。ディスク使用量は増えます。",
+      "descRebuild": "ホストにイメージが残っていない場合は、過去のコミットを再ビルドします。",
+      "descInstant": "履歴の上限内で成果物を保持します。古いバージョンは再ビルドが必要になる場合があります。",
       "toggleAria": "スナップショット保持を切り替え",
-      "keepNone": "追加のコピーを保持しない",
-      "keepCopies": "バージョンごとにコピーを保持",
-      "descRebuildFiles": "ファイルがホストに残っていない場合は、以前のコミットを再ビルドします。",
-      "descInstantFiles": "各バージョンのファイルを保持するため、復元で再ビルドは発生しません。ディスク使用量は増えます。"
+      "keepNone": "イメージを再利用、または再ビルド",
+      "keepCopies": "ロールバック用の成果物を保持",
+      "descRebuildFiles": "ホストにファイルが残っていない場合は、過去のコミットを再ビルドします。",
+      "descInstantFiles": "履歴の上限内でビルド済みファイルを保持します。古いバージョンは再ビルドが必要になる場合があります。"
     },
     "rollbackHistory": {
       "title": "ロールバック履歴",
@@ -483,13 +669,19 @@
       "descGit": "最近のイメージはいずれの場合も保持されるため、ロールバックはビルドを省略できます。",
       "decreaseAria": "ロールバック履歴を減らす",
       "increaseAria": "ロールバック履歴を増やす",
-      "sizeEach": "各 ~{size}",
+      "sizeEach": "イメージあたり約 {size}（共有レイヤーを含む）",
       "diskFree": "空き {size}",
-      "autoBadge": "自動調整",
+      "autoBadge": "自動",
       "manualBadge": "手動設定",
       "kindFiles": "ディスク上のビルド済みファイル",
       "kindImages": "ホスト上のイメージ",
-      "descGitFiles": "最近のバージョンのファイルはいずれの場合も保持されるため、ロールバックはビルドを省略できます。"
+      "descGitFiles": "最近のバージョンのファイルはいずれの場合も保持されるため、ロールバックはビルドを省略できます。",
+      "retentionHint": "最近のデプロイ成果物を保持し、すばやくロールバックできるようにします。",
+      "retentionDescription": "保持する過去のリリース数の上限です。稼働中およびピン留めしたリリースは別枠で保持します。古い成果物は削除されますが、デプロイ履歴は残ります。0 にすると、稼働中およびピン留めしたリリースのみ保持します。",
+      "automaticValue": "最大 {count} バージョン",
+      "automaticDescription": "既定の履歴上限まで保持します。ディスク容量が不足すると、復元可能な成果物は早めに削除される場合があります。稼働中と固定済みのリリースは上限に含まれません。コミットと設定の履歴は保持されますが、ロールバック時に再ビルドが必要な場合があります。",
+      "defaultBadge": "インスタンスの既定値",
+      "loadFailed": "ロールバック設定を読み込めませんでした。"
     },
     "commits": {
       "title": "最近のコミット",
@@ -552,7 +744,7 @@
   },
   "resources": {
     "title": "マシンパワー",
-    "description": "このプロジェクトのコンテナに適用する CPU とメモリの上限。",
+    "description": "プロジェクトはこのサーバーを共有します。必要な場合のみCPUやメモリの制限を設定してください。",
     "loading": "対象マシンを読み取っています…",
     "unavailable": "マシンパワーを利用できません",
     "loadFailed": "マシンパワーの読み込みに失敗しました",
@@ -562,9 +754,9 @@
     "appliesOnNextDeploy": "上限はコンテナの再作成時に適用されます。変更を反映するには再デプロイしてください。",
     "tiers": {
       "unlimited": {
-        "name": "上限なし",
-        "description": "マシン全体を使う（既定）",
-        "spec": "マシンの容量"
+        "name": "全容量",
+        "description": "サーバーで利用可能なCPUとRAMを使用（デフォルト）",
+        "spec": "他のプロジェクトと共有"
       },
       "micro": {
         "name": "Micro",
@@ -606,6 +798,10 @@
       "updated": "マシンパワーを更新しました",
       "updateFailed": "マシンパワーの更新に失敗しました",
       "invalidValues": "CPU とメモリは 0 または正の数を指定してください"
+    },
+    "customized": {
+      "name": "カスタマイズ",
+      "description": "プリセットを選ぶか、上限を設定"
     }
   },
   "sleep": {
@@ -658,7 +854,12 @@
     "linkedTitleOne": "{count} 件のプロジェクトがこのアプリに接続しています",
     "linkedTitleOther": "{count} 件のプロジェクトがこのアプリに接続しています",
     "linkedNote": "データはそのままで動作を続けます。失うのはこの接続だけです。反映するには再デプロイしてください。",
-    "linkedNoteRecordOnly": "動作は続きますが、リンクはレコードとともに失われます。後でこのアプリを再インポートしても復元されません。"
+    "linkedNoteRecordOnly": "動作は続きますが、リンクはレコードとともに失われます。後でこのアプリを再インポートしても復元されません。",
+    "recordOnlyLabel": "Openship からのみ削除",
+    "recordOnlyDesc": "アプリとそのデータをサーバー上で実行したまま維持し、Openship のレコードのみを削除します。後で再インポートできます。",
+    "recordOnlyReversible": "元に戻せます — アプリはサーバー上に残ります。",
+    "recordOnlyNote": "サーバー上のものは一切変更されません — アプリはデータとともに実行を続けます。Openship のレコードのみが削除され、後で再インポートできます。",
+    "confirmRecordOnly": "レコードを削除"
   },
   "routing": {
     "title": "ルーティング",
@@ -679,15 +880,19 @@
       "active": "アクティブ",
       "failed": "失敗",
       "removing": "削除中",
-      "pending": "保留中"
+      "pending": "保留中",
+      "waiting": "対応待ち"
     },
     "ssl": {
       "includedByHost": "ホストに含まれる",
       "active": "アクティブ",
-      "provisioning": "プロビジョニング中",
+      "provisioning": "証明書を待機中",
       "expired": "期限切れ",
       "error": "エラー",
-      "inactive": "非アクティブ"
+      "inactive": "非アクティブ",
+      "unknown": "不明",
+      "external": "外部 TLS",
+      "manual": "手動証明書"
     },
     "typeCustom": "カスタムドメイン",
     "typeFree": "無料サブドメイン",
@@ -731,12 +936,18 @@
       "mapsToPort": "マッピング先ポート",
       "includeWww": "www を含める",
       "dnsChallenge": "DNS-01 チャレンジを使用",
-      "dnsChallengeDesc": "接続済みの DNS プロバイダーで証明書を発行・更新します。ポート 80 に到達できない場合に使用してください。",
-      "dnsChallengeWildcardDesc": "ワイルドカード証明書には DNS-01 と接続済みの DNS プロバイダーが必要です。",
+      "dnsChallengeDesc": "DNS プロバイダーまたは一時的な TXT レコードで検証します。ポート 80 を利用できない場合に便利です。",
+      "dnsChallengeWildcardDesc": "ワイルドカード HTTPS には必須です。接続済みの DNS プロバイダーを使用するか、HTTPS の設定中に一時的な TXT レコードを追加してください。",
       "includeWwwDesc": "www.{domain} 用のレコードも生成します",
       "includeWwwFallback": "yourdomain.com",
       "adding": "追加中...",
-      "submit": "ドメインを追加"
+      "submit": "ドメインを追加",
+      "servesPath": "提供パス",
+      "servesPathHint": "このドメインへのリクエストは、ビルド出力内のこのパスから提供されます。",
+      "servesPathRedeploy": "新しいパスは次回のデプロイ時に有効になります。",
+      "externalIngress": "外部 ingress と TLS",
+      "externalIngressDesc": "TLS はリバースプロキシ（Cloudflare Tunnel、Nginx Proxy Manager、ロードバランサーなど）で終端します。ドメインがこのサーバーを指している必要はなく、Openship は証明書を発行しません。",
+      "noWww": "そのドメインは既にこのプロジェクトに存在します。"
     },
     "dns": {
       "title": "DNS レコード",
@@ -788,7 +999,8 @@
       "title": "ルートを編集",
       "internalOnly": "内部のみ",
       "close": "閉じる",
-      "disabledWarning": "サービスが無効です。サービスが再度有効になるまでルートは非アクティブです。"
+      "disabledWarning": "サービスが無効です。サービスが再度有効になるまでルートは非アクティブです。",
+      "save": "変更を保存"
     },
     "menu": {
       "editRoute": "ルートを編集",
@@ -799,7 +1011,8 @@
       "renewing": "更新中...",
       "renewSsl": "SSL を更新",
       "rechecking": "再確認中...",
-      "recheckSsl": "SSL を再確認"
+      "recheckSsl": "SSL を再確認",
+      "uploadCert": "証明書をアップロード"
     },
     "toast": {
       "enterPort": "このドメインがルーティングするポートを入力してください（1〜65535）。",
@@ -830,7 +1043,11 @@
       "enterPortShort": "このドメインがルーティングするポートを入力してください。",
       "noServicePort": "ポート {port} を公開しているサービスがありません。先にそのポートをサービスに追加してください。",
       "enterCustom": "カスタムドメインを入力してください。",
-      "enterSubdomain": "サブドメインを入力してください。"
+      "enterSubdomain": "サブドメインを入力してください。",
+      "certUploaded": "{hostname} の証明書をインストールしました。",
+      "certUploadFailed": "{hostname} の証明書をインストールできませんでした。",
+      "publishing": "公開中 — エッジをインストールしてドメインを適用するためにデプロイ中…",
+      "publishFailed": "ドメインは保存されましたが、デプロイが開始されませんでした — 再デプロイして公開してください。"
     },
     "edge": {
       "setUp": "エッジを設定",
@@ -840,19 +1057,225 @@
       "foreignProxyHint": "別のプロキシが 80/443 を使用中"
     },
     "diagnosis": {
-      "title": "うまくいかない理由",
+      "title": "ドメインの詳細",
       "noneYet": "まだチェックが実行されていないため、表示できる結果がありません。表示されている DNS レコードを追加してから「検証」を実行してください。",
       "attempts": "これまでに {count} 回失敗しています。",
-      "pillHint": "理由を表示"
+      "pillHint": "理由を表示",
+      "lastChecked": "最終確認：",
+      "nextCheck": "次回の確認予定：",
+      "scheduleHint": "このインスタンスがオンラインの間に確認を実行します。待機中の処理により開始が遅れることがあります。",
+      "automaticDisabled": "ドメインの自動確認は無効です。手動で再試行するか、ジョブで有効にしてください。",
+      "scheduleUnavailable": "自動確認のスケジュールを取得できません。手動で再試行できます。",
+      "retryNow": "今すぐ再試行",
+      "checking": "確認中…",
+      "reasons": {
+        "verification": "ドメインの検証は完了していません。再試行する前に DNS レコードを確認してください。",
+        "certificate": "サイトを提供するサーバーで HTTPS の確認が必要です。再試行時は、新しい証明書を要求する前に既存の証明書を確認します。",
+        "deployment": "このルートはデプロイを待っています。プロジェクトをデプロイして適用してください。",
+        "disabled": "このプロジェクトまたはサービスは無効です。ルートを確認する前に有効にしてください。",
+        "removing": "このドメインは削除中です。検証は予定されていません。",
+        "manual_certificate": "このドメインはアップロードされた証明書を使用しています。有効な証明書をアップロードして再確認してください。Openship は自動更新しません。",
+        "managed_certificate": "TLS は外部プロキシまたは Openship Cloud が管理しています。そのプロバイダーの設定を確認してください。",
+        "route_missing": "設定されたルートはまだ適用されていません。ルーティングを再試行して適用してください。ルーティングの自動再試行は予定されていません。",
+        "manual_dns": "この証明書は手動の TXT 検証を使用しています。HTTPS 設定を開いて新しい TXT レコードを確認するか、接続済みの DNS プロバイダーを選んで自動更新を有効にしてください。",
+        "managed_owner": "このホスト名と証明書は所有サービスによって管理されています。そのサービスのドメイン設定を確認してください。"
+      }
     },
     "records": {
       "failed": "このドメインの DNS レコードを読み込めませんでした。",
-      "retry": "再試行"
+      "retry": "再試行",
+      "toggle": "DNS レコード",
+      "hint": "これらを DNS プロバイダーに追加し、「確認」をクリックしてください。",
+      "loading": "レコードを読み込み中…",
+      "none": "このドメインに追加するレコードはありません。"
     },
     "outputHint": {
       "body": "{path} にビルド出力が見つかりません — 出力ディレクトリを確認して再デプロイしてください。",
       "noIndex": "{path} に出力はありますが index ファイルがありません — リクエストは 404 になります。出力ディレクトリを確認してください。",
       "notServed": "エッジが {path} に対して HTTP {status} を返しました — このパスは配信されていません。出力ディレクトリとルートを確認してください。"
+    },
+    "wildcard": {
+      "title": "DNS 検証による HTTPS",
+      "scope": "ワイルドカードはサブドメインの 1 階層を対象とします。ベースドメインでもこのアプリを配信する場合は、別途追加してください。",
+      "notice": "ワイルドカード HTTPS には DNS 検証が必要です。保存後、DNS プロバイダーを接続するか、HTTPS 設定に表示される TXT レコードを追加してください。",
+      "automatic": "自動（プロバイダー）",
+      "manual": "手動 TXT",
+      "automaticHint": "設定 → DNS で Cloudflare を接続すると、証明書の検証レコードを作成し、HTTPS を自動更新できます。",
+      "manualHint": "DNS プロバイダーで一時的な TXT レコードを追加してください。更新のたびに新しい TXT レコードが必要です。更新時期は Openship に表示されます。",
+      "routing": "1. ドメインをこのサーバーに向ける",
+      "certificate": "2. HTTPS を有効にする",
+      "startAutomatic": "HTTPS を自動で有効にする",
+      "startManual": "TXT レコードを取得",
+      "renew": "証明書を更新",
+      "check": "TXT を確認して HTTPS を有効化",
+      "cancel": "検証をキャンセル",
+      "refresh": "状態を更新",
+      "close": "設定を閉じる",
+      "loading": "証明書設定を読み込み中",
+      "loadFailed": "証明書設定を読み込めませんでした。再試行して現在の状態を確認してください。",
+      "recordsFailed": "ルーティング用の DNS レコードを読み込めませんでした。保存済みの証明書検証情報は引き続き利用できます。",
+      "actionFailed": "証明書設定を更新できませんでした。",
+      "expires": "{date} までにこの検証を完了してください。",
+      "txtHint": "この TXT 値をそのまま追加してください。同じ名前の他の TXT 値は残してください。プロバイダーがゾーン名を補完する場合は、相対部分のみを入力してください。",
+      "cleanup": "この試行の TXT 値は削除できます。他の TXT レコードはすべて残してください。",
+      "logs": "証明書ログ",
+      "states": {
+        "preparing": "証明書の検証を準備中…",
+        "waiting": "TXT レコードを待機中",
+        "checking": "DNS と証明書の所有権を確認中…",
+        "installing": "HTTPS を有効化中…",
+        "cancelling": "検証をキャンセル中…",
+        "completed": "HTTPS の準備ができました",
+        "failed": "証明書の設定に対応が必要です",
+        "cancelled": "検証をキャンセルしました",
+        "expired": "TXT 検証の有効期限が切れました"
+      }
+    },
+    "verifyMissing": {
+      "both": "CNAME レコードも TXT レコードもまだ名前解決されていません — 以下のレコードを追加し、DNS が伝播するのを待ってから「確認」をクリックしてください。",
+      "cname": "CNAME レコードがまだ名前解決されていません — 以下に追加し、DNS が伝播するのを待ってから「確認」をクリックしてください。",
+      "txt": "TXT 検証レコードがまだ名前解決されていません — 以下に追加し、DNS が伝播するのを待ってから「確認」をクリックしてください。"
+    },
+    "portHint": {
+      "body": "ポート {port} で応答がありません — アプリがそこでリッスンを開始するまでリクエストが 502 になる可能性があります。",
+      "bodyService": "サービス \"{service}\": ポート {port} で応答がありません — アプリがリッスンを開始するまでリクエストが 502 になる可能性があります。"
+    },
+    "certUpload": {
+      "title": "証明書をアップロード",
+      "desc": "Let's Encrypt の代わりに独自の証明書（持ち込み証明書または Cloudflare Origin CA）から TLS を提供します。アップストリームプロキシがこのドメインの前面にあり、オリジンが引き続き本物の証明書を必要とする場合（Cloudflare Full-strict など）に使用します。証明書をアップロードすると、このドメインの Certbot は無効になります — 新しい証明書をアップロードして更新してください。",
+      "certLabel": "証明書 (fullchain PEM)",
+      "certPlaceholder": "-----BEGIN CERTIFICATE-----",
+      "keyLabel": "秘密鍵 (PEM)",
+      "keyPlaceholder": "-----BEGIN PRIVATE KEY-----",
+      "submit": "証明書をインストール",
+      "submitting": "インストール中…",
+      "close": "キャンセル"
+    },
+    "removeRoute": {
+      "title": "ルートを削除",
+      "description": "アプリは実行を継続します — このルートとエッジ登録のみが削除されます。いつでも再度追加できます。",
+      "confirm": "ルートを削除",
+      "removing": "削除中…"
     }
+  },
+  "serviceEnvironment": {
+    "title": "サービスのランタイム環境",
+    "description": "これらの変数はこのサービスのみに適用され、Compose やプロジェクトの同名の値より優先されます。「環境の変更を適用」で保存済みの値を有効にします。",
+    "overrides": "このサービスでは次のキーがプロジェクトの値より優先されます: {keys}。",
+    "buildArguments": "ビルド引数は Compose ファイルまたはソース設定で指定し、変更を反映するには再ビルドが必要です。",
+    "projectLink": "共有プロジェクト環境を編集",
+    "loadFailed": "上書きを確認するためのプロジェクト変数名を読み込めませんでした。"
+  },
+  "cloudStaticHosting": {
+    "title": "静的ホスティング",
+    "description": "ビルドしたファイルの配信先を選択します。",
+    "pages": "Cloud Pages（デフォルト）",
+    "pagesDescription": "アプリコンテナを常時稼働させず、Cloud エッジにファイルを公開します。",
+    "server": "マネージドサーバー",
+    "serverDescription": "マネージドサーバー上の nginx コンテナからファイルを配信します。",
+    "nextDeploy": "保存した設定は次回のデプロイから適用されます。"
+  },
+  "deploymentChecks": {
+    "title": "GitHub デプロイチェック",
+    "description": "デプロイしたコミットにデプロイとサービスの結果を表示します。",
+    "customize": "チェックをカスタマイズ",
+    "deployment": "デプロイ結果",
+    "services": "新しいサービスを含むすべてのサービス",
+    "selectedServices": "サービスを選択",
+    "includeErrors": "エラーの詳細を含める",
+    "errorsHint": "機密情報を除いたエラー概要は、このリポジトリを閲覧できる人に共有されます。",
+    "emptySelection": "チェックを1つ以上選択するか、結果の送信をオフにしてください。",
+    "connectionHint": "Checks の書き込み権限を持つ GitHub App が必要です。",
+    "connection": "GitHub 接続",
+    "deliveryFailed": "チェックを送信できませんでした",
+    "saveFailed": "GitHub チェックの設定を保存できませんでした。"
+  },
+  "appSource": {
+    "title": "ソース",
+    "description": "このアプリはリリースからデプロイされます — プッシュ先のリポジトリはなく、アップデートは新バージョンとして提供されます。",
+    "sourceType": "ソース",
+    "kindRelease": "リリース",
+    "kindImage": "コンテナイメージ",
+    "current": "現在のバージョン",
+    "latest": "最新バージョン",
+    "repository": "リポジトリ",
+    "notChecked": "未確認",
+    "upToDate": "最新です",
+    "updateAvailable": "アップデートがあります",
+    "checkForUpdates": "アップデートを確認",
+    "checkFailed": "アップデートを確認できませんでした",
+    "update": "アップデート",
+    "updateTo": "{version} にアップデート",
+    "updating": "アップデート中…",
+    "updateFailed": "アップデートに失敗しました",
+    "toastTitle": "ソース",
+    "cliManaged": "これは Openship のコントロールプレーンです — 自動で更新されます。アップグレードするにはホスト上で \"openship update\" を実行してください。ここで変更する必要はありません。"
+  },
+  "routeRules": {
+    "title": "ルーティングルール",
+    "description": "エッジで適用されるレート制限、BAN、許可/拒否ルール — 再デプロイ不要で即座に適用されます。",
+    "loading": "ルールを読み込み中…",
+    "empty": "ルーティングルールはまだありません。以下から追加してください。",
+    "allHosts": "すべてのホスト名",
+    "allPaths": "すべてのパス",
+    "addTitle": "ルールを追加",
+    "pathLabel": "パスプレフィックス（任意）",
+    "rps": "リクエスト / 秒",
+    "burst": "バースト",
+    "methods": "許可するメソッドのみ",
+    "banIps": "BAN する IP / CIDR",
+    "banCountries": "BAN する国 (ISO)",
+    "allowCountries": "許可する国のみ (ISO)",
+    "denyCidrs": "拒否する CIDR",
+    "allowReferers": "直リンク防止: 許可する Referer",
+    "banUserAgents": "BAN する User-Agent（部分一致）",
+    "blockEmptyUa": "空の User-Agent をブロック",
+    "blockStatus": "ブロック時のレスポンスコード",
+    "add": "ルールを追加",
+    "remove": "削除",
+    "enabled": "有効",
+    "disabled": "無効",
+    "saved": "ルールを保存しました",
+    "saveFailed": "ルールの保存に失敗しました",
+    "loadFailed": "ルールの読み込みに失敗しました"
+  },
+  "runtimeUpdates": {
+    "options": "再デプロイのオプション",
+    "refresh": "イメージを更新して再デプロイ",
+    "refreshing": "イメージを更新中…",
+    "check": "イメージの更新を確認",
+    "title": "イメージの更新",
+    "failed": "イメージの更新を開始できませんでした。",
+    "uncertain": "リクエストがタイムアウトしました。再試行する前にデプロイ履歴を確認してください。",
+    "available": "イメージの更新があります",
+    "current": "イメージのダイジェストは、レジストリで最後に確認した値と一致しています。",
+    "checkUnavailable": "比較には記録済みダイジェストとレジストリへのアクセスが必要です。",
+    "checkFailed": "イメージの更新を確認できませんでした。",
+    "pinned": "イメージはダイジェストで固定されています。更新するには設定した参照を編集してください。"
+  },
+  "securityAdvisories": {
+    "sourceRedeployRequired": "ランタイムを更新する前に、保存済みのソースからこのアプリを再ビルドしてください。現在のイメージには検証済みのソースリビジョンがありません。ソースから再デプロイすると、新しいコードが含まれる場合があります。「デプロイ」で確認してから、このアドバイザリを再確認してください。",
+    "openSourceRedeploy": "ソースからの再デプロイを開く",
+    "reviewApps": "影響を受けるアプリを確認（{count}）",
+    "pendingApps": "{count} 個のアプリの確認が保留中です。結果は自動的に表示されます。",
+    "checkAgain": "再確認",
+    "checking": "確認中…",
+    "title": "セキュリティ情報",
+    "unavailable": "セキュリティ確認が利用できないか、古くなっています。以前の通知は引き続き表示されます。",
+    "affected": "現在の組織でアクセスできるアプリの検出結果です。",
+    "noMatches": "確認した情報に一致する通知はありません。完全な脆弱性スキャンではありません。",
+    "partial": "一部のランタイムを確認できませんでした。",
+    "guidance": "詳細を読む",
+    "automatic": "検証済みセキュリティ修正を自動更新",
+    "automaticDescription": "初期設定では無効です。現在のタグに署名済み修正があるイメージサービスのみ自動更新します。ソースビルド、固定イメージ、バージョン変更は確認が必要です。通常のデプロイとヘルスチェックも行います。",
+    "notifications": "セキュリティ通知は各チャンネルで初期設定で有効です。設定 → 通知で個別に変更できます。",
+    "publicFeed": "公開フィードを見る",
+    "checked": "検証日時",
+    "possible": "イメージタグが一致しています。デプロイ済みバージョンの確認が必要です。",
+    "tab": "セキュリティ",
+    "monitoring": "監視で表示",
+    "persistent": "バナーを閉じても、未解決の検出結果はここに表示されます。",
+    "otherApps": "その他のアプリ ({count})",
+    "details": "詳細と対処方法"
   }
 }

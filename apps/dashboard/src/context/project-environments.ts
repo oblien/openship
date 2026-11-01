@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export interface EnvironmentIdentity {
   id: string;
   type?: "production" | "preview" | "development";
@@ -98,6 +99,7 @@ export async function reconcileCreatedProjectEnvironment<T extends EnvironmentId
     commit(refreshed);
     invalidate(projectEnvironmentIds(currentId, [...optimistic, ...refreshed]));
   } catch (error) {
+    observeCaughtError(error, "dashboard/context/project-environments");
     onRefreshError?.(error);
   }
 }

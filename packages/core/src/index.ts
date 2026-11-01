@@ -1,36 +1,58 @@
 export * from "./types";
+export * from "./docker-swarm";
+export * from "./actions";
+export * from "./action-capabilities";
 export * from "./stacks";
+export * from "./package-manager-version";
+export * from "./stack-roles";
+export * from "./duration";
 export * from "./volumes";
 export * from "./compose-namespace";
 export * from "./compose-spec";
+export * from "./container-hosts";
+export * from "./env-file";
 export * from "./object-storage";
 export * from "./constants";
 export * from "./shell-split";
+export * from "./ssh-options";
+export * from "./service-name";
 export * from "./edge-image-ref";
 export * from "./mail-image-ref";
 // `image-ref` was internal (only the two wrappers above used `buildImageRef`). Exported
 // now for the registry rules it also holds: the credential a user saves and the lookup
 // that matches it at pull time must derive the registry from the SAME functions.
 export {
+  buildImageRef,
+  isMutableImageRef,
+  type BaseImageReceipt,
+  type RuntimeImageReceipts,
   DOCKER_HUB_REGISTRY,
   normalizeRegistryHost,
   registryConfigKeys,
   registryForImage,
 } from "./image-ref";
 export * from "./system";
+export * from "./domain-retry";
 export * from "./utils";
+export * from "./runtime-version";
 export * from "./errors";
+export * from "./operation-state";
 export * from "./service-routing";
+export * from "./volume-spec";
 export * from "./source-access";
 export * from "./edge-orphans";
 export * from "./service-status";
 export * from "./backup-catalog";
 export * from "./backup-image-detect";
+export * from "./backup-storage";
 export * from "./runtime-config";
 export * from "./resources";
+export * from "./cloud-capacity";
 export * from "./rollback-window";
+export * from "./deployment-history";
 export * from "./secret-keys";
 export * from "./credentials";
+export * from "./url-credentials";
 export * from "./workspaces";
 export * from "./connectivity";
 export * from "./cloud-capability";
@@ -38,6 +60,7 @@ export * from "./languages";
 export * from "./metadata";
 export * from "./openship-config";
 export * from "./mail-server";
+export * from "./mail-certificate";
 export * from "./app-templates";
 export {
   appTemplateSchema,
@@ -48,7 +71,9 @@ export {
   type AppTemplateRejection,
 } from "./apps/schema";
 export * from "./apps/install-phases";
+export * from "./apps/install-routing";
 export * from "./pricing";
+export * from "./pricing/custom";
 export {
   pricingCatalogSchema,
   pricingCopySchema,
@@ -59,13 +84,56 @@ export {
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./deployment-class";
+export * from "./deployment-ownership";
 export * from "./updates";
 export * from "./proxy-settings";
 export * from "./audit-taxonomy";
 export * from "./access-grants";
+export * from "./access-capabilities";
 export * from "./answer";
 export * from "./host-profile";
 export * from "./host-firewall";
 export * from "./host-channel";
 export * from "./network";
 export * from "./sse-terminal";
+export * from "./data-transfer";
+export * from "./instance-address";
+export * from "./analytics-domain";
+export * from "./deployment-events";
+export * from "./deployment-resource-issue";
+export * from "./operation-limits";
+export type { ExecutionAuthority } from "./execution-authority";
+export * from "./sse";
+export * from "./infrastructure";
+export * from "./managed-network";
+export type { ManagedCommandRef } from "./managed-command";
+export * from "./network-firewall";
+export * from "./network-access";
+
+export * from "./compute-cluster";
+export * from "./cluster-runtime";
+export * from "./cluster-storage";
+export * from "./cluster-workload";
+export * from "./cluster-database";
+
+export { withKeyedMutex, tryWithKeyedMutex } from "./keyed-mutex";
+export * from "./instance-handoff";
+export * from "./instance-environment";
+export { nodeImageForEngine } from "./node-runtime-version";
+export * from "./diagnostics/index";
+
+export * from "./github-installation-scope";
+
+export * from "./pricing/actions";
+export * from "./deployment-checks";
+export * from "./compose-gpu";
+export * from "./compose-shared-memory";
+export * from "./apps/gpu";
+
+export * from "./appearance";
+export * from "./command-environment";
+
+export * from "./build-caches";
+
+export * from "./compose-interpolation";
+export * from "./service-env-layers";

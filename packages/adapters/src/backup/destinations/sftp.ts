@@ -21,10 +21,13 @@
  * resolveDestination sees them.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Client, type SFTPWrapper } from "ssh2";
 import { posix } from "node:path";
 import { PassThrough, Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { randomBytes } from "node:crypto";
+import { resolvePinnedHost } from "../../system/outbound-target";
 import { decryptCredential } from "../common/credentials";
 import { registerDestination } from "../registry";
 import { safeErrorMessage } from "@repo/core";
@@ -56,7 +59,7 @@ const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>(
  * A shorter bound here would silently override that budget and fail healthy
  * backups of large databases.
  */
-const UPLOAD_STALL_TIMEOUT_MS = 10 * 60 * 1000;
+const TRANSFER_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const UPLOAD_STALL_PROBE_MS = 30 * 1000;
 
 /**
@@ -71,6 +74,39 @@ const UPLOAD_STALL_PROBE_MS = 30 * 1000;
  * uploads are one-at-a-time within a run.
  */
 const UPLOAD_BUFFER_BYTES = 8 * 1024 * 1024;
+const SFTP_CONTROL_TIMEOUT_MS = 10_000;
+
+/** Control requests must also settle when a broken channel drops its callbacks. */
+function sftpRequest<T = void>(
+  label: string,
+  start: (done: (error?: Error | null, value?: T) => void) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error | null, value?: T) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve(value as T);
+    };
+    const onAbort = () => finish(signal?.reason ?? new Error("SFTP connection closed"));
+    const timer = setTimeout(
+      () => finish(new Error(`SFTP ${label} timed out`)),
+      SFTP_CONTROL_TIMEOUT_MS,
+    );
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) return onAbort();
+    try {
+      start(finish);
+    } catch (error) {
+      observeCaughtError(error, "adapters/backup/destinations/sftp");
+      finish(error as Error);
+    }
+  });
+}
 
 interface ConnectionConfig {
   host: string;
@@ -87,8 +123,10 @@ class SftpDestinationImpl implements BackupDestination {
 
   private readonly conn: ConnectionConfig;
   private readonly rootPath: string;
+  private readonly publicNetworkOnly: boolean;
 
   constructor(row: BackupDestinationRow) {
+    this.publicNetworkOnly = row.publicNetworkOnly === true;
     this.kind = row.kind === "openship_server" ? "openship_server" : "sftp";
 
     if (!row.sshHost) {
@@ -112,6 +150,7 @@ class SftpDestinationImpl implements BackupDestination {
       host: row.sshHost,
       port: row.sshPort ?? 22,
       username: row.sshUser,
+      ...(row.sshHostKey ? { hostVerifier: (key: Buffer) => key.toString("base64") === row.sshHostKey } : {}),
       ...(password ? { password } : {}),
       ...(privateKey ? { privateKey, ...(passphrase ? { passphrase } : {}) } : {}),
     };
@@ -131,7 +170,7 @@ class SftpDestinationImpl implements BackupDestination {
     // configured pathPrefix.
     const root = posix.resolve("/", this.rootPath);
     const candidate = posix.resolve(root, cleaned);
-    if (candidate !== root && !candidate.startsWith(root + "/")) {
+    if (root !== "/" && candidate !== root && !candidate.startsWith(root + "/")) {
       throw new Error(
         `SFTP key escapes destination root (${this.rootPath}): ${key}`,
       );
@@ -141,66 +180,115 @@ class SftpDestinationImpl implements BackupDestination {
 
   // ── Connection helper ────────────────────────────────────────────────
 
-  private async withSftp<T>(fn: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
+  private async withSftp<T>(
+    fn: (sftp: SFTPWrapper, signal: AbortSignal) => Promise<T>,
+    timeoutMs?: number,
+    cancelSignal?: AbortSignal,
+  ): Promise<T> {
     const client = new Client();
+    const abort = new AbortController();
     return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        cancelSignal?.removeEventListener("abort", onCancel);
         try {
           client.end();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/backup/destinations/sftp");
           // already ended
         }
       };
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        abort.abort(error);
+        cleanup();
+        reject(error);
+      };
+      const onCancel = () => fail(cancelSignal?.reason ?? new Error("SFTP operation cancelled"));
+      cancelSignal?.addEventListener("abort", onCancel, { once: true });
+      if (cancelSignal?.aborted) return onCancel();
+      if (timeoutMs) {
+        timer = setTimeout(() => fail(new Error("SFTP cleanup timed out")), timeoutMs);
+      }
       client
         .on("ready", () => {
-          client.sftp((err, sftp) => {
-            if (err) {
-              cleanup();
-              reject(err);
-              return;
-            }
-            fn(sftp).then(
+          if (settled) return;
+          sftpRequest<SFTPWrapper>("channel open", (done) => client.sftp(done), abort.signal)
+            .then((sftp) => {
+              abort.signal.throwIfAborted();
+              return fn(sftp, abort.signal);
+            })
+            .then(
               (val) => {
+                if (settled) return;
+                settled = true;
                 cleanup();
                 resolve(val);
               },
-              (e) => {
-                cleanup();
-                reject(e);
-              },
+              fail,
             );
-          });
         })
-        .on("error", (err) => {
-          cleanup();
-          reject(err);
-        })
-        .connect(this.conn);
+        .on("error", fail)
+        .on("close", () => fail(new Error("SFTP connection closed before the operation completed")));
+      try {
+        if (this.publicNetworkOnly) {
+          void resolvePinnedHost(this.conn.host, false, AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]))
+            .then(({ ip }) => {
+              abort.signal.throwIfAborted();
+              client.connect({ ...this.conn, host: ip });
+            })
+            .catch(fail);
+        } else {
+          client.connect(this.conn);
+        }
+      } catch (error) {
+        observeCaughtError(error, "adapters/backup/destinations/sftp");
+        fail(error);
+      }
     });
   }
 
   // ── Recursive mkdir (SFTP has no mkdir -p) ───────────────────────────
 
-  private async ensureDir(sftp: SFTPWrapper, dir: string): Promise<void> {
+  private async ensureDir(sftp: SFTPWrapper, dir: string, signal: AbortSignal): Promise<void> {
     const parts = dir.split("/").filter(Boolean);
     let current = dir.startsWith("/") ? "" : ".";
     for (const part of parts) {
       current = current === "" ? `/${part}` : posix.join(current, part);
       // eslint-disable-next-line no-await-in-loop
-      await new Promise<void>((resolve, reject) => {
+      await sftpRequest("directory creation", (done) => {
         sftp.mkdir(current, (err) => {
-          if (!err) return resolve();
+          if (signal.aborted) return;
+          if (!err) return done();
           // EEXIST / "Failure" / code 4 = already exists. We can't
           // reliably check by code (depends on server), so try stat
           // and treat-as-ok if it's a directory.
           sftp.stat(current, (statErr, stats) => {
-            if (statErr) return reject(err);
-            if (stats.isDirectory()) return resolve();
-            reject(new Error(`${current} exists but is not a directory`));
+            if (statErr) return done(err);
+            if (stats.isDirectory()) return done();
+            done(new Error(`${current} exists but is not a directory`));
           });
         });
-      });
+      }, signal);
     }
+  }
+
+  /** A missing file is already clean; every deletion uses the same deadline. */
+  private async unlinkIfPresent(
+    sftp: SFTPWrapper,
+    path: string,
+    signal: AbortSignal,
+    label = "file deletion",
+  ): Promise<void> {
+    await sftpRequest(label, (done) => {
+      sftp.unlink(path, (error) => {
+        const missing = (error as { code?: number } | null)?.code === 2;
+        done(missing ? null : error);
+      });
+    }, signal);
   }
 
   // ── BackupDestination interface ──────────────────────────────────────
@@ -208,21 +296,27 @@ class SftpDestinationImpl implements BackupDestination {
   async preflight(): Promise<{ ok: true } | { ok: false; reason: string }> {
     try {
       const probeName = `.openship-probe-${randomBytes(6).toString("hex")}`;
-      await this.withSftp(async (sftp) => {
-        await this.ensureDir(sftp, this.rootPath);
+      await this.withSftp(async (sftp, signal) => {
+        await this.ensureDir(sftp, this.rootPath, signal);
         const probePath = posix.join(this.rootPath, probeName);
-        await new Promise<void>((resolve, reject) => {
-          const ws = sftp.createWriteStream(probePath);
-          ws.on("error", reject);
-          ws.on("close", () => resolve());
+        await sftpRequest("write probe", (done) => {
+          // ssh2's autoClose destroys in _final, before Node can emit finish.
+          // Close explicitly after finish so a complete write and an interrupted
+          // write remain distinguishable on both Node and Bun.
+          const ws = sftp.createWriteStream(probePath, { autoClose: false });
+          let finishedWriting = false;
+          ws.on("finish", () => { finishedWriting = true; ws.destroy(); });
+          ws.on("error", done);
+          ws.on("close", () => done(
+            finishedWriting ? undefined : new Error("SFTP write probe closed before all bytes were written"),
+          ));
           ws.end("ok");
-        });
-        await new Promise<void>((resolve, reject) =>
-          sftp.unlink(probePath, (err) => (err ? reject(err) : resolve())),
-        );
+        }, signal);
+        await this.unlinkIfPresent(sftp, probePath, signal);
       });
       return { ok: true };
     } catch (err) {
+      observeCaughtError(err, "adapters/backup/destinations/sftp");
       return {
         ok: false,
         reason: safeErrorMessage(err),
@@ -234,9 +328,11 @@ class SftpDestinationImpl implements BackupDestination {
     const target = this.fullPath(key);
     const tmp = `${target}.uploading-${randomBytes(4).toString("hex")}`;
     let bytesWritten = 0;
+    let uploadStarted = false;
 
-    await this.withSftp(async (sftp) => {
-      await this.ensureDir(sftp, posix.dirname(target));
+    await this.withSftp(async (sftp, signal) => {
+      await this.ensureDir(sftp, posix.dirname(target), signal);
+      signal.throwIfAborted();
 
       await new Promise<void>((resolve, reject) => {
         // `highWaterMark` is the throughput fix, and it is not a micro-optimisation.
@@ -255,9 +351,11 @@ class SftpDestinationImpl implements BackupDestination {
         //
         // This buffer is ALSO the backpressure boundary the artifact stream pushes
         // against, so it is a deliberate memory ceiling per upload, not a guess.
-        const ws = sftp.createWriteStream(tmp, { highWaterMark: UPLOAD_BUFFER_BYTES });
+        uploadStarted = true;
+        const ws = sftp.createWriteStream(tmp, { highWaterMark: UPLOAD_BUFFER_BYTES, autoClose: false });
         let lastProgressAt = Date.now();
         let settled = false;
+        let finishedWriting = false;
 
         let watchdog: ReturnType<typeof setInterval> | undefined;
 
@@ -285,10 +383,10 @@ class SftpDestinationImpl implements BackupDestination {
         // a fixed size (#516). This bound is deliberately cause-agnostic: it says
         // nothing about WHY the bytes stopped, only that they did.
         watchdog = setInterval(() => {
-          if (settled || Date.now() - lastProgressAt <= UPLOAD_STALL_TIMEOUT_MS) return;
+          if (settled || Date.now() - lastProgressAt <= TRANSFER_IDLE_TIMEOUT_MS) return;
           finish(
             new Error(
-              `SFTP upload stalled: no write progress for ${UPLOAD_STALL_TIMEOUT_MS / 1000}s ` +
+              `SFTP upload stalled: no write progress for ${TRANSFER_IDLE_TIMEOUT_MS / 1000}s ` +
                 `(wrote ${bytesWritten} bytes so far). Retry; if it recurs, check both ends — ` +
                 `whether the source is still producing bytes, and the destination's SFTP subsystem.`,
             ),
@@ -296,8 +394,12 @@ class SftpDestinationImpl implements BackupDestination {
         }, UPLOAD_STALL_PROBE_MS);
         (watchdog as { unref?: () => void }).unref?.();
 
-        ws.on("error", (err: Error) => finish(err));
-        ws.on("close", () => finish());
+        ws.on("error", (err: Error) => { observeCaughtError(err, "adapters/backup/destinations/sftp"); return finish(err); });
+        ws.on("finish", () => { finishedWriting = true; ws.destroy(); });
+        ws.on("close", () => finish(finishedWriting ? undefined : new Error("SFTP upload closed before all bytes were written")));
+        const onAbort = () => finish(signal.reason ?? new Error("SFTP connection closed"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        onSettled.push(() => signal.removeEventListener("abort", onAbort));
         // Progress is measured at the WRITE side (`ws`), not by counting bytes read
         // out of `body`. Those are different questions: with a fast producer and a
         // dead destination, bytes leave `body` into the write buffer and the stall
@@ -314,96 +416,96 @@ class SftpDestinationImpl implements BackupDestination {
         }, 1000);
         (trackProgress as { unref?: () => void }).unref?.();
         onSettled.push(() => clearInterval(trackProgress));
-        body.on("error", (err) => finish(err));
+        body.on("error", (err) => { observeCaughtError(err, "adapters/backup/destinations/sftp"); return finish(err); });
+        body.on("close", () => {
+          if (!body.readableEnded) finish(new Error("SFTP upload source closed prematurely"));
+        });
+        if (signal.aborted) return onAbort();
         body.pipe(ws);
       });
 
       // Atomic finalize.
-      await new Promise<void>((resolve, reject) => {
+      await sftpRequest("upload finalization", (done) => {
         sftp.rename(tmp, target, (err) => {
-          if (!err) return resolve();
+          if (!err) return done();
           // POSIX rename refuses to overwrite on some servers. Try
           // unlink + rename as the fallback.
           sftp.unlink(target, () => {
-            sftp.rename(tmp, target, (err2) =>
-              err2 ? reject(err2) : resolve(),
-            );
+            sftp.rename(tmp, target, done);
           });
         });
+      }, signal);
+    }).catch(async (error) => {
+      body.destroy();
+      if (!uploadStarted) throw error;
+      // The upload connection may already be dead. Reconnect with a deadline;
+      // a failed cleanup must neither mask the upload error nor hold the worker.
+      await this.withSftp(
+        (sftp, signal) => this.unlinkIfPresent(sftp, tmp, signal, "temporary upload cleanup"),
+        SFTP_CONTROL_TIMEOUT_MS,
+      ).catch((cleanupError) => {
+        errorDiagnostics.warn("adapters/backup/destinations/sftp", `[sftp] Could not reclaim temporary upload ${tmp}: ${safeErrorMessage(cleanupError)}`, cleanupError);
       });
+      throw error;
     });
 
     return { bytesWritten };
   }
 
   async get(key: string): Promise<Readable> {
-    // The SFTP read stream needs the connection to outlive the
-    // returned Readable. We pipe through a PassThrough and close the
-    // client when the pass-through ends or errors.
     const target = this.fullPath(key);
     const out = new PassThrough();
-
-    const client = new Client();
-    let ended = false;
-    const close = () => {
-      if (ended) return;
-      ended = true;
+    out.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/backup/destinations/sftp"); });
+    const cancelled = new AbortController();
+    out.once("close", () => {
+      if (!out.readableEnded) cancelled.abort(new Error("SFTP download consumer closed early"));
+    });
+    // Keep the shared connection lifecycle until every remote byte is handed
+    // off. A dropped SSH channel must fail the reader, not leave restore waiting
+    // forever for an EOF that the disconnected server can no longer send.
+    void this.withSftp(async (sftp, signal) => {
+      const source = sftp.createReadStream(target);
+      const onAbort = () => source.destroy(signal.reason as Error);
+      signal.addEventListener("abort", onAbort, { once: true });
+      let idle: ReturnType<typeof setTimeout> | undefined;
+      const touch = () => {
+        clearTimeout(idle);
+        idle = setTimeout(() => source.destroy(new Error("SFTP download stalled: no read progress for 600s")), TRANSFER_IDLE_TIMEOUT_MS);
+        idle.unref?.();
+      };
+      source.on("data", touch);
+      out.on("drain", touch);
+      touch();
       try {
-        client.end();
-      } catch {
-        // already ended
+        await pipeline(source, out);
+      } finally {
+        clearTimeout(idle);
+        source.off("data", touch);
+        out.off("drain", touch);
+        signal.removeEventListener("abort", onAbort);
       }
-    };
-
-    client
-      .on("ready", () => {
-        client.sftp((err, sftp) => {
-          if (err) {
-            out.destroy(err);
-            close();
-            return;
-          }
-          const rs = sftp.createReadStream(target);
-          rs.on("error", (e: Error) => {
-            out.destroy(e);
-            close();
-          });
-          rs.on("end", close);
-          rs.pipe(out);
-        });
-      })
-      .on("error", (err) => {
-        out.destroy(err);
-        close();
-      })
-      .connect(this.conn);
-
-    out.on("close", close);
+    }, undefined, cancelled.signal).catch(error => { observeCaughtError(error, "adapters/backup/destinations/sftp"); return out.destroy(error as Error); });
     return out;
   }
 
   async head(key: string): Promise<HeadInfo | null> {
     const target = this.fullPath(key);
-    try {
-      return await this.withSftp(
-        (sftp) =>
-          new Promise<HeadInfo | null>((resolve, reject) => {
+    return this.withSftp(
+        (sftp, signal) =>
+          sftpRequest<HeadInfo | null>("file stat", (done) => {
             sftp.stat(target, (err, stats) => {
               if (err) {
                 const code = (err as { code?: number }).code;
-                if (code === 2) return resolve(null); // SFTP_STATUS_NO_SUCH_FILE
-                return reject(err);
+                if (code === 2) return done(null, null); // SFTP_STATUS_NO_SUCH_FILE
+                return done(err);
               }
-              resolve({
+              done(null, {
                 sizeBytes: stats.size,
                 uploadedAt: new Date(stats.mtime * 1000),
               });
             });
-          }),
+          }, signal),
       );
-    } catch {
-      return null;
-    }
   }
 
   async list(prefix: string, opts?: ListOpts): Promise<ListPage> {
@@ -411,20 +513,20 @@ class SftpDestinationImpl implements BackupDestination {
     const limit = opts?.limit ?? 1000;
     const entries: ListPage["entries"] = [];
 
-    await this.withSftp(async (sftp) => {
+    await this.withSftp(async (sftp, signal) => {
       const walk = async (dir: string, relBase: string): Promise<void> => {
-        const dirents = await new Promise<
+        const dirents = await sftpRequest<
           Array<{ filename: string; longname: string; attrs: { isDirectory(): boolean; isFile(): boolean; size: number; mtime: number } }>
-        >((resolve, reject) => {
+        >("directory listing", (done) => {
           sftp.readdir(dir, (err, list) => {
             if (err) {
               const code = (err as { code?: number }).code;
-              if (code === 2) return resolve([]); // missing dir = empty
-              return reject(err);
+              if (code === 2) return done(null, []); // missing dir = empty
+              return done(err);
             }
-            resolve(list);
+            done(null, list);
           });
-        });
+        }, signal);
 
         for (const dirent of dirents) {
           if (entries.length >= limit) return;
@@ -450,15 +552,7 @@ class SftpDestinationImpl implements BackupDestination {
   async delete(key: string): Promise<void> {
     const target = this.fullPath(key);
     await this.withSftp(
-      (sftp) =>
-        new Promise<void>((resolve, reject) =>
-          sftp.unlink(target, (err) => {
-            if (!err) return resolve();
-            const code = (err as { code?: number }).code;
-            if (code === 2) return resolve(); // already gone
-            reject(err);
-          }),
-        ),
+      (sftp, signal) => this.unlinkIfPresent(sftp, target, signal),
     );
   }
 
@@ -470,24 +564,16 @@ class SftpDestinationImpl implements BackupDestination {
     const deleted: string[] = [];
     const failed: Array<{ key: string; error: string }> = [];
 
-    await this.withSftp(async (sftp) => {
+    await this.withSftp(async (sftp, signal) => {
       for (const key of keys) {
         // eslint-disable-next-line no-await-in-loop
-        await new Promise<void>((resolve) => {
-          sftp.unlink(this.fullPath(key), (err) => {
-            if (!err) {
-              deleted.push(key);
-              return resolve();
-            }
-            const code = (err as { code?: number }).code;
-            if (code === 2) {
-              deleted.push(key); // missing = "successfully" deleted
-            } else {
-              failed.push({ key, error: err.message });
-            }
-            resolve();
-          });
-        });
+        try {
+          await this.unlinkIfPresent(sftp, this.fullPath(key), signal);
+          deleted.push(key);
+        } catch (error) {
+          observeCaughtError(error, "adapters/backup/destinations/sftp");
+          failed.push({ key, error: safeErrorMessage(error) });
+        }
       }
     });
 

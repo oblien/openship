@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { systemApi } from "@/lib/api";
 import type { TunnelInfo } from "@/lib/api/system";
@@ -42,7 +43,8 @@ export function useServerTunnels(serverId: string | null | undefined) {
       try {
         const rows = await systemApi.listTunnels(serverId);
         if (mounted.current) setTunnels(rows);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/hooks/useServerTunnels");
         // Silent on poll; keep the last good state.
       } finally {
         if (mounted.current && !opts.silent) setLoading(false);

@@ -33,13 +33,14 @@ export function createJobRepo(db: Database) {
 
     /**
      * Seed/refresh a built-in system job. Creates it with the default cron +
-     * enabled on first boot; on later boots only the label is refreshed so an
+     * enabled preference on first boot; on later boots only the label is refreshed so an
      * operator's cron/enabled overrides survive.
      */
     async upsertSystem(data: {
       key: string;
       label: string;
       defaultCron: string;
+      defaultEnabled?: boolean;
     }): Promise<Job> {
       const now = new Date();
       const [row] = await db
@@ -50,7 +51,7 @@ export function createJobRepo(db: Database) {
           kind: "system",
           label: data.label,
           cronExpression: data.defaultCron,
-          enabled: true,
+          enabled: data.defaultEnabled ?? true,
           actionType: "builtin",
         })
         // Boot reconciliation and a request-side self-heal can race. The key is

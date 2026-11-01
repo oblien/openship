@@ -13,7 +13,7 @@
 export type WizardBump = "patch" | "minor" | "major" | "rc" | "current" | "custom";
 
 export interface WizardAnswers {
-  mode: "version" | "docker";
+  mode: "version" | "docker" | "continue";
   bump?: WizardBump;
   /** Literal semver when `bump === "custom"`. */
   literal?: string;
@@ -38,7 +38,9 @@ export interface WizardAnswers {
 export function buildWizardArgs(a: WizardAnswers): string[] {
   const out: string[] = [];
 
-  if (a.mode === "docker") {
+  if (a.mode === "continue") {
+    out.push("continue");
+  } else if (a.mode === "docker") {
     out.push("docker");
     if (a.dockerTag) out.push(a.dockerTag);
     if (a.dockerRef) out.push(`--ref=${a.dockerRef}`);

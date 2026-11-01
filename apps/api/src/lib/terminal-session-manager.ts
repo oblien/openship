@@ -22,16 +22,19 @@
  * place. Nothing else owns lifecycle.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
-import { env } from "../config/env";
+import { env } from "@repo/platform/engine/config/env";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
-import type { RequestContext } from "./request-context";
-import { sshManager } from "./ssh-manager";
+import { freezeContext, type ExecutionContext as RequestContext } from "@repo/platform";
+import type { CloudTerminalTicket } from "./cloud/terminal-bridge";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
 interface Ticket {
+  context: RequestContext;
   token: string;
   userId: string;
   /** Org the user was acting in at mint time. The WS upgrade scopes
@@ -44,6 +47,7 @@ interface Ticket {
   expiresAt: number;
   /** Once true, the ticket has been consumed and can never be redeemed again. */
   used: boolean;
+  cloud?: CloudTerminalTicket;
 }
 
 const tickets = new Map<string, Ticket>();
@@ -66,17 +70,20 @@ function newToken(): string {
 export function issueTerminalTicket(
   ctx: RequestContext,
   serverId: string,
+  cloud?: CloudTerminalTicket,
 ): { token: string; expiresIn: number } {
   cleanupExpiredTickets();
   const ttl = env.TERMINAL_TICKET_TTL_MS;
   const token = newToken();
   tickets.set(token, {
+    context: freezeContext(ctx),
     token,
     userId: ctx.userId,
     organizationId: ctx.organizationId,
     serverId,
     expiresAt: Date.now() + ttl,
     used: false,
+    ...(cloud && { cloud }),
   });
   return { token, expiresIn: Math.floor(ttl / 1000) };
 }
@@ -88,9 +95,11 @@ export function issueTerminalTicket(
  * (timing-uniform).
  */
 export function consumeTerminalTicket(token: string): {
+  context: RequestContext;
   userId: string;
   organizationId: string;
   serverId: string;
+  cloud?: CloudTerminalTicket;
 } | null {
   if (!token) return null;
   const ticket = tickets.get(token);
@@ -101,9 +110,11 @@ export function consumeTerminalTicket(token: string): {
   if (ticket.used) return null;
   if (ticket.expiresAt <= Date.now()) return null;
   return {
+    context: ticket.context,
     userId: ticket.userId,
     organizationId: ticket.organizationId,
     serverId: ticket.serverId,
+    ...(ticket.cloud && { cloud: ticket.cloud }),
   };
 }
 
@@ -129,8 +140,11 @@ export interface ActiveSession {
   serverId: string;
   startedAt: number;
   shell: ShellSession;
+  release?: () => void | Promise<void>;
   /** Caller-provided cleanup hook fired on timeout / explicit termination. */
   onTimeout: (sessionId: string, reason: TerminalExitReason) => void;
+  /** Updated on resume; one remote-exit listener owns the whole PTY lifetime. */
+  onExit?: (code: number | null, signal?: string) => void;
   /** Reset on every client→server byte to defer the idle timer. */
   lastActivityAt: number;
   idleTimer: ReturnType<typeof setTimeout>;
@@ -193,7 +207,9 @@ export function registerSession(args: {
   userId: string;
   serverId: string;
   shell: ShellSession;
+  release?: () => void | Promise<void>;
   onTimeout: (sessionId: string, reason: TerminalExitReason) => void;
+  onExit?: (code: number | null, signal?: string) => void;
 }): ActiveSession {
   const now = Date.now();
   const resumeToken = randomBytes(16).toString("base64url");
@@ -205,7 +221,9 @@ export function registerSession(args: {
     serverId: args.serverId,
     startedAt: now,
     shell: args.shell,
+    release: args.release,
     onTimeout: args.onTimeout,
+    onExit: args.onExit,
     lastActivityAt: now,
     closed: false,
     parked: false,
@@ -230,6 +248,11 @@ export function registerSession(args: {
     sessionsByUser.set(session.userId, userSet);
   }
   userSet.add(session.sessionId);
+
+  args.shell.onClose((code, signal) => {
+    if (!unregisterSession(session.sessionId)) return;
+    session.onExit?.(code, signal);
+  });
 
   return session;
 }
@@ -287,7 +310,8 @@ export function attachWs(
   // on chunk N, the underlying WS is likely already gone and we want
   // to bail before swapping the handler in.
   for (const chunk of session.scrollback) {
-    try { onData(chunk); } catch { /* WS gone mid-replay */ }
+    try { onData(chunk); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/lib/terminal-session-manager"); /* WS gone mid-replay */ }
   }
 
   session.attachedDataHandler = onData;
@@ -322,14 +346,16 @@ export function dispatchStdout(sessionId: string, chunk: Buffer): void {
 
   const handler = session.attachedDataHandler;
   if (!handler) return; // parked
-  try { handler(chunk); } catch { /* peer gone */ }
+  try { handler(chunk); } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-session-manager"); /* peer gone */ }
 }
 
 function fireTimeout(session: ActiveSession, reason: TerminalExitReason): void {
   if (session.closed) return;
   // Drop from registry first so the controller's cleanup can't double-fire.
   unregisterSession(session.sessionId);
-  try { session.onTimeout(session.sessionId, reason); } catch { /* timeout hook is best-effort */ }
+  try { session.onTimeout(session.sessionId, reason); } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-session-manager"); /* timeout hook is best-effort */ }
 }
 
 /**
@@ -360,12 +386,11 @@ export function unregisterSession(sessionId: string): boolean {
   if (session.closed) return false;
   session.closed = true;
 
-  // Release the SSH connection hold acquired when this terminal opened. This is
-  // the single, atomic release point — park/resume never unregister — so the
-  // shared connection stays pinned for the EXACT session lifetime (surviving
-  // background command churn via dropServer's retain guard) and is freed
-  // exactly once: no leak on the park→timeout path, no early drop on resume.
-  sshManager.release(session.serverId);
+  // A connection is owned by the whole terminal session, including park/resume.
+  // The provider-specific release is idempotent and runs only at final teardown.
+  void trackBackgroundWork(Promise.resolve().then(() => session.release?.()).catch((error) => {
+    errorDiagnostics.warn("api/lib/terminal-session-manager", "[terminal] failed to release server connection", error instanceof Error ? error.message : "unknown error", error);
+  }));
 
   clearTimeout(session.idleTimer);
   clearTimeout(session.hardCapTimer);
@@ -385,4 +410,10 @@ export function unregisterSession(sessionId: string): boolean {
 
 export function getSession(sessionId: string): ActiveSession | undefined {
   return sessions.get(sessionId);
+}
+
+/** End parked as well as attached shells before exporting a controller. */
+export function closeControllerTerminals(): void {
+  tickets.clear();
+  for (const session of [...sessions.values()]) fireTimeout(session, "server_error");
 }

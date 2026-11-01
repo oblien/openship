@@ -40,7 +40,7 @@ vi.mock("@repo/db", () => ({
     patGrant: { findForResource: vi.fn(async () => null), listByToken: vi.fn(async () => []) },
   },
 }));
-vi.mock("../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
 import { checkPermission, permitsAction } from "../../src/lib/permission";
 import { ORG_SINGLETON_RESOURCE_TYPES } from "@repo/core";

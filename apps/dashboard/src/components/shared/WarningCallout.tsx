@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Shared callout — the app's standard "amber" warning treatment, extracted from
  * the server detail page's ConnectionBanner so every warning across the product
@@ -12,7 +14,6 @@
  * and does not match the design system — prefer this.)
  */
 import React from "react";
-import { AlertTriangle, type LucideIcon } from "lucide-react";
 
 type CalloutTone = "warning" | "danger" | "info";
 
@@ -23,7 +24,7 @@ interface WarningCalloutProps {
   /** Optional body copy under the title. */
   description?: React.ReactNode;
   /** Override the leading icon (defaults to AlertTriangle). */
-  icon?: LucideIcon;
+  icon?: IconName;
   /** Extra content rendered under the description (lists, sub-cards, etc.). */
   children?: React.ReactNode;
   /** Buttons/links rendered in a wrapping row at the bottom. */
@@ -56,13 +57,13 @@ export function WarningCallout({
   className = "",
 }: WarningCalloutProps) {
   const t = TONES[tone];
-  const Icon = icon ?? AlertTriangle;
+  const Icon = icon ?? "warning";
 
   return (
     <div className={`rounded-2xl border p-4 ${t.container} ${className}`}>
       <div className="flex items-start gap-3">
         <div className={`size-9 rounded-lg flex items-center justify-center shrink-0 ${t.iconBox}`}>
-          <Icon className="size-4" />
+          <UiIcon name={Icon} className="size-4" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground">{title}</p>

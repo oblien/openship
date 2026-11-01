@@ -19,7 +19,10 @@ const serviceRepo = vi.hoisted(() => ({
   listByDeployment: vi.fn(),
   update: vi.fn(),
 }));
-const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
+const deploymentRepo = vi.hoisted(() => ({
+  findById: vi.fn(),
+  listPendingRoleHandovers: async () => [],
+}));
 const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn() }));
 
 vi.mock("@repo/db", async (importOriginal) => {
@@ -36,17 +39,17 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/free-domain-guard", () => ({ assertFreeEndpointsAllowed: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/free-domain-guard", () => ({ assertFreeEndpointsAllowed: vi.fn() }));
 
-vi.mock("../../../src/modules/domains/domain.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/domain.service", () => ({
   ensurePendingServiceDomain: vi.fn().mockResolvedValue({ created: false }),
   removeServiceDomain: vi.fn(),
   reuseServerCertForDomain: vi.fn(),
 }));
 
 const reconcileProjectRoutes = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/route-apply.service", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/route-apply.service")>();
+vi.mock("@repo/platform/engine/lib/route-apply.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/route-apply.service")>();
   return { ...actual, reconcileProjectRoutes };
 });
 
@@ -56,12 +59,12 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
 });
 
 const resolveDeploymentRuntimeForRead = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/deployment-runtime")>();
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>();
   return { ...actual, resolveDeploymentRuntimeForRead };
 });
 
-import { updateService } from "../../../src/modules/services/service.service";
+import { updateService } from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = {
@@ -137,6 +140,7 @@ describe("service route upstream (migration cutover)", () => {
     reconcileProjectRoutes.mockResolvedValue(undefined);
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1",
       organizationId: "org_1",
       meta: { deployTarget: "server", serverId: "srv_1", runtimeMode: "docker" },
     });
@@ -208,4 +212,15 @@ describe("service route upstream (migration cutover)", () => {
     expect(resolveDeploymentRuntimeForRead).not.toHaveBeenCalled();
     expect(registeredTarget()?.targetUrl).toBeUndefined();
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });

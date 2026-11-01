@@ -35,7 +35,7 @@ const h = vi.hoisted(() => ({
   resolvedWith: [] as Array<Record<string, unknown>>,
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   disposeRuntime: (r: { name?: string } | null | undefined) => {
     if (r?.name) h.disposed.push(r.name);
   },
@@ -72,7 +72,7 @@ vi.mock("@repo/adapters", () => ({
   },
 }));
 
-import { resolveSourceExecutor } from "../../../src/modules/backups/source-platform";
+import { resolveSourceExecutor } from "@repo/platform/engine/modules/backups/source-platform";
 
 const call = (over: Partial<Parameters<typeof resolveSourceExecutor>[0]> = {}) =>
   resolveSourceExecutor({

@@ -9,8 +9,9 @@
  * Runs daily at 03:33 UTC — off-peak, staggered from the audit prune.
  */
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { getJobRunner } from "../../lib/job-runner";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 
 const PENDING_GRANT_PRUNE_JOB_ID = "permissions:pending-grant-prune";
 const PENDING_GRANT_PRUNE_CRON = "33 3 * * *";
@@ -27,7 +28,7 @@ export async function schedulePendingGrantPrune(): Promise<void> {
           console.log(`[pending-grant-prune] deleted ${deleted} orphan row(s)`);
         }
       } catch (err) {
-        console.error("[pending-grant-prune] sweep failed", err);
+        errorDiagnostics.error("api/modules/permissions/pending-grant-prune-schedule", "[pending-grant-prune] sweep failed", err);
       }
     },
   });

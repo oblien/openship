@@ -1,12 +1,14 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { Lock, ArrowRight, AlertTriangle } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 /**
- * Renders the `details` payload of a pipeline prompt. Two shapes:
+ * Renders the `details` payload of a pipeline prompt:
  *
+ *  - pre-deploy backup → failed sources and their errors.
  *  - port conflict → a port/PID/systemd-unit key list (a service already on the port).
  *  - edge conflict → the sites parsed from an existing reverse proxy on 80/443, so the
  *    operator can AUDIT exactly what a "migrate & take over" would import (and, via the
@@ -22,6 +24,7 @@ type EdgeSite = {
   target: { kind: "proxy"; url: string } | { kind: "static"; root: string };
   tls?: { certPath: string; keyPath: string };
   source?: string;
+  projectServices?: string[];
 };
 
 function asEdgeSites(details: Record<string, unknown>): EdgeSite[] {
@@ -71,6 +74,21 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
 
   if (!details) return null;
 
+  const backupErrors = Array.isArray(details.backupErrors)
+    ? details.backupErrors.filter((error): error is string => typeof error === "string")
+    : [];
+  if (backupErrors.length > 0) {
+    return (
+      <ul className="max-h-40 space-y-2 overflow-y-auto rounded-xl bg-muted/40 p-3">
+        {backupErrors.map((error, index) => (
+          <li key={index} className="break-words text-sm text-muted-foreground">
+            {error}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   const occupants = asOccupants(details);
   const sites = asEdgeSites(details);
   const warnings = asWarnings(details);
@@ -113,18 +131,21 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
                       </span>
                       {site.ssl && (
                         <span className="inline-flex items-center gap-0.5 rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success shrink-0">
-                          <Lock className="size-2.5" />
+                          <UiIcon name="lock" className="size-2.5" />
                           {dp.promptDetails.sites.tlsBadge}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
-                      <ArrowRight className="size-3 shrink-0" />
+                      <UiIcon name="arrow-right" className="size-3 shrink-0" />
                       <span className="truncate font-mono">{targetLabel(site, dp.promptDetails.sites.staticLabel)}</span>
                     </div>
                     {site.source && (
                       <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{site.source}</p>
                     )}
+                    {site.projectServices?.map((service) => (
+                      <p key={service} className="mt-1 text-xs font-medium text-primary">{service}</p>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -135,7 +156,7 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
         {warnings.length > 0 && (
           <div className="rounded-xl border border-warning/30 bg-warning/5 p-3 space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-medium text-warning">
-              <AlertTriangle className="size-3.5" />
+              <UiIcon name="warning" className="size-3.5" />
               {dp.promptDetails.sites.warningsTitle}
             </div>
             <ul className="max-h-40 space-y-1 overflow-y-auto">

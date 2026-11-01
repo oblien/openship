@@ -133,6 +133,11 @@ export function getRestApiBaseUrl() {
   return `${getApiOrigin()}/api`;
 }
 
+/** External MCP clients use the canonical resource path advertised by OAuth. */
+export function getMcpEndpointUrl() {
+  return `${getApiOrigin()}/api/mcp`;
+}
+
 /**
  * Resolve a URL returned by the API for direct browser navigation.
  *

@@ -130,5 +130,22 @@
     "firstLogin": {
       "note": "Create the owner account as soon as it deploys — the setup screen is unauthenticated until you do. Never change the generated encryption key afterwards or every stored credential becomes unreadable. n8n issues https-only session cookies, so sign in over the domain rather than a plain-http address."
     }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Visual workflows",
+        "description": "Connect steps in a browser-based editor."
+      },
+      {
+        "title": "Apps and APIs",
+        "description": "Automate work across connected services."
+      },
+      {
+        "title": "Your infrastructure",
+        "description": "Keep workflows on your chosen server."
+      }
+    ],
+    "articleFile": "articles/n8n.md"
   }
 }

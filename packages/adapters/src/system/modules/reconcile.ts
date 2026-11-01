@@ -16,6 +16,7 @@
  * or trusted here. Interpolated args are single-quoted with `sq`.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { compareSemver } from "@repo/core";
 import type { CommandExecutor } from "../../types";
 import type { EnvironmentProfile } from "../environment";
@@ -80,7 +81,8 @@ async function onBoxFileMatches(
   try {
     const out = await executor.exec(`sha256sum ${sq(path)} 2>/dev/null | awk '{print $1}'`);
     return out.trim().toLowerCase() === sha256.toLowerCase();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/modules/reconcile");
     return false; // missing file / no sha256sum → treat as mismatch (will write)
   }
 }
@@ -156,6 +158,7 @@ export async function reconcileServerModule(
   try {
     manifest = await readManifestOrSeed(executor, opts.module, opts.seed);
   } catch (err) {
+    observeCaughtError(err, "adapters/system/modules/reconcile");
     return {
       module: opts.module,
       fromVersion: "unknown",
@@ -297,12 +300,14 @@ export async function reconcileServerModule(
       try {
         await opts.postApply(executor);
       } catch (err) {
+        observeCaughtError(err, "adapters/system/modules/reconcile");
         log(opts, `postApply failed (non-fatal): ${(err as Error).message}`);
       }
     }
 
     return { ...result({}, manifest), fromVersion };
   } catch (err) {
+    observeCaughtError(err, "adapters/system/modules/reconcile");
     // Never throw: return the partial progress already persisted.
     return {
       ...result({}, manifest),

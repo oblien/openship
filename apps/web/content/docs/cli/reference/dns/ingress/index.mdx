@@ -1,0 +1,142 @@
+---
+title: dns ingress
+description: Commands, arguments, and options for openship dns ingress.
+cliGroup: openship dns ingress
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship dns ingress
+
+Manage Cloudflare public ingress on connected self-hosted servers
+
+```text
+openship dns ingress [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/dns/ingress#openship-dns-ingress-list) | List saved tunnel bindings and setup status |
+| [`discover <file>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-discover) | Discover Cloudflare accounts, remotely managed tunnels and reusable policies |
+| [`connect <file>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-connect) | Create or attach a named tunnel and optionally install its server connector |
+| [`defaults <file>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-defaults) | Change defaults for new custom domains without changing existing policies |
+| [`retry <id>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-retry) | Retry durable tunnel setup or cleanup |
+| [`disconnect [options] <id>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-disconnect) | Unpublish owned hostnames and remove this binding's managed connector |
+| [`domain`](/docs/cli/reference/dns/ingress#openship-dns-ingress-domain) | Manage a custom hostname's tunnel and Access policy |
+
+## openship dns ingress connect
+
+Create or attach a named tunnel and optionally install its server connector
+
+```text
+openship dns ingress connect [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON containing server, credential, account and tunnel settings |
+
+## openship dns ingress defaults
+
+Change defaults for new custom domains without changing existing policies
+
+```text
+openship dns ingress defaults [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON containing id, defaultForDomains and defaultAccessPolicyId |
+
+## openship dns ingress disconnect
+
+Unpublish owned hostnames and remove this binding's managed connector
+
+```text
+openship dns ingress disconnect [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Connection ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip confirmation |
+
+## openship dns ingress discover
+
+Discover Cloudflare accounts, remotely managed tunnels and reusable policies
+
+```text
+openship dns ingress discover [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON containing credentialId and optional accountId/includePolicies |
+
+## openship dns ingress domain
+
+Manage a custom hostname's tunnel and Access policy
+
+```text
+openship dns ingress domain [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <id>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-domain-get) | Show persisted tunnel, DNS and Access status |
+| [`set [options] <file>`](/docs/cli/reference/dns/ingress#openship-dns-ingress-domain-set) | Connect a hostname, change its policy, or disconnect with connectionId=null |
+
+## openship dns ingress domain get
+
+Show persisted tunnel, DNS and Access status
+
+```text
+openship dns ingress domain get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+## openship dns ingress domain set
+
+Connect a hostname, change its policy, or disconnect with connectionId=null
+
+```text
+openship dns ingress domain set [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON containing domainId, connectionId and optional accessPolicyId |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip disconnection confirmation |
+
+## openship dns ingress list
+
+List saved tunnel bindings and setup status
+
+```text
+openship dns ingress list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Filter by deployment server |
+
+## openship dns ingress retry
+
+Retry durable tunnel setup or cleanup
+
+```text
+openship dns ingress retry [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Connection ID |

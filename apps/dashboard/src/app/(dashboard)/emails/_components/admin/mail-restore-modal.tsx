@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Mail restore / migrate wizard. Reuses the shared restore engine
  * (backupsApi.prepareRestore/applyRestore + the useRestoreRunStream SSE
@@ -14,13 +17,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Loader2,
-  AlertTriangle,
-  Check,
-  CircleX,
-  Server as ServerIcon,
-} from "lucide-react";
 import {
   mailApi,
   backupsApi,
@@ -100,7 +96,9 @@ function MailRestoreContent({
             .map((s) => ({ id: s.id, name: s.name, host: s.host, domain: s.domain, completed: s.completed })),
         ),
       )
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/mail-restore-modal");
+      });
   }, [mode, sourceServerId]);
 
   const canStart =
@@ -192,7 +190,7 @@ function MailRestoreContent({
               disabled={!canStart || phase === "running"}
               className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-danger-solid text-white hover:bg-danger-solid/90 transition-colors disabled:opacity-50"
             >
-              {phase === "running" && <Loader2 className="size-3.5 animate-spin" />}
+              {phase === "running" && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
               {mode === "to_fork" ? t.emailsAdmin.restore.migrate : t.emailsAdmin.restore.restore}
             </button>
           </>
@@ -256,7 +254,7 @@ function ReviewStep({
       )}
 
       <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3.5 py-2.5">
-        <AlertTriangle className="size-4 text-warning mt-0.5 shrink-0" />
+        <UiIcon name="warning" className="size-4 text-warning mt-0.5 shrink-0" />
         <p className="text-xs text-warning leading-relaxed">
           {interpolate(r.warnMain, { which: mode === "to_fork" ? r.warnWhichTarget : r.warnWhichCurrent })}
           {mode === "to_fork" && ` ${r.warnForkExtra}`}
@@ -297,11 +295,11 @@ function ProgressStep({
         }`}
       >
         {done ? (
-          <Check className="size-6 text-success" />
+          <UiIcon name="check" className="size-6 text-success" />
         ) : failed ? (
-          <CircleX className="size-6 text-danger" />
+          <UiIcon name="x-circle" className="size-6 text-danger" />
         ) : (
-          <Loader2 className="size-6 text-info animate-spin" />
+          <UiIcon name="spinner" className="size-6 text-info animate-spin" />
         )}
       </div>
       <div>
@@ -321,7 +319,7 @@ function ProgressStep({
         </p>
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
-        <ServerIcon className="size-3" />
+        <UiIcon name="server" className="size-3" />
         {domain}
       </div>
     </div>

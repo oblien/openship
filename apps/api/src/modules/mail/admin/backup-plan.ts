@@ -17,8 +17,7 @@
  * `{SSHA512}` password hashes are host-portable, so accounts work as-is.
  */
 
-import { HOST_STATE_DIR } from "@repo/adapters";
-import { safePipelineFragment } from "@repo/adapters";
+import { HOST_STATE_DIR, MAIL_HOST_STATE_DIR, safePipelineFragment } from "@repo/adapters";
 import {
   HOST_AMAVIS_CONF_CANDIDATES,
   mailDaemonReloadCommand,
@@ -26,7 +25,7 @@ import {
   mailPgDumpToStdout,
   mailPsqlFromStdin,
   type MailEngineFlavor,
-} from "../mail-engine";
+} from "@repo/platform/engine/modules/mail/mail-engine";
 
 /** The four tables that hold accounts / domains / aliases / admins. */
 const ACCOUNT_TABLES = ["domain", "mailbox", "forwardings", "domain_admins"] as const;
@@ -80,7 +79,7 @@ export function buildMailBackupPayload(
   const tableArgs = ACCOUNT_TABLES.map((t) => `-t ${t}`).join(" ");
   const truncateList = ACCOUNT_TABLES.join(", ");
   const info = JSON.stringify({ domain, messageData: flags.messageData, keys: flags.keys });
-
+  const vmailHostDir = flavor === "container" ? `${MAIL_HOST_STATE_DIR}/vmail` : "/var/vmail";
   const produceCommand = [
     "set -e",
     'tmp="$(mktemp -d)"',
@@ -144,7 +143,7 @@ export function buildMailBackupPayload(
     // `sh -c`, and it captures each status via `if` for exactly that reason.
     safePipelineFragment(
       flags.messageData
-        ? 'sudo -n tar -c -C "$tmp" . -C /var/vmail vmail1'
+        ? `sudo -n tar -c -C "$tmp" . -C ${vmailHostDir} vmail1`
         : 'sudo -n tar -c -C "$tmp" .',
       "zstd -c -3",
       { left: "tar (staging the mail archive)", right: "the compressor 'zstd'" },
@@ -210,7 +209,7 @@ export function buildMailBackupPayload(
     // box is the engine, not the host (GH-563). No `|| true` on the chown: maildirs left
     // root-owned are maildirs Dovecot cannot read, and swallowing that produced a restore
     // that reported success and served nothing.
-    `if [ -d "$tmp/vmail1" ]; then cp -a "$tmp/vmail1" /var/vmail/ && ${mailEngineCommand(flavor, "chown -R vmail:vmail /var/vmail/vmail1")}; fi`,
+    `if [ -d "$tmp/vmail1" ]; then cp -a "$tmp/vmail1" ${vmailHostDir}/ && ${mailEngineCommand(flavor, "chown -R vmail:vmail /var/vmail/vmail1")}; fi`,
     // Recompute per-domain counters (app-managed, not DB triggers).
     `printf '%s' "UPDATE domain d SET mailboxes=(SELECT count(*) FROM mailbox m WHERE m.domain=d.domain), aliases=(SELECT count(*) FROM forwardings f WHERE f.domain=d.domain AND f.is_alias) WHERE d.domain IS NOT NULL;" | ${mailPsqlFromStdin(flavor)} || true`,
     // Reload daemons so the restored data + keys take effect.

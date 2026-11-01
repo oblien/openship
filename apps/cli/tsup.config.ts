@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { defineConfig } from "tsup";
 
 // Inline the package version at build time so the CLI reports the released
@@ -6,6 +6,10 @@ import { defineConfig } from "tsup";
 const { version } = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ) as { version: string };
+
+// tsup runs config entries concurrently. Clean once before any bundle starts,
+// otherwise the main bundle can erase an already-emitted executable wrapper.
+rmSync(new URL("./dist", import.meta.url), { recursive: true, force: true });
 
 // Both bundles need the CJS-compat shim so esbuild's __require helper works
 // under Node ESM. The bundle is ESM, but @repo/adapters transitively pulls CJS
@@ -22,9 +26,7 @@ const CJS_SHIM = [
 ].join("\n");
 
 // Two bundles because each needs its OWN shebang and tsup's `banner` is
-// per-config, not per-entry. Configs run in array order, so Bundle 1's
-// `clean: true` wipes dist/ before Bundle 2 (which must NOT clean) writes
-// dist/node-entry.js beside it.
+// per-config, not per-entry. The output directory is cleaned once above.
 export default defineConfig([
   // ── Bundle 1: dist/index.js — the polyglot sh/JS launcher ──────────────
   // The first two banner lines are a sh/JS POLYGLOT launcher, not a plain
@@ -42,7 +44,7 @@ export default defineConfig([
     entry: { index: "src/index.ts" },
     format: ["esm"],
     dts: true,
-    clean: true,
+    clean: false,
     define: { __CLI_VERSION__: JSON.stringify(version) },
     // Bundle the workspace packages (@repo/core, @repo/onboarding) INTO the
     // output. They're never published to npm, so an npx-installed `openship`

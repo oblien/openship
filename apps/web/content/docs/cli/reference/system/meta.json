@@ -1,0 +1,9 @@
+{
+  "title": "system",
+  "pages": [
+    "index",
+    "migration",
+    "onboarding",
+    "settings"
+  ]
+}

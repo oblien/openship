@@ -31,7 +31,49 @@
     "createLabel": "Nuevo proyecto",
     "settingsText": "Configura variables de entorno y dominios personalizados en los ajustes del proyecto.",
     "settingsLabel": "Ajustes del proyecto",
-    "connected": "Conectado"
+    "connected": "Conectado",
+    "tips": {
+      "envVars": {
+        "text": "Agrega variables de entorno cifradas y secretos a cualquier proyecto.",
+        "label": "Abrir proyectos"
+      },
+      "customDomain": {
+        "text": "Apunta un dominio personalizado a un proyecto: HTTPS se aprovisiona automáticamente.",
+        "label": "Abrir proyectos"
+      },
+      "autoDeploy": {
+        "text": "Conecta GitHub para desplegar automáticamente con cada push, sin configurar CI.",
+        "label": "Abrir configuración de Git"
+      },
+      "rollback": {
+        "text": "Vuelve a cualquier despliegue anterior con un solo clic.",
+        "label": "Ver despliegues"
+      },
+      "apps": {
+        "text": "Instala aplicaciones autoalojadas como Gitea, n8n y Metabase con un clic.",
+        "label": "Explorar aplicaciones"
+      },
+      "servers": {
+        "text": "Conecta tus propios servidores mediante SSH y despliega en ellos desde aquí.",
+        "label": "Administrar servidores"
+      },
+      "jobs": {
+        "text": "Programa comandos con tareas cron: reintentos, registros en vivo e historial incluidos.",
+        "label": "Abrir tareas"
+      },
+      "backups": {
+        "text": "Configura copias de seguridad automáticas para tus bases de datos y volúmenes.",
+        "label": "Configurar copias de seguridad"
+      },
+      "mail": {
+        "text": "Ejecuta tu propio servidor de correo y webmail, totalmente autoalojado.",
+        "label": "Configurar correo"
+      },
+      "team": {
+        "text": "Invita a compañeros de equipo y delimita su acceso por proyecto.",
+        "label": "Administrar equipo"
+      }
+    }
   },
   "welcome": {
     "title": "Lanza tu primer proyecto",

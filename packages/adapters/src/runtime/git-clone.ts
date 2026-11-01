@@ -13,10 +13,24 @@
  * `git-ssh-material.ts` (the IO backend differs per site; the layout does not).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { AmbientGitVia } from "../types";
 import { shellQuote } from "@repo/core";
 
 export type { AmbientGitVia };
+
+// Initialize only after selecting the parent commit. --checkout honors the
+// recorded gitlink instead of following a submodule branch or merge strategy.
+export const GIT_SUBMODULE_UPDATE_ARGS = [
+  "submodule",
+  "update",
+  "--init",
+  "--recursive",
+  "--checkout",
+  "--depth",
+  "1",
+  "--progress",
+] as const;
 
 /** Alias of `@repo/core`'s {@link shellQuote}. Kept as a name because ~300 call sites in
  *  this package read `sq(...)`; there is one implementation, in core. */
@@ -27,8 +41,8 @@ export const sq = shellQuote;
  *
  * Both slots are ALWAYS filled. `https://<token>@host` is not a complete
  * credential to git: it sends an empty password, and on the 401 goes looking for
- * the real one — GIT_ASKPASS, then the credential helper, then the tty. Every
- * clone path here sets `GIT_ASKPASS=/bin/echo`, so today that detour ends in a
+ * the real one — GIT_ASKPASS, then the credential helper, then the tty. Legacy
+ * URL-token paths set `GIT_ASKPASS=/bin/echo`, so that detour ends in a
  * retry with garbage; a path that forgets to set it fails with git's "unable to
  * get password from user" before it ever authenticates, hiding GitHub's actual
  * reason. Filling both slots keeps the URL self-contained on success AND failure.
@@ -94,6 +108,8 @@ export function toGitHubSshUrl(repoUrl: string): string {
 export interface GitCloneAuth {
   repoUrl: string;
   gitToken?: string;
+  /** Exact same-owner repository names authorized by an expanded App mint. */
+  gitTokenRepositories?: string[];
   gitCredentialHelperPath?: string;
   /** SSH mode — key + known_hosts files ALREADY written (0600/0700) by caller. */
   ssh?: { keyFile: string; knownHostsFile: string };
@@ -165,6 +181,94 @@ function assertNotOptionLike(repoUrl: string): void {
   }
 }
 
+// Only Git invokes this deployment-scoped helper. No secret is embedded in the
+// helper, repository config or a file; it reads the per-command environment.
+// useHttpPath prevents Git from reusing a parent credential for another repo.
+const SCOPED_TOKEN_HELPER = `!f() {
+  [ "$1" = get ] || return 0
+  protocol= host= path=
+  while IFS= read -r line; do
+    case "$line" in
+      protocol=*) protocol=\${line#protocol=} ;;
+      host=*) host=\${line#host=} ;;
+      path=*) path=\${line#path=} ;;
+    esac
+  done
+  [ "$protocol" = https ] || return 0
+  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+  [ "$host" = "$OPENSHIP_GIT_HOST" ] || return 0
+  path=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+  path=\${path%/}
+  path=\${path%.git}
+  case "$path" in ""|*[!a-z0-9_./-]*) return 0 ;; esac
+  case " $OPENSHIP_GIT_REPOSITORIES " in
+    *" $path "*) printf 'username=%s\\npassword=%s\\n' "$OPENSHIP_GIT_USERNAME" "$OPENSHIP_GIT_PASSWORD" ;;
+  esac
+}; f`;
+
+function scopedTokenInvocation(auth: GitCloneAuth): GitCloneInvocation {
+  const url = new URL(auth.repoUrl);
+  const [owner, parent, ...extra] = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+  const name = /^[A-Za-z0-9_.-]{1,100}$/;
+  const repositories = auth.gitTokenRepositories!;
+  if (
+    url.protocol !== "https:" ||
+    !owner ||
+    !parent ||
+    extra.length ||
+    !name.test(owner) ||
+    !name.test(parent) ||
+    !repositories.length ||
+    repositories.length > 26 ||
+    repositories.some((repo) => !name.test(repo) || repo === "." || repo === "..")
+  )
+    throw new Error("Expanded App clone credentials require exact HTTPS repository grants.");
+  const allowed = [...new Set(repositories.map((repo) => repo.toLowerCase()))];
+  if (!allowed.includes(parent.replace(/\.git$/i, "").toLowerCase()))
+    throw new Error("The App clone grant does not include the parent repository.");
+  url.username = "";
+  url.password = "";
+  const pair = gitCredentialPair(url.hostname, auth.gitToken!.trim());
+  const base = `https://${url.host}/`;
+  const settings = [
+    ["credential.helper", ""],
+    ["credential.helper", SCOPED_TOKEN_HELPER],
+    ["credential.useHttpPath", "true"],
+    ["protocol.allow", "never"],
+    ["protocol.https.allow", "always"],
+    // A redirected clone must not carry credentials to another origin/path.
+    ["http.followRedirects", "false"],
+    // Transport rewrites contain no secret. Private SSH submodules can use the
+    // App credential only after becoming HTTPS requests to an authorized repo.
+    [`url.${base}.insteadOf`, `git@${url.hostname}:`],
+    [`url.${base}.insteadOf`, `ssh://git@${url.hostname}/`],
+    [`url.${base}.insteadOf`, `ssh://${url.hostname}/`],
+  ];
+  const baseInvocation = invocation(
+    url.href,
+    [
+      TERMINAL_PROMPT,
+      ["GIT_ASKPASS", "/bin/false", false],
+      // Also override per-protocol ambient host allowances. Approved SSH URLs
+      // are rewritten to HTTPS before Git applies this transport policy.
+      ["GIT_ALLOW_PROTOCOL", "https", false],
+      ["OPENSHIP_GIT_HOST", url.host.toLowerCase(), true],
+      [
+        "OPENSHIP_GIT_REPOSITORIES",
+        allowed.map((repo) => `${owner.toLowerCase()}/${repo}`).join(" "),
+        true,
+      ],
+      ["OPENSHIP_GIT_USERNAME", pair.username, true],
+      ["OPENSHIP_GIT_PASSWORD", pair.password, true],
+    ],
+    false,
+  );
+  // Git propagates -c configuration to submodule children. This avoids raising
+  // the minimum Git version for server builds (GIT_CONFIG_COUNT needs 2.31).
+  const credArgs = settings.flatMap(([key, value]) => ["-c", `${key}=${value}`]);
+  return { ...baseInvocation, credArgs, credFlag: credArgs.map(sq).join(" ") };
+}
+
 /**
  * Build the clone invocation for the given credential.
  * Priority: ssh → relay helper → ambient → token/public.
@@ -211,7 +315,8 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     let url: URL;
     try {
       url = new URL(auth.repoUrl);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/git-clone");
       throw new Error("Git credential forwarding requires an absolute HTTPS repository URL");
     }
     if (url.protocol !== "https:") {
@@ -219,6 +324,11 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     }
     const protocol = url.protocol.slice(0, -1);
     const path = url.pathname.replace(/^\/+/, "");
+    const headerUrl = new URL(url);
+    headerUrl.username = "";
+    headerUrl.password = "";
+    headerUrl.search = "";
+    headerUrl.hash = "";
     const headerVar = "OPENSHIP_GIT_AUTH_HEADER";
     const headerCommand =
       `${sq(auth.gitCredentialHelperPath)} auth-header ` +
@@ -235,7 +345,9 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
       // gitShellCommand(), which adds the preemptive header as config slot 3.
       gitEnv:
         `${base.gitEnv.replace("GIT_CONFIG_COUNT=3", "GIT_CONFIG_COUNT=4")} ` +
-        `GIT_CONFIG_KEY_3=http.extraHeader GIT_CONFIG_VALUE_3="$${headerVar}"`,
+        // A submodule may name another host/repository. Its authentication must
+        // go through the scoped relay helper, never inherit the parent's header.
+        `GIT_CONFIG_KEY_3=${sq(`http.${headerUrl.href}.extraHeader`)} GIT_CONFIG_VALUE_3="$${headerVar}"`,
     };
   }
 
@@ -263,6 +375,7 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
 
   // Token / public: token (if any) in the URL; disable host credential helpers
   // so the URL token is the only auth (GIT_ASKPASS=/bin/echo fails fast).
+  if (auth.gitToken && auth.gitTokenRepositories !== undefined) return scopedTokenInvocation(auth);
   return invocation(
     injectGitToken(auth.repoUrl, auth.gitToken),
     [TERMINAL_PROMPT, ["GIT_ASKPASS", "/bin/echo", false]],

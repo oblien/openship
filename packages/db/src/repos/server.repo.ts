@@ -1,21 +1,24 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import { AppError } from "@repo/core";
 import type { Database } from "../client";
 import { servers } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type Server = typeof servers.$inferSelect;
+export type ConnectedServer = Server & { workspaceId: null; sshHost: string };
 export type NewServer = typeof servers.$inferInsert;
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createServerRepo(db: Database) {
   return {
-    /** List all servers, ordered by creation date */
-    async list(): Promise<Server[]> {
+    /** Connected-host inventory for SSH maintenance and infrastructure jobs. */
+    async list(): Promise<ConnectedServer[]> {
       return db.query.servers.findMany({
+        where: and(isNull(servers.workspaceId), eq(servers.purpose, "deployment")),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
-      });
+      }) as Promise<ConnectedServer[]>;
     },
 
     /**
@@ -47,13 +50,29 @@ export function createServerRepo(db: Database) {
     },
 
     /**
-     * Org-scoped list. Returns only servers whose organization_id exactly
-     * matches the caller's org. NULL-org rows are NOT returned and remain
-     * invisible from the dashboard.
+     * Org-scoped inventory. Host-maintenance callers keep the connected-only
+     * default; the shared management API explicitly includes managed servers.
+     * NULL-org rows are never returned.
      */
-    async listByOrganization(organizationId: string): Promise<Server[]> {
+    async listByOrganization<IncludeManaged extends boolean = false>(
+      organizationId: string,
+      includeManaged?: IncludeManaged,
+    ): Promise<IncludeManaged extends true ? Server[] : ConnectedServer[]> {
+      const rows = await db.query.servers.findMany({
+        where: and(
+          eq(servers.organizationId, organizationId),
+          eq(servers.purpose, "deployment"),
+          includeManaged ? undefined : isNull(servers.workspaceId),
+        ),
+        orderBy: (s, { asc }) => [asc(s.createdAt)],
+      });
+      return rows as IncludeManaged extends true ? Server[] : ConnectedServer[];
+    },
+
+    /** Sources live only in the import flow, never in host maintenance or defaults. */
+    async listMigrationSources(organizationId: string): Promise<Server[]> {
       return db.query.servers.findMany({
-        where: eq(servers.organizationId, organizationId),
+        where: and(eq(servers.organizationId, organizationId), eq(servers.purpose, "migration_source")),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       });
     },
@@ -62,6 +81,13 @@ export function createServerRepo(db: Database) {
     async getInOrganization(id: string, organizationId: string): Promise<Server | undefined> {
       return db.query.servers.findFirst({
         where: and(eq(servers.id, id), eq(servers.organizationId, organizationId)),
+      });
+    },
+
+    /** The sole execution identity owned by a managed workspace. */
+    async findByWorkspace(workspaceId: string, organizationId: string): Promise<Server | undefined> {
+      return db.query.servers.findFirst({
+        where: and(eq(servers.workspaceId, workspaceId), eq(servers.organizationId, organizationId)),
       });
     },
 
@@ -128,7 +154,10 @@ export function createServerRepo(db: Database) {
 
     /** Delete a server by ID */
     async delete(id: string): Promise<void> {
-      await db.delete(servers).where(eq(servers.id, id));
+      const server = await db.query.servers.findFirst({ where: eq(servers.id, id) });
+      if (server?.workspaceId) throw new AppError(
+        "Delete this managed host through its Cloud workspace", 409, "MANAGED_SERVER_LIFECYCLE_REQUIRED");
+      await db.delete(servers).where(and(eq(servers.id, id), isNull(servers.workspaceId)));
     },
   };
 }

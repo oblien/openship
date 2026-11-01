@@ -1,3 +1,4 @@
+import type { ExecutionContext } from "@repo/platform";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { ProjectResources } from "@repo/core";
@@ -21,7 +22,7 @@ vi.mock("../../lib/audit", () => ({
   auditContextFrom: vi.fn(() => ({})),
 }));
 
-vi.mock("./project.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project.service", () => ({
   getResources: h.getResources,
   updateResources: h.updateResources,
 }));
@@ -74,3 +75,13 @@ describe("project resources response envelope", () => {
     expect(h.audit).toHaveBeenCalledOnce();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: ExecutionContext) => ctx },
+}));
+
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
+  audit: { recordAsync: h.audit },
+  auditContextFrom: vi.fn(() => ({})),
+}));

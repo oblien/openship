@@ -1,7 +1,7 @@
 {
   "checking": "DNS プロバイダーを確認しています…",
   "noProviderTitle": "これらのレコードを自動で設定",
-  "noProviderDesc": "DNS プロバイダーを接続すると、Openship がこれらのレコードを追加します。",
+  "noProviderDesc": "このドメインのゾーンにアクセスできる DNS プロバイダーを接続し、レコードを確認して適用してください。",
   "connect": "DNS プロバイダーを接続",
   "unauthorizedTitle": "DNS プロバイダーの再接続が必要です",
   "unauthorizedDesc": "保存されたトークンが拒否されました。再接続して DNS を自動設定してください。",
@@ -25,5 +25,20 @@
   "outcomeFailed": "失敗",
   "resultDone": "DNS を更新しました。",
   "resultPartial": "一部のレコードに対応が必要です。",
-  "applyFailed": "DNS を設定できませんでした。"
+  "applyFailed": "DNS を設定できませんでした。",
+  "preDeployHint": "プロバイダーを接続しました。まずデプロイしてから、プロジェクトのドメイン設定で DNS の自動設定を選択してください。",
+  "currentValue": "現在の値",
+  "desiredValue": "新しい値",
+  "checkAgain": "再確認",
+  "manualSetup": "DNS を手動で設定",
+  "recordsFailed": "DNS レコードを読み込めませんでした。再試行してください。",
+  "connection": {
+    "description": "このワークスペースで一度接続すれば利用できます。DNS の変更内容を確認してから適用してください。",
+    "provider": "DNS プロバイダー",
+    "connection": "接続",
+    "newConnection": "接続を追加",
+    "createToken": "API トークンを作成",
+    "adminRequired": "DNS プロバイダーの接続にはオーナーまたは管理者の権限が必要です。レコードは手動でも追加できます。",
+    "loadFailed": "DNS 接続を読み込めませんでした。再試行してください。"
+  }
 }

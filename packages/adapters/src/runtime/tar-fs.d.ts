@@ -14,6 +14,9 @@ declare module "tar-fs" {
     /** Return true to skip a path during the walk. */
     ignore?: (name: string) => boolean;
     dereference?: boolean;
+    finalize?: boolean;
+    pack?: Readable;
+    finish?: (pack: Readable) => void;
   }
 
   /** Pack a directory into a tar stream (a tar-stream `Pack`, i.e. a Readable). */

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   buildSshSettings,
   buildSetupPayload,
@@ -94,7 +95,8 @@ async function runSelfHostedFlow(
 
   try {
     await api.post("system/onboarding", payload);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/app/(onboarding)/onboarding/_lib/loading-flow");
     return {
       ok: false,
       status: {

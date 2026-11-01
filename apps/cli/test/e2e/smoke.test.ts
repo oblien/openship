@@ -1,8 +1,8 @@
 /**
- * Black-box smoke: spawn the real assembled CLI (src/index.ts via tsx) and
+ * Black-box smoke: spawn the real assembled CLI with the runtime's TS loader and
  * assert arg parsing, help, version, and error exit codes. No mocks — this is
  * the whole `commander` program wired exactly as the built binary wires it.
- * `__CLI_VERSION__` (a tsup build-time define) is injected for the tsx run.
+ * `__CLI_VERSION__` (a tsup build-time define) is injected before the entrypoint.
  *
  * Actions that would hit the network/servers are never triggered here — only
  * --help / --version / bad-args paths, which resolve before any action runs.
@@ -18,10 +18,15 @@ const inject = join(here, "..", "helpers", "inject-version.mjs");
 const entry = join(cliRoot, "src", "index.ts");
 
 function runCli(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+  const bunVersion = (process.versions as NodeJS.ProcessVersions & { bun?: string }).bun;
+  const runtimeArgs = bunVersion
+    ? ["--preload", inject, entry, ...args]
+    : ["--import", "tsx", "--import", pathToFileURL(inject).href, entry, ...args];
+
   return new Promise((resolve) => {
     execFile(
       process.execPath,
-      ["--import", "tsx", "--import", pathToFileURL(inject).href, entry, ...args],
+      runtimeArgs,
       { cwd: cliRoot, env: { ...process.env } },
       (error, stdout, stderr) => {
         const code = error && typeof (error as { code?: number }).code === "number"
@@ -46,7 +51,7 @@ describe("cli smoke", { timeout: 40_000 }, () => {
     const { stdout, code } = await runCli(["--help"]);
     expect(code).toBe(0);
     expect(stdout).toContain("openship");
-    for (const cmd of ["deploy", "server", "project", "mail", "login"]) {
+    for (const cmd of ["deploy", "server", "project", "mail", "login", "job"]) {
       expect(stdout).toContain(cmd);
     }
   });
@@ -56,6 +61,14 @@ describe("cli smoke", { timeout: 40_000 }, () => {
     expect(code).toBe(0);
     expect(stdout.toLowerCase()).toContain("server");
     expect(stdout).toContain("--help");
+  });
+
+  it("renders the jobs alias and its subcommands", async () => {
+    const { stdout, code } = await runCli(["jobs", "--help"]);
+    expect(code).toBe(0);
+    for (const cmd of ["list", "get", "create", "update", "delete", "run", "runs", "logs"]) {
+      expect(stdout).toContain(cmd);
+    }
   });
 
   it("exits non-zero on an unknown command", async () => {

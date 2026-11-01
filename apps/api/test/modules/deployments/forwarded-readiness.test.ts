@@ -1,13 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Duplex } from "node:stream";
+import { createServer } from "node:http";
 import {
   buildHostProbeCommand,
   isForwardingProhibited,
   parseHostProbeOutput,
   waitForForwardedReady,
   waitForReadyFromExecutor,
-} from "../../../src/modules/deployments/forwarded-readiness";
-import type { CommandExecutor } from "@repo/adapters";
+} from "@repo/platform/engine/modules/deployments/forwarded-readiness";
+import { LocalExecutor, type CommandExecutor } from "@repo/adapters";
 
 function response(status: number): Duplex {
   let sent = false;
@@ -23,6 +24,21 @@ function response(status: number): Duplex {
     },
   });
 }
+
+function silentStream(): Duplex {
+  return new Duplex({
+    read() {},
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  });
+}
+
+function connectionRefused(): Error & { reason: number } {
+  return Object.assign(new Error("(SSH) Channel open failure: Connection refused"), { reason: 2 });
+}
+
+afterEach(() => vi.useRealTimers());
 
 /** ssh2's shape for a channel the server refused: numeric `reason` + sshd's description. */
 function prohibited(): Error & { reason: number } {
@@ -68,7 +84,7 @@ describe("waitForForwardedReady", () => {
     const result = await waitForForwardedReady(
       async () => {
         attempts += 1;
-        throw new Error("ECONNREFUSED");
+        throw connectionRefused();
       },
       "127.0.0.1",
       20_001,
@@ -79,6 +95,23 @@ describe("waitForForwardedReady", () => {
     // A connect failure is the state a readiness probe polls THROUGH, so it keeps trying.
     expect(result.prohibited).toBeUndefined();
     expect(attempts).toBeGreaterThan(1);
+  });
+
+  it("retries a closed app port and passes when the app starts listening", async () => {
+    const forward = vi
+      .fn()
+      .mockRejectedValueOnce(connectionRefused())
+      .mockResolvedValueOnce(response(200));
+
+    const result = await waitForForwardedReady(forward, "127.0.0.1", 20_001, {
+      path: "/ready",
+      timeoutMs: 100,
+      intervalMs: 1,
+      probeTimeoutMs: 20,
+    });
+
+    expect(result).toEqual({ ready: true });
+    expect(forward).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a path that could inject an HTTP header", async () => {
@@ -206,18 +239,70 @@ describe("parseHostProbeOutput", () => {
 function executorWith(opts: {
   forward?: () => Promise<Duplex>;
   exec?: (command: string) => Promise<string>;
+  onDisconnect?: CommandExecutor["onDisconnect"];
 }): CommandExecutor {
   return {
     ...(opts.forward ? { forwardPort: opts.forward } : {}),
     exec: opts.exec ?? (async () => ""),
+    onDisconnect: opts.onDisconnect,
   } as unknown as CommandExecutor;
 }
 
 describe("waitForReadyFromExecutor", () => {
+  it("probes a managed server through its executor when TCP forwarding is unavailable", async () => {
+    const exec = vi.fn(async () => "OPENSHIP_PROBE 204 1");
+    const result = await waitForReadyFromExecutor(
+      executorWith({ exec }), "127.0.0.1", 20_000,
+      { path: "/ready", timeoutMs: 50 },
+    );
+
+    expect(result).toEqual({ ready: true, via: "exec" });
+    expect(exec).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("'http://127.0.0.1:20000/ready'"),
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
+  });
+
+  it("cannot accept a healthy controller port as proof that a remote app is ready", async () => {
+    const server = createServer((_request, response) => { response.end("controller"); });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (server.address() as { port: number }).port;
+      const exec = vi.fn(async () => "OPENSHIP_PROBE 503 1");
+      const result = await waitForReadyFromExecutor(
+        executorWith({ exec }), "127.0.0.1", port,
+        { path: "/ready", timeoutMs: 20, intervalMs: 1 },
+      );
+      expect(result).toEqual({ ready: false, via: "exec" });
+      expect(exec).toHaveBeenCalled();
+
+      // The same address belongs to this machine only for an explicit local executor.
+      expect(await waitForReadyFromExecutor(new LocalExecutor(), "127.0.0.1", port, {
+        path: "/ready", timeoutMs: 500,
+      })).toEqual({ ready: true, via: "socket" });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each([
+    ["missing HTTP client", async () => "OPENSHIP_PROBE_NO_CLIENT", "no `curl`"],
+    ["lost provider connection", async () => { throw new Error("provider unavailable"); }, "provider unavailable"],
+  ] as const)("reports a managed server's %s as unverified", async (_label, exec, detail) => {
+    const result = await waitForReadyFromExecutor(
+      executorWith({ exec }), "127.0.0.1", 20_000,
+      { path: "/ready", timeoutMs: 50 },
+    );
+    expect(result).toEqual({ ready: false, via: "exec", unverifiable: expect.stringContaining(detail) });
+  });
+
   it("uses the forwarded channel when the server allows it", async () => {
     const exec = vi.fn();
+    const unsubscribe = vi.fn();
+    const onDisconnect = vi.fn(() => unsubscribe);
     const result = await waitForReadyFromExecutor(
-      executorWith({ forward: async () => response(200), exec }),
+      executorWith({ forward: async () => response(200), exec, onDisconnect }),
       "127.0.0.1",
       20_000,
       { path: "/ready", timeoutMs: 50, probeTimeoutMs: 20 },
@@ -225,6 +310,168 @@ describe("waitForReadyFromExecutor", () => {
 
     expect(result).toEqual({ ready: true, via: "forward" });
     expect(exec).not.toHaveBeenCalled();
+    expect(onDisconnect).toHaveBeenCalledOnce();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["a connection reset", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })],
+    [
+      "an SSH connection refusal",
+      Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+    ],
+    ["an SSH handshake failure", new Error("Timed out while waiting for handshake")],
+    ["exhausted SSH resources", Object.assign(new Error("SSH resource shortage"), { reason: 4 })],
+  ] as const)("reports %s as unverified, without blaming the app", async (_label, error) => {
+    const forward = vi.fn(async () => {
+      throw error;
+    });
+    const exec = vi.fn();
+    const unsubscribe = vi.fn();
+
+    const result = await waitForReadyFromExecutor(
+      executorWith({ forward, exec, onDisconnect: () => unsubscribe }),
+      "127.0.0.1",
+      20_000,
+      { path: "/ready", timeoutMs: 20, intervalMs: 1, probeTimeoutMs: 10 },
+    );
+
+    expect(result).toEqual({
+      ready: false,
+      via: "forward",
+      unverifiable: expect.stringContaining(error.message),
+    });
+    expect(forward).toHaveBeenCalledOnce();
+    expect(exec).not.toHaveBeenCalled();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it.each(["timeout", "disconnect"])(
+    "reports an opening-channel %s as unverified and destroys a late stream",
+    async (cause) => {
+      vi.useFakeTimers();
+      let resolveForward!: (stream: Duplex) => void;
+      let disconnect!: (error: Error) => void;
+      const unsubscribe = vi.fn();
+      const forward = vi.fn(
+        () =>
+          new Promise<Duplex>((resolve) => {
+            resolveForward = resolve;
+          }),
+      );
+      const pending = waitForReadyFromExecutor(
+        executorWith({
+          forward,
+          onDisconnect: (cb) => {
+            disconnect = cb;
+            return unsubscribe;
+          },
+        }),
+        "127.0.0.1",
+        20_000,
+        { path: "/ready", timeoutMs: 1_000, probeTimeoutMs: 20 },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      if (cause === "timeout") await vi.advanceTimersByTimeAsync(20);
+      else disconnect(new Error("SSH connection lost"));
+
+      expect(await pending).toEqual({
+        ready: false,
+        via: "forward",
+        unverifiable: expect.stringContaining(
+          cause === "timeout" ? "timed out opening" : "SSH connection lost",
+        ),
+      });
+      const stream = response(200);
+      resolveForward(stream);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(stream.destroyed).toBe(true);
+      expect(forward).toHaveBeenCalledOnce();
+      expect(unsubscribe).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("stops an HTTP probe when SSH disconnects and cleans up its stream and subscription", async () => {
+    vi.useFakeTimers();
+    const stream = silentStream();
+    let disconnect!: (error: Error) => void;
+    const unsubscribe = vi.fn();
+    const pending = waitForReadyFromExecutor(
+      executorWith({
+        forward: async () => stream,
+        onDisconnect: (cb) => {
+          disconnect = cb;
+          return unsubscribe;
+        },
+      }),
+      "127.0.0.1",
+      20_000,
+      { path: "/ready", timeoutMs: 5_000, probeTimeoutMs: 2_000 },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.destroyed).toBe(false);
+    disconnect(new Error("SSH connection lost during HTTP response"));
+
+    expect(await pending).toEqual({
+      ready: false,
+      via: "forward",
+      unverifiable: expect.stringContaining("SSH connection lost during HTTP response"),
+    });
+    expect(stream.destroyed).toBe(true);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops retrying an app refusal if SSH disconnects between attempts", async () => {
+    vi.useFakeTimers();
+    let disconnect!: (error: Error) => void;
+    const forward = vi.fn(async () => {
+      throw connectionRefused();
+    });
+    const unsubscribe = vi.fn();
+    const pending = waitForReadyFromExecutor(
+      executorWith({
+        forward,
+        onDisconnect: (cb) => {
+          disconnect = cb;
+          return unsubscribe;
+        },
+      }),
+      "127.0.0.1",
+      20_000,
+      { timeoutMs: 5_000, intervalMs: 1_000 },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    disconnect(new Error("SSH connection lost between attempts"));
+
+    expect((await pending).unverifiable).toContain("SSH connection lost between attempts");
+    expect(forward).toHaveBeenCalledOnce();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("fails readiness when the connected app never answers HTTP and SSH stays connected", async () => {
+    vi.useFakeTimers();
+    const stream = silentStream();
+    const unsubscribe = vi.fn();
+    const pending = waitForReadyFromExecutor(
+      executorWith({ forward: async () => stream, onDisconnect: () => unsubscribe }),
+      "127.0.0.1",
+      20_000,
+      { path: "/ready", timeoutMs: 20, probeTimeoutMs: 20 },
+    );
+
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(await pending).toEqual({ ready: false, via: "forward" });
+    expect(stream.destroyed).toBe(true);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   // The GH-583 install: exec works, forwarding is refused. The app IS healthy, and the

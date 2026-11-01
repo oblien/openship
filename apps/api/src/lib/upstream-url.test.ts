@@ -5,7 +5,7 @@ import {
   resolveRouteStrategy,
   resolveUpstreamUrl,
   usesHostLoopbackUpstream,
-} from "./upstream-url";
+} from "@repo/platform/engine/lib/upstream-url";
 
 /** A docker-shaped runtime whose live inspect we control. */
 function dockerRuntime(opts: {
@@ -117,7 +117,7 @@ describe("usesHostLoopbackUpstream", () => {
     expect(usesHostLoopbackUpstream("container-ip", topologyRuntime("host-only", false))).toBe(
       true,
     );
-    expect(usesHostLoopbackUpstream("loopback-port", topologyRuntime("cloud", true))).toBe(false);
+    expect(usesHostLoopbackUpstream("loopback-port", topologyRuntime("managed-docker", true))).toBe(true);
   });
 });
 

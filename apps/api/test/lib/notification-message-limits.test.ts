@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDiscordMessage, buildSlackMessage } from "../../src/lib/notification-workers";
+import { buildDiscordMessage, buildSlackMessage } from "@repo/platform/engine/lib/notification-workers";
 
 describe("notification chat-webhook payload limits", () => {
   it("clamps a long Slack section body to Slack's 3000-char limit", () => {

@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   CLOUD_EDGE_REAL_IP_HEADER,
+  EDGE_CONTAINER_REAL_IP_CONF_NAME,
   cloudEdgeRealIpConf,
+  edgeContainerRealIpConf,
   edgeRealIpConf,
   edgeRealIpHeader,
   edgeTrustedProxies,
@@ -9,6 +11,7 @@ import {
 } from "./edge-real-ip";
 import { CLOUDFLARE_IPV4, CLOUDFLARE_IPV6 } from "./cloudflare-ips.generated";
 import { bakedEdgeNginxConf } from "./edge-baked-conf";
+import { OPENRESTY_DEFAULT_PATHS } from "./openresty-lua";
 
 const ENV_KEYS = ["OPENSHIP_EDGE_REAL_IP_HEADER", "OPENSHIP_EDGE_TRUSTED_PROXIES"] as const;
 
@@ -61,6 +64,26 @@ describe("the trusted-proxy list", () => {
     // typo in an env var would wedge every route on the box, not just misconfigure trust.
     process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "10.0.0.0/8, not-an-ip, ; rm -rf /, 1.2.3.4";
     expect(edgeTrustedProxies()).toEqual(["10.0.0.0/8", "1.2.3.4"]);
+  });
+
+  it("rejects invalid addresses and prefix lengths before either edge emits them", () => {
+    const valid = ["192.0.2.1", "10.0.0.0/32", "2001:db8::/128", "::ffff:192.0.2.1/120"];
+    const invalid = [
+      "999.1.1.1",
+      "deadbeef",
+      "127.1",
+      "1:::2",
+      "10.0.0.0/33",
+      "2001:db8::/129",
+      "10.0.0.0/-1",
+      "10.0.0.0/1/2",
+      "fe80::1%eth0",
+    ];
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = [...valid, ...invalid].join(",");
+    expect(edgeTrustedProxies()).toEqual(valid);
+    for (const conf of [edgeRealIpConf(), edgeContainerRealIpConf()]) {
+      for (const address of invalid) expect(conf).not.toContain(`set_real_ip_from ${address};`);
+    }
   });
 });
 
@@ -182,5 +205,42 @@ describe("both install paths get it", () => {
     // apply to the ACME/default vhost only and every managed site would keep the proxy
     // address.
     expect(conf.indexOf("real_ip_header")).toBeLessThan(conf.indexOf("server {"));
+  });
+});
+
+describe("the containerized edge's operator include", () => {
+  const directives = (conf: string) =>
+    conf.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#"));
+
+  it("is loaded inside the baked http block, after the baked real-ip settings", () => {
+    // The image's nginx.conf cannot be edited at runtime; its sites-enabled glob is
+    // the one include the api can write into.
+    const baked = bakedEdgeNginxConf();
+    const sites = baked.indexOf(`include ${OPENRESTY_DEFAULT_PATHS.sitesDir}/*.conf;`);
+    expect(sites).toBeGreaterThan(baked.indexOf("real_ip_header "));
+    expect(EDGE_CONTAINER_REAL_IP_CONF_NAME).toMatch(/^_.*\.conf$/);
+  });
+
+  it("adds the operator's proxies to the baked trust list", () => {
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "172.17.0.0/16, fd00::/8";
+    expect(directives(edgeContainerRealIpConf())).toEqual([
+      "set_real_ip_from 172.17.0.0/16;",
+      "set_real_ip_from fd00::/8;",
+    ]);
+  });
+
+  it("never repeats a directive the baked block already set", () => {
+    // A second real_ip_header or real_ip_recursive in the same scope is
+    // `[emerg] ... is duplicate`: every reload on the box would be refused.
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "10.0.0.0/8";
+    process.env.OPENSHIP_EDGE_REAL_IP_HEADER = "X-Forwarded-For";
+    const conf = edgeContainerRealIpConf();
+    expect(directives(conf).every((l) => l.startsWith("set_real_ip_from "))).toBe(true);
+    expect(conf).toContain("OPENSHIP_EDGE_REAL_IP_HEADER=X-Forwarded-For is NOT applied");
+  });
+
+  it("trusts nothing extra when the operator declares nothing", () => {
+    // Still written, so unsetting the variable withdraws the trust it granted.
+    expect(directives(edgeContainerRealIpConf())).toEqual([]);
   });
 });

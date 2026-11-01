@@ -46,6 +46,15 @@ import {
 /** Shell commands to run in order, or the reason there are none. Never empty when supported. */
 export type Op = Answer<readonly string[]>;
 
+/** Commands for OpenShip's owned network unit and persistent rollback timer. */
+export interface ManagedNetworkServices {
+  reload: string;
+  enable: string;
+  disable: string;
+  armTimer: string;
+  cancelTimer: string;
+}
+
 /**
  * Steps → one command line.
  *
@@ -164,15 +173,16 @@ export type HostFacts = {
  * whoever adds it.
  */
 export type HostCommands = {
-  pkgInstall(packages: readonly string[]): Op;
+  pkgInstall(packages: readonly string[], options?: { installRecommends?: boolean }): Op;
   /** Install one logical thing whose package name differs per manager. */
-  pkgInstallVariants(variants: PackageVariants): Op;
+  pkgInstallVariants(variants: PackageVariants, options?: { installRecommends?: boolean }): Op;
   pkgRemove(packages: readonly string[]): Op;
   /** Print the installable version of `pkg`; the caller parses per manager. */
   pkgAvailableVersion(pkg: string): Op;
   serviceEnableStart(unit: string): Op;
   /** Exit-code semantics: 0 iff the unit is running. Prints nothing. */
   serviceIsActive(unit: string): Op;
+  managedNetworkServices(identity: string): Answer<ManagedNetworkServices>;
   firewallAllow(scope: FirewallScope): Op;
   dockerInstall(): Op;
   dockerStart(): Op;
@@ -205,13 +215,18 @@ function joinPackages(packages: readonly string[]): Answer<string> {
 
 // ─── Package manager ─────────────────────────────────────────────────────────
 
-type PkgRule = (names: string) => Op;
+type PkgRule = (names: string, installRecommends?: boolean) => Op;
 
 const INSTALL: Readonly<Record<SystemPackageManager, PkgRule>> = {
   // `update` first because an install against a stale index fails on a
   // just-provisioned box; `-qq` because this output streams into the UI.
-  apt: (names) => answered(["apt-get update -qq", `apt-get install -y -qq ${names}`]),
-  dnf: (names) => answered([`dnf install -y ${names}`]),
+  apt: (names, recommends = true) =>
+    answered([
+      "apt-get update -qq",
+      `apt-get install -y -qq ${recommends ? "" : "--no-install-recommends "}${names}`,
+    ]),
+  dnf: (names, recommends = true) =>
+    answered([`dnf install -y ${recommends ? "" : "--setopt=install_weak_deps=False "}${names}`]),
   yum: (names) => answered([`yum install -y ${names}`]),
   apk: (names) => answered([`apk add --no-cache ${names}`]),
   brew: (names) => answered([`brew install ${names}`]),
@@ -230,8 +245,7 @@ const REMOVE: Readonly<Record<SystemPackageManager, PkgRule>> = {
   yum: (names) => answered([`yum remove -y ${names}`]),
   apk: (names) => answered([`apk del ${names}`]),
   brew: (names) => answered([`brew uninstall --force ${names}`]),
-  none: (names) =>
-    refused(`No package manager is available to remove ${names}.`),
+  none: (names) => refused(`No package manager is available to remove ${names}.`),
 };
 
 /**
@@ -485,10 +499,7 @@ function dockerInstallSteps(profile: EnvironmentProfile): Op {
       // So this stays a deliberate downgrade: the distro's `docker.io` is older than
       // docker-ce but real, and MIN_DOCKER_VERSION gates it. It carries no compose plugin
       // under any name we can derive here — see {@link COMPOSE_PLUGIN_VERSION}.
-      return withComposePlugin(profile, [
-        "apt-get update -qq",
-        "apt-get install -y -qq docker.io",
-      ]);
+      return withComposePlugin(profile, ["apt-get update -qq", "apt-get install -y -qq docker.io"]);
 
     case "alpine":
       // `docker-compose` does not exist in Alpine; the v2 plugin is `docker-cli-compose`.
@@ -586,12 +597,15 @@ function hostCommands(profile: EnvironmentProfile): HostCommands {
   };
 
   return {
-    pkgInstall: (packages) => withPackages(packages, INSTALL[pm]),
+    pkgInstall: (packages, options) =>
+      withPackages(packages, (names) => INSTALL[pm](names, options?.installRecommends)),
 
-    pkgInstallVariants: (variants) => {
+    pkgInstallVariants: (variants, options) => {
       if (pm === "none") return INSTALL.none("this package");
       const chosen = variants[pm];
-      return chosen.supported ? withPackages(chosen.value, INSTALL[pm]) : chosen;
+      return chosen.supported
+        ? withPackages(chosen.value, (names) => INSTALL[pm](names, options?.installRecommends))
+        : chosen;
     },
 
     pkgRemove: (packages) => withPackages(packages, REMOVE[pm]),
@@ -603,6 +617,27 @@ function hostCommands(profile: EnvironmentProfile): HostCommands {
     // the guarantee has to hold for a string nobody vetted.
     serviceEnableStart: (name) => service.enableStart(unit(name)),
     serviceIsActive: (name) => service.isActive(unit(name)),
+
+    managedNetworkServices: (identity) => {
+      if (profile.os !== "linux" || profile.serviceManager !== "systemd")
+        return refused(
+          "Managed networking requires Linux with a running systemd, so rollback can survive a controller disconnect or host reboot.",
+        );
+      if (!/^[a-f0-9]{32}$/.test(identity)) return refused("Invalid managed network identity.");
+      const network = unit(`openship-network-${identity}.service`);
+      const timer = unit(`openship-network-${identity}-rollback.timer`);
+      return answered({
+        reload: "systemctl daemon-reload",
+        // Applying the interface happens under a host lock. Starting the unit here
+        // would recursively acquire it; enable it for subsequent boots instead.
+        enable: `systemctl enable ${network}`,
+        disable: `systemctl disable ${network}`,
+        armTimer: `systemctl enable ${timer} && systemctl restart ${timer}`,
+        // A timer may already be waiting on that same host lock. Never wait for it
+        // while holding the lock: the receipt fences its eventual callback.
+        cancelTimer: `systemctl disable ${timer} && systemctl --no-block stop ${timer}`,
+      });
+    },
 
     firewallAllow: (scope) => firewallScoped(scope, firewallAllowSteps),
 

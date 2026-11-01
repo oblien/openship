@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useCallback, useRef } from "react";
-import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useCallback } from "react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CustomSelect } from "@/components/ui/CustomSelect";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
+import { Button } from "@/components/ui/button";
 import DomainSettings from "./DomainSettings";
+import { MonorepoDomains } from "@/components/import-project/MonorepoDomains";
 import BuildSummary from "./BuildSummary";
-import { CloudWaitlistModal } from "./CloudWaitlistModal";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
@@ -64,7 +67,7 @@ const ComposeChecklist: React.FC = () => {
       label: t.deploy.checklist.servicesDetected,
       value: interpolate(t.deploy.checklist.servicesCount, { count: String(services.length) }),
       ok: services.length > 0,
-      icon: Layers,
+      icon: "layers" as const,
     },
     {
       label: t.deploy.checklist.publicDomains,
@@ -73,14 +76,14 @@ const ComposeChecklist: React.FC = () => {
         : interpolate(t.deploy.checklist.canBeExposed, { count: String(exposableServices.length) }),
       ok: exposedServices.length > 0,
       warn: exposedServices.length === 0 && exposableServices.length > 0,
-      icon: Globe,
+      icon: "globe" as const,
     },
     ...(buildServices.length > 0
       ? [{
           label: t.deploy.checklist.buildServices,
           value: interpolate(t.deploy.checklist.toBuild, { count: String(buildServices.length) }),
           ok: true,
-          icon: Container,
+          icon: "layers" as const,
         }]
       : []),
     {
@@ -89,7 +92,7 @@ const ComposeChecklist: React.FC = () => {
         ? interpolate(t.deploy.checklist.varsAcross, { vars: String(totalEnvVars), services: String(envConfigured) })
         : t.deploy.checklist.noEnvVars,
       ok: totalEnvVars > 0,
-      icon: Key,
+      icon: "key" as const,
     },
   ];
 
@@ -111,11 +114,11 @@ const ComposeChecklist: React.FC = () => {
                     : "bg-muted/50 text-muted-foreground/50"
               }`}>
                 {check.ok ? (
-                  <Check className="size-3" />
+                  <UiIcon name="check" className="size-3" />
                 ) : (check as any).warn ? (
-                  <AlertCircle className="size-3" />
+                  <UiIcon name="alert-circle" className="size-3" />
                 ) : (
-                  <Icon className="size-3" />
+                  <UiIcon name={Icon} className="size-3" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -139,7 +142,7 @@ const ComposeChecklist: React.FC = () => {
           </p>
           {routedServices.map(({ svc, host }) => (
             <div key={svc.name} className="flex items-center gap-2">
-              <Globe className="size-3 text-primary" />
+              <UiIcon name="globe" className="size-3 text-primary" />
               <span className="text-sm text-primary font-medium truncate">{host}</span>
               <span className="text-xs text-muted-foreground ms-auto">{svc.name}</span>
             </div>
@@ -152,8 +155,9 @@ const ComposeChecklist: React.FC = () => {
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
-const Sidebar: React.FC = () => {
-  const { config, state, updateConfig, startDeployment } = useDeployment();
+const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) => {
+  const { config, state, updateConfig, startDeployment, rescanWithBranch, isRescanning } =
+    useDeployment();
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
@@ -163,6 +167,15 @@ const Sidebar: React.FC = () => {
   const { showToast } = useToast();
   const router = useRouter();
   const isServices = usesServiceDeployment(config);
+  const [branchError, setBranchError] = React.useState<string | null>(null);
+  const handleBranchChange = useCallback(
+    async (branch: string) => {
+      setBranchError(null);
+      const result = await rescanWithBranch(branch);
+      if (!result.success && result.error) setBranchError(result.error);
+    },
+    [rescanWithBranch],
+  );
 
   // Copy a ready-to-run `git clone` command with a short-lived GitHub App
   // installation token. Cloud / GitHub-App mode only — surfaces a clear
@@ -191,32 +204,6 @@ const Sidebar: React.FC = () => {
   // connect-account flow, local builds don't need a remote credential.
   const cloneGate = useCloneStrategyGate();
 
-  // Lazy branch list. In config-edit mode the wizard hydrates from saved data
-  // with only the current branch seeded (no repo round-trip on load). The full
-  // list is fetched once, on first open of the branch dropdown — never for
-  // local-sourced projects (no remote repo to list).
-  const branchesFetchedRef = useRef(false);
-  const loadBranches = useCallback(async () => {
-    if (branchesFetchedRef.current) return;
-    if (!config.projectId || !config.owner || config.owner === "local") return;
-    // Only when the list is "thin" (config-edit seeds just the current branch);
-    // the first-deploy path already preloads the full list via prepare.
-    if (config.branches.length > 1) return;
-    branchesFetchedRef.current = true;
-    try {
-      const res = await projectsApi.getBranches(config.projectId);
-      const names: string[] = (res?.data ?? [])
-        .map((b: { name?: string }) => b?.name)
-        .filter((n: unknown): n is string => typeof n === "string" && n.length > 0);
-      if (names.length) {
-        const merged = Array.from(new Set([config.branch, ...names].filter(Boolean)));
-        updateConfig({ branches: merged });
-      }
-    } catch {
-      branchesFetchedRef.current = false; // allow a retry on next open
-    }
-  }, [config.projectId, config.owner, config.branch, config.branches.length, updateConfig]);
-
   const handleOpenEnvironmentCreator = useCallback(() => {
     if (!config.projectId) return;
 
@@ -239,14 +226,14 @@ const Sidebar: React.FC = () => {
   }, [startDeployment, router]);
 
   const continueDeploy = useCallback(async (overrides?: { buildStrategy?: BuildStrategy }) => {
-    // Pre-deploy DNS gate (self-hosted custom domain): surface the records to add
+    // Pre-deploy DNS gate (custom domains): surface the records to add
     // BEFORE the deploy so DNS is pointed when the first-deploy SSL attempt runs.
     // A failed attempt just marks the domain Action Required — never blocks the
     // deploy. Informational-blocking: Deploy proceeds, Cancel aborts.
-    let dnsTargets = selfHosted ? deploymentDnsTargets(config) : [];
+    let dnsTargets = deploymentDnsTargets(config);
     if (dnsTargets.length > 0) {
       if (config.projectId) {
-        const projectInfo = await projectsApi.getInfo(config.projectId).catch(() => null);
+        const projectInfo = await projectsApi.getInfo(config.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/(deployment)/deploy/[slug]/components/Sidebar"); return null; });
         const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
           ? projectInfo.data.project.domains
           : [];
@@ -265,28 +252,17 @@ const Sidebar: React.FC = () => {
             onCancel={() => hideModal(modalId)}
           />
         ),
+        width: "100%",
         maxWidth: "560px",
+        showCloseButton: false,
       });
       return;
     }
     await doDeploy(overrides);
-  }, [doDeploy, selfHosted, config, showModal, hideModal]);
+  }, [doDeploy, config, showModal, hideModal]);
 
   const handleDeploy = useCallback(async () => {
-    // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so
-    // pressing Deploy on the hosted control plane shows the "Cloud is almost
-    // here" waitlist instead of running a deploy. Self-hosted / desktop deploys
-    // are unaffected. Delete this block (+ CloudWaitlistModal + the
-    // /api/cloud-waitlist route) when Cloud launches.
-    if (!selfHosted) {
-      let modalId = "";
-      modalId = showModal({
-        customContent: <CloudWaitlistModal onClose={() => hideModal(modalId)} />,
-        maxWidth: "460px",
-      });
-      return;
-    }
-
+    if (!destinationReady) return;
     // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
     // remote servers; the workload can't run on this machine yet. Scoped to NEW
     // projects on purpose — a project that already lives locally stays fully
@@ -345,10 +321,17 @@ const Sidebar: React.FC = () => {
 
     if (
       !isServices &&
-      !config.noPublicRoute &&
+      (!config.noPublicRoute ||
+        (config.projectType === "monorepo" && config.serviceDeploymentMode !== "single")) &&
       canConnectCloud &&
       config.deployTarget !== "cloud" &&
-      publicEndpointsNeedCloud(config.publicEndpoints)
+      publicEndpointsNeedCloud(
+        config.projectType === "monorepo" && config.serviceDeploymentMode !== "single"
+          ? (config.monorepoApps ?? [])
+              .filter((app) => app.enabled && app.exposed !== false)
+              .flatMap((app) => app.publicEndpoints)
+          : config.publicEndpoints,
+      )
     ) {
       if (!(await requireCloud("managed-project-domain", { domain: baseDomain }))) return;
     }
@@ -405,31 +388,68 @@ const Sidebar: React.FC = () => {
       return;
     }
 
-    await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+    await continueDeploy(
+      buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined,
+    );
+  }, [
+    baseDomain,
+    canConnectCloud,
+    cloneGate.preference,
+    config.buildStrategy,
+    config.deployTarget,
+    config.owner,
+    config.projectId,
+    config.serverId,
+    config.publicEndpoints,
+    config.services,
+    config.monorepoApps,
+    config.projectType,
+    config.serviceDeploymentMode,
+    config.noPublicRoute,
+    continueDeploy,
+    destinationReady,
+    hideModal,
+    isServices,
+    localDeployGate,
+    requireCloud,
+    selfHosted,
+    showModal,
+    showToast,
+    updateConfig,
+    t,
+  ]);
 
-  // Edit mode (opened from the project Runtime page with ?mode=config): the
+  // Edit mode (opened from project Settings with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no
   // deploy gates (cloud/clone/domain checks are deploy concerns). Deploying is
   // the separate "Redeploy" action on the project page.
   const searchParams = useSearchParams();
-  const isConfigMode = searchParams.get("mode") === "config";
+  const isConfigMode = searchParams.get("mode") === "config" && Boolean(config.projectId);
   const [isSaving, setIsSaving] = React.useState(false);
+  const saveInFlight = React.useRef(false);
   const handleSave = useCallback(async () => {
+    if (!destinationReady || isRescanning || saveInFlight.current) return;
+    saveInFlight.current = true;
     setIsSaving(true);
     try {
       const projectId = await startDeployment({ saveConfigOnly: true });
       if (projectId) {
-        // Bust the cached project info so the Runtime tab shows the just-saved
-        // config (it's served from infoCache and would otherwise be stale), then
-        // return to the Runtime tab the user edited from — not the default tab.
+        // Refresh the cached project info before returning to Settings so it
+        // shows the saved configuration.
         invalidateProjectCaches(projectId);
-        router.push(`/projects/${projectId}/runtime`);
+        router.push(`/projects/${projectId}/advanced`);
       }
     } finally {
+      saveInFlight.current = false;
       setIsSaving(false);
     }
-  }, [startDeployment, router]);
+  }, [startDeployment, router, destinationReady, isRescanning]);
+
+  const handleCancel = () => {
+    if (saveInFlight.current || isRescanning || !config.projectId) return;
+    // Leaving the wizard unmounts its draft provider; no save or deploy is sent.
+    router.push(`/projects/${config.projectId}/advanced`);
+  };
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">
@@ -442,7 +462,7 @@ const Sidebar: React.FC = () => {
         </div>
         <div className="p-4 pt-3">
           <div className="flex items-center gap-3">
-            <Github className="size-4 text-muted-foreground shrink-0" />
+            <UiIcon name="github" className="size-4 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               {config.owner && config.owner !== "local" && config.repo ? (
                 <a
@@ -453,7 +473,7 @@ const Sidebar: React.FC = () => {
                   className="group inline-flex max-w-full items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-primary"
                 >
                   <span className="truncate">{config.owner}/{config.repo}</span>
-                  <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-primary" />
+                  <UiIcon name="external-link" className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-primary" />
                 </a>
               ) : (
                 <p className="text-sm font-medium text-foreground truncate">
@@ -469,7 +489,7 @@ const Sidebar: React.FC = () => {
                   {
                     id: "clone-token",
                     label: t.deploy.sidebar.copyCloneToken,
-                    icon: <Copy className="size-4" />,
+                    icon: <UiIcon name="copy" className="size-4" />,
                     onClick: handleCopyCloneToken,
                   },
                 ]}
@@ -478,47 +498,57 @@ const Sidebar: React.FC = () => {
           </div>
           {config.branches.length > 0 && (
             <div className="mt-3">
-              <CustomSelect
+              <RepositoryBranchSelect
+                owner={config.owner}
+                repo={config.repo}
+                serverId={config.serverId}
+                projectId={config.projectId}
                 value={config.branch}
-                onChange={(val) => updateConfig({ branch: val })}
-                onOpen={loadBranches}
-                options={config.branches.map(branch => ({
-                  value: branch,
-                  label: branch,
-                  icon: <GitBranch className="w-3.5 h-3.5" />
-                }))}
+                onChange={(val) => void handleBranchChange(val)}
+                disabled={isRescanning || isSaving || state.isDeploying}
+                initialBranches={config.branches}
+                initialPage={config.branchPage}
+                initialHasMore={config.branchesHasMore}
                 footerAction={config.projectId
                   ? {
                       label: t.deploy.sidebar.newEnvironment,
-                      icon: <Plus className="w-3.5 h-3.5 text-muted-foreground" />,
+                      icon: <UiIcon name="plus" className="w-3.5 h-3.5 text-muted-foreground" />,
                       onClick: handleOpenEnvironmentCreator,
                     }
                   : undefined}
-                placeholder={t.deploy.sidebar.selectBranch}
-                className="w-full"
               />
+              {isRescanning && (
+                <p
+                  role="status"
+                  className="flex items-center gap-2 mt-2 text-sm text-muted-foreground"
+                >
+                  <UiIcon name="spinner" className="size-3.5 animate-spin" aria-hidden="true" />
+                  {t.importProject.buildSettings.composePath.scanning}
+                </p>
+              )}
+              {branchError && (
+                <p role="alert" className="mt-2 text-sm text-danger break-words">
+                  {branchError}
+                </p>
+              )}
             </div>
           )}
           {config.branches.length === 0 && config.branch && (
             <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-              <GitBranch className="size-3" />
+              <UiIcon name="git-branch" className="size-3" />
               {config.branch}
             </div>
           )}
         </div>
       </div>
 
-      {/* Domain - per-service for compose, checklist for others.
-          Monorepo flows through the single-app DomainSettings: its
-          `<PublicEndpointsCard>` already supports multiple endpoints
-          (the "+" button at the header adds another Domain card). The
-          monorepo init seeds `config.publicEndpoints` with one entry
-          per sub-app so the existing card renders them all without a
-          parallel UI. */}
-      {isServices ? (
+      {config.projectType === "monorepo" && config.serviceDeploymentMode !== "single" ? (
+        <MonorepoDomains />
+      ) : isServices ? (
         <ComposeChecklist />
       ) : (
         <DomainSettings
+          serverId={config.serverId}
           projectId={config.projectId}
           projectName={config.projectName}
           endpoints={config.publicEndpoints}
@@ -544,37 +574,56 @@ const Sidebar: React.FC = () => {
           config from the project Runtime page SAVES without deploying — deploy
           is the separate "Redeploy" action. */}
       {isConfigMode ? (
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="size-4 animate-spin" />
-              {t.deploy.sidebar.saving}
-            </>
-          ) : (
-            <>
-              <Check className="size-4" />
-              {t.deploy.sidebar.saveChanges}
-            </>
-          )}
-        </button>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-w-0 flex-1 whitespace-normal"
+            onClick={handleCancel}
+            disabled={isSaving || isRescanning || !config.projectId}
+          >
+            {t.projectSettings.settingSection.cancel}
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || isRescanning || !destinationReady}
+            className="min-w-0 flex-1 whitespace-normal"
+          >
+            {isSaving ? (
+              <>
+                <UiIcon name="spinner" className="size-4 animate-spin" />
+                {t.deploy.sidebar.saving}
+              </>
+            ) : (
+              <>
+                <UiIcon name="check" className="size-4" />
+                {t.deploy.sidebar.saveChanges}
+              </>
+            )}
+          </Button>
+        </div>
       ) : (
         <button
           onClick={handleDeploy}
-          disabled={state.isDeploying}
+          disabled={
+            state.isDeploying ||
+            isRescanning ||
+            !destinationReady ||
+            (config.projectType === "monorepo" &&
+              config.serviceDeploymentMode !== "single" &&
+              !config.monorepoApps?.some((app) => app.enabled))
+          }
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {state.isDeploying ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
               {t.deploy.sidebar.deploying}
             </>
           ) : (
             <>
-              <Rocket className="size-4" />
+              <UiIcon name="rocket" className="size-4" />
               {t.deploy.sidebar.deploy}
             </>
           )}
@@ -595,8 +644,21 @@ function hasConnectedDomain(service: {
   customDomain?: string;
   domain?: string;
   name?: string;
+  publicEndpoints?: Array<{
+    domainType?: "free" | "custom";
+    customDomain?: string;
+    domain?: string;
+  }>;
 }) {
   if (!service.exposed) return false;
+  if (service.publicEndpoints && service.publicEndpoints.length > 0) {
+    const hasEndpointDomain = service.publicEndpoints.some((ep) =>
+      ep.domainType === "custom"
+        ? Boolean(ep.customDomain?.trim())
+        : Boolean(ep.domain?.trim()),
+    );
+    if (hasEndpointDomain) return true;
+  }
   if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
   return Boolean(service.domain?.trim() || service.name?.trim());
 }

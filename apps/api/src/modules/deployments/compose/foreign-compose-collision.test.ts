@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DockerContainerSummary } from "@repo/adapters";
-import { findForeignComposeCollisions } from "./foreign-compose-collision";
+import { findForeignComposeCollisions } from "@repo/platform/engine/modules/deployments/compose/foreign-compose-collision";
 
 const container = (over: Partial<DockerContainerSummary> & { id: string }) =>
   ({ names: [], labels: {}, ports: [], mounts: [], state: "running", ...over }) as DockerContainerSummary;

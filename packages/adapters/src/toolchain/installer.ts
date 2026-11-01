@@ -11,6 +11,7 @@
  * Tools with `providedBy` are skipped if their parent was just installed.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor, LogEntry } from "../types";
 import type { ToolchainInstallResult, ToolStep, ToolStepUser } from "./types";
 import { toolchainCatalog } from "./catalog";
@@ -66,6 +67,7 @@ export async function installTool(
   name: string,
   onLog?: (log: LogEntry) => void,
   requiredVersion?: string,
+  options?: { signal?: AbortSignal },
 ): Promise<ToolchainInstallResult> {
   const startedAt = Date.now();
   const recipe = toolchainCatalog.checks[name];
@@ -137,13 +139,18 @@ export async function installTool(
 
   try {
     for (const group of groups) {
+      options?.signal?.throwIfAborted();
       // `elevated` is non-null whenever a group asks for root — the loop above resolved
       // the grant or returned. Falling back to `executor` would silently run a root step
       // unprivileged, which is the class of bug this whole path exists to remove.
       const runner = group.as === "root" ? elevated! : executor;
-      const { code } = await runner.streamExec(opScript(group.commands), (entry) => {
-        onLog?.(entry);
-      });
+      const { code } = await runner.streamExec(
+        opScript(group.commands),
+        (entry) => {
+          onLog?.(entry);
+        },
+        options?.signal ? { signal: options.signal } : undefined,
+      );
 
       if (code !== 0) {
         throw new Error(`Install command failed with exit code ${code}`);
@@ -155,7 +162,7 @@ export async function installTool(
     // that landed in /root and is unreachable for the login user.
     const verifyResult = await executor
       .exec(plan.value.verifyCommand, { timeout: 10_000 })
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/toolchain/installer"); return null; });
 
     if (!verifyResult) {
       throw new Error(`${recipe.label} installed but verification failed`);
@@ -170,9 +177,8 @@ export async function installTool(
     // to, applied to one we just performed.
     if (requiredVersion && !meetsMinVersion(version, requiredVersion)) {
       throw new Error(
-        `${recipe.label} ${version} was installed but this project needs ` +
-          `${requiredVersion} or newer, and this host has no newer package. Use a newer ` +
-          `OS release, or build in a container.`,
+        `${recipe.label} ${version} was installed but this setup requires ` +
+          `${requiredVersion} or newer. The configured repositories did not provide a suitable version. Use a supported newer OS release or update the package repositories.`,
       );
     }
 
@@ -186,6 +192,7 @@ export async function installTool(
 
     return { tool: name, success: true, version };
   } catch (err) {
+    observeCaughtError(err, "adapters/toolchain/installer");
     const msg = safeErrorMessage(err);
     systemDebug("toolchain", `install:fail ${name} (${formatDuration(startedAt)}) ${msg}`);
 

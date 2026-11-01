@@ -43,6 +43,10 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   DockerRuntime,
+  BuildLogger,
+  NginxProvider,
+  runDeployPipeline,
+  type RootChecked,
   EDGE_CHALLENGE_DIR,
   EDGE_CHALLENGE_URL_PREFIX,
   OPENRESTY_DEFAULT_PATHS,
@@ -52,6 +56,8 @@ import {
 } from "@repo/adapters";
 import type Dockerode from "dockerode";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
+import { makeTestCert } from "../../../../packages/adapters/src/system/proxy/test-certs";
+import { buildProjectRouteDomains, toRoutedDomainInputs } from "@repo/platform/engine/lib/routing-domains";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -224,12 +230,12 @@ describeDockerE2E("edge unrouted-host page, real OpenResty", () => {
    * config OpenResty rejects fails here — with its own `[emerg]` line — instead of
    * as an unexplained connection refused.
    */
-  async function boot(files: Record<string, string>): Promise<{ http: number; https: number }> {
+  async function boot(files: Record<string, string>, extraDirectories: string[] = []): Promise<{ http: number; https: number }> {
     const script =
       `set -e\n` +
       // The token lives under the challenge location's `root`, at the URL path:
       // `try_files $uri =404` means the file has to be exactly where the URI says.
-      `mkdir -p ${CERT_DIR} ${SITES_DIR} ${EDGE_CHALLENGE_DIR} /etc/letsencrypt\n` +
+      `mkdir -p ${CERT_DIR} ${SITES_DIR} ${EDGE_CHALLENGE_DIR} /etc/letsencrypt ${extraDirectories.join(" ")}\n` +
       heredoc(certPath, cert.cert) +
       heredoc(keyPath, cert.key) +
       heredoc(join(EDGE_CHALLENGE_DIR, TOKEN), TOKEN) +
@@ -385,6 +391,75 @@ describeDockerE2E("edge unrouted-host page, real OpenResty", () => {
     expect(tls.certCn).toBe(CERT_CN);
     expect(tls.body).toContain("Service not found");
   }, 300_000);
+
+  it("serves a verified unmapped custom domain on first deploy using its retained certificate (#1281)", async () => {
+    const hostname = "recreated.example.com";
+    const live = `/etc/letsencrypt/live/${hostname}`;
+    const pair = makeTestCert([hostname]);
+    const files = new Map([
+      [`${live}/fullchain.pem`, pair.certPem], [`${live}/privkey.pem`, pair.keyPem],
+    ]);
+    const executor = {
+      exists: async (path: string) => files.has(path),
+      readFile: async (path: string) => {
+        if (!files.has(path)) throw new Error(`ENOENT: ${path}`);
+        return files.get(path)!;
+      },
+      writeFile: async (path: string, data: string) => { files.set(path, data); },
+      mkdir: async () => {},
+      rm: async (path: string) => { files.delete(path); },
+      exec: async (command: string) => {
+        if (/certbot\s+certonly/.test(command)) throw new Error("The retained certificate must be reused");
+        const move = command.match(/^mv '([^']+)' '([^']+)'$/);
+        if (move) {
+          files.set(move[2]!, files.get(move[1]!)!);
+          files.delete(move[1]!);
+        }
+        return "";
+      },
+    } as unknown as RootChecked;
+    const provider = new NginxProvider({ executor, paths: OPENRESTY_DEFAULT_PATHS, pinPaths: true, containerEdge: true });
+    const planned = buildProjectRouteDomains({
+      project: { slug: "recreated-app" } as never,
+      projectDomains: [{
+        hostname, domainType: "custom", verified: true, sslStatus: "active",
+        targetPort: null, targetPath: null,
+      }] as never,
+      publicEndpoints: [], defaultTargetPort: 9901,
+      runtimeName: "docker", usesManagedRouting: false,
+    });
+    const result = await runDeployPipeline({
+      canOverlap: true,
+      activate: async () => ({ containerId: "app" }),
+      deactivate: async () => {},
+      resolveTargetUrl: async () => "http://127.0.0.1:9901",
+    }, {
+      config: { port: 9901 } as never,
+      domains: toRoutedDomainInputs(planned), routing: provider, ssl: provider,
+    }, new BuildLogger(() => {}));
+    expect(result.status).toBe("ready");
+    expect(result.routeWarnings).toBeUndefined();
+    const luaDirectory = "/usr/local/openresty/site/lualib/openship";
+    for (const name of ["rules_guard.lua", "site_logger.lua"]) {
+      files.set(`${luaDirectory}/${name}`, await readFile(
+        join(REPO_ROOT, "packages/adapters/src/infra/lua", name), "utf8",
+      ));
+    }
+    const ports = await boot({
+      ...Object.fromEntries(files),
+      [CONF_PATH]: BARE_ENVELOPE.replace(
+        `include ${SITES_DIR}/*.conf;`,
+        `server { listen 9901; location / { return 200 "RECREATED-APP"; } }\n    include ${SITES_DIR}/*.conf;`,
+      ),
+      [join(SITES_DIR, "_default.conf")]: edgeDefaultCatchAllConf({ certPath, keyPath }),
+    }, [live, luaDirectory]);
+    const https = await ask(ports.https, "/", hostname, { sni: hostname });
+    expect(https).toMatchObject({ status: 200, body: "RECREATED-APP", certCn: hostname });
+    const http = await ask(ports.http, "/", hostname);
+    expect(http.status).toBe(301);
+    expect(http.headers.location).toBe(`https://${hostname}/`);
+    expect((await ask(ports.https, "/", UNROUTED_HOST, { sni: UNROUTED_HOST })).certCn).toBe(CERT_CN);
+  });
 
   it("rejects a page body with a stray quote — the gate can still fail", async () => {
     // The negative control. The page is ~1.6 KB of HTML inlined in a `return`

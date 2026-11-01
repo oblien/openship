@@ -1,0 +1,699 @@
+{
+  "deployment.failed": {
+    "action": "部署失败",
+    "label": "部署失败",
+    "description": "部署在达到健康状态前出错。"
+  },
+  "deployment.cancelled": {
+    "action": "取消了部署",
+    "label": "部署已取消",
+    "description": "部署在完成前已中止。"
+  },
+  "deployment:write": {
+    "action": "启动了部署:",
+    "actionWithoutResource": "启动了部署",
+    "label": "部署操作",
+    "description": "调用了部署端点 — 启动、重试、回滚或提升。"
+  },
+  "deployment:admin": {
+    "action": "对部署执行了管理操作:",
+    "actionWithoutResource": "对部署执行了管理操作",
+    "label": "部署管理操作",
+    "description": "对部署调用了管理操作。"
+  },
+  "project.created": {
+    "label": "应用已创建",
+    "action": "创建了",
+    "description": "已创建新应用及其配置。"
+  },
+  "project.updated": {
+    "label": "应用已更新",
+    "action": "更新了",
+    "description": "设置、服务、环境变量或路由已被更改。"
+  },
+  "project.deleted": {
+    "label": "应用已删除",
+    "action": "删除了",
+    "description": "应用及其运行负载已被删除。"
+  },
+  "project.deletion.rejected": {
+    "label": "删除应用被拒绝",
+    "action": "尝试删除",
+    "description": "删除被拒绝 — 仍有其他资源依赖于此应用。"
+  },
+  "project.deletion.failed": {
+    "label": "删除应用失败",
+    "action": "未能删除",
+    "description": "清理未完成，已保留应用记录以便安全重试。"
+  },
+  "project.build_cache.cleared": {
+    "label": "构建缓存已清除",
+    "action": "清除了 Docker 构建缓存",
+    "description": "已从应用的 Docker 主机中移除未使用的构建缓存。"
+  },
+  "project:write": {
+    "action": "更改了",
+    "label": "项目已更改",
+    "description": "调用了应用写入端点。"
+  },
+  "job:write": {
+    "action": "更改了任务",
+    "actionWithoutResource": "更改了任务",
+    "label": "任务已更改",
+    "description": "已创建、编辑、运行或删除定时或自定义任务。"
+  },
+  "job_run.started": {
+    "action": "启动了任务",
+    "actionWithoutResource": "启动了任务",
+    "label": "任务已启动"
+  },
+  "job_run.succeeded": {
+    "action": "成功运行了任务",
+    "actionWithoutResource": "成功运行了任务",
+    "label": "任务成功"
+  },
+  "job_run.failed": {
+    "action": "运行了失败的任务",
+    "actionWithoutResource": "运行了失败的任务",
+    "label": "任务失败"
+  },
+  "service.down": {
+    "label": "应用已宕机",
+    "action": "报告应用宕机",
+    "description": "应当运行的容器已停止运行。"
+  },
+  "service.crash_loop": {
+    "label": "应用陷入重启循环",
+    "action": "报告应用重启循环",
+    "description": "容器不断重启未能保持稳定运行。"
+  },
+  "service.unhealthy": {
+    "label": "应用运行不健康",
+    "action": "报告健康检查失败",
+    "description": "容器正在运行，但其健康检查未通过。"
+  },
+  "service.recovered": {
+    "label": "应用已恢复",
+    "action": "报告应用恢复正常",
+    "description": "故障已解除，容器已恢复正常健康状态。"
+  },
+  "server:write": {
+    "action": "更改了服务器",
+    "label": "服务器已更改"
+  },
+  "server:admin": {
+    "action": "对服务器执行了管理操作",
+    "label": "服务器管理操作",
+    "description": "调用了破坏性服务器端点（如删除或组件安装）。"
+  },
+  "terminal:write": {
+    "action": "打开了终端：",
+    "label": "终端会话已打开",
+    "description": "已在服务器上发起交互式 shell 会话。"
+  },
+  "settings:write": {
+    "action": "更改了设置",
+    "label": "设置已更改"
+  },
+  "settings:admin": {
+    "action": "对设置执行了管理操作",
+    "label": "设置管理操作",
+    "description": "调用了破坏性系统设置。"
+  },
+  "notification_channel.created": {
+    "action": "添加了通知渠道",
+    "actionWithoutResource": "添加了通知渠道",
+    "label": "通知渠道已添加"
+  },
+  "notification_channel.updated": {
+    "action": "更新了通知渠道",
+    "actionWithoutResource": "更新了通知渠道",
+    "label": "通知渠道已更新"
+  },
+  "notification_channel.deleted": {
+    "action": "删除了通知渠道",
+    "actionWithoutResource": "删除了通知渠道",
+    "label": "通知渠道已删除"
+  },
+  "notification_subscription.updated": {
+    "action": "更改了发送至该目标的通知内容",
+    "actionWithoutResource": "更改了通知路由",
+    "label": "通知路由已更改"
+  },
+  "notification_subscription.deleted": {
+    "action": "停止发送通知至",
+    "actionWithoutResource": "停止了发送通知",
+    "label": "通知已停止"
+  },
+  "notification_default.updated": {
+    "action": "更改了默认通知设置",
+    "actionWithoutResource": "更改了默认通知设置",
+    "label": "默认通知设置已更改",
+    "description": "组织的默认通知路由已更新。"
+  },
+  "notification_delivery.seen": {
+    "action": "标记为已读",
+    "actionWithoutResource": "标记为已读",
+    "label": "提醒已标记为已读"
+  },
+  "notifications:write": {
+    "action": "更改了通知",
+    "actionWithoutResource": "更改了通知",
+    "label": "通知已更改"
+  },
+  "notifications:admin": {
+    "action": "执行了通知管理操作",
+    "actionWithoutResource": "执行了通知管理操作",
+    "label": "通知管理操作"
+  },
+  "deployment.succeeded": {
+    "label": "部署成功",
+    "action": "部署了",
+    "description": "部署已成功完成并正在提供服务。"
+  },
+  "deployment.no_changes": {
+    "label": "无需部署更改",
+    "action": "未发现需要部署的更改",
+    "description": "所有服务均已是最新状态，当前发布版本保持运行。"
+  },
+  "project:admin": {
+    "label": "应用管理操作",
+    "action": "对应用执行了管理操作",
+    "description": "调用了破坏性应用操作（删除或转移）。"
+  },
+  "project:service:write": {
+    "label": "服务已更改",
+    "action": "更改了服务",
+    "description": "服务已被创建、更新、启动、停止或重启。"
+  },
+  "project:service:admin": {
+    "label": "服务管理操作",
+    "action": "对服务执行了管理操作"
+  },
+  "service.exec": {
+    "label": "服务中命令已执行",
+    "action": "在服务中执行了命令",
+    "description": "在服务容器内执行了 shell 命令。"
+  },
+  "domain.added": {
+    "label": "域名已添加",
+    "action": "添加了域名"
+  },
+  "domain.removed": {
+    "label": "域名已删除",
+    "action": "删除了域名"
+  },
+  "domain.verified": {
+    "label": "域名已验证",
+    "action": "验证了域名",
+    "description": "DNS 记录已验证，证书已成功颁发。"
+  },
+  "domain.verification_failed": {
+    "label": "域名验证失败",
+    "action": "未能验证域名",
+    "description": "DNS 检查或证书颁发失败。"
+  },
+  "domain.verify_failed": {
+    "label": "域名验证失败",
+    "action": "未能验证域名",
+    "description": "DNS 检查或证书颁发失败。"
+  },
+  "domain.set_primary": {
+    "label": "已设置为主域名",
+    "action": "设为主域名",
+    "description": "其他域名的流量现在将重定向到此域名。"
+  },
+  "domain.dns_provisioned": {
+    "label": "DNS 自动配置",
+    "action": "配置了 DNS",
+    "description": "通过关联的 DNS 提供商自动创建了 DNS 记录。"
+  },
+  "domain.cert_uploaded": {
+    "label": "自定义证书已上传",
+    "action": "上传了自定义证书",
+    "description": "已上传自定义 SSL 证书以替代自动生成的证书。"
+  },
+  "ssl.renewal_failed": {
+    "label": "SSL 续期失败",
+    "action": "未能续期 SSL",
+    "description": "自动证书续期失败。"
+  },
+  "credential.created": {
+    "label": "凭据已创建",
+    "action": "添加了凭据",
+    "description": "已保存镜像仓库密钥、提供商令牌或 SSH 密钥。"
+  },
+  "credential.updated": {
+    "label": "凭据已更新",
+    "action": "更新了凭据",
+    "description": "已编辑保存的凭据。"
+  },
+  "credential.deleted": {
+    "label": "凭据已删除",
+    "action": "删除了凭据",
+    "description": "已移除保存的凭据。"
+  },
+  "credential.verified": {
+    "label": "凭据已验证",
+    "action": "验证了凭据",
+    "description": "凭据已针对远程服务成功验证。"
+  },
+  "dns_credential.connected": {
+    "label": "DNS 提供商已连接",
+    "action": "连接了 DNS 提供商",
+    "description": "已配置用于自动域名管理的 DNS 凭据。"
+  },
+  "dns_credential.disconnected": {
+    "label": "DNS 提供商已断开",
+    "action": "断开了 DNS 提供商",
+    "description": "已移除对 DNS API 的访问，现有 DNS 记录保持不变。"
+  },
+  "domain:write": {
+    "label": "域名已修改",
+    "action": "修改了域名",
+    "description": "调用了网域端点 — 添加、验证或路由到服务。"
+  },
+  "domain:admin": {
+    "label": "域名管理操作",
+    "action": "对域名执行了管理操作"
+  },
+  "server.added": {
+    "label": "服务器已添加",
+    "action": "添加了服务器"
+  },
+  "server.updated": {
+    "label": "服务器已更新",
+    "action": "更新了服务器"
+  },
+  "server.removed": {
+    "label": "服务器已删除",
+    "action": "删除了服务器"
+  },
+  "server.removal.rejected": {
+    "label": "删除服务器被拒绝",
+    "action": "尝试删除服务器",
+    "description": "无法删除服务器，因为其上仍在运行工作负载。"
+  },
+  "server.exec": {
+    "label": "服务器命令已执行",
+    "action": "在服务器上执行了命令",
+    "description": "已在主机上运行 shell 命令。"
+  },
+  "server.unreachable": {
+    "label": "服务器无法连接",
+    "action": "报告服务器不可达",
+    "description": "Openship 无法与此服务器建立 SSH 连接。"
+  },
+  "server.reachable": {
+    "label": "服务器恢复连接",
+    "action": "报告服务器已恢复可达"
+  },
+  "migration.source_connected": {
+    "label": "迁移源已连接",
+    "action": "连接了迁移源",
+    "description": "已连接外部 SSH 服务器以导入项目。"
+  },
+  "migration.source_disconnected": {
+    "label": "迁移源已断开",
+    "action": "断开了迁移源",
+    "description": "已移除保存的迁移连接。"
+  },
+  "mail_server:write": {
+    "label": "邮件服务器已更改",
+    "action": "更改了邮件服务器",
+    "description": "调用了邮件服务器端点。"
+  },
+  "mail_server:admin": {
+    "label": "邮件服务器管理操作",
+    "action": "对邮件服务器执行了管理操作"
+  },
+  "mail.inbound_received": {
+    "label": "收到入站邮件",
+    "action": "收到了符合通知规则的邮件",
+    "actionWithoutResource": "收到了邮件"
+  },
+  "identity.provisioned": {
+    "label": "身份已配置",
+    "action": "配置了身份",
+    "description": "受信任的主机将外部身份映射到 Openship 用户。"
+  },
+  "organization.created": {
+    "label": "组织已创建",
+    "action": "创建了组织"
+  },
+  "organization.deleted": {
+    "label": "组织已删除",
+    "action": "删除了组织"
+  },
+  "organization.deletion.blocked": {
+    "label": "组织删除被阻止",
+    "action": "尝试删除组织",
+    "description": "删除被拒绝 — 仍有关联的活动资源或账单。"
+  },
+  "member.added": {
+    "label": "成员已添加",
+    "action": "添加了"
+  },
+  "member.removed": {
+    "label": "成员已移除",
+    "action": "移除了"
+  },
+  "member.role_changed": {
+    "label": "成员角色已更改",
+    "action": "更改了角色"
+  },
+  "member.updated": {
+    "label": "成员资格已更新",
+    "action": "更改了成员资格",
+    "description": "受信任的主机添加、修改或删除了组织成员资格。"
+  },
+  "member.joined": {
+    "label": "成员已加入",
+    "action": "加入了",
+    "description": "受邀者已接受邀请并获得访问权限。"
+  },
+  "member.invited": {
+    "label": "成员已邀请",
+    "action": "邀请了"
+  },
+  "member.removal.grant_cleanup_failed": {
+    "label": "已移除成员的权限未完全清理",
+    "action": "移除了具有残留权限的成员",
+    "description": "成员已移除但权限依然存在 — 请手动检查。"
+  },
+  "member.removal.subscription_cleanup_failed": {
+    "label": "已移除成员的账单未完全清理",
+    "action": "移除了具有关联账单的成员",
+    "description": "成员已移除但关联的订阅依然存在 — 请检查账单。"
+  },
+  "invitation.created": {
+    "label": "邀请已创建",
+    "action": "邀请了"
+  },
+  "invitation.sent": {
+    "label": "已发送带有待处理权限的邀请",
+    "action": "发送了带有待处理权限的邀请给",
+    "actionWithoutResource": "发送了带有待处理权限的邀请",
+    "description": "权限已排队，将在受邀者加入时立即生效。"
+  },
+  "invitation.resent": {
+    "label": "邀请已更新重发",
+    "action": "更新了邀请",
+    "description": "邀请的有效期和密钥已更新。"
+  },
+  "invitation.accepted": {
+    "label": "邀请已接受",
+    "action": "接受了邀请"
+  },
+  "invitation.rejected": {
+    "label": "邀请已拒绝",
+    "action": "拒绝了邀请"
+  },
+  "invitation.cancelled": {
+    "label": "邀请已取消",
+    "action": "取消了邀请"
+  },
+  "team.created": {
+    "label": "团队已创建",
+    "action": "创建了团队"
+  },
+  "grant.granted": {
+    "label": "权限已授予",
+    "action": "授予了权限"
+  },
+  "grant.revoked": {
+    "label": "权限已撤销",
+    "action": "撤销了权限"
+  },
+  "grant.replaced": {
+    "label": "权限已替换",
+    "action": "替换了权限",
+    "description": "现有权限已被不同范围覆盖。"
+  },
+  "grant.materialized": {
+    "label": "待处理权限已生效",
+    "action": "获得了待处理权限",
+    "description": "受邀者加入后，附加在邀请上的权限已立即生效。"
+  },
+  "permissions:write": {
+    "label": "权限已修改",
+    "action": "修改了权限"
+  },
+  "permissions:admin": {
+    "label": "权限管理操作",
+    "action": "对权限执行了管理操作"
+  },
+  "mcp.authorized": {
+    "label": "MCP 客户端已授权",
+    "action": "授权了 MCP 客户端",
+    "description": "AI 代理已连接并获得了操作权限范围。"
+  },
+  "mcp.scope_changed": {
+    "label": "MCP 权限已修改",
+    "action": "修改了 MCP 客户端的访问权限",
+    "description": "已修改关联代理的权限范围。将在代理的下一次请求时生效。"
+  },
+  "mcp.disconnected": {
+    "label": "MCP 客户端已断开",
+    "action": "断开了 MCP 客户端",
+    "description": "已吊销已连接代理的令牌、授权和权限范围。立即停止生效。"
+  },
+  "mcp.tool_called": {
+    "label": "AI 工具调用",
+    "action": "运行了 MCP 工具",
+    "description": "MCP 客户端调用了 Openship 工具。"
+  },
+  "admin.bootstrapped": {
+    "label": "首个管理员账户已创建",
+    "action": "初始化了首个管理员账户",
+    "description": "已创建实例初始所有者 — 此操作仅能执行一次。"
+  },
+  "admin.password_reset": {
+    "label": "管理员密码已重置",
+    "action": "重置了管理员密码"
+  },
+  "auth-mode-changed": {
+    "label": "登录模式已更改",
+    "action": "更改了登录模式",
+    "description": "实例在单用户和完整身份验证之间切换。"
+  },
+  "instance.data.exported": {
+    "label": "实例数据已导出",
+    "action": "导出了所有实例数据",
+    "description": "已从此实例导出完整的数据库转储文件。"
+  },
+  "instance.data.receive_code_created": {
+    "label": "数据接收代码已创建",
+    "action": "创建了直接数据传输接收代码",
+    "description": "已创建用于直接接收实例数据的短期代码。"
+  },
+  "instance.data.sent": {
+    "label": "实例数据已发送",
+    "action": "将实例数据发送到另一个实例",
+    "description": "选定的实例数据已直接传输到另一个实例。"
+  },
+  "instance.data.imported": {
+    "label": "实例数据已导入",
+    "action": "导入了实例数据",
+    "description": "已载入来自另一个实例的数据库转储。"
+  },
+  "instance.move_requested": {
+    "label": "已请求控制平面迁移",
+    "action": "请求将控制平面迁移到另一个实例",
+    "description": "管理员请求将实例数据和控制权转移到另一个实例。"
+  },
+  "instance.server_move_requested": {
+    "label": "已请求将控制平面迁移至服务器",
+    "action": "请求将控制平面迁移到服务器",
+    "description": "管理员请求在选定服务器上托管控制平面。"
+  },
+  "audit.disabled": {
+    "label": "活动记录已关闭",
+    "action": "关闭了活动记录",
+    "description": "在重新开启记录之前，不会记录任何后续操作。"
+  },
+  "audit.enabled": {
+    "label": "活动记录已开启",
+    "action": "开启了活动记录"
+  },
+  "audit.retention_changed": {
+    "label": "活动保留时间已修改",
+    "action": "修改了活动保留时间"
+  },
+  "audit:write": {
+    "label": "活动设置已修改",
+    "action": "修改了活动设置"
+  },
+  "billing.hard_cap_tripped": {
+    "label": "已达到支出上限",
+    "action": "达到了支出上限",
+    "description": "Cloud 资源可能已被暂停 — 请检查账单。"
+  },
+  "billing.credit_low": {
+    "label": "云资源积分不足",
+    "action": "接近积分使用限额",
+    "description": "请在工作负载中断前检查剩余可用配额。"
+  },
+  "billing.credit_exhausted": {
+    "label": "积分已耗尽",
+    "action": "用尽了积分",
+    "description": "计量使用已暂停，直至充值或每月重置。"
+  },
+  "billing.credit_restored": {
+    "label": "积分已恢复",
+    "action": "恢复了积分"
+  },
+  "billing.anniversary_reset": {
+    "label": "每月积分已重置",
+    "action": "重置了每月积分"
+  },
+  "quota.threshold_fired": {
+    "label": "使用量阈值触发",
+    "action": "超出了使用量阈值"
+  },
+  "billing:write": {
+    "label": "账单操作",
+    "action": "更改了账单",
+    "description": "调用了账单端点。"
+  },
+  "billing:admin": {
+    "label": "账单管理操作",
+    "action": "对账单执行了管理操作",
+    "description": "调用了破坏性账单端点（如取消订阅）。"
+  },
+  "settings.updated": {
+    "label": "设置已更新",
+    "action": "更新了设置"
+  },
+  "updates:write": {
+    "label": "系统更新",
+    "action": "检查或应用了更新",
+    "description": "已启动 Openship 组件更新。"
+  },
+  "cloud.disconnect": {
+    "label": "Cloud 已断开",
+    "action": "断开了与 Cloud 的连接"
+  },
+  "cloud:write": {
+    "label": "Cloud 操作",
+    "action": "修改了 Cloud 集成",
+    "description": "调用了云服务端点。"
+  },
+  "cloud:admin": {
+    "label": "Cloud 管理操作",
+    "action": "对 Cloud 执行了管理操作"
+  },
+  "github.install": {
+    "label": "GitHub App 已安装",
+    "action": "安装了 GitHub App"
+  },
+  "github.source.created": {
+    "label": "GitHub 源已添加",
+    "action": "添加了 GitHub 仓库",
+    "description": "已将 GitHub 仓库添加为项目源。"
+  },
+  "github.source.updated": {
+    "label": "GitHub 源已更新",
+    "action": "更新了 GitHub 仓库",
+    "description": "已修改 GitHub 源配置。"
+  },
+  "github.source.verified": {
+    "label": "GitHub 源已验证",
+    "action": "验证了 GitHub 访问权限"
+  },
+  "github.source.defaulted": {
+    "label": "设为默认 GitHub 源",
+    "action": "设为默认仓库"
+  },
+  "github.source.deleted": {
+    "label": "GitHub 源已删除",
+    "action": "删除了 GitHub 源",
+    "description": "已移除与 GitHub 仓库的关联。"
+  },
+  "github.connect": {
+    "label": "GitHub 账号已连接",
+    "action": "连接了 GitHub 账号"
+  },
+  "github.installation.claim": {
+    "label": "GitHub 安装已关联",
+    "action": "关联了 GitHub 安装"
+  },
+  "github.disconnect": {
+    "label": "GitHub 账号已断开",
+    "action": "断开了 GitHub 账号"
+  },
+  "github.repo.create": {
+    "label": "GitHub 仓库已创建",
+    "action": "在 GitHub 上创建了仓库"
+  },
+  "github.repo.delete": {
+    "label": "GitHub 仓库已删除",
+    "action": "在 GitHub 上删除了仓库"
+  },
+  "github.webhook.register": {
+    "label": "GitHub Webhook 已注册",
+    "action": "注册了 GitHub Webhook"
+  },
+  "github.webhook.delete": {
+    "label": "GitHub Webhook 已删除",
+    "action": "删除了 GitHub Webhook"
+  },
+  "github.instance_token.set": {
+    "label": "GitHub 实例令牌已设置",
+    "action": "设置了 GitHub 实例令牌",
+    "description": "已为实例配置自定义 GitHub App 令牌。"
+  },
+  "github:write": {
+    "label": "GitHub 操作",
+    "action": "修改了 GitHub 集成"
+  },
+  "github:admin": {
+    "label": "GitHub 管理操作",
+    "action": "对 GitHub 执行了管理操作"
+  },
+  "backup_run.succeeded": {
+    "label": "备份成功",
+    "action": "成功创建了备份"
+  },
+  "backup_run.failed": {
+    "label": "备份失败",
+    "action": "创建备份失败"
+  },
+  "backup_restore.completed": {
+    "label": "备份恢复已完成",
+    "action": "成功从备份中恢复"
+  },
+  "backup_restore.failed": {
+    "label": "备份恢复失败",
+    "action": "从备份恢复失败"
+  },
+  "backup.webhook.fired": {
+    "label": "备份 Webhook 已触发",
+    "action": "触发了备份 Webhook"
+  },
+  "backup.webhook.disabled": {
+    "label": "备份 Webhook 已停用",
+    "action": "停用了备份 Webhook",
+    "description": "在多次投递失败后，该 Webhook 已被自动停用。"
+  },
+  "backup_destination:write": {
+    "label": "备份目标已修改",
+    "action": "修改了备份目标"
+  },
+  "backup_destination:admin": {
+    "label": "备份目标管理操作",
+    "action": "对备份目标执行了管理操作"
+  },
+  "backup_destination:backup_policy:write": {
+    "label": "备份策略已修改",
+    "action": "修改了备份策略"
+  },
+  "backup_destination:backup_run:write": {
+    "label": "备份运行已修改",
+    "action": "修改了备份运行"
+  },
+  "backup_destination:backup_restore:write": {
+    "label": "备份恢复已修改",
+    "action": "修改了备份恢复"
+  }
+}

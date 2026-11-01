@@ -55,6 +55,10 @@
     "appsEmptyDesc": "Un clic, totalmente autoalojado: bases de datos, automatización, analítica, gestores de contraseñas y más, en tus propios servidores."
   },
   "nav": {
+    "affiliates": "Gana",
+    "resources": "Espacios Cloud",
+    "support": "Soporte",
+    "scale": "Escalado",
     "home": "Inicio",
     "new-project": "Nuevo proyecto",
     "projects": "Proyectos",
@@ -73,6 +77,7 @@
     "addMailbox": "Añadir buzón",
     "webmail": "Webmail",
     "sections": {
+      "help": "Ayuda",
       "main": "Principal",
       "settings": "Configuración",
       "infrastructure": "Infraestructura",
@@ -82,7 +87,9 @@
       "account": "Cuenta"
     },
     "apps": "Apps",
-    "jobs": "Trabajos"
+    "jobs": "Trabajos",
+    "workspaces": "Espacios de trabajo",
+    "actions": "Acciones"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",
@@ -126,7 +133,27 @@
         "analytics": "Analítica",
         "automation": "Automatización",
         "mail": "Correo",
-        "other": "Herramientas"
+        "other": "Herramientas",
+        "ai": "IA y modelos"
+      },
+      "addCustom": "Añadir personalizada",
+      "howToAddApp": "Cómo añadir una aplicación",
+      "removeCustomApp": "Eliminar aplicación personalizada",
+      "needsUpdateDesc": "Actualiza tu instancia de Openship para instalar esta aplicación.",
+      "needsUpdateBadge": "Requiere actualización",
+      "needsVersionBadge": "Requiere v{version}",
+      "removedToast": "Se eliminó \"{name}\".",
+      "removeFailedToast": "No se pudo eliminar la aplicación.",
+      "gpu": {
+        "recommended": "GPU recomendada",
+        "required": "Requiere GPU NVIDIA",
+        "mode": "Procesamiento",
+        "cpu": "Solo CPU",
+        "nvidia": "GPU NVIDIA",
+        "hint": "El modo NVIDIA necesita un controlador compatible y NVIDIA Container Toolkit en tu servidor.",
+        "cloudUnsupported": "Esta app solo admite alojamiento propio. Elige un servidor propio conectado.",
+        "selfHostedOnly": "Solo alojamiento propio",
+        "noGpu": "No se detectó una GPU. Revisa el controlador NVIDIA y Container Toolkit o elige CPU."
       }
     },
     "projects": {

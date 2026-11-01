@@ -1,0 +1,10 @@
+{
+  "title": "billing",
+  "pages": [
+    "index",
+    "change",
+    "checkout",
+    "manage",
+    "subscription"
+  ]
+}

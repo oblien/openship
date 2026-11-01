@@ -47,4 +47,19 @@ describe("GitHub connect error storage", () => {
     expect(() => storeGitHubConnectError("claim failed", null)).not.toThrow();
     expect(consumeGitHubConnectError(null)).toBeNull();
   });
+
+  it("does not consume another tab's connection error", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+    storeGitHubConnectError("expired in A", storage, "attempt-a");
+    storeGitHubConnectError("cancelled in B", storage, "attempt-b");
+    expect(consumeGitHubConnectError(storage, "attempt-a")).toBe("expired in A");
+    expect(consumeGitHubConnectError(storage, "attempt-a")).toBeNull();
+    expect(consumeGitHubConnectError(storage)).toBeNull();
+    expect(consumeGitHubConnectError(storage, "attempt-b")).toBe("cancelled in B");
+  });
 });

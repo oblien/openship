@@ -1,0 +1,105 @@
+---
+title: dns
+description: Commands, arguments, and options for openship dns.
+cliGroup: openship dns
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship dns
+
+Manage DNS providers and zone access
+
+```text
+openship dns [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`providers`](/docs/cli/reference/dns#openship-dns-providers) | List DNS providers, scopes and token setup links |
+| [`verify-zone <hostname>`](/docs/cli/reference/dns#openship-dns-verify-zone) | Check DNS zone access |
+| [`credentials`](/docs/cli/reference/dns#openship-dns-credentials) | Manage DNS automation credentials |
+| [`ingress`](/docs/cli/reference/dns/ingress#openship-dns-ingress) | Manage Cloudflare public ingress on connected self-hosted servers |
+
+## openship dns credentials
+
+Manage DNS automation credentials
+
+```text
+openship dns credentials [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/dns#openship-dns-credentials-list) | List masked DNS credentials |
+| [`get <id>`](/docs/cli/reference/dns#openship-dns-credentials-get) | Show a masked DNS credential |
+| [`add <file>`](/docs/cli/reference/dns#openship-dns-credentials-add) | Store DNS credentials for automatic records and certificates |
+| [`remove\|rm [options] <id>`](/docs/cli/reference/dns#openship-dns-credentials-remove) | Remove DNS automation credentials |
+
+## openship dns credentials add
+
+Store DNS credentials for automatic records and certificates
+
+```text
+openship dns credentials add [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON object containing provider, name and apiToken |
+
+## openship dns credentials get
+
+Show a masked DNS credential
+
+```text
+openship dns credentials get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Credential ID |
+
+## openship dns credentials list
+
+List masked DNS credentials
+
+```text
+openship dns credentials list [options]
+```
+
+## openship dns credentials remove
+
+Remove DNS automation credentials
+
+```text
+openship dns credentials remove|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Credential ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip confirmation |
+
+## openship dns providers
+
+List DNS providers, scopes and token setup links
+
+```text
+openship dns providers [options]
+```
+
+## openship dns verify-zone
+
+Check DNS zone access
+
+```text
+openship dns verify-zone [options] <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `hostname` | Hostname to resolve against your DNS credentials |

@@ -46,6 +46,27 @@ const workload = {
 };
 
 describe("serviceIncident repo", () => {
+  it("clears all old resolved history only in the requested org and preserves active and later recoveries", async () => {
+    const repo = await freshRepo();
+    const cutoff = new Date("2026-10-13T10:00:00Z");
+    const older = new Date(cutoff.getTime() - 1000);
+    const newer = new Date(cutoff.getTime() + 1000);
+    // The feed only returns 200 rows. Clearing history must not inherit that cap.
+    for (let i = 0; i < 205; i++) {
+      const row = await repo.open({ ...workload, serviceKey: `old-${i}` });
+      await repo.resolve(row!.id, older);
+    }
+    const open = await repo.open({ ...workload, serviceKey: "still-open" });
+    const later = await repo.open({ ...workload, serviceKey: "later-recovery" });
+    await repo.resolve(later!.id, newer);
+    const other = await repo.open({ ...workload, organizationId: "org-2", serviceKey: "foreign" });
+    await repo.resolve(other!.id, older);
+    expect(await repo.clearResolvedByOrg("org-1", cutoff)).toBe(205);
+    expect((await repo.listByOrg("org-1")).map(row => row.id).sort()).toEqual([open!.id, later!.id].sort());
+    expect((await repo.listByOrg("org-2"))[0]?.id).toBe(other!.id);
+    expect(await repo.clearResolvedByOrg("org-1", cutoff)).toBe(0);
+  });
+
   it("opens one incident and reads it back as the workload's open incident", async () => {
     const repo = await freshRepo();
     const incident = await repo.open({ ...workload, reason: "it exited with code 1", confirmations: 1 });

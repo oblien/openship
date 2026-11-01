@@ -1,5 +1,6 @@
+import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useState } from 'react';
-import { generateIcon } from '@/utils/icons';
+
 import { useToast } from '@/context/ToastContext';
 import { useI18n } from "@/components/i18n-provider";
 import { projectsApi } from "@/lib/api";
@@ -37,7 +38,7 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
     <div className="bg-card rounded-2xl border border-border/50 p-6">
       <div className="flex items-center gap-3 mb-5">
         <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
-          {generateIcon('preferences-95-1658432731.png', 24, 'var(--primary)')}
+          <UiIcon name="sliders" size={24} className="text-primary" />
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">{t.projectSettings.sleep.title}</h3>
@@ -59,12 +60,12 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
           {selectedMode === 'auto_sleep' && (
             <div className="absolute top-2 end-2">
               <div className="w-4 h-4 bg-primary rounded-full flex items-center justify-center">
-                {generateIcon('checkmark-7-1662452248.png', 12, 'white')}
+                <UiIcon name="check" size={12} className="text-primary-foreground" />
               </div>
             </div>
           )}
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${selectedMode === 'auto_sleep' ? 'bg-primary' : 'bg-muted'}`}>
-            {generateIcon('auto%20flash-91-1689918656.png', 24, selectedMode === 'auto_sleep' ? 'white' : 'rgb(0, 0, 0, 0.5)')}
+            <UiIcon name="bolt" size={24} className={selectedMode === 'auto_sleep' ? "text-primary-foreground" : "text-muted-foreground"} />
           </div>
           <div className="flex-1 text-start pe-4">
             <div className="flex items-center gap-2 mb-0.5">
@@ -97,12 +98,12 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
           {selectedMode === 'always_on' && (
             <div className="absolute top-2 end-2">
               <div className="w-4 h-4 bg-primary rounded-full flex items-center justify-center">
-                {generateIcon('checkmark-7-1662452248.png', 12, 'white')}
+                <UiIcon name="check" size={12} className="text-primary-foreground" />
               </div>
             </div>
           )}
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${selectedMode === 'always_on' ? 'bg-primary' : 'bg-muted'}`}>
-            {generateIcon('connected%20cable-99-1689918656.png', 24, selectedMode === 'always_on' ? 'white' : 'rgb(0, 0, 0, 0.5)')}
+            <UiIcon name="plug" size={24} className={selectedMode === 'always_on' ? "text-primary-foreground" : "text-muted-foreground"} />
           </div>
           <div className="flex-1 text-start pe-4">
             <p className={`text-sm font-semibold mb-0.5 ${selectedMode === 'always_on' ? 'text-foreground' : 'text-foreground'}`}>
@@ -121,7 +122,7 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
       {/* Info Box */}
       <div className="mt-4 p-3 bg-warning-bg border border-warning-border rounded-xl">
         <div className="flex items-start gap-2">
-          {generateIcon('info%20circle-16-1662452248.png', 16, 'var(--primary)')}
+          <UiIcon name="info" size={16} className="text-primary" />
           <div>
             <p className="text-xs font-semibold text-warning mb-0.5">{t.projectSettings.sleep.infoTitle}</p>
             <p className="text-sm text-warning/80 leading-relaxed">

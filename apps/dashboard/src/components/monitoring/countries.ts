@@ -15,6 +15,7 @@
 
 // One instance per locale. `Intl.DisplayNames` construction is not free and the
 // map calls this ~173 times per render.
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 const cache = new Map<string, Intl.DisplayNames | null>();
 
 function namerFor(locale: string): Intl.DisplayNames | null {
@@ -23,7 +24,8 @@ function namerFor(locale: string): Intl.DisplayNames | null {
   let namer: Intl.DisplayNames | null = null;
   try {
     namer = new Intl.DisplayNames([locale, "en"], { type: "region" });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/countries");
     // Unsupported locale tag / trimmed ICU data — fall through to raw codes.
     namer = null;
   }
@@ -41,7 +43,8 @@ export function countryNamer(locale: string): (code: string) => string {
     if (!namer) return code;
     try {
       return namer.of(code) ?? code;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/countries");
       return code;
     }
   };

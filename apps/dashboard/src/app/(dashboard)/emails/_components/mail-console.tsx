@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The mail console — the whole of /emails, and Openship Mail's home page.
  *
@@ -17,7 +20,6 @@
 
 import { Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Loader2, ArrowLeft, Plus } from "lucide-react";
 import {
   mailApi,
   mailAdminApi,
@@ -32,6 +34,8 @@ import { relayProvider, mailHostname } from "@repo/core";
 import { mailProvider } from "@/lib/mail-providers";
 import type { ServerOption } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
+import { usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -49,6 +53,8 @@ import { resolveMailView } from "../_lib/view-gate";
 import { getMailSectionHeading, useMailRailOwnsTabs } from "../_lib/mail-section";
 import { canonicalMailTab } from "@/lib/mail-tabs";
 import { invalidateMailScope } from "@/lib/mail-scope-bus";
+import { canManageMailServers } from "@/lib/mail-availability";
+import { CloudMailClient } from "./cloud-mail-client";
 
 /** Identity the mail rail is built from: which servers exist and whether each
  *  is installed. Anything else changing here doesn't move the rail. */
@@ -61,11 +67,13 @@ const registrySignature = (servers: MailServerListItem[]) =>
  * here means neither route shell has to — and neither can forget it.
  */
 export function MailConsole() {
+  const platform = usePlatform();
+  if (!canManageMailServers(platform)) return <CloudMailClient />;
   return (
     <Suspense
       fallback={
         <PageContainer>
-          <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </PageContainer>
       }
     >
@@ -92,6 +100,11 @@ function MailConsoleInner() {
   const forceWizard = searchParams.get("force") === "wizard";
 
   const [status, setStatus] = useState<MailSetupStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const statusRequest = useRef(0);
+  const statusServer = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [domain, setDomain] = useState("");
@@ -172,20 +185,16 @@ function MailConsoleInner() {
   // Resolve a Server row → ServerOption (the shape ServerSelector + the
   // setup form expect). Used both for the saved mail-status server and
   // for the ?serverId= URL hint.
-  const loadServerOption = useCallback(async (id: string): Promise<ServerOption | null> => {
-    try {
-      const server = await systemApi.getServerById(id);
-      return {
-        id: server.id,
-        name: server.name || server.sshHost,
-        host: server.sshHost,
-        user: server.sshUser || "root",
-        port: server.sshPort ?? 22,
-        raw: server,
-      };
-    } catch {
-      return null;
-    }
+  const loadServerOption = useCallback(async (id: string): Promise<ServerOption> => {
+    const server = await systemApi.getServerById(id);
+    return {
+      id: server.id,
+      name: server.name || server.sshHost || server.id,
+      host: server.sshHost ?? "",
+      user: server.sshUser || "root",
+      port: server.sshPort ?? 22,
+      raw: server,
+    };
   }, []);
 
   // Status now lives on the TARGET server (one JSON file per VPS), so we
@@ -195,13 +204,23 @@ function MailConsoleInner() {
   // mail-capable server).
   const fetchStatusForServer = useCallback(
     async (serverId: string | null) => {
+      const request = ++statusRequest.current;
+      const current = () => statusRequest.current === request;
+      if (statusServer.current !== serverId) {
+        setStatus(null);
+        setStatusError(null);
+        statusServer.current = serverId;
+      }
       try {
         setLoading(true);
         if (!serverId) {
           setStatus(null);
+          setStatusError(null);
           return;
         }
         const s = await mailApi.getStatus(serverId);
+        if (!current()) return;
+        setStatusError(null);
         setStatus(s);
         if (s.domain) setDomain(s.domain);
         // Authoritative for the open server: a server without records must CLEAR
@@ -287,11 +306,12 @@ function MailConsoleInner() {
             });
           }
         }
-      } catch {
-        // Server unreachable or no state - treat as fresh setup.
-        setStatus(null);
+      } catch (err) {
+        // Retain only this server's last successful read. Never turn a failed
+        // observation into a fresh setup or let an older server overwrite it.
+        if (current()) setStatusError(getApiErrorMessage(err));
       } finally {
-        setLoading(false);
+        if (current()) setLoading(false);
       }
     },
     [],
@@ -301,6 +321,7 @@ function MailConsoleInner() {
   const refreshMailServers = useCallback(async (): Promise<MailServerListItem[]> => {
     try {
       const { servers } = await mailApi.listMailServers();
+      setRegistryError(null);
       setMailServers(servers);
       // In Openship Mail view the sidebar is built from this same registry, so
       // tell it when the set changed — an install completing has to expand the
@@ -311,7 +332,8 @@ function MailConsoleInner() {
         invalidateMailScope();
       }
       return servers;
-    } catch {
+    } catch (err) {
+      setRegistryError(getApiErrorMessage(err));
       return [];
     }
   }, []);
@@ -331,6 +353,10 @@ function MailConsoleInner() {
   // from a previously-opened server (incl. an in-flight install stream) so
   // the wizard starts clean.
   const handleAddNew = useCallback(() => {
+    statusRequest.current++;
+    statusServer.current = null;
+    setStatusError(null);
+    setRegistryError(null);
     abortRef.current?.abort();
     setServerInUrl(null); // don't let a refresh re-open a server over the form
     setSelectedServer(null);
@@ -348,6 +374,9 @@ function MailConsoleInner() {
   // open server, refetch the list, and re-open the survivor if exactly one
   // remains (mirrors the mount logic).
   const reconcileAfterForget = useCallback(async () => {
+    statusRequest.current++;
+    statusServer.current = null;
+    setStatusError(null);
     setSelectedServer(null);
     setStatus(null);
     setAddingNew(false);
@@ -398,14 +427,25 @@ function MailConsoleInner() {
   //     a server the user just left.
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    if (hintedServerId && statusServer.current !== hintedServerId) {
+      statusRequest.current++;
+      statusServer.current = hintedServerId;
+      setSelectedServer(null);
+      setStatus(null);
+      setStatusError(null);
+    }
+    const open = async (serverId: string) => {
+      const opt = await loadServerOption(serverId);
+      if (cancelled) return;
+      setSelectedServer(opt);
+      await fetchStatusForServer(serverId);
+      if (!cancelled) didInit.current = true;
+    };
     (async () => {
       if (hintedServerId) {
-        const opt = await loadServerOption(hintedServerId);
-        if (cancelled) return;
-        if (opt) setSelectedServer(opt);
-        await fetchStatusForServer(hintedServerId);
-        refreshMailServers();
-        didInit.current = true;
+        await open(hintedServerId);
+        if (!cancelled) void refreshMailServers();
         return;
       }
 
@@ -418,46 +458,49 @@ function MailConsoleInner() {
       const servers = await mailApi
         .listMailServers()
         .then((r) => r.servers)
-        .catch(() => [] as MailServerListItem[]);
+        .catch((err) => {
+          if (!cancelled) setRegistryError(getApiErrorMessage(err));
+          return null;
+        });
       if (cancelled) return;
+      if (!servers) { setLoading(false); return; }
+      setRegistryError(null);
       setMailServers(servers);
       // Seed, don't signal: the rail did its own first fetch alongside this one.
       registrySigRef.current = registrySignature(servers);
-      didInit.current = true;
-
       if (servers.length === 1) {
-        const opt = await loadServerOption(servers[0].id);
-        if (cancelled) return;
-        if (opt) setSelectedServer(opt);
-        await fetchStatusForServer(servers[0].id);
+        await open(servers[0].id);
         return;
       }
 
       if (servers.length === 0) {
-        const allServers = await systemApi.listServers().catch(() => []);
+        const allServers = await systemApi.listServers();
         if (cancelled) return;
         if (allServers.length === 1) {
-          const opt = await loadServerOption(allServers[0].id);
-          if (cancelled) return;
-          if (opt) setSelectedServer(opt);
-          await fetchStatusForServer(allServers[0].id);
+          await open(allServers[0].id);
           return;
         }
       }
 
       // Several mail servers (list view) or several bare servers (add form):
       // nothing to auto-open.
-      if (!cancelled) setLoading(false);
-    })();
+      if (!cancelled) { didInit.current = true; setLoading(false); }
+    })().catch((err) => {
+      if (!cancelled) {
+        setStatusError(getApiErrorMessage(err));
+        setLoading(false);
+      }
+    });
     return () => {
       cancelled = true;
+      statusRequest.current++;
     };
-  }, [hintedServerId, loadServerOption, fetchStatusForServer, refreshMailServers]);
+  }, [hintedServerId, loadServerOption, fetchStatusForServer, refreshMailServers, loadAttempt]);
 
   // Whenever the user picks a different server, refetch its state.
   useEffect(() => {
     if (!selectedServer?.id) return;
-    if (selectedServer.id === hintedServerId) return; // already loaded above
+    if (selectedServer.id === hintedServerId || selectedServer.id === statusServer.current) return; // already loaded above
     fetchStatusForServer(selectedServer.id);
   }, [selectedServer?.id, hintedServerId, fetchStatusForServer]);
 
@@ -595,7 +638,7 @@ function MailConsoleInner() {
                         password: r.password,
                       })
                       .then(() => showToast(t.emailsAdmin.sending.saved, "success", t.emailsAdmin.sending.title))
-                      .catch(() => showToast(t.emailsAdmin.sending.saveFailed, "error", t.emailsAdmin.sending.title))
+                      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/mail-console"); return showToast(t.emailsAdmin.sending.saveFailed, "error", t.emailsAdmin.sending.title); })
                       .finally(finalize);
                   } else {
                     // The install just registered/marked this server — refresh
@@ -651,7 +694,8 @@ function MailConsoleInner() {
     abortRef.current?.abort();
     try {
       await mailApi.cancelSetup();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/mail-console");
       // Already stopped
     }
     setRunning(false);
@@ -686,12 +730,15 @@ function MailConsoleInner() {
 
     // (2) Ask the backend to drop its in-memory session pointer. We catch
     // the rejection - it's normal for there to be no active session.
-    await mailApi.cancelSetup().catch(() => {});
+    await mailApi.cancelSetup().catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/mail-console");
+    });
 
     // (3) Wipe the on-server state file
     try {
       await mailApi.resetSetup(selectedServer.id);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(dashboard)/emails/_components/mail-console");
       setError(err instanceof Error ? err.message : t.emails.page.errors.resetFailed);
       return;
     }
@@ -769,6 +816,7 @@ function MailConsoleInner() {
         await handleStart(next);
       }
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(dashboard)/emails/_components/mail-console");
       setError(err instanceof Error ? err.message : t.emails.page.errors.ackDns);
     } finally {
       setAcknowledgingDns(false);
@@ -789,6 +837,7 @@ function MailConsoleInner() {
       setPtrPending(null);
       await handleStart(next);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(dashboard)/emails/_components/mail-console");
       setError(err instanceof Error ? err.message : t.emails.page.errors.ackPtr);
     } finally {
       setAcknowledgingPtr(false);
@@ -820,6 +869,7 @@ function MailConsoleInner() {
           setError(result.message);
         }
       } catch (err) {
+        observeCaughtError(err, "dashboard/app/(dashboard)/emails/_components/mail-console");
         setError(err instanceof Error ? err.message : t.emails.page.errors.resolutionFailed);
       } finally {
         setResolving(false);
@@ -851,6 +901,7 @@ function MailConsoleInner() {
     addingNew,
     hasServer: !!selectedServer,
     hasStatus: !!status,
+    statusUnavailable: !!statusError || !!registryError,
     registryCompleted,
     isCompleted: !!isCompleted,
     running,
@@ -886,6 +937,9 @@ function MailConsoleInner() {
   // "← Mail servers" is only meaningful when there's a list to return to.
   const canGoBack = mailServers.length > 1 && (!!selectedServer || addingNew);
   const handleBack = () => {
+    statusRequest.current++;
+    statusServer.current = null;
+    setStatusError(null);
     abortRef.current?.abort();
     setServerInUrl(null);
     setAddingNew(false);
@@ -897,10 +951,10 @@ function MailConsoleInner() {
     setError(null);
   };
 
-  if (loading) {
+  if (loading && !status && !statusError && !registryError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -908,8 +962,8 @@ function MailConsoleInner() {
   return (
     <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex min-w-0 items-center gap-3">
             {/* One slot, two meanings: cancelling a forced re-run returns to the
                 panel it was launched from, which takes precedence over the
                 list-level back (the operator's last step was opening this form). */}
@@ -917,30 +971,30 @@ function MailConsoleInner() {
               <button
                 type="button"
                 onClick={() => setServerInUrl(selectedServer!.id)}
-                className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
+                className="flex shrink-0 size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
                 title={t.emails.page.backToAdmin}
               >
-                <ArrowLeft className="size-4 rtl:rotate-180" />
+                <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
               </button>
             ) : canGoBack ? (
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
+                className="flex shrink-0 size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
                 title={t.emails.page.backToServers}
               >
-                <ArrowLeft className="size-4 rtl:rotate-180" />
+                <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
               </button>
             ) : null}
             <div className="min-w-0">
               <h1
-                className="text-2xl font-medium text-foreground/80"
+                className="truncate text-2xl font-medium text-foreground/80"
                 style={{ letterSpacing: "-0.2px" }}
               >
                 {headerTitle}
               </h1>
               {headerSubtitle && (
-                <p className="text-sm text-muted-foreground/70 mt-1 max-w-2xl">
+                <p className="truncate text-sm text-muted-foreground/70 mt-1 max-w-2xl">
                   {headerSubtitle}
                 </p>
               )}
@@ -949,19 +1003,37 @@ function MailConsoleInner() {
 
           {/* Add-server action while viewing a server (add a 2nd, etc.).
               The list view has its own Add button; the setup/progress views
-              are already the add flow. */}
+              are already the add flow. `whitespace-nowrap` + `shrink-0` keep
+              this on one line - it used to wrap onto 3 lines once the title
+              block above squeezed it for space on a narrow viewport. Label
+              text drops below `sm` so the button stays icon-only there
+              instead of fighting the title for room. */}
           {showAdmin && (
             <button
               type="button"
               onClick={handleAddNew}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              aria-label={t.emails.page.addServer}
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               title={t.emails.page.addServer}
             >
-              <Plus className="size-4" />
-              {t.emails.page.addServer}
+              <UiIcon name="plus" className="size-4 shrink-0" />
+              <span className="hidden sm:inline">{t.emails.page.addServer}</span>
             </button>
           )}
         </div>
+
+        {(statusError || registryError) && <div className="mb-6">
+          <ConnectionNotice
+            title={t.issues.connectivity.mailTitle}
+            message={t.issues.connectivity.mailHint}
+            detail={statusError ?? registryError ?? undefined}
+            onRetry={() => {
+              if (selectedServer?.id) void fetchStatusForServer(selectedServer.id);
+              if (registryError || !selectedServer) setLoadAttempt((attempt) => attempt + 1);
+            }}
+            retrying={loading}
+          />
+        </div>}
 
         {/* ── Registry list - several mail servers, pick one or add ── */}
         {showList && (
@@ -1047,7 +1119,7 @@ function MailConsoleInner() {
               surface. */}
         {showAdmin && status && selectedServer?.id && (
           <MailAdminPanel
-            status={status}
+            status={statusError ? { ...status, engine: undefined, observationError: undefined } : status}
             serverId={selectedServer.id}
             onRefresh={() => fetchStatusForServer(selectedServer.id)}
             onForgotten={reconcileAfterForget}

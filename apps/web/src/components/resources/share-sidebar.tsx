@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import { useState } from "react";
 
@@ -10,7 +12,9 @@ export default function ResourceShareSidebar() {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch (error) {
+      reportCaughtError(error, "web/components/resources/share-sidebar");
+    }
   };
 
   const share = (platform: "twitter" | "linkedin") => {

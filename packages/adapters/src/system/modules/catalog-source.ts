@@ -12,6 +12,7 @@
  * mirrors downloadTarballOnRemote (source-tarball.ts): fail on HTTP error, retry.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { ModuleCatalog, VerifiedCatalog } from "./types";
 import {
   CATALOG_PUBKEYS,
@@ -120,7 +121,7 @@ export async function fetchRemoteCatalog(module: string): Promise<CatalogLoadRes
   const dir = `${CATALOG_BASE_URL}/${CATALOG_REF}/modules/${module}`;
   const [manifest, sig] = await Promise.all([
     fetchBytes(`${dir}/catalog.json`),
-    fetchBytes(`${dir}/catalog.json.sig`).catch(() => null),
+    fetchBytes(`${dir}/catalog.json.sig`).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/modules/catalog-source"); return null; }),
   ]);
   if (!manifest) return {}; // not published remotely
   // Parse first (unverified) only to learn which assets to fetch; the real trust
@@ -154,15 +155,15 @@ export async function resolveVerifiedCatalog(module: string): Promise<VerifiedCa
     const remote = await fetchRemoteCatalog(module);
     if (remote.catalog) return remote.catalog;
     if (remote.error) {
-      console.warn(`[modules] remote catalog for ${module} rejected: ${remote.error}`);
+      errorDiagnostics.warn("adapters/system/modules/catalog-source", `[modules] remote catalog for ${module} rejected: ${remote.error}`);
     }
   } catch (err) {
-    console.warn(`[modules] remote catalog fetch for ${module} failed: ${(err as Error).message}`);
+    errorDiagnostics.warn("adapters/system/modules/catalog-source", `[modules] remote catalog fetch for ${module} failed: ${(err as Error).message}`, err);
   }
   const embedded = loadEmbeddedCatalog(module);
   if (embedded.catalog) return embedded.catalog;
   if (embedded.error) {
-    console.warn(`[modules] embedded catalog for ${module} rejected: ${embedded.error}`);
+    errorDiagnostics.warn("adapters/system/modules/catalog-source", `[modules] embedded catalog for ${module} rejected: ${embedded.error}`);
   }
   return null;
 }

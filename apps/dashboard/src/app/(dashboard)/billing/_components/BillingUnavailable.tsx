@@ -1,149 +1,131 @@
 "use client";
 
-/**
- * BillingUnavailable — empty-state card rendered when the billing
- * surface is reachable but not usable in the current mode.
- *
- * Three accurate variants per the trace:
- *
- *   - `saas-not-enabled`  : we're in SaaS mode but the org has no
- *                            billing configured (admin should enable).
- *   - `cloud-not-connected`: local mode, no cloud session linked —
- *                            offers a Connect to Cloud button.
- *   - `cloud-unreachable`  : local mode, cloud was linked but the
- *                            proxy got a 5xx — likely transient or
- *                            expired session; user can retry/reconnect.
- *
- * The Connect button reuses CloudContext.startConnect, identical to
- * the settings/cloud flow so we don't fork the PKCE handshake.
- */
-
-import { useCallback } from "react";
-import { ExternalLink, Loader2, Cloud, CircleAlert } from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+import type { ReactNode } from "react";
+import Link from "next/link";
 import { useCloud } from "@/context/CloudContext";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 
 export type BillingUnavailableReason =
+  | "workspace-required"
   | "saas-not-enabled"
+  | "billing-not-configured"
+  | "billing-forbidden"
+  | "billing-sign-in-required"
+  | "billing-unreachable"
   | "cloud-not-connected"
   | "cloud-session-expired"
   | "cloud-unreachable";
 
-interface Props {
-  reason: BillingUnavailableReason;
+function UnavailablePanel({
+  title,
+  description,
+  icon = "alert-circle",
+  children,
+}: {
+  title: string;
+  description: string;
+  icon?: IconName;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl bg-card p-5">
+      <div className="flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+          <UiIcon name={icon} className="size-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-base font-medium text-foreground">{title}</h2>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-2">{children}</div>
+    </section>
+  );
 }
 
-export function BillingUnavailable({ reason }: Props) {
+/** Reuse the Cloud connection flow; purchase, access and network failures stay distinct. */
+export function BillingUnavailable({ reason }: { reason: BillingUnavailableReason }) {
   const { t } = useI18n();
   const { startConnect, connecting, refresh } = useCloud();
 
-  const handleConnect = useCallback(() => {
-    startConnect();
-  }, [startConnect]);
-
-  const handleRetry = useCallback(() => {
-    // Re-check cloud status and reload the route — Next will re-run
-    // the server component, which re-hits /billing/state.
-    void refresh().then(() => {
-      if (typeof window !== "undefined") window.location.reload();
-    });
-  }, [refresh]);
-
-  if (reason === "cloud-not-connected") {
-    return (
-      <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/10">
-          <Cloud className="size-6 text-primary" />
-        </div>
-        <h2 className="text-base font-semibold text-foreground">
-          {t.billing.unavailable.notConnected.title}
-        </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          {t.billing.unavailable.notConnected.description}
-        </p>
-        <div className="mt-5 flex justify-center">
-          <Button onClick={handleConnect} disabled={connecting}>
-            {connecting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ExternalLink className="size-4" />
-            )}
-            {connecting
-              ? t.billing.unavailable.notConnected.connecting
-              : t.billing.unavailable.notConnected.connect}
-          </Button>
-        </div>
-      </div>
-    );
+  function handleRetry() {
+    const reload = () => window.location.reload();
+    if (reason === "cloud-unreachable") void refresh().then(reload, reload);
+    else reload();
   }
 
-  if (reason === "cloud-session-expired") {
+  if (reason === "workspace-required")
     return (
-      <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-warning-bg">
-          <CircleAlert className="size-6 text-warning" />
-        </div>
-        <h2 className="text-base font-semibold text-foreground">
-          {t.billing.unavailable.sessionExpired.title}
-        </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          {t.billing.unavailable.sessionExpired.description}
-        </p>
-        <div className="mt-5 flex justify-center">
-          <Button onClick={handleConnect} disabled={connecting}>
-            {connecting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ExternalLink className="size-4" />
-            )}
-            {connecting
-              ? t.billing.unavailable.sessionExpired.connecting
-              : t.billing.unavailable.sessionExpired.reconnect}
-          </Button>
-        </div>
-      </div>
+      <UnavailablePanel
+        icon="cloud"
+        title={t.billing.workspaces.title}
+        description={t.billing.workspaces.chooseBilling}
+      >
+        <Button asChild variant="secondary">
+          <Link href="/servers">{t.billing.workspaces.manage}</Link>
+        </Button>
+      </UnavailablePanel>
     );
-  }
 
-  if (reason === "cloud-unreachable") {
+  if (
+    reason === "cloud-not-connected" ||
+    reason === "cloud-session-expired" ||
+    reason === "cloud-unreachable"
+  ) {
+    const copy =
+      reason === "cloud-not-connected"
+        ? t.billing.unavailable.notConnected
+        : reason === "cloud-session-expired"
+          ? t.billing.unavailable.sessionExpired
+          : t.billing.unavailable.unreachable;
+    const connectLabel =
+      reason === "cloud-not-connected"
+        ? t.billing.unavailable.notConnected.connect
+        : reason === "cloud-session-expired"
+          ? t.billing.unavailable.sessionExpired.reconnect
+          : t.billing.unavailable.unreachable.reconnect;
     return (
-      <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
-          <CircleAlert className="size-6 text-destructive" />
-        </div>
-        <h2 className="text-base font-semibold text-foreground">
-          {t.billing.unavailable.unreachable.title}
-        </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          {t.billing.unavailable.unreachable.description}
-        </p>
-        <div className="mt-5 flex justify-center gap-2">
-          <Button variant="outline" onClick={handleRetry}>
+      <UnavailablePanel
+        title={copy.title}
+        description={copy.description}
+        icon={reason === "cloud-not-connected" ? "cloud" : "alert-circle"}
+      >
+        <Button onClick={startConnect} disabled={connecting}>
+          {connecting && (
+            <UiIcon name="spinner" className="size-4 animate-spin" aria-hidden="true" />
+          )}
+          {connecting ? t.billing.unavailable.notConnected.connecting : connectLabel}
+        </Button>
+        {reason === "cloud-unreachable" && (
+          <Button variant="secondary" onClick={handleRetry}>
             {t.billing.unavailable.unreachable.tryAgain}
           </Button>
-          <Button onClick={handleConnect} disabled={connecting}>
-            {connecting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ExternalLink className="size-4" />
-            )}
-            {t.billing.unavailable.unreachable.reconnect}
-          </Button>
-        </div>
-      </div>
+        )}
+      </UnavailablePanel>
     );
   }
 
-  // saas-not-enabled
+  const content = {
+    "saas-not-enabled": t.billing.unavailable.notEnabled,
+    "billing-not-configured": t.billing.unavailable.notConfigured,
+    "billing-forbidden": t.billing.unavailable.forbidden,
+    "billing-sign-in-required": t.billing.unavailable.signInRequired,
+    "billing-unreachable": t.billing.unavailable.loadFailed,
+  }[reason];
+
   return (
-    <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
-      <h2 className="text-base font-semibold text-foreground">
-        {t.billing.unavailable.notEnabled.title}
-      </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        {t.billing.unavailable.notEnabled.description}
-      </p>
-    </div>
+    <UnavailablePanel title={content.title} description={content.description}>
+      {reason === "billing-sign-in-required" ? (
+        <Button asChild>
+          <Link href="/login">{t.billing.unavailable.signInRequired.signIn}</Link>
+        </Button>
+      ) : (
+        <Button variant="secondary" onClick={handleRetry}>
+          {t.billing.unavailable.unreachable.tryAgain}
+        </Button>
+      )}
+    </UnavailablePanel>
   );
 }

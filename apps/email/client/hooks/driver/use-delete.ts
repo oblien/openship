@@ -6,10 +6,12 @@ import { useThreads } from '@/hooks/use-threads';
 import { useStats } from '@/hooks/use-stats';
 import { m } from '@/paraglide/messages';
 import { useState } from 'react';
+import { useParams } from 'react-router';
 import { toast } from 'sonner';
 
 const useDelete = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const { folder = 'inbox' } = useParams();
   const [mail, setMail] = useMail();
   const [{ refetch: refetchThreads }] = useThreads();
   const { refetch: refetchStats } = useStats();
@@ -24,6 +26,7 @@ const useDelete = () => {
       return toast.promise(
         deleteThread({
           id,
+          folder,
         }),
         {
           loading: m['common.actions.deletingMail'](),

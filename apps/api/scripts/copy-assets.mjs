@@ -6,6 +6,9 @@
  */
 import { cp, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { stageActionRunnerAssets } from "../../../packages/actions-runner/assets.mjs";
+
+stageActionRunnerAssets("dist/assets/actions-runner");
 
 const src = "assets";
 const dest = "dist/assets";

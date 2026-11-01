@@ -17,7 +17,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { requireRole } from "../../middleware";
 import * as ctrl from "./credential.controller";
-import { CreateCredentialBody, UpdateCredentialBody } from "./credential.schema";
+import { CreateCredentialBody, UpdateCredentialBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "credentials",
@@ -45,7 +45,7 @@ r.get(
 r.post(
   "/",
   {
-    tag: "settings:admin",
+    tag: "settings:admin", auditHandledByOperation: true,
     body: CreateCredentialBody,
     mcp: { description: "Store a credential for a third-party provider (registry login, DNS token)." },
   },
@@ -55,7 +55,7 @@ r.post(
 r.patch(
   "/:id",
   {
-    tag: "settings:admin",
+    tag: "settings:admin", auditHandledByOperation: true,
     body: UpdateCredentialBody,
     mcp: { description: "Rename, re-scope or rotate a stored credential." },
   },
@@ -64,7 +64,7 @@ r.patch(
 );
 r.delete(
   "/:id",
-  { tag: "settings:admin", mcp: { description: "Delete a stored credential." } },
+  { tag: "settings:admin", auditHandledByOperation: true, mcp: { description: "Delete a stored credential." } },
   requireRole("admin"),
   ctrl.deleteCredential,
 );
@@ -72,7 +72,7 @@ r.post(
   // A write, not a read: it records the verdict, which is what makes a credential revoked
   // upstream visible instead of silently failing every consumer.
   "/:id/verify",
-  { tag: "settings:admin", mcp: { description: "Re-check a stored credential with its provider and record the result." } },
+  { tag: "settings:admin", auditHandledByOperation: true, mcp: { description: "Re-check a stored credential with its provider and record the result." } },
   requireRole("admin"),
   ctrl.verifyCredential,
 );

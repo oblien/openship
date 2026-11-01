@@ -2,6 +2,16 @@ import { describe, it, expect } from "vitest";
 import { parseOpenshipConfig, parseOpenshipConfigJson } from "./parse";
 
 describe("parseOpenshipConfig", () => {
+  it.each(["web\nEOF\nprintf injected\n#", "web;id", "$(id)", "two services", "-option"])(
+    "rejects unsafe service name %s",
+    (name) => {
+      const { config, errors } = parseOpenshipConfig({
+        services: [{ name, image: "nginx:alpine" }],
+      });
+      expect(errors.length).toBeGreaterThan(0);
+      expect(config?.services ?? []).toEqual([]);
+    },
+  );
   it("accepts a full, valid config and strips undefined fields", () => {
     const { config, errors, warnings } = parseOpenshipConfig({
       framework: "nextjs",
@@ -80,6 +90,55 @@ describe("parseOpenshipConfig", () => {
     });
     expect(errors).toEqual([]);
     expect(config?.services?.[0]?.resources).toMatchObject({ memoryMb: 4096 });
+  });
+
+  it("accepts a per-service swap opt-in with a memory limit", () => {
+    const { errors, config } = parseOpenshipConfig({
+      services: [{ name: "api", image: "x", resources: { memoryMb: 1024, swapDisabled: true } }],
+    });
+    expect(errors).toEqual([]);
+    expect(config?.services?.[0]?.resources).toMatchObject({
+      memoryMb: 1024,
+      swapDisabled: true,
+    });
+  });
+
+  it("accepts a per-service swap opt-in inheriting the project memory limit", () => {
+    const { errors, config } = parseOpenshipConfig({
+      resources: { memoryMb: 2048 },
+      services: [{ name: "api", image: "x", resources: { swapDisabled: true } }],
+    });
+    expect(errors).toEqual([]);
+    expect(config?.services?.[0]?.resources?.swapDisabled).toBe(true);
+  });
+
+  it("preserves an explicit swap opt-out without requiring memory", () => {
+    const { errors, config } = parseOpenshipConfig({
+      services: [{ name: "api", image: "x", resources: { swapDisabled: false } }],
+    });
+    expect(errors).toEqual([]);
+    expect(config?.services?.[0]?.resources?.swapDisabled).toBe(false);
+  });
+
+  it("rejects swap-disabled services with an explicit zero memory limit", () => {
+    const { errors } = parseOpenshipConfig({
+      services: [{ name: "api", image: "x", resources: { memoryMb: 0, swapDisabled: true } }],
+    });
+    expect(errors.some((e) => e.includes("resources.swapDisabled"))).toBe(true);
+  });
+
+  it("rejects swap-disabled services with no effective memory limit", () => {
+    const { errors } = parseOpenshipConfig({
+      services: [{ name: "api", image: "x", resources: { swapDisabled: true } }],
+    });
+    expect(errors.some((e) => e.includes("resources.swapDisabled"))).toBe(true);
+  });
+
+  it("rejects swapDisabled at the project level (it is per-service)", () => {
+    const { errors } = parseOpenshipConfig({
+      resources: { memoryMb: 1024, swapDisabled: true },
+    });
+    expect(errors.some((e) => e.includes("resources.swapDisabled"))).toBe(true);
   });
 
   it("coerces a string port and validates env value shape", () => {
@@ -225,6 +284,27 @@ describe("parseOpenshipConfig", () => {
     }
   });
 
+  describe("monorepo override roots (#873)", () => {
+    it.each([
+      ["platform/dashboard_web", "./platform/dashboard_web/"],
+      [".", "./"],
+      ["apps\\web", "apps/web"],
+    ])("rejects duplicate monorepo override roots %s and %s (#873)", (first, second) => {
+      const { config, errors } = parseOpenshipConfig({
+        monorepo: {
+          apps: [
+            { name: "web", rootDirectory: first },
+            { name: "worker", rootDirectory: second },
+          ],
+        },
+      });
+      expect(errors).toEqual([
+        expect.stringMatching(/monorepo\.apps\[1\]\.rootDirectory: duplicates monorepo\.apps\[0\]/),
+      ]);
+      expect(config?.monorepo?.apps).toHaveLength(1);
+    });
+  });
+
   describe("composePath", () => {
     it("round-trips a file path and a directory path", () => {
       for (const composePath of [
@@ -246,6 +326,40 @@ describe("parseOpenshipConfig", () => {
     it("is absent (not undefined-valued) when undeclared", () => {
       const { config } = parseOpenshipConfig({ framework: "nextjs" });
       expect(config && "composePath" in config).toBe(false);
+    });
+  });
+
+  describe("releaseCommands", () => {
+    it("round-trips a list of commands in declared order", () => {
+      const releaseCommands = ["php artisan migrate --force", "php artisan db:seed --force"];
+      const { config, errors, warnings } = parseOpenshipConfig({ releaseCommands });
+      expect(errors).toEqual([]);
+      expect(warnings).toEqual([]);
+      expect(config?.releaseCommands).toEqual(releaseCommands);
+    });
+
+    it("rejects a bare string and a non-string entry", () => {
+      expect(parseOpenshipConfig({ releaseCommands: "php artisan migrate" }).errors).toEqual([
+        "releaseCommands: must be an array of strings",
+      ]);
+      expect(parseOpenshipConfig({ releaseCommands: ["ok", 7] }).errors).toEqual([
+        "releaseCommands[1]: must be a string",
+      ]);
+    });
+
+    // Absent must stay distinguishable from `[]` all the way to the column: the
+    // phase is opt-in, and an undeclared field has to behave exactly as it did
+    // before the field existed.
+    it("is absent (not undefined-valued) when undeclared", () => {
+      const { config, errors } = parseOpenshipConfig({ framework: "nextjs" });
+      expect(errors).toEqual([]);
+      expect(config && "releaseCommands" in config).toBe(false);
+    });
+
+    it("keeps an explicit empty list as a declared opt-out", () => {
+      const { config, errors } = parseOpenshipConfig({ releaseCommands: [] });
+      expect(errors).toEqual([]);
+      expect(config?.releaseCommands).toEqual([]);
     });
   });
 
@@ -348,5 +462,392 @@ describe("parseOpenshipConfig", () => {
       expect(config?.readiness?.enabled).toBe(true);
       expect(config?.services?.[0]?.healthcheck?.test).toBe("pg_isready");
     });
+  });
+
+  describe("roles (#935)", () => {
+    it("reports a missing role kind instead of silently discarding the worker", () => {
+      const { config, errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", command: "bin/jobs" }],
+      });
+      expect(errors).toContain("roles[0].kind: is required");
+      expect(config?.roles).toEqual([]);
+    });
+
+    it.each(["name", "command"])("rejects a whitespace-only role %s", (field) => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", [field]: " \t\n " }],
+      });
+      expect(errors.some((error) => error.startsWith(`roles[0].${field}:`))).toBe(true);
+    });
+
+    it.each([undefined, "", " \t\n "])(
+      "rejects an exec health check without a usable command (%j)",
+      (command) => {
+        const { errors } = parseOpenshipConfig({
+          roles: [
+            {
+              name: "jobs",
+              kind: "worker",
+              command: "bin/jobs",
+              health: { kind: "exec", command },
+            },
+          ],
+        });
+        expect(errors.some((error) => error.startsWith("roles[0].health.command:"))).toBe(true);
+      },
+    );
+
+    it("rejects a replica count that cannot be represented exactly", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [
+          {
+            name: "jobs",
+            kind: "worker",
+            command: "bin/jobs",
+            replicas: Number.MAX_SAFE_INTEGER + 1,
+          },
+        ],
+      });
+      expect(errors.some((error) => error.startsWith("roles[0].replicas:"))).toBe(true);
+    });
+
+    it("preserves meaningful command whitespace while validating non-empty content", () => {
+      const command = "  exec bin/jobs\n";
+      const healthCommand = "  test -f /tmp/worker-ready\n";
+      const { config, errors } = parseOpenshipConfig({
+        roles: [
+          {
+            name: "jobs",
+            kind: "worker",
+            command,
+            health: { kind: "exec", command: healthCommand },
+          },
+        ],
+      });
+      expect(errors).toEqual([]);
+      expect(config?.roles?.[0]?.command).toBe(command);
+      expect(config?.roles?.[0]?.health?.command).toBe(healthCommand);
+    });
+
+    it("parses a valid worker role with health and replicas", () => {
+      const { config, errors } = parseOpenshipConfig({
+        roles: [
+          {
+            name: "jobs",
+            kind: "worker",
+            command: "bin/jobs",
+            replicas: 2,
+            health: { kind: "process" },
+          },
+        ],
+      });
+      expect(errors).toEqual([]);
+      expect(config?.roles).toEqual([
+        {
+          name: "jobs",
+          kind: "worker",
+          command: "bin/jobs",
+          replicas: 2,
+          health: { kind: "process" },
+        },
+      ]);
+    });
+
+    it("warns that `when` and `unless` are ignored on an openship.json role", () => {
+      const horizon = { deps: ["laravel/horizon"] };
+      const { config, errors, warnings } = parseOpenshipConfig({
+        roles: [
+          { name: "queue", kind: "worker", command: "php artisan queue:work", unless: horizon },
+          { name: "horizon", kind: "worker", command: "php artisan horizon", when: horizon },
+          { name: "cron", kind: "scheduler", command: "bin/cron", when: {}, unless: {} },
+          { name: "jobs", kind: "worker", command: "bin/jobs" },
+        ],
+      });
+      expect(errors).toEqual([]);
+      expect(config?.roles?.map((role) => role.name)).toEqual(["queue", "horizon", "cron", "jobs"]);
+      expect(config?.roles?.some((role) => "when" in role || "unless" in role)).toBe(false);
+      expect(warnings).toEqual([
+        'roles[0] ("queue"): `unless` applies only to stack presets and is ignored, so this role always runs',
+        'roles[1] ("horizon"): `when` applies only to stack presets and is ignored, so this role always runs',
+        'roles[2] ("cron"): `when` and `unless` apply only to stack presets and are ignored, so this role always runs',
+      ]);
+    });
+
+    it("an absent `roles` field parses byte-identical to a config with none declared", () => {
+      const withoutRoles = parseOpenshipConfig({ framework: "rails" });
+      expect(withoutRoles.config).not.toHaveProperty("roles");
+      expect(withoutRoles.errors).toEqual([]);
+    });
+
+    it("roles: [] is a valid explicit opt-out", () => {
+      const { config, errors } = parseOpenshipConfig({ roles: [] });
+      expect(errors).toEqual([]);
+      expect(config?.roles).toEqual([]);
+    });
+
+    it("rejects a role with kind: web - web is derived from startCommand", () => {
+      const { errors, config } = parseOpenshipConfig({
+        roles: [{ name: "web", kind: "web", command: "bin/rails server" }],
+      });
+      expect(errors.some((e) => e.startsWith("roles[0].kind"))).toBe(true);
+      expect(config?.roles).toEqual([]);
+    });
+
+    it("rejects a role with an empty or missing name", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [
+          { kind: "worker", command: "bin/jobs" },
+          { name: "", kind: "worker", command: "bin/jobs" },
+        ],
+      });
+      expect(errors.filter((e) => e.includes("requires a non-empty `name`")).length).toBe(2);
+    });
+
+    it("rejects duplicate role names", () => {
+      const { errors, config } = parseOpenshipConfig({
+        roles: [
+          { name: "jobs", kind: "worker", command: "bin/jobs" },
+          { name: "jobs", kind: "worker", command: "bin/other" },
+        ],
+      });
+      expect(errors.some((e) => e.includes('duplicates role "jobs"'))).toBe(true);
+      expect(config?.roles).toEqual([{ name: "jobs", kind: "worker", command: "bin/jobs" }]);
+    });
+
+    it("rejects a missing or empty command", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "" }],
+      });
+      expect(errors.some((e) => e.includes("requires a non-empty `command`"))).toBe(true);
+    });
+
+    it("rejects a non-integer or sub-1 replicas count", () => {
+      const { errors: e1 } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", replicas: 1.5 }],
+      });
+      expect(e1.some((e) => e.includes("roles[0].replicas"))).toBe(true);
+
+      const { errors: e2 } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", replicas: 0 }],
+      });
+      expect(e2.some((e) => e.includes("roles[0].replicas"))).toBe(true);
+    });
+
+    it("rejects replicas > 1 on a scheduler role instead of capping it", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "cron", kind: "scheduler", command: "bin/cron", replicas: 3 }],
+      });
+      expect(errors.some((e) => e.includes("roles[0].replicas") && e.includes("scheduler"))).toBe(
+        true,
+      );
+    });
+
+    it("rejects replicas > 1 on a singleton worker, accepts replicas: 1", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [
+          { name: "jobs", kind: "worker", command: "bin/jobs", singleton: true, replicas: 2 },
+        ],
+      });
+      expect(errors.some((e) => e.includes("roles[0].replicas") && e.includes("singleton"))).toBe(
+        true,
+      );
+
+      const { errors: ok, config } = parseOpenshipConfig({
+        roles: [
+          { name: "jobs", kind: "worker", command: "bin/jobs", singleton: true, replicas: 1 },
+        ],
+      });
+      expect(ok).toEqual([]);
+      expect(config?.roles?.[0]?.replicas).toBe(1);
+    });
+
+    it.each(["Jobs", "jobs_1", "-jobs", "jobs-", "my worker", "jobs.1", "é", "a".repeat(64)])(
+      "rejects the non-DNS-label role name %j",
+      (name) => {
+        const { errors } = parseOpenshipConfig({
+          roles: [{ name, kind: "worker", command: "bin/jobs" }],
+        });
+        expect(errors.some((e) => e.startsWith("roles[0].name:") && e.includes("DNS label"))).toBe(
+          true,
+        );
+      },
+    );
+
+    it.each(["a", "jobs", "queue-2", "0", "a-b-c", "a".repeat(63)])(
+      "accepts the DNS-label role name %j",
+      (name) => {
+        const { errors, config } = parseOpenshipConfig({
+          roles: [{ name, kind: "worker", command: "bin/jobs" }],
+        });
+        expect(errors).toEqual([]);
+        expect(config?.roles?.[0]?.name).toBe(name);
+      },
+    );
+
+    it("accepts replicas up to 100 and rejects 101", () => {
+      const { errors: ok, config } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", replicas: 100 }],
+      });
+      expect(ok).toEqual([]);
+      expect(config?.roles?.[0]?.replicas).toBe(100);
+
+      const { errors } = parseOpenshipConfig({
+        roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", replicas: 101 }],
+      });
+      expect(errors.some((e) => e.startsWith("roles[0].replicas:") && e.includes("100"))).toBe(
+        true,
+      );
+    });
+
+    it("rejects health.kind http for roles and accepts process and exec", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [
+          {
+            name: "jobs",
+            kind: "worker",
+            command: "bin/jobs",
+            health: { kind: "http", path: "/up" },
+          },
+        ],
+      });
+      expect(
+        errors.some((e) => e.startsWith("roles[0].health.kind") && e.includes("portless")),
+      ).toBe(true);
+
+      const { errors: ok } = parseOpenshipConfig({
+        roles: [
+          { name: "a", kind: "worker", command: "x", health: { kind: "process" } },
+          { name: "b", kind: "worker", command: "y", health: { kind: "exec", command: "true" } },
+        ],
+      });
+      expect(ok).toEqual([]);
+    });
+
+    it("accepts SIG names and positive integers for stopSignal", () => {
+      for (const stopSignal of ["SIGTERM", "SIGQUIT", "SIGUSR1", "3"]) {
+        const { errors, config } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopSignal }],
+        });
+        expect(errors).toEqual([]);
+        expect(config?.roles?.[0]?.stopSignal).toBe(stopSignal);
+      }
+    });
+
+    it("rejects an invalid stopSignal", () => {
+      for (const stopSignal of ["", "term", "SIG", "SIG TERM", "0", "-1", "1.5", 9]) {
+        const { errors } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopSignal }],
+        });
+        expect(errors.some((e) => e.includes("roles[0].stopSignal"))).toBe(true);
+      }
+    });
+
+    it("accepts compose durations and bare seconds for stopGracePeriod", () => {
+      for (const stopGracePeriod of [
+        "90",
+        "1.5",
+        "90s",
+        "10m",
+        "1m30s",
+        "500ms",
+        "2h",
+        "100us",
+        "100µs",
+        "5ns",
+        "+90s",
+        ".5s",
+        "1.s",
+        "1d",
+        "1w",
+        "100μs",
+      ]) {
+        const { errors, config } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopGracePeriod }],
+        });
+        expect(errors).toEqual([]);
+        expect(config?.roles?.[0]?.stopGracePeriod).toBe(stopGracePeriod);
+      }
+    });
+
+    it("rejects a stopGracePeriod that would parse to nothing", () => {
+      for (const stopGracePeriod of ["", "soon", "10x", "s", "1m30", "10 m", "-5s", 30]) {
+        const { errors } = parseOpenshipConfig({
+          roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopGracePeriod }],
+        });
+        expect(errors.some((e) => e.includes("roles[0].stopGracePeriod"))).toBe(true);
+      }
+    });
+
+    it("forces singleton true for a scheduler role regardless of what was declared", () => {
+      const { config, errors } = parseOpenshipConfig({
+        roles: [{ name: "cron", kind: "scheduler", command: "bin/cron", singleton: false }],
+      });
+      expect(errors).toEqual([]);
+      expect(config?.roles?.[0]?.singleton).toBe(true);
+    });
+
+    it("rejects an unknown role kind and an unknown health kind", () => {
+      const { errors } = parseOpenshipConfig({
+        roles: [
+          { name: "jobs", kind: "batch", command: "bin/jobs" },
+          { name: "cron", kind: "scheduler", command: "bin/cron", health: { kind: "tcp" } },
+        ],
+      });
+      expect(errors.some((e) => e.startsWith("roles[0].kind"))).toBe(true);
+      expect(errors.some((e) => e.startsWith("roles[1].health.kind"))).toBe(true);
+    });
+
+    it("rejects `roles` that isn't an array", () => {
+      const { errors } = parseOpenshipConfig({ roles: { name: "jobs" } });
+      expect(errors.some((e) => e.startsWith("roles:"))).toBe(true);
+    });
+  });
+
+  describe("optimize", () => {
+    it("omits optimize when absent (defaults OFF)", () => {
+      const { config, errors } = parseOpenshipConfig({ framework: "laravel" });
+      expect(errors).toEqual([]);
+      expect(config).not.toHaveProperty("optimize");
+    });
+
+    it("accepts optimize: true", () => {
+      const { config, errors } = parseOpenshipConfig({ framework: "laravel", optimize: true });
+      expect(errors).toEqual([]);
+      expect(config?.optimize).toBe(true);
+    });
+
+    it("accepts optimize: false", () => {
+      const { config, errors } = parseOpenshipConfig({ framework: "laravel", optimize: false });
+      expect(errors).toEqual([]);
+      expect(config?.optimize).toBe(false);
+    });
+
+    it("rejects a non-boolean optimize", () => {
+      const { errors } = parseOpenshipConfig({ optimize: "yes" });
+      expect(errors.some((e) => e.startsWith("optimize:"))).toBe(true);
+    });
+  });
+});
+
+
+describe("automatic deploy path overrides", () => {
+  it("accepts repo-relative includes and exclusions", () => {
+    const parsed = parseOpenshipConfig({
+      autoDeployPaths: { include: ["apps/web/**", "shared/**"], exclude: ["**/*.md"] },
+    });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.config?.autoDeployPaths).toEqual({
+      include: ["apps/web/**", "shared/**"],
+      exclude: ["**/*.md"],
+    });
+  });
+  it("bounds pattern counts and rejects wrong types", () => {
+    for (const autoDeployPaths of [
+      { include: Array(51).fill("src/**") },
+      { exclude: "src/**" },
+      [],
+    ])
+      expect(parseOpenshipConfig({ autoDeployPaths }).errors.length).toBeGreaterThan(0);
   });
 });

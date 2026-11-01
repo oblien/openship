@@ -27,11 +27,11 @@ vi.mock("../../../src/lib/request-context", () => ({
 }));
 
 import { repos } from "@repo/db";
-import { listApplyingContainers } from "../../../src/modules/system/server-containers.controller";
+import { listApplyingContainers } from "@repo/platform/engine/modules/system/server-containers.operations";
 import {
   createContainerApplySession,
   finishContainerApplySession,
-} from "../../../src/lib/server-container-session";
+} from "@repo/platform/engine/lib/server-container-session";
 
 interface Progress {
   active: {
@@ -61,7 +61,7 @@ const row = (over: Record<string, unknown> = {}) => ({
 });
 
 async function call(): Promise<Progress> {
-  return (await listApplyingContainers({ json: (body: unknown) => body } as never)) as never;
+  return (await listApplyingContainers({ userId: "u1", organizationId: "org_1" } as never)) as never;
 }
 
 /** Unique per case: the session store is module-global. */
@@ -172,3 +172,12 @@ describe("listApplyingContainers", () => {
     }
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  assertNotCloud: vi.fn(() => undefined),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  assertNotCloud: vi.fn(() => undefined),
+}));

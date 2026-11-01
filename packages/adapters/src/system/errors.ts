@@ -167,8 +167,8 @@ export function commandForError(command: string): string {
  */
 export function isRuntimeNotFoundError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { statusCode?: number; message?: string };
-  if (e.statusCode === 404) return true;
+  const e = err as { statusCode?: number; status?: number; message?: string };
+  if (e.statusCode === 404 || e.status === 404) return true;
   return (
     typeof e.message === "string" &&
     /no such (container|image|volume|network)/i.test(e.message)

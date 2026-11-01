@@ -9,7 +9,8 @@
       "dns": "DNS",
       "health": "ヘルス",
       "backup": "バックアップ",
-      "advanced": "詳細設定"
+      "advanced": "詳細設定",
+      "aliases": "エイリアス"
     },
     "ariaLabel": "メール管理セクション"
   },
@@ -22,7 +23,7 @@
     "edit": "編集",
     "emptyTitle": "通知ルールがまだありません",
     "emptyBody": "このサーバー上のメールボックスまたはドメインにメールが届いたときに Slack、Telegram、Discord、webhook で通知を受け取るには、ルールを追加してください。",
-    "noChannels": "検証済みの通知チャンネルがまだありません。設定 → 通知 で追加して検証したうえで、ここに戻ってルールを作成してください。",
+    "noChannels": "監視 → 通知でチャンネルを追加・確認してから、ルールを作成してください。",
     "addChannel": "通知チャンネルを追加",
     "manageChannels": "チャンネルを管理",
     "fieldName": "名前",
@@ -66,7 +67,73 @@
     "confirmDelete": "ルール「{name}」を削除しますか? ほかのルールがまだ必要としている場合を除き、そのアドレスの取り込みは停止します。"
   },
   "sending": {
-    "testLiveNote": "現在有効な経路で送信します。上の未保存の変更は使われません。"
+    "testLiveNote": "現在有効な経路で送信します。上の未保存の変更は使われません。",
+    "title": "送信設定",
+    "subtitle": "受信はこのサーバーで維持されます。送信メールの配信方法を選択してください。",
+    "modeDirectTitle": "直接配信",
+    "modeDirectDesc": "このサーバーが直接送信メールを配信します。シンプルですが、新規VPSのIPはブロックリストに登録されていることが多く、多くのホスティング事業者が出信ポート25をブロックしているため、迷惑メールに入ったり送信に失敗したりする可能性があります。",
+    "modeRelayTitle": "プロバイダー経由でリレー",
+    "modeRelayDesc": "送信メールをスマートホスト（SES、SendGrid、Mailgun、Postmark、Resend、または任意の SMTP サーバー）に渡します。最高の到達率を実現します。受信トレイおよびすべての受信 DNS は現在のまま維持されます。",
+    "pathTitle": "送信経路",
+    "setUpRelay": "リレーを設定",
+    "directActive": "送信メールはこのサーバーから直接配信されます。設定は不要です。到達率に問題が生じた場合は上記のリレーを選択してください。",
+    "switchToDirect": "直接配信に切り替え",
+    "switchToDirectHint": "スマートホストとその保存された認証情報を削除し、DNS からリレーの SPF include を削除します。送信メールは再び各受信者のサーバーに直接送信されます。",
+    "statusOn": "リレー有効",
+    "statusOff": "直接配信（デフォルト）",
+    "sendersTitle": "リレーする送信者",
+    "scopeAll": "すべての送信者",
+    "scopeSelected": "選択した送信者",
+    "scopeAllHint": "このサーバー上のすべてのドメインがリレー経由で送信します。",
+    "scopeSelectedHint": "選択した送信者のみがリレーされ、その他はすべて直接配信を継続します。",
+    "sendersDomains": "ドメイン全体",
+    "sendersAddresses": "個別の送信者",
+    "sendersAddressesHint": "ドメイン全体をリレーすることなく、単一のメールボックスのみをリレーします。例えば contact@example.com はプロバイダー経由で送信しながら、ここでは引き続き IMAP で受信できます。",
+    "senderPlaceholder": "contact@example.com",
+    "addSender": "追加",
+    "removeSender": "削除",
+    "senderInvalid": "contact@example.com のようなプレーンなアドレスを1つ入力してください（表示名は含めないでください）。",
+    "noSenders": "リレーするドメインまたは送信者アドレスを少なくとも1つ選択してください。",
+    "noDomains": "このサーバーにはまだドメインがありません。",
+    "credentialsTitle": "プロバイダーと認証情報",
+    "provider": "プロバイダー",
+    "regionFor": "{provider} リージョン",
+    "host": "SMTP ホスト",
+    "port": "ポート",
+    "username": "SMTP ユーザー名",
+    "password": "SMTP パスワード",
+    "passwordKeep": "現在のパスワードを保持する場合は空欄のままにします",
+    "port465Blocked": "ポート 465（暗黙的 TLS）はサーバー全体の設定であるため、一部の送信者のみをリレーする場合には使用できません。プロバイダーの STARTTLS ポート（通常は 587）を使用してください。",
+    "spfIncludeLabel": "include: 値",
+    "spfIncludeHint": "プロバイダーから指示された include: メカニズムを貼り付けます。空欄の場合、SPF レコードは変更されませんが、SPF に記載されていないホストを経由してリレーされたメールは SPF 認証に失敗します。",
+    "spfNone": "なし",
+    "mailFromDomain": "カスタム MAIL FROM ドメイン",
+    "mailFromHint": "任意。SPF/バウンスアライメント用のサブドメイン（例: bounce.example.com）。プロバイダー側でも設定してください。",
+    "identityTitle": "ドメインごとの {provider} ID",
+    "identityHint": "{provider} は各送信ドメインを個別に検証します。各リレードメインのレコードを貼り付けてください（任意 — amavis が既に署名しているため、これらがなくても DMARC は一致しますが、プロバイダーは送信を許可する前にドメインの検証を必要とします）。",
+    "identityPrimary": "プライマリ",
+    "dkimRecords": "{provider} DKIM レコード",
+    "dkimRecordsHint": "プロバイダーに表示されている CNAME レコードを貼り付けます（SES の場合: コンソール → Verified identities → ドメイン → DKIM）。これらは「DNS」タブに表示され検証されます。",
+    "dkimName": "CNAME 名",
+    "dkimValue": "CNAME 値",
+    "summaryTitle": "概要",
+    "summaryTarget": "スマートホスト",
+    "summarySenders": "送信者",
+    "summaryUpdated": "最終保存",
+    "guidanceTitle": "有効にする前に",
+    "guidanceVerify": "Amazon SES コンソールでドメインを検証してください。",
+    "guidanceSandbox": "本番アクセスのリクエスト — SES はデフォルトでサンドボックス状態であり、検証済みのアドレスにのみ送信できます。",
+    "guidanceCreds": "AWS アクセスキーではなく、SES SMTP 認証情報（IAM SMTP ユーザー）を使用してください。",
+    "guidanceDns": "「DNS」タブに DNS レコードを公開し、再スキャンして確認します。",
+    "guidanceSystem": "システムメール（パスワードのリセット、招待、通知）もこのリレー経由で送信されます（「設定」→「メール」で別の送信者を設定している場合を除く）。",
+    "save": "リレーを有効化",
+    "update": "変更を保存",
+    "disable": "リレーを無効化",
+    "saved": "送信リレーが更新されました。",
+    "disabled": "リレーが無効化されました — 直接配信に戻りました。",
+    "saveFailed": "リレーを更新できませんでした。",
+    "disableFailed": "リレーを無効化できませんでした。",
+    "dnsHint": "プロバイダーの送信ホップレコードが「DNS」タブに表示されるようになりました。完全な到達率を確保するために公開して検証してください。"
   },
   "overview": {
     "mailServer": "メールサーバー",
@@ -98,7 +165,9 @@
     "quickActions": "クイックアクション",
     "addMailbox": "メールボックスを追加",
     "addDomain": "ドメインを追加",
-    "reviewDns": "DNS レコードを確認"
+    "reviewDns": "DNS レコードを確認",
+    "legacyWebmail": "旧バージョンの Openship によってデプロイされました — リリースとともに更新される Web メールアプリに置き換えることができます。",
+    "upgradeWebmail": "Web メールを置き換える"
   },
   "webmail": {
     "title": "ウェブメール",
@@ -300,8 +369,19 @@
       "notListeningHint": "このポートで待ち受けているプロセスはありません。",
       "notExposedHint": "ループバックのみで待ち受けているため、外部クライアントは接続できません。",
       "unknownHint": "公開到達性を確認できませんでした。",
-      "ports": { "smtp": "受信 SMTP", "smtps": "SMTP 送信 (TLS)", "submission": "SMTP 送信 (STARTTLS)", "imaps": "IMAP 受信 (TLS)" },
-      "status": { "reachable": "接続可能", "blocked": "ブロック", "not_listening": "待受なし", "not_exposed": "未公開", "unknown": "不明" }
+      "ports": {
+        "smtp": "受信 SMTP",
+        "smtps": "SMTP 送信 (TLS)",
+        "submission": "SMTP 送信 (STARTTLS)",
+        "imaps": "IMAP 受信 (TLS)"
+      },
+      "status": {
+        "reachable": "接続可能",
+        "blocked": "ブロック",
+        "not_listening": "待受なし",
+        "not_exposed": "未公開",
+        "unknown": "不明"
+      }
     },
     "delivery": {
       "title": "送信の状態",
@@ -411,7 +491,8 @@
       "partSignatures": "{names} が動作していません - ウイルス定義が更新されなくなるため、古くなっていく定義でスキャンされます",
       "partAdvisory": "{names} が動作していません",
       "almostSubQueueOne": "{count} 件のメールが送信待ちです - 下の「送信の状態」を確認してください。",
-      "almostSubQueueOther": "{count} 件のメールが送信待ちです - 下の「送信の状態」を確認してください。"
+      "almostSubQueueOther": "{count} 件のメールが送信待ちです - 下の「送信の状態」を確認してください。",
+      "partCertificate": "メール証明書の確認が必要です"
     },
     "time": {
       "secondsAgo": "{n} 秒前",
@@ -647,5 +728,74 @@
     "loadingLogs": "ログを読み込み中…",
     "noLogLines": "このコンポーネントのログ行はまだありません。",
     "rowActions": "{name} の操作"
+  },
+  "certificate": {
+    "title": "メール証明書",
+    "manage": "証明書を管理",
+    "check": "証明書を確認",
+    "checking": "確認中…",
+    "renew": "証明書を更新",
+    "renewing": "更新中…",
+    "autoRenew": "自動更新",
+    "autoRenewHint": "有効期限前に更新し、メールサービスを再読み込みします。",
+    "desktopHint": "自動更新には Openship を起動したままにしてください。",
+    "jobDisabled": "共通の SSL 更新ジョブが無効です。",
+    "manageJob": "更新ジョブを開く",
+    "failed": "メール証明書を更新できませんでした。",
+    "notChecked": "未確認",
+    "expires": "有効期限：{date}",
+    "checked": "確認日時：{time}",
+    "status": {
+      "ok": "有効",
+      "warn": "更新が必要",
+      "fail": "対応が必要",
+      "unknown": "未検証"
+    }
+  },
+  "aliases": {
+    "heading": "エイリアス",
+    "description": "あるアドレスから別のアドレスにメールを転送するか、ドメイン内の未一致のアドレスをすべてキャッチします。保存した瞬間に反映され、再起動は不要です。",
+    "addAlias": "エイリアスを追加",
+    "domainLabel": "ドメイン",
+    "loading": "読み込み中…",
+    "activeCount": "{total} 件中 {active} 件がアクティブ",
+    "colSource": "転送元",
+    "colDestination": "転送先",
+    "colType": "タイプ",
+    "colStatus": "ステータス",
+    "typeAlias": "エイリアス",
+    "typeCatchAll": "キャッチオール",
+    "active": "アクティブ",
+    "disabled": "無効",
+    "activateAction": "有効化",
+    "deactivateAction": "無効化",
+    "deleteAction": "削除",
+    "loadDomainsFailed": "ドメインの読み込みに失敗しました",
+    "loadFailed": "エイリアスの読み込みに失敗しました",
+    "emptyTitle": "エイリアスはまだありません",
+    "emptyDesc": "{domain} のアドレス転送またはキャッチオールを設定します。",
+    "create": {
+      "title": "新規エイリアス · {domain}",
+      "description": "メールサーバーの転送テーブルに行を作成します。Postfix が即座に読み取るため再起動は不要です。",
+      "submit": "エイリアスを作成",
+      "submitting": "作成中…",
+      "catchAllLabel": "このドメインのキャッチオール",
+      "catchAllHint": "実際のメールボックスや他のエイリアスに一致しない {domain} のすべてのアドレス宛てのメールを転送します。このドメインの既存のキャッチオールを置き換えます。",
+      "localPartLabel": "ローカル部",
+      "localPartHint": "@ の前の部分。小文字の英数字。",
+      "destinationLabel": "転送先",
+      "destinationHint": "有効なメールアドレス（このサーバー上のメールボックス、または Gmail などの外部アドレス）。"
+    },
+    "deleteForm": {
+      "title": "このエイリアスを削除しますか？",
+      "sourceCatchAll": "{domain} のキャッチオール",
+      "description": "転送行を直ちに削除します。{source} へのメールは次のメッセージからバウンスするか、次のマッチングルールにフォールスルーします。",
+      "submit": "エイリアスを削除",
+      "submitting": "削除中…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} は実際のメールボックスです。ここにエイリアスを作成するとそのメールがリダイレクトされます。代わりにメールボックスを編集または削除してください。",
+      "alreadyExists": "その転送設定は既に存在します。"
+    }
   }
 }

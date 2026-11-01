@@ -1,6 +1,7 @@
 "use client";
 
-import { LayoutGrid, List } from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 import { useI18n } from "@/components/i18n-provider";
 
 export type ProjectView = "list" | "grid";
@@ -24,9 +25,9 @@ export function ViewToggle({
   const { t } = useI18n();
   const copy = t.dashboard.pages.projects.view;
 
-  const options: { id: ProjectView; label: string; Icon: typeof List }[] = [
-    { id: "list", label: copy.list, Icon: List },
-    { id: "grid", label: copy.grid, Icon: LayoutGrid },
+  const options: { id: ProjectView; label: string; Icon: IconName }[] = [
+    { id: "list", label: copy.list, Icon: "list" },
+    { id: "grid", label: copy.grid, Icon: "grid" },
   ];
 
   return (
@@ -43,13 +44,14 @@ export function ViewToggle({
             type="button"
             onClick={() => onChange(id)}
             aria-pressed={active}
+            aria-label={label}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
               active
                 ? "bg-card text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Icon className="size-4" />
+            <UiIcon name={Icon} className="size-4" />
             <span className="hidden sm:inline">{label}</span>
           </button>
         );

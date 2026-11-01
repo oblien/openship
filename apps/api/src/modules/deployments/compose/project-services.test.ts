@@ -11,7 +11,7 @@ vi.mock("@repo/db", async (importOriginal) => ({
   repos,
 }));
 
-import { isMultiServiceProject, shouldUseProjectServicePipeline } from "./project-services";
+import { isMultiServiceProject, shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/project-services";
 
 describe("composePath service-pipeline bootstrap (#689)", () => {
   beforeEach(() => {

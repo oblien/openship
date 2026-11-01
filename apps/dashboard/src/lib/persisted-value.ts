@@ -27,6 +27,7 @@
  * skips JSON entirely and stores a single "1" / absent.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export interface PersistedValue<T> {
   read(): T | null;
   write(value: T): void;
@@ -60,13 +61,15 @@ export function createPersistedValue<T>(
       if (typeof window === "undefined") return;
       try {
         window.localStorage.setItem(key, JSON.stringify(value));
-      } catch { /* quota / private mode - soft memory is best-effort */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/persisted-value"); /* quota / private mode - soft memory is best-effort */ }
     },
     clear(): void {
       if (typeof window === "undefined") return;
       try {
         window.localStorage.removeItem(key);
-      } catch { /* same - best-effort */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/persisted-value"); /* same - best-effort */ }
     },
   };
 }
@@ -88,7 +91,8 @@ export function createPersistedFlag(key: string): PersistedFlag {
       if (typeof window === "undefined") return false;
       try {
         return window.localStorage.getItem(key) === "1";
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/persisted-value");
         return false;
       }
     },
@@ -96,13 +100,15 @@ export function createPersistedFlag(key: string): PersistedFlag {
       if (typeof window === "undefined") return;
       try {
         window.localStorage.setItem(key, "1");
-      } catch { /* best-effort */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/persisted-value"); /* best-effort */ }
     },
     clear(): void {
       if (typeof window === "undefined") return;
       try {
         window.localStorage.removeItem(key);
-      } catch { /* best-effort */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/lib/persisted-value"); /* best-effort */ }
     },
   };
 }

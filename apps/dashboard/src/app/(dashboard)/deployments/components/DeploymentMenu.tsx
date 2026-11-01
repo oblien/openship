@@ -1,17 +1,10 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useRef, useEffect } from "react";
-import {
-  MoreVertical,
-  ExternalLink,
-  Copy,
-  RotateCcw,
-  XCircle,
-  Trash2,
-  Pin,
-  PinOff,
-} from "lucide-react";
-import { generateIcon } from "@/utils/icons";
+
 import { deployApi, getApiErrorMessage, type RestorePlanUI } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { RollbackConfirmDialog } from "./RollbackConfirmDialog";
@@ -88,7 +81,8 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     try {
       await deployApi.cancel(deployment.id);
       onStatusChange?.();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/deployments/components/DeploymentMenu");
       /* silent */
     }
   };
@@ -103,7 +97,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     const plan = await deployApi
       .restorePlan(deployment.id)
       .then((res) => res.data)
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/deployments/components/DeploymentMenu"); return null; });
     setConfirmPlan({ plan });
   };
 
@@ -158,7 +152,8 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     try {
       await deployApi.deleteDeployment(deployment.id);
       onStatusChange?.();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/deployments/components/DeploymentMenu");
       /* silent */
     }
   };
@@ -175,7 +170,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
           "w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         }
       >
-        <MoreVertical className="w-4 h-4" />
+        <UiIcon name="more-vertical" className="w-4 h-4" />
       </button>
 
       {isOpen && (
@@ -188,7 +183,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
               }}
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
             >
-              <ExternalLink className="w-4 h-4" />
+              <UiIcon name="external-link" className="w-4 h-4" />
               {t.deployments.menu.openDeployment}
             </button>
           )}
@@ -201,13 +196,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
               }}
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
             >
-              {generateIcon(
-                "https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg",
-                16,
-                "currentColor",
-                {},
-                true,
-              )}
+              <UiIcon name="github" size={16} />
               {t.deployments.menu.viewRepository}
             </button>
           )}
@@ -222,7 +211,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
               }}
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
             >
-              <Copy className="w-4 h-4" />
+              <UiIcon name="copy" className="w-4 h-4" />
               {t.deployments.menu.copyDomainUrl}
             </button>
           )}
@@ -234,7 +223,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
             }}
             className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
           >
-            <Copy className="w-4 h-4" />
+            <UiIcon name="copy" className="w-4 h-4" />
             {t.deployments.menu.copyBuildId}
           </button>
 
@@ -245,7 +234,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                 onClick={handleCancel}
                 className="w-full px-4 py-2.5 text-start text-sm text-danger hover:bg-danger-bg transition-colors flex items-center gap-3"
               >
-                <XCircle className="w-4 h-4" />
+                <UiIcon name="x-circle" className="w-4 h-4" />
                 {t.deployments.menu.cancelDeployment}
               </button>
             </>
@@ -269,7 +258,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                 }
                 className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
-                <RotateCcw className="w-4 h-4" />
+                <UiIcon name="rotate-left" className="w-4 h-4" />
                 {t.deployments.menu.rollback}
               </button>
             </>
@@ -292,7 +281,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
               }
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             >
-              {deployment.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+              {deployment.pinned ? <UiIcon name="pin-off" className="w-4 h-4" /> : <UiIcon name="pin" className="w-4 h-4" />}
               {deployment.pinned ? t.deployments.menu.unpin : t.deployments.menu.pin}
             </button>
           )}
@@ -304,7 +293,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                 onClick={handleDelete}
                 className="w-full px-4 py-2.5 text-start text-sm text-danger hover:bg-danger-bg transition-colors flex items-center gap-3"
               >
-                <Trash2 className="w-4 h-4" />
+                <UiIcon name="trash" className="w-4 h-4" />
                 {t.deployments.menu.deleteDeployment}
               </button>
             </>

@@ -1,5 +1,23 @@
 import { DEFAULT_IMAGE_REGISTRY } from "./constants";
 
+/** Registry content selected for a literal Dockerfile base during a successful build. */
+export interface BaseImageReceipt {
+  ref: string;
+  digest: string;
+}
+
+export interface RuntimeImageReceipts {
+  app?: BaseImageReceipt[];
+  services?: Record<string, BaseImageReceipt[]>;
+  /** Artifact identity binds a receipt to the build that actually reached this release. */
+  artifacts?: { app?: string; services?: Record<string, string> };
+}
+
+/** Tags can move; repository digests and daemon image IDs identify fixed content. */
+export function isMutableImageRef(ref: string): boolean {
+  return !/(?:^|@)sha256:[a-f0-9]{64}$/.test(ref.trim());
+}
+
 /**
  * Shared precedence for an Openship container image reference (edge, mail, …).
  * ONE resolver so a per-image wrapper can't drift on the order:

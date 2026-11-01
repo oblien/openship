@@ -1,92 +1,45 @@
 "use client";
 
-/**
- * "Domain routing needs attention" + Retry — the release is live on the
- * server, but the routes in front of it didn't sync.
- *
- * It lives on Domains & Routes rather than Deployments because nothing is wrong
- * with the release: it built, shipped and is running. What's wrong is the route,
- * so the banner belongs beside the routes it's about — next to the per-domain
- * state (verification, SSL, target) an operator reads in the same breath, and
- * next to the controls that actually change any of it.
- *
- * One component rather than a copy per tab: the retry is a real repair with its
- * own failure copy (`retryProjectRouting` re-points the deployment's server
- * binding, restores nulled custom-domain ports, re-applies the live routes, and
- * verifies the edge is SERVING them), and two renderings would drift the moment
- * one of them learned something the other didn't.
- */
+/** Show the persisted routing failure beside the domain cards and their repair action. */
 
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { getApiErrorMessage, projectsApi } from "@/lib/api";
-import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import WarningCallout from "@/components/shared/WarningCallout";
-import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
+import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
 
-export const RoutingUnsyncedCallout = () => {
-  const { projectData, updateProjectData } = useProjectSettings();
+export const RoutingUnsyncedCallout = ({
+  onRetry,
+  retrying = false,
+}: {
+  onRetry: () => void;
+  retrying?: boolean;
+}) => {
+  const { projectData } = useProjectSettings();
   const { t } = useI18n();
-  const { showToast } = useToast();
-  const [isRetrying, setIsRetrying] = React.useState(false);
-
-  /** Re-run the routing repair (no rebuild). On success the warning clears and the
-   *  project flips back to Live; on failure the server's own reason is surfaced —
-   *  it names the thing to fix (an edge not serving :80, an unreachable box). */
-  const handleRetry = async () => {
-    if (!projectData?.id || isRetrying) return;
-    setIsRetrying(true);
-    try {
-      const res = await projectsApi.retryRouting(projectData.id);
-      if (res?.ok) {
-        updateProjectData({ routingUnsynced: false, routingWarning: null });
-        // Re-read the whole payload, not just the flag: the repair re-applies routes and
-        // re-checks what the edge SERVES, so per-domain verification and SSL state can all have
-        // moved. Patching one boolean left the domain cards showing their pre-retry state.
-        invalidateProjectCaches(String(projectData.id));
-        showToast(t.projects.routingRetry.success, "success", t.projects.routingRetry.title);
-      } else {
-        showToast(
-          res?.warning || res?.error || t.projects.routingRetry.failed,
-          "error",
-          t.projects.routingRetry.title,
-        );
-      }
-    } catch (err) {
-      showToast(
-        getApiErrorMessage(err) || t.projects.routingRetry.failed,
-        "error",
-        t.projects.routingRetry.title,
-      );
-    } finally {
-      setIsRetrying(false);
-    }
-  };
 
   // A pending partial-failure decision outranks this: that release hasn't been
   // accepted yet, so its routes aren't the thing to fix first.
-  if (!projectData?.routingUnsynced || projectData.awaitingDecision) return null;
+  // The inline operation owns progress while running. Keep the saved failure
+  // until the server refreshes it, but don't display that stale result mid-repair.
+  if (retrying || !projectData?.routingUnsynced || projectData.awaitingDecision)
+    return null;
+
+  const warning = projectData?.routingWarning
+    ? localizeDiagnosisMessage(projectData.routingWarning, t.issues?.messages)
+    : t.projects.routingRetry.description;
 
   return (
     <WarningCallout
       title={t.projects.routingRetry.title}
-      // The SERVER's reason when it has one, and only then the generic line.
-      //
-      // The generic line describes exactly one cause — a free `.opsh.io` URL that didn't route
-      // through Openship Cloud's edge — and it was shown for every cause. On a self-hosted
-      // project with custom domains waiting for certificates it was simply false, and it sent
-      // the operator to a cloud they don't use instead of to DNS + Verify, which is what the
-      // server had already worked out and written down.
-      description={projectData?.routingWarning || t.projects.routingRetry.description}
+      description={warning}
       actions={
         <button
           type="button"
-          onClick={handleRetry}
-          disabled={isRetrying}
+          onClick={onRetry}
           className="rounded-lg bg-warning-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-warning-solid/90 disabled:opacity-60"
         >
-          {isRetrying ? t.projects.routingRetry.retrying : t.projects.routingRetry.retry}
+          {t.projects.routingRetry.retry}
         </button>
       }
     />

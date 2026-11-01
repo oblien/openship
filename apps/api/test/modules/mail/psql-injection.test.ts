@@ -9,7 +9,7 @@
 import "./_setup-env"; // MUST be first — sets INTERNAL_TOKEN before config/env loads
 import { describe, expect, test } from "vitest";
 import type { CommandExecutor } from "@repo/adapters";
-import { transaction } from "../../../src/modules/mail/admin/psql-runner";
+import { transaction } from "@repo/platform/engine/modules/mail/admin/psql-runner";
 
 function capturingExecutor(sink: string[]): CommandExecutor {
   return {

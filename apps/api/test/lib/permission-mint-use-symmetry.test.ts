@@ -28,6 +28,7 @@ vi.mock("@repo/db", () => ({
       findEnvVarById: vi.fn(async () => null),
     },
     server: { get: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })) },
+    cloudWorkspace: { findById: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })) },
     backupDestination: {
       findById: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })),
     },
@@ -41,7 +42,7 @@ vi.mock("@repo/db", () => ({
     patGrant: { findForResource: vi.fn(async () => null), listByToken: vi.fn(async () => []) },
   },
 }));
-vi.mock("../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
 import { checkPermission, checkPermissionOnResource, ORG_SINGLETON_RESOURCES } from "../../src/lib/permission";
 import { GRANTABLE_RESOURCE_TYPES } from "../../src/lib/grantable-types";

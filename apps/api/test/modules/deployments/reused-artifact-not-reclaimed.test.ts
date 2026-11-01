@@ -6,6 +6,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   destroy: vi.fn(async () => {}),
   updateStatus: vi.fn(async () => true),
+  listByDeployment: vi.fn(async (): Promise<unknown[]> => []),
+  setActiveDeployment: vi.fn(async () => {}),
+  sessionStatus: vi.fn(),
 }));
 
 // The lifecycle module transitively pulls in auth/notification wiring that reads
@@ -21,29 +24,32 @@ vi.mock("@repo/db", () => ({
       appendBuildLog: vi.fn(async () => {}),
       finishBuildSession: vi.fn(async () => {}),
     },
-    project: { setActiveDeployment: vi.fn(async () => {}) },
-    service: { listByDeployment: vi.fn(async () => []) },
+    project: { setActiveDeployment: mocks.setActiveDeployment },
+    service: { listByDeployment: mocks.listByDeployment },
   },
 }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: vi.fn() },
 }));
 vi.mock("../../../src/lib/audit", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));
-vi.mock("../../../src/lib/favicon-detector", () => ({
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({
   detectAndStoreFavicon: vi.fn(async () => {}),
 }));
-vi.mock("../../../src/modules/mail/webmail/webmail-install.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/cleanup-keep-set", () => ({
+  computeCleanupKeepSet: vi.fn(async () => ({ containers: new Set<string>() })),
+}));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: vi.fn(async () => {}),
 }));
-vi.mock("../../../src/modules/deployments/session-manager", () => ({
-  updateStatus: vi.fn(),
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
+  updateStatus: mocks.sessionStatus,
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
   getSession: vi.fn(() => null),
   endSession: vi.fn(),
 }));
 
-import { onCancelled, onFailure } from "../../../src/modules/deployments/deployment-lifecycle";
+import { onCancelled, onFailure } from "@repo/platform/engine/modules/deployments/deployment-lifecycle";
 
 /**
  * `ctx.provisioned.imageRef` is a RECLAIM LIST, not a record of what got deployed:
@@ -84,6 +90,7 @@ const RELEASE_DIR = "/opt/openship/static/releases/d_old";
 describe("a reused artifact is not on the failure reclaim list", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.listByDeployment.mockResolvedValue([]);
   });
 
   it("onFailure destroys whatever the pipeline recorded — including a release dir", async () => {
@@ -96,6 +103,50 @@ describe("a reused artifact is not on the failure reclaim list", () => {
     expect(mocks.destroy).toHaveBeenCalledWith(RELEASE_DIR);
   });
 
+  it("records uncertain routing recovery as failed without deleting either release", async () => {
+    mocks.listByDeployment.mockResolvedValue([
+      { id: "sd_candidate", serviceId: "svc1", containerId: "candidate", status: "ready" },
+    ]);
+    const attempt = ctx({ imageRef: RELEASE_DIR });
+
+    await onFailure(
+      attempt,
+      "Routing recovery could not be verified. Both releases were preserved.",
+      250,
+      { errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED" },
+      { keepProvisioned: true },
+    );
+
+    expect(mocks.destroy).not.toHaveBeenCalled();
+    expect(mocks.listByDeployment).not.toHaveBeenCalled();
+    expect(mocks.setActiveDeployment).not.toHaveBeenCalled();
+    expect(mocks.updateStatus).toHaveBeenCalledWith(
+      "d_new",
+      "failed",
+      expect.objectContaining({
+        buildDurationMs: 250,
+        errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED",
+        errorMessage: "Routing recovery could not be verified. Both releases were preserved.",
+      }),
+    );
+    expect(mocks.sessionStatus).toHaveBeenCalledWith(
+      "d_new",
+      "failed",
+      expect.objectContaining({ errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED" }),
+    );
+    expect(attempt).toHaveProperty("settled", "failed");
+  });
+
+  it("still cleans up an ordinary failed attempt's unprotected service container", async () => {
+    mocks.listByDeployment.mockResolvedValue([
+      { id: "sd_candidate", serviceId: "svc1", containerId: "candidate", status: "ready" },
+    ]);
+
+    await onFailure(ctx({}), "readiness failed");
+
+    expect(mocks.destroy).toHaveBeenCalledWith("candidate");
+  });
+
   it("neither hook reclaims anything when nothing was recorded", async () => {
     await onFailure(ctx({}), "health gate failed");
     await onCancelled(ctx({}), 10);
@@ -104,7 +155,7 @@ describe("a reused artifact is not on the failure reclaim list", () => {
 
   it("the pipeline records ONLY an artifact this deploy produced", () => {
     const src = readFileSync(
-      resolve(import.meta.dirname, "../../../src/modules/deployments/build-pipeline.ts"),
+      resolve(import.meta.dirname, "../../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts"),
       "utf8",
     );
     // The one assignment, gated on the reuse. An ungated `provisioned.imageRef =`
@@ -118,12 +169,13 @@ describe("a reused artifact is not on the failure reclaim list", () => {
 
   it("a refresh fails closed when its active artifact is gone", () => {
     const src = readFileSync(
-      resolve(import.meta.dirname, "../../../src/modules/deployments/build-pipeline.ts"),
+      resolve(import.meta.dirname, "../../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts"),
       "utf8",
     );
     const refreshStart = src.indexOf("const refreshFrom = refreshAppDeploymentId(snapshot)");
+    // Skip the image declarations inside the Kubernetes and Docker refresh branches.
     const ordinaryPinStart = src.indexOf(
-      "const image = pinnedAppImage(snapshot)",
+      "\n  const image = pinnedAppImage(snapshot);",
       refreshStart + 1,
     );
     const refreshBranch = src.slice(refreshStart, ordinaryPinStart);
@@ -135,3 +187,6 @@ describe("a reused artifact is not on the failure reclaim list", () => {
     expect(refreshBranch).not.toContain("return gone(");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));

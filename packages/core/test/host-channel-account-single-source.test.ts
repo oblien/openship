@@ -22,7 +22,7 @@ describe("hostChannelAccount is the only place that spells the channel-account f
   /** Every file that legitimately needs the account, plus the resolver's own home. */
   const CONSUMERS = [
     "packages/adapters/src/system/executor.ts",
-    "apps/api/src/lib/startup/self-server.ts",
+    "packages/platform/src/engine/lib/startup/self-server.ts",
     "apps/cli/src/lib/compose.ts",
   ];
 

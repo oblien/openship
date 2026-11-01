@@ -2,7 +2,7 @@
   "available": true,
   "id": "gitea",
   "name": "Gitea",
-  "description": "Self-hosted Git with issues and pull requests. The admin account below is created for you.",
+  "description": "Lightweight Git hosting with repositories, issues, and pull requests.",
   "kind": "template",
   "logo": "gitea",
   "category": "other",
@@ -105,5 +105,21 @@
       "note": "INSTALL_LOCK is on, so the public setup wizard is disabled and cannot be used to hijack the instance. The password above works as-is."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Git hosting",
+        "description": "Host repositories on your own server."
+      },
+      {
+        "title": "Issues and reviews",
+        "description": "Keep discussion and pull requests beside the code."
+      },
+      {
+        "title": "Browser interface",
+        "description": "Manage projects through a lightweight web UI."
+      }
+    ]
+  }
 }

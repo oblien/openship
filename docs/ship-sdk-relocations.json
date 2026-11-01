@@ -1,0 +1,1934 @@
+[
+  {
+    "from": "apps/api/src/config/env.ts",
+    "to": "packages/platform/src/engine/config/env.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/config/index.ts",
+    "to": "packages/platform/src/engine/config/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/acme-config.ts",
+    "to": "packages/platform/src/engine/lib/acme-config.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/agent-exec.schema.ts",
+    "to": "packages/contracts/src/exec.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/agent-exec.ts",
+    "to": "packages/platform/src/engine/lib/agent-exec.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/app-version.ts",
+    "to": "packages/platform/src/engine/lib/app-version.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/audit-emitter.ts",
+    "to": "packages/platform/src/engine/lib/audit-emitter.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/auth-mode.ts",
+    "to": "packages/platform/src/engine/lib/auth-mode.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/auth.ts",
+    "to": "packages/platform/src/engine/lib/auth.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/authorization.ts",
+    "to": "packages/platform/src/engine/lib/authorization.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/background-context.ts",
+    "to": "packages/platform/src/engine/lib/background-context.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/box-org.ts",
+    "to": "packages/platform/src/engine/lib/box-org.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cache-store/index.ts",
+    "to": "packages/platform/src/engine/lib/cache-store/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cache-store/memory.ts",
+    "to": "packages/platform/src/engine/lib/cache-store/memory.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cache-store/redis.ts",
+    "to": "packages/platform/src/engine/lib/cache-store/redis.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cache-store/types.ts",
+    "to": "packages/platform/src/engine/lib/cache-store/types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cache.ts",
+    "to": "packages/platform/src/engine/lib/cache.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud-preflight.ts",
+    "to": "packages/platform/src/engine/lib/cloud-preflight.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud-route.service.ts",
+    "to": "packages/platform/src/engine/lib/cloud-route.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/client.ts",
+    "to": "packages/platform/src/engine/lib/cloud/client.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/project-authority.ts",
+    "to": "packages/platform/src/engine/lib/cloud/project-authority.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/cloud/projects.ts",
+    "to": "packages/platform/src/engine/lib/cloud/projects.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/request-error.ts",
+    "to": "packages/platform/src/engine/lib/cloud/request-error.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/require-cloud.ts",
+    "to": "packages/platform/src/engine/lib/cloud/require-cloud.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/session.ts",
+    "to": "packages/platform/src/engine/lib/cloud/session.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/transport.ts",
+    "to": "packages/platform/src/engine/lib/cloud/transport.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/cloud/types.ts",
+    "to": "packages/platform/src/engine/lib/cloud/types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/compose-parser.ts",
+    "to": "packages/platform/src/engine/lib/compose-parser.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/connectivity-checks.ts",
+    "to": "packages/platform/src/engine/lib/connectivity-checks.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/connectivity.ts",
+    "to": "packages/platform/src/engine/lib/connectivity.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/container-ref.ts",
+    "to": "packages/platform/src/engine/lib/container-ref.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/credential-encryption.ts",
+    "to": "packages/platform/src/engine/lib/credential-encryption.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/custom-domain-guard.ts",
+    "to": "packages/platform/src/engine/lib/custom-domain-guard.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/deliver-managed-image.ts",
+    "to": "packages/platform/src/engine/lib/deliver-managed-image.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/deployable-service.ts",
+    "to": "packages/platform/src/engine/lib/deployable-service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/deployment-runtime.ts",
+    "to": "packages/platform/src/engine/lib/deployment-runtime.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/dns-address.ts",
+    "to": "packages/platform/src/engine/lib/dns-address.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/dns-resolver.ts",
+    "to": "packages/platform/src/engine/lib/dns-resolver.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/domain-claims.ts",
+    "to": "packages/platform/src/engine/lib/domain-claims.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/domain-redirect.ts",
+    "to": "packages/platform/src/engine/lib/domain-redirect.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/domain-ssl.ts",
+    "to": "packages/platform/src/engine/lib/domain-ssl.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/domain-token.ts",
+    "to": "packages/platform/src/engine/lib/domain-token.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-challenge.ts",
+    "to": "packages/platform/src/engine/lib/edge-challenge.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-host-executor.ts",
+    "to": "packages/platform/src/engine/lib/edge-host-executor.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-image.ts",
+    "to": "packages/platform/src/engine/lib/edge-image.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-orphans.service.ts",
+    "to": "packages/platform/src/engine/lib/edge-orphans.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-reconcile.ts",
+    "to": "packages/platform/src/engine/lib/edge-reconcile.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-target-verify.ts",
+    "to": "packages/platform/src/engine/lib/edge-target-verify.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-target.ts",
+    "to": "packages/platform/src/engine/lib/edge-target.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/edge-vhost-repair.ts",
+    "to": "packages/platform/src/engine/lib/edge-vhost-repair.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/email-templates.ts",
+    "to": "packages/platform/src/engine/lib/email-templates.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/encryption.ts",
+    "to": "packages/platform/src/engine/lib/encryption.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/env-reveal.ts",
+    "to": "packages/platform/src/engine/lib/env-reveal.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/environment-scope.ts",
+    "to": "packages/contracts/src/environment-scope.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ephemeral-store.ts",
+    "to": "packages/platform/src/engine/lib/ephemeral-store.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/favicon-detector.ts",
+    "to": "packages/platform/src/engine/lib/favicon-detector.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/free-domain-guard.ts",
+    "to": "packages/platform/src/engine/lib/free-domain-guard.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/generated-config-files.ts",
+    "to": "packages/platform/src/engine/lib/generated-config-files.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/geo-ip.ts",
+    "to": "packages/platform/src/engine/lib/geo-ip.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/git-forwarding/deploy.ts",
+    "to": "packages/platform/src/engine/lib/git-forwarding/deploy.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/git-forwarding/index.ts",
+    "to": "packages/platform/src/engine/lib/git-forwarding/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/git-forwarding/relay.ts",
+    "to": "packages/platform/src/engine/lib/git-forwarding/relay.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/grant-source.ts",
+    "to": "packages/platform/src/engine/lib/grant-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/host-capacity.ts",
+    "to": "packages/platform/src/engine/lib/host-capacity.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/host-control.ts",
+    "to": "packages/platform/src/engine/lib/host-control.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/host-disk.ts",
+    "to": "packages/platform/src/engine/lib/host-disk.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/host-port-target.ts",
+    "to": "packages/platform/src/engine/lib/host-port-target.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/image-registry.ts",
+    "to": "packages/platform/src/engine/lib/image-registry.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/invitation-claim.ts",
+    "to": "packages/platform/src/engine/lib/invitation-claim.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/invitation-delivery.ts",
+    "to": "packages/platform/src/engine/lib/invitation-delivery.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/invitation-signup.ts",
+    "to": "packages/platform/src/engine/lib/invitation-signup.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/job-runner/bullmq.ts",
+    "to": "packages/platform/src/engine/lib/job-runner/bullmq.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/job-runner/in-process.ts",
+    "to": "packages/platform/src/engine/lib/job-runner/in-process.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/job-runner/index.ts",
+    "to": "packages/platform/src/engine/lib/job-runner/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/job-runner/types.ts",
+    "to": "packages/platform/src/engine/lib/job-runner/types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/loopback-publish.ts",
+    "to": "packages/platform/src/engine/lib/loopback-publish.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/mail-host-claim.ts",
+    "to": "packages/platform/src/engine/lib/mail-host-claim.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/mail-image.ts",
+    "to": "packages/platform/src/engine/lib/mail-image.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/mail-reconcile.ts",
+    "to": "packages/platform/src/engine/lib/mail-reconcile.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/mail.ts",
+    "to": "packages/platform/src/engine/lib/mail.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/managed-edge-proxy.ts",
+    "to": "packages/platform/src/engine/lib/managed-edge-proxy.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/managed-images.ts",
+    "to": "packages/platform/src/engine/lib/managed-images.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/map-with-limit.ts",
+    "to": "packages/platform/src/engine/lib/map-with-limit.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/notification-categories.ts",
+    "to": "packages/platform/src/engine/lib/notification-categories.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/notification-dispatcher.ts",
+    "to": "packages/platform/src/engine/lib/notification-dispatcher.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/notification-workers.ts",
+    "to": "packages/platform/src/engine/lib/notification-workers.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/oblien-client.ts",
+    "to": "packages/platform/src/engine/lib/oblien-client.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/oblien-user-client.ts",
+    "to": "packages/platform/src/engine/lib/oblien-user-client.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/openresty-paths.ts",
+    "to": "packages/platform/src/engine/lib/openresty-paths.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/openship-cloud.ts",
+    "to": "packages/platform/src/engine/lib/openship-cloud.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/openship-manifest-sync.ts",
+    "to": "packages/platform/src/engine/lib/openship-manifest-sync.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/openship-manifest.ts",
+    "to": "packages/platform/src/engine/lib/openship-manifest.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/openship-server-store.ts",
+    "to": "packages/platform/src/engine/lib/openship-server-store.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/operation-source.ts",
+    "to": "packages/platform/src/engine/lib/operation-source.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/org-actor.ts",
+    "to": "packages/platform/src/engine/lib/org-actor.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/pat.ts",
+    "to": "packages/platform/src/engine/lib/pat.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/plan-guard.ts",
+    "to": "packages/platform/src/engine/lib/plan-guard.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/platform-config.ts",
+    "to": "packages/platform/src/engine/lib/platform-config.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/platform-mode.ts",
+    "to": "packages/platform/src/engine/lib/platform-mode.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/platform.ts",
+    "to": "packages/platform/src/engine/lib/platform.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/port-reachability.ts",
+    "to": "packages/platform/src/engine/lib/port-reachability.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/product-mode.ts",
+    "to": "packages/platform/src/engine/lib/product-mode.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/project-analytics.ts",
+    "to": "packages/platform/src/engine/lib/project-analytics.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/project-root-detector.ts",
+    "to": "packages/platform/src/engine/lib/project-root-detector.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/project-route-store.ts",
+    "to": "packages/platform/src/engine/lib/project-route-store.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/project-routing-fields.ts",
+    "to": "packages/platform/src/engine/lib/project-routing-fields.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/project-runtime-lock.ts",
+    "to": "packages/platform/src/engine/lib/project-runtime-lock.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/project-service-upstream.ts",
+    "to": "packages/platform/src/engine/lib/project-service-upstream.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/prompt-gateway.ts",
+    "to": "packages/platform/src/engine/lib/prompt-gateway.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/provision-lock.ts",
+    "to": "packages/platform/src/engine/lib/provision-lock.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/provision-user.ts",
+    "to": "packages/platform/src/engine/lib/provision-user.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/public-dns.ts",
+    "to": "packages/platform/src/engine/lib/public-dns.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/public-endpoints.ts",
+    "to": "packages/platform/src/engine/lib/public-endpoints.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/public-url.ts",
+    "to": "packages/platform/src/engine/lib/public-url.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/redis.ts",
+    "to": "packages/platform/src/engine/lib/redis.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/release-dist.ts",
+    "to": "packages/platform/src/engine/lib/release-dist.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/release-download.ts",
+    "to": "packages/platform/src/engine/lib/release-download.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/release-resolver.ts",
+    "to": "packages/platform/src/engine/lib/release-resolver.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/remote-state.ts",
+    "to": "packages/platform/src/engine/lib/remote-state.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/request-store.ts",
+    "to": "packages/platform/src/engine/lib/request-store.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/resource-access.ts",
+    "to": "packages/platform/src/engine/lib/resource-access.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/resources.ts",
+    "to": "packages/platform/src/engine/lib/resources.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/route-apply.service.ts",
+    "to": "packages/platform/src/engine/lib/route-apply.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/routing-domains.ts",
+    "to": "packages/platform/src/engine/lib/routing-domains.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/run-bus.ts",
+    "to": "packages/platform/src/engine/lib/run-bus.ts",
+    "hadBaseline": false
+  },
+  {
+    "from": "apps/api/src/lib/safe-fetch.ts",
+    "to": "packages/platform/src/engine/lib/safe-fetch.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/secret-env.ts",
+    "to": "packages/platform/src/engine/lib/secret-env.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/self-host.ts",
+    "to": "packages/platform/src/engine/lib/self-host.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/server-container-session.ts",
+    "to": "packages/platform/src/engine/lib/server-container-session.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/server-reachability.ts",
+    "to": "packages/platform/src/engine/lib/server-reachability.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/server-target.ts",
+    "to": "packages/platform/src/engine/lib/server-target.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ssh-key-path.ts",
+    "to": "packages/platform/src/engine/lib/ssh-key-path.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ssh-manager.ts",
+    "to": "packages/platform/src/engine/lib/ssh-manager.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ssh-tunnel-manager.ts",
+    "to": "packages/platform/src/engine/lib/ssh-tunnel-manager.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ssh-tunnel.ts",
+    "to": "packages/platform/src/engine/lib/ssh-tunnel.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ssl-scheduler.ts",
+    "to": "packages/platform/src/engine/lib/ssl-scheduler.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/ssrf-guard.ts",
+    "to": "packages/platform/src/engine/lib/ssrf-guard.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/stack-detector.ts",
+    "to": "packages/platform/src/engine/lib/stack-detector.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/startup/index.ts",
+    "to": "packages/platform/src/engine/lib/startup/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/startup/self-server.ts",
+    "to": "packages/platform/src/engine/lib/startup/self-server.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/startup/self-services.ts",
+    "to": "packages/platform/src/engine/lib/startup/self-services.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/stripe-client.ts",
+    "to": "packages/platform/src/engine/lib/stripe-client.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/system-debug.ts",
+    "to": "packages/platform/src/engine/lib/system-debug.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/system-jobs.ts",
+    "to": "packages/platform/src/engine/lib/system-jobs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/lib/upstream-url.ts",
+    "to": "packages/platform/src/engine/lib/upstream-url.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/analytics/analytics-config.service.ts",
+    "to": "packages/platform/src/engine/modules/analytics/analytics-config.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/analytics/analytics.schema.ts",
+    "to": "packages/contracts/src/analytics-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/analytics/analytics.service.ts",
+    "to": "packages/platform/src/engine/modules/analytics/analytics.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/analytics/geo.service.ts",
+    "to": "packages/platform/src/engine/modules/analytics/geo.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/apps/app-install.service.ts",
+    "to": "packages/platform/src/engine/modules/apps/app-install.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/apps/app-settings.service.ts",
+    "to": "packages/platform/src/engine/modules/apps/app-settings.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/apps/app.schema.ts",
+    "to": "packages/contracts/src/app-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/apps/catalog-source.ts",
+    "to": "packages/platform/src/engine/modules/apps/catalog-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/apps/custom-app.service.ts",
+    "to": "packages/platform/src/engine/modules/apps/custom-app.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/audit/audit-prune.ts",
+    "to": "packages/platform/src/engine/modules/audit/audit-prune.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/audit/member-emitter.ts",
+    "to": "packages/platform/src/engine/modules/audit/member-emitter.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backup-destinations/destination.service.ts",
+    "to": "packages/platform/src/engine/modules/backup-destinations/destination.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backup-destinations/hydrate-server.ts",
+    "to": "packages/platform/src/engine/modules/backup-destinations/hydrate-server.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backup-destinations/local-gate.ts",
+    "to": "packages/platform/src/engine/modules/backup-destinations/local-gate.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backup-destinations/local-path.ts",
+    "to": "packages/platform/src/engine/modules/backup-destinations/local-path.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/backup-stale-sweep.ts",
+    "to": "packages/platform/src/engine/modules/backups/backup-stale-sweep.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/backup.orchestrator.ts",
+    "to": "packages/platform/src/engine/modules/backups/backup.orchestrator.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/backup.service.ts",
+    "to": "packages/platform/src/engine/modules/backups/backup.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/backup.sse.ts",
+    "to": "packages/platform/src/engine/modules/backups/backup.sse.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/restore-command-backfill.ts",
+    "to": "packages/platform/src/engine/modules/backups/restore-command-backfill.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/restore.orchestrator.ts",
+    "to": "packages/platform/src/engine/modules/backups/restore.orchestrator.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/restore.sse.ts",
+    "to": "packages/platform/src/engine/modules/backups/restore.sse.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/retention-prune.ts",
+    "to": "packages/platform/src/engine/modules/backups/retention-prune.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/service-handle.ts",
+    "to": "packages/platform/src/engine/modules/backups/service-handle.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/source-platform.ts",
+    "to": "packages/platform/src/engine/modules/backups/source-platform.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/triggers/cron.ts",
+    "to": "packages/platform/src/engine/modules/backups/triggers/cron.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/triggers/manual.ts",
+    "to": "packages/platform/src/engine/modules/backups/triggers/manual.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/triggers/pre-deploy.ts",
+    "to": "packages/platform/src/engine/modules/backups/triggers/pre-deploy.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/backups/triggers/webhook.ts",
+    "to": "packages/platform/src/engine/modules/backups/triggers/webhook.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing-anniversary.cron.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing-anniversary.cron.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing-credit-units.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing-credit-units.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing-local.controller.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing-local.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing-namespace.provision.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing-namespace.provision.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing-oblien-quota.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing-oblien-quota.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing-org-cleanup.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing-org-cleanup.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing.repository.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing.repository.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing.schema.ts",
+    "to": "packages/contracts/src/billing-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing.service.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/billing.webhooks.ts",
+    "to": "packages/platform/src/engine/modules/billing/billing.webhooks.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/billing/oblien-webhook-crypto.ts",
+    "to": "packages/platform/src/engine/modules/billing/oblien-webhook-crypto.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/cloud/cloud-analytics.service.ts",
+    "to": "packages/platform/src/engine/modules/cloud/cloud-analytics.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/cloud/cloud-github.service.ts",
+    "to": "packages/platform/src/engine/modules/cloud/cloud-github.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/credentials/credential.schema.ts",
+    "to": "packages/contracts/src/credential-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/credentials/credential.service.ts",
+    "to": "packages/platform/src/engine/modules/credentials/credential.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/credentials/registry-auth.ts",
+    "to": "packages/platform/src/engine/modules/credentials/registry-auth.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/credentials/verify.ts",
+    "to": "packages/platform/src/engine/modules/credentials/verify.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/attach-linked-networks.ts",
+    "to": "packages/platform/src/engine/modules/deployments/attach-linked-networks.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/blocking-errors.ts",
+    "to": "packages/platform/src/engine/modules/deployments/blocking-errors.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-cache-gc.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-cache-gc.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-config.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-config.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-execution-plan.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-execution-plan.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-log-sanitize.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-log-sanitize.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-pipeline.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-pipeline.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-status.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-status.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build-steps.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build-steps.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/build.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/build.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/clone-plan.ts",
+    "to": "packages/platform/src/engine/modules/deployments/clone-plan.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/cloud-resources.ts",
+    "to": "packages/platform/src/engine/modules/deployments/cloud-resources.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose-configuration-error.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose-configuration-error.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/app-config-host.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/app-config-host.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/build-service-dns.test.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/build-service-dns.test.ts",
+    "hadBaseline": true,
+    "baselineCommit": "30ae48a4d67aabe8502df2a8393753443cb0637a"
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/build-service-dns.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/build-service-dns.ts",
+    "hadBaseline": true,
+    "baselineCommit": "30ae48a4d67aabe8502df2a8393753443cb0637a"
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/build.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/build.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/composite-route.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/composite-route.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/deploy.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/deploy.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/domain-helpers.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/domain-helpers.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/foreign-compose-collision.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/foreign-compose-collision.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/index.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/pipeline.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/pipeline.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/project-services.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/project-services.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/route-port-demands.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/route-port-demands.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/service-env-layers.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/service-env-layers.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/service-scope.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/service-scope.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/deployment-cancellation.ts",
+    "to": "packages/platform/src/engine/modules/deployments/deployment-cancellation.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/deployment-class.ts",
+    "to": "packages/platform/src/engine/modules/deployments/deployment-class.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/deployment-lifecycle.ts",
+    "to": "packages/platform/src/engine/modules/deployments/deployment-lifecycle.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/deployment.schema.ts",
+    "to": "packages/contracts/src/deployment-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/deployment.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/deployment.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/env-drift.ts",
+    "to": "packages/platform/src/engine/modules/deployments/env-drift.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/exact-service-targets.ts",
+    "to": "packages/platform/src/engine/modules/deployments/exact-service-targets.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/forwarded-readiness.ts",
+    "to": "packages/platform/src/engine/modules/deployments/forwarded-readiness.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/image-gc.ts",
+    "to": "packages/platform/src/engine/modules/deployments/image-gc.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/local-source.ts",
+    "to": "packages/platform/src/engine/modules/deployments/local-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/observed-host-port-claims.ts",
+    "to": "packages/platform/src/engine/modules/deployments/observed-host-port-claims.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/output-audit.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/output-audit.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/pinned-artifacts.ts",
+    "to": "packages/platform/src/engine/modules/deployments/pinned-artifacts.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/pinned-host-ports.ts",
+    "to": "packages/platform/src/engine/modules/deployments/pinned-host-ports.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/port-audit.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/port-audit.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/preflight.ts",
+    "to": "packages/platform/src/engine/modules/deployments/preflight.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/prepare.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/prepare.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/project-reader.ts",
+    "to": "packages/platform/src/engine/modules/deployments/project-reader.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/readiness-gate.ts",
+    "to": "packages/platform/src/engine/modules/deployments/readiness-gate.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/readiness-probe.ts",
+    "to": "packages/platform/src/engine/modules/deployments/readiness-probe.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/readiness-target.ts",
+    "to": "packages/platform/src/engine/modules/deployments/readiness-target.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/reconcile-schedule.ts",
+    "to": "packages/platform/src/engine/modules/deployments/reconcile-schedule.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/reconcile.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/reconcile.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/release-retention.ts",
+    "to": "packages/platform/src/engine/modules/deployments/release-retention.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/rollback/env-diff.ts",
+    "to": "packages/platform/src/engine/modules/deployments/rollback/env-diff.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/rollback/index.ts",
+    "to": "packages/platform/src/engine/modules/deployments/rollback/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/rollback/restore-plan.ts",
+    "to": "packages/platform/src/engine/modules/deployments/rollback/restore-plan.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/rollback/rollback-orchestrator.ts",
+    "to": "packages/platform/src/engine/modules/deployments/rollback/rollback-orchestrator.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/runtime-source.ts",
+    "to": "packages/platform/src/engine/modules/deployments/runtime-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/service-checks.ts",
+    "to": "packages/platform/src/engine/modules/deployments/service-checks.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/session-manager.ts",
+    "to": "packages/platform/src/engine/modules/deployments/session-manager.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/smart-route.ts",
+    "to": "packages/platform/src/engine/modules/deployments/smart-route.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/ssl.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/ssl.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/stability-audit.service.ts",
+    "to": "packages/platform/src/engine/modules/deployments/stability-audit.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/terminal-logs.ts",
+    "to": "packages/platform/src/engine/modules/deployments/terminal-logs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/deployments/terminal-messages.ts",
+    "to": "packages/platform/src/engine/modules/deployments/terminal-messages.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/dns/dns-credential.service.ts",
+    "to": "packages/platform/src/engine/modules/dns/dns-credential.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/dns/dns.schema.ts",
+    "to": "packages/contracts/src/dns-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/dns/providers/cloudflare.provider.ts",
+    "to": "packages/platform/src/engine/modules/dns/providers/cloudflare.provider.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/dns/registry.ts",
+    "to": "packages/platform/src/engine/modules/dns/registry.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/dns/types.ts",
+    "to": "packages/platform/src/engine/modules/dns/types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/domains/domain.schema.ts",
+    "to": "packages/contracts/src/domain-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/domains/domain.service.ts",
+    "to": "packages/platform/src/engine/modules/domains/domain.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/domains/edge-verify-schedule.ts",
+    "to": "packages/platform/src/engine/modules/domains/edge-verify-schedule.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/domains/project-route.service.ts",
+    "to": "packages/platform/src/engine/modules/domains/project-route.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/domains/routing-apply.service.ts",
+    "to": "packages/platform/src/engine/modules/domains/routing-apply.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/clone-auth.ts",
+    "to": "packages/platform/src/engine/modules/github/clone-auth.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github-access.ts",
+    "to": "packages/platform/src/engine/modules/github/github-access.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github-known-hosts.ts",
+    "to": "packages/platform/src/engine/modules/github/github-known-hosts.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github-source.service.ts",
+    "to": "packages/platform/src/engine/modules/github/github-source.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.app-client.ts",
+    "to": "packages/platform/src/engine/modules/github/github.app-client.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.auth.ts",
+    "to": "packages/platform/src/engine/modules/github/github.auth.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.capabilities.ts",
+    "to": "packages/platform/src/engine/modules/github/github.capabilities.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.http.ts",
+    "to": "packages/platform/src/engine/modules/github/github.http.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.installation-claim.ts",
+    "to": "packages/platform/src/engine/modules/github/github.installation-claim.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.installation-verification.ts",
+    "to": "packages/platform/src/engine/modules/github/github.installation-verification.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.local-auth.ts",
+    "to": "packages/platform/src/engine/modules/github/github.local-auth.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.schema.ts",
+    "to": "packages/contracts/src/github-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.service.ts",
+    "to": "packages/platform/src/engine/modules/github/github.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.token.ts",
+    "to": "packages/platform/src/engine/modules/github/github.token.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/github.types.ts",
+    "to": "packages/contracts/src/github-types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/repo-list.ts",
+    "to": "packages/platform/src/engine/modules/github/repo-list.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/server-git-ambient.ts",
+    "to": "packages/platform/src/engine/modules/github/server-git-ambient.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/server-github.service.ts",
+    "to": "packages/platform/src/engine/modules/github/server-github.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/sources/app-source.ts",
+    "to": "packages/platform/src/engine/modules/github/sources/app-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/sources/gh-cli-source.ts",
+    "to": "packages/platform/src/engine/modules/github/sources/gh-cli-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/sources/index.ts",
+    "to": "packages/platform/src/engine/modules/github/sources/index.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/sources/local-source.ts",
+    "to": "packages/platform/src/engine/modules/github/sources/local-source.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/sources/mappers.ts",
+    "to": "packages/platform/src/engine/modules/github/sources/mappers.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/sources/types.ts",
+    "to": "packages/platform/src/engine/modules/github/sources/types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/github/webhook-changed-files.ts",
+    "to": "packages/platform/src/engine/modules/github/webhook-changed-files.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/incoming-webhooks/incoming-action.ts",
+    "to": "packages/platform/src/engine/modules/incoming-webhooks/incoming-action.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/incoming-webhooks/incoming.schema.ts",
+    "to": "packages/contracts/src/incoming-webhook-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/incoming-webhooks/incoming.service.ts",
+    "to": "packages/platform/src/engine/modules/incoming-webhooks/incoming.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/issues/issues.service.ts",
+    "to": "packages/platform/src/engine/modules/issues/issues.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job-command.ts",
+    "to": "packages/platform/src/engine/modules/jobs/job-command.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job-events.ts",
+    "to": "packages/platform/src/engine/modules/jobs/job-events.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job-run.sse.ts",
+    "to": "packages/platform/src/engine/modules/jobs/job-run.sse.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job.registry.ts",
+    "to": "packages/platform/src/engine/modules/jobs/job.registry.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job.schema.ts",
+    "to": "packages/contracts/src/job-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job.service.ts",
+    "to": "packages/platform/src/engine/modules/jobs/job.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/jobs/job.types.ts",
+    "to": "packages/platform/src/engine/modules/jobs/job.types.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/domain-dns.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/domain-dns.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/domains.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/domains.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/mailboxes.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/mailboxes.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/maildir.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/maildir.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/outbound-relay.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/outbound-relay.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/password.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/password.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/platform-mailbox.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/platform-mailbox.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/admin/psql-runner.ts",
+    "to": "packages/platform/src/engine/modules/mail/admin/psql-runner.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/inbound/capture.ts",
+    "to": "packages/platform/src/engine/modules/mail/inbound/capture.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/inbound/filter.ts",
+    "to": "packages/platform/src/engine/modules/mail/inbound/filter.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/inbound/read.ts",
+    "to": "packages/platform/src/engine/modules/mail/inbound/read.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/inbound/senders.ts",
+    "to": "packages/platform/src/engine/modules/mail/inbound/senders.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/inbound/watch.ts",
+    "to": "packages/platform/src/engine/modules/mail/inbound/watch.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/mail-engine.ts",
+    "to": "packages/platform/src/engine/modules/mail/mail-engine.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/mail-health.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/mail-health.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/mail-port-reachability.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/mail-port-reachability.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/mail-state.ts",
+    "to": "packages/platform/src/engine/modules/mail/mail-state.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/mail.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/mail.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/smtp-auth-error.ts",
+    "to": "packages/platform/src/engine/modules/mail/smtp-auth-error.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/mail/webmail/webmail-install.service.ts",
+    "to": "packages/platform/src/engine/modules/mail/webmail/webmail-install.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/direct-transfer.ts",
+    "to": "packages/platform/src/engine/modules/migration/direct-transfer.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/docker-inspect.service.ts",
+    "to": "packages/platform/src/engine/modules/migration/docker-inspect.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/docker-reconcile.ts",
+    "to": "packages/platform/src/engine/modules/migration/docker-reconcile.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/managed-containers.ts",
+    "to": "packages/platform/src/engine/modules/migration/managed-containers.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/migrate.service.ts",
+    "to": "packages/platform/src/engine/modules/migration/migrate.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/migration-input.ts",
+    "to": "packages/platform/src/engine/modules/migration/migration-input.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/migration-preflight.ts",
+    "to": "packages/platform/src/engine/modules/migration/migration-preflight.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/migration-size.ts",
+    "to": "packages/platform/src/engine/modules/migration/migration-size.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/migration.orchestrator.ts",
+    "to": "packages/platform/src/engine/modules/migration/migration.orchestrator.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/migration.sse.ts",
+    "to": "packages/platform/src/engine/modules/migration/migration.sse.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/project-move.ts",
+    "to": "packages/platform/src/engine/modules/migration/project-move.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/proxy-route-scan.ts",
+    "to": "packages/platform/src/engine/modules/migration/proxy-route-scan.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/select-services.ts",
+    "to": "packages/platform/src/engine/modules/migration/select-services.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/migration/volume-conflict.ts",
+    "to": "packages/platform/src/engine/modules/migration/volume-conflict.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/container-events.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/container-events.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/health-watch.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/health-watch.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/incident.service.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/incident.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/project-usage.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/project-usage.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/steady-state.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/steady-state.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/usage-history.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/usage-history.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/monitoring/usage-sampler.ts",
+    "to": "packages/platform/src/engine/modules/monitoring/usage-sampler.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/notifications/notification.schema.ts",
+    "to": "packages/contracts/src/notification-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/active-migration.ts",
+    "to": "packages/platform/src/engine/modules/projects/active-migration.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/cleanup-keep-set.ts",
+    "to": "packages/platform/src/engine/modules/projects/cleanup-keep-set.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/deployment-flags.ts",
+    "to": "packages/platform/src/engine/modules/projects/deployment-flags.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/edge-config.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/edge-config.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/folder/folder.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/folder/folder.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/folder/session-store.ts",
+    "to": "packages/platform/src/engine/modules/projects/folder/session-store.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/orphan-gc-schedule.ts",
+    "to": "packages/platform/src/engine/modules/projects/orphan-gc-schedule.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/output-check.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/output-check.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/pending-actions.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/pending-actions.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/port-check.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/port-check.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-cleanup.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-cleanup.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-clone.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-clone.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-connection.schema.ts",
+    "to": "packages/contracts/src/project-connections.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-connection.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-connection.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-connection.util.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-connection.util.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-crud.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-crud.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-deploy-target.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-deploy-target.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-env.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-env.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-git-webhook.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-git-webhook.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-resources.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-resources.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-runtime.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-runtime.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-storage.schema.ts",
+    "to": "packages/contracts/src/project-storage.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-storage.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-storage.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project-teardown.ts",
+    "to": "packages/platform/src/engine/modules/projects/project-teardown.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project.schema.ts",
+    "to": "packages/contracts/src/project-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/project.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/project.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/rollback-capacity.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/rollback-capacity.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/projects/transfer.service.ts",
+    "to": "packages/platform/src/engine/modules/projects/transfer.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/route-rules/route-rule.service.ts",
+    "to": "packages/platform/src/engine/modules/route-rules/route-rule.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/services/live-state.ts",
+    "to": "packages/platform/src/engine/modules/services/live-state.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/services/service-container.ts",
+    "to": "packages/platform/src/engine/modules/services/service-container.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/services/service.schema.ts",
+    "to": "packages/contracts/src/service-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/services/service.service.ts",
+    "to": "packages/platform/src/engine/modules/services/service.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/services/volume-spec.ts",
+    "to": "packages/platform/src/engine/modules/services/volume-spec.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/settings/settings.schema.ts",
+    "to": "packages/contracts/src/settings-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/settings/settings.service.ts",
+    "to": "packages/platform/src/engine/modules/settings/settings.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/system/analytics-scraper.ts",
+    "to": "packages/platform/src/engine/modules/system/analytics-scraper.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/system/server-containers.service.ts",
+    "to": "packages/platform/src/engine/modules/system/server-containers.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/system/server-modules.service.ts",
+    "to": "packages/platform/src/engine/modules/system/server-modules.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/system/setup-session.ts",
+    "to": "packages/platform/src/engine/modules/system/setup-session.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/tokens/token.schema.ts",
+    "to": "packages/contracts/src/token-inputs.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/updates/updates.service.ts",
+    "to": "packages/platform/src/engine/modules/updates/updates.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/webhooks/webhook.service.ts",
+    "to": "packages/platform/src/engine/modules/webhooks/webhook.service.ts",
+    "hadBaseline": true
+  },
+  {
+    "from": "apps/api/src/modules/webhooks/webhook.types.ts",
+    "to": "packages/platform/src/engine/modules/webhooks/webhook.types.ts",
+    "hadBaseline": true
+  }
+]

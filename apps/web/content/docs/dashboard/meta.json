@@ -1,4 +1,14 @@
 {
   "title": "Dashboard",
-  "pages": ["index", "projects", "deploy-wizard", "library", "servers", "emails", "backups", "settings", "billing"]
+  "pages": [
+    "index",
+    "projects",
+    "deploy-wizard",
+    "library",
+    "servers",
+    "emails",
+    "backups",
+    "settings",
+    "billing"
+  ]
 }

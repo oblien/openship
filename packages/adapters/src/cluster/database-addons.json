@@ -1,0 +1,67 @@
+{
+  "longhorn-uninstall": {
+    "url": "https://raw.githubusercontent.com/longhorn/longhorn/v1.12.1/uninstall/uninstall.yaml",
+    "sha256": "98ff61dd1878ee31ea367b38106af2bad27ab76479a785cbb41edf599fdca664",
+    "bytes": 2622
+  },
+  "longhorn": {
+    "url": "https://raw.githubusercontent.com/longhorn/longhorn/v1.12.1/deploy/longhorn.yaml",
+    "sha256": "41648963af867ac1d0c85755fb53cf61cacd57c9bb22e1942e3fb0439eeb04fd",
+    "bytes": 207054
+  },
+  "postgres": {
+    "url": "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml",
+    "sha256": "f8bede43fe4ee0d478c2355b204a36876b2ae4faac60f2a9452280b293da3b88",
+    "bytes": 1262410
+  },
+  "local": {
+    "url": "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.35/deploy/local-path-storage.yaml",
+    "sha256": "c34a11046a555ef22c1e4125a2adaa090a1b954158840de10e4a8d27415a9cf9",
+    "bytes": 3824
+  },
+  "redis-crd-redis": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/crd/bases/redis.redis.opstreelabs.in_redis.yaml",
+    "sha256": "aaaaf9291a7de39011f112e41c7909fa1ce121908e98fab0cdb1f11c961bfeb6",
+    "bytes": 350253
+  },
+  "redis-crd-redisclusters": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/crd/bases/redis.redis.opstreelabs.in_redisclusters.yaml",
+    "sha256": "2ad9627590c19cff08802aaa5adee68db9aa5987232c2451654216232a55455c",
+    "bytes": 522476
+  },
+  "redis-crd-redisreplications": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/crd/bases/redis.redis.opstreelabs.in_redisreplications.yaml",
+    "sha256": "1d62dfc5638de69a71b3610752c455ee3aa16a1db853d5e3f2c9e4e2d8bdbbcd",
+    "bytes": 480261
+  },
+  "redis-crd-redissentinels": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/crd/bases/redis.redis.opstreelabs.in_redissentinels.yaml",
+    "sha256": "5b119926c54876486817e54213214516cb96c3e451c159ec2f54f00aafea1754",
+    "bytes": 326709
+  },
+  "redis-role": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/rbac/role.yaml",
+    "sha256": "d43e2e14208c0a201173998478fc537e49fe133e6502830af90535f8142e0c24",
+    "bytes": 1722
+  },
+  "redis-binding": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/rbac/role_binding.yaml",
+    "sha256": "902efa0f7188122d50606cbb582b586dca2c158421fb1121ef3ea024746da4b9",
+    "bytes": 284
+  },
+  "redis-election-role": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/rbac/leader_election_role.yaml",
+    "sha256": "6ef52bfbef93d3781494325239bb71ef63afb3ac0a2b4e0f40af1421c0643b5e",
+    "bytes": 412
+  },
+  "redis-election-binding": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/rbac/leader_election_role_binding.yaml",
+    "sha256": "4021df0dfcb4ea58dd300a636f96c56a0b1470e35745870ca0834c502568eb44",
+    "bytes": 332
+  },
+  "redis-manager": {
+    "url": "https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/config/manager/manager.yaml",
+    "sha256": "b9c11ac9eec893005b398aed9ee837b7251bfdefdf5ceb156fdcc18e7cb57189",
+    "bytes": 1519
+  }
+}

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import Dockerode from "dockerode";
 import { PassThrough } from "node:stream";
 
@@ -87,11 +88,11 @@ export class DockerEdgeExecutor implements CommandExecutor {
     const status = await container
       .inspect()
       .then((info) => info.State?.Status ?? null)
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/docker-edge-executor"); return null; });
     const logs = await container
       .logs({ stdout: true, stderr: true, tail: 40, follow: false })
       .then((out) => (Buffer.isBuffer(out) ? out.toString("utf8") : String(out)))
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/docker-edge-executor"); return null; });
     const explanation = explainEdgeDown({
       container: this.containerName,
       status,

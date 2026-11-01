@@ -31,11 +31,6 @@ Go to your project and open the **Configuration** tab. Find the **Environment va
 **Edit**. A panel opens showing the variables you already have (empty is fine — a brand-new app often has
 none).
 
-<Callout title="Screenshot">
-  Project → **Configuration** tab, the "Environment variables" card with its **Edit** button.
-  *(screenshot pending)*
-</Callout>
-
 </Step>
 
 <Step>
@@ -57,11 +52,22 @@ Some values are sensitive — passwords, API keys, tokens. For each of those, pr
 row to **mark it as secret**. A secret's value is stored the same way, but from then on it shows as dots
 (`••••••••`) instead of plain text, so it stays hidden whenever you reopen the editor.
 
-<Callout title="Everything is encrypted at rest" type="info">
+<Callout title="Environment values are encrypted at rest" type="info">
   Whether or not you mark a variable secret, Openship **encrypts every value before saving it**.
   Marking a value secret adds the on-screen masking on top — it controls what *you* can see later,
   not whether it's protected on disk.
 </Callout>
+
+Inline service environment values and build arguments are also encrypted, including their copies in
+saved deployment snapshots and Compose drift baselines. Existing plaintext service configuration is
+converted when the API or native engine starts after upgrading. Keep your `BETTER_AUTH_SECRET` with
+your database backup: it is needed to read these values. To downgrade to a version from before this
+protection, restore its matching database backup as well.
+
+When moving to an installation with a different key, use **Settings → Data Transfer** with secrets
+included. It re-encrypts the configuration for the destination. Transfers or recovery manifests that
+omit secrets also omit inline environment, build arguments and protected service configuration; set
+those values again before deploying.
 
 </Step>
 
@@ -101,6 +107,15 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 ```
 
+For a Git source, Openship also passes `OPENSHIP_COMMIT_SHA`: the commit this deployment builds, on
+manual and automatic deploys alike. It takes precedence over a variable of the same name, so use it
+instead of a stored literal to stamp an image's revision:
+
+```dockerfile
+ARG OPENSHIP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$OPENSHIP_COMMIT_SHA
+```
+
 The project environment is the shared build/runtime layer. A multi-service project's `services[].env`
 is different: it belongs only to that service at runtime and is never leaked into an image build. In
 `openship.json`, add `services[].buildArgs` when an image needs an explicit build-only value or when you
@@ -129,6 +144,55 @@ file is only used after you choose **Import .env**.
   flow rather than committing it to `openship.json` or baking it into the image.
 </Callout>
 
+## Service overrides and credential rotation
+
+Open **Services → select a service → Environment** to see its effective saved
+variables. The list includes Compose values, shared project variables and explicit
+service overrides, with a source label on each row. Openship stores these values;
+the list remains available when the deployment server is offline.
+
+When you edit an inherited project value or a direct Compose reference such as
+`TOKEN: ${TOKEN}`, **Save** shows the affected services. Choose **Only this service**
+to create an override, or select the values to update at their shared project
+source. Derived values, such as a connection URL using that token, are included
+in the review. Existing service overrides remain independent.
+
+Shared changes are saved together with your other edits. If the configuration
+changes after review, Openship asks you to review again. Saving does not restart
+containers: use **Apply & restart** or redeploy each affected service. Settings
+used during an image build require a rebuild.
+
+This edits configuration stored in Openship, not files in your repository. Literal
+Compose values and already-expanded imports do not establish a shared source;
+matching names or values are never automatically linked. Use project variables
+and Compose references when you want a shared editable value.
+
+Saving changes only the rows you edited; it does not copy other inherited values
+into overrides. Removing an override restores the inherited value, if one exists.
+Remove inherited keys at their Compose or project source. Conflicting edits from
+another session are rejected before anything is saved.
+
+On a normal service deployment, the highest-priority value wins in this order:
+
+1. A service-scoped variable from its environment editor.
+2. A literal in that service's Compose `environment` or `openship.json` `env` map.
+3. The project's environment, captured when the deployment starts.
+
+Compose expressions such as `TOKEN: ${TOKEN}` resolve against the configured values;
+they do not pin a previous scan's value. A rollback instead replays its captured
+project values, including their precedence over present-day service overrides.
+
+`openship project env set` warns when a changed or deleted key still has a service
+override. The API and SDK return the same `warnings` array, and deployment logs name
+keys whose service values win. These messages contain names only. Saving the project
+value succeeds, but it cannot replace a service-owned credential. Update the service
+value, or remove its override to inherit the project value, then deploy. Deleting a
+project variable does not delete a service's copy.
+
+For example, if `web` pins `TOKEN=old`, setting the project's `TOKEN=new` will warn
+about `web`; a rebuild alone still uses the pinned value. In the service editor,
+remove that override before relying on the project's rotated token.
+
 ## Reveal, hide, and replace a secret
 
 Inside the editor, each value has an **eye icon** to show or hide it. A secret you saved earlier comes back
@@ -141,8 +205,24 @@ Openship keeps variables **per environment**, so your test setup and your live s
 build can point at a test database while `production` points at the real one). The three environments are
 `production`, `preview`, and `development`.
 
-The dashboard editor manages your **production** values. To set values for `preview` or `development`, use
-the CLI (below) with the `--environment` flag.
+The project editor manages **production** values. A service's Environment tab uses
+its active deployment's environment, or production before the first deployment.
+The CLI also supports `preview` and `development` through `--environment`.
+
+These are variable sets within a project. Runtime isolation comes from selecting a separate
+non-production project environment and deploying its project ID. Passing `--env preview` against
+a production project is rejected; it cannot promote that preview onto the production runtime.
+See [preview deployment](/docs/cli/deploy) for the complete flow.
+
+## Download environment variables
+
+In a service's **Environment** tab, choose **Download .env** beside **Upload .env**.
+The file contains the listed variables and their real saved secret values. Downloading
+does not reveal those secrets in the editor, save edits, or restart the service.
+Unsaved edits shown in the editor are included in the download.
+
+The file uses Compose-compatible `.env` quoting. **Upload .env** restores its literal
+values, including dollar signs, quotes, and multiline values, without expanding variable references.
 
 ## Apply without a full rebuild
 
@@ -153,14 +233,39 @@ Press it and Openship recreates the running container from the image it already 
 injected. No git clone, no build — just a quick restart. It's the fastest way to roll out a changed key or a
 rotated secret.
 
-<Callout title="Screenshot">
-  The env editor after saving, showing the "Apply without a rebuild" notice and the **Apply
-  (restart, no rebuild)** button. *(screenshot pending)*
-</Callout>
+From the terminal, `openship deploy --refresh` (shown below) applies environment
+changes through a deployment without rebuilding.
 
-The same thing from the terminal is `openship deploy --refresh` (shown below).
+For one service, open its **Environment** tab, press **Save**, then
+**Apply environment changes** in the toolbar above the variables. It refreshes only
+that service using the image already running on its target. The editor stays open
+and shows completion after the service starts. This is a dedicated service action
+(`POST /api/projects/:id/services/:serviceId/apply-env`); it creates no deployment or
+build session. Docker gets a graceful stop, and the replacement retains the existing
+ports, project network address, volumes, commands, and resource limits. If startup
+fails, Openship restores the previous container and leaves the changes pending.
+The toolbar offers Apply only when a comparison with the deployed container finds
+saved changes, including removed variables. **Check running service** refreshes
+that comparison. An unavailable server is reported as an unknown state, while the
+saved variables remain editable.
 
-## Prefer the terminal?
+For an older or migrated service, Docker may still hold variables that were never
+saved in Openship. **Recover from running service** reads those missing values
+from that service's container, excluding image defaults, and adds them to the
+editor for review. Press **Save** to store them encrypted in Openship. Recovery
+never overwrites an already saved value. Before applying, recover these values or
+explicitly choose to remove them from the running service.
+
+This action supports Docker services on a server or an Openship Cloud Docker
+workspace. Legacy cloud workspaces and adopted containers on Docker's default bridge
+require **Redeploy**. Namespace-sharing services must be refreshed together through
+a deployment.
+
+A normal **Restart** keeps the container's existing variables. When saved changes are
+pending, Openship opens the service's **Environment** panel so you can apply them there.
+Variables used during a build still require a rebuild.
+
+## CLI
 
 Everything above works from the CLI. Secret values always come back **masked** when you list them.
 
@@ -220,7 +325,7 @@ openship service env set web -p my-stack -e preview API_URL=https://staging.exam
 
 </Tabs>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="I saved a variable but my app still doesn't see it" type="warn">
   Saving stores the value; the **running app** only picks it up on a deploy. Use **Apply (restart,
@@ -240,7 +345,7 @@ openship service env set web -p my-stack -e preview API_URL=https://staging.exam
   more.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card
@@ -259,3 +364,42 @@ openship service env set web -p my-stack -e preview API_URL=https://staging.exam
     description="Give each service in a docker-compose stack its own variables."
   />
 </Cards>
+
+## Build-time variables and command migration
+
+Saved project variables are supplied to install and build commands as well as runtime processes.
+Service variables override the project values for that service. This applies across managed stack
+builders, including Node/Bun, Python, PHP, Ruby and compiled stacks. A custom Dockerfile must declare
+and consume its own build arguments. Browser-facing variables such as `NEXT_PUBLIC_*` and `VITE_*`
+are compiled into client assets: rebuild after changing them, and never put secrets in them.
+
+Build settings warn about embedded variables at the start of a command or after shell separators
+such as `&&` and `;`. **Move to Environment** removes literal leading assignments and saves their
+values in one transaction. Chained assignments require manual editing to preserve their scope.
+Existing equal values are retained; conflicting values or concurrent command edits stop the migration.
+Shell expansions and command substitutions require manual editing. Values are encrypted and masked;
+warnings and audit records contain variable names only. The import wizard supports the same action
+before the project is saved.
+
+Before installation, managed builders inspect empty declarations in the selected app's `.env.example`
+and warn about unconfigured names. This is advisory because an empty example can be optional.
+The file is never executed. Compose required-variable expressions retain their existing blocking validation.
+
+## Managed output and build caches
+
+Next.js standalone builds use the generated manifest to locate the app server, preserve the complete
+traced workspace, and copy `.next/static` and `public` beside that server. Default startup selects the
+correct entry and working directory automatically. Nuxt uses its self-contained `.output` server through
+the same stack registry. Other stacks keep their registered runtime commands; custom commands remain
+authoritative. Invalid root directories fail before installation, and an invalid explicit Next standalone
+server path is reported with instructions to clear the override.
+
+Supported Docker builders use managed package and framework caches. Build settings detect legacy manual
+cache mounts and offer **Use managed caches** only after a deployment succeeds with the corresponding
+managed cache paths. Migration removes configuration mounts and retains existing volume data. Ordinary
+application data mounts are excluded. Cache paths come from each package manager and stack definition,
+so this also covers Python, PHP, Ruby, Go, Rust, Java and other registered builders.
+
+Build logs report observed Docker layer cache hits and misses, the managed cache paths, and build-time
+comparisons when previous timing is available. Layer reuse does not prove a package cache hit inside a
+running build step. Unsupported builders keep their original cache behavior and manual mounts.

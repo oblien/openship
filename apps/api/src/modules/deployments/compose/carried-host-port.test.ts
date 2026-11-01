@@ -48,11 +48,21 @@ describe("pickHostPort's preferred-port contract", () => {
 });
 
 describe("the deploy routes the carried port through the allocator", () => {
-  const src = readFileSync(new URL("./deploy.service.ts", import.meta.url), "utf8");
-  /** The loopback-port allocation block, bounded by its own loop. */
+  const src = readFileSync(
+    new URL(
+      "../../../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  // Inspect the allocation helper, which handles both routed and port-only
+  // publishes, without depending on the name of its internal loop variable.
   const block = (() => {
-    const from = src.indexOf("for (const containerPort of routedContainerPorts) {");
-    return src.slice(from, src.indexOf("serviceRuntimeConfig.ports =", from));
+    const from = src.indexOf("const prepareServiceHostPorts = async (");
+    if (from === -1) throw new Error("Host-port allocation helper was not found");
+    const to = src.indexOf("\n  };", from);
+    if (to === -1) throw new Error("Host-port allocation helper boundary was not found");
+    return src.slice(from, to);
   })();
 
   it("passes the carried port as `preferred`, not as the answer", () => {

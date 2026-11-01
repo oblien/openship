@@ -16,7 +16,9 @@
  * doesn't come up.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { buildEdgeImageRef, safeErrorMessage } from "@repo/core";
+import { DEFAULT_CONTAINER_LOG_ARGS } from "../../container-logging";
 import type { CommandExecutor, LogEntry } from "../../types";
 import type { NginxProvider, NginxProviderOptions } from "../../infra/nginx";
 import type { InstallerConfig, SystemLog, SystemLogCallback } from "../types";
@@ -29,6 +31,7 @@ import {
 import { sq } from "../local-shell";
 import {
   containerImageRef,
+  containerIdentity,
   dockerAvailable,
   fromSourceImageMissingMessage,
   imageExistsLocally,
@@ -49,6 +52,7 @@ import {
 } from "./detect";
 import { completeEdgeTakeover, rollbackEdgeTakeover } from "./takeover-journal";
 import { ensureEdgeClear } from "./consent";
+import { OPENSHIP_LABEL } from "../port-owner";
 
 function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
   return { timestamp: new Date().toISOString(), message, level };
@@ -139,7 +143,7 @@ function edgeHostExecutor(executor: CommandExecutor): Promise<RootChecked> {
     consequence:
       "Vhosts and certificates may not be writable, and routing will be incomplete — " +
       "the deploy continues and the app still runs on its port.",
-    report: (message) => console.error(`[edge] ${message}`),
+    report: (message) => errorDiagnostics.error("adapters/system/proxy/ensure-container-edge", `[edge] ${message}`),
   });
 }
 
@@ -236,8 +240,8 @@ export interface ContainerEdgeOptions {
  * on every start by anyone. Guarding the callers instead of the start is how the
  * image-swap path and the compose path each shipped without it.
  *
- * `docker rm -f` first: a stopped/renamed leftover holds the name and `docker run`
- * would fail on it.
+ * Read ownership first and remove the exact predecessor: its name can be reused
+ * after Docker returns. Keep identity labels on upgrades and rollback.
  */
 async function startEdgeContainer(
   executor: CommandExecutor,
@@ -245,11 +249,16 @@ async function startEdgeContainer(
   image: string,
   onLog: SystemLogCallback,
   mounts: readonly EdgeContainerMount[],
+  predecessor: Awaited<ReturnType<typeof containerIdentity>>,
+  preservedLabels?: Record<string, string>,
 ): Promise<boolean> {
-  await sanitizeEdgeVhosts(executor, EDGE_HOST_PATHS.sitesDir, onLog).catch(() => {});
-  await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
+  const labels = preservedLabels ?? predecessor?.labels ?? {};
+  await sanitizeEdgeVhosts(executor, EDGE_HOST_PATHS.sitesDir, onLog).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge");
+  });
+  if (predecessor) await executor.exec(`docker rm -f ${sq(predecessor.id)}`);
   const run = await executor.streamExec(
-    buildEdgeRunCommand(container, image, mounts),
+    buildEdgeRunCommand(container, image, mounts, labels),
     onLog as (l: LogEntry) => void,
   );
   // Identity just changed; nobody may keep answering from a pre-start memo.
@@ -292,6 +301,7 @@ export async function resolveEdgeContainerMounts(
   try {
     raw = await executor.exec(script);
   } catch (err) {
+    observeCaughtError(err, "adapters/system/proxy/ensure-container-edge");
     throw new Error(
       `Could not resolve edge bind-mount sources on the target host: ${safeErrorMessage(err)}`,
     );
@@ -322,6 +332,7 @@ export function buildEdgeRunCommand(
   container: string,
   image: string,
   edgeMounts: readonly EdgeContainerMount[] = EDGE_CONTAINER_MOUNTS,
+  identityLabels: Readonly<Record<string, string>> = {},
 ): string {
   const mounts = edgeMounts.map(
     // `:z` relabels for SELinux-enforcing hosts; a no-op elsewhere.
@@ -332,6 +343,12 @@ export function buildEdgeRunCommand(
     `--name ${sq(container)}`,
     "--network host",
     "--restart unless-stopped",
+    ...DEFAULT_CONTAINER_LOG_ARGS,
+    ...[
+      OPENSHIP_LABEL.project, OPENSHIP_LABEL.deployment, OPENSHIP_LABEL.service, OPENSHIP_LABEL.role,
+      "com.docker.compose.project", "com.docker.compose.service", "com.docker.compose.container-number",
+    ].filter(key => Object.hasOwn(identityLabels, key))
+      .map(key => `--label ${sq(`${key}=${identityLabels[key]}`)}`),
     mounts,
     sq(image),
   ].join(" ");
@@ -352,7 +369,8 @@ async function edgeContainerMountsMatch(
     raw = await executor.exec(
       `docker inspect -f '{{range .HostConfig.Binds}}{{println .}}{{end}}' ${sq(container)}`,
     );
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge");
     return null;
   }
 
@@ -383,8 +401,13 @@ function makeEdgeStart(
   mounts: readonly EdgeContainerMount[],
 ): (image: string) => Promise<boolean> {
   const { onLog } = opts;
+  let preservedLabels: Record<string, string> | undefined;
   return async (image: string) => {
-    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) return false;
+    // Both attempts belong to one swap. If the new image fails before creating
+    // a container, rollback still needs the original service's identity.
+    const predecessor = await containerIdentity(executor, container);
+    preservedLabels ??= predecessor?.labels ?? {};
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts, predecessor, preservedLabels))) return false;
     const verdict = await verifyEdgeServing(executor, container, {
       timeoutMs: opts.verifyTimeoutMs ?? 30_000,
     });
@@ -434,6 +457,7 @@ export async function verifyEdgeServing(
     try {
       await executor.exec(containerCommand(container, "openresty -t 2>&1"));
     } catch (err) {
+      observeCaughtError(err, "adapters/system/proxy/ensure-container-edge");
       const out = safeErrorMessage(err);
       return { serving: false, reason: edgeFailureReason(out) ?? out };
     }
@@ -555,6 +579,9 @@ export async function ensureContainerEdge(
         "Install the Docker component first, then set up the edge.",
     );
   }
+  // Capture identity outside the create/rollback block, before the consent gate
+  // stops anything. An unavailable identity is not an empty label map.
+  const predecessor = await containerIdentity(executor, existing ?? container);
 
   // 1. Pull, and make the host state dirs, BEFORE anything stops serving. A
   //    registry failure has to land here: past the consent gate the old proxy is
@@ -600,6 +627,7 @@ export async function ensureContainerEdge(
   });
   for (const mount of EDGE_CONTAINER_MOUNTS) {
     await hostState.exec(`mkdir -p ${sq(mount.host)}`).catch((err: unknown) => {
+      observeCaughtError(err, "adapters/system/proxy/ensure-container-edge");
       onLog(
         log(
           `Could not create the edge state directory ${mount.host}: ${safeErrorMessage(err)}. ` +
@@ -628,7 +656,7 @@ export async function ensureContainerEdge(
     // 3. Start. The ports are PROVABLY free by now, so failing to bind here is a real
     //    failure and not a race we should have waited out.
     onLog(log("Starting the edge container..."));
-    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) {
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts, predecessor))) {
       throw new Error("the edge container failed to start");
     }
 
@@ -650,17 +678,20 @@ export async function ensureContainerEdge(
 
     const version = await executor
       .exec(containerCommand(container, "openresty -v 2>&1"))
-      .catch(() => "");
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge"); return ""; });
     onLog(log(`Edge container running${version.trim() ? ` (${version.trim()})` : ""}`));
     return { container, image, converted: clear.tookOver };
   } catch (err) {
+    observeCaughtError(err, "adapters/system/proxy/ensure-container-edge");
     const msg = safeErrorMessage(err);
     onLog(log(`Edge container setup failed: ${msg}`, "error"));
     const logs = await executor
       .exec(`docker logs --tail 40 ${sq(container)} 2>&1 || true`)
-      .catch(() => "");
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge"); return ""; });
     if (logs.trim()) onLog(log(`Edge container logs:\n${logs}`, "error"));
-    await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
+    await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge");
+    });
     invalidateEdgeContainer(executor);
     // Put back exactly what the consent gate stopped, from its journal — the one
     // rollback implementation, shared with the CLI's two-process takeover and with

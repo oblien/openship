@@ -14,23 +14,23 @@ const mocks = vi.hoisted(() => ({
   encrypt: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: async (_serverId: string, fn: (exec: object) => unknown) => fn({}),
   },
 }));
 
-vi.mock("../../../src/lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   decrypt: mocks.decrypt,
   encrypt: mocks.encrypt,
 }));
 
-vi.mock("../../../src/modules/mail/mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: mocks.readState,
   mutateState: mocks.mutateState,
 }));
 
-vi.mock("../../../src/modules/mail/admin/psql-runner", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/psql-runner", () => ({
   execute: mocks.execute,
   queryOne: mocks.queryOne,
   q: (value: string) => `'${value}'`,
@@ -38,11 +38,11 @@ vi.mock("../../../src/modules/mail/admin/psql-runner", () => ({
   transaction: mocks.transaction,
 }));
 
-vi.mock("../../../src/modules/mail/admin/password", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/password", () => ({
   hashPassword: mocks.hashPassword,
 }));
 
-vi.mock("../../../src/modules/mail/admin/maildir", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   createMaildirOnDisk: mocks.createMaildirOnDisk,
   generateMaildir: (domain: string, localPart: string) => ({
     storagebasedirectory: "/var/vmail",
@@ -54,11 +54,11 @@ vi.mock("../../../src/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("../../../src/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
   recountDomain: mocks.recountDomain,
 }));
 
-import { ensureOpenshipPlatformMailbox } from "../../../src/modules/mail/admin/platform-mailbox.service";
+import { ensureOpenshipPlatformMailbox } from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
 
 const state = {
   domain: "example.com",

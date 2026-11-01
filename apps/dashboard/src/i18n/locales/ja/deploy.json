@@ -103,6 +103,12 @@
     "cloneTokenFailed": "クローントークンを発行できませんでした",
     "newEnvironment": "新しい環境",
     "selectBranch": "ブランチを選択",
+    "searchBranches": "ブランチを検索...",
+    "noBranchesMatch": "一致するブランチがありません",
+    "loadingBranches": "ブランチを読み込み中...",
+    "loadMoreBranches": "ブランチをさらに読み込む",
+    "loadBranchesFailed": "ブランチを読み込めませんでした。",
+    "retryBranches": "再試行",
     "saving": "保存中…",
     "saveChanges": "変更を保存",
     "deploying": "デプロイ中…",
@@ -212,7 +218,11 @@
     "backupSummaryConfigured": "バックアップ設定 {count} 件 · デプロイ前: {preDeploy}",
     "backupManage": "バックアップを管理",
     "on": "有効",
-    "off": "無効"
+    "off": "無効",
+    "previewTitle": "デプロイのプレビュー",
+    "previewHint": "続行してアプリを設定します。デプロイは次のページから開始します。",
+    "back": "戻る",
+    "gpuBadge": "GPU"
   },
   "summary": {
     "buildAndDeploy": "ビルドとデプロイ:",
@@ -231,8 +241,8 @@
     "rollbackOne": "{count} バージョン",
     "rollbackOther": "{count} バージョン",
     "rollbackAuto": "ロールバック: 自動",
-    "rollbackSnapshotHint": "各バージョンのコピーを保持するため、ロールバックで再ビルドは発生しません。「詳細設定」で変更できます。",
-    "rollbackGitHint": "復元可能な過去バージョンの数です。「詳細設定」で変更できます。"
+    "rollbackSnapshotHint": "各バージョンを保存するため、ロールバックで再ビルドは不要です。デプロイ設定で変更できます。",
+    "rollbackGitHint": "復元可能な過去のバージョン数です。デプロイ設定で変更できます。"
   },
   "power": {
     "heading": "パワー",
@@ -296,7 +306,12 @@
     "legacyBody": "ウェブメールをイメージではなくバンドルとして配布していた旧バージョンの Openship でデプロイされたため、再デプロイできません。ここでデプロイすると、プロジェクト・コンテナ・セッションデータベースが削除され、代わりにウェブメールアプリがインストールされます。サインイン中のユーザーは全員サインアウトされ、ユーザーごとのウェブメール設定は失われます。",
     "legacyKept": "メールボックス、メールデータ、すべてのメッセージはメールサーバー上にそのまま残ります。",
     "deployFailedTitle": "デプロイに失敗しました",
-    "deployFailed": "デプロイの開始に失敗しました"
+    "deployFailed": "デプロイの開始に失敗しました",
+    "reconnectTitle": "既存のウェブメールを再接続",
+    "reconnectBody": "メールサーバーとのリンクがありません。既存のアプリを選択すると、プロジェクト、認証情報、保存済み設定を維持できます。",
+    "reconnectChoose": "続行する前に再接続するウェブメールアプリを選択してください。",
+    "reconnectPlacement": "再接続では現在のサーバーとホスト名を維持します。接続先は後で変更できます。",
+    "reconnectButton": "再接続してデプロイ"
   },
   "serveMode": {
     "heading": "How it's served",

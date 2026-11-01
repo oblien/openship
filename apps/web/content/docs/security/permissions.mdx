@@ -91,6 +91,36 @@ The resource picker offers these grantable types:
 | **GitHub orgs** | Every repo under one GitHub installation. |
 | **GitHub repos** | A single repository. |
 
+### Capabilities: finer than read / write / admin
+
+A **scoped access token** can also carry **capabilities** in a grant's `permissions`, next to (or instead of) the levels. A capability is `<area>:<verb>` and covers one slice of the resource it is granted on, and nothing else:
+
+| Capability | Granted on | Allows |
+|---|---|---|
+| `domains:read` | a project | List the project's domains, read their DNS records, verification and certificate status. |
+| `domains:write` | a project | Add domains, verify them, set the primary domain, renew certificates, run DNS challenges and DNS auto-configure. |
+| `domains:delete` | a project | Delete the project's domains. |
+| `deployments:read` | a project | Read the project's deployments, their logs and build status, and list them. |
+| `deployments:trigger` | a project | Start, redeploy, restart or pin deployments and handle deployment decisions. Cancel, rollback and deletion require project `admin`. |
+
+Capabilities don't stack: `domains:delete` alone allows deleting domains, not adding them. The levels keep their meaning and are the presets: project `read` includes every `:read` capability above, `write` adds `domains:write` and `deployments:trigger`, and `admin` adds `domains:delete`. Cancelling, rolling back or deleting a deployment, and every route outside these areas, still needs the level. Capabilities are granted on a specific project id; the project `"*"` grant stays create-only.
+
+In the token editor, each project row shows a toggle per capability under its level. Toggles the level already includes show as on and locked.
+
+For an automation that adds, verifies and removes one project's custom domains, and nothing else:
+
+```json
+{
+  "name": "edge-domains",
+  "expiresInDays": 90,
+  "grants": [
+    { "resourceType": "project", "resourceId": "<projectId>", "permissions": ["domains:read", "domains:write", "domains:delete"] }
+  ]
+}
+```
+
+Member grants keep the levels only.
+
 <Callout title="Which types you'll see" type="info">
 The picker adapts to your instance. A **self-hosted** instance shows Servers and Mail servers; **Openship Cloud** shows Billing in their place. Projects, Backup destinations, the Audit log, and GitHub are offered on both.
 </Callout>
@@ -107,8 +137,6 @@ Team management lives under **Settings → Team**.
 
 Go to **Settings → Team** and press **Invite member**. Enter the person's email address.
 
-<Callout title="Screenshot">Settings → Team tab, member list with the **Invite member** button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -119,8 +147,6 @@ Pick **Member**, **Admin**, or **Restricted**. (Owner is the org creator's role 
 
 - **Member** and **Admin** get their access immediately on joining.
 - **Restricted** opens a resource picker on the right, where you choose exactly what the invite unlocks.
-
-<Callout title="Screenshot">The Invite member dialog with the three role cards (Member, Admin, Restricted) and, for Restricted, the resource picker pane on the right. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -155,7 +181,7 @@ When you try to touch something you're not allowed to, Openship returns **404 No
 A 403 quietly confirms the resource *exists* — you just can't see it. A 404 gives nothing away. This protects against **IDOR** (Insecure Direct Object Reference — guessing ids to probe for resources you shouldn't know about). If a project id isn't yours, the platform behaves as if it simply isn't there.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Authentication" href="/docs/security/auth" description="Sessions, personal access tokens, and how you prove who you are." />

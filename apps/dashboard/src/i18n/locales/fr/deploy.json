@@ -103,6 +103,12 @@
     "cloneTokenFailed": "Impossible de générer un jeton de clonage",
     "newEnvironment": "Nouvel environnement",
     "selectBranch": "Sélectionner une branche",
+    "searchBranches": "Rechercher des branches...",
+    "noBranchesMatch": "Aucune branche correspondante",
+    "loadingBranches": "Chargement des branches...",
+    "loadMoreBranches": "Charger plus de branches",
+    "loadBranchesFailed": "Impossible de charger les branches.",
+    "retryBranches": "Réessayer",
     "saving": "Enregistrement…",
     "saveChanges": "Enregistrer les modifications",
     "deploying": "Déploiement…",
@@ -212,7 +218,11 @@
     "backupSummaryConfigured": "{count} règle(s) de sauvegarde · avant déploiement : {preDeploy}",
     "backupManage": "Gérer les sauvegardes",
     "on": "activé",
-    "off": "désactivé"
+    "off": "désactivé",
+    "previewTitle": "Aperçu du déploiement",
+    "previewHint": "Continuez pour configurer votre application. Le déploiement démarre depuis la page suivante.",
+    "back": "Retour",
+    "gpuBadge": "GPU"
   },
   "summary": {
     "buildAndDeploy": "Builder et déployer :",
@@ -231,8 +241,8 @@
     "rollbackOne": "{count} version",
     "rollbackOther": "{count} versions",
     "rollbackAuto": "Rollback : auto",
-    "rollbackSnapshotHint": "Une copie de chaque version est conservée, donc un rollback ne reconstruit jamais. Modifiable dans Avancé.",
-    "rollbackGitHint": "Combien de versions passées restent restaurables. Modifiable dans Avancé."
+    "rollbackSnapshotHint": "Une copie de chaque version est conservée pour éviter de reconstruire lors d’un retour arrière. À modifier dans les paramètres de déploiement.",
+    "rollbackGitHint": "Nombre de versions précédentes restaurables. À modifier dans les paramètres de déploiement."
   },
   "power": {
     "heading": "Puissance",
@@ -296,7 +306,12 @@
     "legacyBody": "Il a été déployé par une version plus ancienne d'Openship qui livrait le webmail sous forme de bundle et non d'image : il ne peut donc pas être redéployé. Déployer maintenant le supprime — le projet, le conteneur et sa base de données de sessions — et installe l'app webmail à sa place. Toutes les personnes connectées sont déconnectées et les préférences webmail de chaque utilisateur sont perdues.",
     "legacyKept": "Les boîtes aux lettres, les données de messagerie et tous les messages restent intacts sur le serveur de messagerie.",
     "deployFailedTitle": "Échec du déploiement",
-    "deployFailed": "Échec du démarrage du déploiement"
+    "deployFailed": "Échec du démarrage du déploiement",
+    "reconnectTitle": "Relier le webmail existant",
+    "reconnectBody": "Le lien avec le serveur de messagerie manque. Choisissez l’application existante pour conserver son projet, ses identifiants et ses paramètres.",
+    "reconnectChoose": "Choisissez l’application webmail à relier avant de continuer.",
+    "reconnectPlacement": "Le serveur et le nom d’hôte actuels sont conservés. Vous pourrez changer la destination ensuite.",
+    "reconnectButton": "Relier et déployer"
   },
   "serveMode": {
     "heading": "How it's served",

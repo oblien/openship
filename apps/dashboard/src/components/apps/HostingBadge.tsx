@@ -1,6 +1,7 @@
 "use client";
 
-import { FlaskConical } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { BadgeTooltip } from "./BadgeTooltip";
 
 /**
@@ -29,12 +30,12 @@ export function HostingBadge({
       className={`shrink-0 ${className}`}
       trigger={
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
-          <FlaskConical className="size-3" aria-hidden /> Experimental
+          <UiIcon name="flask" className="size-3" aria-hidden /> Experimental
         </span>
       }
       title={
         <>
-          <FlaskConical className="size-3.5 text-warning" /> Experimental self-host
+          <UiIcon name="flask" className="size-3.5 text-warning" /> Experimental self-host
         </>
       }
     >

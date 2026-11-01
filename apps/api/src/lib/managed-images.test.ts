@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
-import { devSourceTag } from "./managed-images";
+import { devSourceTag } from "@repo/platform/engine/lib/managed-images";
 
 const roots: string[] = [];
 function makeComponent(files: Record<string, string>): { context: string; subdir: string } {
@@ -48,4 +48,20 @@ describe("devSourceTag", () => {
       devSourceTag("2.0.0", more.context, more.subdir),
     );
   });
+  it("tracks selected source files without hashing unrelated adapter files", () => {
+    const { context, subdir } = makeComponent({ "Dockerfile": "FROM x", "guard.ts": "export const v = 1", "unrelated.ts": "a" });
+    const sources = [`${subdir}/Dockerfile`, `${subdir}/guard.ts`];
+    const clock = vi.spyOn(Date, "now");
+    try {
+      clock.mockReturnValue(10_000);
+      const first = devSourceTag("1.0.0", context, sources);
+      writeFileSync(join(context, subdir, "unrelated.ts"), "unrelated changes");
+      clock.mockReturnValue(13_000);
+      expect(devSourceTag("1.0.0", context, sources)).toBe(first);
+      writeFileSync(join(context, subdir, "guard.ts"), "export const v = 12345");
+      clock.mockReturnValue(16_000);
+      expect(devSourceTag("1.0.0", context, sources)).not.toBe(first);
+    } finally { clock.mockRestore(); }
+  });
+
 });

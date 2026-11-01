@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * The ⋮ help menu — support / report issue / feedback / docs / community.
  *
@@ -8,7 +10,6 @@
  * to a page's primary action.
  */
 
-import { Bug, BookOpen, ExternalLink, HelpCircle, MessageSquare, MoreVertical } from "lucide-react";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useI18n } from "@/components/i18n-provider";
 import { BRAND_LINKS } from "@repo/core";
@@ -31,32 +32,32 @@ export function useHelpMenuActions(): MenuAction[] {
     {
       id: "support",
       label: t.projects.help.contactSupport,
-      icon: <HelpCircle className="size-4" />,
+      icon: <UiIcon name="help-circle" className="size-4" />,
       onClick: () => open(SUPPORT_URL),
     },
     {
       id: "report-issue",
       label: t.projects.help.reportIssue,
-      icon: <Bug className="size-4" />,
+      icon: <UiIcon name="bug" className="size-4" />,
       onClick: () => open(ISSUE_URL),
     },
     {
       id: "feedback",
       label: t.projects.help.sendFeedback,
-      icon: <MessageSquare className="size-4" />,
+      icon: <UiIcon name="message" className="size-4" />,
       onClick: () => open(FEEDBACK_URL),
     },
     { id: "divider", divider: true },
     {
       id: "documentation",
       label: t.projects.help.documentation,
-      icon: <BookOpen className="size-4" />,
+      icon: <UiIcon name="book" className="size-4" />,
       onClick: () => open(DOCS_URL),
     },
     {
       id: "community",
       label: t.projects.help.joinCommunity,
-      icon: <ExternalLink className="size-4" />,
+      icon: <UiIcon name="external-link" className="size-4" />,
       onClick: () => open(COMMUNITY_URL),
     },
   ];
@@ -79,7 +80,7 @@ export function HelpMenu({
       actions={actions}
       align="right"
       className={className}
-      trigger={<MoreVertical className="size-5 text-muted-foreground" />}
+      trigger={<UiIcon name="more-vertical" className="size-5 text-muted-foreground" />}
     />
   );
 }

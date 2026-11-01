@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Settings → Infrastructure. POLICY ONLY: the two instance-wide preferences for
  * managed containers (edge / mail) — auto-update on a control-plane version bump,
@@ -16,7 +19,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Boxes, CheckCircle2 } from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { systemApi } from "@/lib/api/system";
@@ -60,7 +62,8 @@ export function InfrastructureTab() {
         const me = res.data?.members?.find((m) => m.userId === session?.user?.id);
         setIsOwner(me?.role === "owner");
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab");
         if (!cancelled) setIsOwner(false);
       });
     return () => {
@@ -73,14 +76,18 @@ export function InfrastructureTab() {
     if (isOwner !== true) return;
     let cancelled = false;
     void Promise.all([
-      systemApi.containerIssues().catch(() => null),
-      systemApi.containersBehind().catch(() => null),
+      systemApi.containerIssues().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab"); return null; }),
+      systemApi.containersBehind().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab"); return null; }),
     ]).then(([issues, behind]) => {
       if (cancelled) return;
       setRollup({ attention: issues?.total ?? 0, updates: behind?.components ?? 0 });
     });
-    void systemApi.getInfraAutoUpdate().then(setAutoUpdateInfra).catch(() => {});
-    void systemApi.getInfraAutoScan().then(setAutoScanInfra).catch(() => {});
+    void systemApi.getInfraAutoUpdate().then(setAutoUpdateInfra).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab");
+    });
+    void systemApi.getInfraAutoScan().then(setAutoScanInfra).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab");
+    });
     // Host control is server-host only — don't read it on desktop/SaaS where the
     // toggle never renders.
     if (isServerHost) {
@@ -91,7 +98,9 @@ export function InfrastructureTab() {
           setHostControlOn(effective);
           setHostControlFromEnv(stored === null && !effective);
         })
-        .catch(() => {});
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab");
+        });
     }
     return () => {
       cancelled = true;
@@ -100,12 +109,12 @@ export function InfrastructureTab() {
 
   const toggleAutoInfra = useCallback((v: boolean) => {
     setAutoUpdateInfra(v);
-    void systemApi.setInfraAutoUpdate(v).catch(() => setAutoUpdateInfra(!v));
+    void systemApi.setInfraAutoUpdate(v).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab"); return setAutoUpdateInfra(!v); });
   }, []);
 
   const toggleAutoScan = useCallback((v: boolean) => {
     setAutoScanInfra(v);
-    void systemApi.setInfraAutoScan(v).catch(() => setAutoScanInfra(!v));
+    void systemApi.setInfraAutoScan(v).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab"); return setAutoScanInfra(!v); });
   }, []);
 
   const toggleHostControl = useCallback(
@@ -113,7 +122,8 @@ export function InfrastructureTab() {
       const prevFromEnv = hostControlFromEnv;
       setHostControlOn(v);
       setHostControlFromEnv(false); // an explicit choice now overrides the env
-      void systemApi.setHostControl(v).catch(() => {
+      void systemApi.setHostControl(v).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InfrastructureTab");
         setHostControlOn(!v);
         setHostControlFromEnv(prevFromEnv);
         showToast(copy.hostControlError, "error", copy.hostControlLabel);
@@ -141,7 +151,7 @@ export function InfrastructureTab() {
     : [];
 
   return (
-    <SettingsSection icon={Boxes} title={copy.title} description={copy.description}>
+    <SettingsSection icon={"server-settings"} title={copy.title} description={copy.description}>
       <div className="space-y-5">
         {/* #527: let OpenShip deploy to the machine it runs on. Server-host (VPS)
             only — desktop derives "here" without a row and the SaaS control plane
@@ -182,7 +192,7 @@ export function InfrastructureTab() {
             <p className="min-w-0 text-[13px] text-foreground">{parts.join(" · ")}</p>
           ) : (
             <p className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
-              <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+              <UiIcon name="check-circle" className="size-3.5 shrink-0 text-success" />
               {copy.allHealthy}
             </p>
           )}
@@ -191,7 +201,7 @@ export function InfrastructureTab() {
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
           >
             {copy.manageLink}
-            <ArrowRight className="size-3.5 rtl:rotate-180" />
+            <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
           </Link>
         </div>
       </div>

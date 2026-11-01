@@ -10,14 +10,22 @@ const serviceRepo = vi.hoisted(() => ({
   listByProject: vi.fn(),
 }));
 
+const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn(), updateStatus: vi.fn() }));
+
 const routeState = vi.hoisted(() => ({
   listProjectRouteRows: vi.fn(),
+  persistProjectRouteState: vi.fn(),
   reapplyProjectLiveRoutes: vi.fn(),
   resolveProjectRouteState: vi.fn(),
   syncProjectRouteState: vi.fn(),
 }));
 
 const applyProjectRouting = vi.hoisted(() => vi.fn());
+
+// Route writers are mocked below; Cloud activity admission is outside this suite.
+vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({
+  withCloudWorkspaceActivity: async (_id: unknown, work: () => Promise<unknown>) => work(),
+}));
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
@@ -27,25 +35,29 @@ vi.mock("@repo/db", async (importOriginal) => {
       ...actual.repos,
       project: projectRepo,
       service: serviceRepo,
+      domain: { ...actual.repos.domain, listByProject: routeState.listProjectRouteRows },
+      deployment: { ...actual.repos.deployment, ...deploymentRepo },
     },
   };
 });
 
-vi.mock("../../../src/modules/domains/project-route.service", () => ({
-  deriveEnvironmentPublicEndpoints: vi.fn(),
-  deriveNextProjectRouteState: vi.fn(),
-  listProjectRouteRows: routeState.listProjectRouteRows,
-  persistProjectRouteState: vi.fn(),
-  reapplyProjectLiveRoutes: routeState.reapplyProjectLiveRoutes,
-  resolveProjectRouteState: routeState.resolveProjectRouteState,
-  syncProjectRouteState: routeState.syncProjectRouteState,
-}));
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/modules/domains/project-route.service")>();
+  return {
+    ...actual,
+    listProjectRouteRows: routeState.listProjectRouteRows,
+    persistProjectRouteState: routeState.persistProjectRouteState,
+    reapplyProjectLiveRoutes: routeState.reapplyProjectLiveRoutes,
+    resolveProjectRouteState: routeState.resolveProjectRouteState,
+    syncProjectRouteState: routeState.syncProjectRouteState,
+  };
+});
 
-vi.mock("../../../src/modules/domains/routing-apply.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", () => ({
   applyProjectRouting,
 }));
 
-import { updateProject } from "../../../src/modules/projects/project-crud.service";
+import { updateProject } from "@repo/platform/engine/modules/projects/project-crud.service";
 
 const project = {
   id: "proj_123",
@@ -55,7 +67,7 @@ const project = {
   name: "Portfolio",
   port: 4321,
   activeDeploymentId: "dep_123",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   resources: null,
   buildResources: null,
   sleepMode: "auto_sleep",
@@ -66,7 +78,10 @@ describe("updateProject route persistence", () => {
     projectRepo.findById.mockReset();
     projectRepo.update.mockReset();
     serviceRepo.listByProject.mockReset().mockResolvedValue([]);
+    deploymentRepo.findById.mockReset().mockResolvedValue(undefined);
+    deploymentRepo.updateStatus.mockReset().mockResolvedValue(undefined);
     routeState.listProjectRouteRows.mockReset();
+    routeState.persistProjectRouteState.mockReset().mockResolvedValue(undefined);
     routeState.reapplyProjectLiveRoutes.mockReset();
     routeState.resolveProjectRouteState.mockReset();
     routeState.syncProjectRouteState.mockReset();
@@ -80,6 +95,54 @@ describe("updateProject route persistence", () => {
       projectDomains: [{ hostname: "old.example.com" }],
     });
     routeState.syncProjectRouteState.mockResolvedValue(undefined);
+  });
+
+  it("serializes overlapping primary-direction changes before domain persistence", async () => {
+    let release!: () => void;
+    routeState.persistProjectRouteState.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = resolve; }),
+    );
+    const first = updateProject(project.id, {
+      publicEndpoints: [
+        { domainType: "custom", customDomain: "www.example.com", port: 4321 },
+        {
+          domainType: "custom", customDomain: "example.com", port: 4321,
+          redirectTo: "www.example.com", redirectStatus: 301,
+        },
+      ],
+    }, project.organizationId);
+    await vi.waitFor(() => expect(routeState.persistProjectRouteState).toHaveBeenCalledTimes(1));
+    const second = updateProject(project.id, {
+      publicEndpoints: [
+        { domainType: "custom", customDomain: "example.com", port: 4321 },
+        {
+          domainType: "custom", customDomain: "www.example.com", port: 4321,
+          redirectTo: "example.com", redirectStatus: 301,
+        },
+      ],
+    }, project.organizationId);
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(routeState.persistProjectRouteState).toHaveBeenCalledTimes(1);
+      expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await Promise.all([first, second]);
+    }
+    expect(routeState.persistProjectRouteState).toHaveBeenCalledTimes(2);
+    expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledTimes(2);
+    expect(routeState.reapplyProjectLiveRoutes.mock.invocationCallOrder[0]).toBeLessThan(
+      routeState.persistProjectRouteState.mock.invocationCallOrder[1],
+    );
+  });
+
+  it("releases routing admission after a failed save", async () => {
+    routeState.persistProjectRouteState.mockRejectedValueOnce(new Error("database write failed"));
+    const edit = { publicEndpoints: [{ customDomain: "example.com", domainType: "custom" as const, port: 4321 }] };
+    await expect(updateProject(project.id, edit, project.organizationId)).rejects.toThrow("database write failed");
+    await updateProject(project.id, edit, project.organizationId);
+    expect(routeState.persistProjectRouteState).toHaveBeenCalledTimes(2);
+    expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledTimes(1);
   });
 
   it("does not finish the PATCH before its live route writer is quiescent", async () => {
@@ -109,13 +172,14 @@ describe("updateProject route persistence", () => {
 
     await vi.waitFor(() => expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalled());
     expect(settled).toBe(false);
-    expect(routeState.syncProjectRouteState).toHaveBeenCalled();
+    expect(routeState.persistProjectRouteState).toHaveBeenCalled();
     // `managedEdgeSyncedByCaller` is asserted, not loosened away: updateProject runs
     // its own `syncProjectManagedEdge` afterwards, and letting the re-apply sync the
     // same free domain too raced it — two challenges for one target, the second
     // resetting the first's token mid-check.
     expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, ["old.example.com"], {
       managedEdgeSyncedByCaller: true,
+      onWarning: expect.any(Function),
     });
 
     releaseRoute();
@@ -123,11 +187,29 @@ describe("updateProject route persistence", () => {
     expect(settled).toBe(true);
   });
 
+  it.each([
+    { label: "clear all routing", routingConfig: null },
+    { label: "clear proxy settings", routingConfig: { proxy: {}, cleanUrls: true } },
+    { label: "carry unchanged legacy proxy with a routing edit", routingConfig: { proxy: { gzip: true }, cleanUrls: true } },
+  ])("allows Cloud to $label", async ({ routingConfig }) => {
+    projectRepo.findById.mockResolvedValue({ ...project, workspaceId: "ws1", routingConfig: { proxy: { gzip: true } } });
+    await updateProject(project.id, { routingConfig }, project.organizationId);
+    expect(projectRepo.update).toHaveBeenCalledWith(project.id, expect.objectContaining({ routingConfig }));
+    expect(applyProjectRouting).toHaveBeenCalled();
+  });
+
+  it("persists and applies changed self-hosted proxy settings", async () => {
+    projectRepo.findById.mockResolvedValue({ ...project, serverId: "selfhost", routingConfig: { proxy: { gzip: true } } });
+    const routingConfig = { proxy: { gzip: false } };
+    await updateProject(project.id, { routingConfig }, project.organizationId);
+    expect(projectRepo.update).toHaveBeenCalledWith(project.id, expect.objectContaining({ routingConfig }));
+    expect(applyProjectRouting).toHaveBeenCalled();
+  });
+
   it("does not start a live route writer after deletion has claimed the project", async () => {
     projectRepo.findById
       .mockResolvedValueOnce(project)
-      .mockResolvedValueOnce({ ...project, deletionInProgress: true })
-      .mockResolvedValue(project);
+      .mockResolvedValue({ ...project, deletionInProgress: true });
 
     await updateProject(
       project.id,
@@ -137,7 +219,7 @@ describe("updateProject route persistence", () => {
       project.organizationId,
     );
 
-    expect(routeState.syncProjectRouteState).toHaveBeenCalled();
+    expect(routeState.persistProjectRouteState).toHaveBeenCalled();
     expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
     expect(applyProjectRouting).not.toHaveBeenCalled();
   });
@@ -145,8 +227,7 @@ describe("updateProject route persistence", () => {
   it("also gates a routingConfig-only live writer after deletion claims the project", async () => {
     projectRepo.findById
       .mockResolvedValueOnce(project)
-      .mockResolvedValueOnce({ ...project, deletionInProgress: true })
-      .mockResolvedValue(project);
+      .mockResolvedValue({ ...project, deletionInProgress: true });
 
     await updateProject(
       project.id,
@@ -165,8 +246,8 @@ describe("updateProject route persistence", () => {
       project.organizationId,
     );
 
-    expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, []);
-    expect(applyProjectRouting).toHaveBeenCalledWith(project.id);
+    expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, [], { onWarning: expect.any(Function) });
+    expect(applyProjectRouting).toHaveBeenCalledWith(project.id, { onWarning: expect.any(Function) });
     expect(routeState.reapplyProjectLiveRoutes.mock.invocationCallOrder[0]).toBeLessThan(
       applyProjectRouting.mock.invocationCallOrder[0]!,
     );
@@ -178,10 +259,11 @@ describe("updateProject route persistence", () => {
       { routeStrategy: "container-ip" } as never,
       project.organizationId,
     );
-    await vi.waitFor(() => expect(applyProjectRouting).toHaveBeenCalledWith(project.id));
+    await vi.waitFor(() => expect(applyProjectRouting).toHaveBeenCalledWith(project.id, { onWarning: expect.any(Function) }));
 
     expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, ["old.example.com"], {
       managedEdgeSyncedByCaller: true,
+      onWarning: expect.any(Function),
     });
     expect(routeState.reapplyProjectLiveRoutes.mock.invocationCallOrder[0]).toBeLessThan(
       applyProjectRouting.mock.invocationCallOrder[0]!,
@@ -199,6 +281,27 @@ describe("updateProject route persistence", () => {
 
     expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
     expect(applyProjectRouting).not.toHaveBeenCalled();
+  });
+
+  it.each(["project", "topology"])("keeps a failed Cloud %s route apply visible after a port edit", async (stage) => {
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_123", projectId: project.id, organizationId: project.organizationId,
+      status: "ready", meta: { deployTarget: "cloud" },
+    });
+    const message = "Provider could not update the route to port 8000";
+    if (stage === "project") {
+      routeState.reapplyProjectLiveRoutes.mockRejectedValueOnce(new Error(message));
+    } else {
+      applyProjectRouting.mockImplementationOnce(async (_id, options) => options.onWarning(message));
+    }
+
+    await updateProject(project.id, {
+      publicEndpoints: [{ customDomain: "old.example.com", domainType: "custom", port: 8000 }],
+    }, project.organizationId);
+
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledExactlyOnceWith("dep_123", "ready", {
+      meta: { deployTarget: "cloud", edgeUnsynced: true, deployWarning: expect.stringContaining(message) },
+    });
   });
 
   /**
@@ -227,6 +330,7 @@ describe("updateProject route persistence", () => {
       ).rejects.toThrow(/is not a valid custom domain/);
 
       expect(projectRepo.update).not.toHaveBeenCalled();
+      expect(routeState.persistProjectRouteState).not.toHaveBeenCalled();
       expect(routeState.syncProjectRouteState).not.toHaveBeenCalled();
       expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
     });
@@ -256,7 +360,7 @@ describe("updateProject route persistence", () => {
       project.organizationId,
     );
 
-    expect(routeState.syncProjectRouteState).toHaveBeenCalled();
+    expect(routeState.persistProjectRouteState).toHaveBeenCalled();
   });
 
   it("refuses a NEW bad hostname even on a project that already has one", async () => {
@@ -287,7 +391,11 @@ describe("updateProject route persistence", () => {
       project.organizationId,
     );
 
-    expect(routeState.syncProjectRouteState).toHaveBeenCalled();
+    expect(routeState.persistProjectRouteState).toHaveBeenCalledWith(
+      project.id,
+      [expect.objectContaining({ customDomain: "app.example.com", domainType: "custom", port: 4321 })],
+      expect.any(Array),
+    );
   });
 
   /**

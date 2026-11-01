@@ -1,0 +1,188 @@
+---
+title: settings
+description: Commands, arguments, and options for openship settings.
+cliGroup: openship settings
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship settings
+
+Manage user preferences on the selected Openship instance
+
+```text
+openship settings [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/settings#openship-settings-get) | Read deployment, cloning and transfer preferences |
+| [`update <file>`](/docs/cli/reference/settings#openship-settings-update) | Update supported user preferences |
+| [`build-mode <value>`](/docs/cli/reference/settings#openship-settings-build-mode) | Set the default build-mode |
+| [`route-strategy <value>`](/docs/cli/reference/settings#openship-settings-route-strategy) | Set the default route-strategy |
+| [`clone-strategy <value>`](/docs/cli/reference/settings#openship-settings-clone-strategy) | Set the default clone-strategy |
+| [`deploy-defaults <file>`](/docs/cli/reference/settings#openship-settings-deploy-defaults) | Set deployment destination defaults |
+| [`clone-token [options] <file>`](/docs/cli/reference/settings#openship-settings-clone-token) | Save a cloning credential; responses do not disclose the token |
+| [`clear-clone-token`](/docs/cli/reference/settings#openship-settings-clear-clone-token) | Remove the saved cloning credential |
+| [`transfer [options]`](/docs/cli/reference/settings#openship-settings-transfer) | Set volume transfer preferences |
+| [`git-forwarding <state>`](/docs/cli/reference/settings#openship-settings-git-forwarding) | Control forwarding of git identity to build servers |
+| [`appearance`](/docs/cli/reference/settings#openship-settings-appearance) | Manage personal theme JSON on the selected instance |
+
+## openship settings appearance
+
+Manage personal theme JSON on the selected instance
+
+```text
+openship settings appearance [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/settings#openship-settings-appearance-get) | Export saved appearance JSON |
+| [`set <file>`](/docs/cli/reference/settings#openship-settings-appearance-set) | Import and save a personal theme library |
+| [`reset`](/docs/cli/reference/settings#openship-settings-appearance-reset) | Clear saved personal appearance |
+
+## openship settings appearance get
+
+Export saved appearance JSON
+
+```text
+openship settings appearance get [options]
+```
+
+## openship settings appearance reset
+
+Clear saved personal appearance
+
+```text
+openship settings appearance reset [options]
+```
+
+## openship settings appearance set
+
+Import and save a personal theme library
+
+```text
+openship settings appearance set [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | Appearance JSON file, or - for stdin |
+
+## openship settings build-mode
+
+Set the default build-mode
+
+```text
+openship settings build-mode [options] <value>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `value` | auto \| server \| local |
+
+## openship settings clear-clone-token
+
+Remove the saved cloning credential
+
+```text
+openship settings clear-clone-token [options]
+```
+
+## openship settings clone-strategy
+
+Set the default clone-strategy
+
+```text
+openship settings clone-strategy [options] <value>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `value` | prompt \| local \| remote-with-token |
+
+## openship settings clone-token
+
+Save a cloning credential; responses do not disclose the token
+
+```text
+openship settings clone-token [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | Token file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--default` | Use this token by default for cloning |
+
+## openship settings deploy-defaults
+
+Set deployment destination defaults
+
+```text
+openship settings deploy-defaults [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON defaultDeployTarget and defaultServerId; null clears, - reads stdin |
+
+## openship settings get
+
+Read deployment, cloning and transfer preferences
+
+```text
+openship settings get [options]
+```
+
+## openship settings git-forwarding
+
+Control forwarding of git identity to build servers
+
+```text
+openship settings git-forwarding [options] <state>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `state` | on \| off |
+
+## openship settings route-strategy
+
+Set the default route-strategy
+
+```text
+openship settings route-strategy [options] <value>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `value` | auto \| loopback-port \| container-ip |
+
+## openship settings transfer
+
+Set volume transfer preferences
+
+```text
+openship settings transfer [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--mode <mode>` | Transfer method (choices: "auto", "stream", "direct", "rsync") |
+| `--compression <format>` | Compression (choices: "auto", "zstd", "gzip", "none") |
+
+## openship settings update
+
+Update supported user preferences
+
+```text
+openship settings update [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON settings patch, or - for stdin |

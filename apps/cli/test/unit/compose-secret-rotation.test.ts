@@ -37,7 +37,10 @@ vi.mock("node:child_process", () => ({
   spawnSync: (cmd: string, args: string[] = []) => {
     if (cmd === "docker" && args[0] === "compose") h.composeCalls.push(args);
     if (cmd === "docker" && args[0] === "volume") {
-      return { status: h.dbVolumes.has(String(args[2])) ? 0 : 1, stdout: "", stderr: "" };
+      return { status: h.dbVolumes.has(String(args[2])) ? 0 : 1, stdout: "", stderr: `Error: No such volume: ${args[2]}` };
+    }
+    if (cmd === "docker" && args[0] === "run" && args.some((a) => a.includes("PG_VERSION"))) {
+      return { status: 0, stdout: "sub", stderr: "" };
     }
     // The label sweep (adopted-stack evidence, orphaned stacks, the edge reclaim).
     if (cmd === "docker" && args[0] === "ps" && !args.some((a) => a.includes("{{.Ports}}"))) {

@@ -31,7 +31,49 @@
     "createLabel": "Novo Projeto",
     "settingsText": "Configure variáveis de ambiente e domínios personalizados nas configurações do projeto.",
     "settingsLabel": "Configurações do Projeto",
-    "connected": "Conectado"
+    "connected": "Conectado",
+    "tips": {
+      "envVars": {
+        "text": "Adicione variáveis de ambiente criptografadas e segredos a qualquer projeto.",
+        "label": "Abrir projetos"
+      },
+      "customDomain": {
+        "text": "Aponte um domínio personalizado para um projeto — HTTPS é provisionado automaticamente.",
+        "label": "Abrir projetos"
+      },
+      "autoDeploy": {
+        "text": "Conecte o GitHub para fazer deploy automático a cada push, sem configurar CI.",
+        "label": "Abrir configurações do Git"
+      },
+      "rollback": {
+        "text": "Reverta para qualquer deploy anterior com um clique.",
+        "label": "Ver deploys"
+      },
+      "apps": {
+        "text": "Instale aplicativos auto-hospedados como Gitea, n8n e Metabase com um clique.",
+        "label": "Navegar pelos apps"
+      },
+      "servers": {
+        "text": "Conecte seus próprios servidores via SSH e faça deploy neles a partir daqui.",
+        "label": "Gerenciar servidores"
+      },
+      "jobs": {
+        "text": "Agende comandos com tarefas cron — novas tentativas, logs ao vivo e histórico incluídos.",
+        "label": "Abrir tarefas"
+      },
+      "backups": {
+        "text": "Configure backups automáticos para seus bancos de dados e volumes.",
+        "label": "Configurar backups"
+      },
+      "mail": {
+        "text": "Execute seu próprio servidor de e-mail e webmail, totalmente auto-hospedado.",
+        "label": "Configurar e-mail"
+      },
+      "team": {
+        "text": "Convide membros da equipe e defina o acesso deles por projeto.",
+        "label": "Gerenciar equipe"
+      }
+    }
   },
   "welcome": {
     "title": "Lance seu primeiro projeto",

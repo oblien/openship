@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { CreateProjectBody, EnsureProjectBody, UpdateProjectBody } from "./project.schema";
+import { CreateProjectBody, EnsureProjectBody, UpdateProjectBody } from "@repo/contracts";
 
 /**
  * Mass-assignment guard: `updateProject` builds its DB patch ONLY from the keys
@@ -74,12 +74,12 @@ describe("publicEndpoints — empty set", () => {
     expect(ensure([])).toBe(true);
   });
 
-  it("still accepts a populated array and rejects more than 20 entries", () => {
-    const tooMany = Array.from({ length: 21 }, () => endpoint);
+  it("accepts a populated array, including more than 20 entries (issue #1018)", () => {
+    const many = Array.from({ length: 21 }, () => endpoint);
     expect(create([endpoint])).toBe(true);
-    expect(create(tooMany)).toBe(false);
-    expect(update(tooMany)).toBe(false);
-    expect(ensure(tooMany)).toBe(false);
+    expect(create(many)).toBe(true);
+    expect(update(many)).toBe(true);
+    expect(ensure(many)).toBe(true);
   });
 });
 
@@ -100,4 +100,13 @@ describe("EnsureProjectBody — compose build args (#689)", () => {
       }),
     ).toBe(true);
   });
+});
+
+it("accepts only supported Cloud static hosting choices on create, ensure, and update", () => {
+  for (const schema of [CreateProjectBody, EnsureProjectBody, UpdateProjectBody]) {
+    for (const cloudStaticHosting of ["pages", "server"]) {
+      expect(Value.Check(schema, { name: "static-site", cloudStaticHosting })).toBe(true);
+    }
+    expect(Value.Check(schema, { name: "static-site", cloudStaticHosting: "invalid" })).toBe(false);
+  }
 });

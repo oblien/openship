@@ -1,0 +1,185 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "schemaVersion": 2,
+  "supportsCloud": false,
+  "available": false,
+  "verified": true,
+  "kind": "template",
+  "category": "ai",
+  "framework": "docker-compose",
+  "id": "vllm",
+  "name": "vLLM",
+  "logo": "vllm",
+  "gpu": "required",
+  "hosting": "experimental",
+  "minEngine": "0.9.2",
+  "repository": "https://github.com/vllm-project/vllm",
+  "description": "OpenAI-compatible model serving on a self-hosted NVIDIA GPU. Preview pending real GPU installation tests.",
+  "tags": ["ai", "llm", "inference", "gpu", "openai"],
+  "minResources": {
+    "cpuCores": 4,
+    "memoryMb": 8192
+  },
+  "services": [
+    {
+      "name": "vllm",
+      "image": "vllm/vllm-openai:v0.31.0",
+      "exposedPort": 8000,
+      "ports": ["8000:8000"],
+      "exposed": true,
+      "gpus": {
+        "driver": "nvidia",
+        "count": 1,
+        "capabilities": ["gpu"]
+      },
+      "shmSize": 2147483648,
+      "environment": {
+        "MODEL_ID": "Qwen/Qwen3-0.6B",
+        "MAX_MODEL_LEN": "4096",
+        "GPU_MEMORY_UTILIZATION": "0.8",
+        "VLLM_NO_USAGE_STATS": "1",
+        "DO_NOT_TRACK": "1"
+      },
+      "secretEnv": ["VLLM_API_KEY", "HF_TOKEN"],
+      "entrypointArgv": ["/bin/sh", "-c"],
+      "commandArgv": [
+        "exec vllm serve \"$MODEL_ID\" --host 0.0.0.0 --port 8000 --max-model-len \"$MAX_MODEL_LEN\" --gpu-memory-utilization \"$GPU_MEMORY_UTILIZATION\""
+      ],
+      "volumes": ["vllm_cache:/root/.cache/huggingface", "vllm_compile_cache:/root/.cache/vllm"],
+      "restart": "unless-stopped",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/health\",timeout=5)"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 5,
+        "startPeriod": "30m"
+      },
+      "stopGracePeriod": "60s"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "VLLM_API_KEY",
+      "service": "vllm",
+      "label": "API key",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "HF_TOKEN",
+      "service": "vllm",
+      "label": "Hugging Face token",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "model",
+      "label": "Model",
+      "columns": 2,
+      "description": "The selected model must fit your GPU memory. First startup downloads the model; see Logs for progress.",
+      "fields": [
+        {
+          "key": "MODEL_ID",
+          "service": "vllm",
+          "label": "Hugging Face model",
+          "type": "text",
+          "default": "Qwen/Qwen3-0.6B",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "patternError": "Enter an owner/model identifier."
+        },
+        {
+          "key": "HF_TOKEN",
+          "service": "vllm",
+          "label": "Hugging Face token",
+          "type": "password",
+          "secret": true,
+          "installStep": true,
+          "help": "Only needed for gated or private models. Accept the model license on Hugging Face first."
+        },
+        {
+          "key": "MAX_MODEL_LEN",
+          "service": "vllm",
+          "label": "Context length",
+          "type": "number",
+          "default": "4096",
+          "min": 512,
+          "max": 131072,
+          "installStep": true
+        },
+        {
+          "key": "GPU_MEMORY_UTILIZATION",
+          "service": "vllm",
+          "label": "GPU memory fraction",
+          "type": "number",
+          "default": "0.8",
+          "min": 0.1,
+          "max": 0.95,
+          "step": 0.05,
+          "installStep": true
+        }
+      ]
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "endpoints": [
+    {
+      "service": "vllm",
+      "port": 8000,
+      "kind": "http",
+      "label": "Inference API",
+      "help": "Every /v1 API request requires the generated bearer token.",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "port"]
+    }
+  ],
+  "connection": {
+    "title": "Connect to vLLM",
+    "description": "Use the API key as a bearer token with an OpenAI-compatible client. Startup may take several minutes while the model downloads and loads. Check Logs for progress.",
+    "outputs": [
+      {
+        "id": "baseUrl",
+        "label": "OpenAI base URL",
+        "source": "template:{{publicUrl:vllm}}/v1",
+        "service": "vllm",
+        "envKey": "OPENAI_BASE_URL",
+        "recommended": true
+      },
+      {
+        "id": "apiKey",
+        "label": "API key",
+        "source": "env:vllm:VLLM_API_KEY",
+        "service": "vllm",
+        "envKey": "OPENAI_API_KEY",
+        "secret": true,
+        "recommended": true
+      }
+    ]
+  },
+  "marketplace": {
+    "articleFile": "articles/vllm.md",
+    "features": [
+      {
+        "title": "OpenAI-compatible API",
+        "description": "Connect existing inference clients."
+      },
+      {
+        "title": "NVIDIA inference",
+        "description": "Request one GPU with private container shared memory."
+      },
+      {
+        "title": "Persistent model cache",
+        "description": "Reuse downloads and compilation caches."
+      }
+    ]
+  }
+}

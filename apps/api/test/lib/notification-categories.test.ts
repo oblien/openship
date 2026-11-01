@@ -7,7 +7,7 @@ import {
   EVENT_HEADLINES,
   categoryForEventType,
   findCategory,
-} from "../../src/lib/notification-categories";
+} from "@repo/platform/engine/lib/notification-categories";
 
 /**
  * The category registry is a public contract in three directions at once, and
@@ -23,7 +23,7 @@ import {
  */
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("../../src/lib/notification-categories.ts", import.meta.url)),
+  fileURLToPath(new URL("../../../../packages/platform/src/engine/lib/notification-categories.ts", import.meta.url)),
   "utf8",
 );
 
@@ -53,6 +53,7 @@ describe("notification category registry", () => {
     // category (add it below) or a rename that needs a migration first — the
     // labels above them are free to change, which is the point of the split.
     expect(CATEGORIES.map((c) => c.id)).toEqual([
+      "security.advisory",
       "deploy.failed",
       "deploy.succeeded",
       "deploy.cancelled",
@@ -67,6 +68,9 @@ describe("notification category registry", () => {
       "job.run.failed",
       "job.run.succeeded",
       "job.run.started",
+      "action.run.failed",
+      "action.run.succeeded",
+      "action.run.cancelled",
       "domain.expiring",
       "domain.verification_failed",
       "member.added",

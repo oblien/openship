@@ -2,14 +2,13 @@
  * App connection route — mounted at /api/projects/:id/app-connection in app.ts.
  *
  * Scoped to the project (`:id`) so it reuses the standard project permission
- * check + `cloudProjectProxy` (a cloud app's env is canonical on the SaaS, so
+ * check and shared Cloud resource gateway (a cloud app's env is canonical on the SaaS, so
  * the proxy forwards there; self-hosted resolves locally). Returns the installed
  * app's connection details (public URL + generated keys) fully resolved.
  */
 
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./app.controller";
 
 const r = secureRouter(new Hono(), {
@@ -26,9 +25,9 @@ r.get(
   "/",
   {
     tag: "project:write",
+    auditHandledByOperation: true,
     mcp: { description: "Get an installed app's resolved connection details (URLs + generated keys)." },
   },
-  cloudProjectProxy,
   ctrl.getConnection,
 );
 

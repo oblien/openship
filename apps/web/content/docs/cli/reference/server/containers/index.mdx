@@ -1,0 +1,155 @@
+---
+title: server containers
+description: Commands, arguments, and options for openship server containers.
+cliGroup: openship server containers
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server containers
+
+Inspect and update infrastructure containers through the engine
+
+```text
+openship server containers [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/server/containers#openship-server-containers-list) | List edge and mail containers across servers |
+| [`scan`](/docs/cli/reference/server/containers#openship-server-containers-scan) | Refresh infrastructure container state |
+| [`behind`](/docs/cli/reference/server/containers#openship-server-containers-behind) | Count outdated infrastructure containers |
+| [`issues`](/docs/cli/reference/server/containers#openship-server-containers-issues) | Show missing or stopped infrastructure containers |
+| [`active`](/docs/cli/reference/server/containers#openship-server-containers-active) | Show running and recently completed container updates |
+| [`get <server>`](/docs/cli/reference/server/containers#openship-server-containers-get) | Read a server's infrastructure containers |
+| [`scan-server <server>`](/docs/cli/reference/server/containers#openship-server-containers-scan-server) | Refresh a server's infrastructure containers |
+| [`session <server> <component>`](/docs/cli/reference/server/containers#openship-server-containers-session) | Find an in-progress update before retrying |
+| [`events [options] <server> <component>`](/docs/cli/reference/server/containers#openship-server-containers-events) | Reattach to update progress without starting another update |
+| [`apply [options] <server> <component>`](/docs/cli/reference/server/containers#openship-server-containers-apply) | Apply an infrastructure update and follow its existing engine session |
+| [`apply-all [options]`](/docs/cli/reference/server/containers#openship-server-containers-apply-all) | Queue eligible infrastructure updates; use active to inspect completion |
+
+## openship server containers active
+
+Show running and recently completed container updates
+
+```text
+openship server containers active [options]
+```
+
+## openship server containers apply
+
+Apply an infrastructure update and follow its existing engine session
+
+```text
+openship server containers apply [options] <server> <component>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `component` | edge \| mail |
+
+| Option | Meaning |
+| --- | --- |
+| `--intent <intent>` | Operation to apply (choices: "update", "repair", default: "update") |
+| `--timeout <ms>` | Stop following after this deadline |
+| `-y, --yes` | Confirm the container restart |
+
+## openship server containers apply-all
+
+Queue eligible infrastructure updates; use active to inspect completion
+
+```text
+openship server containers apply-all [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--intent <intent>` | Limit queued work to this intent (choices: "update", "repair") |
+| `-y, --yes` | Confirm restarts across eligible servers |
+
+## openship server containers behind
+
+Count outdated infrastructure containers
+
+```text
+openship server containers behind [options]
+```
+
+## openship server containers events
+
+Reattach to update progress without starting another update
+
+```text
+openship server containers events [options] <server> <component>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `component` | edge \| mail |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop following after this deadline |
+
+## openship server containers get
+
+Read a server's infrastructure containers
+
+```text
+openship server containers get [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server containers issues
+
+Show missing or stopped infrastructure containers
+
+```text
+openship server containers issues [options]
+```
+
+## openship server containers list
+
+List edge and mail containers across servers
+
+```text
+openship server containers list [options]
+```
+
+## openship server containers scan
+
+Refresh infrastructure container state
+
+```text
+openship server containers scan [options]
+```
+
+## openship server containers scan-server
+
+Refresh a server's infrastructure containers
+
+```text
+openship server containers scan-server [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server containers session
+
+Find an in-progress update before retrying
+
+```text
+openship server containers session [options] <server> <component>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `component` | edge \| mail |

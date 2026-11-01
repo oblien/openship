@@ -6,11 +6,13 @@
  * can't interpret is returned as a warning, never silently dropped.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   PROXY_DIRECTIVES,
   isLoopbackHost,
   parseProxyValue,
   sanitizeProxySettings,
+  shellQuote,
   type ProxySettings,
 } from "@repo/core";
 
@@ -19,7 +21,17 @@ import type { ImportedSite, ProxyScanResult } from "../../types";
 import { EDGE_HOST_PATHS, OPENRESTY_DEFAULT_PATHS } from "../../../infra/openresty-lua";
 import { containerCommand } from "../../edge-container-executor";
 import { detectEdgeContainer, resolveOurEdgeContainer } from "../detect";
-import { collapseByHost, extractBlocks, stripComments, tryExec } from "./parse-utils";
+import { swarmEdgePorts } from "../swarm";
+import { probePortListeningOnce } from "../../port-listen";
+import { rootOrDegrade } from "../../privilege";
+import {
+  collapseByHost,
+  extractBlocks,
+  firstDirective,
+  locationBlocks,
+  stripComments,
+  tryExec,
+} from "./parse-utils";
 
 /**
  * The fully-resolved config dump from the first of `bins` that yields one. `-T`
@@ -79,11 +91,6 @@ async function loadNginxConfig(executor: CommandExecutor): Promise<string> {
   return cat ?? "";
 }
 
-function firstDirective(body: string, name: string): string | undefined {
-  const m = body.match(new RegExp(`(?:^|[;{\\s])${name}\\s+([^;]+);`));
-  return m?.[1]?.trim();
-}
-
 /** Parse `upstream <name> { server <host:port>; ... }` → every declared target. */
 function parseUpstreams(config: string): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -105,14 +112,15 @@ const HTTP_PROXY_TARGET_RE = /^(https?:\/\/)([^/?#]+)([/?#].*)?$/i;
 /**
  * Turn a raw proxy_pass value into a concrete Openship route target, or reject
  * it (so the caller warns and skips) when it can't be resolved to a real
- * host:port — an unknown/undeclared upstream, an nginx variable, or a unix
- * socket would otherwise produce a vhost that fails `openresty -t`.
+ * host:port — an unknown/undeclared upstream or an nginx variable would
+ * otherwise produce a vhost that fails `openresty -t`, and a unix socket one
+ * that passes it but points at a path the edge can't reach.
  */
 function resolveProxyTarget(
   proxyPass: string,
   upstreams: Map<string, string[]>,
   opts: { allowVariablesAfterAuthority?: boolean } = {},
-): { url: string } | { reason: string } {
+): { url: string } | { reason: string; unixSocket?: true } {
   const raw = proxyPass.replace(/;$/, "").trim();
   const parsed = raw.match(HTTP_PROXY_TARGET_RE);
   if (raw.includes("$")) {
@@ -124,14 +132,24 @@ function resolveProxyTarget(
       return { reason: `proxy_pass "${raw}" uses an nginx variable` };
     }
   }
-  if (/\/\/unix:/i.test(raw)) return { reason: `proxy_pass "${raw}" targets a unix socket` };
+  if (/\/\/unix:/i.test(raw)) {
+    return { reason: `proxy_pass "${raw}" targets a unix socket`, unixSocket: true };
+  }
   const m = parsed;
   if (!m) return { reason: `unrecognized proxy_pass "${raw}"` };
   const scheme = m[1];
   const authority = m[2];
   const host = authority.replace(/:\d+$/, "");
   const declaredUpstream = upstreams.get(authority);
-  if (declaredUpstream?.[0]) return { url: `${scheme}${declaredUpstream[0]}` };
+  if (declaredUpstream?.[0]) {
+    if (/^unix:/i.test(declaredUpstream[0])) {
+      return {
+        reason: `proxy_pass "${raw}" resolves to upstream "${authority}", a unix socket`,
+        unixSocket: true,
+      };
+    }
+    return { url: `${scheme}${declaredUpstream[0]}` };
+  }
   const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   // `localhost` is NOT safe to carry over verbatim: nginx resolves it to ::1
   // first, and most app servers bind IPv4 only — so an adopted
@@ -165,10 +183,7 @@ function strictLoopbackUpstreamPorts(config: string): Set<number> {
     const raw = match[1]?.trim();
     if (!raw) continue;
     const resolved = resolveProxyTarget(raw, upstreams, { allowVariablesAfterAuthority: true });
-    if ("reason" in resolved) {
-      // Unix sockets never consume a TCP port and therefore cannot collide with
-      // Docker's loopback publishing. Every other unresolved target is unknown.
-      if (/\/\/unix:/i.test(raw)) continue;
+    if ("reason" in resolved && !resolved.unixSocket) {
       throw new Error(`Cannot inventory Openship edge routes: ${resolved.reason}`);
     }
 
@@ -182,13 +197,18 @@ function strictLoopbackUpstreamPorts(config: string): Set<number> {
     const targets =
       authority && scheme && upstreams.has(authority)
         ? upstreams.get(authority)!.map((target) => `${scheme}${target}`)
-        : [resolved.url];
+        : "url" in resolved ? [resolved.url] : [];
 
     for (const target of targets) {
+      // Sockets cannot consume a TCP port. A named group can mix sockets and
+      // TCP backends, so keep inspecting its other members even when migration
+      // refused the group's first (socket) target.
+      if (/^https?:\/\/unix:/i.test(target)) continue;
       let url: URL;
       try {
         url = new URL(target);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/proxy/import/nginx");
         throw new Error(`Cannot inventory Openship edge routes: invalid proxy_pass "${raw}"`);
       }
       if (!isLoopbackHost(url.hostname)) continue;
@@ -210,31 +230,6 @@ function parseStrictEdgeConfig(raw: string): ProxyScanResult & {
     ...parseNginxConfig(raw),
     loopbackUpstreamPorts: strictLoopbackUpstreamPorts(raw),
   };
-}
-
-/**
- * Every `location <path> { … }` in a server block with its body, in source order.
- * Balanced-brace matched so a nested `if {}` / `types {}` inside a location doesn't
- * truncate it.
- */
-function locationBlocks(serverBody: string): { path: string; body: string }[] {
-  const out: { path: string; body: string }[] = [];
-  const re = /(?:^|[\s;}])location\s+([^{]+?)\s*\{/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(serverBody)) !== null) {
-    const path = m[1].trim();
-    const openIdx = m.index + m[0].length - 1; // the `{`
-    let depth = 1;
-    let i = openIdx + 1;
-    for (; i < serverBody.length && depth > 0; i++) {
-      if (serverBody[i] === "{") depth++;
-      else if (serverBody[i] === "}") depth--;
-    }
-    if (depth !== 0) break; // unbalanced — stop
-    out.push({ path, body: serverBody.slice(openIdx + 1, i - 1) });
-    re.lastIndex = i;
-  }
-  return out;
 }
 
 /**
@@ -552,7 +547,7 @@ function parseNginxConfig(raw: string, prefix?: string): ProxyScanResult {
   const sites: ImportedSite[] = [];
 
   if (!raw.trim()) {
-    return { proxy: "nginx", sites, warnings: ["nginx: no readable configuration found"] };
+    return { proxy: "nginx", sites, readable: false, warnings: ["nginx: no readable configuration found"] };
   }
 
   // `nginx -T` prefixes each file with `# configuration file <path>:` — track it
@@ -641,7 +636,14 @@ export async function scanForeignOpenResty(executor: CommandExecutor): Promise<P
 }
 
 export async function scanOpenshipEdge(executor: CommandExecutor): Promise<ProxyScanResult> {
-  const cat = `cat ${OUR_EDGE_SITE_GLOBS.join(" ")} 2>/dev/null`;
+  // Only one layout normally exists (Compose mounts just the container path).
+  // A single cat over all globs exits nonzero for the missing layouts, losing
+  // valid stdout through tryExec. Skip unmatched globs, but still fail the whole
+  // read if an existing file cannot be read; partial inventory is not all-clear.
+  const cat = `sh -c ${shellQuote(
+    `for openship_site in ${OUR_EDGE_SITE_GLOBS.join(" ")}; do ` +
+    `if [ -f "$openship_site" ]; then cat "$openship_site" || exit 1; printf '\\n'; fi; done`,
+  )}`;
   const raw = await tryExec(executor, cat);
   if (raw?.trim()) return parseNginxConfig(raw);
 
@@ -654,6 +656,45 @@ export async function scanOpenshipEdge(executor: CommandExecutor): Promise<Proxy
   if (!container) return parseNginxConfig("");
   const fromContainer = await tryExec(executor, containerCommand(container, cat));
   return parseNginxConfig(fromContainer ?? "");
+}
+
+async function proveNoIngress(executor: CommandExecutor): Promise<boolean> {
+  try {
+    // A routing mesh can publish without a local listener. Unreadable Swarm
+    // state and unidentified listeners are not evidence of an unused host.
+    if ((await swarmEdgePorts(executor)).size > 0) return false;
+    for (const port of [80, 443]) {
+      if ((await probePortListeningOnce(executor, port)) !== false) return false;
+    }
+    // Also reject dormant ingress: standard host proxy installations/configs,
+    // host-network containers, and stopped Docker edge port declarations.
+    // Only a successful, explicit proof permits an empty inventory. Shell or
+    // Docker errors never look like the success marker.
+    const inspection = await rootOrDegrade(executor, {
+      purpose: "Inspecting dormant ingress",
+      consequence: "The absence of existing routes cannot be verified.",
+      report: (message) => observeCaughtError(new Error(message), "adapters/system/proxy/import/nginx"),
+    });
+    const proof = await inspection.exec(`set -eu
+[ "$(id -u)" = 0 ] || exit 1
+for binary in openresty nginx caddy traefik haproxy apache2 httpd; do
+  if command -v "$binary" >/dev/null 2>&1; then exit 1; fi
+done
+for path in /etc/nginx /etc/openresty /etc/caddy /etc/traefik /etc/haproxy /etc/apache2 /etc/httpd /usr/local/etc/nginx /usr/local/openresty/nginx/conf ${shellQuote(EDGE_HOST_PATHS.sitesDir)}; do
+  if [ -e "$path" ]; then exit 1; fi
+done
+ids=$(docker ps -aq --no-trunc)
+if [ -n "$ids" ]; then
+  ingress=$(docker inspect --format '{{if eq .HostConfig.NetworkMode "host"}}ingress{{end}}{{range .HostConfig.PortBindings}}{{range .}}{{if or (eq .HostPort "80") (eq .HostPort "443")}}ingress{{end}}{{end}}{{end}}' $ids)
+  if [ -n "$ingress" ]; then exit 1; fi
+fi
+printf '__OPENSHIP_NO_INGRESS__'
+`);
+    return proof.trim() === "__OPENSHIP_NO_INGRESS__";
+  } catch (error) {
+    observeCaughtError(error, "adapters/system/proxy/import/nginx");
+    return false;
+  }
 }
 
 /**
@@ -687,12 +728,14 @@ export async function scanOpenshipEdgeStrict(
   if (!detected.exists) {
     // "No Openship container" is not proof that the edge has no routes. A
     // foreign nginx/caddy/traefik may still own :80/:443 and retain a stale
-    // loopback upstream that a new workload could capture. Allocation callers
-    // run this only after routing preflight, so a genuinely fresh Docker host
-    // should have an Openship edge by now. The one supported container-less
-    // topology is bare OpenResty; its resolved config is authoritative.
+    // loopback upstream that a new workload could capture. Private deployments
+    // must not install/take over an edge merely to allocate a loopback port.
+    // A bare OpenResty dump or a positive proof of no ingress is authoritative.
     const bareConfig = await dumpResolvedConfig(executor, ["openresty"]);
     if (bareConfig) return parseStrictEdgeConfig(bareConfig);
+    if (await proveNoIngress(executor)) {
+      return { ...parseNginxConfig(""), loopbackUpstreamPorts: new Set() };
+    }
     throw new Error(
       "Cannot read Openship edge routes: no running Openship edge or bare OpenResty inventory is available",
     );

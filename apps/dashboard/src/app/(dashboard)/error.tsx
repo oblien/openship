@@ -1,7 +1,9 @@
 "use client";
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect } from "react";
-import { RefreshCw, LayoutGrid } from "lucide-react";
 import { ErrorView } from "@/components/error-view";
 import { useBrandName, useI18n } from "@/components/i18n-provider";
 
@@ -27,7 +29,7 @@ export default function DashboardError({
   const c = t.chrome;
 
   useEffect(() => {
-    console.error("[dashboard] segment error:", error);
+    errorDiagnostics.error("dashboard/app/(dashboard)/error", "[dashboard] segment error:", error);
   }, [error]);
 
   return (
@@ -43,12 +45,12 @@ export default function DashboardError({
           {
             label: c.error.tryAgain,
             onClick: () => reset(),
-            icon: <RefreshCw className="size-4" />,
+            icon: <UiIcon name="refresh" className="size-4" />,
           },
           {
             label: c.error.goToProjects,
             href: "/projects",
-            icon: <LayoutGrid className="size-4" />,
+            icon: <UiIcon name="grid" className="size-4" />,
             variant: "secondary",
           },
         ]}

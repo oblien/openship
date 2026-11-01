@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSmtpAuthFailure } from "../../../src/modules/mail/smtp-auth-error";
+import { isSmtpAuthFailure } from "@repo/platform/engine/modules/mail/smtp-auth-error";
 
 describe("isSmtpAuthFailure", () => {
   it.each([

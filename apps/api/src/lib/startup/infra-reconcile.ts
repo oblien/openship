@@ -27,11 +27,13 @@
  * "Updating…" for a swap nobody is performing.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { safeErrorMessage } from "@repo/core";
 import { repos } from "@repo/db";
-import { registerStartupHook } from "./index";
-import { readApiVersion } from "../release-resolver";
-import { scanInstanceContainers } from "../../modules/system/server-containers.service";
+import { registerStartupHook } from "@repo/platform/engine/lib/startup/index";
+import { readApiVersion } from "@repo/platform/engine/lib/release-resolver";
+import { scanInstanceContainers } from "@repo/platform/engine/modules/system/server-containers.service";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 export function registerInfraReconcile(): void {
   registerStartupHook({
@@ -43,31 +45,31 @@ export function registerInfraReconcile(): void {
       await repos.serverContainerStatus
         .clearAllInProgress()
         .catch((err) =>
-          console.warn(`[infra-reconcile] in-progress reset failed: ${safeErrorMessage(err)}`),
+          errorDiagnostics.warn("api/lib/startup/infra-reconcile", `[infra-reconcile] in-progress reset failed: ${safeErrorMessage(err)}`, err),
         );
 
       const current = readApiVersion();
-      const settings = await repos.instanceSettings.get().catch(() => undefined);
+      const settings = await repos.instanceSettings.get().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/lib/startup/infra-reconcile"); return undefined; });
       if (settings?.lastSeenVersion === current) return;
 
       // Record the version FIRST so a scan that is slow or crashes doesn't make
       // the next boot re-trigger — the periodic job is the retry, not reboot.
       await repos.instanceSettings
         .upsert({ lastSeenVersion: current })
-        .catch((err) => console.warn(`[infra-reconcile] version write failed: ${safeErrorMessage(err)}`));
+        .catch((err) => errorDiagnostics.warn("api/lib/startup/infra-reconcile", `[infra-reconcile] version write failed: ${safeErrorMessage(err)}`, err));
 
       console.log(
         `[infra-reconcile] control plane at ${current}` +
           `${settings?.lastSeenVersion ? ` (was ${settings.lastSeenVersion})` : " (first boot)"}` +
           ` — scanning remote edge/mail containers`,
       );
-      void scanInstanceContainers()
+      trackBackgroundWork(scanInstanceContainers()
         .then((r) =>
           console.log(
             `[infra-reconcile] scanned ${r.servers} server(s): ${r.behind} behind, ${r.updated} updated`,
           ),
         )
-        .catch((err) => console.warn(`[infra-reconcile] scan failed: ${safeErrorMessage(err)}`));
+        .catch((err) => errorDiagnostics.warn("api/lib/startup/infra-reconcile", `[infra-reconcile] scan failed: ${safeErrorMessage(err)}`, err)));
     },
   });
 }

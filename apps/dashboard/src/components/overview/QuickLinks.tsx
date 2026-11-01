@@ -1,18 +1,9 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
 import Link from 'next/link';
-import { 
-  Rocket, 
-  Bot, 
-  CreditCard, 
-  Key, 
-  Box, 
-  Search,
-  FolderPlus,
-  ChevronRight,
-  Sparkles
-} from 'lucide-react';
 import { useI18n } from '@/components/i18n-provider';
 
 interface QuickLinkItem {
@@ -33,7 +24,7 @@ const QuickLinks: React.FC = () => {
       title: quickLinks.deployProject.title,
       description: quickLinks.deployProject.description,
       href: '/library',
-      icon: <Rocket className="w-5 h-5" />,
+      icon: <UiIcon name="rocket" className="w-5 h-5" />,
       color: '#f59e0b',
       bgColor: 'rgba(245, 158, 11, 0.1)',
     },
@@ -41,7 +32,7 @@ const QuickLinks: React.FC = () => {
       title: quickLinks.projects.title,
       description: quickLinks.projects.description,
       href: '/projects',
-      icon: <FolderPlus className="w-5 h-5" />,
+      icon: <UiIcon name="folder-plus" className="w-5 h-5" />,
       color: '#8b5cf6',
       bgColor: 'rgba(139, 92, 246, 0.1)',
     },
@@ -49,7 +40,7 @@ const QuickLinks: React.FC = () => {
       title: quickLinks.deployments.title,
       description: quickLinks.deployments.description,
       href: '/deployments',
-      icon: <Box className="w-5 h-5" />,
+      icon: <UiIcon name="rocket" className="w-5 h-5" />,
       color: '#06b6d4',
       bgColor: 'rgba(6, 182, 212, 0.1)',
     },
@@ -57,7 +48,7 @@ const QuickLinks: React.FC = () => {
       title: quickLinks.settings.title,
       description: quickLinks.settings.description,
       href: '/settings',
-      icon: <Key className="w-5 h-5" />,
+      icon: <UiIcon name="key" className="w-5 h-5" />,
       color: '#3b82f6',
       bgColor: 'rgba(59, 130, 246, 0.1)',
     },
@@ -65,7 +56,7 @@ const QuickLinks: React.FC = () => {
       title: quickLinks.domains.title,
       description: quickLinks.domains.description,
       href: '/domains',
-      icon: <Search className="w-5 h-5" />,
+      icon: <UiIcon name="search" className="w-5 h-5" />,
       color: '#ec4899',
       bgColor: 'rgba(236, 72, 153, 0.1)',
     },
@@ -73,7 +64,7 @@ const QuickLinks: React.FC = () => {
       title: quickLinks.billing.title,
       description: quickLinks.billing.description,
       href: '/billing',
-      icon: <CreditCard className="w-5 h-5" />,
+      icon: <UiIcon name="credit-card" className="w-5 h-5" />,
       color: '#059669',
       bgColor: 'rgba(5, 150, 105, 0.1)',
     },
@@ -84,7 +75,7 @@ const QuickLinks: React.FC = () => {
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-primary" />
+            <UiIcon name="sparkles" className="w-5 h-5 text-primary" />
           </div>
           <div>
             <h3 className="font-semibold text-foreground">{quickLinks.title}</h3>
@@ -116,4 +107,3 @@ const QuickLinks: React.FC = () => {
 };
 
 export default QuickLinks;
-

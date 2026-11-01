@@ -36,22 +36,25 @@
  * snapshot (journal tail), not SSE — surfaced via `mail logs`.
  */
 import { Command } from "commander";
+import { password as passwordPrompt, isCancel } from "@clack/prompts";
+import type { MailDeliveryHealth } from "@repo/contracts";
+import { MailRequestSchemas, parseInput } from "@repo/contracts";
 import chalk from "chalk";
 import ora from "ora";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
+import { stdin as input } from "node:process";
 import { buildMailImageRef } from "@repo/core";
-import { apiRequest, ApiError } from "../lib/api-client";
-import { sseRequest } from "../lib/sse";
-import { streamDeploymentLogs } from "../lib/deploy-stream";
-import { getToken } from "../lib/config";
+import { getRemoteClient, ApiError, hasShipCredentials } from "../lib/ship-client";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { has } from "../lib/from-source";
 import { readSourceInstall } from "../lib/source-install";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
+import { printJsonLine } from "../lib/output";
+import { confirmOrExit } from "../lib/cmd-helpers";
+import { positiveInteger, readJsonInput, readSecret } from "../lib/command-input";
+import { registerMailAdminCommands } from "./mail-admin";
 
 // ─── Shared plumbing ──────────────────────────────────────────────────────────
 
@@ -63,7 +66,7 @@ function guard<A extends unknown[]>(
   fn: (...args: A) => Promise<void>,
 ): (...args: A) => Promise<void> {
   return async (...args: A) => {
-    if (!getToken()) {
+    if (!hasShipCredentials()) {
       err("Not logged in. Run `openship login` first.");
       process.exit(1);
     }
@@ -110,9 +113,7 @@ const stepsCmd = new Command("steps")
   .description("List the mail setup steps")
   .action(
     guard(async () => {
-      const res = await apiRequest<{ steps: Array<{ id: number; key: string; label: string; description: string }>; total: number }>(
-        "/mail/steps",
-      );
+      const res = await getRemoteClient().mail.getSteps();
       if (isJsonMode()) return printJson(res);
       printTable(
         res.steps.map((s) => ({ id: s.id, key: s.key, label: s.label, description: s.description })),
@@ -122,28 +123,12 @@ const stepsCmd = new Command("steps")
     }),
   );
 
-interface MailStatus {
-  active: boolean;
-  serverId?: string;
-  domain?: string;
-  currentStep?: number;
-  dnsRecords?: unknown;
-  dnsAcknowledged?: boolean;
-  ptrAcknowledged?: boolean;
-  errorMessage?: string;
-  resumeStep?: number;
-  steps?: Array<{ id: number; key: string; label: string; status?: string; message?: string }>;
-  credentials?: Record<string, unknown>;
-  webmail?: Record<string, unknown>;
-}
-
 const statusCmd = new Command("status")
   .description("Show the setup progress for a mail server")
   .argument("[serverId]", "Mail server ID (omit for the empty welcome shell)")
   .action(
     guard(async (serverId?: string) => {
-      const q = serverId ? `?serverId=${encodeURIComponent(serverId)}` : "";
-      const res = await apiRequest<MailStatus>(`/mail/status${q}`);
+      const res = await getRemoteClient().mail.getStatus({ serverId });
       if (isJsonMode()) return printJson(res);
       info(`  server:  ${res.serverId ?? "-"}`);
       info(`  domain:  ${res.domain ?? "-"}`);
@@ -166,10 +151,7 @@ const serversCmd = new Command("servers")
   .description("List every server the mail stack is installed on")
   .action(
     guard(async () => {
-      const res = await apiRequest<{ servers: Array<{ id: string; name: string; host: string; port: number; user: string; domain: string; completed: boolean; active: boolean }> }>(
-        "/mail/servers",
-      );
-      const rows = res.servers ?? [];
+      const rows = await getRemoteClient().mail.listServers();
       if (isJsonMode()) return printJson(rows);
       if (rows.length === 0) return info("  No mail servers.");
       printTable(
@@ -177,7 +159,7 @@ const serversCmd = new Command("servers")
           id: s.id,
           name: s.name,
           host: s.host,
-          domain: s.domain,
+          domain: s.domain ?? "",
           completed: s.completed ? "yes" : "no",
           active: s.active ? "yes" : "",
         })),
@@ -192,15 +174,7 @@ const scanCmd = new Command("scan")
   .action(
     guard(async (serverId: string) => {
       const sp = spin("Scanning server…");
-      const res = await apiRequest<{
-        serverId: string;
-        iredmailInstalled: boolean;
-        hasState: boolean;
-        domain: string | null;
-        installComplete: boolean;
-        webmailPresent: boolean;
-        adoptable: boolean;
-      }>("/mail/scan", { method: "POST", body: JSON.stringify({ serverId }) });
+      const res = await getRemoteClient().mail.scan({ serverId });
       sp?.stop();
       if (isJsonMode()) return printJson(res);
       info(`  iRedMail live:  ${res.iredmailInstalled ? "yes" : "no"}`);
@@ -219,10 +193,7 @@ const adoptCmd = new Command("adopt")
   .action(
     guard(async (serverId: string) => {
       const sp = spin("Adopting mail server…");
-      const res = await apiRequest<{ success: boolean; serverId: string; domain: string; completed: boolean }>(
-        "/mail/adopt",
-        { method: "POST", body: JSON.stringify({ serverId }) },
-      );
+      const res = await getRemoteClient().mail.adopt({ serverId });
       sp?.succeed(`Adopted ${res.domain}`);
       if (isJsonMode()) return printJson(res);
       info(`  domain:    ${res.domain}`);
@@ -234,11 +205,13 @@ const setupCmd = new Command("setup")
   .description("Start or resume the mail setup wizard (streams over SSE)")
   .argument("<serverId>", "Server ID to install the mail stack on")
   .requiredOption("-d, --domain <domain>", "Mail domain (e.g. example.com)")
-  .option("--start-step <n>", "Resume from a specific step (1-13)")
+  .option("--start-step <n>", "Resume from a step returned by mail status", positiveInteger)
   .option("--config <json>", "iRedMail config overrides as a JSON object")
+  .option("--config-file <file>", "Setup config file, or - for stdin (recommended for passwords)")
   .action(
     guard(async (serverId: string, opts) => {
-      let config: unknown;
+      if (opts.config && opts.configFile) throw new Error("Choose --config or --config-file.");
+      let config: unknown = opts.configFile ? readJsonInput(opts.configFile) : undefined;
       if (opts.config) {
         try {
           config = JSON.parse(opts.config);
@@ -247,21 +220,21 @@ const setupCmd = new Command("setup")
           process.exit(1);
         }
       }
-      const body: Record<string, unknown> = { serverId, domain: opts.domain };
-      if (opts.startStep) body.startStep = Number(opts.startStep);
-      if (config) body.config = config;
-
-      info(`  Setting up mail on ${serverId} for ${opts.domain}… (Ctrl-C to stop)`);
+      const body = parseInput(MailRequestSchemas.setup, { serverId, domain: opts.domain, startStep: opts.startStep, config });
+      if (!isJsonMode()) info(`  Setting up mail on ${serverId} for ${opts.domain}…`);
       let failed = false;
-      for await (const ev of sseRequest("/mail/setup", {
-        method: "POST",
-        body: JSON.stringify(body),
-      })) {
+      let completed = false;
+      for await (const ev of getRemoteClient().mail.setup(body)) {
         if (ev.event === "ping") continue;
         const p = safeParse(ev.data);
+        if (ev.event === "error" || ev.event === "port_conflict" || (ev.event === "step_done" && p.success === false)) failed = true;
+        if (ev.event === "complete") { completed = p.success === true; failed ||= !completed; }
         if (isJsonMode()) {
-          printJson({ event: ev.event, ...p });
-          if (ev.event === "error" || ev.event === "dns_pending" || ev.event === "ptr_pending") failed = ev.event === "error";
+          printJsonLine({ ...p, event: ev.event });
+          if (ev.event === "dns_pending" || ev.event === "ptr_pending") {
+            if (failed) process.exit(1);
+            return;
+          }
           continue;
         }
         switch (ev.event) {
@@ -285,14 +258,17 @@ const setupCmd = new Command("setup")
             info("  Publish the DNS records above, then:");
             info(`    openship mail dns-ack ${serverId}`);
             info(`    openship mail setup ${serverId} --domain ${opts.domain} --start-step ${p.resumeStep}`);
+            if (failed) process.exit(1);
             return;
           case "ptr_pending":
             info(`  Set reverse DNS (PTR) for ${p.ipv4}${p.ipv6 ? ` / ${p.ipv6}` : ""} → ${p.target}, then:`);
             info(`    openship mail ptr-ack ${serverId}`);
             info(`    openship mail setup ${serverId} --domain ${opts.domain} --start-step ${p.resumeStep}`);
+            if (failed) process.exit(1);
             return;
           case "complete":
-            ok(`  Mail setup complete for ${p.domain}.`);
+            if (completed) ok(`  Mail setup complete for ${p.domain}.`);
+            else err("  Mail setup did not complete successfully.");
             if (p.webmailUrl) info(`  Webmail: ${p.webmailUrl}`);
             if (p.adminUrl) info(`  Admin:   ${p.adminUrl}`);
             break;
@@ -301,9 +277,14 @@ const setupCmd = new Command("setup")
             err(`  ${p.message ?? "setup error"}`);
             if (p.resumeStep) info(`  Resume with --start-step ${p.resumeStep} after fixing.`);
             break;
+          case "port_conflict":
+            err("  Mail setup stopped because required ports are occupied. Inspect mail status before resuming.");
+            printJson(p);
+            break;
         }
       }
       if (failed) process.exit(1);
+      if (!completed) throw new Error("Setup stream ended before completion. Check `openship mail status` before explicitly resuming; no retry was started.");
     }),
   );
 
@@ -311,25 +292,20 @@ const cancelCmd = new Command("cancel")
   .description("Cancel the mail setup currently running")
   .action(
     guard(async () => {
-      const res = await apiRequest<{ ok: boolean; message?: string }>("/mail/setup/cancel", {
-        method: "POST",
-      });
+      const res = await getRemoteClient().mail.cancelSetup();
       if (isJsonMode()) return printJson(res);
       ok(`  ${res.message ?? "Cancellation requested"}`);
     }),
   );
 
 /** Build the simple `{ serverId }`-body ack/reset commands from one factory. */
-function ackCommand(name: string, path: string, description: string, successMsg: string): Command {
+function ackCommand(name: string, method: "acknowledgeDns" | "acknowledgePtr", description: string, successMsg: string): Command {
   return new Command(name)
     .description(description)
     .argument("<serverId>", "Mail server ID")
     .action(
       guard(async (serverId: string) => {
-        const res = await apiRequest<{ ok: boolean }>(path, {
-          method: "POST",
-          body: JSON.stringify({ serverId }),
-        });
+        const res = await getRemoteClient().mail[method]({ serverId });
         if (isJsonMode()) return printJson(res);
         ok(`  ${successMsg}`);
       }),
@@ -338,14 +314,14 @@ function ackCommand(name: string, path: string, description: string, successMsg:
 
 const dnsAckCmd = ackCommand(
   "dns-ack",
-  "/mail/setup/dns-ack",
+  "acknowledgeDns",
   "Acknowledge that DNS records are published (releases the DKIM gate)",
   "DNS acknowledged. Re-run `mail setup` with --start-step to continue.",
 );
 
 const ptrAckCmd = ackCommand(
   "ptr-ack",
-  "/mail/setup/ptr-ack",
+  "acknowledgePtr",
   "Acknowledge that reverse DNS (PTR) is configured",
   "PTR acknowledged. Re-run `mail setup` with --start-step to continue.",
 );
@@ -356,16 +332,8 @@ const resetCmd = new Command("reset")
   .option("-y, --yes", "Skip the confirmation prompt")
   .action(
     guard(async (serverId: string, opts) => {
-      if (!opts.yes && !isJsonMode()) {
-        const rl = createInterface({ input, output });
-        const answer = await rl.question(`  Wipe setup state for ${serverId}? [y/N] `);
-        rl.close();
-        if (answer.trim().toLowerCase() !== "y") return info("  Aborted.");
-      }
-      const res = await apiRequest<{ ok: boolean }>("/mail/setup/reset", {
-        method: "POST",
-        body: JSON.stringify({ serverId }),
-      });
+      await confirmOrExit(opts.yes, `Wipe setup state for ${serverId}?`);
+      const res = await getRemoteClient().mail.resetSetup({ serverId });
       if (isJsonMode()) return printJson(res);
       ok("  Setup state reset.");
     }),
@@ -376,9 +344,7 @@ const forgetCmd = new Command("forget")
   .argument("<serverId>", "Mail server ID")
   .action(
     guard(async (serverId: string) => {
-      const res = await apiRequest<{ ok: boolean }>(`/mail/servers/${encodeURIComponent(serverId)}`, {
-        method: "DELETE",
-      });
+      const res = await getRemoteClient().mail.forget(serverId);
       if (isJsonMode()) return printJson(res);
       ok(`  Forgot mail server ${serverId} (re-adopt with \`mail scan\` + \`mail adopt\`).`);
     }),
@@ -389,14 +355,11 @@ const forgetCmd = new Command("forget")
 const healthCmd = new Command("health")
   .description("Show live status of every mail daemon, and whether mail is leaving the box")
   .argument("<serverId>", "Mail server ID")
+  .option("--refresh-reachability", "Bypass the public reachability cache")
   .action(
-    guard(async (serverId: string) => {
+    guard(async (serverId: string, opts) => {
       const sp = spin("Checking mail daemons…");
-      const res = await apiRequest<{
-        serverId: string;
-        components: Array<{ key: string; label: string; status: string; subState?: string; unit: string }>;
-        delivery?: MailDeliveryHealth;
-      }>(`/mail/health/${encodeURIComponent(serverId)}`);
+      const res = await getRemoteClient().mail.getHealth(serverId, { refreshReachability: !!opts.refreshReachability });
       sp?.stop();
       if (isJsonMode()) return printJson(res);
       printTable(
@@ -414,18 +377,6 @@ const healthCmd = new Command("health")
       if (res.delivery) printDelivery(res.delivery);
     }),
   );
-
-interface MailDeliveryHealth {
-  status: "ok" | "warn" | "fail" | "unknown";
-  mode: "direct" | "relay";
-  relayHost?: string;
-  relayScope?: "all" | "selected";
-  relayDomains?: string[];
-  queued: number;
-  sampled: boolean;
-  deferrals: Array<{ kind: string; count: number; reason: string }>;
-  detail?: string;
-}
 
 function printDelivery(d: MailDeliveryHealth): void {
   const paint = d.status === "fail" ? chalk.red : d.status === "warn" ? chalk.yellow : chalk.dim;
@@ -454,12 +405,10 @@ const logsCmd = new Command("logs")
   .description("Tail a mail component's journal (snapshot)")
   .argument("<serverId>", "Mail server ID")
   .argument("<component>", "Component key (postfix|dovecot|amavis|clamav|iredapd|postgresql|…)")
-  .option("-n, --lines <n>", "Number of lines (max 1000)", "200")
+  .option("-n, --lines <n>", "Number of lines (max 1000)", positiveInteger, 200)
   .action(
     guard(async (serverId: string, component: string, opts) => {
-      const res = await apiRequest<{ key: string; unit: string; lines: string[] }>(
-        `/mail/admin/${encodeURIComponent(serverId)}/components/${encodeURIComponent(component)}/logs?lines=${encodeURIComponent(opts.lines)}`,
-      );
+      const res = await getRemoteClient().mail.componentLogs(serverId, component, { lines: opts.lines });
       if (isJsonMode()) return printJson(res);
       info(`  ${res.unit}:`);
       for (const line of res.lines) process.stdout.write(line + "\n");
@@ -472,27 +421,26 @@ postmasterCmd.addCommand(
     .description("Rotate the postmaster password")
     .argument("<serverId>", "Mail server ID")
     .option("--password <password>", "New password (min 12 chars); prompted if omitted")
+    .option("--password-file <file>", "Password file, or - for stdin (keeps secrets out of process arguments)")
     .action(
       guard(async (serverId: string, opts) => {
-        let password: string | undefined = opts.password;
+        if (opts.password && opts.passwordFile) throw new Error("Choose --password or --password-file.");
+        let password: string | undefined = opts.passwordFile ? readSecret(opts.passwordFile) : opts.password;
         if (!password) {
-          if (isJsonMode()) {
-            err("  --password is required in JSON mode.");
+          if (isJsonMode() || !input.isTTY) {
+            err("  --password-file is required without an interactive terminal.");
             process.exit(1);
           }
-          const rl = createInterface({ input, output });
-          password = (await rl.question("  New postmaster password (min 12 chars): ")).trim();
-          rl.close();
+          const answer = await passwordPrompt({ message: "New postmaster password (min 12 characters)" });
+          if (isCancel(answer)) return;
+          password = answer;
         }
         if (!password || password.length < 12) {
           err("  Password must be at least 12 characters.");
           process.exit(1);
         }
         const sp = spin("Updating postmaster password…");
-        const res = await apiRequest<{ ok: boolean }>("/mail/credentials/postmaster", {
-          method: "POST",
-          body: JSON.stringify({ serverId, password }),
-        });
+        const res = await getRemoteClient().mail.setPostmasterPassword({ serverId, password });
         sp?.succeed("Postmaster password updated.");
         if (isJsonMode()) printJson(res);
       }),
@@ -595,3 +543,5 @@ export const mailCommand = new Command("mail")
   .addCommand(logsCmd)
   .addCommand(postmasterCmd)
   .addCommand(buildCmd);
+
+registerMailAdminCommands(mailCommand);

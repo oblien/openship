@@ -1,0 +1,109 @@
+---
+title: access invitations
+description: Commands, arguments, and options for openship access invitations.
+cliGroup: openship access invitations
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship access invitations
+
+Manage workspace invitations
+
+```text
+openship access invitations [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/access/invitations#openship-access-invitations-list) | List pending invitations |
+| [`create <file>`](/docs/cli/reference/access/invitations#openship-access-invitations-create) | Invite a member with optional resource grants |
+| [`accept <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-accept) | accept a workspace invitation |
+| [`reject <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-reject) | reject a workspace invitation |
+| [`cancel <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-cancel) | cancel a workspace invitation |
+| [`resend [options] <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-resend) | Resend an existing invitation |
+| [`materialize <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-materialize) | Recover resource grants from an already-accepted invitation |
+
+## openship access invitations accept
+
+accept a workspace invitation
+
+```text
+openship access invitations accept [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Invitation ID |
+
+## openship access invitations cancel
+
+cancel a workspace invitation
+
+```text
+openship access invitations cancel [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Invitation ID |
+
+## openship access invitations create
+
+Invite a member with optional resource grants
+
+```text
+openship access invitations create [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON invitation with email, optional role, grants and delivery |
+
+## openship access invitations list
+
+List pending invitations
+
+```text
+openship access invitations list [options]
+```
+
+## openship access invitations materialize
+
+Recover resource grants from an already-accepted invitation
+
+```text
+openship access invitations materialize [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Accepted invitation ID |
+
+## openship access invitations reject
+
+reject a workspace invitation
+
+```text
+openship access invitations reject [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Invitation ID |
+
+## openship access invitations resend
+
+Resend an existing invitation
+
+```text
+openship access invitations resend [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Invitation ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--delivery <mode>` | email \| link |

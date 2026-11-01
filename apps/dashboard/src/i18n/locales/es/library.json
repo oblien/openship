@@ -10,16 +10,17 @@
   },
   "page": {
     "title": "Nuevo proyecto",
-    "subtitle": "Importa un repositorio, pega una URL o parte de una plantilla",
+    "subtitle": "Despliega una aplicación o importa tu propio proyecto.",
     "tabs": {
       "folder": "Carpeta",
       "github": "GitHub",
-      "url": "URL de Git",
-      "template": "Plantilla"
+      "templates": "Plantillas",
+      "gitUrl": "URL de Git"
     }
   },
   "connect": {
     "connectGithub": "Conectar GitHub",
+    "deployApp": "Desplegar aplicación",
     "manageInSettings": "Gestionar en Ajustes",
     "terminal": {
       "title": "Conectar GitHub",
@@ -30,7 +31,9 @@
       "title": "Introduce este código en GitHub",
       "goToPrefix": "Ve a",
       "goToSuffix": "e introduce el código de arriba.",
-      "waiting": "Esperando la autorización…"
+      "waiting": "Esperando la autorización…",
+      "openGithub": "Abrir GitHub",
+      "copyCode": "Haz clic para copiar"
     },
     "default": {
       "title": "Conecta GitHub para desplegar",
@@ -44,7 +47,33 @@
       "ghCli": "Inicia sesión con la CLI de gh",
       "ghCliDesc": "Usa el inicio de sesión de GitHub de tu equipo. No hace falta la nube.",
       "useGhCli": "Usar la CLI de gh",
-      "connecting": "Conectando…"
+      "connecting": "Conectando…",
+      "manual": "Conexión manual a GitHub",
+      "manualDesc": "Configurar en Configuración: tu propia GitHub App/OAuth o el CLI gh de esta instancia. Sin cuenta de Openship.",
+      "manualCta": "Configurar en Configuración",
+      "byoc": "Clave SSH o token de acceso",
+      "byocDesc": "Usa tus propias credenciales: una clave de despliegue por servidor o un token. Sin inicio de sesión.",
+      "byocCta": "Configurar"
+    },
+    "installationPicker": {
+      "title": "Elige el acceso a GitHub",
+      "description": "Selecciona una instalación existente de la App para este espacio de trabajo.",
+      "sharedHint": "Tus otras conexiones de Openship se conservan.",
+      "connect": "Usar esta cuenta",
+      "connected": "Ya conectada",
+      "installAnother": "Instalar en otra cuenta de GitHub",
+      "failed": "No se pudo conectar esta instalación.",
+      "tryAgain": "Volver a empezar",
+      "successTitle": "GitHub conectado",
+      "successDescription": "El acceso a los repositorios está listo. Puedes volver a Openship.",
+      "errorTitle": "La conexión con GitHub necesita atención",
+      "returnToApp": "Volver a la biblioteca"
+    },
+    "token": {
+      "title": "Conectar con un token de GitHub",
+      "connect": "Conectar",
+      "create": "Crear un token en GitHub",
+      "failed": "No se pudo guardar el token."
     }
   },
   "folderUpload": {
@@ -124,8 +153,6 @@
     "noMatchingDesc": "Prueba con otro término de búsqueda o ajusta tus filtros",
     "noReposDesc": "Esta cuenta todavía no tiene ningún repositorio",
     "privateBadge": "Privado",
-    "localOnly": "Solo local",
-    "localOnlyTooltip": "La Openship App no está instalada en {owner}. Solo compilaciones locales: instala la App en este propietario para habilitar despliegues remotos.",
     "repoCountSingular": "{count} repositorio",
     "repoCountPlural": "{count} repositorios",
     "matching": "que coinciden con \"{query}\"",
@@ -159,13 +186,75 @@
     "checking": "Comprobando…",
     "notConnectedManage": "No conectado — gestiona en Ajustes",
     "optional": "Opcional",
-    "footnote": "Biblioteca local mediante la CLI de gh; los despliegues remotos usan tokens de corta duración —",
-    "manageGithubSettings": "gestionar GitHub en Ajustes"
+    "footnote": "Gestiona las conexiones de GitHub para explorar y desplegar repositorios.",
+    "manageGithubSettings": "gestionar GitHub en Ajustes",
+    "methodToken": "Token de GitHub",
+    "methodDevice": "Iniciar sesión con GitHub"
   },
   "urlImport": {
     "invalidUrl": "Introduce una URL válida de repositorio de GitHub",
     "title": "Importar desde URL de Git",
     "description": "Pega la URL de un repositorio público para importarlo. No requiere conexión con GitHub.",
     "importButton": "Importar repositorio"
+  },
+  "customAppModal": {
+    "title": "Agregar una aplicación personalizada",
+    "description": "Sube una definición de aplicación (JSON). Se agregará a tu catálogo y se marcará como no verificada.",
+    "howToWrite": "Cómo escribir una",
+    "dropPrefix": "Arrastra",
+    "dropSuffix": "aquí, o",
+    "browse": "examinar",
+    "validDefinition": "Definición de aplicación válida —",
+    "unverifiedTitle": "No verificada.",
+    "unverifiedBody": "Esto despliega imágenes que proporcionaste, no una aplicación oficial revisada. Revisa la definición y solo agrega aplicaciones de confianza.",
+    "cancel": "Cancelar",
+    "addApp": "Agregar aplicación",
+    "invalidJson": "Ese archivo no es un JSON válido.",
+    "invalidDefinition": "Esta no es una definición de aplicación válida; revise los campos requeridos y las referencias.",
+    "onlyTemplateSupported": "Solo se pueden añadir aplicaciones basadas en plantillas (no se admiten flow apps).",
+    "addedToast": "Se añadió \"{name}\" a tu catálogo.",
+    "failedToast": "No se pudo añadir la aplicación."
+  },
+  "catalog": {
+    "apps": {
+      "mail": "Tu propio correo en tu propio dominio: SMTP/IMAP, buzones y webmail en un solo servidor. O conserva los buzones existentes y usa solo el webmail.",
+      "supabase": "Supabase autohospedado completo: Postgres, Auth, REST, Realtime, Storage y Studio tras una única puerta de enlace API.",
+      "mongodb": "Base de datos documental MongoDB con interfaz web de administración Mongo Express.",
+      "convex": "Backend reactivo Convex autohospedado con panel de control y volumen de datos persistente.",
+      "n8n": "Automatización de flujos de trabajo: conecta aplicaciones y API con un editor visual.",
+      "ghost": "Publicación de blogs, boletines y sitios de membresía con un editor enfocado y base de datos propia.",
+      "directus": "CMS headless con API REST y GraphQL sobre tus datos y estudio de administración web.",
+      "nocodb": "Interfaz de hoja de cálculo al estilo Airtable para trabajar con datos respaldados por SQL.",
+      "metabase": "Inteligencia empresarial, consultas y paneles interactivos sobre tus datos existentes.",
+      "grafana": "Paneles y visualización de métricas y registros en tu propia infraestructura.",
+      "gitea": "Alojamiento Git ligero con repositorios, problemas (issues) y solicitudes de extracción (pull requests).",
+      "code-server": "VS Code en tu navegador ejecutándose en un espacio de trabajo en tu propio servidor.",
+      "uptime-kuma": "Supervisión de tiempo de actividad con páginas de estado y alertas para tus servicios.",
+      "vaultwarden": "Gestor de contraseñas ligero y autohospedado, compatible con clientes de Bitwarden.",
+      "freshrss": "Tu propio lector de feeds RSS y Atom con interfaz web para organizar tus suscripciones.",
+      "stirling-pdf": "Divide, combina, convierte, aplica OCR y edita archivos PDF en tu propia infraestructura.",
+      "it-tools": "Colección de herramientas para desarrolladores y administradores sin necesidad de registro.",
+      "excalidraw": "Pizarra virtual para bocetos y diagramas. Sin estado: los dibujos se guardan en el navegador.",
+      "buzz": "Espacio de trabajo donde humanos y agentes de IA colaboran: chat, código, revisiones y flujos en un registro de auditoría.",
+      "minio": "Almacenamiento de objetos compatible con S3 con consola web para clientes S3 o cargas de proyectos.",
+      "kafka": "Broker de transmisión de eventos Apache Kafka (modo KRaft) con consola web Kafbat Kafka UI.",
+      "qdrant": "Base de datos vectorial de alto rendimiento para búsqueda de IA, RAG y embeddings con interfaz web.",
+      "meilisearch": "Motor de búsqueda ultrarrápido y tolerante a erratas. Indexa y busca en milisegundos.",
+      "neon": "Neon autohospedado impulsado por la comunidad con ramificación de Postgres y consola web.",
+      "posthog": "Analítica de producto, reproducción de sesiones y feature flags en un stack autohospedado.",
+      "redis": "Almacén en memoria para caché, sesiones y colas: Valkey (fork de Redis) con RedisInsight integrado.",
+      "umami": "Analítica web respetuosa con la privacidad y sin cookies: alternativa a Google Analytics.",
+      "webmail": "Cliente de webmail rápido para cualquier buzón IMAP/SMTP en tu propio dominio.",
+      "clickhouse": "SQL columnar para datos analíticos con consola CH-UI para consultas y esquemas.",
+      "mindwire": "Ejecuta entornos de agentes de código tras un plano de control privado y centralizado.",
+      "pocketbase": "Backend compacto con autenticación, base de datos SQLite en tiempo real y panel de administración.",
+      "authentik": "Proveedor de identidad para SSO, OAuth2, OpenID Connect y SAML con servidor y PostgreSQL.",
+      "mariadb": "Base de datos compatible con MySQL con panel de control Adminer para tablas y consultas.",
+      "nextcloud": "Sincronización y uso compartido de archivos privados con Nextcloud Admin, MariaDB y Redis.",
+      "odoo": "Aplicaciones empresariales de CRM, ventas e inventario con PostgreSQL y cuenta de administrador.",
+      "postgresql": "Base de datos PostgreSQL persistente con pgAdmin para administración y consultas SQL en navegador.",
+      "rabbitmq": "Broker de mensajes persistente con panel oficial para colas, intercambios y conexiones.",
+      "wordpress": "Publica sitios web, blogs y tiendas con WordPress Admin, MariaDB y almacenamiento persistente."
+    }
   }
 }

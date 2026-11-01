@@ -32,7 +32,8 @@
       "total": "Total",
       "successful": "Réussis",
       "failed": "Échoués",
-      "inProgress": "En cours"
+      "inProgress": "En cours",
+      "pageTitle": "Sur cette page"
     },
     "autoDeploy": {
       "title": "Déploiement automatique",
@@ -191,5 +192,75 @@
     "untouchedNote": "Ils continuent de tourner et ne sont pas touchés : {names}",
     "confirm": "Revenir",
     "cancel": "Annuler"
+  },
+  "loadFailed": "Impossible de charger les déploiements.",
+  "retry": "Réessayer",
+  "pagination": {
+    "label": "Pages de l’historique des déploiements",
+    "previous": "Page précédente",
+    "next": "Page suivante",
+    "pageOf": "Page {page} sur {total}",
+    "range": "Déploiements {from}–{to} sur {total}"
+  },
+  "resourceGuidance": {
+    "label": "Conseils sur les ressources du déploiement",
+    "reviewCapacity": "Examiner la capacité",
+    "reviewTitle": "Examiner la capacité de l’espace Cloud",
+    "reviewHint": "Vérifiez d’abord l’utilisation et les limites configurées. La mise à niveau est facultative ; ouvrir cet écran ne modifie ni ne relance le déploiement.",
+    "slowTitle": "Cette compilation prend du temps",
+    "slowDescription": "Les téléchargements, le réseau ou les commandes peuvent être lents. Plus de capacité peut aider les compilations intensives ; consultez d’abord les journaux.",
+    "titles": {
+      "container-oom": "Le conteneur a manqué de mémoire",
+      "memory-allocation": "Échec de l’allocation mémoire",
+      "process-heap": "Limite du tas de l’application atteinte",
+      "storage-full": "Échec de l’allocation du stockage",
+      "storage-low": "Stockage libre insuffisant pour compiler",
+      "process-killed": "Le processus de compilation a été arrêté"
+    },
+    "causes": {
+      "container-oom": "Docker a confirmé un arrêt par manque de mémoire. Vérifiez la limite du conteneur et la capacité de l’espace Cloud avant de réessayer.",
+      "memory-allocation": "Le processus n’a pas pu allouer de mémoire. Vérifiez les limites configurées et la capacité disponible avant de choisir un forfait supérieur.",
+      "process-heap": "Le processus a atteint sa propre limite de tas. Vérifiez les paramètres d’exécution ; un forfait supérieur seul pourrait ne pas suffire.",
+      "storage-full": "L’opération a épuisé l’espace disque ou les inodes. Examinez l’utilisation et les artefacts inutilisés en préservant les données de l’application.",
+      "storage-low": "Le système de fichiers Docker manque d’espace libre ou d’inodes. Examinez l’utilisation ou augmentez le stockage.",
+      "process-killed": "Le processus a reçu SIGKILL (code de sortie 137). Cela seul ne prouve pas un manque de mémoire. Consultez les journaux."
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "File de compilation Cloud",
+    "title": "Compilation en attente",
+    "position": "Compilation en attente · Position {position}",
+    "concurrency": "En attente d’une place pour une compilation simultanée.",
+    "resources": "En attente de processeur ou de mémoire disponible sur le serveur.",
+    "server": "En attente de l’acceptation de cette compilation par le serveur.",
+    "automaticStart": "Elle démarrera automatiquement.",
+    "allowance": "Compilations simultanées autorisées par votre offre : {count}.",
+    "unlimited": "Votre offre ne limite pas les compilations simultanées.",
+    "active": "Compilations actives : {count}.",
+    "comparePlans": "Comparer les offres",
+    "optionalUpgrade": "Le changement d’offre est facultatif. Vous pouvez continuer à attendre.",
+    "compareConcurrency": "Comparez les offres pour exécuter davantage de compilations simultanées. Votre compilation peut rester dans la file d’attente.",
+    "compareResources": "Comparez les offres pour obtenir plus de processeur ou de mémoire. Vous pouvez continuer à attendre que des ressources soient disponibles sur le serveur."
+  },
+  "monitoring": {
+    "title": "Vue des déploiements",
+    "scope": "Projet et recherche sélectionnés · jours UTC · historique conservé",
+    "period": "Période",
+    "days": "{count} jours",
+    "refresh": "Actualiser",
+    "attempts": "Tentatives de déploiement",
+    "window": "Sur la période sélectionnée",
+    "successRate": "Taux de réussite",
+    "rateHint": "Réussis / (réussis + échoués) ; hors annulations",
+    "failedHint": "Inclut les versions partielles et bloquées",
+    "activeHint": "Tentatives en cours ou en attente sur cette période",
+    "unavailable": "Vue indisponible. Essayez d’actualiser.",
+    "trend": "Résultats quotidiens",
+    "avgBuild": "Build réussi moyen",
+    "empty": "Aucun déploiement sur cette période.",
+    "projects": "Détail par projet",
+    "projectHint": "Les 6 premiers par échecs, puis tentatives actives",
+    "failedShort": "échoués",
+    "history": "Historique des déploiements"
   }
 }

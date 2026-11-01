@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OpenshipReadiness } from "@repo/core";
-import { resolveReadinessGate } from "../../../src/modules/deployments/readiness-gate";
+import { resolveReadinessGate } from "@repo/platform/engine/modules/deployments/readiness-gate";
 
 /**
  * The gate webmail arms, read through the resolver that decides what actually runs.

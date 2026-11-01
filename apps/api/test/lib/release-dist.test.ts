@@ -6,14 +6,14 @@ import { join } from "node:path";
 // The download lives in release-download; mock it so these tests
 // exercise ONLY the 3-slot resolution + latest-version logic (no network, no fs
 // extraction). fetchAndExtractRelease → controllable.
-vi.mock("../../src/lib/release-download", () => ({
+vi.mock("@repo/platform/engine/lib/release-download", () => ({
   fetchAndExtractRelease: vi.fn(),
 }));
 
 // URL-mode version discovery is user-controlled and must go through the DNS-
 // pinned safe client. Mock the transport, then assert the security policy the
 // resolver hands it rather than touching the network.
-vi.mock("../../src/lib/safe-fetch", () => ({ safeFetch: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/safe-fetch", () => ({ safeFetch: vi.fn() }));
 
 import {
   resolveReleaseDist,
@@ -23,10 +23,10 @@ import {
   resolveReleaseVersion,
   ReleaseDistMissingError,
   ReleaseVersionUnavailableError,
-} from "../../src/lib/release-dist";
-import { fetchAndExtractRelease } from "../../src/lib/release-download";
-import { safeFetch } from "../../src/lib/safe-fetch";
-import { env } from "../../src/config/env";
+} from "@repo/platform/engine/lib/release-dist";
+import { fetchAndExtractRelease } from "@repo/platform/engine/lib/release-download";
+import { safeFetch } from "@repo/platform/engine/lib/safe-fetch";
+import { env } from "@repo/platform/engine/config/env";
 import type { ReleaseSource } from "@repo/core";
 
 const fetchMock = fetchAndExtractRelease as unknown as ReturnType<typeof vi.fn>;
@@ -245,7 +245,7 @@ describe("resolveLatestVersion", () => {
       timeoutMs: 10_000,
       maxRedirects: 5,
       maxBodyBytes: 8192,
-      allowPrivate: !env.CLOUD_MODE,
+      allowPrivate: false,
     });
     expect(nativeFetch).not.toHaveBeenCalled();
   });

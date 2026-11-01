@@ -1,17 +1,16 @@
 import type Dockerode from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 
-import { gracefulStopForGrace, toStopConfig } from "../src/runtime/docker";
+import { DockerRuntime, gracefulStopBeforeRemoval, toStopConfig } from "../src/runtime/docker";
 
-/** Minimal container double — records whether stop() was issued. Cast to the
- *  dockerode Container surface the helper actually touches (inspect + stop). */
+/** Minimal container double that records stop calls and detects any extra inspect request. */
 function fakeContainer(opts: {
   stopTimeout?: number | null;
   inspectRejects?: boolean;
-  stopRejects?: boolean;
+  stopError?: Error;
 }) {
   const stop = vi.fn(async () => {
-    if (opts.stopRejects) throw new Error("304 / already stopped");
+    if (opts.stopError) throw opts.stopError;
   });
   const inspect = vi.fn(async () => {
     if (opts.inspectRejects) throw new Error("404 no such container");
@@ -52,6 +51,24 @@ describe("toStopConfig (#388)", () => {
     expect(toStopConfig({ stopGracePeriod: "0s" })).toEqual({ StopTimeout: 0 });
   });
 
+  it("preserves valid Compose signs and fractional shutdown durations", () => {
+    expect(toStopConfig({ stopGracePeriod: "+90s" })).toEqual({ StopTimeout: 90 });
+    expect(toStopConfig({ stopGracePeriod: ".5s" })).toEqual({ StopTimeout: 1 });
+    expect(toStopConfig({ stopGracePeriod: "1.s" })).toEqual({ StopTimeout: 1 });
+    expect(toStopConfig({ stopGracePeriod: "1d" })).toEqual({ StopTimeout: 86400 });
+  });
+
+  // "1m30" is not a whole duration. Scanning it for unit groups read one minute
+  // and dropped the 30, a grace period shorter than the one written, applied
+  // without a word. It now counts as unset, like any other unreadable value.
+  it("never half-reads a grace period into a shorter one", () => {
+    expect(toStopConfig({ stopGracePeriod: "1m30" })).toEqual({});
+    expect(toStopConfig({ stopGracePeriod: "abc5s" })).toEqual({});
+    expect(toStopConfig({ stopSignal: "SIGTERM", stopGracePeriod: "1m30" })).toEqual({
+      StopSignal: "SIGTERM",
+    });
+  });
+
   it("carries both together and omits an unparseable grace", () => {
     expect(toStopConfig({ stopSignal: "SIGQUIT", stopGracePeriod: "1m" })).toEqual({
       StopSignal: "SIGQUIT",
@@ -64,46 +81,86 @@ describe("toStopConfig (#388)", () => {
 });
 
 /**
- * #388: setting StopTimeout/StopSignal is inert unless a *graceful* stop is
- * issued — recreate/teardown force-removes (SIGKILL). gracefulStopForGrace gives
- * a container that opted into a grace period a clean stop before the caller's
- * force-remove, and stays out of the way for everyone else (no redeploy latency).
+ * #986: removal must issue a graceful stop even when Compose did not specify
+ * a timeout. Docker owns the default, explicit grace, and image stop signal.
  */
-describe("gracefulStopForGrace (#388)", () => {
+describe("gracefulStopBeforeRemoval (#986)", () => {
   it("stops a container that declared a positive grace period (opted in)", async () => {
     const c = fakeContainer({ stopTimeout: 60 });
-    await gracefulStopForGrace(c.container);
+    await gracefulStopBeforeRemoval(c.container);
     expect(c.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT stop a container with the default (unset) StopTimeout — fast path preserved", async () => {
+  it("stops a container with the default (unset) StopTimeout", async () => {
     const c = fakeContainer({ stopTimeout: null });
-    await gracefulStopForGrace(c.container);
-    expect(c.stop).not.toHaveBeenCalled();
+    await gracefulStopBeforeRemoval(c.container);
+    expect(c.stop).toHaveBeenCalledExactlyOnceWith();
   });
 
-  it("does NOT stop when the field is absent entirely", async () => {
+  it("stops when the field is absent entirely", async () => {
     const stop = vi.fn(async () => {});
-    const container = { stop, inspect: vi.fn(async () => ({ Config: {} })) } as unknown as Dockerode.Container;
-    await gracefulStopForGrace(container);
-    expect(stop).not.toHaveBeenCalled();
+    const container = {
+      stop,
+      inspect: vi.fn(async () => ({ Config: {} })),
+    } as unknown as Dockerode.Container;
+    await gracefulStopBeforeRemoval(container);
+    expect(stop).toHaveBeenCalledExactlyOnceWith();
   });
 
-  it("does NOT graceful-stop an explicit zero grace (operator asked to kill immediately)", async () => {
+  it("leaves an explicit zero grace to Docker without overriding it", async () => {
     const c = fakeContainer({ stopTimeout: 0 });
-    await gracefulStopForGrace(c.container);
-    expect(c.stop).not.toHaveBeenCalled();
+    await gracefulStopBeforeRemoval(c.container);
+    expect(c.stop).toHaveBeenCalledExactlyOnceWith();
   });
 
-  it("swallows an inspect failure (gone / racing removal) and never stops", async () => {
+  it("does not depend on an extra inspect request to stop", async () => {
     const c = fakeContainer({ inspectRejects: true });
-    await expect(gracefulStopForGrace(c.container)).resolves.toBeUndefined();
-    expect(c.stop).not.toHaveBeenCalled();
+    await expect(gracefulStopBeforeRemoval(c.container)).resolves.toBeUndefined();
+    expect(c.stop).toHaveBeenCalledExactlyOnceWith();
+    expect(c.inspect).not.toHaveBeenCalled();
   });
 
-  it("swallows a stop failure (already stopped) so the caller's force-remove still runs", async () => {
-    const c = fakeContainer({ stopTimeout: 30, stopRejects: true });
-    await expect(gracefulStopForGrace(c.container)).resolves.toBeUndefined();
+  it.each([304, 404])("tolerates already-stopped or gone containers (%s)", async (statusCode) => {
+    const c = fakeContainer({
+      stopTimeout: 30,
+      stopError: Object.assign(new Error("already stopped or gone"), { statusCode }),
+    });
+    await expect(gracefulStopBeforeRemoval(c.container)).resolves.toBeUndefined();
     expect(c.stop).toHaveBeenCalledTimes(1);
   });
+
+  it.each([403, 500])(
+    "propagates stop failures so removal cannot fall back to SIGKILL (%s)",
+    async (statusCode) => {
+      const error = Object.assign(new Error("stop failed"), { statusCode });
+      const c = fakeContainer({ stopTimeout: 30, stopError: error });
+      await expect(gracefulStopBeforeRemoval(c.container)).rejects.toBe(error);
+    },
+  );
+});
+
+describe("DockerRuntime.stop: confirmed shutdown", () => {
+  it.each([undefined, 304, 404, 403, 409, 500, "ECONNRESET"])(
+    "accepts only successful, already-stopped or absent daemon responses (%s)",
+    async (code) => {
+      const error = code === undefined
+        ? undefined
+        : Object.assign(new Error("stop response"),
+            typeof code === "number" ? { statusCode: code } : { code });
+      const c = fakeContainer({ stopError: error });
+      const runtime = await DockerRuntime.create({
+        dockerSocketPath: "/tmp/openship-test-absent.sock",
+      });
+      (runtime as unknown as { _docker: unknown })._docker = {
+        getContainer: vi.fn(() => c.container),
+      };
+      if (code === undefined || code === 304 || code === 404) {
+        await expect(runtime.stop("old-scheduler")).resolves.toBeUndefined();
+      } else {
+        await expect(runtime.stop("old-scheduler")).rejects.toBe(error);
+      }
+      expect(c.stop).toHaveBeenCalledExactlyOnceWith();
+      expect(c.inspect).not.toHaveBeenCalled();
+    },
+  );
 });

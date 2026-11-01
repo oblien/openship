@@ -8,6 +8,11 @@
  *   producerStream.pipe(hasher).pipe(destinationPut);
  *   await destinationPutFinished;
  *   const { sha256, bytesWritten } = hasher.summary();
+ *
+ * `onBytes` reports the CUMULATIVE count per chunk, for callers that publish
+ * live progress mid-stream. It fires synchronously from `_transform`; any
+ * throttling or persistence happens at the caller (per image-transfer.ts's
+ * onProgress convention).
  */
 
 import { createHash, type Hash } from "node:crypto";
@@ -17,15 +22,18 @@ export class HashingPassthrough extends Transform {
   private readonly hash: Hash;
   private bytes = 0;
   private finalDigest: string | null = null;
+  private readonly onBytes?: (bytesWritten: number) => void;
 
-  constructor() {
+  constructor(opts?: { onBytes?: (bytesWritten: number) => void }) {
     super();
     this.hash = createHash("sha256");
+    this.onBytes = opts?.onBytes;
   }
 
   override _transform(chunk: Buffer, _enc: BufferEncoding, cb: TransformCallback): void {
     this.hash.update(chunk);
     this.bytes += chunk.byteLength;
+    this.onBytes?.(this.bytes);
     cb(null, chunk);
   }
 

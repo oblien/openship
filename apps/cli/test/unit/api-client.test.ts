@@ -6,7 +6,7 @@ vi.mock("../../src/lib/config", () => ({
   getToken: () => "tok-123",
 }));
 
-import { ApiError, apiRequest, getApiUrl, paginate } from "../../src/lib/api-client";
+import { getRemoteClient, ApiError } from "../../src/lib/ship-client";
 import { stubFetch, type FetchStub } from "../helpers/harness";
 
 let fetchStub: FetchStub;
@@ -14,7 +14,7 @@ afterEach(() => fetchStub?.restore());
 
 describe("getApiUrl", () => {
   it("appends the /api prefix to the configured base", () => {
-    expect(getApiUrl()).toBe("http://api.test/api");
+    expect(getRemoteClient().http.apiUrl).toBe("http://api.test/api");
   });
 });
 
@@ -24,7 +24,7 @@ describe("apiRequest", () => {
   });
 
   it("targets /api and attaches the bearer token + JSON content type", async () => {
-    await apiRequest("/servers");
+    await getRemoteClient().http.request("/servers");
     const req = fetchStub.calls[0];
     expect(req.url).toBe("http://api.test/api/servers");
     expect(req.headers.authorization).toBe("Bearer tok-123");
@@ -34,19 +34,19 @@ describe("apiRequest", () => {
   it("returns the parsed JSON body on 2xx", async () => {
     fetchStub.restore();
     fetchStub = stubFetch(() => ({ json: { id: "s1" } }));
-    expect(await apiRequest("/servers/s1")).toEqual({ id: "s1" });
+    expect(await getRemoteClient().http.request("/servers/s1")).toEqual({ id: "s1" });
   });
 
   it("returns undefined on 204 without parsing", async () => {
     fetchStub.restore();
     fetchStub = stubFetch(() => ({ status: 204 }));
-    expect(await apiRequest("/servers/s1", { method: "DELETE" })).toBeUndefined();
+    expect(await getRemoteClient().http.request("/servers/s1", { method: "DELETE" })).toBeUndefined();
   });
 
   it("throws ApiError carrying status + the {error} message on non-2xx", async () => {
     fetchStub.restore();
     fetchStub = stubFetch(() => ({ status: 404, json: { error: "no such server" } }));
-    await expect(apiRequest("/servers/missing")).rejects.toMatchObject({
+    await expect(getRemoteClient().http.request("/servers/missing")).rejects.toMatchObject({
       name: "ApiError",
       status: 404,
       message: "no such server",
@@ -56,8 +56,8 @@ describe("apiRequest", () => {
   it("falls back to a generic message when the error body has none", async () => {
     fetchStub.restore();
     fetchStub = stubFetch(() => ({ status: 500, json: {} }));
-    await expect(apiRequest("/x")).rejects.toBeInstanceOf(ApiError);
-    await expect(apiRequest("/x")).rejects.toThrow(/500/);
+    await expect(getRemoteClient().http.request("/x")).rejects.toBeInstanceOf(ApiError);
+    await expect(getRemoteClient().http.request("/x")).rejects.toThrow(/500/);
   });
 });
 
@@ -73,7 +73,7 @@ describe("paginate", () => {
     });
 
     const seen: number[] = [];
-    for await (const item of paginate<{ n: number }>("/things", { perPage: 2 })) {
+    for await (const item of getRemoteClient().http.paginate<{ n: number }>("/things", { perPage: 2 })) {
       seen.push(item.n);
     }
     expect(seen).toEqual([1, 2, 3]);
@@ -82,7 +82,7 @@ describe("paginate", () => {
   it("stops when the running count reaches the reported total", async () => {
     fetchStub = stubFetch(() => ({ json: { data: [{ n: 1 }, { n: 2 }], total: 2 } }));
     const seen: number[] = [];
-    for await (const item of paginate<{ n: number }>("/things", { perPage: 2 })) {
+    for await (const item of getRemoteClient().http.paginate<{ n: number }>("/things", { perPage: 2 })) {
       seen.push(item.n);
     }
     expect(seen).toEqual([1, 2]);

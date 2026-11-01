@@ -2,7 +2,7 @@ import { docsSource } from "@/lib/source";
 import { renderOgImage, type OgAccent } from "@/lib/og-image";
 
 /** Blue accent for docs — distinct from home (green), download (seafoam) and
- *  roadmap (violet), so a docs link is recognizable in a feed at a glance. */
+ *  features (violet), so a docs link is recognizable in a feed at a glance. */
 const BLUE: OgAccent = { glow: "59,130,246", solid: "#3B82F6", soft: "#93C5FD" };
 
 /** Section labels for the eyebrow. Only the ones whose casing we can't derive
@@ -16,9 +16,7 @@ const SECTION_LABELS: Record<string, string> = {
 function sectionLabel(slug: string[]): string {
   const top = slug[0];
   if (!top) return "Docs";
-  const label =
-    SECTION_LABELS[top] ??
-    top.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
+  const label = SECTION_LABELS[top] ?? top.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
   return `Docs · ${label}`;
 }
 

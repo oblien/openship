@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect } from "react";
 import { api } from "@/lib/api/client";
 import { useI18n } from "@/components/i18n-provider";
@@ -43,7 +46,8 @@ export function MigrationInProgress() {
           window.location.reload();
           return;
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/migration-in-progress");
         // Network blip mid-cutover is expected — just keep polling.
       }
       schedule();
@@ -80,10 +84,7 @@ export function MigrationInProgress() {
     <div className="flex min-h-dvh flex-col items-center justify-center bg-black p-8 text-white">
       <div className="w-full max-w-lg space-y-6 rounded-2xl border border-white/10 bg-white/[0.02] p-8">
         <div className="flex items-center gap-4">
-          <span
-            aria-hidden="true"
-            className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white"
-          />
+          <UiIcon name="spinner" className="inline-block h-6 w-6 animate-spin text-white" aria-hidden="true" />
           <h1 className="text-2xl font-semibold">{t.chrome.migration.inProgressTitle}</h1>
         </div>
 

@@ -1,23 +1,27 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { buildAuthPageHref } from "@/lib/cloud-auth";
 import { emailOtp, resetPassword } from "@/lib/auth-client";
 import { useToast } from "@/components/toast";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AuthShell } from "@/components/auth-shell";
+import { AuthSuccess } from "@/components/auth-success";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
       <AuthShell>
-        <div className="flex justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center"><UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" /></div>
       </AuthShell>
     }>
       <ResetPasswordForm />
@@ -41,7 +45,7 @@ function ResetPasswordForm() {
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<{ email: string | null } | null>(null);
 
   // Same mapping verify-email uses, so a wrong/expired/locked code reads the same in
   // both flows. TOO_MANY_ATTEMPTS means the code was invalidated — they must request
@@ -77,11 +81,12 @@ function ResetPasswordForm() {
     }
 
     setLoading(true);
+    const submittedEmail = email.trim();
     try {
       const result = token
         ? await resetPassword({ newPassword: password, token })
         : await emailOtp.resetPassword({
-            email: email.trim(),
+            email: submittedEmail,
             otp: code.trim(),
             password,
           });
@@ -96,9 +101,15 @@ function ResetPasswordForm() {
               ),
         );
       } else {
-        setDone(true);
+        // Show the account confirmed by the code flow, never an unverified
+        // email query parameter attached to an older token link.
+        setDone({ email: token ? null : submittedEmail });
+        setPassword("");
+        setConfirm("");
+        setCode("");
       }
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/reset-password/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
@@ -109,22 +120,14 @@ function ResetPasswordForm() {
 
   if (done) {
     return (
-      <AuthShell>
-        <div className="text-center">
-          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-success-bg">
-            <CheckCircle2 className="size-6 text-success" />
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {t.auth.resetPassword.doneTitle}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t.auth.resetPassword.doneDescription}
-          </p>
-          <Button asChild className="mt-6">
-            <Link href="/login">{t.auth.resetPassword.doneAction}</Link>
-          </Button>
-        </div>
-      </AuthShell>
+      <AuthSuccess
+        icon="lock"
+        title={t.auth.resetPassword.doneTitle}
+        description={t.auth.resetPassword.doneDescription}
+        email={done.email}
+        actionLabel={t.auth.resetPassword.doneAction}
+        actionHref={buildAuthPageHref("/login", searchParams)}
+      />
     );
   }
 
@@ -204,7 +207,7 @@ function ResetPasswordForm() {
               className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
               aria-label={showPassword ? t.auth.hidePassword : t.auth.showPassword}
             >
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
             </button>
           </div>
         </div>
@@ -224,13 +227,13 @@ function ResetPasswordForm() {
         </div>
 
         <Button type="submit" disabled={loading} className="mt-1 w-full">
-          {loading && <Loader2 className="animate-spin" />}
+          {loading && <UiIcon name="spinner" className="animate-spin" />}
           {loading ? t.auth.resetPassword.submitting : t.auth.resetPassword.submit}
         </Button>
       </form>
 
       <p className="mt-8 text-center text-sm text-muted-foreground">
-        <Link href="/login" className="font-medium text-foreground transition-colors hover:underline">
+        <Link href={buildAuthPageHref("/login", searchParams)} className="font-medium text-foreground transition-colors hover:underline">
           {t.auth.resetPassword.backToSignIn}
         </Link>
       </p>

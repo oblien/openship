@@ -21,12 +21,17 @@ import {
   sql,
   dumpSubgraph,
   restoreSubgraph,
+  restoreSubgraphInTransaction,
   deleteProjectSubgraph,
   DUMP_FORMAT_VERSION,
   type DatabaseDump,
   type SubgraphScope,
 } from "@repo/db";
-import { cloudRuntimeTarget } from "../../config/env";
+import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
+import { withProjectRuntimeLock } from "@repo/platform/engine/lib/project-runtime-lock";
+import { AppError } from "@repo/core";
+import { isProjectPromotion, type ProjectPromotion } from "@repo/platform/engine/lib/cloud/project-promotion";
+import { sameCloudIdentity } from "@repo/platform/engine/lib/cloud/transport";
 
 export class IngestValidationError extends Error {
   readonly code = "INGEST_VALIDATION_FAILED" as const;
@@ -70,12 +75,15 @@ export interface IngestSubgraphInput {
    * rows. Org-scope only; project-scope is handled by the caller.
    */
   allowNonEmptyTarget?: boolean;
+  /** Present only on the receipt-aware route; userId comes from Cloud auth. */
+  promotion?: { id: string; userId: string };
 }
 
 export interface IngestSubgraphResult {
   organizationId: string;
   publicUrl: string;
   imported: Record<string, number>;
+  promotionId?: string;
 }
 
 /**
@@ -88,9 +96,7 @@ export interface IngestSubgraphResult {
  * Instance-scope ingest is rejected — the SaaS never wants to replace
  * its own auth/instance state from a self-hosted dump.
  */
-export async function ingestSubgraph(
-  input: IngestSubgraphInput,
-): Promise<IngestSubgraphResult> {
+export async function ingestSubgraph(input: IngestSubgraphInput): Promise<IngestSubgraphResult> {
   // ── 1. Validate ───────────────────────────────────────────────────────────
   if (input.dump.formatVersion !== DUMP_FORMAT_VERSION) {
     throw new IngestValidationError(
@@ -98,9 +104,7 @@ export async function ingestSubgraph(
     );
   }
   if (!input.dump.scope || input.dump.scope.kind === "instance") {
-    throw new IngestValidationError(
-      "Instance-scope dumps cannot be ingested on the SaaS.",
-    );
+    throw new IngestValidationError("Instance-scope dumps cannot be ingested on the SaaS.");
   }
 
   // ── 2. Safety check (org-scope only; project-scope handled by caller) ────
@@ -119,14 +123,64 @@ export async function ingestSubgraph(
     if (rows.length > 0) imported[name] = rows.length;
   }
 
+  if (input.promotion) return ingestProjectPromotion(input, imported);
+
   // ── 4. Restore (merge + remap to target org) ─────────────────────────────
-  await restoreSubgraph(input.dump, { mode: "merge", remapOrgId: input.organizationId });
+  await restoreSubgraph(input.dump, { mode: "merge", remapOrgId: input.organizationId, stripInstanceRefs: true });
 
   return {
     organizationId: input.organizationId,
     publicUrl: cloudRuntimeTarget.dashboard,
     imported,
   };
+}
+
+/** Commit the receipt with the data, and never re-import on a cleanup retry.
+ * A matching ID without the original receipt remains an ordinary conflict. */
+async function ingestProjectPromotion(
+  input: IngestSubgraphInput,
+  imported: Record<string, number>,
+): Promise<IngestSubgraphResult> {
+  const projectRows = input.dump.tables.project;
+  const state = projectRows?.[0]?.cloudPromotion;
+  if (input.dump.scope.kind !== "project" || projectRows?.length !== 1 ||
+    projectRows[0].id !== input.dump.scope.projectId || !isProjectPromotion(state) ||
+    state.id !== input.promotion!.id || state.target.apiUrl !== cloudRuntimeTarget.api ||
+    state.target.organizationId !== input.organizationId || state.target.userId !== input.promotion!.userId)
+    throw new IngestValidationError("Invalid project promotion receipt or destination");
+
+  const projectId = input.dump.scope.projectId;
+  const response = (receipt: ProjectPromotion): IngestSubgraphResult => ({
+    organizationId: input.organizationId,
+    publicUrl: cloudRuntimeTarget.dashboard,
+    imported: receipt.imported!,
+    promotionId: receipt.id,
+  });
+  return withProjectRuntimeLock(projectId, async () => {
+    const [existing] = await db.select().from(schema.project).where(eq(schema.project.id, projectId));
+    if (existing) {
+      const receipt = existing.cloudPromotion;
+      if (existing.organizationId !== input.organizationId || existing.deletedAt || existing.deletionInProgress ||
+        !isProjectPromotion(receipt) || receipt.id !== state.id || !receipt.imported ||
+        receipt.sourceDigest !== state.sourceDigest || !sameCloudIdentity(receipt.target, state.target))
+        throw new AppError("A project with this ID exists without a matching transfer receipt. Review both copies before removing either one.", 409, "TRANSFER_CONFLICT");
+      return response(receipt);
+    }
+    // A previously acknowledged target disappearing is not permission to
+    // resurrect its stale configuration during a local cleanup retry.
+    if (state.imported)
+      throw new AppError("The previously imported Cloud project is no longer available. The local copy was preserved.", 409, "TRANSFER_TARGET_MISSING");
+
+    const receipt: ProjectPromotion = { ...state, imported };
+    delete receipt.cleanupInProgress;
+    await db.transaction(async tx => {
+      await restoreSubgraphInTransaction(tx, input.dump, { mode: "merge", remapOrgId: input.organizationId, stripInstanceRefs: true });
+      await tx.update(schema.project).set({ cloudPromotion: receipt, deletionInProgress: false }).where(
+        and(eq(schema.project.id, projectId), eq(schema.project.organizationId, input.organizationId)),
+      );
+    });
+    return response(receipt);
+  });
 }
 
 export class TeardownProjectNotFoundError extends Error {
@@ -150,10 +204,7 @@ export async function projectExistsInOrg(
     .select({ id: schema.project.id })
     .from(schema.project)
     .where(
-      and(
-        eq(schema.project.id, projectId),
-        eq(schema.project.organizationId, organizationId),
-      ),
+      and(eq(schema.project.id, projectId), eq(schema.project.organizationId, organizationId)),
     );
   return rows.length > 0;
 }
@@ -172,9 +223,21 @@ export async function teardownProjectSubgraph(input: {
   organizationId: string;
   projectId: string;
 }): Promise<void> {
-  if (!(await projectExistsInOrg(input.projectId, input.organizationId))) {
-    throw new TeardownProjectNotFoundError(input.projectId);
-  }
-  await deleteProjectSubgraph(input.projectId);
+  return withProjectRuntimeLock(input.projectId, async () => {
+    if (!(await projectExistsInOrg(input.projectId, input.organizationId))) {
+      throw new TeardownProjectNotFoundError(input.projectId);
+    }
+    const [deployment] = await db
+      .select({ id: schema.deployment.id })
+      .from(schema.deployment)
+      .where(eq(schema.deployment.projectId, input.projectId))
+      .limit(1);
+    if (deployment)
+      throw new AppError(
+        "This project has deployment history. Use project deletion or migration to clean up its runtime and data before removing its configuration.",
+        409,
+        "PROJECT_DATA_TRANSFER_REQUIRED",
+      );
+    await deleteProjectSubgraph(input.projectId);
+  });
 }
-

@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   createContext,
   useCallback,
@@ -53,7 +54,8 @@ function readClientLocale(): Locale | null {
   try {
     const fromLs = localStorage.getItem(LOCALE_COOKIE);
     if (fromLs && (locales as readonly string[]).includes(fromLs)) return fromLs as Locale;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/components/i18n-provider");
     /* storage disabled */
   }
   return null;
@@ -112,7 +114,8 @@ export function I18nProvider({
     document.cookie = `${LOCALE_COOKIE}=${l};path=/;max-age=31536000;samesite=lax`;
     try {
       localStorage.setItem(LOCALE_COOKIE, l);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/i18n-provider");
       /* private mode / disabled storage — cookie still carries it */
     }
   }, []);
@@ -170,7 +173,7 @@ export function useBrandName(): string {
  */
 export function interpolate(
   template: string,
-  vars: Record<string, string>,
+  vars: Record<string, string | number>,
 ): string {
-  return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
+  return template.replace(/\{(\w+)\}/g, (_, key) => (vars[key] !== undefined ? String(vars[key]) : `{${key}}`));
 }

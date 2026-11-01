@@ -78,6 +78,32 @@ describe("assertDumpSelfContained (cross-tenant ingest guard)", () => {
     ).toThrow(/references a project_app not present/);
   });
 
+  it("rejects an active deployment outside the imported graph", () => {
+    expect(() => assertDumpSelfContained(dump({
+      project: [{ id: "p1", organizationId: "org-a", activeDeploymentId: "foreign-deployment" }],
+    }))).toThrow(/activeDeploymentId.*not present in the dump/);
+  });
+
+  it.each([
+    { projectId: "p2", organizationId: "org-a" },
+    { projectId: "p1", organizationId: "org-b" },
+  ])("rejects an active deployment with a mismatched parent: %j", (owner) => {
+    expect(() => assertDumpSelfContained(dump({
+      project: [
+        { id: "p1", organizationId: "org-a", activeDeploymentId: "d1" },
+        { id: "p2", organizationId: "org-a", activeDeploymentId: null },
+      ],
+      deployment: [{ id: "d1", ...owner }],
+    }))).toThrow(/does not belong to the same project and organization/);
+  });
+
+  it("accepts an active deployment belonging to its project and organization", () => {
+    expect(() => assertDumpSelfContained(dump({
+      project: [{ id: "p1", organizationId: "org-a", activeDeploymentId: "d1" }],
+      deployment: [{ id: "d1", projectId: "p1", organizationId: "org-a" }],
+    }))).not.toThrow();
+  });
+
   it("rejects a service_deployment referencing a foreign deploymentId/serviceId", () => {
     expect(() =>
       assertDumpSelfContained(
@@ -195,6 +221,12 @@ describe("instance-scope FK references (servers / mail_servers)", () => {
     expect(tables.project![0]!.id).toBe("prj_1");
   });
 
+  it("does not carry preview automation or host cache receipts in a portable project export", () => {
+    const tables = { project: [{ id: "source", previewSettings: { enabled: true }, previewScannedAt: new Date(), buildCacheReceipts: { source: { deploymentId: "old-host-build" } } }] };
+    stripInstanceRefsInPlace(tables);
+    expect(tables.project[0]).toMatchObject({ id: "source", previewSettings: null, previewScannedAt: null, buildCacheReceipts: null });
+  });
+
   it("is a no-op on tables and rows that carry no instance reference", () => {
     const tables: Record<string, Array<Record<string, unknown>>> = {
       project: [{ id: "prj_1", serverId: null }],
@@ -211,6 +243,46 @@ describe("instance-scope FK references (servers / mail_servers)", () => {
         dump({ backup_destination: [{ id: "bkd_evil", serverId: "srv_VICTIM" }] }),
       ),
     ).toThrow(/references a servers not present/);
+  });
+
+  it("does not accept a shadow parent in a table excluded from the restore scope", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          backup_destination: [{ id: "bkd_evil", serverId: "srv_VICTIM" }],
+          servers: [{ id: "srv_VICTIM", organizationId: "o" }],
+        }),
+      ),
+    ).toThrow(/references a servers not present/);
+  });
+
+  it.each([
+    ["clusterId", "compute_cluster"],
+    ["workspaceId", "cloud_workspace"],
+  ])("rejects imported project execution ownership through %s", (column, parent) => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          project: [{ id: "prj_evil", [column]: "target_VICTIM", organizationId: "o" }],
+          [parent]: [{ id: "target_VICTIM", organizationId: "o" }],
+        }),
+      ),
+    ).toThrow(new RegExp(`${column}.*not present`));
+  });
+
+  it("exports managed projects without live host pointers or retained-image claims", () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      project: [{ id: "p", workspaceId: "cws", serverId: "server", activeDeploymentId: "d", hostPort: 32001 }],
+      deployment: [{ id: "d", projectId: "p", containerId: "container", artifactRetainedAt: new Date(), pinned: true,
+        meta: { managedWorkspaceId: "cws", managedServer: { ownerWorkspaceId: "cws", workspaceId: "vm" }, branch: "main" }, envVars: { KEEP: "encrypted" } }],
+      service_deployment: [{ deploymentId: "d", containerId: "container", allocatedResources: { containerId: "container" }, hostPort: 32001, hostPorts: { "80": 32001 }, ip: "172.18.0.2" }],
+    };
+    stripInstanceRefsInPlace(tables);
+    expect(tables.project![0]).toMatchObject({ workspaceId: null, serverId: null, activeDeploymentId: null, hostPort: null });
+    expect(tables.deployment![0]).toMatchObject({ containerId: null, artifactRetainedAt: null, pinned: false, meta: { branch: "main" }, envVars: { KEEP: "encrypted" } });
+    expect(JSON.stringify(tables)).not.toContain('"vm"');
+    expect(JSON.stringify(tables)).not.toContain('"cws"');
+    expect(tables.service_deployment![0]).toEqual({ deploymentId: "d", containerId: null, allocatedResources: null, hostPort: null, hostPorts: null, ip: null, imageRef: null });
   });
 
   it("rejects crafted mail-server references on all three carrying tables", () => {

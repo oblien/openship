@@ -18,9 +18,11 @@
  * MonitoringTab fetching the same endpoint share one network request.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { beginFetchState } from "./begin-fetch-state";
 import { api, ApiError, endpoints, projectsApi } from "@/lib/api";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 
 /**
  * Sentinel error message emitted by `fetchProjectInfo` when the API returns
@@ -166,7 +168,7 @@ export interface AnalyticsData {
     avgResponseSize: number;
   };
   topPaths: Array<{ path: string; count: number; percentage: string }>;
-  trafficByHour: Array<{ hour: number; requests: number }>;
+  trafficByHour: Array<Pick<AnalyticsPeriodResponse, "from" | "to" | "requests">>;
   limited: boolean;
 }
 
@@ -174,6 +176,8 @@ interface AsyncState<T> {
   data: T | null;
   isLoading: boolean;
   error: string | null;
+  /** A read is in flight, including refreshes that retain visible data. */
+  isRefreshing: boolean;
 }
 
 // ─── Per-endpoint dedup caches ─────────────────────────────────────────────
@@ -190,12 +194,45 @@ interface AsyncState<T> {
  */
 type CacheEntry<T> =
   | { kind: "loading"; promise: Promise<T> }
-  | { kind: "ready"; data: T };
+  | { kind: "ready"; data: T; updatedAt: number };
 
 const infoCache = new Map<string, CacheEntry<ProjectInfoData>>();
 const overviewCache = new Map<string, CacheEntry<AnalyticsOverviewResponse>>();
 const geoCache = new Map<string, CacheEntry<AnalyticsGeoResponse>>();
 const usageHistoryCache = new Map<string, CacheEntry<UsageHistoryResponse>>();
+
+/** Drop resolved and in-flight entries when the connected account changes.
+ * An old request cannot refill a cleared entry because writes compare promises. */
+export function clearProjectEndpointCaches(): void {
+  for (const cache of [infoCache, overviewCache, geoCache, usageHistoryCache]) cache.clear();
+}
+
+/** Mounts, polls and retries share one in-flight request for each scope. */
+function requestEndpoint<T>(
+  id: string,
+  cache: Map<string, CacheEntry<T>>,
+  fetcher: (id: string) => Promise<T>,
+  key = id,
+): Promise<T> {
+  const current = cache.get(key);
+  if (current?.kind === "loading") return current.promise;
+  const promise = fetcher(id).then(
+    (data) => {
+      const entry = cache.get(key);
+      if (entry?.kind === "loading" && entry.promise === promise) {
+        cache.set(key, { kind: "ready", data, updatedAt: Date.now() });
+      }
+      return data;
+    },
+    (error: unknown) => {
+      const entry = cache.get(key);
+      if (entry?.kind === "loading" && entry.promise === promise) cache.delete(key);
+      throw error;
+    },
+  );
+  cache.set(key, { kind: "loading", promise });
+  return promise;
+}
 
 // ─── Revision store (drives live refresh on invalidation) ──────────────────
 //
@@ -245,6 +282,9 @@ function useEndpoint<T>(
   // empty animates as new points land, without a page reload. 0/undefined = off.
   pollMs?: number,
 ): AsyncState<T> {
+  const scope = useCloudResourceKey();
+  const key = id ? `${scope}\0${id}` : null;
+  const [owner, setOwner] = useState(key);
   // Ref tracks the LATEST id from props at any moment. Combined with
   // the `cancelled` flag, this prevents an in-flight fetch for project
   // A from writing its result onto project B's state after the user
@@ -252,8 +292,8 @@ function useEndpoint<T>(
   // a stale `.then` resolves, but under concurrent rendering the
   // exact ordering isn't guaranteed — the ref check is the defensive
   // belt to the cancelled-flag suspenders.
-  const idRef = useRef(id);
-  idRef.current = id;
+  const idRef = useRef(key);
+  idRef.current = key;
 
   // Subscribe to this id's revision counter. When
   // invalidateProjectCaches(id) is called, the counter bumps,
@@ -268,12 +308,12 @@ function useEndpoint<T>(
   );
 
   const [state, setState] = useState<AsyncState<T>>(() => {
-    if (!id) return { data: null, isLoading: false, error: null };
-    const cached = cache.get(id);
+    if (!id) return { data: null, isLoading: false, error: null, isRefreshing: false };
+    const cached = cache.get(key!);
     if (cached?.kind === "ready") {
-      return { data: cached.data, isLoading: false, error: null };
+      return { data: cached.data, isLoading: false, error: null, isRefreshing: false };
     }
-    return { data: null, isLoading: true, error: null };
+    return { data: null, isLoading: true, error: null, isRefreshing: true };
   });
 
   /**
@@ -284,20 +324,21 @@ function useEndpoint<T>(
    * Different id: whatever we hold is another project's, and reporting it as loaded would
    * render project A's page under project B's URL.
    */
-  const loadedIdRef = useRef<string | null>(null);
+  const loadedIdRef = useRef<string | null>(id && cache.get(key!)?.kind === "ready" ? key : null);
 
   useEffect(() => {
+    setOwner(key);
     if (!id) {
       loadedIdRef.current = null;
-      setState({ data: null, isLoading: false, error: null });
+      setState({ data: null, isLoading: false, error: null, isRefreshing: false });
       return;
     }
 
-    // Cached ready → flip into resolved state and bail.
-    const cached = cache.get(id);
-    if (cached?.kind === "ready") {
-      loadedIdRef.current = id;
-      setState({ data: cached.data, isLoading: false, error: null });
+    // A polled series can have changed while the tab was unmounted.
+    const cached = cache.get(key!);
+    if (cached?.kind === "ready" && (!pollMs || Date.now() - cached.updatedAt < pollMs)) {
+      loadedIdRef.current = key;
+      setState({ data: cached.data, isLoading: false, error: null, isRefreshing: false });
       return;
     }
 
@@ -306,39 +347,37 @@ function useEndpoint<T>(
     // Load-bearing rather than a nicety — see `beginFetchState`, which owns the reasoning and
     // the infinite-loop regression it exists to prevent.
     const loadedId = loadedIdRef.current;
-    setState((prev) => beginFetchState(prev, loadedId, id));
+    setState((prev) => ({
+      ...beginFetchState(prev, loadedId, key!),
+      data: loadedId === key ? prev.data : null,
+      // Keep a failed read visible while Retry is pending; navigation clears it.
+      error: owner === key ? prev.error : null,
+      isRefreshing: true,
+    }));
 
-    let promise: Promise<T>;
-    if (cached?.kind === "loading") {
-      // Already in flight from a concurrent mount — subscribe to it.
-      promise = cached.promise;
-    } else {
-      // Cold — fire a new fetch and register it so concurrent mounts share.
-      promise = fetcher(id);
-      cache.set(id, { kind: "loading", promise });
-    }
-
-    promise
+    requestEndpoint(id, cache, fetcher, key!)
       .then((data) => {
-        cache.set(id, { kind: "ready", data });
         // Guard: don't write A's result into B's state if id has
         // changed since the effect started. Both flags together cover
         // synchronous (cancelled) and racy (idRef mismatch) cases.
-        if (cancelled || idRef.current !== id) return;
-        loadedIdRef.current = id;
-        setState({ data, isLoading: false, error: null });
+        if (cancelled || idRef.current !== key || (revKey && getRevision(revKey) !== revision)) return;
+        loadedIdRef.current = key;
+        setState({ data, isLoading: false, error: null, isRefreshing: false });
       })
       .catch((err: unknown) => {
+        observeCaughtError(err, "dashboard/hooks/useProjectEndpoints");
         // Errors are NOT cached — drop the entry so a future mount /
         // refresh re-fires the request. Otherwise a transient 5xx
         // permanently bricks the page until full reload.
-        cache.delete(id);
-        if (cancelled || idRef.current !== id) return;
+        if (cancelled || idRef.current !== key || (revKey && getRevision(revKey) !== revision)) return;
         const message = err instanceof Error ? err.message : "Request failed";
-        // The data goes with the error, so the next revision must report loading again rather
-        // than revalidating something that is no longer on screen.
-        loadedIdRef.current = null;
-        setState({ data: null, isLoading: false, error: message });
+        // Failed refreshes retain this scope's last observation, never another project's.
+        setState((prev) => ({
+          data: loadedIdRef.current === key ? prev.data : null,
+          isLoading: false,
+          error: message,
+          isRefreshing: false,
+        }));
       });
 
     return () => {
@@ -347,7 +386,7 @@ function useEndpoint<T>(
     // `revision` is intentionally in deps: bumping it via
     // invalidateProjectCaches() retriggers the effect for already-
     // mounted consumers, fetching fresh data without a remount.
-  }, [id, cache, fetcher, revision]);
+  }, [id, key, cache, fetcher, revision, pollMs]);
 
   // Poll: re-fire the fetcher on an interval, bypassing the ready-cache
   // short-circuit above. A transient failure keeps the last-good data on
@@ -355,23 +394,48 @@ function useEndpoint<T>(
   useEffect(() => {
     if (!id || !pollMs || pollMs <= 0) return;
     let cancelled = false;
-    const handle = setInterval(() => {
-      fetcher(id)
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      const current = cache.get(key!);
+      if (current?.kind === "ready" && Date.now() - current.updatedAt < pollMs) {
+        // Another subscriber may have just refreshed the shared result.
+        loadedIdRef.current = key;
+        setState((prev) => prev.data === current.data && !prev.error && !prev.isRefreshing
+          ? prev
+          : { data: current.data, isLoading: false, error: null, isRefreshing: false });
+        return;
+      }
+      const startedRevision = revKey ? getRevision(revKey) : 0;
+      setState((prev) => ({ ...prev, isRefreshing: true }));
+      requestEndpoint(id, cache, fetcher, key!)
         .then((data) => {
-          cache.set(id, { kind: "ready", data });
-          if (cancelled || idRef.current !== id) return;
-          loadedIdRef.current = id;
-          setState({ data, isLoading: false, error: null });
+          if (cancelled || idRef.current !== key ||
+            (revKey && getRevision(revKey) !== startedRevision)) return;
+          loadedIdRef.current = key;
+          setState({ data, isLoading: false, error: null, isRefreshing: false });
         })
-        .catch(() => {});
-    }, pollMs);
+        .catch((error: unknown) => {
+          observeCaughtError(error, "dashboard/hooks/useProjectEndpoints");
+          if (cancelled || idRef.current !== key ||
+            (revKey && getRevision(revKey) !== startedRevision)) return;
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: error instanceof Error ? error.message : "Request failed",
+            isRefreshing: false,
+          }));
+        });
+    };
+    const handle = setInterval(refresh, pollMs);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       cancelled = true;
       clearInterval(handle);
+      document.removeEventListener("visibilitychange", refresh);
     };
-  }, [id, cache, fetcher, pollMs]);
+  }, [id, key, cache, fetcher, pollMs, revKey]);
 
-  return state;
+  return owner === key ? state : { data: null, isLoading: !!id, error: null, isRefreshing: !!id };
 }
 
 // ─── Fetcher functions ─────────────────────────────────────────────────────
@@ -400,6 +464,10 @@ async function fetchProjectInfo(id: string): Promise<ProjectInfoData> {
 // first domain's cached numbers; `fetchOverview` splits it back apart.
 const OVERVIEW_KEY_SEP = "::";
 
+/** Analytics overview aggregates traffic server-side; high-traffic projects can exceed the 15s default. */
+const ANALYTICS_OVERVIEW_TIMEOUT_MS = 60_000;
+const ANALYTICS_POLL_MS = 60_000;
+
 function overviewCacheKey(id: string, domain?: string | null): string {
   return domain ? `${id}${OVERVIEW_KEY_SEP}${domain}` : id;
 }
@@ -408,10 +476,14 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   const sepIndex = key.indexOf(OVERVIEW_KEY_SEP);
   const projectId = sepIndex === -1 ? key : key.slice(0, sepIndex);
   const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
-  const response = await api.get<{ data: AnalyticsOverviewResponse; success?: boolean; error?: string }>(
-    endpoints.analytics.overview,
-    { params: { projectId, ...(domain ? { domain } : {}) } },
-  );
+  const response = await api.get<{
+    data: AnalyticsOverviewResponse;
+    success?: boolean;
+    error?: string;
+  }>(endpoints.analytics.overview, {
+    params: { projectId, ...(domain ? { domain } : {}) },
+    timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
+  });
   if (response.success === false || !response.data) {
     throw new Error(response.error || "Failed to load analytics");
   }
@@ -482,7 +554,7 @@ export function useProjectInfo(id: string | null | undefined) {
  */
 export function useAnalyticsOverview(id: string | null | undefined, domain?: string | null) {
   const key = id ? overviewCacheKey(id, domain) : id;
-  return useEndpoint(key, overviewCache, fetchOverview, id);
+  return useEndpoint(key, overviewCache, fetchOverview, id, ANALYTICS_POLL_MS);
 }
 
 /**
@@ -490,14 +562,14 @@ export function useAnalyticsOverview(id: string | null | undefined, domain?: str
  * visitors, top paths, status mix.
  *
  * Separate from /analytics/overview because the two have different shapes in the
- * edge's shared memory: overview is a per-MINUTE series (the traffic chart), this
+ * edge's shared memory: overview groups minute counters into hours, this
  * is per-DAY aggregates. Countries, visitors and paths are only kept daily —
  * holding them per minute would multiply the edge's key cardinality by ~1440 and
  * evict the counters they annotate.
  */
 export function useAnalyticsGeo(id: string | null | undefined, domain?: string | null) {
   const key = id ? overviewCacheKey(id, domain) : id;
-  return useEndpoint(key, geoCache, fetchGeo, id);
+  return useEndpoint(key, geoCache, fetchGeo, id, ANALYTICS_POLL_MS);
 }
 
 /**
@@ -538,6 +610,7 @@ export function useAnalyticsData(id: string | null | undefined, domain?: string 
     isLoadingSummary: overview.isLoading,
     isLoadingPeriods: overview.isLoading,
     error: overview.error,
+    isRefreshing: overview.isRefreshing,
   };
 }
 
@@ -560,8 +633,9 @@ export function mapAnalyticsData(
   domain: string,
 ): AnalyticsData | null {
   if (summary.totalRequests <= 0 && periods.length === 0) return null;
-  const firstPeriod = periods[0] ?? null;
-  const lastPeriod = periods[periods.length - 1] ?? null;
+  const chronological = [...periods].sort((a, b) => Date.parse(a.from) - Date.parse(b.from));
+  const firstPeriod = chronological[0] ?? null;
+  const lastPeriod = chronological[chronological.length - 1] ?? null;
   const firstRequest = firstPeriod?.from ?? summary.lastUpdated ?? new Date().toISOString();
   const lastRequest = lastPeriod?.to ?? summary.lastUpdated ?? firstRequest;
   const timeRangeHours = Math.max(
@@ -607,8 +681,9 @@ export function mapAnalyticsData(
       avgResponseSize: totalRequests > 0 ? summary.bandwidthOut / totalRequests : 0,
     },
     topPaths: [],
-    trafficByHour: periods.map((period) => ({
-      hour: new Date(period.from).getHours(),
+    trafficByHour: chronological.map((period) => ({
+      from: period.from,
+      to: period.to,
       requests: period.requests,
     })),
     limited: false,
@@ -624,22 +699,14 @@ export function mapAnalyticsData(
  * tick — no remount required.
  */
 export function invalidateProjectCaches(id: string) {
-  infoCache.delete(id);
-  // Overview AND geo share the `id` / `id::domain` key format — drop every
-  // domain-scoped entry for this project from both, not just the aggregate key.
-  const domainPrefix = `${id}${OVERVIEW_KEY_SEP}`;
-  for (const key of overviewCache.keys()) {
-    if (key === id || key.startsWith(domainPrefix)) overviewCache.delete(key);
-  }
-  for (const key of geoCache.keys()) {
-    if (key === id || key.startsWith(domainPrefix)) geoCache.delete(key);
-  }
-  // Usage-history entries are keyed `id##serviceKey`. Without this the chart kept a
-  // stale empty series after the first sample landed — the revision bump re-ran the
-  // effect but the cached `{kind:"ready"}` short-circuited it back to the old data.
-  const historyPrefix = `${id}${HISTORY_SEP}`;
-  for (const key of usageHistoryCache.keys()) {
-    if (key === id || key.startsWith(historyPrefix)) usageHistoryCache.delete(key);
+  // Invalidate every connection's version. The scope is never passed to the API;
+  // it only prevents cached results from crossing account boundaries.
+  for (const cache of [infoCache, overviewCache, geoCache, usageHistoryCache]) {
+    for (const key of cache.keys()) {
+      const target = key.slice(key.indexOf("\0") + 1);
+      if (target === id || target.startsWith(`${id}${OVERVIEW_KEY_SEP}`) || target.startsWith(`${id}${HISTORY_SEP}`))
+        cache.delete(key);
+    }
   }
   bumpRevision(id);
 }
@@ -649,4 +716,9 @@ export function invalidateProjectCachesFor(ids: Iterable<string>) {
   for (const id of new Set(ids)) {
     if (id) invalidateProjectCaches(id);
   }
+}
+
+/** Retry failed reads while sharing pending reads and keeping healthy cached results. */
+export function retryProjectRequests(id: string): void {
+  bumpRevision(id);
 }

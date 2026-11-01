@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Domains tab - list + create/edit/delete for vmail.domain rows.
  *
@@ -9,7 +12,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Globe } from "lucide-react";
 import {
   mailAdminApi,
   type AdminDomain,
@@ -158,7 +160,7 @@ export function DomainsTab({
     try {
       const [domainsRes, pendingRes] = await Promise.all([
         mailAdminApi.domains.list(serverId),
-        mailAdminApi.domains.pendingDns(serverId).catch(() => ({ pending: [] })),
+        mailAdminApi.domains.pendingDns(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/domains-tab"); return ({ pending: [] }); }),
       ]);
       setRows(domainsRes.domains);
       setPendingDns(pendingRes.pending);
@@ -246,7 +248,7 @@ export function DomainsTab({
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
           <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
-            <Globe className="size-4 text-muted-foreground" strokeWidth={2} />
+            <UiIcon name="globe" className="size-4 text-muted-foreground" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">
@@ -341,7 +343,7 @@ export function DomainsTab({
           onClick={openCreate}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 shrink-0"
         >
-          <Plus className="size-4" />
+          <UiIcon name="plus" className="size-4" />
           {t.emailsAdmin.domains.addDomain}
         </button>
       </div>
@@ -396,14 +398,14 @@ export function DomainsTab({
               {
                 id: "edit",
                 label: t.emailsAdmin.domains.editAction,
-                icon: <Pencil className="size-4" />,
+                icon: <UiIcon name="edit" className="size-4" />,
                 onClick: () => openEdit(row),
               },
               { id: "sep", divider: true },
               {
                 id: "delete",
                 label: t.emailsAdmin.domains.deleteAction,
-                icon: <Trash2 className="size-4" />,
+                icon: <UiIcon name="trash" className="size-4" />,
                 variant: "danger",
                 // The install domain can't be dropped while it still holds mail.
                 disabled: row.domain === primaryDomain && row.mailboxes > 0,
@@ -413,7 +415,7 @@ export function DomainsTab({
           />
         )}
         empty={{
-          icon: Globe,
+          icon: "globe",
           title: t.emailsAdmin.domains.emptyTitle,
           description: t.emailsAdmin.domains.emptyDesc,
           action: (
@@ -421,7 +423,7 @@ export function DomainsTab({
               onClick={openCreate}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {t.emailsAdmin.domains.addDomain}
             </button>
           ),

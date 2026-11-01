@@ -9,13 +9,13 @@ const { resolveFromLocalMock, resolveSourceEnvFromLocalMock } = vi.hoisted(() =>
   resolveSourceEnvFromLocalMock: vi.fn(),
 }));
 
-vi.mock("../../deployments/local-source", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/local-source", () => ({
   resolveFromLocal: resolveFromLocalMock,
   resolveSourceEnvFromLocal: resolveSourceEnvFromLocalMock,
 }));
 
-import { resolveFolderSessionSourceEnv, scanFolderSession } from "./folder.service";
-import type { FolderSession } from "./session-store";
+import { resolveFolderSessionSourceEnv, scanFolderSession } from "@repo/platform/engine/modules/projects/folder/folder.service";
+import type { FolderSession } from "@repo/platform/engine/modules/projects/folder/session-store";
 
 describe("scanFolderSession", () => {
   let stagingDir: string;

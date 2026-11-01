@@ -19,6 +19,10 @@
     "enterprise": {
       "name": "Enterprise",
       "tagline": "Limites sur mesure, infrastructure dédiée et un SLA."
+    },
+    "hobby": {
+      "name": "Hobby",
+      "tagline": "Un petit serveur géré pour vos projets personnels et vos applications du quotidien."
     }
   },
   "features": {
@@ -26,11 +30,10 @@
     "staticOnly": "Sites statiques uniquement — SSG, SPA et HTML brut",
     "anyWorkload": "Exécutez tout — conteneurs, Compose, workers, Postgres, Redis",
     "runningServices": "{runningServices} applications, bases de données ou workers actifs",
-    "computeMinutes": "{computeMinutes} minutes de calcul par mois",
     "buildMinutes": "{buildMinutes} minutes de build par mois",
+    "sharedBuilds": "Les builds partagent votre serveur, sans quota de durée mensuel",
     "power": "Jusqu'à {powerCpu} vCPU et {powerRamGb} GB de RAM par application",
     "projects": "{maxProjects} projets",
-    "projectsUnlimited": "Projets illimités",
     "freeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits",
     "freeSubdomainsUnlimited": "Sous-domaines {freeDomainSuffix} gratuits en illimité",
     "gitDeploys": "Déployez depuis GitHub, GitLab ou n'importe quel dépôt Git",
@@ -50,7 +53,9 @@
     "selfHostedUnlimited": "Déploiements, projets, serveurs et domaines illimités",
     "selfHostedServices": "Tous les services managés — Postgres, Redis, mail",
     "selfHostedClients": "CLI, web et desktop — un seul backend",
-    "selfHostedFreeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits en vous connectant au Cloud"
+    "selfHostedFreeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits en vous connectant au Cloud",
+    "monthlyCoverage": "CPU, RAM et stockage inclus pour la période payée",
+    "namespaceCapacity": "Total : {namespaceCpu} vCPU, {namespaceRamGb} Go de RAM, {namespaceDiskGb} Go de disque"
   },
   "selfHosted": {
     "name": "Auto-hébergé",
@@ -60,9 +65,14 @@
     "cta": "Commencer l'auto-hébergement"
   },
   "creditPacks": {
-    "pack_5k": "{computeMinutes} minutes de calcul",
-    "pack_25k": "{computeMinutes} minutes de calcul",
-    "pack_100k": "{computeMinutes} minutes de calcul"
+    "pack_5k": "{credits} crédits",
+    "pack_25k": "{credits} crédits",
+    "pack_100k": "{credits} crédits",
+    "pack_500": "{credits} crédits",
+    "pack_2k": "{credits} crédits",
+    "pack_400": "{credits} crédits",
+    "pack_1700": "{credits} crédits",
+    "pack_4500": "{credits} crédits"
   },
   "ui": {
     "perMonth": "/mois",
@@ -80,6 +90,6 @@
     "campaignEnds": "L'offre se termine le {date}",
     "wasPrice": "avant {price}",
     "standardTitle": "Dans tous les forfaits",
-    "creditPackNote": "≈ {appHours} heures d'une petite application, ou {buildMinutes} minutes de build"
+    "creditPackNote": "Utilisés pour la consommation Cloud mesurée ; la durée dépend de votre charge de travail."
   }
 }

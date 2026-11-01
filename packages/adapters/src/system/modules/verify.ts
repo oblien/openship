@@ -16,6 +16,7 @@
  * on a host.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { validateModuleCatalog, validateModuleVersion, type ModuleCatalog } from "./types";
 
@@ -66,7 +67,8 @@ export function verifyManifestSignature(
       });
       // ed25519 uses algorithm `null` in Node's one-shot verify.
       if (cryptoVerify(null, manifestBytes, key, signature)) return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/modules/verify");
       // Malformed key or signature for this candidate — try the next.
     }
   }

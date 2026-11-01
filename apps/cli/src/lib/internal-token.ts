@@ -25,6 +25,7 @@
  * that talks to a running API goes through `resolveInternalToken` /
  * `internalTokenSources`, or through lib/loopback-api's internalFetch on top of them.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 
@@ -50,7 +51,8 @@ export function mintBareInternalToken(): string {
 function bareInternalToken(): string | null {
   try {
     return readFileSync(INTERNAL_TOKEN_FILE, "utf8").trim() || null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/internal-token");
     return null;
   }
 }

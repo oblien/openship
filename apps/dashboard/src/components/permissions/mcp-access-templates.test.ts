@@ -116,17 +116,17 @@ describe("grantableTypes", () => {
   });
 
   it("mode-gates the platform features that only exist in one mode", () => {
-    // The jobs router is localOnly; billing exists only on the hosted control plane.
+    // Jobs use the selected server in both modes; billing belongs to Cloud.
     expect(grantableTypes(true)).toContain("job");
     expect(grantableTypes(true)).not.toContain("billing");
     expect(grantableTypes(false)).toContain("billing");
-    expect(grantableTypes(false)).not.toContain("job");
+    expect(grantableTypes(false)).toContain("job");
   });
 
-  it("offers servers and mail servers only self-hosted", () => {
+  it("offers managed servers in Cloud while keeping mail self-hosted", () => {
     expect(grantableTypes(true)).toContain("server");
     expect(grantableTypes(true)).toContain("mail_server");
-    expect(grantableTypes(false)).not.toContain("server");
+    expect(grantableTypes(false)).toContain("server");
     expect(grantableTypes(false)).not.toContain("mail_server");
   });
 });
@@ -669,5 +669,26 @@ describe("the digest answers the file-contents question", () => {
     const d = capabilityDigest({ template: "custom", readOnly: false, grants: [] });
     expect(d.can).not.toContain("readSource");
     expect(d.cannot).not.toContain("notReadSource");
+  });
+});
+
+describe("capability grants", () => {
+  const domainsOnly: PickerGrant = {
+    resourceType: "project",
+    resourceId: "p1",
+    permissions: ["domains:read", "domains:write", "domains:delete"],
+  };
+
+  it("a capability-only row states no level, and lists its capabilities", () => {
+    const [row] = summaryRows([domainsOnly]);
+    expect(row).toMatchObject({ level: null, capabilities: ["domains:read", "domains:write", "domains:delete"] });
+    expect(summaryGroups([row!])[0]!.sharedLevel).toBeNull();
+  });
+
+  it("counts capability writes as writes and domains:delete as a delete", () => {
+    const d = capabilityDigest(sel({ grants: [domainsOnly] }));
+    expect(d.can).toContain("operatePickedProjects");
+    expect(d.cannot).not.toContain("notDelete");
+    expect(readOnlyContradictions(sel({ grants: [domainsOnly], readOnly: true })).writes).toBe(1);
   });
 });

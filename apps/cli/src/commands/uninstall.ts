@@ -17,6 +17,7 @@
  * It also tries to hand :80/:443 back: if an install took over a proxy and never
  * finished, the takeover journal is rolled back so the previous proxy returns.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Command } from "commander";
 import chalk from "chalk";
 import { confirm, isCancel } from "@clack/prompts";
@@ -63,7 +64,7 @@ export const uninstallCommand = new Command("uninstall")
     // Before tearing the edge down: if an install stopped the operator's proxy and
     // never completed, put it back. Best-effort and a no-op when there's no
     // unfinished journal (a COMPLETED takeover cleared it — see the hint below).
-    const restored = await rollbackHostEdge().catch(() => false);
+    const restored = await rollbackHostEdge().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/commands/uninstall"); return false; });
     if (restored) console.log(chalk.green("  Restored the proxy that was running before Openship."));
 
     if (method === "compose") {
@@ -83,6 +84,7 @@ export const uninstallCommand = new Command("uninstall")
         const res = stopService();
         console.log(chalk.green(`  Service removed — ${res.detail}`));
       } catch (err) {
+        observeCaughtError(err, "cli/commands/uninstall");
         console.log(chalk.yellow(`  Couldn't remove the service: ${(err as Error).message}`));
       }
     }
@@ -92,6 +94,7 @@ export const uninstallCommand = new Command("uninstall")
         rmSync(OS_DIR, { recursive: true, force: true });
         console.log(chalk.green(`  Removed ${OS_DIR}`));
       } catch (err) {
+        observeCaughtError(err, "cli/commands/uninstall");
         console.log(chalk.yellow(`  Couldn't remove ${OS_DIR}: ${(err as Error).message}`));
       }
     }

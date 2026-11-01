@@ -1,7 +1,7 @@
-import { lt, eq } from "drizzle-orm";
+import { lt, eq, and, gt, or, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { githubInstallState } from "../schema";
+import { githubInstallState, userSettings } from "../schema";
 import type { GithubInstallStatePayload } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ export interface CreateInstallStateInput {
   userId: string;
   organizationId: string | null;
   sourceId?: string | null;
-  flow?: "install" | "manifest";
+  flow?: "install" | "manifest" | "repository-oauth";
   payload?: GithubInstallStatePayload;
   /** Absolute expiry. The flow caller picks the window (typically 10min). */
   expiresAt: Date;
@@ -48,10 +48,8 @@ export function createGithubInstallStateRepo(db: Database) {
 
     /**
      * Look up a binding without consuming it. Returns null when the row
-     * is missing or expired. Use this when verifying the install-complete
-     * webhook before doing the DELETE in `consume` — read separately so
-     * a verification failure leaves the row in place for an operator to
-     * audit, instead of silently erasing the evidence.
+     * is missing, expired, or terminal. Verification reads this first;
+     * claimWithState atomically completes it with the installation write.
      */
     async find(state: string): Promise<GithubInstallState | null> {
       const row = await db.query.githubInstallState.findFirst({
@@ -59,7 +57,84 @@ export function createGithubInstallStateRepo(db: Database) {
       });
       if (!row) return null;
       if (row.expiresAt < new Date()) return null;
+      if (["complete", "pending-approval", "failed"].includes(row.flow)) return null;
       return row;
+    },
+
+    /** Report this exact attempt, scoped to its initiating user and workspace. */
+    async progress(state: string, userId: string, organizationId: string): Promise<{
+      status: "waiting" | "complete" | "pending-approval" | "expired" | "failed"; error?: string;
+    }> {
+      const row = await db.query.githubInstallState.findFirst({ where: and(
+        eq(githubInstallState.state, state), eq(githubInstallState.userId, userId),
+        eq(githubInstallState.organizationId, organizationId), gt(githubInstallState.expiresAt, new Date()),
+      ) });
+      if (!row) return { status: "expired" };
+      if (row.flow === "complete" || row.flow === "pending-approval") return { status: row.flow };
+      if (row.payload.connectionError) return { status: "failed", error: row.payload.connectionError };
+      return { status: row.flow === "install" || row.flow === "repository-oauth" ? "waiting" : "expired" };
+    },
+
+    async recordFailure(state: string, userId: string, organizationId: string, error: string): Promise<void> {
+      await db.update(githubInstallState).set({ payload: sql`${githubInstallState.payload} || ${JSON.stringify({ connectionError: error })}::jsonb` }).where(and(
+        eq(githubInstallState.state, state), eq(githubInstallState.userId, userId),
+        eq(githubInstallState.organizationId, organizationId), eq(githubInstallState.flow, "install"),
+      ));
+    },
+
+    /** OAuth failures are terminal; another attempt must obtain fresh proof. */
+    async failAuthorization(state: string, userId: string, error: string): Promise<void> {
+      await db.update(githubInstallState).set({ flow: "failed", payload: { connectionError: error } }).where(and(
+        eq(githubInstallState.state, state), eq(githubInstallState.userId, userId),
+        eq(githubInstallState.flow, "repository-oauth"),
+      ));
+    },
+
+    async pendingApproval(state: string, userId: string, organizationId: string): Promise<boolean> {
+      const rows = await db.update(githubInstallState).set({ flow: "pending-approval", payload: {} }).where(and(
+        eq(githubInstallState.state, state), eq(githubInstallState.userId, userId),
+        eq(githubInstallState.organizationId, organizationId), eq(githubInstallState.flow, "install"),
+        gt(githubInstallState.expiresAt, new Date()),
+      )).returning();
+      return rows.length === 1;
+    },
+
+    /** One browser can begin OAuth; the original nonce remains observable. */
+    async beginAuthorization(state: string, userId: string, organizationId: string, payload: GithubInstallStatePayload): Promise<boolean> {
+      const rows = await db.update(githubInstallState).set({ flow: "repository-oauth", payload })
+        .where(and(eq(githubInstallState.state, state), eq(githubInstallState.userId, userId),
+          eq(githubInstallState.organizationId, organizationId), eq(githubInstallState.flow, "install"),
+          gt(githubInstallState.expiresAt, new Date()),
+        )).returning();
+      return rows.length === 1;
+    },
+
+    /** Save the grant and advance to installation selection in one transaction. */
+    async completeAuthorization(state: string, userId: string, encrypted: string): Promise<boolean> {
+      return db.transaction(async (tx) => {
+        const rows = await tx.update(githubInstallState).set({ flow: "install", payload: sql`${githubInstallState.payload} - 'codeVerifierEncrypted' - 'browserNonceHash' - 'callbackMode' - 'connectionError'` })
+          .where(and(eq(githubInstallState.state, state), eq(githubInstallState.userId, userId),
+            eq(githubInstallState.flow, "repository-oauth"), gt(githubInstallState.expiresAt, new Date()),
+          )).returning();
+        if (!rows.length) return false;
+        await tx.insert(userSettings).values({ id: generateId(), userId, githubAuthorizationEncrypted: encrypted })
+          .onConflictDoUpdate({ target: userSettings.userId, set: {
+            githubAuthorizationEncrypted: encrypted, updatedAt: new Date(),
+          } });
+        return true;
+      });
+    },
+
+    async cancelAuthorizations(userId: string, disconnectedGrant: string): Promise<void> {
+      await db.transaction(async (tx) => {
+        await tx.delete(githubInstallState).where(and(eq(githubInstallState.userId, userId),
+          or(eq(githubInstallState.flow, "repository-oauth"), eq(githubInstallState.flow, "install")),
+        ));
+        await tx.insert(userSettings).values({ id: generateId(), userId, githubAuthorizationEncrypted: disconnectedGrant })
+          .onConflictDoUpdate({ target: userSettings.userId, set: {
+            githubAuthorizationEncrypted: disconnectedGrant, updatedAt: new Date(),
+          } });
+      });
     },
 
     /**

@@ -1,21 +1,22 @@
 {
   "title": "Documentation",
-  "root": true,
   "pages": [
     "index",
     "---Get started---",
     "getting-started",
+    "---Build and operate---",
     "guides",
-    "---Reference---",
-    "reference",
     "dashboard",
-    "cli",
+    "---Developers---",
     "api",
+    "cli",
     "mcp",
+    "reference",
     "---Platform---",
     "architecture",
     "security",
     "---Help---",
     "troubleshooting"
-  ]
+  ],
+  "root": true
 }

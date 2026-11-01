@@ -313,7 +313,8 @@ export function createGitInstallationRepo(db: Database) {
     ): Promise<GitInstallation | null> {
       return db.transaction(async (tx) => {
         const [binding] = await tx
-          .delete(githubInstallState)
+          .update(githubInstallState)
+          .set({ flow: "complete", payload: {} })
           .where(
             and(
               eq(githubInstallState.state, state),

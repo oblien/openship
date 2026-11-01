@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { type ReactNode } from "react";
-import { Cloud, Server, HardDrive, LayoutGrid } from "lucide-react";
 import type { Project } from "@/constants/mock";
 import { useI18n } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -69,7 +70,7 @@ export function buildProjectFilterOptions(projects: Project[], t: Dictionary): P
       key: "all",
       filter: { kind: "all" },
       label: t.projects.filters.allProjects,
-      icon: <LayoutGrid className="size-4" />,
+      icon: <UiIcon name="grid" className="size-4" />,
       count: projects.length,
     },
   ];
@@ -79,7 +80,7 @@ export function buildProjectFilterOptions(projects: Project[], t: Dictionary): P
       key: "cloud",
       filter: { kind: "cloud" },
       label: t.projects.filters.cloud,
-      icon: <Cloud className="size-4" />,
+      icon: <UiIcon name="cloud" className="size-4" />,
       count: cloud,
     });
   }
@@ -89,7 +90,7 @@ export function buildProjectFilterOptions(projects: Project[], t: Dictionary): P
       key: `server:${name}`,
       filter: { kind: "server", name },
       label: name,
-      icon: <Server className="size-4" />,
+      icon: <UiIcon name="server" className="size-4" />,
       count,
     });
   }
@@ -99,7 +100,7 @@ export function buildProjectFilterOptions(projects: Project[], t: Dictionary): P
       key: "local",
       filter: { kind: "local" },
       label: t.projects.filters.local,
-      icon: <HardDrive className="size-4" />,
+      icon: <UiIcon name="hard-drive" className="size-4" />,
       count: local,
     });
   }
@@ -118,7 +119,7 @@ export function ProjectFilters({ options, active, onChange }: ProjectFiltersProp
   const activeKey = projectFilterKey(active);
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50">
+    <div className="bg-card rounded-2xl">
       <div className="px-5 py-4 border-b border-border/50">
         <h2 className="font-semibold text-foreground text-[15px]">{t.projects.filters.title}</h2>
         <p className="text-xs text-muted-foreground">{t.projects.filters.subtitle}</p>
@@ -131,6 +132,7 @@ export function ProjectFilters({ options, active, onChange }: ProjectFiltersProp
               key={opt.key}
               type="button"
               onClick={() => onChange(opt.filter)}
+              aria-pressed={isActive}
               className={
                 "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors " +
                 (isActive

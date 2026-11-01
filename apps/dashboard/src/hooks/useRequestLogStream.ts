@@ -17,7 +17,8 @@
  * `bw_in` vs `requestSize`). Every consumer needs the same shape, so it is produced once.
  */
 
-import { useEffect, useRef } from "react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiBaseUrl, api } from "@/lib/api";
 import { endpoints } from "@/lib/api/endpoints";
 
@@ -137,6 +138,10 @@ const appendQueryParam = (url: string, key: string, value: string) =>
 const MAX_STREAMS = 8;
 
 export function useRequestLogStream({ projectId, domain, domains, enabled, onEntry, onStatus }: Options) {
+  const [attempt, setAttempt] = useState(0);
+  const connecting = useRef(false);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   // Callbacks in refs, not deps: a caller that passes an inline arrow (all of them) would
   // otherwise tear down and reopen the EventSource on every render — which for the map
   // means reconnecting several times a second while ripples animate.
@@ -161,6 +166,7 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
 
   useEffect(() => {
     if (!enabled || !projectId) {
+      connecting.current = false;
       onStatusRef.current?.({ state: "idle" });
       return;
     }
@@ -173,7 +179,10 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
     const states = new Map<number, RequestLogStreamStatus["state"]>();
     let lastError = "closed";
     const status = (s: RequestLogStreamStatus) => {
-      if (!cancelled) onStatusRef.current?.(s);
+      if (!cancelled) {
+        connecting.current = s.state === "connecting";
+        onStatusRef.current?.(s);
+      }
     };
     const report = () => {
       const vals = [...states.values()];
@@ -195,6 +204,7 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
       };
 
       const handleRequest = (e: MessageEvent) => {
+        if (cancelled) return;
         try {
           const d = JSON.parse(e.data);
           if (d?.error) {
@@ -215,6 +225,7 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
       };
 
       const handleError = (e: Event) => {
+        if (cancelled) return;
         const me = e as MessageEvent;
         if (me.data) {
           try {
@@ -228,6 +239,7 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
         // during an auto-reconnect (CONNECTING) it's transient and must NOT flap the
         // aggregate to error while another domain's tail is live.
         if (es?.readyState === EventSource.CLOSED) set("error", "closed");
+        else set("connecting");
       };
 
       (async () => {
@@ -263,7 +275,8 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
             return;
           }
           sources.push(es);
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/hooks/useRequestLogStream");
           set("error", "connect-failed");
         }
       })();
@@ -277,5 +290,13 @@ export function useRequestLogStream({ projectId, domain, domains, enabled, onEnt
       for (const es of sources) es.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, targetsKey, enabled]);
+  }, [projectId, targetsKey, enabled, attempt]);
+
+  return {
+    reconnect: useCallback(() => {
+      if (!enabledRef.current || connecting.current) return;
+      connecting.current = true;
+      setAttempt((value) => value + 1);
+    }, []),
+  };
 }

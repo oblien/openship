@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { storedPublicEndpointsNeedCloud } from "./public-endpoints";
-import { getRoutingBaseDomain } from "./routing-domains";
+import { storedPublicEndpointsNeedCloud } from "@repo/platform/engine/lib/public-endpoints";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
 
 // The Cloud gate must classify by the HOSTNAME's physical truth, not a bare
 // `domainType` string. Regression for: removing a migrated custom-domain route

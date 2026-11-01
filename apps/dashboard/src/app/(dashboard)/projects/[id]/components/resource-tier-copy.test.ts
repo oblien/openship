@@ -1,47 +1,35 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { RESOURCE_TIER_ORDER } from "@repo/core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { RESOURCE_TIER_ORDER, type ResourceTier } from "@repo/core";
 import { baseDictionary as en } from "@/i18n";
+import { useResourceTierLabels } from "@/components/deploy/ResourceTierPicker";
 
-/**
- * Every tier this component renders must have copy — and a missing one must not be fatal.
- *
- * `RESOURCE_TIER_ORDER` (packages/core) decides which tiers exist and the Resources tab renders
- * all of them. `xlarge` was added there without its locale keys, so `r.tiers[tier].name` read
- * `undefined.name` and took the whole tab down with a runtime TypeError — a white screen for a
- * missing translation.
- *
- * Both halves are pinned: the keys exist NOW, and the accessor degrades if a future tier arrives
- * before its copy does. Locale data lags code by construction — nine files, five of which have no
- * `resources` block at all and inherit English — so the lag must be survivable.
- */
-describe("every tier in RESOURCE_TIER_ORDER has English copy", () => {
-  const tiers = en.projectSettings.resources.tiers as Record<string, { name?: string; description?: string }>;
+let resources = structuredClone(en.projectSettings.resources);
+vi.mock("@/components/i18n-provider", async original => ({
+  ...await original<typeof import("@/components/i18n-provider")>(),
+  useI18n: () => ({ t: { ...en, projectSettings: { ...en.projectSettings, resources } } }),
+}));
+beforeEach(() => { resources = structuredClone(en.projectSettings.resources); });
 
-  it.each([...RESOURCE_TIER_ORDER])("%s has a name and a description", (tier) => {
-    expect(tiers[tier]?.name, `${tier}.name`).toBeTruthy();
-    expect(tiers[tier]?.description, `${tier}.description`).toBeTruthy();
+describe("resource tier translations", () => {
+  it.each([...RESOURCE_TIER_ORDER, "unlimited"])("%s has English copy", tier => {
+    const copy = (resources.tiers as Record<string, { name?: string; description?: string }>)[tier];
+    expect(copy?.name).toBeTruthy();
+    expect(copy?.description).toBeTruthy();
   });
 
-  it("covers the unlimited pseudo-tier the picker prepends", () => {
-    expect(tiers.unlimited?.name).toBeTruthy();
-  });
-});
-
-describe("the accessor survives a tier with no copy", () => {
-  const raw = readFileSync(new URL("./ResourceSettings.tsx", import.meta.url), "utf8");
-  // CODE only. Matching the raw file made this fail on the doc comment that quotes the crashing
-  // shape in order to explain it — a comment describing a bug is not the bug.
-  const code = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
-  it("never hard-indexes the dictionary", () => {
-    // The shape that crashed was `r.tiers[<expr>].name` — a direct index, no optional chain.
-    expect(code).not.toMatch(/r\.tiers\[[^\]]+\]\.name/);
-    expect(code).not.toMatch(/r\.tiers\[[^\]]+\]\.description/);
-  });
-
-  it("falls back to the tier id rather than throwing", () => {
-    expect(code).toContain("tierCopy(tier)?.name ?? tier");
-    expect(code).toContain('tierCopy(tier)?.description ?? ""');
+  it.each(["micro", "xlarge"] as ResourceTier[])("renders %s safely when its translation has not arrived", tier => {
+    delete (resources.tiers as Record<string, unknown>)[tier];
+    let labels!: { name: string; description: string; spec: string };
+    function Probe() {
+      const copy = useResourceTierLabels();
+      labels = { name: copy.name(tier), description: copy.description(tier), spec: copy.spec(tier, { cpuCores: 0, memoryMb: 0 }) };
+      return createElement("span", null, labels.name);
+    }
+    expect(renderToStaticMarkup(createElement(Probe))).toContain(tier);
+    expect(labels.name).toBe(tier);
+    expect(labels.description).toBe("");
+    expect(labels.spec).toContain("vCPU");
   });
 });

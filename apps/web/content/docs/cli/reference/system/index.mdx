@@ -1,0 +1,218 @@
+---
+title: system
+description: Commands, arguments, and options for openship system.
+cliGroup: openship system
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship system
+
+Instance settings, onboarding, migration, and data transfer
+
+```text
+openship system [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`settings`](/docs/cli/reference/system/settings#openship-system-settings) | Read or update instance settings |
+| [`onboarding`](/docs/cli/reference/system/onboarding#openship-system-onboarding) | First-run instance setup |
+| [`upgrade-to-auth [options]`](/docs/cli/reference/system#openship-system-upgrade-to-auth) | Promote a zero-auth instance to email/password login |
+| [`browse [path]`](/docs/cli/reference/system#openship-system-browse) | List directories on the instance host (defaults to home) |
+| [`migration`](/docs/cli/reference/system/migration#openship-system-migration) | Team-mode migration lifecycle |
+| [`data-transfer`](/docs/cli/reference/system#openship-system-data-transfer) | Instance and project data export / import (instance-admin only) |
+| [`info`](/docs/cli/reference/system#openship-system-info) | Read product mode, version and advertised capabilities |
+| [`notices`](/docs/cli/reference/system#openship-system-notices) | Read advisories for this instance and workspace |
+| [`email`](/docs/cli/reference/system#openship-system-email) | Manage the instance's invitation and authentication email transport |
+| [`untracked-sites`](/docs/cli/reference/system#openship-system-untracked-sites) | Inspect edge sites not tracked by Openship |
+
+## openship system browse
+
+List directories on the instance host (defaults to home)
+
+```text
+openship system browse [options] [path]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `path` | Directory to list |
+
+## openship system data-transfer
+
+Instance and project data export / import (instance-admin only)
+
+```text
+openship system data-transfer [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`preview [options] [file]`](/docs/cli/reference/system#openship-system-data-transfer-preview) | Review export row counts, scope, projects and credentials before exporting |
+| [`export [options]`](/docs/cli/reference/system#openship-system-data-transfer-export) | Export instance or project data, including plaintext credentials, to a private JSON file |
+| [`import [options]`](/docs/cli/reference/system#openship-system-data-transfer-import) | Import an instance export file |
+
+## openship system data-transfer export
+
+Export instance or project data, including plaintext credentials, to a private JSON file
+
+```text
+openship system data-transfer export [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--selection <file>` | Export selection as JSON, or - for stdin |
+| `--out <file>` | Write the export to this file instead of stdout |
+
+## openship system data-transfer import
+
+Import an instance export file
+
+```text
+openship system data-transfer import [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--file <path>` | Path to an export file |
+| `--passphrase <passphrase>` | Passphrase for a legacy encrypted export |
+| `--passphrase-file <file>` | Legacy passphrase file, or - for stdin |
+| `--selection <file>` | Import selection and reviewed server mappings as JSON |
+| `--mode <mode>` | wipe (replace) \| merge (choices: "wipe", "merge", default: "wipe") |
+| `-y, --yes` | Skip the confirmation prompt |
+
+## openship system data-transfer preview
+
+Review export row counts, scope, projects and credentials before exporting
+
+```text
+openship system data-transfer preview [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship system email
+
+Manage the instance's invitation and authentication email transport
+
+```text
+openship system email [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/system#openship-system-email-get) | Read mail transport configuration with credentials masked |
+| [`set [options] [file]`](/docs/cli/reference/system#openship-system-email-set) | Update the instance's email transport credentials |
+| [`test <address>`](/docs/cli/reference/system#openship-system-email-test) | Send one test message through the configured mail transport |
+
+## openship system email get
+
+Read mail transport configuration with credentials masked
+
+```text
+openship system email get [options]
+```
+
+## openship system email set
+
+Update the instance's email transport credentials
+
+```text
+openship system email set [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship system email test
+
+Send one test message through the configured mail transport
+
+```text
+openship system email test [options] <address>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `address` | Recipient for one test message |
+
+## openship system info
+
+Read product mode, version and advertised capabilities
+
+```text
+openship system info [options]
+```
+
+## openship system notices
+
+Read advisories for this instance and workspace
+
+```text
+openship system notices [options]
+```
+
+## openship system untracked-sites
+
+Inspect edge sites not tracked by Openship
+
+```text
+openship system untracked-sites [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/system#openship-system-untracked-sites-list) | Read untracked edge sites and scan readiness |
+| [`remove [options] <hostname>`](/docs/cli/reference/system#openship-system-untracked-sites-remove) | Remove one untracked edge site through ownership checks |
+
+## openship system untracked-sites list
+
+Read untracked edge sites and scan readiness
+
+```text
+openship system untracked-sites list [options]
+```
+
+## openship system untracked-sites remove
+
+Remove one untracked edge site through ownership checks
+
+```text
+openship system untracked-sites remove [options] <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `hostname` | Exact hostname from the scan |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm removal |
+
+## openship system upgrade-to-auth
+
+Promote a zero-auth instance to email/password login
+
+```text
+openship system upgrade-to-auth [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Account display name |
+| `--email <email>` | Account email |
+| `--password <password>` | Account password (prompted if omitted) |
+| `--use-own-mail-server` | Warm the self-hosted mail server for auth emails |

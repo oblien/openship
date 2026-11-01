@@ -108,5 +108,5 @@ const UPDATE_ASSET_HOSTS = new Set([
 
 export function isAllowedUpdateAssetUrl(url: string): boolean {
   const parsed = parse(url);
-  return !!parsed && parsed.protocol === "https:" && UPDATE_ASSET_HOSTS.has(parsed.hostname);
+  return !!parsed && parsed.protocol === "https:" && !parsed.port && !parsed.username && !parsed.password && UPDATE_ASSET_HOSTS.has(parsed.hostname);
 }

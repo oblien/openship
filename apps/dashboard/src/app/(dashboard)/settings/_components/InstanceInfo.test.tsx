@@ -48,7 +48,7 @@ vi.mock("@/components/i18n-provider", () => ({
 vi.mock("./SettingsSection", () => ({
   SettingsSection: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
 }));
-vi.mock("./UpgradeAuthModal", () => ({ UpgradeAuthModal: () => null }));
+vi.mock("@/components/instance/UpgradeAuthModal", () => ({ UpgradeAuthModal: () => null }));
 
 import { InstanceInfo } from "./InstanceInfo";
 

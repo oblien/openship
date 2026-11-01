@@ -4,7 +4,7 @@
   "minEngine": "0.6.6",
   "id": "clickhouse",
   "name": "ClickHouse",
-  "description": "The columnar SQL database for analytics — billions of rows scanned per second. Ships with the CH-UI console, so you get a SQL editor, schema browser and dashboards the moment it installs: sign in with the ClickHouse user and password below, no extra setup.",
+  "description": "Columnar SQL for analytical data, with the CH-UI console for queries and schema browsing.",
   "repository": "https://github.com/ClickHouse/ClickHouse",
   "kind": "template",
   "logo": "clickhouse",
@@ -267,5 +267,21 @@
         "internal"
       ]
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Columnar SQL",
+        "description": "Query analytical datasets with SQL."
+      },
+      {
+        "title": "Web console",
+        "description": "CH-UI adds an editor and schema browser."
+      },
+      {
+        "title": "Persistent storage",
+        "description": "Keep data in a project-scoped volume."
+      }
+    ]
+  }
 }

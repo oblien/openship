@@ -19,7 +19,7 @@ const { rateLimit } = vi.hoisted(() => ({
 vi.mock("../../src/lib/rate-limit", () => ({ rateLimit }));
 
 // Minimal env so the rate-limiter loads without the full zod validation.
-vi.mock("../../src/config/env", () => ({ env: {} }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: {} }));
 
 // authMiddleware sets ctx, so permission-tagged routes can key per-user.
 vi.mock("../../src/middleware/auth", () => ({
@@ -38,14 +38,12 @@ vi.mock("../../src/lib/request-context", () => ({
   },
 }));
 
-// Permission engine: allow everything; registry is a no-op. A spec is "public"
-// iff it carries a `reason` (PublicSpec) rather than a `resource` (PermissionSpec).
-vi.mock("../../src/lib/route-permission", () => ({
+// Permission engine: allow everything; preserve the real route-spec parser.
+vi.mock("../../src/lib/route-permission", async (original) => ({
+  ...await original<typeof import("../../src/lib/route-permission")>(),
   requirePermission: () => (_c: unknown, next: () => unknown) => next(),
   publicRoute: () => (_c: unknown, next: () => unknown) => next(),
   registerRoute: () => {},
-  isPublicSpec: (s: { reason?: unknown; resource?: unknown }) =>
-    typeof s?.reason === "string" && !s?.resource,
 }));
 
 vi.mock("../../src/middleware/local-only", () => ({
@@ -61,9 +59,9 @@ function buildApp() {
     return n();
   });
   const r = secureRouter(new Hono(), { module: "t" });
-  r.get("/authed", { resource: "project", action: "read" } as never, (c) => c.json({ ok: true }));
-  r.get("/pub", { reason: "public test" } as never, (c) => c.json({ ok: true }));
-  r.get("/explicit", { resource: "project", action: "read", rateLimit: "mcp" } as never, (c) =>
+  r.get("/authed", { tag: "project:read" }, (c) => c.json({ ok: true }));
+  r.get("/pub", { public: true, reason: "public test" }, (c) => c.json({ ok: true }));
+  r.get("/explicit", { tag: "project:read", rateLimit: "mcp" }, (c) =>
     c.json({ ok: true }),
   );
   app.route("/api/t", r.hono);

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { getCloudApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { isInvitationClaimPath } from "@repo/core";
@@ -106,7 +107,8 @@ export async function preparePkceFlow(): Promise<{ state: string; codeChallenge:
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(CONNECT_PKCE_STORAGE_PREFIX + flowId, verifier);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/lib/cloud-auth");
       /* localStorage disabled — callback round trip will fail, but at
        * least the URL is PKCE-bound so a bearer code can't be replayed. */
     }
@@ -130,7 +132,15 @@ export function getCloudDesktopHandoffUrl(options: {
 }
 
 export function buildAuthPageHref(
-  route: "/login" | "/register" | "/authorize",
+  route:
+    | "/login"
+    | "/register"
+    | "/authorize"
+    | "/two-factor"
+    | "/verify-email"
+    | "/select-organization"
+    | "/forgot-password"
+    | "/reset-password",
   searchParams: SearchParamsLike,
 ) {
   const params = new URLSearchParams();
@@ -148,6 +158,24 @@ export function buildAuthPageHref(
 
   const query = params.toString();
   return query ? `${route}?${query}` : route;
+}
+
+/** Preserve an allowlisted destination through the server-side auth gates. */
+export function authContinuationHref(
+  route: "/login" | "/select-organization",
+  destination: string | null,
+): string {
+  const returnTo =
+    destination?.split("?")[0] === "/select-organization"
+      ? new URLSearchParams(destination.slice(destination.indexOf("?") + 1)).get("returnTo")
+      : destination;
+  return buildAuthPageHref(route, new URLSearchParams({ returnTo: returnTo ?? "" }));
+}
+
+/** Carry the same validated auth continuation through email verification. */
+export function emailVerificationHref(email: string, searchParams: SearchParamsLike): string {
+  const href = buildAuthPageHref("/verify-email", searchParams);
+  return `${href}${href.includes("?") ? "&" : "?"}email=${encodeURIComponent(email)}`;
 }
 
 export function getPostAuthRedirect(searchParams: SearchParamsLike) {
@@ -178,8 +206,10 @@ export function getPostAuthRedirect(searchParams: SearchParamsLike) {
  *   - Must be a relative path starting with a single `/`.
  *   - Must NOT start with `//` (protocol-relative URLs).
  *   - Path must match an allowlisted auth continuation. Invitation claims are
- *     accepted only in the exact `/accept-invite/<opaque-id>` shape; arbitrary
- *     dashboard paths are not.
+ *     accepted only in the exact `/accept-invite/<opaque-id>` shape. App install
+ *     and plan purchases also have exact paths. A pricing selection continues
+ *     only after authentication and live offer validation. Arbitrary dashboard
+ *     paths are not accepted.
  *
  * Returns the validated path, or `null` when the input is unsafe or
  * missing. Callers should treat `null` as "no returnTo" and fall back
@@ -211,6 +241,9 @@ export function validateReturnTo(input: string | null): string | null {
   const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
   const isAllowed =
     isInvitationClaim ||
+    /^\/apps\/new\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathOnly) ||
+    pathOnly === "/billing/plans" ||
+    pathOnly === "/cloud-billing" ||
     ALLOWED_PREFIXES.some((prefix) => {
       if (prefix === "/") return pathOnly === "/";
       return pathOnly === prefix || pathOnly.startsWith(prefix + "/");

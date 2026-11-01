@@ -4,7 +4,7 @@
  * checkable, so a future credential kind can't quietly violate them.
  */
 import { describe, it, expect } from "vitest";
-import { CHAINS, SPECS } from "../../../src/modules/github/github.token";
+import { CHAINS, SPECS } from "@repo/platform/engine/modules/github/github.token";
 
 describe("credential chain — structural invariants", () => {
   it("every remote chain contains only shippable credentials", () => {
@@ -28,6 +28,14 @@ describe("credential chain — structural invariants", () => {
     // A multi-tenant host must never shell out to another user's gh identity.
     expect(CHAINS.saas.local).not.toContain("gh-cli");
     expect(CHAINS.saas.remote).not.toContain("gh-cli");
+  });
+
+  it("server tokens are confined to self-hosted local reads", () => {
+    expect(SPECS["server-token"].shippable).toBe(false);
+    expect(CHAINS.selfhosted.local).toContain("server-token");
+    expect(CHAINS.selfhosted.remote).not.toContain("server-token");
+    expect(CHAINS.saas.local).not.toContain("server-token");
+    expect(CHAINS.saas.remote).not.toContain("server-token");
   });
 
   it("every kind named in a chain has a spec, and every spec's kind is self-consistent", () => {

@@ -1,7 +1,7 @@
 {
   "checking": "جارٍ التحقق من مزوّد DNS…",
   "noProviderTitle": "اضبط هذه السجلات تلقائيًا",
-  "noProviderDesc": "اربط مزوّد DNS وسيتولى Openship إضافة هذه السجلات نيابةً عنك.",
+  "noProviderDesc": "اربط مزوّد DNS لديه صلاحية الوصول إلى نطاق هذا الدومين، ثم راجع السجلات وطبّقها.",
   "connect": "ربط مزوّد DNS",
   "unauthorizedTitle": "يحتاج مزوّد DNS إلى إعادة الربط",
   "unauthorizedDesc": "تم رفض الرمز المحفوظ. أعِد ربطه لضبط DNS تلقائيًا.",
@@ -25,5 +25,20 @@
   "outcomeFailed": "فشل",
   "resultDone": "تم تحديث DNS.",
   "resultPartial": "بعض السجلات تحتاج إلى انتباه.",
-  "applyFailed": "تعذّر ضبط DNS."
+  "applyFailed": "تعذّر ضبط DNS.",
+  "preDeployHint": "تم ربط المزوّد. انشر أولاً، ثم اختر إعداد DNS تلقائياً من إعدادات دومين المشروع.",
+  "currentValue": "القيمة الحالية",
+  "desiredValue": "القيمة الجديدة",
+  "checkAgain": "تحقق مجدداً",
+  "manualSetup": "إعداد DNS يدوياً",
+  "recordsFailed": "تعذّر تحميل سجلات DNS. أعد المحاولة.",
+  "connection": {
+    "description": "اربط المزوّد مرة واحدة لمساحة العمل هذه. راجع تغييرات DNS قبل تطبيقها.",
+    "provider": "مزوّد DNS",
+    "connection": "الاتصال",
+    "newConnection": "إضافة اتصال",
+    "createToken": "إنشاء رمز API",
+    "adminRequired": "يجب أن يربط المالك أو المسؤول مزوّد DNS. يمكنك إضافة السجلات يدوياً.",
+    "loadFailed": "تعذّر تحميل اتصالات DNS. أعد المحاولة."
+  }
 }

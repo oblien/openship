@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { buildAuthPageHref } from "@/lib/cloud-auth";
 import { emailOtp } from "@/lib/auth-client";
 import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
@@ -10,13 +14,17 @@ import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
+  return <Suspense><ForgotPasswordForm /></Suspense>;
+}
+
+function ForgotPasswordForm() {
   const { toast } = useToast();
   const { t } = useI18n();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,8 +34,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       // A CODE, not a link. `redirectTo` is gone with the link flow — the user is
-      // sent straight to the form that asks for the code, so the only thing that
-      // has to survive the trip is six digits they can read off their screen.
+      // sent straight to the form that asks for the code.
       const result = await emailOtp.sendVerificationOtp({ email, type: "forget-password" });
       if (result?.error) {
         toast("error", result.error.message ?? t.auth.errors.generic);
@@ -37,8 +44,10 @@ export default function ForgotPasswordPage() {
       // announced a link, and the page it sends you to already says a code was sent
       // and to where. Carrying the address in the query saves asking twice — it is
       // not the credential, the code is.
-      router.push(`/reset-password?email=${encodeURIComponent(email)}`);
+      const href = buildAuthPageHref("/reset-password", searchParams);
+      router.push(`${href}${href.includes("?") ? "&" : "?"}email=${encodeURIComponent(email)}`);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/forgot-password/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
@@ -73,17 +82,17 @@ export default function ForgotPasswordPage() {
           </div>
 
           <Button type="submit" disabled={loading} className="mt-1 w-full">
-            {loading && <Loader2 className="animate-spin" />}
+            {loading && <UiIcon name="spinner" className="animate-spin" />}
             {loading ? t.auth.forgotPassword.submitting : t.auth.forgotPassword.submit}
           </Button>
         </form>
 
         <p className="mt-8 text-center text-sm text-muted-foreground">
           <Link
-            href="/login"
+            href={buildAuthPageHref("/login", searchParams)}
             className="inline-flex items-center gap-1 font-medium text-foreground transition-colors hover:underline"
           >
-            <ArrowLeft className="size-3.5" />
+            <UiIcon name="arrow-left" className="size-3.5" />
             {t.auth.forgotPassword.backToSignIn}
           </Link>
         </p>

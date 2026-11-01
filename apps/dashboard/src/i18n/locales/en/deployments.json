@@ -1,4 +1,13 @@
 {
+  "loadFailed": "Could not load deployments.",
+  "retry": "Try again",
+  "pagination": {
+    "label": "Deployment pages",
+    "previous": "Previous page",
+    "next": "Next page",
+    "pageOf": "Page {page} of {total}",
+    "range": "{from}–{to} of {total} deployments"
+  },
   "time": {
     "secondsAgo": "{n}s ago",
     "minutesAgo": "{n}m ago",
@@ -29,6 +38,7 @@
   "sidebar": {
     "overview": {
       "title": "Overview",
+      "pageTitle": "On this page",
       "total": "Total",
       "successful": "Successful",
       "failed": "Failed",
@@ -191,5 +201,66 @@
     "untouchedNote": "These keep running and are not touched: {names}",
     "confirm": "Roll back",
     "cancel": "Cancel"
+  },
+  "resourceGuidance": {
+    "label": "Deployment resource guidance",
+    "reviewCapacity": "Review capacity",
+    "reviewTitle": "Review Cloud space capacity",
+    "reviewHint": "Check usage and configured limits first. Upgrading is optional; opening this review does not change or retry the deployment.",
+    "slowTitle": "This build is taking a while",
+    "slowDescription": "Downloads, network delays or build commands may be slow. More capacity can help compute-heavy builds; check the logs first.",
+    "titles": {
+      "container-oom": "Container ran out of memory",
+      "memory-allocation": "Memory allocation failed",
+      "process-heap": "Application heap limit reached",
+      "storage-full": "Storage allocation failed",
+      "storage-low": "Not enough free build storage",
+      "process-killed": "Build process was killed"
+    },
+    "causes": {
+      "container-oom": "Docker confirmed an out-of-memory kill. Review the container memory limit and Cloud space capacity before retrying.",
+      "memory-allocation": "The failing process could not allocate memory. Review configured limits and available capacity before choosing a larger plan.",
+      "process-heap": "The process reached its own heap limit. Check runtime settings; a larger plan alone may not fix this.",
+      "storage-full": "The operation ran out of disk space or inodes. Review usage and unused artifacts, preserving application data.",
+      "storage-low": "Docker's filesystem has too little free space or no free inodes. Review usage or increase storage.",
+      "process-killed": "The process received SIGKILL (exit 137). This alone does not prove an out-of-memory failure. Check the logs."
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "Cloud build queue",
+    "title": "Build queued",
+    "position": "Build queued · Position {position}",
+    "concurrency": "Waiting for a simultaneous build slot.",
+    "resources": "Waiting for available CPU or memory on the server.",
+    "server": "Waiting for the server to accept this build.",
+    "automaticStart": "It will start automatically.",
+    "allowance": "Simultaneous builds allowed by your plan: {count}.",
+    "unlimited": "Your plan has no simultaneous build limit.",
+    "active": "Active builds: {count}.",
+    "comparePlans": "Compare plans",
+    "optionalUpgrade": "Upgrading is optional. You can keep waiting.",
+    "compareConcurrency": "Compare plans for more simultaneous builds. Your build can remain in the queue.",
+    "compareResources": "Compare plans for more CPU or memory. You can keep waiting for server resources to become available."
+  },
+  "monitoring": {
+    "title": "Deployment overview",
+    "scope": "Selected project and search · UTC calendar days · retained deployment history",
+    "period": "Time window",
+    "days": "{count} days",
+    "refresh": "Refresh",
+    "attempts": "Deployment attempts",
+    "window": "Across the selected window",
+    "successRate": "Success rate",
+    "rateHint": "Successful / (successful + failed); excludes cancellations",
+    "failedHint": "Includes partial and blocked releases",
+    "activeHint": "Running or queued attempts in this window",
+    "unavailable": "Overview unavailable. Try refreshing.",
+    "trend": "Daily outcomes",
+    "avgBuild": "Average successful build",
+    "empty": "No deployments in this window.",
+    "projects": "Project breakdown",
+    "projectHint": "Top 6 by failures, then active attempts",
+    "failedShort": "failed",
+    "history": "Deployment history"
   }
 }

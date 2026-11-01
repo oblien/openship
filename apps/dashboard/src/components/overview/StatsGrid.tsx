@@ -1,16 +1,8 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
-import { 
-  Coins, 
-  Rocket, 
-  Cpu, 
-  Box, 
-  Activity,
-  Bot,
-  TrendingUp,
-  TrendingDown
-} from 'lucide-react';
 import { OverviewStats } from './types';
 import { useI18n, interpolate } from '@/components/i18n-provider';
 
@@ -52,7 +44,7 @@ const StatCard: React.FC<StatCardProps> = ({
           <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
             trend > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
           }`}>
-            {trend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+            {trend > 0 ? <UiIcon name="trending-up" className="w-3 h-3" /> : <UiIcon name="trending-down" className="w-3 h-3" />}
             <span>{Math.abs(trend)}%</span>
           </div>
         )}
@@ -111,7 +103,7 @@ const StatsGrid: React.FC<StatsGridProps> = ({ stats, isLoading = false }) => {
     {
       title: t.overview.stats.creditsBalance,
       value: formatCredits(stats.creditsBalance),
-      icon: <Coins className="w-5 h-5" />,
+      icon: <UiIcon name="coins" className="w-5 h-5" />,
       color: '#059669',
       bgColor: 'rgba(5, 150, 105, 0.1)',
     },
@@ -119,7 +111,7 @@ const StatsGrid: React.FC<StatsGridProps> = ({ stats, isLoading = false }) => {
       title: t.overview.stats.tokenUsage,
       value: formatNumber(stats.totalTokenUsage),
       subtitle: t.overview.stats.thisMonth,
-      icon: <Activity className="w-5 h-5" />,
+      icon: <UiIcon name="activity" className="w-5 h-5" />,
       color: '#8b5cf6',
       bgColor: 'rgba(139, 92, 246, 0.1)',
     },
@@ -127,7 +119,7 @@ const StatsGrid: React.FC<StatsGridProps> = ({ stats, isLoading = false }) => {
       title: t.overview.stats.apiRequests,
       value: formatNumber(stats.totalApiRequests),
       subtitle: t.overview.stats.last7Days,
-      icon: <Cpu className="w-5 h-5" />,
+      icon: <UiIcon name="cpu" className="w-5 h-5" />,
       color: '#3b82f6',
       bgColor: 'rgba(59, 130, 246, 0.1)',
     },
@@ -135,14 +127,14 @@ const StatsGrid: React.FC<StatsGridProps> = ({ stats, isLoading = false }) => {
       title: t.overview.stats.deployments,
       value: stats.totalDeployments,
       subtitle: interpolate(t.overview.stats.successfulCount, { count: String(stats.successfulDeployments) }),
-      icon: <Rocket className="w-5 h-5" />,
+      icon: <UiIcon name="rocket" className="w-5 h-5" />,
       color: '#f59e0b',
       bgColor: 'rgba(245, 158, 11, 0.1)',
     },
     {
       title: t.overview.stats.activeProjects,
       value: stats.activeProjects,
-      icon: <Box className="w-5 h-5" />,
+      icon: <UiIcon name="rocket" className="w-5 h-5" />,
       color: '#ec4899',
       bgColor: 'rgba(236, 72, 153, 0.1)',
     },
@@ -150,7 +142,7 @@ const StatsGrid: React.FC<StatsGridProps> = ({ stats, isLoading = false }) => {
       title: t.overview.stats.sandboxes,
       value: stats.totalSandboxes,
       subtitle: interpolate(t.overview.stats.activeCount, { count: String(stats.activeSandboxes) }),
-      icon: <Bot className="w-5 h-5" />,
+      icon: <UiIcon name="bot" className="w-5 h-5" />,
       color: '#06b6d4',
       bgColor: 'rgba(6, 182, 212, 0.1)',
     },
@@ -166,4 +158,3 @@ const StatsGrid: React.FC<StatsGridProps> = ({ stats, isLoading = false }) => {
 };
 
 export default StatsGrid;
-

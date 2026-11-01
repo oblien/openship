@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import { PROXY_DIRECTIVES, sanitizeProxySettings, type ProxyDirectiveSpec } from "@repo/core";
-import { UpdateProjectBody } from "../../src/modules/projects/project.schema";
+import { UpdateProjectBody } from "@repo/contracts";
 
 /**
  * OpenResty inherits nginx's defaults, so an upload over 1 MB is a 413 and anything
@@ -184,11 +184,12 @@ function source(rel: string): string {
   return readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
-/** The `{...}` argument of every `registerRoute(` call in `src`, brace-balanced. */
+/** Route payloads from both the provider and the project registration boundary. */
 function registerRoutePayloads(src: string): string[] {
   const out: string[] = [];
-  const call = ".registerRoute(";
-  for (let at = src.indexOf(call); at !== -1; at = src.indexOf(call, at + 1)) {
+  const calls = /\.registerRoute\(|\bregisterProjectRoute\(/g;
+  for (const match of src.matchAll(calls)) {
+    const at = match.index!;
     const open = src.indexOf("{", at);
     if (open === -1 || open > src.indexOf(")", at) + 1) continue; // called with a variable
     let depth = 0;
@@ -204,7 +205,7 @@ function registerRoutePayloads(src: string): string[] {
 }
 
 describe("ProxySettings — every project vhost writer carries them", () => {
-  const compose = source("../../src/modules/deployments/compose/deploy.service.ts");
+  const compose = source("../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts");
 
   it("resolves them ONCE per compose deploy, sanitized, off the project", () => {
     // Sanitized here rather than at the callers, because the row can also carry a
@@ -223,7 +224,7 @@ describe("ProxySettings — every project vhost writer carries them", () => {
   });
 
   it("spreads them on the live apply path too (a save must not need a redeploy)", () => {
-    const payloads = registerRoutePayloads(source("../../src/lib/route-apply.service.ts"));
+    const payloads = registerRoutePayloads(source("../../../../packages/platform/src/engine/lib/route-apply.service.ts"));
     expect(payloads).not.toHaveLength(0);
     for (const p of payloads) expect(p).toMatch(/\.\.\.\(proxy \? \{ proxy \} : \{\}\)/);
   });
@@ -238,7 +239,7 @@ describe("ProxySettings — every project vhost writer carries them", () => {
  * the adapters' `route-registration.test.ts` (what reaches `registerRoute`).
  */
 describe("compiled vercel.json rules — every project vhost writer carries them", () => {
-  const compose = source("../../src/modules/deployments/compose/deploy.service.ts");
+  const compose = source("../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts");
 
   it("compiles them ONCE per compose deploy", () => {
     // Was recompiled per route, per service, plus again for the fan-out. Identical input
@@ -271,7 +272,7 @@ describe("compiled vercel.json rules — every project vhost writer carries them
   });
 
   it("carries them on the single-app / static deploy path, and reports what it refused", () => {
-    const pipeline = source("../../src/modules/deployments/build-pipeline.ts");
+    const pipeline = source("../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts");
     expect(pipeline).toContain("compileProjectRoutingFields(project.routingConfig");
     // This is the one path with no topology-aware pass behind it, so a refused rule is
     // genuinely not live and the deploy log has to say so.
@@ -311,21 +312,21 @@ function reconcileOptions(src: string): string[] {
  * (Oblien's edge compiles its own table).
  */
 describe("compiled vercel.json rules — the live reconcile writers carry them too", () => {
-  const SRC = new URL("../../src/", import.meta.url);
-  const liveWriters = readdirSync(SRC, { recursive: true, encoding: "utf8" })
+  const roots = [new URL("../../src/", import.meta.url), new URL("../../../../packages/platform/src/engine/", import.meta.url)];
+  const liveWriters = roots.flatMap(SRC => readdirSync(SRC, { recursive: true, encoding: "utf8" })
     .map((entry) => entry.replaceAll("\\", "/"))
     .filter((rel) => rel.endsWith(".ts") && !rel.endsWith(".test.ts"))
     // The dispatcher itself — it receives the registers, it doesn't build them.
     .filter((rel) => rel !== "lib/route-apply.service.ts")
     .map((rel) => [rel, readFileSync(new URL(rel, SRC), "utf8")] as const)
-    .filter(([, src]) => reconcileOptions(src).some((opts) => opts.includes("registers")));
+    .filter(([, src]) => reconcileOptions(src).some((opts) => opts.includes("registers"))));
 
   it("still sees every live writer (a rename must not blind the scan)", () => {
     const found = liveWriters.map(([rel]) => rel);
     for (const rel of [
       "modules/domains/project-route.service.ts",
       "modules/domains/routing-apply.service.ts",
-      "modules/projects/project.controller.ts",
+      "modules/projects/project-git.operations.ts",
       "modules/services/service.service.ts",
     ]) {
       expect(found, `${rel} no longer matches the live-writer scan`).toContain(rel);
@@ -346,7 +347,7 @@ describe("compiled vercel.json rules — the live reconcile writers carry them t
     // per-path upstreams: the domain keeps serving, with `/v3` quietly pointing at the
     // root service instead of the API. Same order as the deploy path — fan-out first.
     expect(
-      source("../../src/modules/domains/routing-apply.service.ts").replace(/\s+/g, ""),
+      source("../../../../packages/platform/src/engine/modules/domains/routing-apply.service.ts").replace(/\s+/g, ""),
     ).toContain("...(reg.proxyLocations??[]),...(routingFields.proxyLocations??[])");
   });
 });

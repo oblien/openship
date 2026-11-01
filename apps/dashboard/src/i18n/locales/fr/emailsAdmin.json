@@ -9,7 +9,8 @@
       "dns": "DNS",
       "health": "État",
       "backup": "Sauvegarde",
-      "advanced": "Avancé"
+      "advanced": "Avancé",
+      "aliases": "Alias"
     },
     "ariaLabel": "Sections d'administration de la messagerie"
   },
@@ -22,7 +23,7 @@
     "edit": "Modifier",
     "emptyTitle": "Aucune règle de notification pour l'instant",
     "emptyBody": "Ajoutez une règle pour être averti dans Slack, Telegram, Discord ou par un webhook lorsqu'un courrier arrive dans une boîte aux lettres ou sur un domaine de ce serveur.",
-    "noChannels": "Vous n'avez encore aucun canal de notification vérifié. Ajoutez-en un et vérifiez-le dans Paramètres → Notifications, puis revenez ici pour créer une règle.",
+    "noChannels": "Ajoutez et vérifiez un canal dans Surveillance → Notifications, puis revenez créer une règle.",
     "addChannel": "Ajouter un canal de notification",
     "manageChannels": "Gérer les canaux",
     "fieldName": "Nom",
@@ -66,7 +67,73 @@
     "confirmDelete": "Supprimer la règle « {name} » ? La capture s'arrête pour son adresse, sauf si une autre règle en a encore besoin."
   },
   "sending": {
-    "testLiveNote": "Envoie par le chemin actuellement actif, pas par les modifications non enregistrées ci-dessus."
+    "testLiveNote": "Envoie par le chemin actuellement actif, pas par les modifications non enregistrées ci-dessus.",
+    "title": "Envoi sortant",
+    "subtitle": "La réception reste sur ce serveur. Choisissez le mode d'expédition des e-mails sortants.",
+    "modeDirectTitle": "Distribution directe",
+    "modeDirectDesc": "Ce serveur distribue les e-mails sortants lui-même. Simple, mais les adresses IP de nouveaux VPS sont souvent sur liste de blocage et de nombreux hébergeurs bloquent le port 25 sortant — les messages peuvent atterrir dans les spams ou échouer.",
+    "modeRelayTitle": "Relais via un fournisseur",
+    "modeRelayDesc": "Transmettez les e-mails sortants à un smarthost — SES, SendGrid, Mailgun, Postmark, Resend ou n'importe quel serveur SMTP. Meilleure délivrabilité. Votre boîte de réception et tous les enregistrements DNS de réception restent inchangés.",
+    "pathTitle": "Chemin sortant",
+    "setUpRelay": "Configurer un relais",
+    "directActive": "Les e-mails sortants partent directement de ce serveur. Rien à configurer — choisissez un relais ci-dessus en cas de problème de délivrabilité.",
+    "switchToDirect": "Passer à la distribution directe",
+    "switchToDirectHint": "Supprime le smarthost et ses identifiants enregistrés, et retire l'include SPF du relais de vos DNS. Les e-mails sortants partent à nouveau directement vers le serveur de chaque destinataire.",
+    "statusOn": "Relais actif",
+    "statusOff": "Distribution directe (par défaut)",
+    "sendersTitle": "Quels expéditeurs utilisent le relais ?",
+    "scopeAll": "Tous les expéditeurs",
+    "scopeSelected": "Expéditeurs sélectionnés",
+    "scopeAllHint": "Chaque domaine sur ce serveur envoie via le relais.",
+    "scopeSelectedHint": "Seuls les expéditeurs choisis utilisent le relais ; les autres continuent d'envoyer en direct.",
+    "sendersDomains": "Domaines entiers",
+    "sendersAddresses": "Expéditeurs individuels",
+    "sendersAddressesHint": "Relayez une seule boîte sans relayer tout son domaine — contact@example.com peut envoyer via votre fournisseur tout en recevant via IMAP ici.",
+    "senderPlaceholder": "contact@example.com",
+    "addSender": "Ajouter",
+    "removeSender": "Supprimer",
+    "senderInvalid": "Saisissez une adresse simple comme contact@example.com — sans nom d'affichage.",
+    "noSenders": "Choisissez au moins un domaine ou une adresse d'expéditeur à relayer.",
+    "noDomains": "Aucun domaine trouvé sur ce serveur pour l'instant.",
+    "credentialsTitle": "Fournisseur et identifiants",
+    "provider": "Fournisseur",
+    "regionFor": "Région {provider}",
+    "host": "Hôte SMTP",
+    "port": "Port",
+    "username": "Nom d'utilisateur SMTP",
+    "password": "Mot de passe SMTP",
+    "passwordKeep": "Laisser vide pour conserver le mot de passe actuel",
+    "port465Blocked": "Le port 465 (TLS implicite) est un paramètre global du serveur et ne peut pas être utilisé si seulement certains expéditeurs sont relayés. Utilisez le port STARTTLS du fournisseur — généralement 587.",
+    "spfIncludeLabel": "Include SPF",
+    "spfIncludeHint": "Collez le mécanisme include: que votre fournisseur vous demande de publier. Si vous laissez vide, nous ne modifierons pas votre enregistrement SPF — mais les e-mails relayés par un hôte non répertorié dans le SPF échoueront au contrôle SPF.",
+    "spfNone": "Aucun",
+    "mailFromDomain": "Domaine MAIL FROM personnalisé",
+    "mailFromHint": "Optionnel. Un sous-domaine comme bounce.example.com pour l'alignement SPF/bounce. Configurez-le également chez le fournisseur.",
+    "identityTitle": "Identité {provider} par domaine",
+    "identityHint": "{provider} vérifie chaque domaine d'expédition séparément. Collez les enregistrements de chaque domaine relayé (optionnel — amavis signe déjà, DMARC s'aligne donc sans eux, mais le fournisseur exige la vérification du domaine pour autoriser l'envoi).",
+    "identityPrimary": "Principal",
+    "dkimRecords": "Enregistrements DKIM {provider}",
+    "dkimRecordsHint": "Collez les enregistrements CNAME affichés par votre fournisseur (SES : console → Identités vérifiées → votre domaine → DKIM). Nous les affichons et les vérifions dans l'onglet DNS.",
+    "dkimName": "Nom CNAME",
+    "dkimValue": "Valeur CNAME",
+    "summaryTitle": "Résumé",
+    "summaryTarget": "Smarthost",
+    "summarySenders": "Expéditeurs",
+    "summaryUpdated": "Dernier enregistrement",
+    "guidanceTitle": "Avant que cela ne fonctionne",
+    "guidanceVerify": "Vérifiez votre domaine dans la console Amazon SES.",
+    "guidanceSandbox": "Demandez l'accès en production — SES démarre dans un bac à sable qui n'envoie qu'aux adresses vérifiées.",
+    "guidanceCreds": "Utilisez les identifiants SMTP SES (un utilisateur SMTP IAM) — pas vos clés d'accès AWS.",
+    "guidanceDns": "Publiez les enregistrements DNS sur l'onglet DNS, puis relancez l'analyse pour confirmer.",
+    "guidanceSystem": "Les e-mails système (réinitialisations de mot de passe, invitations, notifications) passent aussi par ce relais — sauf si vous avez défini un expéditeur distinct dans Paramètres → E-mail.",
+    "save": "Activer le relais",
+    "update": "Enregistrer les modifications",
+    "disable": "Désactiver le relais",
+    "saved": "Relais sortant mis à jour.",
+    "disabled": "Relais désactivé — retour à la distribution directe.",
+    "saveFailed": "Impossible de mettre à jour le relais.",
+    "disableFailed": "Impossible de désactiver le relais.",
+    "dnsHint": "Les enregistrements d'envoi du fournisseur apparaissent maintenant sur l'onglet DNS. Publiez et vérifiez-les pour une délivrabilité optimale."
   },
   "overview": {
     "mailServer": "Serveur de messagerie",
@@ -98,7 +165,9 @@
     "quickActions": "Actions rapides",
     "addMailbox": "Ajouter une boîte aux lettres",
     "addDomain": "Ajouter un domaine",
-    "reviewDns": "Examiner les enregistrements DNS"
+    "reviewDns": "Examiner les enregistrements DNS",
+    "legacyWebmail": "Déployé par une ancienne version d'Openship — peut être remplacé par l'application webmail, qui se met à jour avec vos versions.",
+    "upgradeWebmail": "Remplacer le webmail"
   },
   "webmail": {
     "title": "Webmail",
@@ -300,8 +369,19 @@
       "notListeningHint": "Aucun processus n’écoute sur ce port.",
       "notExposedHint": "Écoute uniquement sur loopback ; les clients distants ne peuvent pas se connecter.",
       "unknownHint": "L’accessibilité publique n’a pas pu être vérifiée.",
-      "ports": { "smtp": "SMTP entrant", "smtps": "Soumission SMTP (TLS)", "submission": "Soumission SMTP (STARTTLS)", "imaps": "Accès IMAP (TLS)" },
-      "status": { "reachable": "Accessible", "blocked": "Bloqué", "not_listening": "Sans écoute", "not_exposed": "Non exposé", "unknown": "Inconnu" }
+      "ports": {
+        "smtp": "SMTP entrant",
+        "smtps": "Soumission SMTP (TLS)",
+        "submission": "Soumission SMTP (STARTTLS)",
+        "imaps": "Accès IMAP (TLS)"
+      },
+      "status": {
+        "reachable": "Accessible",
+        "blocked": "Bloqué",
+        "not_listening": "Sans écoute",
+        "not_exposed": "Non exposé",
+        "unknown": "Inconnu"
+      }
     },
     "delivery": {
       "title": "Envoi sortant",
@@ -411,7 +491,8 @@
       "partSignatures": "{names} n'est pas en cours d'exécution - les signatures antivirus ne sont plus mises à jour, le courrier est donc analysé avec un jeu de signatures qui vieillit",
       "partAdvisory": "{names} n'est pas en cours d'exécution",
       "almostSubQueueOne": "{count} message attend d'être envoyé - voir Envoi sortant ci-dessous.",
-      "almostSubQueueOther": "{count} messages attendent d'être envoyés - voir Envoi sortant ci-dessous."
+      "almostSubQueueOther": "{count} messages attendent d'être envoyés - voir Envoi sortant ci-dessous.",
+      "partCertificate": "Le certificat de messagerie nécessite votre attention"
     },
     "time": {
       "secondsAgo": "il y a {n} s",
@@ -647,5 +728,74 @@
     "loadingLogs": "Chargement des journaux…",
     "noLogLines": "Aucune ligne de journal pour ce composant pour le moment.",
     "rowActions": "Actions pour {name}"
+  },
+  "certificate": {
+    "title": "Certificat de messagerie",
+    "manage": "Gérer le certificat",
+    "check": "Vérifier le certificat",
+    "checking": "Vérification…",
+    "renew": "Renouveler le certificat",
+    "renewing": "Renouvellement…",
+    "autoRenew": "Renouvellement automatique",
+    "autoRenewHint": "Renouveler avant expiration et recharger les services de messagerie.",
+    "desktopHint": "Gardez Openship ouvert pour le renouvellement automatique.",
+    "jobDisabled": "La tâche partagée de renouvellement SSL est désactivée.",
+    "manageJob": "Ouvrir la tâche de renouvellement",
+    "failed": "Impossible de mettre à jour le certificat de messagerie.",
+    "notChecked": "Non vérifié",
+    "expires": "Expire le {date}",
+    "checked": "Vérifié : {time}",
+    "status": {
+      "ok": "Valide",
+      "warn": "Renouvellement requis",
+      "fail": "À vérifier",
+      "unknown": "Non confirmé"
+    }
+  },
+  "aliases": {
+    "heading": "Alias",
+    "description": "Transférez les e-mails d'une adresse à une autre, ou interceptez toutes les adresses non attribuées d'un domaine. Actif dès l'enregistrement — aucun redémarrage requis.",
+    "addAlias": "Ajouter un alias",
+    "domainLabel": "Domaine",
+    "loading": "Chargement…",
+    "activeCount": "{active} sur {total} actifs",
+    "colSource": "Source",
+    "colDestination": "Transférer vers",
+    "colType": "Type",
+    "colStatus": "Statut",
+    "typeAlias": "Alias",
+    "typeCatchAll": "Catch-all",
+    "active": "Actif",
+    "disabled": "Désactivé",
+    "activateAction": "Activer",
+    "deactivateAction": "Désactiver",
+    "deleteAction": "Supprimer",
+    "loadDomainsFailed": "Échec du chargement des domaines",
+    "loadFailed": "Échec du chargement des alias",
+    "emptyTitle": "Aucun alias pour l'instant",
+    "emptyDesc": "Transférez une adresse ou configurez un catch-all pour {domain}.",
+    "create": {
+      "title": "Nouvel alias · {domain}",
+      "description": "Crée une ligne dans la table de redirection du serveur de messagerie. Postfix la lit en direct — aucun redémarrage requis.",
+      "submit": "Créer l'alias",
+      "submitting": "Création…",
+      "catchAllLabel": "Catch-all pour ce domaine",
+      "catchAllHint": "Transfère chaque adresse de {domain} qui ne correspond pas à une vraie boîte aux lettres ou à un autre alias. Remplace tout catch-all existant pour ce domaine.",
+      "localPartLabel": "Partie locale",
+      "localPartHint": "La partie avant @. Minuscules, alphanumérique.",
+      "destinationLabel": "Transférer vers",
+      "destinationHint": "Toute adresse e-mail valide — une boîte aux lettres sur ce serveur ou externe (ex. Gmail)."
+    },
+    "deleteForm": {
+      "title": "Supprimer cet alias ?",
+      "sourceCatchAll": "Catch-all pour {domain}",
+      "description": "Supprime la ligne de transfert immédiatement. Les e-mails vers {source} seront rejetés ou traités par la règle correspondante suivante, dès le prochain message.",
+      "submit": "Supprimer l'alias",
+      "submitting": "Suppression…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} est une vraie boîte aux lettres — créer un alias ici redirigerait ses e-mails. Modifiez ou supprimez plutôt la boîte aux lettres.",
+      "alreadyExists": "Cette redirection exacte existe déjà."
+    }
   }
 }

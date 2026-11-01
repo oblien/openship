@@ -15,7 +15,7 @@ export type {
   MetadataParser,
 } from "./types";
 export { openshipMetadataParser } from "./openship";
-export { vercelMetadataParser, parseVercelConfig, extractCdTargets, type VercelConfig } from "./vercel";
+export { vercelMetadataParser, parseVercelConfig, vercelCompatibilityWarnings, extractCdTargets, type VercelConfig } from "./vercel";
 export { railwayMetadataParser } from "./railway";
 export { renderMetadataParser } from "./render";
 

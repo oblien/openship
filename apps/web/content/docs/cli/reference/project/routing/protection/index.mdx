@@ -1,0 +1,103 @@
+---
+title: project routing protection
+description: Commands, arguments, and options for openship project routing protection.
+cliGroup: openship project routing protection
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship project routing protection
+
+Protect self-hosted HTTPS hostnames with an edge password
+
+```text
+openship project routing protection [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <id>`](/docs/cli/reference/project/routing/protection#openship-project-routing-protection-list) | Read protection status without credentials |
+| [`protect [options] <id> <hostname>`](/docs/cli/reference/project/routing/protection#openship-project-routing-protection-protect) | Set or change the password; existing browser sessions expire |
+| [`retry [options] <id> <hostname>`](/docs/cli/reference/project/routing/protection#openship-project-routing-protection-retry) | Retry the saved edge update |
+| [`revoke [options] <id> <hostname>`](/docs/cli/reference/project/routing/protection#openship-project-routing-protection-revoke) | Sign out all browsers |
+| [`unlock [options] <id> <hostname>`](/docs/cli/reference/project/routing/protection#openship-project-routing-protection-unlock) | Remove password protection and make this hostname public |
+
+## openship project routing protection list
+
+Read protection status without credentials
+
+```text
+openship project routing protection list [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project routing protection protect
+
+Set or change the password; existing browser sessions expire
+
+```text
+openship project routing protection protect [options] <id> <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `hostname` | Exact custom hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `--password-file <file>` | Password file, or - for stdin (never a command-line password) |
+
+## openship project routing protection retry
+
+Retry the saved edge update
+
+```text
+openship project routing protection retry [options] <id> <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `hostname` | Exact custom hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm making the hostname public (unlock only) |
+
+## openship project routing protection revoke
+
+Sign out all browsers
+
+```text
+openship project routing protection revoke [options] <id> <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `hostname` | Exact custom hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm making the hostname public (unlock only) |
+
+## openship project routing protection unlock
+
+Remove password protection and make this hostname public
+
+```text
+openship project routing protection unlock [options] <id> <hostname>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `hostname` | Exact custom hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm making the hostname public (unlock only) |

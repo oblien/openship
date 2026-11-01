@@ -1,9 +1,10 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
 import Link from 'next/link';
-import { FolderKanban, ArrowUpRight, CheckCircle2, Loader2, XCircle, Pause } from 'lucide-react';
-import { generateIcon } from '@/utils/icons';
+
 import { ProjectData } from './types';
 import { useI18n, interpolate } from '@/components/i18n-provider';
 
@@ -36,13 +37,13 @@ const ProjectsCard: React.FC<ProjectsCardProps> = ({ data, isLoading = false }) 
   const getStatusIcon = (status: 'live' | 'building' | 'failed' | 'paused') => {
     switch (status) {
       case 'live':
-        return <CheckCircle2 className="w-3.5 h-3.5 text-success" />;
+        return <UiIcon name="check-circle" className="w-3.5 h-3.5 text-success" />;
       case 'building':
-        return <Loader2 className="w-3.5 h-3.5 text-info animate-spin" />;
+        return <UiIcon name="spinner" className="w-3.5 h-3.5 text-info animate-spin" />;
       case 'failed':
-        return <XCircle className="w-3.5 h-3.5 text-danger" />;
+        return <UiIcon name="x-circle" className="w-3.5 h-3.5 text-danger" />;
       case 'paused':
-        return <Pause className="w-3.5 h-3.5 text-warning" />;
+        return <UiIcon name="pause" className="w-3.5 h-3.5 text-warning" />;
     }
   };
 
@@ -68,16 +69,7 @@ const ProjectsCard: React.FC<ProjectsCardProps> = ({ data, isLoading = false }) 
     return 'Just now';
   };
 
-  const getFrameworkIcon = (framework: string) => {
-    const iconMap: Record<string, string> = {
-      'Next.js': 'nextjs-91-1662289277.png',
-      'React': 'react-51-1662290199.png',
-      'Vue.js': 'vuejs-31-1662290199.png',
-      'Nuxt.js': 'nuxtjs-11-1662289277.png',
-      'Astro': 'astro-31-1662289277.png',
-    };
-    return generateIcon(iconMap[framework] || 'code-45-1658433844.png', 16, 'rgba(0,0,0,0.6)');
-  };
+
 
   return (
     <div className="bg-gradient-to-br from-pink-50/80 to-white rounded-[20px] border border-pink-100 p-6 h-full flex flex-col">
@@ -85,7 +77,7 @@ const ProjectsCard: React.FC<ProjectsCardProps> = ({ data, isLoading = false }) 
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-pink-100 rounded-xl flex items-center justify-center">
-            <FolderKanban className="w-5 h-5 text-pink-600" />
+            <UiIcon name="project" className="w-5 h-5 text-pink-600" />
           </div>
           <div>
             <h3 className="font-semibold text-black">{t.overview.projects.title}</h3>
@@ -97,7 +89,7 @@ const ProjectsCard: React.FC<ProjectsCardProps> = ({ data, isLoading = false }) 
           href="/projects"
           className="p-2 hover:bg-pink-100 rounded-lg transition-colors group"
         >
-          <ArrowUpRight className="w-4 h-4 text-pink-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          <UiIcon name="arrow-up-right" className="w-4 h-4 text-pink-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
         </Link>
       </div>
 
@@ -123,7 +115,7 @@ const ProjectsCard: React.FC<ProjectsCardProps> = ({ data, isLoading = false }) 
       {data.failed > 0 && (
         <div className="pt-4 mt-auto border-t border-pink-100">
           <div className="flex items-center gap-2 text-danger bg-danger-bg px-3 py-2 rounded-lg">
-            <XCircle className="w-4 h-4" />
+            <UiIcon name="x-circle" className="w-4 h-4" />
             <span className="text-xs font-medium">{interpolate(
               data.failed === 1
                 ? t.overview.projects.needAttentionSingular

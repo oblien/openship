@@ -31,14 +31,14 @@ vi.mock("@repo/adapters", () => ({
 }));
 
 const withExecutor = vi.fn();
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: (id: string, fn: (e: unknown) => unknown) => withExecutor(id, fn),
   },
 }));
 
 const readState = vi.fn();
-vi.mock("../../../src/modules/mail/mail-state", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   readState: (...args: unknown[]) => readState(...args),
 }));
@@ -55,7 +55,7 @@ vi.mock("../../../src/lib/request-context", () => ({
 
 import { detectMailEngine } from "@repo/adapters";
 import { getStatus } from "../../../src/modules/mail/mail.controller";
-import { forgetMailEngine } from "../../../src/modules/mail/mail-engine";
+import { forgetMailEngine } from "@repo/platform/engine/modules/mail/mail-engine";
 
 const SERVER = "srv_1";
 /** Minimal state: no dnsRecords and no webmail, so neither augment step runs. */
@@ -136,6 +136,17 @@ describe("GET /mail/status — engine state", () => {
     // The rest of the status still renders: one broken probe can't blank the panel.
     expect(body.serverId).toBe(SERVER);
     expect(body.domain).toBe("example.com");
+    expect(body.observationError).toContain("health is unknown");
+  });
+
+  it("rechecks current engine state on a pooled executor instead of reusing its old running flag", async () => {
+    expect((await callStatus()).engine).toEqual({ flavor: "container", running: true });
+    vi.mocked(detectMailEngine).mockRejectedValueOnce(new Error("connect ENETUNREACH 192.0.2.1:22"));
+    const failed = await callStatus();
+    expect(failed.engine).toBeUndefined();
+    expect(failed.observationError).toBeDefined();
+    expect(failed.domain).toBe("example.com");
+    expect((await callStatus()).engine).toEqual({ flavor: "container", running: true });
   });
 
   it("doesn't probe a server with no mail install at all", async () => {
@@ -148,14 +159,24 @@ describe("GET /mail/status — engine state", () => {
     expect(detectMailEngine).not.toHaveBeenCalled();
   });
 
-  it("still answers the no-install shell when the server is unreachable", async () => {
+  it("reports unavailable status instead of a fresh installation when SSH is unreachable", async () => {
     withExecutor.mockRejectedValue(new Error("connect ETIMEDOUT"));
 
     const body = await callStatus();
 
     expect("engine" in body).toBe(false);
-    expect(body.active).toBe(false);
-    expect(body.serverId).toBe(SERVER);
+    expect(body.code).toBe("MAIL_STATUS_UNAVAILABLE");
+    expect(body.active).toBeUndefined();
+    expect(body.steps).toBeUndefined();
+  });
+
+  it("requires an authoritative state read and preserves a read failure", async () => {
+    readState.mockRejectedValueOnce(new Error("connect ENETUNREACH 192.0.2.1:22"));
+    const c = context();
+    await getStatus(c);
+    expect(readState).toHaveBeenCalledWith(executor, { strict: true });
+    expect((c as { json: ReturnType<typeof vi.fn> }).json).toHaveBeenCalledWith(expect.objectContaining({ code: "MAIL_STATUS_UNAVAILABLE" }), 503);
+    expect(detectMailEngine).not.toHaveBeenCalled();
   });
 
   it("does not demote an install finished before the public-port step existed", async () => {
@@ -179,3 +200,19 @@ describe("GET /mail/status — engine state", () => {
     expect(publicPorts?.warning).toMatch(/Health tab checks it live/i);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn().mockResolvedValue(undefined) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
+});
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  isServerInOrg: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  isServerInOrg: vi.fn().mockResolvedValue(true),
+}));

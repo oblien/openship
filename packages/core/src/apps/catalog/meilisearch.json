@@ -118,5 +118,21 @@
       "label": "Meilisearch",
       "kind": "http"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Typo-tolerant search",
+        "description": "Find results despite small spelling mistakes."
+      },
+      {
+        "title": "Document indexes",
+        "description": "Index the data your app needs to search."
+      },
+      {
+        "title": "Application clients",
+        "description": "Connect through the API and supported clients."
+      }
+    ]
+  }
 }

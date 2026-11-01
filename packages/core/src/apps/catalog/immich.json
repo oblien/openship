@@ -1,0 +1,273 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "immich",
+  "name": "Immich",
+  "description": "Back up photos and videos with Immich, a private vector-enabled database, and a machine-learning worker.",
+  "kind": "template",
+  "logo": "immich",
+  "category": "other",
+  "framework": "docker-compose",
+  "repository": "https://github.com/immich-app/immich",
+  "services": [
+    {
+      "name": "immich-db",
+      "image": "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "app",
+        "POSTGRES_DB": "app",
+        "POSTGRES_INITDB_ARGS": "--data-checksums"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["immich_db_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 30,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 2048,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "immich-broker",
+      "image": "valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d",
+      "restart": "unless-stopped",
+      "volumes": ["immich_broker_data:/data"],
+      "healthcheck": {
+        "test": ["CMD", "valkey-cli", "ping"],
+        "interval": "5s",
+        "timeout": "3s",
+        "retries": 30
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 512
+      }
+    },
+    {
+      "name": "immich-machine-learning",
+      "image": "ghcr.io/immich-app/immich-machine-learning:v3.3.1",
+      "restart": "unless-stopped",
+      "volumes": ["immich_model_cache:/cache"],
+      "healthcheck": {
+        "test": ["CMD", "python3", "healthcheck.py"],
+        "interval": "20s",
+        "timeout": "10s",
+        "retries": 30,
+        "startPeriod": "120s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 2048,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "immich",
+      "image": "ghcr.io/immich-app/immich-server:v3.3.1",
+      "restart": "unless-stopped",
+      "dependsOn": ["immich-db", "immich-broker", "immich-machine-learning"],
+      "environment": {
+        "DB_HOSTNAME": "immich-db",
+        "DB_USERNAME": "app",
+        "DB_DATABASE_NAME": "app",
+        "REDIS_HOSTNAME": "immich-broker",
+        "IMMICH_MACHINE_LEARNING_URL": "http://immich-machine-learning:3003",
+        "IMMICH_ALLOW_SETUP": "false"
+      },
+      "secretEnv": ["DB_PASSWORD", "OPENSHIP_ADMIN_PASSWORD"],
+      "volumes": ["immich_uploads:/data"],
+      "commandArgv": ["node /etc/openship/immich-start.cjs"],
+      "stopGracePeriod": "60s",
+      "healthcheck": {
+        "test": ["CMD-SHELL", "test -f /tmp/openship-ready && immich-healthcheck"],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 30,
+        "startPeriod": "240s"
+      },
+      "exposed": true,
+      "exposedPort": 2283,
+      "routes": [
+        {
+          "port": 2283
+        }
+      ],
+      "resources": {
+        "cpuCores": 1,
+        "memoryMb": 1536,
+        "diskMb": 16384
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "immich",
+      "port": 2283,
+      "label": "Photos",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "immich-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"],
+      "scope": "internal"
+    },
+    {
+      "service": "immich-broker",
+      "port": 6379,
+      "label": "Queue",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"],
+      "scope": "internal"
+    }
+  ],
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 6144
+  },
+  "tags": ["photos", "video", "backup"],
+  "management": {
+    "kind": "schema"
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Persistent storage",
+        "description": "Application data stays on project-scoped volumes across deployments."
+      },
+      {
+        "title": "Published images",
+        "description": "Install pinned upstream containers without building images on your server."
+      }
+    ],
+    "articleFile": "articles/immich.md"
+  },
+  "configFields": [
+    {
+      "service": "immich-db",
+      "key": "POSTGRES_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "immich-db"
+    },
+    {
+      "service": "immich",
+      "key": "DB_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "immich-db"
+    },
+    {
+      "service": "immich",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Initial administrator password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "immich",
+      "key": "OPENSHIP_ADMIN_EMAIL",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "service": "immich",
+      "key": "OPENSHIP_ADMIN_NAME",
+      "label": "Display name",
+      "default": "Admin",
+      "required": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "immich",
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "help": "Used only for the initial account. Manage existing accounts in the app."
+        },
+        {
+          "service": "immich",
+          "key": "OPENSHIP_ADMIN_NAME",
+          "label": "Display name",
+          "type": "text",
+          "default": "Admin",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[a-zA-Z0-9_. -]+$",
+          "help": "Used only for the initial account. Manage existing accounts in the app."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "connection": {
+    "title": "Open Immich",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Immich",
+        "source": "publicUrl:immich",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Email",
+        "source": "env:immich:OPENSHIP_ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Initial password",
+        "source": "env:immich:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Account changes made in the app are preserved on redeployment. These are the initial credentials."
+    }
+  },
+  "files": [
+    {
+      "service": "immich",
+      "path": "/etc/openship/immich-start.cjs",
+      "content": "const { writeFileSync } = require('node:fs');\nconst { spawn } = require('node:child_process');\nconst { networkInterfaces } = require('node:os');\nconst pause = ms => new Promise(resolve => setTimeout(resolve, ms));\nlet child;\nlet stopping = false;\nfor (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { if (stopping) return; stopping = true; void stop().then(() => process.exit(143), () => process.exit(1)); });\nfunction start(host, setup) {\n  if (stopping) throw new Error('Immich setup was interrupted.');\n  child = spawn('start.sh', [], { env: { ...process.env, IMMICH_HOST: host, IMMICH_ALLOW_SETUP: setup }, stdio: 'inherit', detached: true });\n}\nasync function stop() {\n  if (!child) return;\n  const processGroup = child.pid;\n  const alive = () => { try { process.kill(-processGroup, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };\n  if (!alive()) return;\n  process.kill(-processGroup, 'SIGTERM');\n  for (let attempt = 0; attempt < 300 && alive(); attempt++) await pause(100);\n  if (alive()) process.kill(-processGroup, 'SIGKILL');\n}\nasync function config(host = '127.0.0.1') {\n  const response = await fetch('http://' + host + ':2283/api/server/config', { signal: AbortSignal.timeout(5000) });\n  if (!response.ok) throw new Error('Immich did not return its setup status.');\n  const value = await response.json();\n  if (typeof value.isInitialized !== 'boolean') throw new Error('Immich returned an invalid setup status.');\n  return value;\n}\n(async () => {\n  start('127.0.0.1', 'true');\n  let initial;\n  for (let attempt = 0; attempt < 240; attempt++) {\n    if (child.exitCode !== null) throw new Error('Immich exited during private setup.');\n    try { initial = await config(); break; } catch (error) { if (!(error instanceof TypeError) && error.name !== 'TimeoutError') throw error; }\n    await pause(2000);\n  }\n  if (!initial) throw new Error('Immich private setup timed out.');\n  if (!initial.isInitialized) {\n    const response = await fetch('http://127.0.0.1:2283/api/auth/admin-sign-up', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: process.env.OPENSHIP_ADMIN_EMAIL, name: process.env.OPENSHIP_ADMIN_NAME, password: process.env.OPENSHIP_ADMIN_PASSWORD }), signal: AbortSignal.timeout(30000) });\n    if (!response.ok || (await response.json()).isAdmin !== true) throw new Error('Immich initial owner setup was rejected.');\n    if (!(await config()).isInitialized) throw new Error('Immich owner setup did not persist.');\n  }\n  await stop();\n  start('0.0.0.0', 'false');\n  // Probe the container's non-loopback address: an old private worker cannot\n  // satisfy public readiness while the new API is still starting.\n  const address = Object.values(networkInterfaces()).flat().find(value => value && value.family === 'IPv4' && !value.internal)?.address;\n  if (!address) throw new Error('Immich has no private network address for its public listener.');\n  let publicReady = false;\n  for (let attempt = 0; attempt < 180; attempt++) {\n    if (child.exitCode !== null) throw new Error('Immich public server exited during startup.');\n    try { if ((await config(address)).isInitialized) { publicReady = true; break; } } catch (error) { if (!(error instanceof TypeError) && error.name !== 'TimeoutError') throw error; }\n    await pause(2000);\n  }\n  if (!publicReady) throw new Error('Immich public listener did not become ready.');\n  writeFileSync('/tmp/openship-ready', 'ready', { mode: 0o600 });\n  child.once('exit', code => { if (!stopping) process.exit(code ?? 1); });\n})().catch(async error => { if (stopping) return; if (typeof error.message === \"string\" && error.message.startsWith(\"Immich \")) console.error(error.message); console.error('Immich could not complete private owner setup; the public service was not started.'); if (child?.exitCode === null) await stop(); process.exit(1); });\n"
+    }
+  ]
+}

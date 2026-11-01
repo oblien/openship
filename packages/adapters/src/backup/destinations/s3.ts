@@ -13,6 +13,8 @@
  * PUT is naturally atomic. Either way, restores never see partial bytes.
  */
 
+import { PublicHttpHandler } from "../../system/public-http-handler";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   CompleteMultipartUploadCommandOutput,
   DeleteObjectCommand,
@@ -43,6 +45,7 @@ import type {
 const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>([
   "streamingPut",
   "streamingGet",
+  "rangedGet",
   "multipart",
   "presignedGet",
   "presignedPut",
@@ -140,6 +143,7 @@ class S3DestinationImpl implements BackupDestination {
       region: row.region ?? "auto",
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: !isAws,
+      ...(row.publicNetworkOnly ? { requestHandler: new PublicHttpHandler() } : {}),
     });
     this.bucket = row.bucket;
     this.prefix = (row.pathPrefix ?? "").replace(/^\/+|\/+$/g, "");
@@ -167,6 +171,7 @@ class S3DestinationImpl implements BackupDestination {
       await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: probeKey }));
       return { ok: true };
     } catch (err) {
+      observeCaughtError(err, "adapters/backup/destinations/s3");
       const message = safeErrorMessage(err);
       return { ok: false, reason: message };
     }
@@ -221,7 +226,9 @@ class S3DestinationImpl implements BackupDestination {
             `automatically; a streamed database dump cannot, so this artifact needs to be ` +
             `split or sent to a destination without a part limit.`,
         );
-        void upload.abort().catch(() => {});
+        void upload.abort().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/backup/destinations/s3");
+        });
       }
     });
 
@@ -239,9 +246,11 @@ class S3DestinationImpl implements BackupDestination {
     };
   }
 
-  async get(key: string): Promise<Readable> {
+  async get(key: string, options?: { range?: { start: number; end: number } }): Promise<Readable> {
     const result = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: this.fullKey(key) }),
+      new GetObjectCommand({ Bucket: this.bucket, Key: this.fullKey(key),
+        ...(options?.range && { Range: `bytes=${options.range.start}-${options.range.end}` }),
+      }),
     );
     if (!result.Body) {
       throw new Error(`No body in GetObject response for ${key}`);
@@ -342,6 +351,7 @@ class S3DestinationImpl implements BackupDestination {
           }
         }
       } catch (err) {
+        observeCaughtError(err, "adapters/backup/destinations/s3");
         const message = safeErrorMessage(err);
         for (const k of chunk) failed.push({ key: k, error: message });
       }

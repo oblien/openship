@@ -1,0 +1,124 @@
+---
+title: server cluster storage
+description: Commands, arguments, and options for openship server cluster storage.
+cliGroup: openship server cluster storage
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server cluster storage
+
+Manage replicated cluster storage and its backup destination
+
+```text
+openship server cluster storage [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get [options] <id>`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage-get) | Read storage status, disks and current sequence |
+| [`setup [options] [file]`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage-setup) | Configure replicated storage with explicit disks and capacity reservations |
+| [`retry [options] <id>`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage-retry) | retry storage at the reviewed sequence |
+| [`remove [options] <id>`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage-remove) | remove storage at the reviewed sequence |
+| [`backup [options] <id> <destination>`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage-backup) | Set the storage backup destination at its current sequence |
+| [`events [options] <id>`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage-events) | Stream storage progress |
+
+## openship server cluster storage backup
+
+Set the storage backup destination at its current sequence
+
+```text
+openship server cluster storage backup [options] <id> <destination>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+| `destination` | Backup destination ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current sequence from storage get |
+
+## openship server cluster storage events
+
+Stream storage progress
+
+```text
+openship server cluster storage events [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |
+
+## openship server cluster storage get
+
+Read storage status, disks and current sequence
+
+```text
+openship server cluster storage get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--observe` | Refresh storage health from the cluster |
+
+## openship server cluster storage remove
+
+remove storage at the reviewed sequence
+
+```text
+openship server cluster storage remove [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current sequence from storage get |
+| `-y, --yes` | Confirm storage changes |
+
+## openship server cluster storage retry
+
+retry storage at the reviewed sequence
+
+```text
+openship server cluster storage retry [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current sequence from storage get |
+| `-y, --yes` | Confirm storage changes |
+
+## openship server cluster storage setup
+
+Configure replicated storage with explicit disks and capacity reservations
+
+```text
+openship server cluster storage setup [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |

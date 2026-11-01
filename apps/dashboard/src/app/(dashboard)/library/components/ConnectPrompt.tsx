@@ -1,13 +1,17 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Github, Loader2, Settings, ExternalLink, ArrowRight, KeyRound } from "lucide-react";
 import { useGitHub, type CliAction } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
+import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
+import { Button } from "@/components/ui/button";
 
 /* ── Shared SVG illustration ──────────────────────────────────────── */
 
@@ -66,6 +70,8 @@ export function ConnectPrompt({
   onConnect,
   cliAction,
   onRefresh,
+  onBrowseApps,
+  header,
   selfHosted,
 }: {
   connecting: boolean;
@@ -73,6 +79,8 @@ export function ConnectPrompt({
   onConnect: (source?: "oauth" | "cli") => void;
   cliAction: CliAction | null;
   onRefresh: () => void;
+  onBrowseApps: () => void;
+  header?: React.ReactNode;
   selfHosted: boolean;
 }) {
   const { t } = useI18n();
@@ -89,8 +97,10 @@ export function ConnectPrompt({
   const isDesktop = capabilities?.desktop ?? deployMode === "desktop";
   const can = (kind: "device" | "token" | "app" | "ssh-key" | "forwarding") => {
     const m = capabilities?.methods.find((x) => x.kind === kind);
-    return m ? m.available : selfHosted;
+    return m ? m.available : kind === "token" || selfHosted;
   };
+  const leadWithApp = (capabilities?.primary ?? (selfHosted ? null : "app")) === "app";
+  const showCredentialChoices = !leadWithApp && (can("device") || can("token"));
   const cardCount = (can("device") ? 1 : 0) + (can("token") || can("ssh-key") ? 1 : 0);
 
   // No device client id on this instance → collect a token here rather than
@@ -98,6 +108,7 @@ export function ConnectPrompt({
   if (cliAction?.type === "token") {
     return (
       <div className="bg-card rounded-2xl border border-border/50">
+        {header}
         <div className="px-6 pb-10 text-center">
           <div className="relative mx-auto w-64 h-44">
             <GitHubConnectSvg />
@@ -120,6 +131,7 @@ export function ConnectPrompt({
   if (cliAction?.type === "terminal") {
     return (
       <div className="bg-card rounded-2xl border border-border/50">
+        {header}
         <div className="px-6 pb-10 text-center">
           <div className="relative mx-auto w-64 h-44">
             <GitHubConnectSvg />
@@ -153,6 +165,7 @@ export function ConnectPrompt({
   if (cliAction?.type === "device_flow") {
     return (
       <div className="bg-card rounded-2xl border border-border/50">
+        {header}
         <div className="px-6 pb-10 text-center">
           <div className="relative mx-auto w-64 h-44">
             <GitHubConnectSvg />
@@ -165,7 +178,9 @@ export function ConnectPrompt({
               verification_uri_complete), so copy + open is the shortest path. */}
           <button
             type="button"
-            onClick={() => void navigator.clipboard?.writeText(cliAction.userCode ?? "").catch(() => {})}
+            onClick={() => void navigator.clipboard?.writeText(cliAction.userCode ?? "").catch((diagnosticFailure) => {
+              observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/library/components/ConnectPrompt");
+            })}
             title={t.library.connect.deviceFlow.copyCode}
             className="inline-block px-6 py-3 bg-muted rounded-lg text-2xl font-mono font-bold tracking-widest text-foreground mb-4 hover:bg-muted/70 transition-colors"
           >
@@ -180,11 +195,11 @@ export function ConnectPrompt({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 mb-5"
           >
-            <ExternalLink className="size-4" />
+            <UiIcon name="external-link" className="size-4" />
             {t.library.connect.deviceFlow.openGithub}
           </a>
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
             {t.library.connect.deviceFlow.waiting}
           </div>
         </div>
@@ -195,6 +210,7 @@ export function ConnectPrompt({
   // Default: standard connect button
   return (
     <div className="bg-card rounded-2xl border border-border/50">
+      {header}
       <div className="px-6 pb-10 text-center">
         <div className="relative mx-auto w-64 h-44">
           <GitHubConnectSvg />
@@ -209,97 +225,105 @@ export function ConnectPrompt({
             : t.library.connect.default.descSaas}
         </p>
 
-        {!isDesktop && selfHosted && can("token") ? (
-          // VPS / remote self-hosted: the API runs in a container with no `gh`
-          // and no shell, so there's no `gh auth login` to hint at and no reason
-          // to bounce to Settings — paste a token right here. This IS the empty
-          // state: one centered, embedded field.
-          <div className="max-w-md mx-auto text-start">
-            <TokenField onSaved={onRefresh} />
-          </div>
-        ) : can("device") || can("token") ? (
-          // Desktop: sign in with GitHub (device code, nothing to register), or
-          // bring your own credential. A single card centers; two go side by side.
-          // Openship Cloud is deliberately absent here — reachable in Settings.
-          <div
-            className={`grid gap-3 mx-auto text-start ${
-              cardCount <= 1 ? "max-w-sm sm:grid-cols-1" : "max-w-xl sm:grid-cols-2"
-            }`}
-          >
-            {can("device") && (
-            <button
-              onClick={() => onConnect("cli")}
-              disabled={connecting}
-              className="group rounded-xl border border-primary/40 bg-primary/[0.03] p-4 transition-all hover:border-primary/60 hover:bg-primary/[0.06] disabled:opacity-50"
+        <div
+          className={`flex items-center justify-center gap-3 ${showCredentialChoices ? "flex-col" : "flex-wrap"}`}
+        >
+          {!leadWithApp && !isDesktop && selfHosted && can("token") ? (
+            // VPS / remote self-hosted: the API runs in a container with no `gh`
+            // and no shell, so there's no `gh auth login` to hint at and no reason
+            // to bounce to Settings — paste a token right here. This IS the empty
+            // state: one centered, embedded field.
+            <div className="w-full max-w-md mx-auto text-start">
+              <TokenField onSaved={onRefresh} />
+            </div>
+          ) : showCredentialChoices ? (
+            // Desktop: sign in with GitHub (device code, nothing to register), or
+            // bring your own credential. A single card centers; two go side by side.
+            // Openship Cloud is deliberately absent here — reachable in Settings.
+            <div
+              className={`grid w-full gap-3 mx-auto text-start ${
+                cardCount <= 1 ? "max-w-sm sm:grid-cols-1" : "max-w-xl sm:grid-cols-2"
+              }`}
             >
-              <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
-                <Github className="size-[18px] text-foreground/70" />
-              </span>
-              <p className="text-sm font-medium text-foreground">{t.library.connect.default.ghCli}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                {t.library.connect.default.ghCliDesc}
-              </p>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
-                {connecting ? t.library.connect.default.connecting : t.library.connect.default.useGhCli}
-                {connecting ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <ArrowRight className="size-3.5 rtl:rotate-180" />
-                )}
-              </span>
-            </button>
-            )}
+              {can("device") && (
+                <button
+                  onClick={() => onConnect("cli")}
+                  disabled={connecting}
+                  className="group rounded-xl border border-primary/40 bg-primary/[0.03] p-4 transition-all hover:border-primary/60 hover:bg-primary/[0.06] disabled:opacity-50"
+                >
+                  <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
+                    <UiIcon name="github" className="size-[18px] text-foreground/70" />
+                  </span>
+                  <p className="text-sm font-medium text-foreground">{t.library.connect.default.ghCli}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    {t.library.connect.default.ghCliDesc}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
+                    {connecting
+                      ? t.library.connect.default.connecting
+                      : t.library.connect.default.useGhCli}
+                    {connecting ? (
+                      <UiIcon name="spinner" className="size-3.5 animate-spin" />
+                    ) : (
+                      <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
+                    )}
+                  </span>
+                </button>
+              )}
 
-            {/* Settings owns both halves of "bring your own": the token rows and
-                the per-server deploy keys, so one destination covers it. */}
-            {(can("token") || can("ssh-key")) && (
-            <button
-              onClick={() => router.push("/settings?tab=tokens")}
-              className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02] text-start"
-            >
-              <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
-                <KeyRound className="size-[18px] text-foreground/70" />
-              </span>
-              <p className="text-sm font-medium text-foreground">{t.library.connect.default.byoc}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                {t.library.connect.default.byocDesc}
-              </p>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
-                {t.library.connect.default.byocCta}
-                <ArrowRight className="size-3.5 rtl:rotate-180" />
-              </span>
-            </button>
-            )}
-          </div>
-        ) : (
-          // SaaS: one path — the Openship GitHub App via OAuth.
-          <div className="flex flex-col items-center gap-3">
-            <button
+              {/* Settings owns tokens and per-server deploy keys. */}
+              {(can("token") || can("ssh-key")) && (
+                <button
+                  onClick={() => router.push("/settings?tab=git")}
+                  className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02] text-start"
+                >
+                  <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
+                    <UiIcon name="key" className="size-[18px] text-foreground/70" />
+                  </span>
+                  <p className="text-sm font-medium text-foreground">{t.library.connect.default.byoc}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    {t.library.connect.default.byocDesc}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
+                    {t.library.connect.default.byocCta}
+                    <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
+                  </span>
+                </button>
+              )}
+            </div>
+          ) : (
+            // The App remains the Cloud default when a personal token is available.
+            <Button
+              type="button"
               onClick={() => onConnect("oauth")}
               disabled={connecting}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-11 px-6"
             >
               {connecting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
                   {t.library.connect.default.connecting}
                 </>
               ) : (
                 <>
-                  <Github className="size-4" />
+                  <UiIcon name="github" className="size-4" />
                   {t.library.connect.connectGithub}
                 </>
               )}
-            </button>
-          </div>
-        )}
+            </Button>
+          )}
+          <Button type="button" variant="secondary" onClick={onBrowseApps} className="h-11 px-6">
+            <UiIcon name="grid" className="size-4" aria-hidden="true" />
+            {t.library.connect.deployApp}
+          </Button>
+        </div>
 
         <div className="mt-7">
           <Link
-            href="/settings"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            href="/settings?tab=git"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
-            <Settings className="size-3.5" />
+            <UiIcon name="settings" className="size-3.5" />
             {t.library.connect.manageInSettings}
           </Link>
         </div>
@@ -357,20 +381,12 @@ function TokenField({ onSaved }: { onSaved: () => void }) {
           disabled={!token.trim() || saving}
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          {saving && <Loader2 className="size-4 animate-spin" />}
+          {saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {t.library.connect.token.connect}
         </button>
       </div>
       {error && <p className="text-xs text-danger leading-relaxed">{error}</p>}
-      <a
-        href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Openship"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
-      >
-        {t.library.connect.token.create}
-        <ExternalLink className="size-3" />
-      </a>
+      <CreateGitHubTokenLink label={t.library.connect.token.create} />
     </div>
   );
 }

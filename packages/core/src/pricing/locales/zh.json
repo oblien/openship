@@ -19,6 +19,10 @@
     "enterprise": {
       "name": "Enterprise",
       "tagline": "自定义配额、专属基础设施,并提供 SLA。"
+    },
+    "hobby": {
+      "name": "Hobby",
+      "tagline": "适合个人项目和日常应用的小型托管服务器。"
     }
   },
   "features": {
@@ -26,11 +30,10 @@
     "staticOnly": "仅支持静态站点:SSG、SPA 和纯 HTML",
     "anyWorkload": "任意工作负载:容器、Compose、后台任务、Postgres、Redis",
     "runningServices": "{runningServices} 个同时运行的应用、数据库或后台任务",
-    "computeMinutes": "每月 {computeMinutes} 计算分钟",
     "buildMinutes": "每月 {buildMinutes} 分钟构建时长",
+    "sharedBuilds": "构建共享服务器资源，无每月时长上限",
     "power": "每个应用最高可达 {powerCpu} vCPU 和 {powerRamGb} GB RAM",
     "projects": "{maxProjects} 个项目",
-    "projectsUnlimited": "项目不限数量",
     "freeSubdomains": "{freeSubdomains} 个免费 {freeDomainSuffix} 子域名",
     "freeSubdomainsUnlimited": "免费 {freeDomainSuffix} 子域名不限数量",
     "gitDeploys": "从 GitHub、GitLab 或任意 Git 远端部署",
@@ -50,7 +53,9 @@
     "selfHostedUnlimited": "部署、项目、服务器和域名均不限数量",
     "selfHostedServices": "全部托管服务:Postgres、Redis、邮件服务",
     "selfHostedClients": "CLI、网页端和桌面端,共用一个后端",
-    "selfHostedFreeSubdomains": "连接 Cloud 后可获得 {freeSubdomains} 个免费 {freeDomainSuffix} 子域名"
+    "selfHostedFreeSubdomains": "连接 Cloud 后可获得 {freeSubdomains} 个免费 {freeDomainSuffix} 子域名",
+    "monthlyCoverage": "已付费期间包含 CPU、内存和存储",
+    "namespaceCapacity": "总计：{namespaceCpu} vCPU、{namespaceRamGb} GB 内存、{namespaceDiskGb} GB 磁盘"
   },
   "selfHosted": {
     "name": "自托管",
@@ -60,9 +65,14 @@
     "cta": "开始自托管"
   },
   "creditPacks": {
-    "pack_5k": "{computeMinutes} 计算分钟",
-    "pack_25k": "{computeMinutes} 计算分钟",
-    "pack_100k": "{computeMinutes} 计算分钟"
+    "pack_5k": "{credits} 点额度",
+    "pack_25k": "{credits} 点额度",
+    "pack_100k": "{credits} 点额度",
+    "pack_500": "{credits} 点额度",
+    "pack_2k": "{credits} 点额度",
+    "pack_400": "{credits} 点额度",
+    "pack_1700": "{credits} 点额度",
+    "pack_4500": "{credits} 点额度"
   },
   "ui": {
     "perMonth": "/月",
@@ -80,6 +90,6 @@
     "campaignEnds": "优惠截止 {date}",
     "wasPrice": "原价 {price}",
     "standardTitle": "所有套餐均包含",
-    "creditPackNote": "≈ 小型应用运行 {appHours} 小时,或 {buildMinutes} 构建分钟"
+    "creditPackNote": "用于按量计费的云资源；可用时长取决于您的工作负载。"
   }
 }

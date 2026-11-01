@@ -30,7 +30,7 @@
 import type { Context } from "hono";
 import { cloudRequiredCode } from "@repo/core";
 import { dumpSubgraph } from "@repo/db";
-import { cloudClient } from "../../../lib/cloud/client";
+import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
 import { withMigration } from "./with-migration";
 
 export interface MigrateToCloudInput {

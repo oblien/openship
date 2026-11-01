@@ -1,0 +1,158 @@
+{
+  "hobby": {
+    "offer": {
+      "reference": "openship:hobby:v5",
+      "name": "Openship Hobby",
+      "unitAmount": 500,
+      "currency": "usd",
+      "credits": 400,
+      "policy": {
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      },
+      "resourceLimits": {
+        "max_workspaces": 1,
+        "max_vcpus": 1,
+        "max_ram_mb": 4096,
+        "max_disk_gb": 16,
+        "max_total_vcpus": 1,
+        "max_total_ram_mb": 4096,
+        "max_total_disk_gb": 16
+      }
+    },
+    "limits": {
+      "workloads": ["static", "web", "worker"],
+      "services": true,
+      "runningServices": 1,
+      "maxProjects": 3,
+      "maxResourceTier": "low",
+      "maxServiceResources": {
+        "cpuCores": 1,
+        "memoryMb": 2048
+      },
+      "computeMinutesPerMonth": null,
+      "buildMinutesPerMonth": null,
+      "freeSubdomains": 10,
+      "customDomains": null,
+      "seats": null
+    }
+  },
+  "starter": {
+    "offer": {
+      "reference": "openship:starter:v5",
+      "name": "Openship Starter",
+      "unitAmount": 2000,
+      "currency": "usd",
+      "credits": 1700,
+      "policy": {
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      },
+      "resourceLimits": {
+        "max_workspaces": 3,
+        "max_vcpus": 2,
+        "max_ram_mb": 6144,
+        "max_disk_gb": 16,
+        "max_total_vcpus": 2,
+        "max_total_ram_mb": 6144,
+        "max_total_disk_gb": 32
+      }
+    },
+    "limits": {
+      "workloads": ["static", "web", "worker"],
+      "services": true,
+      "runningServices": 3,
+      "maxProjects": 10,
+      "maxResourceTier": "medium",
+      "maxServiceResources": {
+        "cpuCores": 2,
+        "memoryMb": 3072
+      },
+      "computeMinutesPerMonth": null,
+      "buildMinutesPerMonth": null,
+      "freeSubdomains": 25,
+      "customDomains": null,
+      "seats": null
+    }
+  },
+  "pro": {
+    "offer": {
+      "reference": "openship:pro:v5",
+      "name": "Openship Pro",
+      "unitAmount": 3900,
+      "currency": "usd",
+      "credits": 3500,
+      "policy": {
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      },
+      "resourceLimits": {
+        "max_workspaces": 6,
+        "max_vcpus": 4,
+        "max_ram_mb": 8192,
+        "max_disk_gb": 32,
+        "max_total_vcpus": 4,
+        "max_total_ram_mb": 8192,
+        "max_total_disk_gb": 128
+      }
+    },
+    "limits": {
+      "workloads": ["static", "web", "worker"],
+      "services": true,
+      "runningServices": 10,
+      "maxProjects": 50,
+      "maxResourceTier": "high",
+      "maxServiceResources": {
+        "cpuCores": 4,
+        "memoryMb": 4096
+      },
+      "computeMinutesPerMonth": null,
+      "buildMinutesPerMonth": null,
+      "freeSubdomains": 100,
+      "customDomains": null,
+      "seats": null
+    }
+  },
+  "team": {
+    "offer": {
+      "reference": "openship:team:v5",
+      "name": "Openship Scale",
+      "unitAmount": 9900,
+      "currency": "usd",
+      "credits": 9000,
+      "policy": {
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      },
+      "resourceLimits": {
+        "max_workspaces": 12,
+        "max_vcpus": 8,
+        "max_ram_mb": 12288,
+        "max_disk_gb": 64,
+        "max_total_vcpus": 8,
+        "max_total_ram_mb": 16384,
+        "max_total_disk_gb": 256
+      }
+    },
+    "limits": {
+      "workloads": ["static", "web", "worker"],
+      "services": true,
+      "runningServices": 50,
+      "maxProjects": null,
+      "maxResourceTier": "xlarge",
+      "maxServiceResources": {
+        "cpuCores": 8,
+        "memoryMb": 8192
+      },
+      "computeMinutesPerMonth": null,
+      "buildMinutesPerMonth": null,
+      "freeSubdomains": null,
+      "customDomains": null,
+      "seats": null
+    }
+  }
+}

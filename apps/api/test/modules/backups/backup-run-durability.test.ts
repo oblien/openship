@@ -157,7 +157,7 @@ describe("backupRun.transition — status must not ride a payload that can fail"
 const h = vi.hoisted(() => ({
   run: null as Record<string, unknown> | null,
   policy: null as Record<string, unknown> | null,
-  services: [] as Array<{ id: string; enabled: boolean }>,
+  services: [] as Array<Record<string, unknown>>,
   createdRuns: [] as Array<Record<string, unknown>>,
   executionRow: null as Record<string, unknown> | null,
   claimResults: ["claimed"] as Array<"claimed" | "project_unavailable" | "state_changed">,
@@ -170,14 +170,16 @@ const h = vi.hoisted(() => ({
   hookExit: { code: 0 as number | null, stderr: "" },
   artifactMetadata: {} as Record<string, unknown>,
   notifications: [] as Array<{ eventType: string; payload: Record<string, unknown> }>,
+  destinationUnavailable: false,
   verifyNotes: [] as Array<string | undefined>,
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
-      create: async (data: Record<string, unknown>) => {
-        h.createdRuns.push(data);
+      createBatch: async (data: Array<Record<string, unknown>>) => {
+        h.createdRuns.push(...data);
         return data;
       },
       findById: async () => h.run,
@@ -198,12 +200,15 @@ vi.mock("@repo/db", () => ({
       findById: async () => h.policy,
     },
     backupDestination: {
-      findById: async () => ({
-        id: "dst_1",
-        organizationId: "org_1",
-        name: "S3 primary",
-        pathPrefix: null,
-      }),
+      findById: async () => {
+        if (h.destinationUnavailable) throw new Error("Destination lookup unavailable");
+        return {
+          id: "dst_1",
+          organizationId: "org_1",
+          name: "S3 primary",
+          pathPrefix: null,
+        };
+      },
       setLastVerified: async (_id: string, _ok: boolean, note?: string) => {
         h.verifyNotes.push(note);
       },
@@ -230,11 +235,7 @@ vi.mock("@repo/adapters", async () => {
   // Likewise the real sanitizer, not a passthrough stub.
   const { sanitizeProducerOpts } =
     await import("../../../../../packages/adapters/src/backup/common/producer-opts");
-  class FakeHasher extends PassThrough {
-    summary() {
-      return { sha256: "d0", bytesWritten: 11 };
-    }
-  }
+  const { HashingPassthrough: FakeHasher } = await import("../../../../../packages/adapters/src/backup/common/sha256-stream");
   return {
     HashingPassthrough: FakeHasher,
     PRESERVED_ARTIFACT_METADATA_KEYS,
@@ -245,7 +246,11 @@ vi.mock("@repo/adapters", async () => {
     buildManifest: () => ({ version: 1 }),
     resolveDestination: () => ({
       preflight: async () => ({ ok: true }),
-      put: async () => {},
+      put: async (_key: string, body: AsyncIterable<Buffer>) => {
+        let bytesWritten = 0;
+        for await (const chunk of body) bytesWritten += chunk.length;
+        return { bytesWritten };
+      },
     }),
     resolveExecutor: () => ({
       execStream: async () => ({
@@ -269,11 +274,11 @@ vi.mock("@repo/adapters", async () => {
   };
 });
 
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   // The orchestrator releases the runtime it resolved when the run ends; these
   // stubs hold no transport, so the release is a no-op here.
   disposeRuntime: () => {},
@@ -282,9 +287,9 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   resolveTargetPlatform: async () => ({ runtime: { name: "bare" } }),
 }));
 
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
 
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string; payload: Record<string, unknown> }) => {
       h.notifications.push(e);
@@ -292,17 +297,17 @@ vi.mock("../../../src/lib/notification-dispatcher", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
 
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => null,
   liveContainerForService: async () => ({ containerId: null, running: null }),
 }));
 
-import { BackupOrchestrator } from "../../../src/modules/backups/backup.orchestrator";
-import { boundedStorableText } from "../../../src/modules/deployments/build-log-sanitize";
+import { BackupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
+import { boundedStorableText } from "@repo/platform/engine/modules/deployments/build-log-sanitize";
 
 /** Wire the orchestrator to the REAL run repo over the Postgres-shaped fake, so
  *  a rejected write fails exactly where it fails in production. */
@@ -313,6 +318,7 @@ function wireRun(): PgFake {
     id: "bkr_live",
     status: "queued",
     policyId: "pol_1",
+    destinationId: "dst_1",
     projectId: null,
     serviceId: null,
     mailServerId: "mail_1",
@@ -348,6 +354,7 @@ beforeEach(() => {
   h.hookExit = { code: 0, stderr: "" };
   h.artifactMetadata = {};
   h.notifications.length = 0;
+  h.destinationUnavailable = false;
   h.verifyNotes.length = 0;
 });
 
@@ -360,8 +367,8 @@ describe("BackupOrchestrator.enqueue — durable batch identity", () => {
       mailServerId: null,
     };
     h.services = [
-      { id: "svc_api", enabled: true },
-      { id: "svc_db", enabled: true },
+      { id: "svc_api", enabled: true, volumes: ["api_data:/data"] },
+      { id: "svc_db", enabled: true, image: "postgres:16" },
     ];
     const orchestrator = new BackupOrchestrator();
 
@@ -386,6 +393,75 @@ describe("BackupOrchestrator.enqueue — durable batch identity", () => {
     expect(new Set(secondBatch.map((run) => run.batchId)).size).toBe(1);
     expect(secondBatch[0]!.batchId).not.toBe(firstBatch[0]!.batchId);
   });
+
+  it("skips stateless services without volumes or database images during fan-out", async () => {
+    h.policy = {
+      ...(h.policy ?? {}),
+      sourceKind: "service",
+      projectId: "proj_1",
+      mailServerId: null,
+      payloadKind: "auto",
+    };
+    h.services = [
+      { id: "svc_web", enabled: true, volumes: [] },
+      { id: "svc_monitor", enabled: true, volumes: [] },
+      { id: "svc_db", enabled: true, image: "postgres:16" },
+    ];
+    const orchestrator = new BackupOrchestrator();
+
+    await orchestrator.enqueue({
+      policyId: "pol_1",
+      trigger: { source: "cron", userId: "system" },
+    });
+
+    expect(h.createdRuns).toHaveLength(1);
+    expect(h.createdRuns[0]!.serviceId).toBe("svc_db");
+  });
+
+  it("throws when project has no services with persistent storage", async () => {
+    h.policy = {
+      ...(h.policy ?? {}),
+      sourceKind: "service",
+      projectId: "proj_1",
+      mailServerId: null,
+      payloadKind: "auto",
+    };
+    h.services = [
+      { id: "svc_web", enabled: true, volumes: [] },
+      { id: "svc_monitor", enabled: true, volumes: [] },
+    ];
+    const orchestrator = new BackupOrchestrator();
+
+    await expect(
+      orchestrator.enqueue({
+        policyId: "pol_1",
+        trigger: { source: "cron", userId: "system" },
+      }),
+    ).rejects.toThrow(/no services with persistent storage/);
+
+    expect(h.createdRuns).toHaveLength(0);
+  });
+
+  it.each(["custom_command", "path"])(
+    "keeps explicit %s payloads eligible without volumes",
+    async (payloadKind) => {
+      h.policy = {
+        ...(h.policy ?? {}),
+        sourceKind: "service",
+        projectId: "proj_1",
+        mailServerId: null,
+        payloadKind,
+      };
+      h.services = [{ id: "svc_app", enabled: true, image: "node:22", volumes: [] }];
+
+      await new BackupOrchestrator().enqueue({
+        policyId: "pol_1",
+        trigger: { source: "cron", userId: "system" },
+      });
+
+      expect(h.createdRuns.map((run) => run.serviceId)).toEqual(["svc_app"]);
+    },
+  );
 });
 
 describe("a terminal status is final — one owner per verdict", () => {
@@ -398,10 +474,11 @@ describe("a terminal status is final — one owner per verdict", () => {
     const pg = makePgFake({ id: "bkr_9", status: "succeeded" });
     const repo = createBackupRunRepo(pg.db as never);
 
-    await repo.transition("bkr_9", "server_error", {
+    const applied = await repo.transition("bkr_9", "server_error", {
       errorMessage: "stale heartbeat ceiling",
     } as never);
 
+    expect(applied).toBe(false);
     expect(pg.row.status).toBe("succeeded");
     // And the payload does not sneak in behind the refused status.
     expect(pg.row.errorMessage).toBeUndefined();
@@ -411,8 +488,9 @@ describe("a terminal status is final — one owner per verdict", () => {
     const pg = makePgFake({ id: "bkr_10", status: "failed", errorMessage: "pg_dump exited 1" });
     const repo = createBackupRunRepo(pg.db as never);
 
-    await repo.transition("bkr_10", "succeeded", { bytesTransferred: 4096 } as never);
+    const applied = await repo.transition("bkr_10", "succeeded", { bytesTransferred: 4096 } as never);
 
+    expect(applied).toBe(false);
     expect(pg.row.status).toBe("failed");
     expect(pg.row.bytesTransferred).toBeUndefined();
   });
@@ -422,15 +500,35 @@ describe("a terminal status is final — one owner per verdict", () => {
     const pg = makePgFake({ id: "bkr_11", status: "queued" });
     const repo = createBackupRunRepo(pg.db as never);
 
-    await repo.transition("bkr_11", "uploading", { bytesTransferred: 10 } as never);
+    expect(await repo.transition("bkr_11", "uploading", { bytesTransferred: 10 } as never)).toBe(true);
     expect(pg.row.status).toBe("uploading");
-    await repo.transition("bkr_11", "succeeded", { bytesTransferred: 20 } as never);
+    expect(await repo.transition("bkr_11", "succeeded", { bytesTransferred: 20 } as never)).toBe(true);
     expect(pg.row.status).toBe("succeeded");
     expect(pg.row.bytesTransferred).toBe(20);
   });
 });
 
 describe("BackupOrchestrator.execute — hook output cannot fail the backup", () => {
+  it("delivers failure references when policy and destination lookup are unavailable", async () => {
+    const pg = wireRun();
+    h.policy = null;
+    h.run!.destinationId = "dst_1";
+    h.destinationUnavailable = true;
+
+    await new BackupOrchestrator().execute("bkr_live");
+
+    expect(pg.row.status).toBe("failed");
+    expect(h.notifications).toContainEqual(expect.objectContaining({
+      organizationId: "org_1",
+      eventType: "backup_run.failed",
+      payload: expect.objectContaining({
+        policyId: "pol_1",
+        destinationId: "dst_1",
+        errorMessage: "Policy pol_1 disappeared",
+      }),
+    }));
+  });
+
   it("runs one pipeline for duplicate deliveries and acknowledges only its owner", async () => {
     const pg = wireRun();
     h.claimResults = ["claimed", "state_changed"];

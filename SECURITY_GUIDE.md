@@ -127,6 +127,18 @@ Deploys the Zero webmail UI (self-host stack, or pointed at an external IMAP/SMT
 
 ## 7. Cloud / multi-tenant boundary — `apps/api/src/lib/cloud-auth-proxy.ts`, `cloud-route.service.ts`
 
+- `apps/api/src/modules/cloud/cloud-relay-access.ts` checks the selected managed
+  server before legacy token, Page, preflight, or resource relay operations.
+  An omitted selector must enforce the same host permission as an explicit one;
+  a Cloud feature grant alone must not issue a provider execution credential.
+- `packages/db/src/dump.ts` validates imported references against tables that
+  actually travel in the chosen scope. Cloud ingest also scrubs runtime handles
+  on receipt; export-side scrubbing is not an authorization boundary. Restore
+  and promotion receipts commit in one transaction.
+- `packages/platform/src/engine/lib/edge-host-executor.ts` verifies recorded
+  servers against the project's organization. Its self-hosted certificate and
+  SSH readers are disabled in Cloud mode.
+
 When `CLOUD_MODE` is set the API is a multi-tenant SaaS gateway. Several self-hosted-only paths
 (the `gh` CLI, device flow, local file reads) are **hard-floored off** here — see the
 `env.CLOUD_MODE` early-returns in `apps/api/src/modules/github/github.local-auth.ts`.

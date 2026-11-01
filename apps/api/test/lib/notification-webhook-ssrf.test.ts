@@ -16,19 +16,19 @@ const envMock: { CLOUD_MODE: boolean; NOTIFY_WEBHOOK_ALLOW_INTERNAL: boolean } =
   NOTIFY_WEBHOOK_ALLOW_INTERNAL: false,
 };
 
-vi.mock("../../src/lib/safe-fetch", () => ({
+vi.mock("@repo/platform/engine/lib/safe-fetch", () => ({
   safeFetch: (...args: unknown[]) => safeFetch(...(args as [])),
 }));
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   get env() {
     return envMock;
   },
 }));
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("../../src/lib/mail", () => ({ sendMail: vi.fn() }));
-vi.mock("../../src/lib/encryption", () => ({ decrypt: (v: string) => v }));
+vi.mock("@repo/platform/engine/lib/mail", () => ({ sendMail: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt: (v: string) => v }));
 
-const { sendTestToChannel } = await import("../../src/lib/notification-workers");
+const { sendTestToChannel } = await import("@repo/platform/engine/lib/notification-workers");
 
 const webhookChannel = (url: string) =>
   ({ id: "ch_1", kind: "webhook", config: { url } }) as unknown as NotificationChannel;

@@ -21,14 +21,14 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/jobs/job-command", () => ({
+vi.mock("@repo/platform/engine/modules/jobs/job-command", () => ({
   startCommandRun: async (job: { key: string }, trigger: string) => {
     h.runs.push({ key: job.key, trigger });
     return `run:${job.key}`;
   },
 }));
 
-import { fireJobTriggers, refreshTriggerArm } from "../../../src/modules/jobs/job-events";
+import { fireJobTriggers, refreshTriggerArm } from "@repo/platform/engine/modules/jobs/job-events";
 
 function eventJob(key: string, serverIds: string[]) {
   return {

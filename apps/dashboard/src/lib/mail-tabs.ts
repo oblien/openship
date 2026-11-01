@@ -21,7 +21,7 @@
  * through this function, so a stale `?tab=test` shows Sending, titled Sending,
  * with Sending highlighted, instead of one of the three going its own way.
  *
- * Deliberately free of React and of lucide: a pure lookup, unit-testable without
+ * Deliberately free of React and of icon artwork: a pure lookup, unit-testable without
  * the dashboard's providers.
  */
 

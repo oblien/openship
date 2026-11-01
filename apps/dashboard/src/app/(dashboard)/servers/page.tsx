@@ -1,31 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { BlurIp } from "@/components/BlurIp";
-import {
-  Server,
-  Plus,
-  Loader2,
-  ArrowRight,
-  KeyRound,
-  Lock,
-  Network,
-  Boxes,
-  Activity,
-  Container,
-  Globe,
-  GitBranch,
-  BookOpen,
-  ExternalLink,
-  Layers,
-  MapPin,
-  HardDrive,
-} from "lucide-react";
-import { systemApi } from "@/lib/api";
+import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { usePlatform } from "@/context/PlatformContext";
@@ -35,7 +20,14 @@ import { useInfraFleet, type InfraSegment } from "@/hooks/useInfraFleet";
 import { useContainerApplyModal } from "@/hooks/useSystemPrepareModal";
 import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
 import { InfraFilters } from "@/components/infra/InfraFilters";
-import { ComingSoonPanel } from "./_components/coming-soon-panel";
+import type { CloudWorkspaceSummary, ClusterCapabilities } from "@repo/contracts";
+import { privateNetworksApi } from "@/lib/api/private-networks";
+import { ServerClustersPanel } from "@/components/servers/clusters/ServerClustersPanel";
+import { useServerClustersOverview } from "@/hooks/useServerClustersOverview";
+import { ServerDeletionModal } from "@/components/servers/ServerDeletionModal";
+import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { ServerListSkeleton } from "./_components/server-list-skeleton";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
 const FLAGS = CountryFlags as Record<
@@ -58,6 +50,7 @@ interface ServerEntry {
   isLocal: boolean;
   /** Projects currently deployed to this server (active deployment → this host). */
   projectCount: number;
+  managed: CloudWorkspaceSummary | null;
 }
 
 /** Per-state colors: an ambient presence dot on the avatar + a word on the right. */
@@ -76,17 +69,63 @@ const STATUS: Record<Reachability, { dot: string; text: string }> = {
 };
 
 export default function ServersPage() {
+  return <ServerInventoryPage />;
+}
+
+function ServerInventoryPage() {
+  const resourceKey = useCloudResourceKey();
+  const resourceRef = useRef(resourceKey);
+  resourceRef.current = resourceKey;
   const { t } = useI18n();
   const router = useRouter();
   const { selfHosted, deployMode, isServerHost, hostControlEnabled } = usePlatform();
   const { toast } = useToast();
   const isDesktop = deployMode === "desktop";
   /** Managed edge/mail containers exist only where we operate the boxes. */
-  const infraEnabled = selfHosted || isDesktop;
+  const infraEnabled = true;
 
-  const [activeTab, setActiveTab] = useState<ServersTab>("servers");
-  const [servers, setServers] = useState<ServerEntry[]>([]);
+  const searchParams = useSearchParams();
+  const [clusterCapabilities, setClusterCapabilities] = useState<ClusterCapabilities | null>(null);
+  const [clusterCapabilitiesError, setClusterCapabilitiesError] = useState<string | null>(null);
+  const [clusterCapabilitiesAttempt, setClusterCapabilitiesAttempt] = useState(0);
+  const clustersEligible = selfHosted && deployMode !== "cloud";
+  const requestedTab = searchParams.get("tab");
+  const activeTab: ServersTab =
+    clustersEligible && (requestedTab === "cluster" || requestedTab === "networking")
+      ? requestedTab
+      : "servers";
+  const clusterOverview = useServerClustersOverview(
+    clustersEligible && activeTab !== "servers" && !!clusterCapabilities?.available,
+  );
+  const setActiveTab = (tab: ServersTab) =>
+    router.replace(tab === "servers" ? "/servers" : `/servers?tab=${tab}`);
+  useEffect(() => {
+    let current = true;
+    setClusterCapabilities(null);
+    setClusterCapabilitiesError(null);
+    if (clustersEligible) {
+      void privateNetworksApi
+        .capabilities()
+        .then((value) => {
+          if (current) setClusterCapabilities(value);
+        })
+        .catch((error) => {
+          if (current) setClusterCapabilitiesError(getApiErrorMessage(error));
+        });
+    }
+    return () => {
+      current = false;
+    };
+  }, [clustersEligible, clusterCapabilitiesAttempt]);
+  const [serverRows, setServers] = useState<ServerEntry[]>([]);
+  const [serversOwner, setServersOwner] = useState(resourceKey);
+  const servers = serversOwner === resourceKey ? serverRows : [];
+  const [removeServer, setRemoveServer] = useState<ServerEntry | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fetching = useRef<string | null>(null);
+  const fetchRequest = useRef(0);
   /** Live reachability per server (see probeReachability). */
   const [reach, setReach] = useState<Record<string, Reachability>>({});
   /**
@@ -99,32 +138,55 @@ export default function ServersPage() {
   const [forwardCounts, setForwardCounts] = useState<Record<string, number>>({});
 
   const fetchServers = useCallback(async () => {
+    if (fetching.current === resourceKey) return;
+    fetching.current = resourceKey;
+    const request = ++fetchRequest.current;
     try {
-      setLoading(true);
+      setRefreshing(true);
       const list = await systemApi.listServers();
+      if (resourceRef.current !== resourceKey || request !== fetchRequest.current) return;
+      setServersOwner(resourceKey);
       setServers(
-        list.map((s) => ({
+        list.filter(s => selfHosted || !s.managed && !s.isLocal).map((s) => ({
           id: s.id,
-          name: s.name || s.sshHost,
-          host: s.sshHost,
+          name: s.name || s.sshHost || s.id,
+          host: s.sshHost ?? "",
           port: s.sshPort ?? 22,
           user: s.sshUser ?? "root",
           auth: (s.sshAuthMethod as "key" | "password" | null) ?? null,
           country: s.country ?? null,
           isLocal: s.isLocal ?? false,
           projectCount: s.projectCount ?? 0,
+          managed: s.managed ?? null,
         })),
       );
-    } catch {
-      setServers([]);
+      setError(null);
+    } catch (error) {
+      if (resourceRef.current === resourceKey && request === fetchRequest.current) setError(getApiErrorMessage(error));
     } finally {
-      setLoading(false);
+      if (resourceRef.current === resourceKey && request === fetchRequest.current) {
+        fetching.current = null;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, []);
+  }, [resourceKey]);
 
   useEffect(() => {
+    setServers([]);
+    setReach({});
+    setReachHint({});
+    setForwardCounts({});
+    setLoading(true);
     fetchServers();
   }, [fetchServers]);
+
+  const pending = servers.some(server => ["queued", "running"].includes(server.managed?.operation?.status ?? ""));
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setInterval(() => { if (document.visibilityState === "visible") void fetchServers(); }, 3_000);
+    return () => clearInterval(timer);
+  }, [pending, fetchServers]);
 
   // "Add → This machine" (#527): register the box OpenShip runs on as a deploy
   // target. Server-host only (desktop derives "here" without a row; the SaaS
@@ -141,7 +203,8 @@ export default function ServersPage() {
       const created = await systemApi.createServerEntry({ sshHost: "127.0.0.1", sshPort: 22 });
       await fetchServers();
       if (created?.id) router.push(`/servers/${created.id}`);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
       toast("error", t.servers.list.addThisMachineError);
     }
   }, [fetchServers, router, toast, t]);
@@ -151,8 +214,10 @@ export default function ServersPage() {
   useEffect(() => {
     if (servers.length === 0) return;
     let cancelled = false;
-    setReach(Object.fromEntries(servers.map((s) => [s.id, "checking" as const])));
-    servers.forEach((s) => {
+    const connected = servers.filter(server => !server.managed);
+    setReachHint({});
+    setReach(Object.fromEntries(connected.map((s) => [s.id, "checking" as const])));
+    connected.forEach((s) => {
       void systemApi
         .probeReachability(s.id)
         .then((r) => {
@@ -160,7 +225,8 @@ export default function ServersPage() {
           setReach((prev) => ({ ...prev, [s.id]: r.reachable ? "online" : "offline" }));
           if (!r.reachable && r.hint) setReachHint((prev) => ({ ...prev, [s.id]: r.hint! }));
         })
-        .catch(() => {
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
           if (!cancelled) setReach((prev) => ({ ...prev, [s.id]: "offline" }));
         });
     });
@@ -178,7 +244,8 @@ export default function ServersPage() {
         try {
           const rows = await systemApi.listTunnels(s.id);
           return [s.id, rows.filter((tn) => tn.running).length] as const;
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
           return [s.id, 0] as const;
         }
       }),
@@ -192,7 +259,7 @@ export default function ServersPage() {
 
   const counts = servers.reduce(
     (acc, s) => {
-      const st = reach[s.id] ?? "checking";
+      const st = s.managed ? ["ready", "running", "active"].includes(s.managed.state) ? "online" : ["failed", "unreachable"].includes(s.managed.state) ? "offline" : "checking" : reach[s.id] ?? "checking";
       acc[st] += 1;
       return acc;
     },
@@ -257,7 +324,8 @@ export default function ServersPage() {
             interpolate(skipped === 1 ? ic.skippedOne : ic.skippedMany, { n: String(skipped) }),
           );
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
         toast("error", ic.applyFailed);
       }
     },
@@ -291,23 +359,37 @@ export default function ServersPage() {
   const showFilters = infraEnabled && servers.length > 6;
 
   const tabs: TabDef<ServersTab>[] = [
-    { key: "servers", label: t.servers.tabsNav.servers, icon: Server },
-    { key: "cluster", label: t.servers.tabsNav.cluster, icon: Boxes },
-    { key: "networking", label: t.servers.tabsNav.networking, icon: Network },
+    { key: "servers", label: t.servers.tabsNav.servers, icon: "server" },
+    {
+      key: "cluster",
+      label: t.servers.tabsNav.cluster,
+      icon: "cluster",
+      hidden: !clustersEligible,
+      href: "/servers?tab=cluster",
+    },
+    {
+      key: "networking",
+      label: t.servers.tabsNav.networking,
+      icon: "network",
+      hidden: !clustersEligible,
+      href: "/servers?tab=networking",
+    },
   ];
 
   return (
-    <PageContainer>
+    <PageContainer className="@container/server-list">
       {/* Header — mb-6 to match the server DETAIL page's header gap exactly, so
           the tab strip sits at the same y on both pages (this was mb-5, which put
           the list's tabs 4px higher than the detail's). */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {t.servers.list.title}
           </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">{t.servers.list.subtitle}</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">{selfHosted ? t.servers.list.subtitle : "Your infrastructure, managed from Openship Cloud."}</p>
         </div>
+        <div className="flex items-center gap-2">
+        {activeTab === "servers" && <Button variant="ghost" size="icon" disabled={refreshing} aria-label={t.servers.networks.refresh} onClick={() => void fetchServers()}><UiIcon name="refresh" className={`size-4 ${refreshing ? "animate-spin" : ""}`} /></Button>}
         {activeTab === "servers" &&
           (canAddThisMachine ? (
             <DropdownMenu
@@ -315,7 +397,7 @@ export default function ServersPage() {
               triggerClassName="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
               trigger={
                 <>
-                  <Plus className="size-4" />
+                  <UiIcon name="plus" className="size-4" />
                   {t.servers.list.addServer}
                 </>
               }
@@ -323,13 +405,13 @@ export default function ServersPage() {
                 {
                   id: "remote",
                   label: t.servers.list.addRemoteServer,
-                  icon: <Server className="size-4" />,
+                  icon: <UiIcon name="server" className="size-4" />,
                   onClick: () => router.push("/servers/new"),
                 },
                 {
                   id: "this-machine",
                   label: t.servers.list.addThisMachine,
-                  icon: <HardDrive className="size-4" />,
+                  icon: <UiIcon name="hard-drive" className="size-4" />,
                   onClick: () => void addThisMachine(),
                 },
               ]}
@@ -339,48 +421,90 @@ export default function ServersPage() {
               onClick={() => router.push("/servers/new")}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
             >
-              <Plus className="size-4" />
+              <UiIcon name="plus" className="size-4" />
               {t.servers.list.addServer}
             </button>
           ))}
+        {activeTab !== "servers" && clusterCapabilities?.available && (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={clusterOverview.refresh}
+              disabled={clusterOverview.refreshing}
+              aria-label={t.servers.networks.refresh}
+              title={t.servers.networks.refresh}
+            >
+              <UiIcon name="refresh"
+                className={`size-4 ${clusterOverview.refreshing ? "animate-spin" : ""}`}
+              />
+            </Button>
+            {clusterCapabilities.canManage && (
+              <Button asChild>
+                <Link href={activeTab === "networking" ? "/servers/networks/new" : "/servers/clusters/new"}>
+                  <UiIcon name="plus" className="size-4" />
+                  {activeTab === "networking" ? t.servers.networks.createCluster : t.servers.clusters.createCluster}
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} className="mb-6" />
+      </div>
 
-      {activeTab === "cluster" && (
-        <ComingSoonPanel
-          art="cluster"
-          badge={t.servers.comingSoon.badge}
-          title={t.servers.comingSoon.clusterTitle}
-          body={t.servers.comingSoon.clusterBody}
-        />
-      )}
+      {error && <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-danger/5 p-4 text-sm text-danger"><span>{error}</span><Button variant="secondary" size="sm" disabled={refreshing} onClick={() => void fetchServers()}>{t.billing.plansRoute.tryAgain}</Button></div>}
+      {clustersEligible && <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} className="mb-6" />}
 
-      {activeTab === "networking" && (
-        <ComingSoonPanel
-          art="network"
-          badge={t.servers.comingSoon.badge}
-          title={t.servers.comingSoon.networkingTitle}
-          body={t.servers.comingSoon.networkingBody}
-        />
-      )}
+      {activeTab !== "servers" &&
+        (clusterCapabilitiesError ? (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 rounded-xl bg-danger/10 p-4 text-sm text-danger"
+          >
+            <span>{clusterCapabilitiesError}</span>
+            <button
+              type="button"
+              className="shrink-0 font-medium underline"
+              onClick={() => setClusterCapabilitiesAttempt((attempt) => attempt + 1)}
+            >
+              {t.servers.networks.retry}
+            </button>
+          </div>
+        ) : !clusterCapabilities ? (
+          <div
+            role="status"
+            className="flex justify-center py-16"
+            aria-label={activeTab === "networking" ? t.servers.networks.listTitle : t.servers.clusters.listTitle}
+          >
+            <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : clusterCapabilities.available ? (
+          <ServerClustersPanel
+            capabilities={clusterCapabilities}
+            overview={clusterOverview}
+            view={activeTab === "networking" ? "networks" : "clusters"}
+          />
+        ) : (
+          <p role="status" className="rounded-xl bg-muted/50 p-5 text-sm text-muted-foreground">
+            {clusterCapabilities.reason || t.servers.networks.selfHostedOnly}
+          </p>
+        ))}
 
       {activeTab === "servers" &&
-        (loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : servers.length === 0 ? (
+        (!loading && error && servers.length === 0 ? null : !loading && servers.length === 0 ? (
           // Empty state stands alone (no Quick Info card) and centers.
           <EmptyState
+            managed={false}
             onAdd={() => router.push("/servers/new")}
             onAddThisMachine={canAddThisMachine ? () => void addThisMachine() : undefined}
           />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+          <div className="grid grid-cols-1 @min-[60rem]/server-list:grid-cols-[minmax(0,1fr)_340px] gap-6">
             {/* ── LEFT COLUMN ── */}
             <div className="min-w-0">
-              {showFilters && (
+              {!loading && showFilters && (
                 <InfraFilters
                   segment={segment}
                   onSegmentChange={setSegment}
@@ -389,11 +513,13 @@ export default function ServersPage() {
                   counts={infra.counts}
                 />
               )}
-              <div className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/50">
-                {visibleServers.length === 0 && (
+              <div className="rounded-2xl bg-card divide-y divide-border/50">
+                {loading ? (
+                  <ServerListSkeleton label={t.widgets.shared.serverSelector.loadingServers} />
+                ) : visibleServers.length === 0 && (
                   <p className="px-5 py-8 text-center text-sm text-muted-foreground">{ic.noMatches}</p>
                 )}
-                {visibleServers.map((server) => {
+                {!loading && visibleServers.map((server) => {
                   const state = reach[server.id] ?? "checking";
                   const sm = STATUS[state];
                   const authLabel =
@@ -402,7 +528,7 @@ export default function ServersPage() {
                       : server.auth === "key"
                         ? t.servers.list.authKey
                         : null;
-                  const AuthIcon = server.auth === "password" ? Lock : KeyRound;
+                  const AuthIcon = server.auth === "password" ? "lock" : "key";
                   const fwd = forwardCounts[server.id] ?? 0;
                   // Component chip: one per row at most, and only when there IS
                   // something to say (same rule as the project count below —
@@ -417,115 +543,127 @@ export default function ServersPage() {
                       ]
                     : [];
                   return (
-                    <Link
-                      key={server.id}
-                      href={`/servers/${server.id}`}
-                      className="group flex w-full items-center gap-3.5 px-5 py-3 text-start transition-colors hover:bg-muted/40"
-                    >
-                      {/* Avatar — full country flag when we can geolocate the IP, else glyph.
-                          Fixed 36px slot keeps the name column aligned across rows. */}
-                      {(() => {
-                        const Flag = server.country ? FLAGS[server.country] : undefined;
-                        return Flag ? (
-                          <div className="flex size-9 shrink-0 items-center justify-center">
-                            <Flag
-                              title={server.country ?? undefined}
-                              className="h-[18px] w-auto rounded-[2px] ring-1 ring-border/50"
-                            />
-                          </div>
-                        ) : (
-                          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 transition-colors group-hover:bg-muted">
-                            <Server className="size-[18px] text-foreground/70" />
-                          </div>
-                        );
-                      })()}
+                    <div key={server.id} className="@container flex items-center pe-3">
+                      <Link
+                        href={`/servers/${server.id}`}
+                        className="group grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 text-start transition-colors hover:bg-muted/40 @xl:flex @xl:gap-3.5 @xl:px-5"
+                      >
+                        {/* Avatar — full country flag when we can geolocate the IP, else glyph.
+                            Fixed 36px slot keeps the name column aligned across rows. */}
+                        {(() => {
+                          const Flag = server.country ? FLAGS[server.country] : undefined;
+                          return Flag ? (
+                            <div className="flex size-9 shrink-0 items-center justify-center">
+                              <Flag
+                                title={server.country ?? undefined}
+                                className="h-[18px] w-auto rounded-[2px] ring-1 ring-border/50"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 transition-colors group-hover:bg-muted">
+                              <UiIcon name="server" className="size-[18px] text-foreground/70" />
+                            </div>
+                          );
+                        })()}
 
-                      {/* Name + host (fixed column — keeps meta aligned, no dead gap) */}
-                      <div className="w-44 min-w-0 shrink-0 text-start lg:w-56">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {server.name}
-                          {server.isLocal && (
-                            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
-                              {t.servers.list.thisServer}
+                        {/* Name + host (fixed column — keeps meta aligned, no dead gap) */}
+                        <div className="min-w-0 text-start @xl:w-44 @xl:shrink-0 @3xl:w-56">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {server.name}
+                            {server.isLocal && (
+                              <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
+                                {t.servers.list.thisServer}
+                              </span>
+                            )}
+                          </p>
+                          <p className={`mt-0.5 truncate text-xs text-muted-foreground ${server.managed ? "" : "font-mono"}`}>
+                            {server.managed ? t.billing.workspaces.managedBy : server.isLocal ? t.servers.list.currentHost : <BlurIp>{server.host}</BlurIp>}
+                          </p>
+                        </div>
+
+                        {/* Meta chips */}
+                        <div className="col-span-2 flex min-w-0 flex-1 flex-wrap items-center gap-2 overflow-hidden @xl:flex-nowrap @xl:gap-3">
+                          {/* Nothing deployed → no chip at all. A greyed-out "0" beside
+                              a layers glyph is noise that reads as an error. With
+                              projects, the count is spelled out ("1 project") instead
+                              of leaving an icon to carry the meaning. */}
+                          {server.managed?.resources && <span className="text-xs text-muted-foreground">{server.managed.resources.cpuCores} vCPU · {server.managed.resources.memoryMb / 1024} GB</span>}
+                          {server.projectCount > 0 && (
+                            <span className="inline-flex shrink-0 items-center rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/80">
+                              {interpolate(
+                                server.projectCount === 1
+                                  ? t.servers.list.projectCountOne
+                                  : t.servers.list.projectCountMany,
+                                { n: String(server.projectCount) },
+                              )}
                             </span>
                           )}
-                        </p>
-                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                          {server.isLocal ? t.servers.list.currentHost : <BlurIp>{server.host}</BlurIp>}
-                        </p>
-                      </div>
+                          {downParts.length > 0 ? (
+                            <span className="inline-flex shrink-0 items-center rounded-md bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
+                              {downParts.join(" · ")}
+                            </span>
+                          ) : comp && comp.applying > 0 ? (
+                            // Mid-apply outranks the drift it is fixing: the row would
+                            // otherwise keep offering "1 update" for a swap already running.
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-info-bg px-2 py-0.5 text-xs font-medium text-info">
+                              <UiIcon name="spinner" className="size-3 animate-spin" />
+                              {ic.chipUpdating}
+                            </span>
+                          ) : comp && comp.updates > 0 ? (
+                            <span className="inline-flex shrink-0 items-center rounded-md bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
+                              {interpolate(comp.updates === 1 ? ic.chipUpdateOne : ic.chipUpdates, {
+                                n: String(comp.updates),
+                              })}
+                            </span>
+                          ) : null}
+                          {authLabel && (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
+                              <UiIcon name={AuthIcon} className="size-3.5" />
+                              {authLabel}
+                            </span>
+                          )}
+                          {isDesktop && fwd > 0 && (
+                            <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
+                              <UiIcon name="network" className="size-3.5" />
+                              {interpolate(t.servers.list.forwarding, { n: String(fwd) })}
+                            </span>
+                          )}
+                        </div>
 
-                      {/* Meta chips */}
-                      <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-                        {/* Nothing deployed → no chip at all. A greyed-out "0" beside
-                            a layers glyph is noise that reads as an error. With
-                            projects, the count is spelled out ("1 project") instead
-                            of leaving an icon to carry the meaning. */}
-                        {server.projectCount > 0 && (
-                          <span className="inline-flex shrink-0 items-center rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/80">
-                            {interpolate(
-                              server.projectCount === 1
-                                ? t.servers.list.projectCountOne
-                                : t.servers.list.projectCountMany,
-                              { n: String(server.projectCount) },
-                            )}
-                          </span>
-                        )}
-                        {downParts.length > 0 ? (
-                          <span className="inline-flex shrink-0 items-center rounded-md bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
-                            {downParts.join(" · ")}
-                          </span>
-                        ) : comp && comp.applying > 0 ? (
-                          // Mid-apply outranks the drift it is fixing: the row would
-                          // otherwise keep offering "1 update" for a swap already running.
-                          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-info-bg px-2 py-0.5 text-xs font-medium text-info">
-                            <Loader2 className="size-3 animate-spin" />
-                            {ic.chipUpdating}
-                          </span>
-                        ) : comp && comp.updates > 0 ? (
-                          <span className="inline-flex shrink-0 items-center rounded-md bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
-                            {interpolate(comp.updates === 1 ? ic.chipUpdateOne : ic.chipUpdates, {
-                              n: String(comp.updates),
-                            })}
-                          </span>
-                        ) : null}
-                        {authLabel && (
-                          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-                            <AuthIcon className="size-3.5" />
-                            {authLabel}
-                          </span>
-                        )}
-                        {isDesktop && fwd > 0 && (
-                          <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
-                            <Network className="size-3.5" />
-                            {interpolate(t.servers.list.forwarding, { n: String(fwd) })}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Status state + arrow */}
-                      <div className="flex shrink-0 items-center gap-4">
-                        <span
-                          title={reachHint[server.id] ?? t.servers.list[state]}
-                          className={`inline-flex items-center gap-1.5 text-xs font-medium ${sm.text}`}
-                        >
-                          <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
-                          {t.servers.list[state]}
-                        </span>
-                        <ArrowRight className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
-                      </div>
-                    </Link>
+                        {/* Status state + arrow */}
+                        <div className="col-span-2 flex shrink-0 items-center gap-4">
+                          {server.managed ? <ManagedServerStatus workspace={server.managed} /> : <span
+                            title={reachHint[server.id] ?? t.servers.list[state]}
+                            className={`inline-flex items-center gap-1.5 text-xs font-medium ${sm.text}`}
+                          >
+                            <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
+                            {t.servers.list[state]}
+                          </span>}
+                          <UiIcon name="arrow-right" className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
+                        </div>
+                      </Link>
+                      <DropdownMenu
+                        triggerLabel={`${server.name}: ${t.servers.detail.removeServer}`}
+                        actions={[{
+                          id: "remove",
+                          label: t.servers.detail.removeServer,
+                          icon: <UiIcon name="trash" className="size-4" />,
+                          variant: "danger",
+                          onClick: () => server.managed ? router.push(`/servers/${server.id}?remove=true`) : setRemoveServer(server),
+                        }]}
+                      />
+                    </div>
                   );
                 })}
               </div>
             </div>
 
             {/* ── RIGHT COLUMN (Sticky) ── */}
-            <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-            <div className="bg-card rounded-2xl border border-border/50">
+            <div className="space-y-4 @min-[60rem]/server-list:sticky @min-[60rem]/server-list:top-6 @min-[60rem]/server-list:self-start">
+            <div className="bg-card rounded-2xl" aria-busy={loading}>
               <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
                 <div className="w-9 h-9 bg-muted rounded-xl flex items-center justify-center">
-                  <Activity className="size-[18px] text-muted-foreground" />
+                  <UiIcon name="activity" className="size-[18px] text-muted-foreground" />
                 </div>
                 <div>
                   <h2 className="font-semibold text-foreground text-[15px]">{t.servers.list.quickInfo}</h2>
@@ -536,21 +674,28 @@ export default function ServersPage() {
                 {/* Health ratio — online / total with a progress bar. */}
                 <div>
                   <div className="flex items-baseline justify-between">
-                    <div className="flex items-baseline gap-1.5">
+                    {loading ? (
+                      <div aria-hidden="true" className="flex h-8 items-center gap-2 motion-safe:animate-pulse">
+                        <span className="h-6 w-9 rounded bg-foreground/10" />
+                        <span className="h-3.5 w-20 rounded bg-foreground/5" />
+                      </div>
+                    ) : <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl font-semibold text-foreground tabular-nums">{counts.online}</span>
                       <span className="text-sm text-muted-foreground">
                         / {servers.length} {t.servers.list.online}
                       </span>
-                    </div>
-                    <span className="text-xs font-medium text-muted-foreground tabular-nums">{onlinePct}%</span>
+                    </div>}
+                    {loading ? (
+                      <span aria-hidden="true" className="h-3 w-8 self-center rounded bg-foreground/10 motion-safe:animate-pulse" />
+                    ) : <span className="text-xs font-medium text-muted-foreground tabular-nums">{onlinePct}%</span>}
                   </div>
-                  <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
+                  <div className={`mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted ${loading ? "motion-safe:animate-pulse" : ""}`}>
+                    {!loading && <div
                       className="h-full rounded-full bg-success-solid transition-[width] duration-500"
                       style={{ width: `${onlinePct}%` }}
-                    />
+                    />}
                   </div>
-                  {counts.offline > 0 && (
+                  {!loading && counts.offline > 0 && (
                     <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-danger">
                       <span className="size-1.5 rounded-full bg-danger-solid" />
                       {counts.offline} {t.servers.list.offline}
@@ -561,16 +706,18 @@ export default function ServersPage() {
                 {/* Fleet stats. */}
                 <div className="space-y-0.5 border-t border-border/50 pt-4">
                   {[
-                    { icon: Server, label: t.servers.list.totalServers, value: servers.length },
-                    { icon: Layers, label: t.servers.list.projects, value: totalProjects },
-                    { icon: MapPin, label: t.servers.list.regions, value: regionCount },
+                    { icon: "server" as const, label: t.servers.list.totalServers, value: servers.length },
+                    { icon: "layers" as const, label: t.servers.list.projects, value: totalProjects },
+                    ...(regionCount > 0 ? [{ icon: "map-pin" as const, label: t.servers.list.regions, value: regionCount }] : []),
                   ].map((row) => (
                     <div key={row.label} className="flex items-center justify-between py-1.5">
                       <span className="inline-flex items-center gap-2.5 text-sm text-muted-foreground">
-                        <row.icon className="size-4 text-muted-foreground/60" />
+                        <UiIcon name={row.icon} className="size-4 text-muted-foreground/60" />
                         {row.label}
                       </span>
-                      <span className="text-sm font-medium text-foreground tabular-nums">{row.value}</span>
+                      {loading ? (
+                        <span aria-hidden="true" className="h-4 w-5 rounded bg-foreground/10 motion-safe:animate-pulse" />
+                      ) : <span className="text-sm font-medium text-foreground tabular-nums">{row.value}</span>}
                     </div>
                   ))}
                 </div>
@@ -580,7 +727,7 @@ export default function ServersPage() {
             {/* Managed containers across the fleet. Self-hosted/desktop only, and
                 only once at least one component is tracked — a box we've never
                 scanned has nothing to report. */}
-            {infraEnabled && !infra.empty && (
+            {!loading && infraEnabled && !infra.empty && (
               <InfraFleetCard
                 counts={infra.counts}
                 scanning={infra.scanning}
@@ -595,6 +742,19 @@ export default function ServersPage() {
           </div>
         </div>
       ))}
+      {removeServer && (
+        <ServerDeletionModal
+          key={removeServer.id}
+          isOpen
+          serverId={removeServer.id}
+          serverName={removeServer.name}
+          onClose={() => setRemoveServer(null)}
+          onRemoved={() => {
+            setServers((current) => current.filter((server) => server.id !== removeServer.id));
+            void infra.reload();
+          }}
+        />
+      )}
     </PageContainer>
   );
 }
@@ -604,8 +764,10 @@ export default function ServersPage() {
 function EmptyState({
   onAdd,
   onAddThisMachine,
+  managed = false,
 }: {
   onAdd: () => void;
+  managed?: boolean;
   /** Present only on a server-host with host control on — offers registering the
    *  box OpenShip runs on right from the empty state (#527). */
   onAddThisMachine?: () => void;
@@ -646,10 +808,10 @@ function EmptyState({
       </div>
 
       <h3 className="text-2xl font-medium text-foreground/80 mb-2" style={{ letterSpacing: "-0.2px" }}>
-        {t.servers.list.emptyTitle}
+        {managed ? t.billing.workspaces.empty : t.servers.list.emptyTitle}
       </h3>
       <p className="text-sm text-muted-foreground/70 max-w-sm mx-auto mb-8 leading-relaxed">
-        {t.servers.list.emptyDescription}
+        {managed ? t.billing.workspaces.defaultHint : t.servers.list.emptyDescription}
       </p>
 
       <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
@@ -657,51 +819,51 @@ function EmptyState({
           onClick={onAdd}
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
         >
-          <Plus className="size-4" />
-          {t.servers.list.addFirstServer}
+          <UiIcon name="plus" className="size-4" />
+          {managed ? t.billing.onboarding.choosePlan : t.servers.list.addFirstServer}
         </button>
         {onAddThisMachine && (
           <button
             onClick={onAddThisMachine}
             className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
-            <HardDrive className="size-4" />
+            <UiIcon name="hard-drive" className="size-4" />
             {t.servers.list.addThisMachine}
           </button>
         )}
         <a
-          href="https://openship.io/docs/guides/custom-servers"
+          href={managed ? "https://openship.io/docs/guides/cloud-workspaces" : "https://openship.io/docs/guides/custom-servers"}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
         >
-          <BookOpen className="size-4" />
+          <UiIcon name="book" className="size-4" />
           {t.servers.list.seeDocs}
-          <ExternalLink className="size-3.5 opacity-60" />
+          <UiIcon name="external-link" className="size-3.5 opacity-60" />
         </a>
       </div>
 
-      <div className="max-w-2xl mx-auto">
+      {!managed && <div className="max-w-2xl mx-auto">
         <p className="text-xs text-muted-foreground/60 uppercase tracking-wider mb-4">
           {t.servers.list.whatGetsConfigured}
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: t.servers.list.featContainer, desc: t.servers.list.featContainerDesc, Icon: Container },
-            { label: t.servers.list.featProxy, desc: t.servers.list.featProxyDesc, Icon: Globe },
-            { label: t.servers.list.monitoring, desc: t.servers.list.monitoringDesc, Icon: Activity },
-            { label: "Git", desc: t.servers.list.gitDesc, Icon: GitBranch },
+            { label: t.servers.list.featContainer, desc: t.servers.list.featContainerDesc, Icon: "docker" as const },
+            { label: t.servers.list.featProxy, desc: t.servers.list.featProxyDesc, Icon: "globe" as const },
+            { label: t.servers.list.monitoring, desc: t.servers.list.monitoringDesc, Icon: "activity" as const },
+            { label: "Git", desc: t.servers.list.gitDesc, Icon: "git-branch" as const },
           ].map((f) => (
             <div key={f.label} className="bg-card border border-border/50 rounded-xl p-4 text-start">
               <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                <f.Icon className="size-4 text-muted-foreground" />
+                <UiIcon name={f.Icon} className="size-4 text-muted-foreground" />
               </div>
               <p className="text-sm font-medium text-foreground">{f.label}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

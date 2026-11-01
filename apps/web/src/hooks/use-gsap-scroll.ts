@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
@@ -143,7 +145,8 @@ export function useGsapScroll() {
 
       /* Force recalculate - handles pages loaded mid-scroll */
       ScrollTrigger.refresh();
-    } catch {
+    } catch (error) {
+      reportCaughtError(error, "web/hooks/use-gsap-scroll");
       /* GSAP failed → remove class so CSS shows everything */
       el.classList.remove("feat-animated");
     }

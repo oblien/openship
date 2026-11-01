@@ -31,6 +31,7 @@
  * module becomes redundant and should be deleted rather than left as a second decoder.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export interface BuildKitTraceLine {
   message: string;
   level: "info" | "error";
@@ -225,7 +226,8 @@ export class BuildKitTraceDecoder {
     let payload: Uint8Array;
     try {
       payload = Uint8Array.from(Buffer.from(auxBase64, "base64"));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/docker-buildkit-trace");
       return [];
     }
     if (payload.length === 0) return [];

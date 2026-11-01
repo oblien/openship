@@ -30,12 +30,10 @@
  *   - **Kernel-peer, not header.** A remote attacker cannot make the
  *     socket appear to originate from 127.0.0.1 — that bit comes from
  *     the OS, not the request.
- *   - **SaaS runs behind a reverse proxy (openresty).** Every inbound
- *     connection's peer IS the proxy, never literal loopback. So the
- *     loopback branches in (1) and (2) are unreachable from external
- *     callers in SaaS by construction; only on-host processes (the
- *     SaaS API talking to itself, or the operator on the host) can
- *     match.
+ *   - **A proxy can itself be loopback.** This helper identifies the TCP
+ *     peer, not the original browser. Authorization callers must also verify
+ *     the deployment posture. The local-bootstrap and zero-auth guards reject
+ *     public/CLI instances even when their dashboard proxies through loopback.
  *   - **Layered gates.** No consumer treats loopback alone as proof
  *     of trust — each ANDs it with deploy-mode / env-flag / boot
  *     guard. Loopback is the LAST verification, not the first.
@@ -44,6 +42,7 @@
  * forms a dual-stack listener surfaces ("::ffff:127.x.x.x").
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 /** Exact addresses we accept without further parsing. */
@@ -71,7 +70,8 @@ export function isLoopbackPeer(peer: string | null | undefined): boolean {
 export function peerAddress(c: Context): string | null {
   try {
     return getConnInfo(c).remote.address ?? null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/middleware/loopback-peer");
     return null;
   }
 }

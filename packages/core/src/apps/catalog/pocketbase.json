@@ -117,5 +117,22 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Application backend",
+        "description": "Auth, database, and files in one service."
+      },
+      {
+        "title": "Realtime data",
+        "description": "Subscribe to SQLite-backed database changes."
+      },
+      {
+        "title": "Admin dashboard",
+        "description": "Manage records in the included UI."
+      }
+    ],
+    "articleFile": "articles/pocketbase.md"
+  }
 }

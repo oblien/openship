@@ -1,13 +1,18 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState, useRef, useCallback } from "react";
+import { usePlatform } from "@/context/PlatformContext";
+import ServerSelector from "@/components/shared/ServerSelector";
 import { useRouter } from "next/navigation";
-import { Upload, Loader2, AlertCircle, Package, X, ArrowRight, ArrowLeft } from "lucide-react";
 import { buildFolderTarGz, collectFolderFiles } from "@/utils/tarGz";
 import { encodeUploadSlug } from "@/utils/repoSlug";
 import { folderApi } from "@/lib/api/folder";
 import { frameworks, type FrameworkConfig } from "@/components/import-project/Frameworks";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 
 type Phase = "idle" | "packing" | "uploading";
 
@@ -36,6 +41,11 @@ function detectPackageManager(paths: Set<string>): string {
 export function FolderUpload() {
   const { t } = useI18n();
   const router = useRouter();
+  const { selfHosted } = usePlatform();
+  const [serverId, setServerId] = useState<string>();
+  const [workspaceId, setWorkspaceId] = useState<string>();
+  const [destinationReady, setDestinationReady] = useState(selfHosted);
+  const showCloudPricing = useCloudDeployPricing(workspaceId);
   const fileRef = useRef<HTMLInputElement>(null);
   const [stack, setStack] = useState<FrameworkConfig | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -62,7 +72,8 @@ export function FolderUpload() {
       try {
         const pkg = JSON.parse(await pkgEntry.file.text());
         if (typeof pkg?.name === "string") name = pkg.name;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/library/components/FolderUpload");
         /* ignore malformed package.json */
       }
     }
@@ -75,7 +86,7 @@ export function FolderUpload() {
   }, []);
 
   const handleDeploy = async () => {
-    if (!picked || !stack) return;
+    if (!picked || !stack || busy || (!selfHosted && !destinationReady)) return;
     setError("");
     try {
       setPhase("packing");
@@ -83,6 +94,7 @@ export function FolderUpload() {
 
       setPhase("uploading");
       const session = await folderApi.createSession({
+        serverId,
         stack: stack.id,
         packageManager: picked.packageManager,
         name: picked.name,
@@ -92,8 +104,11 @@ export function FolderUpload() {
       const params = new URLSearchParams({ stack: stack.id, name: picked.name });
       router.push(`/deploy/${encodeUploadSlug(session.sessionId)}?${params.toString()}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t.library.folderUpload.uploadError);
+      observeCaughtError(err, "dashboard/app/(dashboard)/library/components/FolderUpload");
       setPhase("idle");
+      if (!showCloudPricing(err)) {
+        setError(err instanceof Error ? err.message : t.library.folderUpload.uploadError);
+      }
     }
   };
 
@@ -143,7 +158,7 @@ export function FolderUpload() {
             className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
             aria-label={t.library.folderUpload.backToStack}
           >
-            <ArrowLeft className="size-4 rtl:rotate-180" />
+            <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
           </button>
         )}
         <div className="w-9 h-9 bg-muted/60 rounded-xl flex items-center justify-center">
@@ -156,6 +171,21 @@ export function FolderUpload() {
       </div>
 
       <div className="px-5 py-4">
+        {!selfHosted && (
+          <div className="mb-4">
+            <ServerSelector
+              label={t.billing.workspaces.destination}
+              value={serverId}
+              onSelect={(server) => {
+                setServerId(server?.id);
+                setWorkspaceId(server?.raw.managed?.id);
+              }}
+              onReadyChange={setDestinationReady}
+              forDeployment
+              disabled={busy}
+            />
+          </div>
+        )}
         {!picked ? (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -177,7 +207,7 @@ export function FolderUpload() {
               onChange={(e) => e.target.files && void handleFiles(e.target.files)}
             />
             <div className="w-10 h-10 rounded-xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-2">
-              <Upload className="size-5 text-muted-foreground" />
+              <UiIcon name="upload" className="size-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground mb-0.5">
               {t.library.folderUpload.dropTitle}
@@ -190,7 +220,7 @@ export function FolderUpload() {
           <div className="space-y-4">
             <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-muted/40 border border-border/50">
               <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <Package className="size-[18px] text-muted-foreground" />
+                <UiIcon name="project" className="size-[18px] text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{picked.name}</p>
@@ -204,17 +234,17 @@ export function FolderUpload() {
                   className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
                   aria-label={t.library.folderUpload.clearSelection}
                 >
-                  <X className="size-4" />
+                  <UiIcon name="close" className="size-4" />
                 </button>
               )}
             </div>
 
             <button
               onClick={handleDeploy}
-              disabled={busy}
+              disabled={busy || (!selfHosted && !destinationReady)}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4 rtl:rotate-180" />}
+              {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />}
               {phase === "packing" ? t.library.folderUpload.packing : phase === "uploading" ? t.library.folderUpload.uploading : t.library.folderUpload.continue}
             </button>
           </div>
@@ -222,7 +252,7 @@ export function FolderUpload() {
 
         {error && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg mt-3 bg-danger-bg border border-danger-border">
-            <AlertCircle className="size-4 shrink-0 text-danger" />
+            <UiIcon name="alert-circle" className="size-4 shrink-0 text-danger" />
             <p className="text-xs text-danger">{error}</p>
           </div>
         )}

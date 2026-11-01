@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { certFromAcmeJson, traefikAcmeCert } from "./traefik-certs";
+import { certFromAcmeJson, traefikAcmeCert, traefikDeclaredCertPaths } from "./traefik-certs";
 import type { CommandExecutor } from "../../../types";
 
 // Traefik keeps every cert in one JSON blob with base64 PEMs and no cert files on
@@ -17,6 +17,55 @@ const entry = (main: string, sans: string[] = []) => ({
   domain: { main, sans },
   certificate: b64(PEM_CERT),
   key: b64(PEM_KEY),
+});
+
+describe("traefikDeclaredCertPaths", () => {
+  const tls = "tls:\n  certificates:\n    - certFile: /certs/site.pem\n      keyFile: /certs/site.key\n";
+  function source(args: string[], files: Record<string, string>, listing = "") {
+    return {
+      readFile: vi.fn(async () => { throw new Error("Only present in the proxy container"); }),
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.startsWith("docker inspect ")) return JSON.stringify(args);
+        if (cmd.includes("find ")) return listing;
+        return Object.entries(files).find(([path]) => cmd.includes(path))?.[1] ?? "";
+      }),
+    } as unknown as CommandExecutor;
+  }
+
+  it.each([
+    "--providers.file.filename=/dynamic/tls.yml",
+    "TRAEFIK_PROVIDERS_FILE_FILENAME=/dynamic/tls.yml",
+  ])("finds the real dynamic TLS file declared by %s", async (declaration) => {
+    const result = await traefikDeclaredCertPaths(source([declaration], { "/dynamic/tls.yml": tls }), "proxy");
+    expect(result).toEqual([{ certPath: "/certs/site.pem", keyPath: "/certs/site.key" }]);
+  });
+
+  it("follows a custom static config to the file provider's TOML certificate declaration", async () => {
+    const exec = source(["--configFile=/config/static.toml"], {
+      "/config/static.toml": '[providers.file]\nfilename = "/dynamic/tls.toml"',
+      "/dynamic/tls.toml": '[[tls.certificates]]\ncertFile = "/certs/site.pem"\nkeyFile = "/certs/site.key"',
+    });
+    expect(await traefikDeclaredCertPaths(exec, "proxy")).toEqual([{ certPath: "/certs/site.pem", keyPath: "/certs/site.key" }]);
+  });
+
+  it("reads YAML/TOML files from a declared dynamic directory inside the proxy", async () => {
+    const exec = source([], {
+      "/etc/traefik/traefik.yml": "providers:\n  file:\n    directory: /dynamic",
+      "/dynamic/one.yaml": tls,
+      "/dynamic/duplicate.toml": '[[tls.certificates]]\ncertFile = "/certs/site.pem"\nkeyFile = "/certs/site.key"',
+      "/dynamic/ignored.txt": "certFile: /wrong.pem\nkeyFile: /wrong.key",
+    }, "/dynamic/one.yaml\n/dynamic/duplicate.toml\n/dynamic/ignored.txt");
+    expect(await traefikDeclaredCertPaths(exec, "proxy")).toEqual([{ certPath: "/certs/site.pem", keyPath: "/certs/site.key" }]);
+  });
+
+  it("refuses unsafe paths from declarations and certificates", async () => {
+    const exec = source(["--providers.file.filename=/dynamic/../private.yml"], {
+      "/dynamic/../private.yml": tls,
+      "/etc/traefik/traefik.yml": "tls:\n  certificates:\n    - certFile: /certs/../private.pem\n      keyFile: /certs/site.key",
+    });
+    expect(await traefikDeclaredCertPaths(exec, "proxy")).toEqual([]);
+    expect(exec.exec).not.toHaveBeenCalledWith(expect.stringContaining("private.yml"));
+  });
 });
 
 describe("certFromAcmeJson", () => {

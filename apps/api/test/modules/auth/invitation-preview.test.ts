@@ -9,17 +9,18 @@ const h = vi.hoisted(() => ({
     role: string;
     expiresAt: Date;
     inviterId: string;
+    inviterName: string;
     inviterIsInstanceAdmin: boolean;
     organization: { id: string; name: string };
   },
   existingUser: undefined as { id: string } | undefined,
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: {},
   isSaasDeployment: false,
 }));
-vi.mock("@/lib/invitation-claim", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/lib/invitation-claim", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/invitation-claim")>()),
   resolveInvitationClaim: vi.fn(async () => h.claim),
 }));
@@ -45,6 +46,7 @@ beforeEach(() => {
     role: "member",
     expiresAt: new Date("2026-09-03T00:00:00.000Z"),
     inviterId: "usr_admin",
+    inviterName: "Alex",
     inviterIsInstanceAdmin: true,
     organization: { id: "org_1", name: "Acme" },
   };
@@ -66,6 +68,7 @@ describe("public invitation preview", () => {
           expiresAt: "2026-09-03T00:00:00.000Z",
         },
         organization: { id: "org_1", name: "Acme" },
+        inviter: { name: "Alex" },
         accountCreation: "invited",
       },
     });

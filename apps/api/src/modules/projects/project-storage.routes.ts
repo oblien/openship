@@ -3,14 +3,13 @@
  *
  * Project-scoped (`:id` = the app the bucket is bound to). Same shape as the
  * service-connection router: standard project permission tags plus
- * `cloudProjectProxy`, with the source-app read check done in the service.
+ * the shared Cloud resource gateway, with the source-app read check done in the service.
  */
 
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project-storage.controller";
-import { BindObjectStorageBody } from "./project-storage.schema";
+import { BindObjectStorageBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -26,7 +25,6 @@ r.get(
         "Read this project's object-storage binding (S3 bucket wired into its filesystem config) and what could be bound.",
     },
   },
-  cloudProjectProxy,
   ctrl.get,
 );
 
@@ -34,13 +32,13 @@ r.post(
   "/",
   {
     tag: "project:write",
+    auditHandledByOperation: true,
     body: BindObjectStorageBody,
     mcp: {
       description:
         "Bind an S3 bucket to this project — either an installed MinIO app or an external provider. Verifies the bucket, then injects the framework's storage env vars.",
     },
   },
-  cloudProjectProxy,
   ctrl.bind,
 );
 
@@ -48,9 +46,9 @@ r.delete(
   "/",
   {
     tag: "project:admin",
+    auditHandledByOperation: true,
     mcp: { description: "Remove the object-storage binding and the env vars it injected." },
   },
-  cloudProjectProxy,
   ctrl.unbind,
 );
 

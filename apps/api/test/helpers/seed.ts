@@ -20,14 +20,16 @@ export interface SeededOrg {
   organizationId: string;
 }
 
-export async function seedOrg(): Promise<SeededOrg> {
+/** Local-daemon fixtures explicitly use the founding user's personal organization. */
+export async function seedOrg(opts: { ownsHost?: boolean } = {}): Promise<SeededOrg> {
   const userId = uid("user");
-  const organizationId = uid("org");
+  const organizationId = opts.ownsHost ? `org_${userId}` : uid("org");
   await db.insert(schema.user).values({
     id: userId,
     name: "Test Owner",
     email: `${userId}@example.test`,
     emailVerified: true,
+    ...(opts.ownsHost ? { role: "admin", autoProvisioned: false } : {}),
   });
   await db.insert(schema.organization).values({
     id: organizationId,

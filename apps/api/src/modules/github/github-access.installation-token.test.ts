@@ -35,7 +35,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { canMintInstallationToken } from "./github-access";
+import { canMintInstallationToken } from "@repo/platform/engine/modules/github/github-access";
 
 // A plain member, not a scoped token: owner auto-access does not apply, so grant
 // matching actually runs.

@@ -21,6 +21,7 @@ const cfg = (over: Partial<BuildConfig> = {}): BuildConfig =>
     slug: "web",
     stack: "vite",
     buildImage: "node:22",
+    runtimeImage: "node:22-alpine",
     rootDirectory: "apps/web",
     outputDirectory: "dist",
     port: 3000,

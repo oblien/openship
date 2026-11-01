@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollupDeploymentStatus } from "./service-checks";
+import { rollupDeploymentStatus } from "@repo/platform/engine/modules/deployments/service-checks";
 
 /**
  * The contract the GH-585 fix rests on: a service a scoped deploy deliberately left alone is

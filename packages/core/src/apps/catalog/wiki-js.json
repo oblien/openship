@@ -1,0 +1,211 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "wiki-js",
+  "name": "Wiki.js",
+  "description": "Create a knowledge base with the stable Wiki.js release, a private PostgreSQL database, and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "wiki-js",
+  "category": "cms",
+  "framework": "docker-compose",
+  "repository": "https://github.com/requarks/wiki",
+  "services": [
+    {
+      "name": "wiki-db",
+      "image": "postgres:17.9-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "app",
+        "POSTGRES_DB": "app"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["wiki_db_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 30,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 512,
+        "diskMb": 2048
+      }
+    },
+    {
+      "name": "wiki",
+      "image": "ghcr.io/requarks/wiki:2.5.315",
+      "restart": "unless-stopped",
+      "dependsOn": ["wiki-db"],
+      "environment": {
+        "DB_HOST": "wiki-db",
+        "DB_USER": "app",
+        "DB_NAME": "app",
+        "OPENSHIP_PUBLIC_URL": "{{publicUrl:wiki}}"
+      },
+      "secretEnv": ["DB_PASS", "OPENSHIP_ADMIN_PASSWORD"],
+      "volumes": ["wiki_data:/wiki/data"],
+      "commandArgv": ["node", "/etc/openship/wiki-start.cjs"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "test -f /tmp/openship-ready && curl -fsS http://127.0.0.1:3000/healthz >/dev/null"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 30,
+        "startPeriod": "120s"
+      },
+      "stopGracePeriod": "60s",
+      "exposed": true,
+      "exposedPort": 3000,
+      "routes": [
+        {
+          "port": 3000
+        }
+      ],
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 768,
+        "diskMb": 4096
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "wiki",
+      "port": 3000,
+      "label": "Knowledge base",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "wiki-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"],
+      "scope": "internal"
+    }
+  ],
+  "minResources": {
+    "cpuCores": 1,
+    "memoryMb": 1280
+  },
+  "tags": ["wiki", "documentation", "knowledge-base"],
+  "management": {
+    "kind": "schema"
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Persistent storage",
+        "description": "Application data stays on project-scoped volumes across deployments."
+      },
+      {
+        "title": "Published images",
+        "description": "Install pinned upstream containers without building images on your server."
+      }
+    ],
+    "articleFile": "articles/wiki-js.md"
+  },
+  "configFields": [
+    {
+      "service": "wiki-db",
+      "key": "POSTGRES_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "wiki-db"
+    },
+    {
+      "service": "wiki",
+      "key": "DB_PASS",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "wiki-db"
+    },
+    {
+      "service": "wiki",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Initial administrator password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "wiki",
+      "key": "OPENSHIP_ADMIN_EMAIL",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "wiki",
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "help": "Used only for the initial account. Manage existing accounts in the app."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "connection": {
+    "title": "Open Wiki.js",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Wiki.js",
+        "source": "publicUrl:wiki",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Email",
+        "source": "env:wiki:OPENSHIP_ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Initial password",
+        "source": "env:wiki:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Account changes made in the app are preserved on redeployment. These are the initial credentials."
+    }
+  },
+  "files": [
+    {
+      "service": "wiki",
+      "path": "/etc/openship/wiki-start.cjs",
+      "content": "const { spawn } = require('node:child_process');\nconst { writeFileSync } = require('node:fs');\nconst { Client } = require('/wiki/node_modules/pg');\nconst pause = ms => new Promise(resolve => setTimeout(resolve, ms));\nlet child;\nlet stopping = false;\nfor (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { if (stopping) return; stopping = true; void stop().then(() => process.exit(143), () => process.exit(1)); });\nfunction start(bindIP) {\n  if (stopping) throw new Error('Wiki.js setup was interrupted.');\n  const config = { port: 3000, bindIP, db: { type: 'postgres', host: process.env.DB_HOST, port: 5432, user: process.env.DB_USER, pass: process.env.DB_PASS, db: process.env.DB_NAME, ssl: false }, dataPath: '/wiki/data', ssl: { enabled: false }, logLevel: 'info' };\n  writeFileSync('/tmp/openship-wiki-config.json', JSON.stringify(config), { mode: 0o600 });\n  child = spawn(process.execPath, ['--no-deprecation', 'server'], { cwd: '/wiki', env: { ...process.env, CONFIG_FILE: '/tmp/openship-wiki-config.json' }, stdio: 'inherit' });\n}\nasync function stop() {\n  if (!child || child.exitCode !== null) return;\n  const closed = new Promise(resolve => child.once('exit', resolve));\n  child.kill('SIGTERM');\n  const timeout = setTimeout(() => child.kill('SIGKILL'), 30000);\n  await closed;\n  clearTimeout(timeout);\n}\n(async () => {\n  start('127.0.0.1');\n  const db = new Client({ host: process.env.DB_HOST, user: process.env.DB_USER, password: process.env.DB_PASS, database: process.env.DB_NAME });\n  await db.connect();\n  let ready = false;\n  for (let attempt = 0; attempt < 180; attempt++) {\n    if (child.exitCode !== null) throw new Error('Wiki.js exited during private setup.');\n    const tables = await db.query(\"SELECT to_regclass('public.settings') IS NOT NULL AND to_regclass('public.users') IS NOT NULL AS ready\");\n    if (tables.rows[0].ready) {\n      const settings = await db.query('SELECT COUNT(*)::int AS count FROM settings');\n      const owner = await db.query('SELECT id FROM users WHERE id = 1');\n      if (settings.rows[0].count > 0 && owner.rows.length) { ready = true; break; }\n      if (settings.rows[0].count > 0 || owner.rows.length) throw new Error('Wiki.js has incomplete existing setup. Restore or repair it before publishing.');\n      try {\n        const response = await fetch('http://127.0.0.1:3000/finalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminEmail: process.env.OPENSHIP_ADMIN_EMAIL, adminPassword: process.env.OPENSHIP_ADMIN_PASSWORD, siteUrl: process.env.OPENSHIP_PUBLIC_URL, telemetry: false }), signal: AbortSignal.timeout(120000) });\n        const result = await response.json();\n        if (!response.ok || result.ok !== true) throw new Error('Wiki.js initial owner setup was rejected.');\n        ready = true; break;\n      } catch (error) {\n        if (!(error instanceof TypeError)) throw error;\n      }\n    }\n    await pause(2000);\n  }\n  if (!ready) throw new Error('Wiki.js private setup timed out.');\n  const owner = await db.query('SELECT id FROM users WHERE id = 1');\n  if (!owner.rows.length) throw new Error('Wiki.js owner was not created; refusing to publish.');\n  await db.end();\n  await stop();\n  start('0.0.0.0');\n  writeFileSync('/tmp/openship-ready', 'ready', { mode: 0o600 });\n  child.once('exit', code => { if (!stopping) process.exit(code ?? 1); });\n})().catch(async error => { if (stopping) return; if (typeof error.message === \"string\" && error.message.startsWith(\"Wiki.js \")) console.error(error.message); console.error('Wiki.js could not complete private owner setup; the public service was not started.'); if (child?.exitCode === null) await stop(); process.exit(1); });\n"
+    }
+  ]
+}

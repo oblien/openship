@@ -1,4 +1,6 @@
 "use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -117,9 +119,9 @@ export default function DownloadPage() {
         for (const a of data.assets ?? []) sizes[a.name] = a.size;
         setRelease({ version: data.tag_name ?? "", sizes });
       })
-      .catch(() => {
+      .catch(error => { reportCaughtError(error, "web/app/(site)/download/page");
         /* rate-limited or offline → keep the static fallback labels */
-      });
+       });
     return () => {
       alive = false;
     };

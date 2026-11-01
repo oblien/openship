@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import * as zlib from "node:zlib";
 import { DmarcParseError, DmarcSecurityError } from "./types";
 
@@ -25,6 +26,7 @@ export function decompressGzip(buf: Buffer): string {
     });
     return decompressed.toString("utf-8");
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/dmarc/mime-extractor");
     if (err instanceof Error && /maxOutputLength|quota|too large/i.test(err.message)) {
       throw new DmarcSecurityError(`Decompressed GZIP XML exceeds maximum size limit of ${MAX_DECOMPRESSED_BYTES} bytes.`);
     }
@@ -75,6 +77,7 @@ export function decompressZip(buf: Buffer): { filename: string; xml: string } {
             maxOutputLength: MAX_DECOMPRESSED_BYTES,
           });
         } catch (err) {
+          observeCaughtError(err, "api/modules/mail/dmarc/mime-extractor");
           throw new DmarcParseError(`Failed to inflate ZIP entry: ${err instanceof Error ? err.message : String(err)}`);
         }
       } else {

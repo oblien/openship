@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GITHUB_KNOWN_HOSTS } from "../../../src/modules/github/github-known-hosts";
+import { GITHUB_KNOWN_HOSTS } from "@repo/platform/engine/modules/github/github-known-hosts";
 
 describe("GITHUB_KNOWN_HOSTS", () => {
   const lines = GITHUB_KNOWN_HOSTS.split("\n").filter((l) => l.trim().length > 0);

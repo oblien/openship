@@ -1,4 +1,5 @@
 import type { SystemSettings, TunnelConfig, SetupPayload } from "./types";
+import { reportError } from "@repo/core/diagnostics";
 
 type FetchFn = typeof globalThis.fetch;
 
@@ -46,6 +47,7 @@ export function buildSetupPayload(settings: {
     if (s.sshKeyPath) payload.sshKeyPath = s.sshKeyPath;
     if (s.sshKeyPassphrase) payload.sshKeyPassphrase = s.sshKeyPassphrase;
     if (s.sshJumpHost) payload.sshJumpHost = s.sshJumpHost;
+    if (s.sshTransport) payload.sshTransport = s.sshTransport;
     if (s.sshArgs) payload.sshArgs = s.sshArgs;
   }
 
@@ -79,8 +81,13 @@ export async function pushInstanceSettings(
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10_000),
     });
+    if (!res.ok) reportError("Instance setup was rejected", {
+      component: "onboarding", operation: "system.setup", statusCode: res.status,
+      requestId: res.headers.get("X-Request-ID") ?? undefined, handled: true,
+    });
     return res.ok;
-  } catch {
+  } catch (error) {
+    reportError(error, { component: "onboarding", operation: "system.setup", handled: true });
     return false;
   }
 }
@@ -95,16 +102,22 @@ export async function waitForApi(
   intervalMs = 1000,
 ): Promise<boolean> {
   const fetchFn = getFetch(opts);
+  let lastError: unknown;
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetchFn(`${opts.apiUrl}/api/health`, {
         signal: AbortSignal.timeout(2000),
       });
       if (res.ok) return true;
-    } catch {
-      // Not ready yet
+    } catch (error) {
+      // diagnostics-ignore: readiness polling is expected during startup; report only if the whole operation fails below.
+      lastError = error;
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
+  reportError(lastError ?? "API did not become ready", {
+    component: "onboarding", operation: "system.wait-for-api", category: "timeout",
+    attempt: maxAttempts, handled: true,
+  });
   return false;
 }

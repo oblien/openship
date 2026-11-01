@@ -20,7 +20,7 @@
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { env } from "../config/env";
+import { env } from "@repo/platform/engine/config/env";
 
 /** Claims we put on an MCP access token. */
 export interface McpAccessTokenClaims {

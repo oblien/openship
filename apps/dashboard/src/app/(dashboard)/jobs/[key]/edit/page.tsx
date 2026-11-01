@@ -1,12 +1,12 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import { jobsApi, getApiErrorMessage, type JobView } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobForm } from "@/components/jobs/JobForm";
-import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -16,7 +16,6 @@ export default function EditJobPage() {
   const router = useRouter();
   const params = useParams();
   const key = decodeURIComponent(String(params.key));
-  const { selfHosted } = usePlatform();
   const { showToast } = useToast();
 
   const [job, setJob] = useState<JobView | null>(null);
@@ -35,9 +34,8 @@ export default function EditJobPage() {
   }, [key, j.loadFailed, j.toast.title, showToast]);
 
   useEffect(() => {
-    if (selfHosted) void load();
-    else router.replace("/jobs");
-  }, [selfHosted, load, router]);
+    void load();
+  }, [load]);
 
   const backToDetail = () => router.push(`/jobs/${encodeURIComponent(key)}`);
 
@@ -45,15 +43,17 @@ export default function EditJobPage() {
     <PageContainer>
       <div className="mb-6 flex items-center gap-3">
         <button onClick={backToDetail} className="flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-muted">
-          <ArrowLeft className="size-4 text-muted-foreground rtl:rotate-180" />
+          <UiIcon name="arrow-left" className="size-4 text-muted-foreground rtl:rotate-180" />
         </button>
         <h1 className="truncate text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
           {j.edit.title}{job ? ` · ${job.label}` : ""}
         </h1>
       </div>
 
-      {loading || !job ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      {loading ? (
+        <div className="flex items-center justify-center py-20"><UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : !job ? (
+        <p role="alert" className="py-20 text-center text-sm text-muted-foreground">{j.loadFailed}</p>
       ) : (
         <JobForm
           job={job}

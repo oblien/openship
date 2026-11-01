@@ -1,0 +1,207 @@
+/**
+ * Oblien Mode B owns charges, grants, renewals, quotas and suspension.
+ * Openship mirrors that authority. Explicit complimentary plans use Mode A.
+ */
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { AppError, safeErrorMessage, type PlanTierId, type PlanLimits, type OblienLimits } from "@repo/core";
+import { repos } from "@repo/db";
+import type { NamespaceUsageUnits } from "@repo/adapters";
+import { env } from "../../config/env";
+import { getOblienBillingApi, getOblienClient } from "../../lib/oblien-client";
+import { type OblienEntitlement, type OblienSubscription } from "../../lib/oblien-billing-api";
+import { createProvisionLock } from "../../lib/provision-lock";
+import { syncCloudResourceLimits } from "../../lib/cloud-resource-limits";
+import { cloudBillingLockKey, effectiveCloudPlan, readProviderBilling, reconcilePlanGrant, type ResolvedPlanGrant } from "./billing-plan-grants";
+import { fromOblienCredits } from "./billing-credit-units";
+import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
+
+export { toOblienCredits, fromOblienCredits } from "./billing-credit-units";
+
+export interface QuotaState {
+  quotaLimit: number | null;
+  quotaUsed: number;
+  quotaRemaining: number | null;
+}
+
+export function entitlementQuota(entitlement: OblienEntitlement): QuotaState {
+  if (entitlement.tierId === "capacity") return { quotaLimit: null, quotaUsed: 0, quotaRemaining: null };
+  const { limit, used, balance } = entitlement.quota;
+  return {
+    quotaLimit: limit === null ? null : fromOblienCredits(limit),
+    quotaUsed: fromOblienCredits(used),
+    quotaRemaining: balance === null ? null : fromOblienCredits(balance),
+  };
+}
+
+/** Validate the provider's onboarding policy. Never overwrite paid allowances. */
+export async function ensureOblienDefaultQuota(): Promise<void> {
+  if (!env.CLOUD_MODE) return;
+  const defaults = await getOblienBillingApi().getDefaults();
+  if (!defaults.autoApply || defaults.quotaLimit !== 0 || defaults.overdraft !== 0 || defaults.suspendThreshold !== 0 ||
+      defaults.onOverdraftAction !== "stop_workspaces") {
+    throw new AppError("Cloud onboarding requires an automatically applied zero-credit Oblien policy with no overdraft", 503, "OBLIEN_DEFAULT_POLICY_REQUIRED");
+  }
+}
+
+export interface EntitlementDrift {
+  quotaMissing: boolean;
+  statusWas: string;
+  statusNow: string;
+  changed: boolean;
+}
+
+/**
+ * Read under an org lock so a delayed webhook cannot overwrite a newer mirror.
+ * Events trigger a fresh read; their payloads never authorize credit grants.
+ */
+export interface SyncedCloudEntitlement {
+  entitlement: OblienEntitlement;
+  subscription: OblienSubscription;
+  tier: PlanTierId;
+  limits: PlanLimits;
+  resourceLimits: OblienLimits;
+  grant: ResolvedPlanGrant | null;
+  drift: EntitlementDrift;
+}
+
+interface EntitlementSyncOptions {
+  /** Billing reads and checkout do not provision or resize customer workloads. */
+  syncResourceLimits?: boolean;
+  workspaceId?: CloudWorkspaceScope;
+}
+
+/** Shares one lock with webhook deduplication, without nesting pooled DB locks. */
+export async function withCloudBillingLock<T>(organizationId: string, work: (
+  sync: (options?: EntitlementSyncOptions) => Promise<SyncedCloudEntitlement>,
+) => Promise<T>, workspaceId?: CloudWorkspaceScope): Promise<T> {
+  const owner = await cloudBillingOwner(organizationId, workspaceId);
+  return createProvisionLock(cloudBillingLockKey(organizationId, owner.workspaceId)).run(() =>
+    work(options => readAndMirrorEntitlement(organizationId, { ...options, workspaceId: owner.workspaceId })));
+}
+
+export async function syncOblienEntitlement(organizationId: string, options?: EntitlementSyncOptions): Promise<SyncedCloudEntitlement> {
+  return withCloudBillingLock(organizationId, (sync) => sync(options), options?.workspaceId);
+}
+
+async function readAndMirrorEntitlement(organizationId: string, options: EntitlementSyncOptions = {}): Promise<SyncedCloudEntitlement> {
+    const owner = await cloudBillingOwner(organizationId, options.workspaceId);
+    if (!owner.namespace) {
+      throw new AppError("Cloud namespace is not ready", 503, "CLOUD_NAMESPACE_REQUIRED");
+    }
+    const billing = getOblienBillingApi();
+    const state = await readProviderBilling(billing, owner.namespace);
+    // A provider may echo the requested namespace while falling back to the
+    // API-key owner's tier/period. Verify the namespace's subscription before
+    // mirroring paid access or issuing a customer token.
+    const resolved = await reconcilePlanGrant({
+      organizationId, namespace: owner.namespace, grants: repos.billingPlanGrant, billing, state,
+    });
+    const { entitlement, subscription, grant } = resolved;
+    const { tier, limits, resourceLimits, currentPeriodStart, currentPeriodEnd } = effectiveCloudPlan(resolved, grant, organizationId);
+    // Positive entitlements must have provider-enforced resource ceilings before
+    // issuing a token or allowing another deployment. Exhausted/suspended
+    // customers can still obtain management access to stop/delete resources.
+    // Reading billing or opening checkout requires no resource-policy write.
+    if (options.syncResourceLimits !== false && entitlement.status === "active" && tier !== "free") {
+      await syncCloudResourceLimits(owner.namespace, tier, resourceLimits);
+    }
+    const changed = owner.planTierId !== tier || owner.subscriptionStatus !== entitlement.status ||
+      (owner.currentPeriodStart?.getTime() ?? null) !== (currentPeriodStart?.getTime() ?? null) ||
+      (owner.currentPeriodEnd?.getTime() ?? null) !== (currentPeriodEnd?.getTime() ?? null);
+
+    if (changed) {
+      const mirror = {
+        planTierId: tier, subscriptionStatus: entitlement.status, currentPeriodStart, currentPeriodEnd,
+      };
+      if (owner.workspaceId) await repos.cloudWorkspace.setBillingEntitlement(owner.workspaceId, organizationId, owner.namespace, mirror);
+      else await repos.organization.setBillingEntitlement(organizationId, owner.namespace, mirror);
+    }
+    const { observeCloudSubscription } = await import("../cloud-analytics/billing");
+    await observeCloudSubscription(organizationId, { tier, subscription, grant });
+    return {
+      entitlement,
+      subscription,
+      grant,
+      tier,
+      limits,
+      resourceLimits,
+      drift: {
+        quotaMissing: entitlement.tierId !== "capacity" && entitlement.quota.limit === null && tier !== "enterprise",
+        statusWas: owner.subscriptionStatus, statusNow: entitlement.status, changed,
+      },
+    };
+}
+
+/** A failed read is unknown state, never a free grant or a status transition. */
+export async function reconcileOblienEntitlement(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<EntitlementDrift | null> {
+  try {
+    return (await syncOblienEntitlement(orgId, { workspaceId })).drift;
+  } catch (error) {
+    errorDiagnostics.warn("platform/engine/modules/billing/billing-oblien-quota", `[billing] entitlement reconciliation failed for org ${orgId}: ${safeErrorMessage(error)}`, error);
+    return null;
+  }
+}
+
+export async function getQuotaState(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<QuotaState | null> {
+  const owner = await cloudBillingOwner(orgId, workspaceId);
+  if (!owner.namespace) return null;
+  return entitlementQuota((await syncOblienEntitlement(orgId, { syncResourceLimits: false, workspaceId: owner.workspaceId })).entitlement);
+}
+
+/** Token issuance still allows exhausted customers to inspect and stop workloads. */
+export async function assertNamespaceHasQuota(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
+  const { drift } = await syncOblienEntitlement(orgId, { workspaceId });
+  if (drift.quotaMissing) {
+    throw new AppError("Cloud namespace billing policy is not ready", 503, "OBLIEN_NAMESPACE_POLICY_REQUIRED");
+  }
+}
+
+/** Applied immediately before starting new billable work, never before cleanup. */
+export async function assertCloudCanSpend(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
+  const { entitlement, drift, tier } = await syncOblienEntitlement(orgId, { workspaceId });
+  // Credits alone (including old top-ups) never activate a Cloud subscription.
+  if (tier === "free") {
+    throw new AppError("Choose a Cloud plan before building or running workloads", 402, "CLOUD_BILLING_BLOCKED");
+  }
+  if (drift.quotaMissing) {
+    throw new AppError("Cloud namespace billing policy is not ready", 503, "OBLIEN_NAMESPACE_POLICY_REQUIRED");
+  }
+  const balance = await getOblienBillingApi().getBalance(entitlement.namespace);
+  const monthly = entitlement.billingMode === "monthly";
+  if (balance.blocking || (monthly
+    ? entitlement.computeCovered !== true || balance.billingMode !== "monthly" || balance.computeCovered !== true
+    : entitlement.status !== "active")) {
+    throw new AppError(monthly
+      ? "This server's paid coverage needs attention. Open billing to review its renewal or payment."
+      : "Your cloud subscription or credit balance needs attention before starting this workload", 402, "CLOUD_BILLING_BLOCKED");
+  }
+}
+
+// Retired entry points fail closed while old queued Stripe jobs drain. They must
+// never write /credits or /billing/policy in an Oblien-managed installation.
+function managedBillingOnly(): never {
+  throw new AppError("Credit grants and renewals are managed by Oblien", 409, "OBLIEN_MANAGED_BILLING");
+}
+export async function setQuotaForTier(_orgId: string, _tier: PlanTierId): Promise<void> { managedBillingOnly(); }
+export async function addQuota(_orgId: string, _credits: number): Promise<void> { managedBillingOnly(); }
+export async function resetAndRegrant(_orgId: string, _tier: PlanTierId): Promise<void> { managedBillingOnly(); }
+
+export interface UsageRangeInput {
+  organizationId: string;
+  workspaceId?: CloudWorkspaceScope;
+  from: Date;
+  to: Date;
+  groupBy?: "hour" | "day";
+}
+
+export async function getNamespaceUsage(input: UsageRangeInput): Promise<NamespaceUsageUnits | null> {
+  const owner = await cloudBillingOwner(input.organizationId, input.workspaceId);
+  if (!owner.namespace) return null;
+  const result = await getOblienClient().namespaces.usageUnits(owner.namespace, {
+    from: input.from.toISOString(), to: input.to.toISOString(), groupBy: input.groupBy ?? "day",
+  });
+  if (!result.success || result.data?.namespace !== owner.namespace) {
+    throw new AppError("Cloud usage could not be verified for this organization", 502, "OBLIEN_USAGE_NAMESPACE_MISMATCH");
+  }
+  return result.data;
+}

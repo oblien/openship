@@ -5,7 +5,7 @@
  * ─── Why this exists ──────────────────────────────────────────────────
  *
  * Every migration service (migrate-instance, migrate-to-cloud,
- * migrate-to-tunnel, switch-back, db-migrate-remote) has the same
+ * migrate-to-tunnel, switch-back) has the same
  * surrounding ceremony:
  *
  *   1. acquire the migration lock (compare-and-swap quiesce)

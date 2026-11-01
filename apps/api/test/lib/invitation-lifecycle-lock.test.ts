@@ -12,7 +12,7 @@ function deferred() {
 }
 
 describe("invitation lifecycle serialization", () => {
-  it("wraps every Better Auth terminal mutation before the catch-all", () => {
+  it("routes every legacy terminal mutation to the shared lifecycle before the catch-all", () => {
     const routes = readFileSync(
       new URL("../../src/modules/auth/auth.routes.ts", import.meta.url),
       "utf8",
@@ -27,7 +27,8 @@ describe("invitation lifecycle serialization", () => {
       expect(mounted).toBeGreaterThan(-1);
       expect(mounted).toBeLessThan(catchAll);
     }
-    expect(routes.slice(0, catchAll)).toContain("invitationLifecycleMiddleware");
+    expect(routes.slice(0, catchAll)).toContain("organizationController.acceptInvitation");
+    expect(routes.slice(0, catchAll)).toContain("organizationController.cancelInvitation");
   });
 
   it("does not let accept and cancel for one invitation overlap", async () => {

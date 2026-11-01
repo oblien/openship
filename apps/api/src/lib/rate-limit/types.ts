@@ -62,11 +62,12 @@ export interface RateLimitResult {
  *   - "user"   — `ctx.userId` (authed routes; per-user across IPs).
  *   - "org"    — `ctx.organizationId` (authed routes; shared org bucket).
  *   - "global" — single bucket per policy (system-wide circuit breakers).
+ *   - "webhook" — stable endpoint identity plus client IP, with a separate IP ceiling.
  *
  * For authed routes prefer "user" or "org" over "ip" — IP-keying breaks
  * for CGNAT users and lets one teammate burn the whole org's quota.
  */
-export type RateLimitSubject = "ip" | "user" | "org" | "global";
+export type RateLimitSubject = "ip" | "user" | "org" | "global" | "webhook";
 
 export interface RateLimitPolicy {
   /** Stable id — appears in the Redis key, so changes invalidate state. */

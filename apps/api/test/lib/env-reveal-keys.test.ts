@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "@repo/core";
-import { MAX_REVEAL_KEYS, parseRevealKeys, pickRevealed } from "../../src/lib/env-reveal";
+import { MAX_REVEAL_KEYS, parseRevealKeys, pickRevealed } from "@repo/platform/engine/lib/env-reveal";
 
 /**
  * Per-key reveal (#336 follow-up): opening ONE row's eye must disclose ONE secret.
@@ -27,6 +27,14 @@ describe("env reveal keys", () => {
   it("never resolves a key off the prototype chain", () => {
     // `key in env` would answer with Object.prototype.constructor here.
     expect(pickRevealed(env, ["constructor", "toString", "__proto__"])).toEqual({});
+  });
+
+  it("preserves explicitly stored keys that also name prototype properties", () => {
+    const stored = JSON.parse('{"__proto__":"literal-value","constructor":"literal-constructor","UNREQUESTED":"hidden"}');
+    const result = pickRevealed(stored, ["__proto__", "constructor"]);
+    expect(Object.keys(result)).toEqual(["__proto__", "constructor"]);
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect(JSON.stringify(result)).toBe('{"__proto__":"literal-value","constructor":"literal-constructor"}');
   });
 
   it("rejects a request that names nothing", () => {

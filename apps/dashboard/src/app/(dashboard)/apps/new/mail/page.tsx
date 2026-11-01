@@ -1,11 +1,14 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Loader2, Server, Plug } from "lucide-react";
 import { deployApi, mailApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppDestinationPicker, type AppDestination } from "@/components/deploy/AppDestinationPicker";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { MAIL_PROVIDERS, mailProvider, type MailProviderId } from "@/lib/mail-providers";
 import { mailTabHref } from "@/lib/sidebar-nav";
 import {
@@ -15,12 +18,14 @@ import {
 } from "@/components/deploy/CleanDeployProgress";
 import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
+import { OptionCard } from "@/components/shared/OptionCard";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { mailHostname } from "@repo/core";
+import { canManageMailServers } from "@/lib/mail-availability";
+import { CloudMailClient } from "@/app/(dashboard)/emails/_components/cloud-mail-client";
 
 /**
  * Mail provider wizard — the app-catalog entry point for Openship Mail, and the
@@ -40,13 +45,19 @@ import { mailHostname } from "@repo/core";
 type Phase = "choose" | "connect" | "installing" | "done" | "error";
 
 export default function MailWizardPage() {
+  const platform = usePlatform();
+  if (!canManageMailServers(platform)) return <CloudMailClient />;
+  return <MailWizardInner />;
+}
+
+function MailWizardInner() {
   const router = useRouter();
   const { t } = useI18n();
   const w = t.projectSettings.appInstall;
   const m = w.mail;
   const { showToast } = useToast();
   const { connected: cloudConnected, requireCloud } = useCloud();
-  const { baseDomain } = usePlatform();
+  const { baseDomain, selfHosted } = usePlatform();
 
   const [phase, setPhase] = useState<Phase>("choose");
   const [preset, setPreset] = useState<MailProviderId>("custom");
@@ -56,6 +67,8 @@ export default function MailWizardPage() {
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState(465);
   const [destination, setDestination] = useState<AppDestination | null>(null);
+  const [destinationReady, setDestinationReady] = useState(selfHosted);
+  const showCloudPricing = useCloudDeployPricing(destination?.workspaceId);
 
   const [busy, setBusy] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
@@ -90,7 +103,8 @@ export default function MailWizardPage() {
       try {
         const res = await mailApi.listMailServers();
         setMailServers(res?.servers ?? []);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/apps/new/mail/page");
         // Wizard still works without it — the operator types the IMAP host.
       }
     })();
@@ -140,7 +154,8 @@ export default function MailWizardPage() {
           setErrorMsg(s.failureMessage || w.installFailed);
           setPhase("error");
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/apps/new/mail/page");
         /* transient — keep polling */
       }
     };
@@ -156,7 +171,7 @@ export default function MailWizardPage() {
   }, [phase, deploymentId, baseDomain]);
 
   const deploy = async () => {
-    if (busy) return;
+    if (busy || (!selfHosted && !destinationReady)) return;
     const host = hostname.trim().toLowerCase();
     if (!host) {
       showToast(m.hostnameRequired, "error");
@@ -184,7 +199,7 @@ export default function MailWizardPage() {
         },
         target: {
           deployTarget: destination?.deployTarget ?? "cloud",
-          serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+          serverId: destination?.serverId,
         },
       });
       setProjectId(res.projectId ?? null);
@@ -192,6 +207,7 @@ export default function MailWizardPage() {
       setPhaseLabel(w.progressPreparing);
       setPhase("installing");
     } catch (err) {
+      if (showCloudPricing(err)) return;
       setErrorMsg(getApiErrorMessage(err, w.installFailed));
       setPhase("error");
     } finally {
@@ -226,7 +242,7 @@ export default function MailWizardPage() {
           onClick={() => (phase === "connect" ? setPhase("choose") : router.push("/apps/new"))}
           className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <ArrowLeft className="size-4" /> {w.back}
+          <UiIcon name="arrow-left" className="size-4" /> {w.back}
         </button>
 
         {/* Header. `shrink-0` on the tile for the same reason as the generic app
@@ -249,7 +265,7 @@ export default function MailWizardPage() {
               value="self"
               selected={false}
               onSelect={() => router.push("/emails")}
-              icon={<Server className="size-4" />}
+              icon={<UiIcon name="server" className="size-4" />}
               label={m.chooseSelf}
               description={m.chooseSelfDesc}
             />
@@ -257,7 +273,7 @@ export default function MailWizardPage() {
               value="connect"
               selected={false}
               onSelect={() => setPhase("connect")}
-              icon={<Plug className="size-4" />}
+              icon={<UiIcon name="plug" className="size-4" />}
               label={m.chooseConnect}
               description={m.chooseConnectDesc}
             />
@@ -392,19 +408,21 @@ export default function MailWizardPage() {
             <div className="space-y-4 lg:sticky lg:top-6">
               <div className="rounded-2xl border border-border/50 bg-card p-5">
                 <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
+                {selfHosted && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
+                )}
                 <div className="mt-4">
-                  <AppDestinationPicker value={destination} onChange={setDestination} />
+                  <AppDestinationPicker value={destination} onChange={setDestination} onReadyChange={setDestinationReady} disabled={busy} />
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={deploy}
-                disabled={busy || !destination}
+                disabled={busy || !destination || (!selfHosted && !destinationReady)}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4 rtl:rotate-180" />}
+                {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />}
                 {busy ? m.deploying : m.deploy}
               </button>
             </div>

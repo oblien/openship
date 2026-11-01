@@ -21,7 +21,7 @@
 import { db, repos, schema } from "@repo/db";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { backfillCustomCommandRestoreCommands } from "../../../src/modules/backups/restore-command-backfill";
+import { backfillCustomCommandRestoreCommands } from "@repo/platform/engine/modules/backups/restore-command-backfill";
 import { seedBackupDestination, seedBackupPolicy, seedBackupRun, seedOrg } from "../../helpers/seed";
 
 /** What mail/admin/backup-plan.ts writes onto the policy. */

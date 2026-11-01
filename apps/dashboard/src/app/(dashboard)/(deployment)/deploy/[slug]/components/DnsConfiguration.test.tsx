@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { I18nProvider } from "@/components/i18n-provider";
+import { ModalProvider } from "@/context/ModalContext";
 import DnsConfiguration from "./DnsConfiguration";
 
 vi.mock("@/lib/api", () => ({
@@ -24,19 +25,21 @@ describe("DnsConfiguration", () => {
   it("offers the shared DNS plan/apply workflow for a persisted service domain", () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
-        <DnsConfiguration
-          domain="api.example.com"
-          domainId="dom_service"
-          mode="selfhosted"
-          records={[
-            {
-              type: "A",
-              host: "api",
-              name: "api.example.com",
-              value: "203.0.113.10",
-            },
-          ]}
-        />
+        <ModalProvider>
+          <DnsConfiguration
+            domain="api.example.com"
+            domainId="dom_service"
+            mode="selfhosted"
+            records={[
+              {
+                type: "A",
+                host: "api",
+                name: "api.example.com",
+                value: "203.0.113.10",
+              },
+            ]}
+          />
+        </ModalProvider>
       </I18nProvider>,
     );
 
@@ -49,21 +52,25 @@ describe("DnsConfiguration", () => {
   it("keeps an unpersisted pre-deploy preview read-only", () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
-        <DnsConfiguration
-          domain="api.example.com"
-          mode="selfhosted"
-          records={[
-            {
-              type: "A",
-              host: "api",
-              name: "api.example.com",
-              value: "203.0.113.10",
-            },
-          ]}
-        />
+        <ModalProvider>
+          <DnsConfiguration
+            domain="api.example.com"
+            mode="selfhosted"
+            records={[
+              {
+                type: "A",
+                host: "api",
+                name: "api.example.com",
+                value: "203.0.113.10",
+              },
+            ]}
+          />
+        </ModalProvider>
       </I18nProvider>,
     );
 
-    expect(text(html)).not.toContain("Checking your DNS provider");
+    expect(text(html)).toContain("Checking your DNS provider");
+    expect(text(html)).toContain("Manual DNS setup");
+    expect(text(html)).not.toContain("Auto-configure DNS");
   });
 });

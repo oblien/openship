@@ -1,0 +1,68 @@
+---
+title: CLI automation
+description: Use contexts, JSON output, and explicit project IDs in scripts and CI.
+---
+
+## Authenticate a runner
+
+Store a personal access token in your CI secret store. The CLI reads an ephemeral connection from
+environment variables without writing the token to disk:
+
+```bash
+export OPENSHIP_API_URL=https://api.openship.io
+export OPENSHIP_ORGANIZATION_ID=org_123
+# OPENSHIP_TOKEN is injected by your CI secret store.
+openship --json project list
+openship deploy --project proj_123 --watch
+```
+
+Use a token with the resource grants needed for the job. `OPENSHIP_CONTEXT` selects a saved context
+before applying the environment overrides. An explicit `--context production` uses only the saved
+connection, so a token intended for a different API cannot leak into that invocation. An API override
+without a replacement token never reuses a saved token from another endpoint.
+
+For a persistent login, `openship login --cloud --token-file /run/secrets/openship` reads a private file;
+`--token-file -` reads stdin. Both avoid putting the token in command arguments.
+
+## Use explicit IDs and JSON
+
+```bash
+openship --json project list > projects.json
+openship deploy --project proj_123 --branch main --watch
+```
+
+Put global `--json` before the command. Structured resource commands write JSON to stdout and
+diagnostics to stderr. `OPENSHIP_JSON=1` also enables JSON output. Interactive installation commands
+retain their command-specific behavior; inspect their help before using them unattended.
+
+Long-running event commands emit one JSON object per line with `event` and `data`. Starting a job,
+install, deployment or migration and observing its completion are separate steps. Reattach to an
+existing operation after disconnection rather than starting it again.
+
+Login, logout and context mutations also return structured JSON. Login and project selection do not
+prompt in JSON or non-TTY mode. Pass credentials and project IDs explicitly. Commands that require
+confirmation require `--yes` in automation; `--json` is an output format and does not confirm deletion.
+
+`--project` avoids depending on a directory link. When using `init` in automation, `--yes` fails if
+it would need to prompt.
+
+## Handle failure
+
+Check the exit status of each command. Operation and argument errors exit nonzero. A deployment
+submission returns an ID before completion; use `--watch` or inspect that deployment before treating
+the job as successful.
+
+Use `deployment wait <id> --timeout <milliseconds>` for a structured final outcome or pending decision.
+Domain and certificate verification return their result in JSON and exit nonzero when verification
+fails, matching human-readable mode. Scripts that previously relied on exit 0 from an unverified JSON
+result must handle the nonzero status. Invalid instance import modes and malformed token-expiry values
+are rejected before submitting changes.
+
+If a mutation's response is lost, inspect the saved resource before submitting it again. The client
+does not automatically replay mutations. Stopping observation does not undo a deployment.
+
+## Native automation
+
+Use [native CLI configuration](/docs/cli/native) to select an explicit installation and organization.
+The command drains its owned worker on completion. For a long-running Node application, use
+[the SDK directly](/docs/api/sdk/native) and keep the installation open across calls.

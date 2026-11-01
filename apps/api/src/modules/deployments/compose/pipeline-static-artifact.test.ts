@@ -34,14 +34,21 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("./build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
-vi.mock("./deploy.service", () => ({
+
+vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
+vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
+  assertRequiredServiceEnvironment: async () => {},
+}));
+vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () => ({
   deployComposeServices: mocks.deployComposeServices,
   // The no-changes settle is a separate branch that runs AFTER the cleanup loop
   // under test; every result below deployed something.
   composeDeployMadeNoChanges: () => false,
 }));
-vi.mock("../deployment-lifecycle", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
+  beginBuildTiming: vi.fn(),
+  completeBuildTiming: vi.fn(),
+  finishServiceDeploymentTimings: vi.fn(async () => {}),
   cleanupBuildArtifact: mocks.cleanupBuildArtifact,
   onCancelled: vi.fn(async () => {}),
   onFailure: mocks.onFailure,
@@ -51,12 +58,12 @@ vi.mock("../deployment-lifecycle", () => ({
   setDeploymentStatus: mocks.setDeploymentStatus,
   routeIssuesWarning: (issues: string[]) => issues.join(", "),
 }));
-vi.mock("../session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
 }));
 
-import { executeComposePipeline } from "./pipeline";
+import { executeComposePipeline } from "@repo/platform/engine/modules/deployments/compose/pipeline";
 
 const SNAPSHOT = {
   repoUrl: "https://example.com/repo.git",

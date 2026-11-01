@@ -1,19 +1,8 @@
+import Link from "next/link";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  Check,
-  Container,
-  Download,
-  Eye,
-  EyeOff,
-  ExternalLink,
-  GitBranch,
-  GitCommit,
-  Github,
-  Key,
-  Loader2,
-  Trash2,
-} from "lucide-react";
+import { PullRequestPreviews } from "@/components/project-settings/DeploymentAutomation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useGitHub } from "@/context/GitHubContext";
 import type { GitHubRepo } from "@/context/GitHubContext";
@@ -24,8 +13,11 @@ import { projectsApi } from "@/lib/api";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { Modal } from "@/components/ui/Modal";
+import { Toggle } from "@/components/project-settings/ServerSideSwitch";
+import { GitHubChecksSettings } from "@/components/project-settings/GitHubChecksSettings";
+import { InstanceMoveLink } from "@/components/instance/InstanceMoveLink";
+import { usePlatform } from "@/context/PlatformContext";
 import { RepositoryList } from "../../../library/components/RepositoryList";
-import { InfoCard } from "@/components/settings/InfoCard";
 import { AppSource } from "./AppSource";
 import { GitSettingsSkeleton } from "./GitSettingsSkeleton";
 import { ReleaseImageSourceSettings } from "./ReleaseImageSourceSettings";
@@ -113,18 +105,48 @@ function GitProjectSettings({
         </div>
       )}
       <GitProjectSettingsBody onUseReleaseImage={onUseReleaseImage} />
+      <ProjectPreviewSettings />
     </div>
   );
 }
 
 const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () => void }) => {
-  const { gitData, refreshGit, id, projectData, updateProjectData } = useProjectSettings();
+  const { gitData, refreshGit, id, projectData, updateProjectData, servicesData } = useProjectSettings();
   const github = useGitHub();
   const { showToast } = useToast();
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
   const [isLinking, setIsLinking] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [togglingAuto, setTogglingAuto] = useState(false);
+  const [savingChecks, setSavingChecks] = useState(false);
+  const [savingBuildPolicy, setSavingBuildPolicy] = useState(false);
+  const saveBuildPolicy = async () => {
+    const autoDeployCancelBuilds = !projectData.autoDeployCancelBuilds;
+    setSavingBuildPolicy(true);
+    try {
+      await projectsApi.setOptions(id, { autoDeployCancelBuilds });
+      updateProjectData({ autoDeployCancelBuilds });
+      invalidateProjectCaches(id);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, t.projectSettings.git.buildQueue.saveFailed), "error");
+    } finally {
+      setSavingBuildPolicy(false);
+    }
+  };
+  const saveChecks = async (githubChecks: import("@repo/core").GitHubDeploymentChecks) => {
+    setSavingChecks(true);
+    try {
+      await projectsApi.setOptions(id, { githubChecks });
+      updateProjectData({ githubChecks });
+      invalidateProjectCaches(id);
+      await refreshGit();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, t.projectSettings.deploymentChecks.saveFailed), "error");
+    } finally {
+      setSavingChecks(false);
+    }
+  };
   const hasRefreshed = useRef(false);
 
   // Auto-deploy on push: one toggle → the API registers/removes the GitHub repo
@@ -166,7 +188,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
     try {
       const res = await projectsApi.getCloneToken(id);
       setCloneToken(res);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/GitSettings");
       setCloneToken({ hasToken: false, setAt: null });
     } finally {
       setCloneTokenLoading(false);
@@ -280,7 +303,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
       return (
         <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted/40">
-            <Github className="size-6 text-muted-foreground/50" />
+            <UiIcon name="github" className="size-6 text-muted-foreground/50" />
           </div>
           <h3 className="mt-4 text-base font-semibold text-foreground">
             {t.projectSettings.git.connectFirst.title}
@@ -291,12 +314,12 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
           <button
             onClick={() => void github.connect()}
             disabled={github.connecting}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
           >
             {github.connecting ? (
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <Github className="size-4" />
+              <UiIcon name="github" className="size-4" />
             )}
             {github.connecting
               ? t.projectSettings.git.connectFirst.connecting
@@ -312,7 +335,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
       <>
         <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <Github className="size-6 text-primary" />
+            <UiIcon name="github" className="size-6 text-primary" />
           </div>
           <h3 className="mt-4 text-base font-semibold text-foreground">
             {t.projectSettings.git.link.title}
@@ -322,9 +345,9 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
           </p>
           <button
             onClick={() => setShowPicker(true)}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
           >
-            <Github className="size-4" />
+            <UiIcon name="github" className="size-4" />
             {t.projectSettings.git.link.select}
           </button>
           {onUseReleaseImage && <ReleaseImageEntryButton onClick={onUseReleaseImage} />}
@@ -349,7 +372,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
           </div>
           {isLinking && (
             <div className="flex items-center gap-2 px-5 py-2.5 bg-primary/5 border-b border-border/50 text-sm text-primary">
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
               {t.projectSettings.git.picker.linking}
             </div>
           )}
@@ -363,6 +386,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
               loadingRepos={github.loadingRepos}
               onSelect={handleLinkRepo}
               installUrl={github.installUrl}
+              onInstall={() => void github.connect("oauth")}
+              installing={github.connecting}
             />
           </div>
         </Modal>
@@ -376,22 +401,22 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
       {projectData.deployTarget === "cloud" && !gitData.installationInstalled && (
         <div className="flex items-start gap-3 rounded-2xl border border-warning-border bg-warning-bg px-5 py-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning-bg">
-            <AlertTriangle className="size-4 text-warning" />
+            <UiIcon name="warning" className="size-4 text-warning" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[14px] font-semibold text-foreground">
+            <h3 className="text-sm font-semibold text-foreground">
               {t.projectSettings.git.appBanner.title}
             </h3>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {t.projectSettings.git.appBanner.description}
             </p>
             <a
               href={gitData.installUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
             >
-              <Download className="size-4" />
+              <UiIcon name="download" className="size-4" />
               {t.projectSettings.git.appBanner.install}
             </a>
           </div>
@@ -402,7 +427,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
         <SectionCard
           title={t.projectSettings.git.source.title}
           description={t.projectSettings.git.source.description}
-          icon={Github}
+          icon={"github"}
           iconTone="primary"
           actions={
             onUseReleaseImage ? (
@@ -411,16 +436,16 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                 onClick={onUseReleaseImage}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
               >
-                <Container className="size-3.5" />
+                <UiIcon name="docker" className="size-3.5" />
                 {t.projectSettings.releaseImageSource.entry.shortButton}
               </button>
             ) : undefined
           }
         >
           <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3.5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 grow basis-64">
+                <div className="text-xs font-medium text-muted-foreground">
                   {t.projectSettings.git.source.repository}
                 </div>
                 {/* owner/repo as the prominent, clickable identity (opens on GitHub). */}
@@ -430,78 +455,69 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                   rel="noopener noreferrer"
                   className="group mt-1.5 inline-flex max-w-full items-center gap-2 underline-offset-4"
                 >
-                  <span className="truncate text-[15px] font-semibold text-foreground transition-colors group-hover:text-primary group-hover:underline">
+                  <span className="truncate text-base font-medium text-foreground transition-colors group-hover:text-primary group-hover:underline">
                     {gitData.repository.full_name || gitData.repository.name}
                   </span>
-                  <ExternalLink className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                  <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                 </a>
                 {/* Branch + latest commit at a glance — what's actually connected. */}
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    <GitBranch className="size-3.5 shrink-0" />
-                    {gitData.branch || "main"}
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                    <UiIcon name="git-branch" className="size-3.5 shrink-0" />
+                    <span className="truncate" title={gitData.branch || "main"}>{gitData.branch || "main"}</span>
                   </span>
                   {gitData.recentCommits?.[0] && (
-                    <>
-                      <span className="text-muted-foreground/40">·</span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <GitCommit className="size-3.5 shrink-0" />
-                        <code className="rounded bg-muted/50 px-1 py-px text-[10px] font-medium">
-                          {gitData.recentCommits[0].id?.slice(0, 7)}
-                        </code>
-                        <span className="truncate">
-                          {gitData.recentCommits[0].message?.split("\n")[0]}
-                        </span>
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <UiIcon name="git-commit" className="size-3.5 shrink-0" />
+                      <code className="shrink-0 rounded bg-muted/50 px-1 py-px text-xs font-medium">
+                        {gitData.recentCommits[0].id?.slice(0, 7)}
+                      </code>
+                      <span className="truncate">
+                        {gitData.recentCommits[0].message?.split("\n")[0]}
                       </span>
-                    </>
+                    </span>
                   )}
                 </div>
               </div>
 
               {/* Auto-deploy on push — inline with the repo identity. Enabling
                   registers the GitHub repo webhook at this instance's public URL
-                  (or uses the GitHub App on cloud); no domain picker. Disabled
-                  with a hover tooltip when there's no public endpoint. */}
+                  (or uses the GitHub App on cloud); no domain picker. The endpoint
+                  requirement stays visible, with setup details available on demand. */}
               {gitData.repository?.full_name &&
                 (() => {
                   const cannotReceive = gitData.webhookStrategy === "none";
                   const disabled = togglingAuto || (cannotReceive && !gitData.autoDeployEnabled);
                   return (
-                    <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-medium text-muted-foreground">
-                          {t.projectSettings.gitInfo.autoDeploy}
+                    <div className="flex max-w-full shrink-0 flex-col items-end gap-1.5 pt-0.5">
+                      <div className="flex items-center gap-2" aria-busy={togglingAuto || undefined}>
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                          {t.actions.integration.autoMode}
+                          {togglingAuto && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
                         </span>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={!!gitData.autoDeployEnabled}
-                          aria-label={t.projectSettings.gitInfo.autoDeploy}
-                          onClick={toggleAutoDeploy}
+                        <Toggle
+                          checked={!!gitData.autoDeployEnabled}
+                          aria-label={t.actions.integration.autoMode}
+                          onChange={() => void toggleAutoDeploy()}
                           disabled={disabled}
-                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                            gitData.autoDeployEnabled ? "bg-primary" : "bg-muted"
-                          } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-                        >
-                          {togglingAuto ? (
-                            <Loader2 className="mx-auto size-3.5 animate-spin text-background" />
-                          ) : (
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${
-                                gitData.autoDeployEnabled
-                                  ? "translate-x-6 rtl:-translate-x-6"
-                                  : "translate-x-1 rtl:-translate-x-1"
-                              }`}
-                            />
-                          )}
-                        </button>
+                        />
                       </div>
-                      {/* When there's no public endpoint the toggle is disabled — show WHY
-                        inline (was hover-tooltip-only), using the space under the switch. */}
+                      <Link href={`/projects/${id}/actions`} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">{t.actions.integration.configureRules}</Link>
                       {cannotReceive && (
-                        <p className="max-w-[220px] text-end text-[11px] leading-snug text-muted-foreground/70">
-                          {t.projectSettings.git.webhookBanner.description}
-                        </p>
+                        <div className="max-w-72 space-y-2 text-end">
+                          <details className="text-xs text-muted-foreground">
+                            <summary className="flex cursor-pointer list-none items-center justify-end gap-1.5 rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+                              {t.projectSettings.git.webhookBanner.summary}
+                              <UiIcon name="info" className="size-3.5 shrink-0" />
+                            </summary>
+                            <p className="mt-2 text-start leading-relaxed">
+                              {selfHosted
+                                ? t.settings.instance.location.webhookAccessHint
+                                : t.projectSettings.git.webhookBanner.description}
+                            </p>
+                          </details>
+                          {selfHosted && <InstanceMoveLink />}
+                        </div>
                       )}
                     </div>
                   );
@@ -509,19 +525,35 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
             </div>
           </div>
 
-          {/* Rollback retention used to live here. It moved to the Backup tab,
-              next to the other recovery controls — and to the deploy wizard's
-              target panel, since retention is a property of the machine you
-              deploy to. Both render the one RollbackRetentionCards component. */}
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-xl bg-card p-4">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-foreground">{t.projectSettings.git.buildQueue.label}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{t.projectSettings.git.buildQueue.description}</p>
+            </div>
+            <Toggle
+              checked={!!projectData.autoDeployCancelBuilds}
+              aria-label={t.projectSettings.git.buildQueue.label}
+              disabled={savingBuildPolicy}
+              onChange={() => void saveBuildPolicy()}
+            />
+          </div>
         </SectionCard>
+
+        <GitHubChecksSettings
+          value={projectData.githubChecks ?? gitData.githubChecks}
+          onChange={value => void saveChecks(value)}
+          disabled={savingChecks}
+          services={servicesData.services.map(service => service.name)}
+          deliveryError={gitData.githubChecksDelivery?.error}
+        />
 
         <SectionCard
           title={t.projectSettings.git.commits.title}
           description={interpolate(t.projectSettings.git.commits.subtitle, {
             branch: gitData.branch || "main",
           })}
-          icon={GitCommit}
-          iconTone="orange"
+          icon={"git-commit"}
+          iconTone="warning"
         >
           {gitData.recentCommits.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/60 bg-muted/15 px-4 py-5 text-center">
@@ -538,7 +570,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                 {gitData.recentCommits.slice(0, 8).map((commit: any) => (
                   <div key={commit.id} className="flex items-center gap-3 px-4 py-2.5">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
                         {commit.authorAvatar ? (
                           <img
                             src={commit.authorAvatar}
@@ -546,18 +578,18 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                             className="size-4 rounded-full"
                           />
                         ) : null}
-                        <span className="text-[11px] font-medium text-muted-foreground">
+                        <span className="max-w-full truncate text-xs font-medium text-muted-foreground">
                           {commit.author}
                         </span>
                         <span className="text-muted-foreground/40">·</span>
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {formatDate(commit.time, undefined, undefined, true)}
                         </span>
-                        <code className="rounded-full bg-muted/50 px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                        <code className="rounded-full bg-muted/50 px-1.5 py-px text-xs font-medium text-muted-foreground">
                           {commit.id?.slice(0, 7)}
                         </code>
                       </div>
-                      <p className="mt-0.5 truncate text-[12px] text-foreground">
+                      <p className="mt-0.5 truncate text-sm text-foreground">
                         {commit.message?.split("\n")[0]}
                       </p>
                     </div>
@@ -566,9 +598,10 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                         href={commit.url}
                         target="_blank"
                         rel="noopener noreferrer"
+                        aria-label={commit.message?.split("\n")[0] || commit.id}
                         className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                       >
-                        <ExternalLink className="size-3" />
+                        <UiIcon name="arrow-up-right" className="size-3" />
                       </a>
                     ) : null}
                   </div>
@@ -578,10 +611,10 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                 href={`${gitData.repository.url}/commits/${gitData.branch || "main"}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary transition-colors hover:text-primary/80"
+                className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
               >
                 {t.projectSettings.git.commits.viewAll}
-                <ExternalLink className="size-3.5" />
+                <UiIcon name="arrow-up-right" className="size-3 shrink-0" />
               </a>
             </>
           )}
@@ -590,17 +623,17 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
         <SectionCard
           title={t.projectSettings.git.cloneToken.title}
           description={t.projectSettings.git.cloneToken.description}
-          icon={Key}
+          icon={"key"}
           iconTone="primary"
         >
           {cloneTokenLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
+              <UiIcon name="spinner" className="size-4 animate-spin" />
               {t.projectSettings.git.cloneToken.loading}
             </div>
           ) : !cloneToken?.hasToken || editingCloneToken ? (
             <div className="space-y-2.5">
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {t.projectSettings.git.cloneToken.explainer}
               </p>
               <div className="relative">
@@ -623,7 +656,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                       : t.projectSettings.git.cloneToken.show
                   }
                 >
-                  {showCloneToken ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                  {showCloneToken ? <UiIcon name="eye-off" className="size-3.5" /> : <UiIcon name="eye" className="size-3.5" />}
                 </button>
               </div>
               <div className="flex items-center gap-2">
@@ -631,12 +664,12 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                   type="button"
                   onClick={saveCloneToken}
                   disabled={savingCloneToken || !cloneTokenInput.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
                 >
                   {savingCloneToken ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                    <UiIcon name="spinner" className="size-3.5 animate-spin" />
                   ) : (
-                    <Check className="size-3.5" />
+                    <UiIcon name="check" className="size-3.5" />
                   )}
                   {t.projectSettings.git.cloneToken.saveToken}
                 </button>
@@ -648,7 +681,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                       setCloneTokenInput("");
                     }}
                     disabled={savingCloneToken}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                   >
                     {t.projectSettings.git.cloneToken.cancel}
                   </button>
@@ -656,7 +689,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-border/50 bg-muted/15 p-3.5 flex items-center justify-between gap-3">
+            <div className="rounded-xl border border-border/50 bg-muted/15 p-3.5 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">
                   {t.projectSettings.git.cloneToken.savedTitle}
@@ -673,7 +706,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                 <button
                   type="button"
                   onClick={() => setEditingCloneToken(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                 >
                   {t.projectSettings.git.cloneToken.replace}
                 </button>
@@ -681,9 +714,9 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                   type="button"
                   onClick={clearCloneToken}
                   disabled={savingCloneToken}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-danger-bg px-3 py-1.5 text-[12px] font-medium text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-danger-bg px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
                 >
-                  <Trash2 className="size-3" />
+                  <UiIcon name="trash" className="size-3" />
                   {t.projectSettings.git.cloneToken.clear}
                 </button>
               </div>
@@ -697,8 +730,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
 
 const ICON_TONES = {
   primary: "bg-primary/10 text-primary",
-  emerald: "bg-success-bg text-success",
-  orange: "bg-orange-500/10 text-orange-500",
+  warning: "bg-warning-bg text-warning",
 } as const;
 
 function SectionCard({
@@ -711,22 +743,24 @@ function SectionCard({
 }: {
   title: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   iconTone: keyof typeof ICON_TONES;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-      <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}
-        >
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/40 px-5 py-4">
+        <div className="flex min-w-0 grow basis-64 items-start gap-3">
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}
+          >
+            <UiIcon name={Icon} className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+            <p className="mt-0.5 break-words text-sm text-muted-foreground">{description}</p>
+          </div>
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
@@ -744,12 +778,17 @@ function ReleaseImageEntryButton({ onClick }: { onClick: () => void }) {
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-background px-4 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50"
+        className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
       >
-        <Container className="size-4" />
+        <UiIcon name="docker" className="size-4" />
         {copy.button}
       </button>
       <p className="mt-1.5 text-xs text-muted-foreground">{copy.description}</p>
     </div>
   );
+}
+
+function ProjectPreviewSettings() {
+  const { id, projectData } = useProjectSettings();
+  return projectData.environmentType !== "preview" && projectData.gitOwner && projectData.gitRepo ? <PullRequestPreviews key={id} projectId={id} /> : null;
 }

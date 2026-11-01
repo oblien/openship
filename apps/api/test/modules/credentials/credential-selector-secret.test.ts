@@ -10,16 +10,16 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: { credential: h.credentialRepo } }));
-vi.mock("../../../src/lib/credential-encryption", () => ({
+vi.mock("@repo/platform/engine/lib/credential-encryption", () => ({
   encryptSecretField: (value: string) => `enc1:${value}`,
   decryptSecretField: (value: string) => value.replace(/^enc1:/, ""),
 }));
-vi.mock("../../../src/modules/credentials/verify", () => ({
+vi.mock("@repo/platform/engine/modules/credentials/verify", () => ({
   hasVerifier: () => true,
   verifyCredentialValues: h.verifyCredentialValues,
 }));
 
-import { updateCredential } from "../../../src/modules/credentials/credential.service";
+import { updateCredential } from "@repo/platform/engine/modules/credentials/credential.service";
 
 const stored = (overrides: Record<string, unknown> = {}) => ({
   id: "cred_1",

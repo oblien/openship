@@ -1,15 +1,17 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { DeploymentMenu } from "./DeploymentMenu";
 import { CommitDetailsModal } from "./CommitDetailsModal";
 import type { Deployment } from "../types";
 import { formatDistanceToNow, formatBuildTime, getStatusConfig } from "../utils";
-import { GitBranch, Clock, ExternalLink, MoreVertical, Archive, Pin, Activity } from "lucide-react";
-import { getFrameworkConfig } from "@/components/import-project/Frameworks";
+import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
 import { AppLogo } from "@/components/AppLogo";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useImageFallback } from "@/hooks/useImageFallback";
 
 type ServiceStatusLabels = {
   deployed: string;
@@ -120,10 +122,8 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
   const { t } = useI18n();
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [faviconError, setFaviconError] = useState(false);
+  const favicon = useImageFallback(deployment.favicon);
   const statusConfig = getStatusConfig(deployment.status);
-  const frameworkConfig = getFrameworkConfig(deployment.framework);
-  const hasFavicon = !!deployment.favicon && !faviconError;
 
   const statusLabelMap: Record<string, string> = {
     success: t.deployments.status.deployed,
@@ -145,7 +145,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     deployment.commit?.message && deployment.commit.message !== "Manual deployment";
 
   return (
-    <div className="group relative flex items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/25">
+    <div className="group relative grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-4 transition-colors first:rounded-t-2xl last:rounded-b-2xl hover:bg-muted/25 sm:flex sm:items-center sm:gap-4">
       <Link
         href={`/build/${deployment.id}`}
         aria-label={deployment.projectName || t.deployments.card.unknownProject}
@@ -155,31 +155,28 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
         {appTemplateId ? (
           <AppLogo appId={appTemplateId} className="size-5 object-contain" />
-        ) : hasFavicon ? (
+        ) : favicon.showImage ? (
           <img
+            ref={favicon.ref}
             src={deployment.favicon!}
             alt=""
             className="size-5 object-contain"
-            onError={() => setFaviconError(true)}
+            onError={favicon.onError}
           />
-        ) : frameworkConfig.icon ? (
-          frameworkConfig.icon("var(--foreground)")
         ) : (
-          <span className="text-xs font-mono font-bold text-muted-foreground">
-            {(deployment.framework || "?").slice(0, 2).toUpperCase()}
-          </span>
+          <ProjectStackIcon framework={deployment.framework} serviceDeploymentMode={deployment.serviceDeploymentMode} className="size-5" />
         )}
       </div>
 
       {/* Main info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <p className="text-sm font-semibold text-foreground truncate">
+          <p className="min-w-0 text-sm font-medium text-foreground truncate">
             {deployment.projectName || t.deployments.card.unknownProject}
           </p>
           {deployment.version != null && (
             <span
-              className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+              className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
               title={interpolate(t.deployments.card.versionTitle, {
                 version: String(deployment.version),
               })}
@@ -188,7 +185,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             </span>
           )}
           <span
-            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${statusConfig.bgColor}`}
+            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusConfig.bgColor}`}
             style={{ color: statusConfig.color }}
           >
             {statusLabel}
@@ -198,28 +195,29 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               the highest-signal one sits closest to the title. */}
           {deployment.isActive && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-success"
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-success"
               title={t.deployments.card.activeTitle}
             >
-              <Activity className="size-2.5" />
+              <UiIcon name="activity" className="size-2.5" />
               {t.deployments.card.active}
             </span>
           )}
           {deployment.pinned && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning"
               title={t.deployments.card.pinnedTitle}
             >
-              <Pin className="size-2.5" />
+              <UiIcon name="pin" className="size-2.5" />
               {t.deployments.card.pinned}
             </span>
           )}
-          {!deployment.pinned && deployment.artifactRetainedAt && !deployment.isActive && (
+          {!deployment.pinned && deployment.artifactRetainedAt && !deployment.isActive &&
+            (deployment.status === "success" || deployment.status === "partial_failure") && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-xs font-medium text-muted-foreground"
               title={t.deployments.card.snapshottedTitle}
             >
-              <Archive className="size-2.5" />
+              <UiIcon name="archive" className="size-2.5" />
               {t.deployments.card.snapshotted}
             </span>
           )}
@@ -235,7 +233,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               return (
                 <span
                   key={sd.id}
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${cfg.bgClass} ${cfg.textClass}`}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.bgClass} ${cfg.textClass}`}
                   title={
                     sd.reason
                       ? interpolate(t.deployments.card.serviceTitleReason, {
@@ -258,19 +256,19 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             })}
           </div>
         )}
-        <div className="flex items-center gap-2 mt-0.5">
-          <p className="max-w-[320px] truncate text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+          <p className="min-w-0 max-w-full sm:max-w-[320px] truncate text-xs text-muted-foreground">
             {hasCommitMessage ? deployment.commit.message : t.deployments.card.manualDeploy}
           </p>
           <span className="text-muted-foreground/40">·</span>
           <span className="text-xs text-muted-foreground shrink-0">
             {formatDistanceToNow(new Date(deployment.createdAt), t.deployments.time)}
           </span>
-          {deployment.buildTime ? (
+          {deployment.buildTime !== null ? (
             <>
               <span className="text-muted-foreground/40">·</span>
               <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
-                <Clock className="size-3" />
+                <UiIcon name="clock" className="size-3" />
                 {formatBuildTime(deployment.buildTime)}
               </span>
             </>
@@ -278,9 +276,9 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           {deployment.branch && (
             <>
               <span className="text-muted-foreground/40 hidden sm:inline">·</span>
-              <span className="text-xs text-muted-foreground shrink-0 items-center gap-1 hidden sm:flex">
-                <GitBranch className="size-3" />
-                {deployment.branch}
+              <span className="min-w-0 max-w-full text-xs text-muted-foreground items-center gap-1 hidden sm:flex">
+                <UiIcon name="git-branch" className="size-3 shrink-0" />
+                <span className="truncate">{deployment.branch}</span>
               </span>
             </>
           )}
@@ -294,7 +292,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           whole block while the menu is open is what puts it above the siblings;
           the dropdown's own z-50 only orders it within this block. */}
       <div
-        className={`relative flex items-center gap-2 shrink-0 ${isMenuOpen ? "z-30" : "z-10"}`}
+        className={`relative col-start-2 flex items-center gap-2 shrink-0 ${isMenuOpen ? "z-30" : "z-10"}`}
       >
         {hasCommitData && (
           <button
@@ -312,7 +310,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             {deployment.commit.hash.slice(0, 7)}
-            {deployment.owner && deployment.repo && <ExternalLink className="size-3" />}
+            {deployment.owner && deployment.repo && <UiIcon name="external-link" className="size-3" />}
           </button>
         )}
 

@@ -1,6 +1,6 @@
 {
   "name": "@repo/web",
-  "version": "0.7.2",
+  "version": "0.9.5",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
@@ -8,10 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
+    "test:metadata": "node ../../scripts/check-web-social-metadata.mjs",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
     "@repo/core": "workspace:*",
+    "@repo/contracts": "workspace:*",
     "@repo/ui": "workspace:*",
     "clsx": "2.1.1",
     "fumadocs-core": "^16.10.7",
@@ -22,7 +24,6 @@
     "marked": "^15.0.0",
     "motion": "12.4.7",
     "next": "^16.1.6",
-    "nodemailer": "^6.9.16",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-wrap-balancer": "^1.1.1",
@@ -33,7 +34,6 @@
     "@tailwindcss/postcss": "^4.2.1",
     "@types/mdx": "^2.0.14",
     "@types/node": "^22.13.0",
-    "@types/nodemailer": "^6.4",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "postcss": "^8.5.8",

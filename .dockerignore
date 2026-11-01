@@ -80,6 +80,7 @@ data
 # Caches + logs
 **/.turbo
 **/.cache
+packages/actions-runner/.generated
 **/coverage
 **/*.log
 **/.DS_Store

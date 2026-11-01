@@ -56,9 +56,13 @@ const h = vi.hoisted(() => ({
   /** Source-run status. THE gate that makes capture atomic — see the tests at the end. */
   sourceStatus: "succeeded" as string,
   sourceDeletedAt: null as Date | null,
+  sourceKind: "service",
+  runtime: { name: "bare" },
+  disposeRuntime: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     backupRun: {
       findById: async () => ({
@@ -68,7 +72,8 @@ vi.mock("@repo/db", () => ({
         organizationId: "org_1",
         projectId: "prj_1",
         serviceId: "svc_1",
-        sourceKind: "service",
+        sourceKind: h.sourceKind,
+        mailServerId: h.sourceKind === "mail_server" ? "mail_1" : null,
         policyId: h.policyId,
         manifestKey: h.manifestKey,
         deletedAt: h.sourceDeletedAt,
@@ -120,6 +125,7 @@ vi.mock("@repo/db", () => ({
       listByProject: async () => [{ id: "svc_1" }],
     },
     deployment: { findById: async () => null },
+    mailServer: { get: async () => ({ id: "mail_1", domain: "mail.example.com" }) },
   },
 }));
 
@@ -162,7 +168,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/modules/backups/restore.sse", () => ({
+vi.mock("@repo/platform/engine/modules/backups/restore.sse", () => ({
   restoreRunBus: {
     publish: (_id: string, event: Record<string, unknown>) => {
       h.events.push(event);
@@ -171,30 +177,28 @@ vi.mock("../../../src/modules/backups/restore.sse", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
-  // The orchestrator releases the runtime it resolved when the run ends; these
-  // stubs hold no transport, so the release is a no-op here.
-  disposeRuntime: () => {},
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  disposeRuntime: h.disposeRuntime,
   disposePlatform: () => {},
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "docker" } } }),
-  resolveTargetPlatform: async () => ({ runtime: { name: "bare" } }),
+  resolveTargetPlatform: async () => ({ runtime: h.runtime }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: () => {} },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => null,
   liveContainerForService: async () => ({ containerId: null, running: null }),
 }));
 
-import { RestoreOrchestrator } from "../../../src/modules/backups/restore.orchestrator";
+import { RestoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 
 const recorded = (over: Partial<Recorded> = {}): Recorded => ({
   name: "volume-pgdata.tar.zst",
@@ -245,6 +249,8 @@ const meta = () => (h.transitions.at(-1)!.patch?.meta ?? {}) as Record<string, u
 beforeEach(() => {
   h.sourceStatus = "succeeded";
   h.sourceDeletedAt = null;
+  h.sourceKind = "service";
+  h.disposeRuntime.mockClear();
   h.objects.clear();
   h.artifacts = [];
   h.manifestKey = null;
@@ -259,6 +265,16 @@ beforeEach(() => {
 });
 
 describe("prepare re-hashes what it says it re-hashes", () => {
+  it.each([false, true])("releases the mail target after preflight (invalid target: %s)", async (invalidTarget) => {
+    h.sourceKind = "mail_server";
+    h.artifacts = [recorded({ metadata: { volumeId: invalidTarget ? "missing" : "pgdata" } })];
+    h.objects.set(recorded().key, VOLUME);
+    const last = await prepare();
+    expect(last.status).toBe(invalidTarget ? "failed" : "prepared");
+    expect(h.disposeRuntime).toHaveBeenCalledExactlyOnceWith(h.runtime);
+    expect(h.targetTouched).toBe(false);
+  });
+
   it("reaches prepared and records that sha256 actually ran", async () => {
     const artifact = recorded();
     h.artifacts = [artifact];
@@ -502,7 +518,7 @@ describe("the destination's own manifest is finally consulted", () => {
     h.manifestKey = "org_1/bkr_1/manifest.json";
     // Reachable only through validateManifest — proof it's wired, which it
     // wasn't: the function had zero call sites in the whole repo.
-    h.objects.set(h.manifestKey, Buffer.from(JSON.stringify({ version: 2, artifacts: [] })));
+    h.objects.set(h.manifestKey, Buffer.from(JSON.stringify({ version: 999, artifacts: [] })));
 
     const last = await prepare();
 

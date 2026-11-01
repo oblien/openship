@@ -1,7 +1,7 @@
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import { CreateIncomingWebhookBody, UpdateIncomingWebhookBody } from "./incoming.schema";
-import { deployServiceIds, normalizeDeployActionConfig } from "./incoming-action";
+import { CreateIncomingWebhookBody, UpdateIncomingWebhookBody } from "@repo/contracts";
+import { deployServiceIds, normalizeDeployActionConfig } from "@repo/platform/engine/modules/incoming-webhooks/incoming-action";
 
 describe("incoming webhook deploy targets", () => {
   it("prefers and canonicalizes plural service ids", () => {

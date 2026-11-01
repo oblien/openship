@@ -135,3 +135,11 @@ describe("work already underway", () => {
     expect(counts).toMatchObject({ attention: 0, updates: 0, healthy: 2, applying: 0 });
   });
 });
+
+it("does not mark an edge-free private server unhealthy while keeping its project count", () => {
+  const privateServer = group("srv_private", [], 3);
+  privateServer.server.edgeRequired = false;
+  expect(summarizeInfraFleet([privateServer]).counts).toMatchObject({ attention: 0, healthy: 1 });
+  privateServer.server.edgeRequired = true;
+  expect(summarizeInfraFleet([privateServer]).counts).toMatchObject({ attention: 1 });
+});

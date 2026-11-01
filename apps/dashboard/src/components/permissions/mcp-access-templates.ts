@@ -50,8 +50,11 @@
 import {
   GRANTABLE_RESOURCE_TYPES,
   INFRASTRUCTURE_GRANT_TYPES,
+  capabilityAction,
   grantableTypesForMode,
+  isCapability,
   isSensitiveGrantType,
+  type Capability,
 } from "@repo/core";
 import type { Permission, PickerGrant, ResourceType } from "@/lib/api";
 
@@ -116,6 +119,12 @@ export const LEVEL_PERMISSIONS: Record<AccessLevel, Permission[]> = {
   manage: ["read", "write"],
   full: ["read", "write", "admin"],
 };
+
+/** Does this grant entry write — a write/admin level, or a capability that does? */
+const writes = (p: Permission) =>
+  p === "write" || p === "admin" || (isCapability(p) && capabilityAction(p) !== "read");
+/** Does it delete — admin, or a capability standing for admin (`domains:delete`)? */
+const deletes = (p: Permission) => p === "admin" || (isCapability(p) && capabilityAction(p) === "admin");
 
 export function levelOf(permissions: readonly Permission[]): AccessLevel {
   if (permissions.includes("admin")) return "full";
@@ -429,7 +438,7 @@ export function readOnlyContradictions(selection: AccessSelection): {
   return {
     create: hasCreateCapability(live),
     writes: live.filter(
-      (g) => !isProjectCreateGrant(g) && g.permissions.some((p) => p === "write" || p === "admin"),
+      (g) => !isProjectCreateGrant(g) && g.permissions.some(writes),
     ).length,
   };
 }
@@ -489,7 +498,7 @@ export function capabilityDigest(selection: AccessSelection): CapabilityDigest {
   );
   const servers = live.filter((g) => g.resourceType === "server" || g.resourceType === "mail_server");
   const backups = live.filter((g) => g.resourceType === "backup_destination");
-  const writable = (gs: PickerGrant[]) => gs.some((g) => g.permissions.some((p) => p === "write" || p === "admin"));
+  const writable = (gs: PickerGrant[]) => gs.some((g) => g.permissions.some(writes));
 
   if (create) {
     can.push("createProjects");
@@ -520,7 +529,7 @@ export function capabilityDigest(selection: AccessSelection): CapabilityDigest {
   // reach projects by id but 404 on enumeration (permission.ts:353-355).
   if (!create && projects.length > 0) cannot.push("notEnumerateProjects");
   if (servers.length === 0) cannot.push("notServers");
-  if (!selection.readOnly && !live.some((g) => g.permissions.includes("admin")) && !create) {
+  if (!selection.readOnly && !live.some((g) => g.permissions.some(deletes)) && !create) {
     cannot.push("notDelete");
   }
 
@@ -537,7 +546,10 @@ export interface SummaryRow {
    *  still the truth, just less friendly. */
   label: string;
   permissions: Permission[];
-  level: AccessLevel;
+  /** The coarse level, or null for a grant that holds only capabilities. */
+  level: AccessLevel | null;
+  /** Fine-grained capabilities held (`domains:delete`) — not the `kind` above. */
+  capabilities: Capability[];
   /** True for the "all X of this type" wildcard row. */
   wildcard: boolean;
 }
@@ -563,7 +575,10 @@ export function summaryRows(
         resourceId: g.resourceId,
         label: labels.get(labelKey(g.resourceType, g.resourceId)) ?? g.resourceId,
         permissions: [...g.permissions],
-        level: levelOf(g.permissions),
+        level: g.permissions.some((p) => !isCapability(p))
+          ? levelOf(g.permissions.filter((p) => !isCapability(p)))
+          : null,
+        capabilities: g.permissions.filter(isCapability) as Capability[],
         wildcard: !capability && g.resourceId === "*",
       };
     });
@@ -619,6 +634,7 @@ export function summaryGroups(rows: readonly SummaryRow[]): SummaryGroup[] {
   for (const [resourceType, bucket] of byType) {
     const first = bucket[0]!.level;
     const sharedLevel = bucket.every((r) => r.level === first) ? first : null;
+    // A null shared level (capability-only rows) just states nothing in the header.
     groups.push({ resourceType, rows: bucket, sharedLevel });
   }
   return groups;

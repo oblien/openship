@@ -9,6 +9,7 @@
  * interactive wizard so the two can't diverge on it again — the wizard used to
  * collect the sites and drop them on the floor.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import chalk from "chalk";
 import ora from "ora";
 import { EDGE_CONTAINER_NAME, edgeCrashReason, type ImportedSite } from "@repo/adapters/proxy";
@@ -23,7 +24,8 @@ export async function waitForApiHealth(port: string, tries: number): Promise<boo
     try {
       const r = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) });
       if (r.ok) return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "cli/lib/edge-import");
       /* not up yet */
     }
     await new Promise((r) => setTimeout(r, 1000));
@@ -46,7 +48,7 @@ export async function waitForEdgeRunning(tries: number): Promise<boolean> {
   for (let i = 0; i < tries; i++) {
     const out = await exec
       .exec(`docker inspect -f '{{.State.Running}}' ${EDGE_CONTAINER_NAME}`)
-      .catch(() => "");
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/lib/edge-import"); return ""; });
     if (out.trim() === "true") return true;
     await new Promise((r) => setTimeout(r, 1000));
   }
@@ -115,7 +117,7 @@ export async function importMigratedSites(
       return { ok: false, registered: [], error: call.detail };
     }
     const r = call.res;
-    const data = (await r.json().catch(() => ({}))) as {
+    const data = (await r.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/lib/edge-import"); return ({}); })) as {
       registered?: string[];
       warnings?: string[];
       error?: string;
@@ -178,6 +180,7 @@ export async function importMigratedSites(
     for (const w of warnings.slice(0, 8)) console.log(chalk.dim(`    • ${w}`));
     return { ok: true, registered };
   } catch (e) {
+    observeCaughtError(e, "cli/lib/edge-import");
     const error = (e as Error).message;
     spinner.warn(`Site import failed: ${error}. Re-run to retry.`);
     return { ok: false, registered: [], error };

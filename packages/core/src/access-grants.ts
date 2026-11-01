@@ -33,12 +33,21 @@
  * doors — `checkPermission` or `canUseGitHubRepo`.
  */
 
+import type { Capability } from "./access-capabilities";
+
 /**
  * "create" is a collection-only capability: it authorizes creating NEW rows of a
  * type (only `{project,"*",[create]}` today) WITHOUT granting read/write/admin
  * on existing ones, and never satisfies a per-resource check. See permission.ts.
  */
 export type Permission = "read" | "write" | "admin" | "create";
+
+/**
+ * What a grant's `permissions` array may hold: the coarse levels above, or a
+ * fine-grained capability such as `domains:delete` (see access-capabilities.ts).
+ * Route checks still assert a coarse `Permission`.
+ */
+export type GrantPermission = Permission | Capability;
 
 /**
  * Every value a grant row's `resource_type` may hold. Wider than the grantable
@@ -218,11 +227,7 @@ export function isSensitiveGrantType(type: string): boolean {
  * and tools that always 404.
  */
 export const SELF_HOSTED_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = [
-  "server",
   "mail_server",
-  // The jobs router is `localOnly`, so on the hosted control plane every job route
-  // 404s regardless of the grant.
-  "job",
 ];
 
 /** Grantable types that exist only on the hosted control plane. */

@@ -11,32 +11,12 @@
  */
 
 import { join, posix as pathPosix } from "node:path";
-import type { StackId } from "@repo/core";
-import { prepareNextStandalone, type NextStandalonePlan } from "./nextjs-standalone";
+import { nodeOutputOptions, prepareNodeOutput } from "./node-output";
 
-/** A self-contained build output: ship `bundleDir` as-is; run `startCommand`. */
-export type StackOutputPlan = NextStandalonePlan;
-
-/** Given the built project dir, return a shippable bundle — or null (→ host mode). */
-export type StackOutputPreparer = (projectDir: string) => Promise<StackOutputPlan | null>;
-
-/**
- * Per-stack self-contained-output preparers. A stack appears here only when its
- * build can emit a wholesale-shippable bundle. Slot new stacks in the same way:
- *   nextjs → next.config `output: 'standalone'` → `.next/standalone`
- *   (nuxt/nitro `.output`, sveltekit adapter-node, … register alongside)
- */
-export const STACK_OUTPUT_PREPARERS: Partial<Record<StackId, StackOutputPreparer>> = {
-  nextjs: prepareNextStandalone,
-};
-
-/** Run the stack's preparer if one is registered; null otherwise. */
-export async function prepareStackOutput(
-  stack: string,
-  projectDir: string,
-): Promise<StackOutputPlan | null> {
-  const prepare = STACK_OUTPUT_PREPARERS[stack as StackId];
-  return prepare ? prepare(projectDir) : null;
+/** Use the same stack output definition as Docker and remote builds. */
+export async function prepareStackOutput(stack: string, projectDir: string) {
+  const options = nodeOutputOptions({ stack }, projectDir);
+  return options ? prepareNodeOutput(options) : null;
 }
 
 /**

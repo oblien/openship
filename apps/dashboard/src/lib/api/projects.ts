@@ -1,12 +1,23 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
+import type { BranchPageResponse } from "./github";
 import type {
   RoutingConfig,
   RouteRuleSpec,
   ProxySettings,
   OpenshipReadiness,
+  StackRole,
   WorkloadType,
+  DeploymentHistoryQuery,
 } from "@repo/core";
+import type {
+  EnsureProjectInput,
+  DeploymentPage,
+  ProjectControlOperations,
+  RollbackCapacity,
+  RouteProtectionInput,
+  RouteProtectionStatus,
+} from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type { ReleaseImageSource } from "../release-image-source";
 import {
@@ -17,6 +28,9 @@ import {
 /* ------------------------------------------------------------------ */
 /*  Projects API                                                      */
 /* ------------------------------------------------------------------ */
+
+/** Source drift computed by the engine's shared update service. */
+export type ProjectUpdateStatus = Awaited<ReturnType<ProjectControlOperations["getCommitStatus"]>>;
 
 /**
  * One thing waiting on a human. Mirrors `PendingAction` in the API's
@@ -39,6 +53,7 @@ export interface PendingAction {
     | "prompt"
     | "partial_decision"
     | "routing_unsynced"
+    | "runtime_health"
     | "domain_unverified"
     | "ssl_error"
     | "port_advisory";
@@ -52,31 +67,25 @@ export interface PendingAction {
   resolveWith: PendingActionResolution[];
 }
 
-/** Rollback retention as the API reports it. `source` says where `window` came
- *  from: an explicit operator override, the disk-sized auto value measured at the
- *  last deploy, or the instance default when nothing has been measured yet. */
-export interface RollbackCapacityUI {
-  window: number;
-  source: "explicit" | "auto" | "instance-default";
-  explicit: number | null;
-  snapshotSizeBytes: number | null;
-  measuredAt: string | null;
-  diskFreeBytes: number | null;
-  diskTotalBytes: number | null;
-  maxWindow: number;
-  diskBudgetFraction: number;
-  strategy: string;
-}
+/** Fixed rollback limit: project override, otherwise the instance default (5). */
+export type RollbackCapacityUI = RollbackCapacity;
 
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
  *  optional — only the fields sent are written. Mirrors the backend allowlist. */
 export interface ProjectOptionsBody {
+  autoDeployCancelBuilds?: boolean;
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
+  gitBranch?: string;
   framework?: string;
   packageManager?: string;
   buildImage?: string;
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   installCommand?: string;
   buildCommand?: string;
   startCommand?: string;
+  releaseCommands?: string[] | null;
+  roles?: StackRole[] | null;
   outputDirectory?: string;
   productionPaths?: string;
   /** Persistent mounts. `null` clears the override and restores the framework's
@@ -156,7 +165,12 @@ export interface ScanProjectResponse {
   installCommand: PrepareProjectResponse["installCommand"];
   buildCommand: PrepareProjectResponse["buildCommand"];
   startCommand: PrepareProjectResponse["startCommand"];
+  releaseCommands?: PrepareProjectResponse["releaseCommands"];
+  roles?: PrepareProjectResponse["roles"];
+  rolePresets?: PrepareProjectResponse["rolePresets"];
   buildImage: PrepareProjectResponse["buildImage"];
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   outputDirectory: PrepareProjectResponse["outputDirectory"];
   rootDirectory: PrepareProjectResponse["rootDirectory"];
   productionPaths: PrepareProjectResponse["productionPaths"];
@@ -252,10 +266,12 @@ export const projectsApi = {
 
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {
+    githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
     projectId?: string;
+    serverId?: string;
     name: string;
     /** Rollback retention picked in the wizard before the project existed.
-     *  `null` window = size it from the deploy host's free disk. */
+     *  `null` window inherits the instance default. */
     rollbackWindow?: number | null;
     defaultRollbackStrategy?: "git" | "snapshot";
     slug?: string;
@@ -276,6 +292,8 @@ export const projectsApi = {
     composePath?: string;
     startCommand?: string;
     buildImage?: string;
+    runtimeVersion?: string | null;
+    runtimeImage?: string | null;
     port?: number;
     publicEndpoints?: Array<{
       port?: number;
@@ -290,36 +308,23 @@ export const projectsApi = {
     workloadType?: WorkloadType;
     /** Project flavor - "monorepo" persists the sub-app + workspace fields below. */
     projectType?: "app" | "docker" | "services" | "monorepo";
-    monorepoApps?: Array<{
-      name: string;
-      rootDirectory: string;
-      framework?: string;
-      packageManager?: string;
-      buildImage?: string;
-      installCommand?: string;
-      buildCommand?: string;
-      startCommand?: string;
-      outputDirectory?: string;
-      port?: number;
-      enabled?: boolean;
-      exposed?: boolean;
-      domain?: string;
-      customDomain?: string;
-      domainType?: "free" | "custom";
-      environment?: Record<string, string>;
-    }>;
+    monorepoApps?: EnsureProjectInput["monorepoApps"];
     monorepoWorkspace?: {
       packageManager: string;
       /** Shell command run ONCE at the repo root before per-app builds. */
       prepareCommand?: string;
     };
     /** Routing config parsed from the repo's vercel.json (opaque passthrough). */
+    cloudStaticHosting?: "pages" | "server";
     routingConfig?: RoutingConfig | null;
     /**
      * Deploy-time readiness gate. Omitted/null = OFF (the default) — the deploy
      * does no post-start waiting. Opaque passthrough to the project column.
      */
     readiness?: OpenshipReadiness | null;
+    /** Ordered commands required before activating a single-app release. */
+    releaseCommands?: string[] | null;
+    roles?: StackRole[] | null;
   }) => api.post<any>(endpoints.projects.ensure, body),
 
   /** List local projects only */
@@ -428,9 +433,10 @@ export const projectsApi = {
       };
     }>(`${endpoints.projects.item(id)}/deletion-preview`),
 
-  /** Update name or description — pass any subset of TUpdateProjectBody fields. */
+  /** Retention edits include artifact cleanup on the project's host. */
   update: (id: string | number, fields: Record<string, unknown>) =>
-    api.patch<any>(endpoints.projects.item(id), fields),
+    api.patch<any>(endpoints.projects.item(id), fields,
+      fields.rollbackWindow !== undefined ? { timeout: 120_000 } : undefined),
 
   /**
    * Read-only edge health for the project's server: is OpenResty already the
@@ -490,28 +496,9 @@ export const projectsApi = {
   unbindObjectStorage: (id: string | number) =>
     api.delete<{ data: { removed: boolean } }>(endpoints.projects.storage(id)),
 
-  /** Source-drift status for the "project outdated" banner. `mode` discriminates:
-   *  "commit" (git HEAD vs deployed sha) or "release" (newest advertised version
-   *  vs the deployed release version). */
+  /** Source drift for a project's update indicator and deployment banner. */
   getCommitStatus: (id: string | number) =>
-    api.get<{
-      data: {
-        supported: boolean;
-        mode?: "commit" | "release";
-        behind?: boolean;
-        /** True when the latest commit/version is already building/deploying. */
-        latestInProgress?: boolean;
-        /* commit mode */
-        branch?: string;
-        latestSha?: string | null;
-        latestMessage?: string | null;
-        deployedSha?: string | null;
-        /* release mode */
-        latestVersion?: string | null;
-        currentVersion?: string | null;
-        pinned?: boolean;
-      };
-    }>(`projects/${id}/commit-status`),
+    api.get<{ data: ProjectUpdateStatus }>(`projects/${id}/commit-status`),
 
   /** Enable or disable a project */
   toggle: (id: string | number, enable: boolean) =>
@@ -569,6 +556,10 @@ export const projectsApi = {
     api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
+  listRouteProtection: (id: string | number) =>
+    api.get<{ data: RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
+  changeRouteProtection: (id: string | number, body: RouteProtectionInput) =>
+    api.put<{ data: RouteProtectionStatus }>(`/projects/${id}/route-protection`, body),
   listRouteRules: (id: string | number) =>
     api.get<{ rules: RouteRuleRow[] }>(endpoints.projects.routeRules(id)),
   createRouteRule: (id: string | number, body: RouteRuleInput) =>
@@ -583,7 +574,7 @@ export const projectsApi = {
     api.post<any>(endpoints.projects.deploymentSession(id)),
 
   /** Connect a custom domain. `externalIngress` = TLS/ingress handled upstream
-   *  (Cloudflare Tunnel / LB): verify via TXT only, no certbot, plain-HTTP route. */
+   *  (Cloudflare Tunnel / LB): no certbot, plain-HTTP route; Cloud requires an ownership TXT record. */
   connectDomain: (
     id: string | number,
     body: {
@@ -638,6 +629,8 @@ export const projectsApi = {
 
   /** List branches */
   getBranches: (id: string | number) => api.get<any>(endpoints.projects.branches(id)),
+  getBranchPage: (id: string | number, page: number) =>
+    api.get<BranchPageResponse>(endpoints.projects.branches(id), { params: { page } }),
 
   /** Set active branch */
   setBranch: (id: string | number, branch: string) =>
@@ -656,12 +649,12 @@ export const projectsApi = {
   getResources: async (id: string | number): Promise<ProjectResourcesResponse> =>
     normalizeProjectResourcesResponse(await api.get<unknown>(endpoints.projects.resources(id))),
 
-  /** Rollback retention: the window in force (explicit or disk-sized), the
+  /** Rollback retention: the configured window (explicit or instance default), the
    *  measured per-release size, and the deploy host's free disk. Everything is
    *  read from values measured at the last deploy plus a cached probe, so this
    *  is cheap enough to call whenever the retention control is shown. */
-  getRollbackCapacity: (id: string | number) =>
-    api.get<{ data: RollbackCapacityUI }>(endpoints.projects.rollbackCapacity(id)),
+  getRollbackCapacity: (id: string | number, signal?: AbortSignal) =>
+    api.get<{ data: RollbackCapacityUI }>(endpoints.projects.rollbackCapacity(id), { signal }),
 
   /** Set resources (POST - tier-based) */
   setResources: async (
@@ -687,5 +680,6 @@ export const projectsApi = {
     api.post<any>(endpoints.projects.sleepMode(id), { sleep_mode }),
 
   /** List deployments for a project */
-  getDeployments: (id: string | number) => api.get<any>(endpoints.projects.deployments(id)),
+  getDeployments: (id: string | number, params?: DeploymentHistoryQuery, signal?: AbortSignal) =>
+    api.get<DeploymentPage>(endpoints.projects.deployments(id), { params: { ...params }, signal }),
 };

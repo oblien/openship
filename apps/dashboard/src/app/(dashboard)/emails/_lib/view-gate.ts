@@ -1,5 +1,5 @@
 /**
- * Which of /emails' four mutually-exclusive surfaces to render.
+ * Which of /emails' mutually-exclusive surfaces to render.
  *
  * This used to be four interdependent booleans inlined in the page, each
  * re-stating the others' negations (`!showAdmin && !showList && …`). That shape
@@ -9,7 +9,7 @@
  * view is possible at a time, so the gate returns one value and the exclusivity is
  * structural instead of something each condition has to restate.
  */
-export type MailView = "admin" | "list" | "setup" | "progress";
+export type MailView = "admin" | "list" | "setup" | "progress" | "unavailable";
 
 export interface MailViewInput {
   /** The "add another mail server" flow is open. */
@@ -18,6 +18,8 @@ export interface MailViewInput {
   hasServer: boolean;
   /** Its /mail/status has arrived. */
   hasStatus: boolean;
+  /** A failed read proves neither a missing installation nor a stopped engine. */
+  statusUnavailable?: boolean;
   /** The `mail_servers` registry row says installed — the authority for day-2. */
   registryCompleted: boolean;
   /** Every step of the on-disk state file is complete (a just-finished install). */
@@ -53,6 +55,8 @@ export function resolveMailView(i: MailViewInput): MailView {
   }
 
   if (!i.addingNew && !i.hasServer && i.serverCount > 1) return "list";
+
+  if (i.statusUnavailable && !i.running && !i.gatesActive) return "unavailable";
 
   // A live install and an operator-blocking hold outrank a forced re-run: opening
   // the form mid-stream would orphan a running install, and hiding a DNS/PTR gate

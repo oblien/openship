@@ -33,8 +33,11 @@ function sliceToConfigView(parent: DeploymentConfig, app: MonorepoAppConfig): De
     detectedFramework: app.detectedFramework,
     packageManager: app.packageManager,
     buildImage: app.buildImage,
+    runtimeVersion: undefined,
+    runtimeImage: undefined,
     envVars: app.envVars,
     publicEndpoints: app.publicEndpoints,
+    noPublicRoute: app.exposed === false,
     options: {
       buildCommand: app.buildCommand,
       installCommand: app.installCommand,
@@ -57,6 +60,8 @@ const SLICE_FIELDS = [
   "buildImage",
   "envVars",
   "publicEndpoints",
+  "options",
+  "noPublicRoute",
 ] as const satisfies readonly (keyof DeploymentConfig)[];
 
 /** Fields on `DeploymentOptions` that map back to the sub-app slice. */
@@ -75,7 +80,10 @@ function patchSubApp(
   app: MonorepoAppConfig,
   updates: Partial<DeploymentConfig>,
 ): MonorepoAppConfig {
-  const next: MonorepoAppConfig = { ...app };
+  const next: MonorepoAppConfig = updates.options
+    ? patchSubAppOptions(app, updates.options)
+    : { ...app };
+  if (updates.noPublicRoute !== undefined) next.exposed = !updates.noPublicRoute;
   if (updates.framework !== undefined) next.framework = updates.framework;
   if (updates.detectedFramework !== undefined) next.detectedFramework = updates.detectedFramework;
   if (updates.packageManager !== undefined) next.packageManager = updates.packageManager;

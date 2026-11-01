@@ -16,13 +16,14 @@ import {
   resolveProjectAccess,
   serviceDomainRowsToPublicEndpoints,
   resolveServicePublicEndpoints,
+  resolveServiceEndpointUrls,
   resolveServiceRouteHostname,
   resolveStoredPublicEndpoints,
   syncStoredPublicEndpoints,
   type ProjectDomainRow,
   type StoredServiceRouting,
-} from "../../src/lib/public-endpoints";
-import { getRoutingBaseDomain } from "../../src/lib/routing-domains";
+} from "@repo/platform/engine/lib/public-endpoints";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
 import { normalizeCustomHostname, resolveServiceHostnameLabel } from "@repo/core";
 
 const row = (
@@ -41,6 +42,41 @@ const row = (
 });
 
 describe("public endpoint helpers", () => {
+  it("keeps the first concrete URL per port when another hostname is added", () => {
+    const service = {
+      name: "web",
+      exposed: true,
+      exposedPort: "4000",
+      domainType: "custom",
+      customDomain: "app.example.com",
+      publicEndpoints: [
+        { port: 4000, domainType: "custom", customDomain: "app.example.com" },
+        { port: 4000, domainType: "custom", customDomain: "alias.example.com" },
+        { port: 5000, domainType: "custom", customDomain: "metrics.example.com" },
+      ],
+    } as any;
+    expect(resolveServicePublicEndpoints(service)).toHaveLength(3);
+    expect(resolveServiceEndpointUrls({ slug: "project" } as any, service)).toEqual([
+      { port: 4000, url: "https://app.example.com" },
+      { port: 5000, url: "https://metrics.example.com" },
+    ]);
+  });
+
+  it("skips wildcard aliases before choosing a concrete URL for the same port", () => {
+    const service = {
+      name: "web",
+      exposed: true,
+      publicEndpoints: [
+        { port: 4000, domainType: "custom", customDomain: "*.example.com" },
+        { port: 4000, domainType: "custom", customDomain: "app.example.com" },
+        { port: 4000, domainType: "custom", customDomain: "alias.example.com" },
+      ],
+    } as any;
+    expect(resolveServiceEndpointUrls({ slug: "project" } as any, service)).toEqual([
+      { port: 4000, url: "https://app.example.com" },
+    ]);
+  });
+
   it("uses the primary project custom domain when an explicit route target is provided", () => {
     const endpoints = resolveStoredPublicEndpoints({
       targetPath: "/",
@@ -434,6 +470,16 @@ describe("pickCanonicalDomainRow", () => {
 });
 
 describe("resolveProjectAccess", () => {
+  it("keeps wildcard routes out of canonical access links and service URL substitutions", () => {
+    const wildcard = row({ hostname: "*.example.com", verified: true, isPrimary: true });
+    expect(pickCanonicalDomainRow([wildcard])).toBeNull();
+    expect(resolveProjectAccess({ rows: [wildcard], target: "server", port: 3000 }).url).toBeNull();
+    const concrete = row({ hostname: "app.example.com", verified: true });
+    expect(resolveProjectAccess({ rows: [wildcard, concrete], target: "server", port: 3000 }).urls).toEqual(["https://app.example.com"]);
+    const service = { id: "service", name: "web", kind: "compose", exposed: true, exposedPort: "3000", domainType: "custom", customDomain: "*.example.com" } as any;
+    expect(resolveServicePublicEndpoints(service)).toMatchObject([{ customDomain: "*.example.com" }]);
+    expect(resolveServiceEndpointUrls({ slug: "project" } as any, service)).toEqual([]);
+  });
   it("resolves a project whose only domains are service-scoped (the openship repro)", () => {
     // Multi-service project: both verified custom domains live on service-scoped
     // rows, so project-level publicEndpoints is empty — the exact case that used

@@ -1,55 +1,36 @@
 /**
- * THE UPDATE ITSELF: last release's stack, real data in it, recreated onto this
- * release's image. Real daemon, real Postgres, real containers.
+ * Upgrade a complete published Compose installation onto the exact new API,
+ * dashboard and edge images. Frozen CLI templates retain the previous release's
+ * healthchecks and dependency graph; the new side uses the production renderer.
+ * Populated PostgreSQL/Redis volumes, custom ports, secrets and a saved edge route
+ * survive replacement and a cold stack restart. A fresh install is checked too.
  *
- * This is the case every other suite in the repo approximates and none of them runs.
- * `migrate-chain` (packages/db) proves the migration chain applies to a populated
- * database, but on PGlite — Postgres compiled to WASM, close but not the
- * `postgres:16-alpine` an operator actually has. Nothing anywhere booted the PREVIOUS
- * RELEASE and then updated it, which is the only sequence an existing user ever
- * performs, and the one that produced "openship-api-1 enters a crash loop after
- * `openship update`" from an operator whose 0.6.1 install was already unhealthy.
- *
- * What it does:
- *   1. Brings up postgres + redis + the PREVIOUS release's api image, waits for
- *      /api/health, and confirms that api actually migrated the database.
- *   2. Seeds rows into core tables, so what follows runs against a NON-EMPTY schema.
- *   3. Repins the api image to THIS release's and runs the same command
- *      `openship update` runs — `up -d --force-recreate api` — against the same
- *      volume, same .env, same network.
- *   4. Asserts the new api reaches /api/health, applied the remaining migrations,
- *      kept every seeded row, and did NOT bounce on the way (RestartCount 0 — a
- *      container that crash-looped its way to healthy is the failure being hunted).
- *
- * Deliberately narrower than `openship up`: postgres + redis + api, not edge/mail/
- * dashboard. The compose file below mirrors the shipped template for those three
- * services (apps/cli/src/lib/compose.ts) — how the CLI GENERATES that file is covered
- * by apps/cli/test/unit; what this owns is whether the update survives.
- *
- * Two inputs, because a checkout has neither side of an upgrade in it:
- *   OPENSHIP_E2E_NEW_API_IMAGE  the api image for the NEW side. CI passes the digest
- *                               `build-images` just pushed, so the bytes under test are
- *                               the bytes about to be tagged. Unset → built from this
- *                               checkout (slow, but makes the test runnable anywhere).
- *   OPENSHIP_E2E_OLD_VERSION    the release to upgrade FROM. Unset → the newest
- *                               `v*.*.*` tag that isn't the one at HEAD.
- *
- * Opt-in via `E2E_SCOPE=update` (see vitest.e2e.config.ts): it pulls a published
- * release, which a plain local checkout has no reason to do on every run.
+ * CI runs both 0.9.3 (healthy baseline) and 0.9.4 (dashboard unhealthy, GH-1461).
+ * Set OPENSHIP_E2E_NEW_{API,DASHBOARD,EDGE}_IMAGE to tested image digests.
+ * Otherwise each image is built from this checkout. Requires an isolated Linux
+ * Docker host: the actual host-network edge owns ports 80/443 on that host.
  */
 
 import { beforeAll, afterAll, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
+import { parse, stringify } from "yaml";
+import { renderComposeYaml } from "../../../cli/src/lib/compose";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 
 const REGISTRY = process.env.OPENSHIP_E2E_IMAGE_REGISTRY ?? "ghcr.io/oblien";
 const PROJECT = `openship-e2e-update-${process.pid}`;
 const SEED_ID = "e2e-upgrade-seed";
+const SEED_SERVER_HOST = "192.0.2.1";
 const SEEDED_TABLES = ["organization", "project", "deployment", "servers"];
+const ADMIN = {
+  name: "Upgrade verification",
+  email: "upgrade-verification@example.test",
+  password: "Upgrade-Verification-Test-Only!",
+};
 
 /** Long enough for a cold pull + initdb + the whole migration chain on a CI runner. */
 const BOOT_TIMEOUT_MS = 240_000;
@@ -72,10 +53,16 @@ const SETUP_TIMEOUT_MS = PULL_TIMEOUT_MS * PULL_ATTEMPTS + BUILD_TIMEOUT_MS + BO
 
 let workdir = "";
 let apiPort = 0;
+let dashboardPort = 0;
+let edgePort = 0;
+const components = ["api", "dashboard", "edge"] as const;
+type Component = (typeof components)[number];
+let newImages: Record<Component, string>;
+let storageContainers: Record<string, string>;
 let oldVersion = "";
-let newApiImage = "";
 let migrationsAfterOld = 0;
 let oldApiImageId = "";
+let savedSessionCookie = "";
 
 function sh(
   cmd: string,
@@ -99,7 +86,9 @@ function compose(args: string[]): { code: number; stdout: string; stderr: string
 function composeOrThrow(args: string[], what: string): string {
   const r = compose(args);
   if (r.code !== 0) {
-    throw new Error(`${what} failed (exit ${r.code})\n--- stdout ---\n${r.stdout}\n--- stderr ---\n${r.stderr}`);
+    throw new Error(
+      `${what} failed (exit ${r.code})\n--- stdout ---\n${r.stdout}\n--- stderr ---\n${r.stderr}`,
+    );
   }
   return r.stdout;
 }
@@ -121,13 +110,16 @@ async function freePort(): Promise<number> {
  */
 function resolvePreviousVersion(): string {
   const override = process.env.OPENSHIP_E2E_OLD_VERSION?.trim();
-  if (override) return override.replace(/^v/, "");
+  if (override && override !== "previous") return override.replace(/^v/, "");
 
   const atHead = new Set(
-    sh("git", ["tag", "--points-at", "HEAD"]).stdout.split("\n").map((t) => t.trim()).filter(Boolean),
+    sh("git", ["tag", "--points-at", "HEAD"])
+      .stdout.split("\n")
+      .map((t) => t.trim())
+      .filter(Boolean),
   );
-  const tags = sh("git", ["tag", "--list", "v*.*.*", "--sort=-v:refname"]).stdout
-    .split("\n")
+  const tags = sh("git", ["tag", "--list", "v*.*.*", "--sort=-v:refname"])
+    .stdout.split("\n")
     .map((t) => t.trim())
     .filter((t) => t && !t.includes("-") && !atHead.has(t));
 
@@ -168,97 +160,184 @@ function pullOrThrow(ref: string, attempts = PULL_ATTEMPTS): void {
  * The api image for the new side. CI hands us the digest `build-images` pushed; without
  * one we build this checkout, so the test is runnable on a laptop.
  */
-function resolveNewApiImage(): string {
-  const override = process.env.OPENSHIP_E2E_NEW_API_IMAGE?.trim();
-  if (override) return override;
+function resolveNewImage(component: Component): string {
+  const override = process.env[`OPENSHIP_E2E_NEW_${component.toUpperCase()}_IMAGE`]?.trim();
+  if (override) {
+    if (sh("docker", ["image", "inspect", override]).code !== 0) pullOrThrow(override);
+    return override;
+  }
 
-  const tag = `openship/e2e-update-api:${process.pid}`;
+  const tag = `openship/e2e-update-${component}:${process.pid}`;
   const repoRoot = join(import.meta.dirname, "..", "..", "..", "..");
   const built = sh(
     "docker",
-    ["build", "-f", join("apps", "api", "Dockerfile"), "-t", tag, "."],
+    ["build", "-f", join("apps", component, "Dockerfile"), "-t", tag, "."],
     { cwd: repoRoot, timeoutMs: BUILD_TIMEOUT_MS },
   );
   if (built.code !== 0) {
     throw new Error(
-      `Could not build the api image for the new side.\n${built.stdout}\n${built.stderr}`,
+      `Could not build the ${component} image for the new side.\n${built.stdout}\n${built.stderr}`,
     );
   }
   return tag;
 }
 
-/**
- * postgres + redis + api, mirroring the shipped template: PGDATA in a SUBDIRECTORY of
- * the volume (#350), a pg_isready healthcheck, and — the part this test exists to
- * exercise — `depends_on: {condition: service_healthy}` on the api.
- *
- * The api image is a variable so phase 2 can repin it the way `openship update` repins
- * OPENSHIP_VERSION, and recreate against the same volume.
- */
-const COMPOSE_YAML = `services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      PGDATA: /var/lib/postgresql/data/pgdata
-      POSTGRES_USER: \${POSTGRES_USER}
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
-      POSTGRES_DB: \${POSTGRES_DB}
-    expose: ["5432"]
-    volumes: [postgres_data:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER} -d \${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
+/** The real templates, with only resource names and host paths isolated. */
+function writeStack(previous: boolean): void {
+  const yaml = previous
+    ? readFileSync(
+        join(import.meta.dirname, `../fixtures/upgrade/compose-${oldVersion}.yml`),
+        "utf8",
+      )
+    : renderComposeYaml();
+  const stack = parse(yaml);
+  for (const component of components) {
+    const service = stack.services[component];
+    service.image = previous
+      ? `${REGISTRY}/openship-${component}:${oldVersion}`
+      : newImages[component];
+    service.environment ??= {};
+    if (component === "api") service.environment.OPENSHIP_EDGE_CONTAINER = `${PROJECT}-edge`;
+    // The socket belongs to this disposable daemon. Routing state is shared by
+    // the real API and edge at their normal container paths, under one test root.
+    if (service.volumes)
+      service.volumes = service.volumes.flatMap((mount: string | { target: string }) => {
+        // Official images are public; never copy the operator's registry
+        // credentials into the disposable control plane.
+        if (typeof mount !== "string") {
+          if (mount.target === "/root/.docker/config.json") return [];
+          throw new Error(`Unexpected long-form test mount: ${mount.target}`);
+        }
+        const match = mount.match(/^([^:$]+):(\/[^:]+)(?::([a-z,]+))?$/);
+        if (!match || match[1] === "/dev/null" || match[1] === "/var/run/docker.sock") return mount;
+        const source = join(workdir, "mounts", match[2]);
+        mkdirSync(source, { recursive: true });
+        return `${source}:${match[2]}${match[3] ? `:${match[3]}` : ""}`;
+      });
+  }
+  stack.services.edge.container_name = `${PROJECT}-edge`;
+  writeFileSync(join(workdir, "docker-compose.yml"), stringify(stack));
+}
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    expose: ["6379"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
-  api:
-    image: \${OPENSHIP_API_IMAGE}
-    restart: unless-stopped
-    ports: ["127.0.0.1:\${API_PORT}:\${API_PORT}"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    env_file: [.env]
-    environment:
-      NODE_ENV: production
-      PORT: "\${API_PORT}"
-      DATABASE_URL: postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-
-volumes:
-  postgres_data:
-`;
-
-function writeEnv(apiImage: string): void {
+function writeEnv(): void {
   writeFileSync(
     join(workdir, ".env"),
     [
-      `OPENSHIP_API_IMAGE=${apiImage}`,
+      `COMPOSE_PROJECT_NAME=${PROJECT}`,
       `API_PORT=${apiPort}`,
+      `DASHBOARD_PORT=${dashboardPort}`,
+      `OPENSHIP_PUBLIC_URL=http://127.0.0.1:${edgePort}`,
       "POSTGRES_USER=openship",
       "POSTGRES_PASSWORD=e2e-upgrade-password",
       "POSTGRES_DB=openship",
-      // Stable across both phases, exactly as `openship update` carries them forward:
-      // a new BETTER_AUTH_SECRET would make every stored env var undecryptable (#488).
       "BETTER_AUTH_SECRET=e2e0000000000000000000000000000000000000000000000000000000000000f",
       "INTERNAL_TOKEN=e2e-internal-token",
       "",
     ].join("\n"),
   );
+}
+
+function writeSavedRoute(): void {
+  const sites = join(workdir, "mounts/usr/local/openresty/nginx/conf/sites-enabled");
+  mkdirSync(sites, { recursive: true });
+  writeFileSync(
+    join(sites, "upgrade-check.conf"),
+    `server {
+    listen 127.0.0.1:${edgePort};
+    server_name upgrade.example.test;
+    location / { proxy_pass http://127.0.0.1:${dashboardPort}; }
+  }\n`,
+  );
+}
+
+function containerId(service: string): string {
+  const id = composeOrThrow(["ps", "-aq", service], `finding ${service}`).trim();
+  expect(id, `${service} container should exist`).not.toBe("");
+  return id;
+}
+
+function inspect(service: string) {
+  return JSON.parse(sh("docker", ["inspect", containerId(service)]).stdout)[0];
+}
+
+async function expectDashboardAndEdge(): Promise<void> {
+  const probe = compose([
+    "exec",
+    "-T",
+    "dashboard",
+    "node",
+    "-e",
+    "fetch('http://127.0.0.1:'+process.env.PORT+'/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
+  ]);
+  expect(probe.code, `dashboard loopback probe: ${probe.stderr}`).toBe(0);
+  const login = await waitForEdgeLogin();
+  expect(login.status, "the saved edge route should reach the dashboard").toBe(200);
+  expect(await login.text()).toMatch(/openship/i);
+  const api = await fetch(`http://127.0.0.1:${edgePort}/api/proxy/api/health`);
+  expect(api.ok, "the dashboard same-origin proxy should reach the API").toBe(true);
+}
+
+async function waitForEdgeLogin(): Promise<Response> {
+  const deadline = Date.now() + BOOT_TIMEOUT_MS;
+  let last = "No response";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${edgePort}/login`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (response.status === 200) return response;
+      last = `HTTP ${response.status}`;
+      await response.body?.cancel();
+    } catch (error) {
+      last = String(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(
+    `The saved dashboard edge route did not become ready: ${last}\n${compose(["logs", "--tail", "40", "dashboard", "edge"]).stdout}`,
+  );
+}
+
+async function bootstrapAdmin(): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/api/system/bootstrap-admin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Internal-Token": "e2e-internal-token" },
+    body: JSON.stringify(ADMIN),
+  });
+  expect(response.status, "normal first-admin bootstrap should succeed").toBe(200);
+  await response.body?.cancel();
+}
+
+async function expectAdminLogin(throughEdge = true): Promise<void> {
+  const base = throughEdge
+    ? `http://127.0.0.1:${edgePort}/api/proxy`
+    : `http://127.0.0.1:${apiPort}`;
+  const response = await fetch(`${base}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${edgePort}` },
+    body: JSON.stringify({ email: ADMIN.email, password: ADMIN.password }),
+  });
+  expect(response.status, "the saved admin credentials should still sign in").toBe(200);
+  if (!throughEdge) {
+    savedSessionCookie = response.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    expect(savedSessionCookie, "the previous release must issue a session cookie").not.toBe("");
+  }
+  const body = await response.json();
+  expect(body).toMatchObject({ user: { email: ADMIN.email } });
+}
+
+async function expectRetainedSession(): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${edgePort}/api/proxy/api/auth/get-session`, {
+    headers: { Cookie: savedSessionCookie },
+  });
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body, "the pre-upgrade signed session should remain valid").toMatchObject({
+    user: { email: ADMIN.email },
+  });
 }
 
 /** One psql statement batch as the cluster superuser. */
@@ -291,7 +370,9 @@ function appliedMigrations(): number {
  * Insert one row into `table`, with the INSERT built from the schema AS THE OLD RELEASE
  * LEFT IT. Introspection rather than a column list, for the same reason as the
  * migrate-chain suite: the old side moves every release, and a hardcoded list would
- * break on the first migration that touched any of these tables.
+ * break on the first migration that touched any of these tables. Keep a valid SSH
+ * host even when that column is nullable: managed servers made it conditional on
+ * workspace ownership, not optional for an ordinary server.
  */
 function seedRow(table: string): void {
   psql(`
@@ -303,6 +384,7 @@ function seedRow(table: string): void {
              string_agg(
                CASE
                  WHEN column_name = 'id' THEN quote_literal('${SEED_ID}')
+                 WHEN '${table}' = 'servers' AND column_name = 'ssh_host' THEN quote_literal('${SEED_SERVER_HOST}')
                  WHEN data_type IN ('text','character varying','character') THEN quote_literal('seed')
                  WHEN data_type = 'uuid' THEN quote_literal('00000000-0000-0000-0000-000000000001')
                  WHEN data_type LIKE 'timestamp%' OR data_type = 'date' THEN 'now()'
@@ -319,7 +401,9 @@ function seedRow(table: string): void {
          AND is_generated = 'NEVER'
          AND identity_generation IS NULL
          -- id is forced in even when it has a default: the assertions find the row by it.
-         AND (column_name = 'id' OR (is_nullable = 'NO' AND column_default IS NULL));
+         AND (column_name = 'id'
+           OR ('${table}' = 'servers' AND column_name = 'ssh_host')
+           OR (is_nullable = 'NO' AND column_default IS NULL));
       EXECUTE format('INSERT INTO %I (%s) VALUES (%s)', '${table}', cols, vals);
     END
     $seed$;
@@ -381,13 +465,27 @@ describeDockerE2E("update from the previous release", () => {
     oldVersion = resolvePreviousVersion();
     apiPort = await freePort();
     workdir = mkdtempSync(join(tmpdir(), "openship-e2e-update-"));
-    writeFileSync(join(workdir, "docker-compose.yml"), COMPOSE_YAML);
+    dashboardPort = await freePort();
+    edgePort = await freePort();
+    writeEnv();
+    writeStack(true);
+    writeSavedRoute();
 
     // ── Phase 1: the previous release, exactly as an operator is running it now.
-    pullOrThrow(`${REGISTRY}/openship-api:${oldVersion}`);
-    writeEnv(`${REGISTRY}/openship-api:${oldVersion}`);
-    composeOrThrow(["up", "-d"], `bringing up the ${oldVersion} stack`);
+    for (const component of components)
+      pullOrThrow(`${REGISTRY}/openship-${component}:${oldVersion}`);
+    const boot = compose(["up", "-d"]);
+    if (oldVersion === "0.9.4") {
+      expect(boot.code, "GH-1461 must reproduce on the original 0.9.4 template").not.toBe(0);
+      expect(inspect("dashboard").State.Health.Status).toBe("unhealthy");
+    } else {
+      expect(boot.code, boot.stderr).toBe(0);
+      const login = await waitForEdgeLogin();
+      expect(login.status).toBe(200);
+    }
     await waitForHealth(`previous release (${oldVersion})`);
+    await bootstrapAdmin();
+    await expectAdminLogin(false);
 
     migrationsAfterOld = appliedMigrations();
     oldApiImageId = apiImageId();
@@ -395,7 +493,16 @@ describeDockerE2E("update from the previous release", () => {
     // ── Phase 2's precondition: rows, so the migrations below run against data.
     for (const table of SEEDED_TABLES) seedRow(table);
 
-    newApiImage = resolveNewApiImage();
+    storageContainers = Object.fromEntries(
+      ["postgres", "redis"].map((name) => [name, containerId(name)]),
+    );
+    composeOrThrow(
+      ["exec", "-T", "redis", "redis-cli", "SET", "upgrade-check", "preserved"],
+      "seeding Redis",
+    );
+    newImages = Object.fromEntries(
+      components.map((component) => [component, resolveNewImage(component)]),
+    ) as Record<Component, string>;
   }, SETUP_TIMEOUT_MS);
 
   afterAll(() => {
@@ -412,15 +519,45 @@ describeDockerE2E("update from the previous release", () => {
     for (const table of SEEDED_TABLES) {
       expect(rowCount(table), `${table} was not seeded on ${oldVersion}`).toBe(1);
     }
+    expect(psql(`select ssh_host from servers where id = '${SEED_ID}'`)).toBe(SEED_SERVER_HOST);
   });
 
   it("recreates onto this release's image and comes up healthy, with the data intact", async () => {
-    // The update: repin the image and force-recreate ONLY the api, which is what
-    // `openship update` does (composeUpdate → composeUp → up -d --force-recreate).
-    writeEnv(newApiImage);
-    composeOrThrow(["up", "-d", "--force-recreate", "api"], "recreating the api onto the new image");
+    const savedEnv = readFileSync(join(workdir, ".env"), "utf8");
+    writeStack(false);
+    // Exact application cohort and readiness wait used by composeUpdate.
+    composeOrThrow(
+      ["up", "-d", "--force-recreate", "--wait", "--wait-timeout", "180", ...components],
+      "upgrading the complete control plane",
+    );
+    expect(readFileSync(join(workdir, ".env"), "utf8")).toBe(savedEnv);
 
     await waitForHealth("new release");
+    await expectDashboardAndEdge();
+    await expectRetainedSession();
+    await expectAdminLogin();
+    for (const name of ["postgres", "redis"])
+      expect(containerId(name)).toBe(storageContainers[name]);
+    expect(
+      composeOrThrow(
+        ["exec", "-T", "redis", "redis-cli", "GET", "upgrade-check"],
+        "reading retained Redis data",
+      ).trim(),
+    ).toBe("preserved");
+    for (const component of components) {
+      const state = inspect(component);
+      expect(state.State.Running).toBe(true);
+      expect(state.RestartCount).toBe(0);
+      if (component !== "edge") expect(state.State.Health.Status).toBe("healthy");
+      const expected = sh("docker", [
+        "image",
+        "inspect",
+        "--format",
+        "{{.Id}}",
+        newImages[component],
+      ]).stdout.trim();
+      expect(state.Image, `${component} must run the exact tested image`).toBe(expected);
+    }
 
     // Migrations moved forward (or were already complete) and nothing was lost.
     const after = appliedMigrations();
@@ -428,6 +565,7 @@ describeDockerE2E("update from the previous release", () => {
     for (const table of SEEDED_TABLES) {
       expect(rowCount(table), `${table} lost its row across the update`).toBe(1);
     }
+    expect(psql(`select ssh_host from servers where id = '${SEED_ID}'`)).toBe(SEED_SERVER_HOST);
 
     // Healthy is not enough: `restart: unless-stopped` will bounce a container until
     // something works, so a crash loop that eventually succeeded still looks healthy
@@ -441,4 +579,40 @@ describeDockerE2E("update from the previous release", () => {
       oldApiImageId,
     );
   }, 600_000);
+
+  it("starts the complete stack after a cold stop, with its data and saved route intact", async () => {
+    composeOrThrow(["stop"], "stopping the test stack");
+    composeOrThrow(
+      ["up", "-d", "--wait", "--wait-timeout", "180"],
+      "cold-starting the updated stack",
+    );
+    await waitForHealth("cold restart");
+    await expectDashboardAndEdge();
+    await expectRetainedSession();
+    await expectAdminLogin();
+    for (const table of SEEDED_TABLES) expect(rowCount(table)).toBe(1);
+    expect(
+      composeOrThrow(
+        ["exec", "-T", "redis", "redis-cli", "GET", "upgrade-check"],
+        "reading Redis after restart",
+      ).trim(),
+    ).toBe("preserved");
+  }, 300_000);
+
+  it("also boots a fresh complete installation on empty storage", async () => {
+    composeOrThrow(
+      ["down", "-v", "--remove-orphans"],
+      "removing only the disposable upgrade stack",
+    );
+    composeOrThrow(
+      ["up", "-d", "--wait", "--wait-timeout", "180"],
+      "starting a fresh installation",
+    );
+    await waitForHealth("fresh install");
+    await expectDashboardAndEdge();
+    await bootstrapAdmin();
+    await expectAdminLogin();
+    for (const table of SEEDED_TABLES) expect(rowCount(table)).toBe(0);
+    expect(appliedMigrations()).toBeGreaterThanOrEqual(migrationsAfterOld);
+  }, 300_000);
 });

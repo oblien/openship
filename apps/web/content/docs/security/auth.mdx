@@ -38,6 +38,108 @@ you never handle it yourself.
 The cookie name is prefixed with your instance mode — `openship.session_token` on a self-hosted install,
 `openship-cloud.session_token` on Openship Cloud.
 
+### OAuth and generic OIDC (SSO)
+
+Self-hosted instances can enable social login (GitHub, Google) or a generic OpenID Connect identity
+provider (Authentik, Keycloak, Okta, Microsoft Entra ID, Google Workspace) via environment variables:
+
+- **GitHub / Google:** `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET`, or `GOOGLE_CLIENT_ID` +
+  `GOOGLE_CLIENT_SECRET`.
+- **Generic OIDC:** `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` (all three required;
+  partial configuration is ignored with a boot warning), plus optional `OIDC_DISPLAY_NAME` for the
+  login button label (defaults to `"SSO"`). Openship discovers endpoints from
+  `${OIDC_ISSUER}/.well-known/openid-configuration` (a trailing slash is removed only when constructing the discovery URL) and
+  requests `openid email profile`. The authorization request uses PKCE and a nonce tied to the
+  same single-use sign-in state. Discovery must report the exact configured issuer. Production
+  issuers and endpoints must use HTTPS; local development permits HTTP only on loopback.
+  Redirects from discovery, token, key and UserInfo endpoints are refused.
+
+Generic OIDC is available only on a self-hosted instance using local accounts
+(`OPENSHIP_AUTH_MODE=local`). Openship Cloud ignores these settings and keeps its
+existing login providers. Account-free mode and instances that delegate login to
+Cloud reject OIDC sign-in and account-linking requests, including direct API calls.
+
+ID tokens must have a valid asymmetric signature from the issuer’s JWKS, the correct issuer and
+client audience, valid expiry and issuance times, and the matching nonce. Multiple audiences require
+a matching authorized party (`azp`). If profile claims come from UserInfo, its subject must match the
+verified ID token. Missing or invalid ID tokens fail sign-in; an access token alone is not accepted.
+
+Register this callback at the identity provider. It is the public origin plus `/api/auth/oauth2/callback/oidc`:
+
+```
+https://openship.example.com/api/auth/oauth2/callback/oidc
+```
+
+Locally, use `http://localhost:4000/api/auth/oauth2/callback/oidc`. When `OPENSHIP_PUBLIC_URL` is set,
+use that origin in place of `https://openship.example.com`.
+
+Account-linking and sign-up rules for OIDC:
+
+- **Verified email required:** The IdP must return boolean `email_verified: true` for OIDC sign-in,
+  account linking and invitation-based signup. An unverified address cannot claim an invitation
+  or an existing account. Check the provider's email scope mapping; Authentik's default email
+  mapping may need configuring to return its verified email claim.
+- **Issuer-scoped accounts:** Openship identifies OIDC accounts by the exact issuer and subject
+  pair. Changing the IdP does not transfer an old subject's login to the new issuer. A verified
+  email can still link through the existing account-linking rules; IdP roles and groups never
+  grant Openship permissions.
+- **Invite-only sign-up stays enforced:** Self-hosted instances remain invite-only after the initial
+  admin is created. A new OIDC user must have a pending, unexpired invitation from an instance admin;
+  there is no automatic email-domain join.
+- **Zero-auth mode:** When `authMode` is `"none"`, the OIDC provider is not advertised, and
+  OIDC sign-in, linking and callback endpoints are rejected. GitHub and
+  Google stay unadvertised the same way they already are in that mode.
+- **Deprovisioning (v1 limitation):** Removing a user at the IdP blocks future OIDC sign-ins, but
+  there is no SCIM push and existing Openship sessions remain valid until they expire (30 days by
+  default) or an admin removes the member in Openship.
+
+### Passkeys
+
+On Openship Cloud or a self-hosted instance with local accounts, open **Settings → Security → Passkeys**
+after signing in. Add a passkey using Face ID, Touch ID, Windows Hello, a password manager, or a
+compatible hardware security key. Registration requires a recent session and a discoverable credential
+so the login page can find it without a username. The private key stays with your authenticator;
+Openship stores the public WebAuthn credential.
+
+Choose **Sign in with a passkey** on the login page. If you enabled two-factor authentication, complete
+that step before a session is issued. You can remove saved passkeys from Settings even in a browser
+that cannot create them. Keep another sign-in method available before removing your last passkey.
+
+Passkeys require HTTPS, except on localhost. They bind to the configured **dashboard** hostname and
+browser origin, independently of the API host. Self-hosted public instances use `OPENSHIP_PUBLIC_URL`;
+Cloud uses its dashboard runtime URL. Keep the hostname stable: moving to another domain requires
+registering a passkey there. Use your password or social login to do that.
+
+### Two-factor authentication
+
+Open **Settings → Security → Two-factor authentication** on Openship Cloud or a self-hosted instance
+using `OPENSHIP_AUTH_MODE=local` (including a VPS). No email delivery or additional provider is needed
+for authenticator codes.
+
+1. Choose **Set up 2FA** and confirm your current password. If you have only used social login, first
+   choose **Add password**; this requires a recent signed-in session and does not replace social login.
+2. Scan the QR code with an authenticator app, or enter the setup key manually.
+3. Enter the app's six-digit code. Protection starts only after this verification succeeds.
+4. Copy or download your recovery codes and store them somewhere safe. Each code works once.
+
+When 2FA is enabled, password, social, and passkey sign-in all require an authenticator or recovery
+code before creating a usable session. Pending challenges expire after ten minutes. Browser handoffs,
+invitations, and MCP authorization continue after verification. Password resets do not disable 2FA.
+
+Use **Recovery codes** to replace your codes, or **Turn off 2FA** to disable protection; both require
+your password. Replacing codes invalidates the old set. An enabled authenticator cannot be overwritten
+by starting setup again: disable it explicitly first. Keep your authenticator or a recovery code
+available; an email password reset is not a way to bypass the second factor.
+
+These controls do not apply to account-free local mode. Instances that delegate sign-in to Openship
+Cloud manage account security on Cloud rather than storing a separate local factor.
+
+Authentication tables are added automatically during the normal database upgrade. Back up and retain
+your installation's `BETTER_AUTH_SECRET`, which encrypts authenticator secrets and recovery codes.
+An instance transfer must include credentials to preserve accounts with 2FA enabled; the destination
+re-encrypts them with its own key. An incomplete factor restore is rejected before changing data.
+Project-only transfers do not move account credentials.
+
 <Callout title="Bearer tokens are refused from the dashboard's own origin" type="warn">
 If a request arrives with a `Bearer` header **and** an `Origin` matching one of the dashboard's trusted
 browser origins, Openship rejects it (`401 BEARER_NOT_ALLOWED_FROM_BROWSER`). Bearer tokens are for
@@ -64,8 +166,6 @@ person's role, unless you narrow it (see below).
 
 In the dashboard, open **Settings → Tokens** and use the **Personal Access Tokens** section. Copy the
 token when it appears — that's the only time you'll see it.
-
-<Callout title="Screenshot">Settings → Tokens tab, the "Personal Access Tokens" section with the create form and a freshly minted token shown once. *(screenshot pending)*</Callout>
 
 From the terminal:
 
@@ -173,8 +273,9 @@ Openship recognizes three auth modes overall:
 
 - **`none`** — zero-auth loopback, described above. Default for the desktop app only; never used by a
   CLI-started or public instance.
-- **`local`** — standard login required (email + password via [Better Auth](https://www.better-auth.com/)).
-  Default for a fresh self-hosted install, and always used for CLI (`openship up`) and public instances.
+- **`local`** — standard login required (email + password, configured OAuth, or a registered passkey via
+  [Better Auth](https://www.better-auth.com/)). Default for a fresh self-hosted install, and always used
+  for CLI (`openship up`) and public instances.
 - **`cloud`** — the desktop app signs in with an Openship Cloud account instead of a local one.
 
 <Callout title="Creating the first admin" type="info">
@@ -229,7 +330,7 @@ Openship keeps secrets where they're safest instead of copying them around:
 | `401 Unauthorized` | No valid session, or a zero-auth request that failed the mode/loopback gates. |
 | `503 AUTH_UNAVAILABLE` | The session check itself failed — retry; it never silently downgrades to no-auth. |
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Permission model" href="/docs/security/permissions" description="What a logged-in identity is actually allowed to do — roles and resource grants." />

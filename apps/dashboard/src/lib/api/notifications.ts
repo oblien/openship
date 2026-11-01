@@ -10,6 +10,8 @@ export interface NotificationCategory {
   label: string;
   description: string;
   defaultEnabled: boolean;
+  defaultPerChannel?: boolean;
+  defaultChannelKinds?: ChannelKind[];
 }
 
 /**
@@ -106,7 +108,10 @@ export const notificationsApi = {
     api.get<{ channels: NotificationChannel[] }>(endpoints.notifications.channels),
 
   createChannel: (data: { kind: ChannelKind; label: string; config: Record<string, unknown> }) =>
-    api.post<{ channel: NotificationChannel }>(endpoints.notifications.channels, data),
+    api.post<{ channel: NotificationChannel; secret?: string }>(
+      endpoints.notifications.channels,
+      data,
+    ),
 
   updateChannel: (
     id: string,
@@ -116,7 +121,11 @@ export const notificationsApi = {
       verified: boolean;
       config: Record<string, unknown>;
     }>,
-  ) => api.patch<{ channel: NotificationChannel }>(endpoints.notifications.channel(id), data),
+  ) =>
+    api.patch<{ channel: NotificationChannel; secret?: string }>(
+      endpoints.notifications.channel(id),
+      data,
+    ),
 
   deleteChannel: (id: string) => api.delete<{ ok: true }>(endpoints.notifications.channel(id)),
 
@@ -150,10 +159,11 @@ export const notificationsApi = {
   }) => api.put<{ default: NotificationDefault }>(endpoints.notifications.defaults, data),
 
   // ── Deliveries (in-app inbox)
-  listDeliveries: (opts?: { unseen?: boolean; limit?: number }) => {
+  listDeliveries: (opts?: { unseen?: boolean; limit?: number; before?: string }) => {
     const params = new URLSearchParams();
     if (opts?.unseen) params.set("unseen", "true");
     if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
     const qs = params.toString();
     const url = qs
       ? `${endpoints.notifications.deliveries}?${qs}`

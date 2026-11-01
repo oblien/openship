@@ -1,0 +1,57 @@
+name: Resume a verified release job
+description: Reuse only a successful job whose source and workflow inputs are unchanged.
+inputs:
+  scope:
+    required: true
+    description: Dependency scope of this check or build.
+  job-name:
+    required: true
+    description: Exact job name in the previous run, including matrix values.
+  workflow:
+    required: true
+    description: Workflow file that defines this job.
+  job-id:
+    required: true
+    description: Job identifier in that workflow.
+  artifact:
+    required: false
+    default: ""
+    description: Artifact to copy into this run when reusing a build.
+outputs:
+  reused:
+    description: Whether the previous successful result was verified and reused.
+    value: ${{ steps.check.outputs.reused }}
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .bun-version
+    - id: check
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        RESUME_SCOPE: ${{ inputs.scope }}
+        RESUME_JOB_NAME: ${{ inputs.job-name }}
+        RESUME_WORKFLOW: ${{ inputs.workflow }}
+        RESUME_JOB_ID: ${{ inputs.job-id }}
+        RESUME_ARTIFACT: ${{ inputs.artifact }}
+      run: |
+        bun test scripts/release-resume.test.ts
+        bun scripts/release-resume.ts
+    - uses: actions/download-artifact@v8
+      if: steps.check.outputs.reused == 'true' && inputs.artifact != ''
+      with:
+        artifact-ids: ${{ steps.check.outputs.artifact-id }}
+        run-id: ${{ steps.check.outputs.run-id }}
+        github-token: ${{ github.token }}
+        path: ${{ runner.temp }}/openship-resume-artifact
+        merge-multiple: true
+    - uses: actions/upload-artifact@v7
+      if: steps.check.outputs.reused == 'true' && inputs.artifact != ''
+      with:
+        name: ${{ inputs.artifact }}
+        path: ${{ runner.temp }}/openship-resume-artifact
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7

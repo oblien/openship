@@ -2,10 +2,12 @@
 
 import React from "react";
 
-export function LoadingSkeleton() {
+export function LoadingSkeleton({ header }: { header?: React.ReactNode }) {
   return (
     <div className="bg-card rounded-2xl border border-border/50">
+      {header}
       <div className="px-5 py-4 border-b border-border/50">
+        {!header && <>
         <div className="flex items-center gap-3 mb-4">
           <div className="w-9 h-9 bg-muted rounded-xl animate-pulse" />
           <div className="space-y-2">
@@ -17,6 +19,7 @@ export function LoadingSkeleton() {
           <div className="h-10 w-28 bg-muted rounded-xl animate-pulse" />
           <div className="h-10 w-28 bg-muted rounded-xl animate-pulse" />
         </div>
+        </>}
         <div className="flex items-center gap-2">
           <div className="h-10 flex-1 bg-muted rounded-xl animate-pulse" />
           <div className="h-10 w-32 bg-muted rounded-xl animate-pulse" />

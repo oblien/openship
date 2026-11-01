@@ -7,9 +7,51 @@ import {
   parseVercelRootDirectories,
   selectPreferredProjectRoot,
   selectPreferredSingleAppRoot,
-} from "../../src/lib/project-root-detector";
+} from "@repo/platform/engine/lib/project-root-detector";
 
 describe("selectPreferredProjectRoot", () => {
+  it.each([
+    {
+      label: "tooling-only package",
+      packageJson: { scripts: { lint: "eslint ." } },
+      source: "discovered" as const,
+    },
+    {
+      label: "explicit static deployment",
+      packageJson: { scripts: { start: "node server.mjs" } },
+      source: "vercel" as const,
+    },
+    {
+      label: "declared static workspace",
+      packageJson: { scripts: { start: "node server.mjs" } },
+      source: "workspace" as const,
+    },
+  ])("still selects static assets for a $label", ({ packageJson, source }) => {
+    const selected = selectPreferredProjectRoot(
+      {
+        rootDirectory: "",
+        files: [{ name: "package.json" }],
+        packageJson,
+      },
+      [{ rootDirectory: "site", source, files: [{ name: "index.html" }] }],
+    );
+    expect(selected.rootDirectory).toBe("site");
+    expect(selected.stack.stack).toBe("static");
+  });
+
+  it("keeps a framework backend when it discovers static assets", () => {
+    const selected = selectPreferredProjectRoot(
+      {
+        rootDirectory: "",
+        files: [{ name: "requirements.txt" }, { name: "app.py" }],
+        fileContents: { "requirements.txt": "flask==3.1.0\n" },
+      },
+      [{ rootDirectory: "site", source: "discovered", files: [{ name: "index.html" }] }],
+    );
+    expect(selected.rootDirectory).toBe("");
+    expect(selected.stack.stack).toBe("flask");
+  });
+
   it("prefers a vercel-configured frontend directory over a root backend package", () => {
     const vercelConfig = JSON.stringify({
       installCommand: "npm install && cd frontend && npm install",
@@ -1110,6 +1152,33 @@ describe("discoverMonorepoApps - formal workspace monorepo with per-app Dockerfi
     fileContents: {},
   });
 
+  it("does not recommend CLI and mobile packages as servers", () => {
+    const result = discoverMonorepoApps(root(), [
+      dockerSubApp("apps/api"),
+      {
+        rootDirectory: "apps/cli",
+        source: "workspace",
+        files: [{ name: "package.json", type: "file" }],
+        packageJson: { name: "cli", bin: { cli: "dist/index.js" }, scripts: { build: "tsc" } },
+      },
+      {
+        rootDirectory: "apps/mobile",
+        source: "workspace",
+        files: [{ name: "package.json", type: "file" }],
+        packageJson: {
+          name: "mobile",
+          dependencies: { expo: "*" },
+          scripts: { start: "expo start" },
+        },
+      },
+    ]);
+    expect(result?.apps.map((app) => [app.rootDirectory, app.suggested])).toEqual([
+      ["apps/api", true],
+      ["apps/cli", false],
+      ["apps/mobile", false],
+    ]);
+  });
+
   it("detects a monorepo whose sub-apps each have their own Dockerfile", () => {
     const result = discoverMonorepoApps(root(), [
       dockerSubApp("apps/api"),
@@ -1194,12 +1263,7 @@ describe("discoverMonorepoApps - formal workspace monorepo with per-app Dockerfi
     expect(worker!.startCommand).toBe("");
   });
 
-  it("keeps real commands on a framework sub-app that merely ships a Dockerfile", () => {
-    // The inverse guard. A Vite/Next app shipping an OPTIONAL Dockerfile still
-    // detects as its framework, so the pipeline takes the buildpack branch
-    // (`stack === "docker" || dockerfilePath`, see cloud.ts) - keying the blanking
-    // on "a Dockerfile exists" instead of on the stack leaves it with nothing to
-    // install, build, or start.
+  it("uses a framework sub-app's Dockerfile instead of synthesizing buildpack commands", () => {
     const viteWithDockerfile = {
       rootDirectory: "frontend",
       source: "discovered" as const,
@@ -1237,9 +1301,10 @@ describe("discoverMonorepoApps - formal workspace monorepo with per-app Dockerfi
     expect(result).not.toBeNull();
     const frontend = result!.apps.find((app) => app.rootDirectory === "frontend");
     expect(frontend).toBeDefined();
-    expect(frontend!.stack).toBe("vite");
-    expect(frontend!.installCommand).not.toBe("");
-    expect(frontend!.buildCommand).toBe("npm run build");
+    expect(frontend!.stack).toBe("docker");
+    expect(frontend!.installCommand).toBe("");
+    expect(frontend!.buildCommand).toBe("");
+    expect(frontend!.startCommand).toBe("");
   });
 
   it("sanitizes an npm-scoped package.json name into a Docker-safe service name", () => {

@@ -2,7 +2,7 @@
   "available": true,
   "id": "freshrss",
   "name": "FreshRSS",
-  "description": "Self-hosted RSS and Atom feed reader. Your account is created during install.",
+  "description": "Your own RSS and Atom feed reader, with a browser interface for organizing feeds.",
   "kind": "template",
   "logo": "freshrss",
   "category": "other",
@@ -91,5 +91,21 @@
       "note": "Deliberately NOT deployed with the public web installer, so nobody can claim your instance first. Feeds refresh on a schedule only if you set CRON_MIN (e.g. \"*/20\")."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "RSS and Atom",
+        "description": "Follow publications and feeds."
+      },
+      {
+        "title": "Your own reader",
+        "description": "Run the feed-reading service on your server."
+      },
+      {
+        "title": "Browser access",
+        "description": "Read and organize feeds through a web interface."
+      }
+    ]
+  }
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Proper data table for admin lists (Domains, Mailboxes, Aliases, etc.).
  *
@@ -18,7 +20,6 @@
  */
 
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { Skeleton } from "./skeleton";
 
@@ -49,7 +50,7 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   /** Empty state when rows.length === 0 and not loading. */
   empty?: {
-    icon?: LucideIcon;
+    icon?: IconName;
     title: string;
     description?: string;
     action?: React.ReactNode;
@@ -76,7 +77,7 @@ export function DataTable<T>({
   return (
     // No overflow-hidden: a row's ⋯ menu renders in-flow, so it would be
     // clipped on the last row. Corners come from the header + last row instead.
-    <div className="bg-card rounded-2xl border border-border/50">
+    <div role="table" aria-busy={loading || undefined} className="bg-card rounded-2xl border border-border/50">
       {/* Header row. A hairline and quieter labels, no grey fill strip: the
           dashboard's other lists head their cards this way, and the filled bar
           read as a second surface stacked on the card. */}
@@ -98,11 +99,11 @@ export function DataTable<T>({
             {c.header}
           </div>
         ))}
-        {rowActions && <div />}
+        {rowActions && <div role="columnheader" />}
       </div>
 
       {/* Body */}
-      <div className="divide-y divide-border/50">
+      <div role="rowgroup" className="divide-y divide-border/50">
         {loading
           ? Array.from({ length: skeletonRows }).map((_, i) => (
               <DataTableRowSkeleton
@@ -166,6 +167,7 @@ function DataTableRow<T>({
       ))}
       {rowActions && (
         <div
+          role="cell"
           className="flex items-center justify-end gap-1"
           onClick={(e) => e.stopPropagation()}
         >
@@ -187,6 +189,7 @@ function DataTableRowSkeleton({
 }) {
   return (
     <div
+      aria-hidden="true"
       className="grid items-center gap-4 px-5 py-4"
       style={{ gridTemplateColumns: gridTemplate }}
     >
@@ -211,7 +214,7 @@ function DataTableEmpty({
   description,
   action,
 }: {
-  icon?: LucideIcon;
+  icon?: IconName;
   title: string;
   description?: string;
   action?: React.ReactNode;
@@ -220,9 +223,8 @@ function DataTableEmpty({
     <div className="bg-card rounded-2xl border border-border/50 py-16 px-6 text-center">
       {Icon && (
         <div className="mx-auto w-16 h-16 rounded-full bg-muted/60 flex items-center justify-center mb-5">
-          <Icon
+          <UiIcon name={Icon}
             className="size-7 text-muted-foreground/60"
-            strokeWidth={1.5}
           />
         </div>
       )}

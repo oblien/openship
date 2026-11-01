@@ -1,11 +1,11 @@
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import { CreateServiceBody, UpdateServiceBody } from "../../../src/modules/services/service.schema";
+import { CreateServiceBody, UpdateServiceBody } from "@repo/contracts";
 import {
   assertValidGeneratedConfigFiles,
   MAX_GENERATED_CONFIG_FILES,
   MAX_GENERATED_CONFIG_FILE_BYTES,
-} from "../../../src/lib/generated-config-files";
+} from "@repo/platform/engine/lib/generated-config-files";
 
 const files = [
   { path: "/etc/kong/kong.yml", content: "_format_version: '3.0'\n" },

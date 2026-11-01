@@ -12,6 +12,7 @@
  * pending. (The dashboard proper should use `usePlatform()` instead.)
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 
@@ -39,7 +40,9 @@ export function useDeploymentInfo(): ClientDeploymentInfo | null {
     let alive = true;
     loadDeploymentInfo()
       .then((d) => alive && setInfo(d))
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/hooks/useDeploymentInfo");
+      });
     return () => {
       alive = false;
     };

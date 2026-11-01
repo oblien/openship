@@ -49,6 +49,7 @@ import {
 import { authMiddleware } from "../middleware/auth";
 import { rateLimiterFor } from "../middleware/rate-limiter";
 import { localOnly } from "../middleware/local-only";
+import { cloudResourceRouter } from "./cloud/resource-router";
 
 export interface SecureRouterOptions {
   /**
@@ -74,14 +75,14 @@ export interface SecureRouterOptions {
    * Every route on this router is self-hosted-only. Prefer this over
    * `r.use("*", localOnly)`: `use` is Hono middleware, so it never reaches the
    * route REGISTRY, and anything reading the registry to decide what a route can
-   * do sees a route that looks universally available. That is how all 11 jobs
-   * tools came to be advertised over MCP on the hosted control plane, where the
-   * jobs router 404s everything.
+   * do would otherwise advertise a tool that cannot run in Cloud.
    *
    * Folded into each registered spec's `localOnly`, so the registry is the single
    * answer to "does this route exist in this mode".
    */
   localOnly?: boolean;
+  /** Default explanation for HTTP-only surfaces; an explicit mcp tool overrides it. */
+  mcpExcluded?: string;
 }
 
 type MethodName = "get" | "post" | "put" | "patch" | "delete";
@@ -138,6 +139,7 @@ export function secureRouter<T extends Hono>(
           ...(spec as PermissionSpec),
           ids: { ...routerIds, ...((spec as PermissionSpec).ids ?? {}) },
           localOnly: (spec as PermissionSpec).localOnly || routerLocalOnly,
+          mcpExcluded: spec.mcp ? undefined : (spec.mcpExcluded ?? options.mcpExcluded),
         };
 
     registerRoute({
@@ -171,9 +173,8 @@ export function secureRouter<T extends Hono>(
     // else per-user `default-authed` for permission-tagged routes (authMiddleware
     // ran just above → ctx is set, so the limiter keys per user), else per-IP
     // `default-anon` for public / self-auth routes (no ctx). Placed AFTER auth and
-    // BEFORE the permission check. There is NO global `/api/*` limiter anymore — it
-    // ran upstream of auth, so it always fell back to default-anon AND double-
-    // charged routes that set their own policy.
+    // BEFORE the permission check. The independent app-level flood guard uses
+    // its own bucket and does not choose or suppress this route's policy.
     const authed = !isPublicSpec(mergedSpec) && !(mergedSpec as PermissionSpec).skipAuth;
     const rateLimitPolicy = mergedSpec.rateLimit ?? (authed ? "default-authed" : "default-anon");
     chain.push(rateLimiterFor(rateLimitPolicy));
@@ -187,8 +188,13 @@ export function secureRouter<T extends Hono>(
     // is never duplicated between a manual `tbValidator(...)` handler and the MCP
     // block. Runs before any cloud proxy (validating locally before forwarding is
     // safe: Hono caches the parsed body, so the proxy still re-reads it).
-    if (!isPublicSpec(mergedSpec) && (mergedSpec as PermissionSpec).body) {
+    if (!isPublicSpec(mergedSpec) && (mergedSpec as PermissionSpec).body &&
+        !(mergedSpec as PermissionSpec).bodyValidatedByOperation) {
       chain.push(tbValidator("json", (mergedSpec as PermissionSpec).body!));
+    }
+    if (!isPublicSpec(mergedSpec)) {
+      const gateway = cloudResourceRouter(`${basePath}${path}`, mergedSpec);
+      if (gateway) chain.push(gateway);
     }
     chain.push(...handlers);
 

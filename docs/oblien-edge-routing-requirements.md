@@ -178,3 +178,47 @@ the target port closed unless it's in `ingress_ports` (state it at the private-l
 in the firewall concepts page), and (b) document (or provide) internal name resolution so callers
 don't have to hand-roll `/etc/hosts`. Ideally, linking two workspaces for a known service port
 would open that port and register the name in one call.
+
+## Canonical hostname redirects: verified provider gap (2026-10-15)
+
+The wizard offers bare-domain or www primary selection on Cloud and self-hosted
+edges. Per the release decision, Openship assumes the provider fix described below
+and uses the existing redirect API contract; it does not expose this provider issue
+in the customer UI. These are the pre-fix live observations, not confirmation that
+Oblien has deployed the fix. This differs from query-string preservation: live tests confirmed that queries survive today,
+but wildcard captures are taken from a decoded path.
+
+Reproduction using an owned temporary EdgeTunnel hostname and `routes.set`:
+
+```json
+{
+  "routes": [{
+    "match": { "path": "/(.*)", "type": "wildcard" },
+    "action": { "kind": "redirect", "status": 301, "to": "https://primary.example.com/$1" }
+  }]
+}
+```
+
+The pre-fix probe of `/docs/a%2Fb?x=1&x=2&encoded=a%2Bb` redirected to
+`https://primary.example.com/docs/a/b?x=1&x=2&encoded=a%2Bb`.
+The encoded slash has changed meaning. Encoded Unicode paths also become raw
+header bytes. `$request_uri`, `${request_uri}`, `{request_uri}` and `$raw_uri`
+are emitted literally, so Nginx variable syntax is not an available workaround.
+The temporary resources used for these checks were deleted; no VM or customer
+route was changed.
+
+The existing `/(.*)` redirect rule with `https://<target>/$1` must preserve the raw
+original escaped path and query when changing hostnames. It must append the
+untouched path and query exactly once to the validated destination origin, without decoding,
+normalizing, re-encoding captures, or accepting a user-supplied destination host.
+Keep path matching and rule precedence consistent with the documented API.
+If a new action or option is required instead of fixing the existing rule, its
+contract must be provided so `CloudInfraProvider.registerRoute` can be updated;
+Openship currently sends the existing wildcard redirect rule. Keep each hostname's
+existing project-owned Page anchor, DNS ownership verification, TLS lifecycle, and same-project redirect
+validation.
+
+When verifying the provider fix, check both directions and HTTP
+301/302/307/308 with `/`, `%2F`, `%25`, UTF-8 escapes, repeated query keys,
+encoded query delimiters, empty parameters and trailing slashes. Re-saving and
+retrying routing must remain idempotent; Serve both must remove the redirect.

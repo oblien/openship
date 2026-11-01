@@ -18,7 +18,7 @@
  * hardcoded to a domain.
  */
 
-import { requestPublicOrigin } from "./public-url";
+import { requestPublicOrigin } from "@repo/platform/engine/lib/public-url";
 
 /** Path the MCP JSON-RPC endpoint is mounted at (`app.route("/api/mcp", …)`). */
 export const MCP_RESOURCE_PATH = "/api/mcp";
@@ -64,6 +64,17 @@ export function publicOriginFor(req: Request): string {
   } catch {
     return raw.replace(/\/+$/, "");
   }
+}
+
+/**
+ * The MCP path the client connected to, before the dashboard proxy stripped its
+ * prefix. Only known MCP paths can select a discovery document; a forwarded
+ * value cannot introduce another resource or change the public origin.
+ */
+export function requestMcpResourcePath(req: Request): string {
+  const path = req.headers.get("x-forwarded-uri")?.split("?")[0] ?? new URL(req.url).pathname;
+  const normalized = path.replace(/\/+$/, "");
+  return MCP_RESOURCE_PATHS.includes(normalized) ? normalized : MCP_RESOURCE_PATH;
 }
 
 /**

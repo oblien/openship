@@ -1,0 +1,723 @@
+{
+  "deployment.failed": {
+    "action": "فشل في نشر",
+    "label": "فشل النشر",
+    "description": "حدث خطأ أثناء النشر قبل الوصول إلى حالة سليمة."
+  },
+  "deployment.cancelled": {
+    "action": "ألغى نشر",
+    "label": "تم إلغاء النشر",
+    "description": "تم إيقاف النشر قبل أن يكتمل."
+  },
+  "deployment:write": {
+    "action": "بدأ عملية نشر لـ",
+    "actionWithoutResource": "بدأ عملية نشر",
+    "label": "إجراء النشر",
+    "description": "تم استدعاء نقطة نهاية النشر — بدء، إعادة محاولة، استرجاع أو ترقية."
+  },
+  "deployment:admin": {
+    "action": "نفّذ إجراء مسؤول على نشر",
+    "actionWithoutResource": "نفّذ إجراء مسؤول على النشر",
+    "label": "إجراء مسؤول النشر",
+    "description": "تم استدعاء إجراء إداري على عملية نشر."
+  },
+  "project.created": {
+    "label": "تم إنشاء التطبيق",
+    "action": "قام بإنشاء",
+    "description": "تم إنشاء تطبيق جديد وإعداده."
+  },
+  "project.updated": {
+    "label": "تم تحديث التطبيق",
+    "action": "قام بتحديث",
+    "description": "تم تغيير الإعدادات أو الخدمات أو المتغيرات البيئية أو التوجيه."
+  },
+  "project.deleted": {
+    "label": "تم حذف التطبيق",
+    "action": "قام بحذف",
+    "description": "تم حذف التطبيق وأعباء العمل التابعة له."
+  },
+  "project.deletion.rejected": {
+    "label": "تم رفض حذف التطبيق",
+    "action": "حاول حذف",
+    "description": "تم رفض الحذف — لا تزال هناك موارد تعتمد على هذا التطبيق."
+  },
+  "project.deletion.failed": {
+    "label": "فشل حذف التطبيق",
+    "action": "فشل في حذف",
+    "description": "لم تكتمل عملية التنظيف، لذا تم الاحتفاظ بسجل التطبيق لإعادة المحاولة بأمان."
+  },
+  "project.build_cache.cleared": {
+    "label": "تم مسح ذاكرة التخزين المؤقت للبناء",
+    "action": "قام بمسح ذاكرة التخزين المؤقت لبناء Docker لـ",
+    "description": "تمت إزالة ذاكرة التخزين المؤقت للبناء غير المستخدمة من مضيف Docker الخاص بالتطبيق."
+  },
+  "project:write": {
+    "action": "قام بتعديل",
+    "label": "تم تعديل المشروع",
+    "description": "تم استدعاء نقطة نهاية كتابة التطبيق."
+  },
+  "job:write": {
+    "action": "غيّر المهمة",
+    "actionWithoutResource": "غيّر المهمة",
+    "label": "تم تغيير المهمة",
+    "description": "تم إنشاء مهمة مجدولة أو مخصصة أو تعديلها أو تشغيلها أو حذفها."
+  },
+  "job_run.started": {
+    "action": "بدأ المهمة",
+    "actionWithoutResource": "بدأ المهمة",
+    "label": "بدأت المهمة"
+  },
+  "job_run.succeeded": {
+    "action": "شغّل المهمة بنجاح",
+    "actionWithoutResource": "شغّل المهمة بنجاح",
+    "label": "نجحت المهمة"
+  },
+  "job_run.failed": {
+    "action": "شغّل المهمة الفاشلة",
+    "actionWithoutResource": "شغّل المهمة الفاشلة",
+    "label": "فشلت المهمة"
+  },
+  "service.down": {
+    "label": "توقف التطبيق",
+    "action": "أبلغ عن توقف",
+    "description": "توقف الحاوية التي ينبغي أن تعمل بشكل غير متوقع."
+  },
+  "service.crash_loop": {
+    "label": "التطبيق في حلقة تعطل مستمرة",
+    "action": "أبلغ عن حلقة تعطل لـ",
+    "description": "تستمر الحاوية في إعادة التشغيل بدلاً من البقاء قيد التشغيل."
+  },
+  "service.unhealthy": {
+    "label": "التطبيق غير سليم",
+    "action": "أبلغ عن فشل فحص صحة",
+    "description": "الحاوية تعمل ولكن فحص حالتها يفشل."
+  },
+  "service.recovered": {
+    "label": "تعافى التطبيق",
+    "action": "أبلغ عن تعافي",
+    "description": "انتهى الانقطاع وعادت الحاوية للعمل بشكل سليم."
+  },
+  "server:write": {
+    "action": "قام بتغيير الخادم",
+    "label": "تم تغيير الخادم"
+  },
+  "server:admin": {
+    "action": "نفّذ إجراء مسؤول على الخادم",
+    "label": "إجراء مسؤول الخادم",
+    "description": "تم استدعاء إجراء مدمر للخادم مثل الحذف أو تثبيت المكونات."
+  },
+  "terminal:write": {
+    "action": "فتح جلسة طرفية على",
+    "label": "تم فتح جلسة طرفية",
+    "description": "تم بدء جلسة صدفة تفاعلية على الخادم."
+  },
+  "settings:write": {
+    "action": "قام بتغيير الإعدادات",
+    "label": "تم تغيير الإعدادات"
+  },
+  "settings:admin": {
+    "action": "نفّذ إجراء مسؤول على الإعدادات",
+    "label": "إجراء مسؤول الإعدادات",
+    "description": "تم استدعاء إعداد نظام مدمر."
+  },
+  "notification_channel.created": {
+    "action": "أضاف قناة الإشعارات",
+    "actionWithoutResource": "أضاف قناة الإشعارات",
+    "label": "تمت إضافة قناة الإشعارات"
+  },
+  "notification_channel.updated": {
+    "action": "حدّث قناة الإشعارات",
+    "actionWithoutResource": "حدّث قناة الإشعارات",
+    "label": "تم تحديث قناة الإشعارات"
+  },
+  "notification_channel.deleted": {
+    "action": "أزال قناة الإشعارات",
+    "actionWithoutResource": "أزال قناة الإشعارات",
+    "label": "تمت إزالة قناة الإشعارات"
+  },
+  "notification_subscription.updated": {
+    "action": "غيّر ما يتم إرساله إلى",
+    "actionWithoutResource": "غيّر توجيه الإشعارات",
+    "label": "تم تغيير توجيه الإشعارات"
+  },
+  "notification_subscription.deleted": {
+    "action": "أوقف الإشعارات لـ",
+    "actionWithoutResource": "أوقف الإشعارات",
+    "label": "تم إيقاف الإشعارات"
+  },
+  "notification_default.updated": {
+    "action": "غيّر الإعدادات الافتراضية للإشعارات لـ",
+    "actionWithoutResource": "غيّر الإعدادات الافتراضية للإشعارات",
+    "label": "تم تغيير الإعدادات الافتراضية للإشعارات",
+    "description": "تم تحديث توجيه الإشعارات الافتراضي للمؤسسة."
+  },
+  "notification_delivery.seen": {
+    "action": "حدد كمقروء",
+    "actionWithoutResource": "حدد كمقروء",
+    "label": "تم تحديد التنبيه كمقروء"
+  },
+  "notifications:write": {
+    "action": "غيّر الإشعارات",
+    "actionWithoutResource": "غيّر الإشعارات",
+    "label": "تم تغيير الإشعارات"
+  },
+  "notifications:admin": {
+    "action": "نفّذ إجراء مسؤول على الإشعارات",
+    "actionWithoutResource": "نفّذ إجراء مسؤول على الإشعارات",
+    "label": "إجراء مسؤول على الإشعارات"
+  },
+  "deployment.succeeded": {
+    "label": "نجح النشر",
+    "action": "نشر",
+    "description": "اكتمل النشر بنجاح ويقوم بخدمة حركة المرور."
+  },
+  "deployment.no_changes": {
+    "label": "لا توجد تغييرات لنشرها",
+    "action": "لم يجد أي تغييرات لنشرها لـ",
+    "actionWithoutResource": "لم يجد أي تغييرات لنشرها",
+    "description": "جميع الخدمات محدثة بالفعل، لذا ظل الإصدار الحالي قيد التشغيل."
+  },
+  "project:admin": {
+    "label": "إجراء إداري للتطبيق",
+    "action": "نفذ إجراءً إدارياً على",
+    "description": "تم استدعاء إجراء مدمر للتطبيق (حذف أو نقل)."
+  },
+  "project:service:write": {
+    "label": "تم تغيير الخدمة",
+    "action": "غير الخدمة في",
+    "actionWithoutResource": "غير الخدمة",
+    "description": "تم إنشاء خدمة أو تحديثها أو تشغيلها أو إيقافها أو إعادة تشغيلها."
+  },
+  "project:service:admin": {
+    "label": "إجراء إداري للخدمة",
+    "action": "نفذ إجراءً إدارياً على الخدمة في",
+    "actionWithoutResource": "نفذ إجراءً إدارياً على الخدمة"
+  },
+  "service.exec": {
+    "label": "تم تنفيذ أمر في الخدمة",
+    "action": "نفذ أمراً في الخدمة",
+    "description": "تم تشغيل أمر في حاوية الخدمة."
+  },
+  "domain.added": {
+    "label": "تمت إضافة النطاق",
+    "action": "أضاف النطاق"
+  },
+  "domain.removed": {
+    "label": "تمت إزالة النطاق",
+    "action": "أزال النطاق"
+  },
+  "domain.verified": {
+    "label": "تم التحقق من النطاق",
+    "action": "تحقق من النطاق",
+    "description": "تم التحقق من سجلات DNS وإصدار الشهادة بنجاح."
+  },
+  "domain.verification_failed": {
+    "label": "فشل التحقق من النطاق",
+    "action": "فشل في التحقق من النطاق",
+    "description": "فشل فحص DNS أو إصدار الشهادة."
+  },
+  "domain.verify_failed": {
+    "label": "فشل التحقق من النطاق",
+    "action": "فشل في التحقق من النطاق",
+    "description": "فشل فحص DNS أو إصدار الشهادة."
+  },
+  "domain.set_primary": {
+    "label": "تم تعيين النطاق الأساسي",
+    "action": "عينه كنطاق أساسي",
+    "description": "ستتم إعادة توجيه حركة المرور للنطاقات الأخرى إلى هذا النطاق."
+  },
+  "domain.dns_provisioned": {
+    "label": "تم تهيئة DNS تلقائياً",
+    "action": "قام بتهيئة DNS لـ",
+    "actionWithoutResource": "قام بتهيئة DNS",
+    "description": "تم إنشاء سجلات DNS عبر المزود المتصل."
+  },
+  "domain.cert_uploaded": {
+    "label": "تم تحميل شهادة مخصصة",
+    "action": "حمّل شهادة مخصصة لـ",
+    "actionWithoutResource": "حمّل شهادة مخصصة",
+    "description": "تم تحميل شهادة SSL مخصصة بدلاً من الشهادة التلقائية."
+  },
+  "ssl.renewal_failed": {
+    "label": "فشل تجديد SSL",
+    "action": "فشل في تجديد SSL لـ",
+    "actionWithoutResource": "فشل في تجديد SSL",
+    "description": "فشل التجديد التلقائي للشهادة."
+  },
+  "credential.created": {
+    "label": "تم إنشاء بيانات الاعتماد",
+    "action": "أضاف بيانات الاعتماد",
+    "description": "تم حفظ مفتاح السجل أو رمز المزود أو مفتاح SSH."
+  },
+  "credential.updated": {
+    "label": "تم تحديث بيانات الاعتماد",
+    "action": "حدث بيانات الاعتماد",
+    "description": "تم تعديل بيانات الاعتماد المحفوظة."
+  },
+  "credential.deleted": {
+    "label": "تم حذف بيانات الاعتماد",
+    "action": "حذف بيانات الاعتماد",
+    "description": "تمت إزالة بيانات الاعتماد المحفوظة."
+  },
+  "credential.verified": {
+    "label": "تم التحقق من بيانات الاعتماد",
+    "action": "تحقق من بيانات الاعتماد",
+    "description": "تم التحقق من بيانات الاعتماد بنجاح ضد الخدمة البعيدة."
+  },
+  "dns_credential.connected": {
+    "label": "تم ربط مزود DNS",
+    "action": "ربط مزود DNS",
+    "description": "تم إعداد بيانات اعتماد DNS لإدارة النطاقات تلقائياً."
+  },
+  "dns_credential.disconnected": {
+    "label": "تم فصل مزود DNS",
+    "action": "فصل مزود DNS",
+    "description": "تمت إزالة الوصول إلى واجهة برمجة تطبيقات DNS، وظلت السجلات كما هي."
+  },
+  "domain:write": {
+    "label": "تم تعديل النطاق",
+    "action": "عدل النطاق",
+    "description": "تم استدعاء نقطة نهاية النطاق — إضافة أو تحقق أو توجيه."
+  },
+  "domain:admin": {
+    "label": "إجراء إداري للنطاق",
+    "action": "نفذ إجراءً إدارياً على النطاق"
+  },
+  "server.added": {
+    "label": "تمت إضافة الخادم",
+    "action": "أضاف الخادم"
+  },
+  "server.updated": {
+    "label": "تم تحديث الخادم",
+    "action": "حدث الخادم"
+  },
+  "server.removed": {
+    "label": "تمت إزالة الخادم",
+    "action": "أزال الخادم"
+  },
+  "server.removal.rejected": {
+    "label": "تم رفض حذف الخادم",
+    "action": "حاول حذف الخادم",
+    "description": "لا يمكن إزالة الخادم لأنه لا يزال يشغل أعباء عمل."
+  },
+  "server.exec": {
+    "label": "تم تنفيذ أمر على الخادم",
+    "action": "نفذ أمراً على الخادم",
+    "description": "تم تشغيل أمر في نظام التشغيل على الخادم."
+  },
+  "server.unreachable": {
+    "label": "تعذر الوصول إلى الخادم",
+    "action": "أبلغ عن تعذر الوصول إلى الخادم",
+    "description": "تعذر على Openship فتح اتصال SSH بهذا الخادم."
+  },
+  "server.reachable": {
+    "label": "الخادم متاح مجدداً",
+    "action": "أبلغ عن إمكانية الوصول إلى الخادم مجدداً"
+  },
+  "migration.source_connected": {
+    "label": "تم ربط مصدر الترحيل",
+    "action": "ربط مصدر الترحيل",
+    "description": "تم توصيل خادم SSH خارجي لاستيراد المشاريع."
+  },
+  "migration.source_disconnected": {
+    "label": "تم فصل مصدر الترحيل",
+    "action": "فصل مصدر الترحيل",
+    "description": "تمت إزالة اتصال الترحيل المحفوظ."
+  },
+  "mail_server:write": {
+    "label": "تم تعديل خادم البريد",
+    "action": "عدل خادم البريد",
+    "description": "تم استدعاء نقطة نهاية خادم البريد."
+  },
+  "mail_server:admin": {
+    "label": "إجراء إداري لخادم البريد",
+    "action": "نفذ إجراءً إدارياً على خادم البريد"
+  },
+  "mail.inbound_received": {
+    "label": "تم استلام بريد وارد",
+    "action": "استلم بريداً يطابق قاعدة الإشعارات على",
+    "actionWithoutResource": "استلم بريداً وارد"
+  },
+  "identity.provisioned": {
+    "label": "تم تزويد الهوية",
+    "action": "زود الهوية",
+    "description": "قام مضيف موثوق بربط هوية خارجية بمستخدم Openship."
+  },
+  "organization.created": {
+    "label": "تم إنشاء المنظمة",
+    "action": "أنشأ المنظمة"
+  },
+  "organization.deleted": {
+    "label": "تم حذف المنظمة",
+    "action": "حذف المنظمة"
+  },
+  "organization.deletion.blocked": {
+    "label": "تم حظر حذف المنظمة",
+    "action": "حاول حذف المنظمة",
+    "description": "تم رفض الحذف — لا تزال هناك موارد نشطة أو فواتير مرتبطة."
+  },
+  "member.added": {
+    "label": "تمت إضافة عضو",
+    "action": "أضاف"
+  },
+  "member.removed": {
+    "label": "تمت إزالة عضو",
+    "action": "أزال"
+  },
+  "member.role_changed": {
+    "label": "تم تغيير دور العضو",
+    "action": "غير دور",
+    "actionWithoutResource": "غير الدور"
+  },
+  "member.updated": {
+    "label": "تم تحديث العضوية",
+    "action": "غير عضوية",
+    "actionWithoutResource": "غير العضوية",
+    "description": "قام مضيف موثوق بإضافة أو تعديل أو إزالة عضوية المنظمة."
+  },
+  "member.joined": {
+    "label": "انضم عضو",
+    "action": "انضم",
+    "description": "قبل المدعو الدعوة وأصبح لديه حق الوصول الآن."
+  },
+  "member.invited": {
+    "label": "تمت دعوة عضو",
+    "action": "دعا"
+  },
+  "member.removal.grant_cleanup_failed": {
+    "label": "لم يتم تنظيف صلاحيات العضو المحذوف",
+    "action": "أزال مع بقاء الصلاحيات",
+    "description": "تمت إزالة العضو ولكن صلاحياته بقيت — يرجى المراجعة يدوياً."
+  },
+  "member.removal.subscription_cleanup_failed": {
+    "label": "لم يتم تنظيف اشتراك العضو المحذوف",
+    "action": "أزال مع بقاء الاشتراك",
+    "description": "تمت إزالة العضو ولكن الاشتراك المرتبط بقي — يرجى مراجعة الفواتير."
+  },
+  "invitation.created": {
+    "label": "تم إنشاء الدعوة",
+    "action": "دعا"
+  },
+  "invitation.sent": {
+    "label": "تم إرسال دعوة مع صلاحيات معلقة",
+    "action": "دعا مع صلاحيات معلقة",
+    "description": "تم تجهيز الصلاحيات وستسري فور انضمام المدعو."
+  },
+  "invitation.resent": {
+    "label": "تم تجديد الدعوة",
+    "action": "جدد الدعوة لـ",
+    "actionWithoutResource": "جدد الدعوة",
+    "description": "تم تجديد صلاحية ومفتاح الدعوة."
+  },
+  "invitation.accepted": {
+    "label": "تم قبول الدعوة",
+    "action": "قبل دعوة",
+    "actionWithoutResource": "قبل الدعوة"
+  },
+  "invitation.rejected": {
+    "label": "تم رفض الدعوة",
+    "action": "رفض دعوة",
+    "actionWithoutResource": "رفض الدعوة"
+  },
+  "invitation.cancelled": {
+    "label": "تم إلغاء الدعوة",
+    "action": "ألغى الدعوة لـ",
+    "actionWithoutResource": "ألغى الدعوة"
+  },
+  "team.created": {
+    "label": "تم إنشاء الفريق",
+    "action": "أنشأ الفريق"
+  },
+  "grant.granted": {
+    "label": "تم منح الإذن",
+    "action": "منح الصلاحيات لـ",
+    "actionWithoutResource": "منح الصلاحيات"
+  },
+  "grant.revoked": {
+    "label": "تم إلغاء الإذن",
+    "action": "ألغى الصلاحيات من",
+    "actionWithoutResource": "ألغى الصلاحيات"
+  },
+  "grant.replaced": {
+    "label": "تم استبدال الإذن",
+    "action": "استبدل صلاحيات",
+    "actionWithoutResource": "استبدل الصلاحيات",
+    "description": "تم استبدال تفويض حالي بنطاق مختلف."
+  },
+  "grant.materialized": {
+    "label": "تم تطبيق الصلاحيات المعلقة",
+    "action": "حصل على صلاحياته المعلقة",
+    "description": "تم تطبيق التفويض المرفق بالدعوة بمجرد انضمام المدعو."
+  },
+  "permissions:write": {
+    "label": "تم تعديل الصلاحيات",
+    "action": "عدل الصلاحيات لـ",
+    "actionWithoutResource": "عدل الصلاحيات"
+  },
+  "permissions:admin": {
+    "label": "إجراء إداري للصلاحيات",
+    "action": "نفذ إجراءً إدارياً على الصلاحيات لـ",
+    "actionWithoutResource": "نفذ إجراءً إدارياً على الصلاحيات"
+  },
+  "mcp.authorized": {
+    "label": "تم تفويض عميل MCP",
+    "action": "فوض عميل MCP",
+    "description": "تم توصيل وكيل ذكاء اصطناعي ومنحه نطاقاً للعمل."
+  },
+  "mcp.scope_changed": {
+    "label": "تم تعديل وصول MCP",
+    "action": "عدل وصول عميل MCP",
+    "description": "تم تعديل نطاق الوكيل المتصل. يسري التغيير في طلبه التالي."
+  },
+  "mcp.disconnected": {
+    "label": "تم فصل عميل MCP",
+    "action": "فصل عميل MCP",
+    "description": "تم إبطال رموز وموافقة ونطاق الوكيل المتصل فوراً."
+  },
+  "mcp.tool_called": {
+    "label": "استدعاء أداة الذكاء الاصطناعي",
+    "action": "شغّل أداة MCP",
+    "description": "تم تنفيذ أداة Openship بواسطة عميل MCP."
+  },
+  "admin.bootstrapped": {
+    "label": "تم إنشاء حساب المسؤول الأول",
+    "action": "أنشأ أول حساب مسؤول",
+    "description": "تم إنشاء المالك الأولي للنسخة — يتم هذا الإجراء مرة واحدة فقط."
+  },
+  "admin.password_reset": {
+    "label": "تمت إعادة تعيين كلمة مرور المسؤول",
+    "action": "أعاد تعيين كلمة مرور المسؤول"
+  },
+  "auth-mode-changed": {
+    "label": "تم تغيير وضع تسجيل الدخول",
+    "action": "غير وضع تسجيل الدخول",
+    "description": "تم التبديل بين وضع المستخدم الفردي والمصادقة الكاملة."
+  },
+  "instance.data.exported": {
+    "label": "تم تصدير بيانات النسخة",
+    "action": "صدر جميع بيانات النسخة",
+    "description": "تم تفريغ قاعدة البيانات بالكامل وتصديرها من هذه النسخة."
+  },
+  "instance.data.receive_code_created": {
+    "label": "تم إنشاء رمز استلام نقل البيانات",
+    "action": "أنشأ رمز استلام مباشر لنقل البيانات",
+    "description": "تم إنشاء رمز قصير الأجل لاستلام بيانات النسخة مباشرة."
+  },
+  "instance.data.sent": {
+    "label": "تم إرسال بيانات النسخة",
+    "action": "أرسل بيانات النسخة إلى نسخة أخرى",
+    "description": "تم نقل بيانات النسخة المحددة مباشرة إلى نسخة أخرى."
+  },
+  "instance.data.imported": {
+    "label": "تم استيراد بيانات النسخة",
+    "action": "استورد بيانات النسخة",
+    "description": "تم تحميل تفريغ قاعدة بيانات من نسخة أخرى."
+  },
+  "instance.move_requested": {
+    "label": "تم طلب نقل لوحة التحكم",
+    "action": "طلب نقل لوحة التحكم إلى نسخة أخرى",
+    "description": "طلب مسؤول نقل بيانات النسخة والتحكم إلى نسخة أخرى."
+  },
+  "instance.server_move_requested": {
+    "label": "تم طلب نقل لوحة التحكم إلى خادم",
+    "action": "طلب نقل لوحة التحكم إلى خادم",
+    "description": "طلب مسؤول استضافة لوحة التحكم على خادم محدد."
+  },
+  "audit.disabled": {
+    "label": "تم إيقاف تسجيل النشاط",
+    "action": "أوقف تسجيل النشاط",
+    "description": "لن يتم تسجيل أي إجراءات حتى تتم إعادة تشغيل التسجيل."
+  },
+  "audit.enabled": {
+    "label": "تم تفعيل تسجيل النشاط",
+    "action": "فعل تسجيل النشاط"
+  },
+  "audit.retention_changed": {
+    "label": "تم تغيير فترة الاحتفاظ بالنشاط",
+    "action": "غير فترة الاحتفاظ بالنشاط"
+  },
+  "audit:write": {
+    "label": "تم تعديل إعدادات النشاط",
+    "action": "عدل إعدادات النشاط"
+  },
+  "billing.hard_cap_tripped": {
+    "label": "تم الوصول إلى الحد الأقصى للإنفاق",
+    "action": "وصل إلى الحد الأقصى للإنفاق لـ",
+    "actionWithoutResource": "وصل إلى الحد الأقصى للإنفاق",
+    "description": "قد تكون الموارد السحابية متوقفة مؤقتاً — يرجى مراجعة الفواتير."
+  },
+  "billing.credit_low": {
+    "label": "أرصدة Cloud منخفضة",
+    "action": "اقترب من حد الرصيد لـ",
+    "actionWithoutResource": "اقترب من حد الرصيد",
+    "description": "راجع الرصيد المتبقي قبل انقطاع أعباء العمل السحابية."
+  },
+  "billing.credit_exhausted": {
+    "label": "تم استنفاد الأرصدة",
+    "action": "استنفد الأرصدة لـ",
+    "actionWithoutResource": "استنفد الأرصدة",
+    "description": "تم إيقاف الاستخدام حتى التعبئة أو إعادة التعيين الشهري."
+  },
+  "billing.credit_restored": {
+    "label": "تمت استعادة الأرصدة",
+    "action": "استعاد الأرصدة لـ",
+    "actionWithoutResource": "استعاد الأرصدة"
+  },
+  "billing.anniversary_reset": {
+    "label": "تمت إعادة تعيين الأرصدة الشهرية",
+    "action": "أعاد تعيين الأرصدة الشهرية لـ",
+    "actionWithoutResource": "أعاد تعيين الأرصدة الشهرية"
+  },
+  "quota.threshold_fired": {
+    "label": "تم تجاوز حد الاستخدام",
+    "action": "تجاوز حد الاستخدام على",
+    "actionWithoutResource": "تجاوز حد الاستخدام"
+  },
+  "billing:write": {
+    "label": "إجراء الفواتير",
+    "action": "عدل الفواتير لـ",
+    "actionWithoutResource": "عدل الفواتير",
+    "description": "تم استدعاء نقطة نهاية الفواتير."
+  },
+  "billing:admin": {
+    "label": "إجراء إداري للفواتير",
+    "action": "نفذ إجراءً إدارياً على الفواتير لـ",
+    "actionWithoutResource": "نفذ إجراءً إدارياً على الفواتير",
+    "description": "تم استدعاء إجراء مدمر للفواتير مثل إلغاء الاشتراك."
+  },
+  "settings.updated": {
+    "label": "تم تحديث الإعدادات",
+    "action": "حدث الإعدادات"
+  },
+  "updates:write": {
+    "label": "تحديث النظام",
+    "action": "فحص أو طبق التحديثات",
+    "description": "تم بدء تحديث مكونات Openship."
+  },
+  "cloud.disconnect": {
+    "label": "تم فصل السحابة",
+    "action": "فصل تكامل Cloud"
+  },
+  "cloud:write": {
+    "label": "إجراء السحابة",
+    "action": "عدل تكامل Cloud",
+    "description": "تم استدعاء نقطة نهاية الخدمات السحابية."
+  },
+  "cloud:admin": {
+    "label": "إجراء إداري للسحابة",
+    "action": "نفذ إجراءً إدارياً على Cloud"
+  },
+  "github.install": {
+    "label": "تم تثبيت تطبيق GitHub",
+    "action": "ثبت تطبيق GitHub"
+  },
+  "github.source.created": {
+    "label": "تمت إضافة مصدر GitHub",
+    "action": "أضاف مستودع GitHub",
+    "description": "تمت إضافة مستودع GitHub كمصدر للمشروع."
+  },
+  "github.source.updated": {
+    "label": "تم تحديث مصدر GitHub",
+    "action": "حدث مستودع GitHub",
+    "description": "تم تغيير تكوين مصدر GitHub."
+  },
+  "github.source.verified": {
+    "label": "تم التحقق من مصدر GitHub",
+    "action": "تحقق من الوصول إلى GitHub"
+  },
+  "github.source.defaulted": {
+    "label": "تم تعيين مصدر GitHub الافتراضي",
+    "action": "عينه كمستودع افتراضي"
+  },
+  "github.source.deleted": {
+    "label": "تمت إزالة مصدر GitHub",
+    "action": "أزال مصدر GitHub",
+    "description": "تمت إزالة الرابط بمستودع GitHub."
+  },
+  "github.connect": {
+    "label": "تم ربط حساب GitHub",
+    "action": "ربط حساب GitHub"
+  },
+  "github.installation.claim": {
+    "label": "تم ربط تثبيت GitHub",
+    "action": "ربط تثبيت GitHub"
+  },
+  "github.disconnect": {
+    "label": "تم فصل حساب GitHub",
+    "action": "فصل حساب GitHub"
+  },
+  "github.repo.create": {
+    "label": "تم إنشاء مستودع GitHub",
+    "action": "أنشأ مستودعاً على GitHub"
+  },
+  "github.repo.delete": {
+    "label": "تم حذف مستودع GitHub",
+    "action": "حذف مستودعاً على GitHub"
+  },
+  "github.webhook.register": {
+    "label": "تم تسجيل خطاف ويب GitHub",
+    "action": "سجل خطاف ويب GitHub"
+  },
+  "github.webhook.delete": {
+    "label": "تم حذف خطاف ويب GitHub",
+    "action": "حذف خطاف ويب GitHub"
+  },
+  "github.instance_token.set": {
+    "label": "تم تعيين رمز نسخة GitHub",
+    "action": "عين رمز نسخة GitHub",
+    "description": "تم تكوين رمز تطبيق GitHub مخصص للنسخة."
+  },
+  "github:write": {
+    "label": "إجراء GitHub",
+    "action": "عدل تكامل GitHub"
+  },
+  "github:admin": {
+    "label": "إجراء إداري لـ GitHub",
+    "action": "نفذ إجراءً إدارياً على GitHub"
+  },
+  "backup_run.succeeded": {
+    "label": "نجح النسخ الاحتياطي",
+    "action": "أنشأ النسخة الاحتياطية بنجاح"
+  },
+  "backup_run.failed": {
+    "label": "فشل النسخ الاحتياطي",
+    "action": "فشل في إنشاء النسخة الاحتياطية"
+  },
+  "backup_restore.completed": {
+    "label": "اكتملت استعادة النسخة الاحتياطية",
+    "action": "استعاد بنجاح من النسخة الاحتياطية"
+  },
+  "backup_restore.failed": {
+    "label": "فشلت استعادة النسخة الاحتياطية",
+    "action": "فشل في الاستعادة من النسخة الاحتياطية"
+  },
+  "backup.webhook.fired": {
+    "label": "تم إطلاق خطاف ويب النسخ الاحتياطي",
+    "action": "أطلق خطاف ويب النسخ الاحتياطي"
+  },
+  "backup.webhook.disabled": {
+    "label": "تم تعطيل خطاف ويب النسخ الاحتياطي",
+    "action": "عطل خطاف ويب النسخ الاحتياطي",
+    "description": "تم تعطيل خطاف الويب بعد تكرار فشل التسليم."
+  },
+  "backup_destination:write": {
+    "label": "تم تعديل وجهة النسخ الاحتياطي",
+    "action": "عدل وجهة النسخ الاحتياطي"
+  },
+  "backup_destination:admin": {
+    "label": "إجراء إداري لوجهة النسخ الاحتياطي",
+    "action": "نفذ إجراءً إدارياً على وجهة النسخ الاحتياطي"
+  },
+  "backup_destination:backup_policy:write": {
+    "label": "تم تعديل سياسة النسخ الاحتياطي",
+    "action": "عدل سياسة النسخ الاحتياطي"
+  },
+  "backup_destination:backup_run:write": {
+    "label": "تم تعديل تشغيل النسخ الاحتياطي",
+    "action": "عدل تشغيل النسخ الاحتياطي"
+  },
+  "backup_destination:backup_restore:write": {
+    "label": "تم تعديل استعادة النسخ الاحتياطي",
+    "action": "عدل استعادة النسخ الاحتياطي"
+  }
+}

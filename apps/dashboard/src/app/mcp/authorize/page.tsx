@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * /mcp/authorize — OAuth 2.1 consent screen for MCP clients.
  *
@@ -28,7 +31,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Boxes, AlertCircle, Check, ChevronDown } from "lucide-react";
 import { authClient, useSession } from "@/lib/auth-client";
 import { AuthShell } from "@/components/auth-shell";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -201,8 +203,8 @@ function McpAuthorizeInner() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      orgClient.list().catch(() => ({ data: [] as Org[] })),
-      orgClient.getFullOrganization().catch(() => ({ data: null })),
+      orgClient.list().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/mcp/authorize/page"); return ({ data: [] as Org[] }); }),
+      orgClient.getFullOrganization().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/mcp/authorize/page"); return ({ data: null }); }),
     ]).then(([listRes, activeRes]) => {
       if (cancelled) return;
       const list = listRes.data ?? [];
@@ -229,7 +231,8 @@ function McpAuthorizeInner() {
           .filter((l): l is string => typeof l === "string" && l.length > 0);
         setGithubAccounts(logins);
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/mcp/authorize/page");
         if (!cancelled) setGithubAccounts([]);
       });
     return () => {
@@ -266,7 +269,8 @@ function McpAuthorizeInner() {
         setGithubAccounts([]);
         dispatch({ type: "pickTemplate", id: "agent" });
         setOrgId(next);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/mcp/authorize/page");
         setError(m.switchOrgError);
       } finally {
         setOrgSwitching(false);
@@ -373,7 +377,7 @@ function McpAuthorizeInner() {
   if (isPending) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
+        <UiIcon name="spinner" className="size-5 animate-spin" />
       </div>
     );
   }
@@ -389,7 +393,7 @@ function McpAuthorizeInner() {
   if (!clientId) {
     return (
       <div className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger">
-        <AlertCircle className="mt-0.5 size-4 shrink-0" />
+        <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
         {m.missingClientId}
       </div>
     );
@@ -420,7 +424,7 @@ function McpAuthorizeInner() {
         actions={orgs.map((o) => ({
           id: o.id,
           label: o.name,
-          icon: o.id === orgId ? <Check className="size-3.5" /> : undefined,
+          icon: o.id === orgId ? <UiIcon name="check" className="size-3.5" /> : undefined,
           onClick: () => void handleOrgChange(o.id),
         }))}
         trigger={
@@ -431,9 +435,9 @@ function McpAuthorizeInner() {
             {orgLogo}
             <span className="truncate font-medium text-foreground">{orgName}</span>
             {orgSwitching ? (
-              <Loader2 className="size-3 shrink-0 animate-spin" />
+              <UiIcon name="spinner" className="size-3 shrink-0 animate-spin" />
             ) : (
-              <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+              <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground" />
             )}
           </span>
         }
@@ -452,7 +456,7 @@ function McpAuthorizeInner() {
           for no interaction, so it's a single meta line here instead. */}
       <div className="mb-6 flex items-start gap-3">
         <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-success-bg text-success">
-          <Boxes className="size-5" />
+          <UiIcon name="mcp" className="size-5" />
         </div>
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-foreground">{m.title}</h1>
@@ -500,7 +504,7 @@ function McpAuthorizeInner() {
             {rejected && (
               <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
                 <p className="flex items-start gap-2 font-medium">
-                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
                   {m.grantRejectedTitle}
                 </p>
                 <p className="mt-1 ps-5 leading-relaxed">
@@ -511,7 +515,7 @@ function McpAuthorizeInner() {
 
             {error && (
               <div className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
                 {error}
               </div>
             )}
@@ -565,7 +569,7 @@ function SignInPrompt({ alreadyTried }: { alreadyTried: boolean }) {
   if (!alreadyTried) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
+        <UiIcon name="spinner" className="size-5 animate-spin" />
       </div>
     );
   }
@@ -573,7 +577,7 @@ function SignInPrompt({ alreadyTried }: { alreadyTried: boolean }) {
   return (
     <div className="mx-auto max-w-md text-center">
       <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-2xl bg-warning-bg text-warning">
-        <AlertCircle className="size-5" />
+        <UiIcon name="alert-circle" className="size-5" />
       </div>
       <h1 className="text-lg font-semibold text-foreground">{m.signInRequiredTitle}</h1>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{m.signInRequiredBody}</p>
@@ -596,7 +600,7 @@ export default function McpAuthorizePage() {
       <Suspense
         fallback={
           <div className="flex items-center justify-center py-10 text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
+            <UiIcon name="spinner" className="size-5 animate-spin" />
           </div>
         }
       >

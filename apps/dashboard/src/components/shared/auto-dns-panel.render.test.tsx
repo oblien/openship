@@ -18,6 +18,7 @@ function render(over: Partial<AutoDnsViewProps>) {
     applyError: null,
     onApply: noop,
     onReload: noop,
+    onConnect: noop,
     ...over,
   };
   return renderToStaticMarkup(
@@ -50,10 +51,11 @@ describe("AutoDnsView", () => {
     expect(text(render({ loading: true }))).toContain("Checking your DNS provider");
   });
 
-  it("offers to connect a provider when none manages the zone — the CTA, not a button", () => {
+  it("offers an in-place connection when none manages the zone", () => {
     const html = render({ plan: { status: "none", records: [] } });
     expect(text(html)).toContain("Connect a DNS provider");
-    expect(html).toContain("/settings?tab=dns");
+    expect(html).not.toContain("/settings?");
+    expect(html).toContain("<button");
     // Nothing is applyable, so no auto-configure button.
     expect(text(html)).not.toContain("Auto-configure DNS");
   });
@@ -64,7 +66,7 @@ describe("AutoDnsView", () => {
     });
     expect(text(html)).toContain("Reconnect provider");
     expect(text(html)).toContain("Token rejected by Cloudflare");
-    expect(html).toContain("/settings?tab=dns");
+    expect(html).not.toContain("/settings?");
   });
 
   it("offers a retry when the provider was unreachable", () => {
@@ -81,12 +83,44 @@ describe("AutoDnsView", () => {
     expect(out).toContain("Cloudflare manages example.com");
     expect(out).toContain("Add"); // the "create" action badge
     expect(out).toContain("Auto-configure DNS");
+    expect(out).toContain("192.0.2.1");
+  });
+
+  it("shows what an existing record will be repointed from and to", () => {
+    const out = text(
+      render({
+        plan: matched([
+          {
+            name: "app.example.com",
+            type: "A",
+            action: "adopt",
+            current: "192.0.2.5",
+            desired: "192.0.2.8",
+          },
+        ]),
+      }),
+    );
+    expect(out).toContain("Current value 192.0.2.5");
+    expect(out).toContain("New value 192.0.2.8");
+  });
+
+  it("explains when an unsaved domain can apply records, without claiming they are in place", () => {
+    const html = render({ plan: matched([]), canConfigure: false });
+    expect(text(html)).toContain("Deploy first");
+    expect(text(html)).not.toContain("All records in place");
+    expect(html).not.toMatch(/<button[^>]*>Auto-configure DNS/);
   });
 
   it("disables the press and says so when every record is already in place", () => {
     const html = render({
       plan: matched([
-        { name: "app.example.com", type: "A", action: "in-sync", desired: "192.0.2.1", current: "192.0.2.1" },
+        {
+          name: "app.example.com",
+          type: "A",
+          action: "in-sync",
+          desired: "192.0.2.1",
+          current: "192.0.2.1",
+        },
       ]),
     });
     const out = text(html);

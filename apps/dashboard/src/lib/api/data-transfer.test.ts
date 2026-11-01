@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { dataTransferApi, inspectDirectTransferCode } from "./data-transfer";
+import { dataTransferApi, inspectDirectTransferCode, type ImportSelection } from "./data-transfer";
 
 function captureRequest() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
@@ -215,6 +215,68 @@ describe("data-transfer export selection", () => {
       fetchMock.mock.calls.filter(([, init]) => (init as RequestInit).method === "PUT"),
     ).toHaveLength(1);
     expect(urls.filter((url) => url.endsWith("/finalize/stream"))).toHaveLength(2);
+  });
+
+  it("reviews selection changes and applies overrides using the original uploaded chunks", async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input);
+        requests.push({ url, init });
+        if (url.endsWith("/import/session"))
+          return Response.json({
+            uploadId: "reviewed_upload",
+            chunkSize: 20,
+            totalChunks: 1,
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          });
+        if (url.endsWith("/finalize/stream"))
+          return new Response(
+            `event: complete\ndata: ${JSON.stringify({ mode: "merge", rowsRestored: 4, secretsRehydrated: 1, secretsSkipped: false, localPathProjects: [] })}\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        return Response.json(
+          url.endsWith("/preview")
+            ? { scope: "projects", projects: [], blockers: [] }
+            : { ok: true },
+        );
+      }),
+    );
+    const file = new File(["project export"], "projects.json");
+    const selection: ImportSelection = {
+      scope: "projects",
+      projectIds: ["web"],
+      conflictPolicy: "skip",
+      projectActions: { web: "overwrite" },
+      serverMappings: { source: "destination" },
+      includeSecrets: true,
+      includeBackups: false,
+      history: [],
+      overwriteDependencies: true,
+    };
+    await dataTransferApi.previewFile(file);
+    await dataTransferApi.previewFile(file, selection);
+    const result = await dataTransferApi.importFile(
+      file,
+      "transfer-password",
+      "merge",
+      undefined,
+      selection,
+    );
+    expect(result.rowsRestored).toBe(4);
+    expect(requests.filter(({ url }) => url.endsWith("/import/session"))).toHaveLength(1);
+    expect(requests.filter(({ init }) => init.method === "PUT")).toHaveLength(1);
+    const reviews = requests.filter(({ url }) => url.endsWith("/preview"));
+    expect(reviews).toHaveLength(2);
+    expect(JSON.parse(String(reviews[1]!.init.body))).toEqual({ selection });
+    const apply = requests.find(({ url }) => url.endsWith("/finalize/stream"))!;
+    expect(apply.url).toContain("reviewed_upload");
+    expect(JSON.parse(String(apply.init.body))).toEqual({
+      passphrase: "transfer-password",
+      mode: "merge",
+      selection,
+    });
   });
 
   it("starts a fresh upload after a cached session expires during chunking", async () => {

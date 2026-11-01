@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * CPU and memory over time.
  *
@@ -7,11 +9,7 @@
  * memory climbing before the OOM at 3am", which the 5-second stream structurally
  * cannot because it keeps nothing.
  *
- * recharts, because it is already a dependency and already live in
- * `components/billing/UsageChart.tsx`. Deliberately NOT an extension of TrafficChart:
- * that one is single-series, hardcoded to `{hour, requests}`, and its
- * `<linearGradient id="trafficGradient">` is a fixed DOM id that would collide with a
- * second instance on the same page — which this is.
+ * Uses the same chart library and theme tokens as project traffic.
  *
  * Colors come from the theme's semantic CSS vars, not hex literals. `UsageChart` does
  * hardcode hexes; that's the one thing here not copied from it, since a hardcoded blue
@@ -32,7 +30,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { formatMb } from "./format";
 import {
@@ -125,7 +122,7 @@ export const ResourceHistoryChart: React.FC<Props> = ({
         }`}
       >
         <div className="flex items-center gap-2">
-          <Activity className="size-4 text-primary" />
+          <UiIcon name="activity" className="size-4 text-primary" />
           <h3 className="text-sm font-medium text-foreground">{m.historyTitle}</h3>
         </div>
         {scopeLabel && <span className="text-xs text-muted-foreground">{scopeLabel}</span>}

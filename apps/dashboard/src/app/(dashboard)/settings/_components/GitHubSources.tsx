@@ -1,18 +1,9 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  ExternalLink,
-  Github,
-  Loader2,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Star,
-  Trash2,
-} from "lucide-react";
 
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -72,7 +63,8 @@ export function GitHubSources() {
         const me = res.data?.members?.find((member) => member.userId === session?.user?.id);
         setIsOwner(me?.role === "owner");
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/GitHubSources");
         if (!cancelled) setIsOwner(false);
       });
     return () => {
@@ -210,16 +202,16 @@ export function GitHubSources() {
   };
 
   return (
-    <SettingsSection icon={Github} title={copy.title} description={copy.description}>
+    <SettingsSection icon={"github"} title={copy.title} description={copy.description}>
       {loading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {t.settings.common.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {t.settings.common.loading}
         </div>
       ) : (
         <div className="space-y-4">
           {!configuration?.publicReady && (
             <div className="flex items-start gap-2 rounded-xl bg-warning/10 px-3.5 py-3 text-xs text-warning">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <UiIcon name="warning" className="mt-0.5 size-4 shrink-0" />
               <span>{copy.publicUrlRequired}</span>
             </div>
           )}
@@ -234,7 +226,7 @@ export function GitHubSources() {
               }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              <Plus className="size-3.5" /> {copy.createWithGithub}
+              <UiIcon name="plus" className="size-3.5" /> {copy.createWithGithub}
             </button>
             <button
               type="button"
@@ -302,7 +294,7 @@ export function GitHubSources() {
                         <img src={source.avatarUrl} alt="" className="size-9 rounded-lg" />
                       ) : (
                         <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
-                          <Github className="size-4 text-muted-foreground" />
+                          <UiIcon name="github" className="size-4 text-muted-foreground" />
                         </span>
                       )}
                       <div className="min-w-0 flex-1">
@@ -312,16 +304,16 @@ export function GitHubSources() {
                           </p>
                           {source.isDefault && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                              <Star className="size-3" /> {copy.defaultBadge}
+                              <UiIcon name="star" className="size-3" /> {copy.defaultBadge}
                             </span>
                           )}
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${source.status === "active" ? "bg-success-bg text-success" : "bg-warning/15 text-warning"}`}
                           >
                             {source.status === "active" ? (
-                              <CheckCircle2 className="size-3" />
+                              <UiIcon name="check-circle" className="size-3" />
                             ) : (
-                              <AlertTriangle className="size-3" />
+                              <UiIcon name="warning" className="size-3" />
                             )}
                             {source.status === "active" ? copy.activeBadge : copy.invalidBadge}
                           </span>
@@ -382,7 +374,7 @@ export function GitHubSources() {
                         disabled={busy === source.id || source.status !== "active"}
                         className={actionClass}
                       >
-                        <Plus className="size-3.5" /> {copy.installAccount}
+                        <UiIcon name="plus" className="size-3.5" /> {copy.installAccount}
                       </button>
                       <button
                         onClick={() => void verify(source)}
@@ -390,9 +382,9 @@ export function GitHubSources() {
                         className={actionClass}
                       >
                         {busy === source.id ? (
-                          <Loader2 className="size-3.5 animate-spin" />
+                          <UiIcon name="spinner" className="size-3.5 animate-spin" />
                         ) : (
-                          <RefreshCw className="size-3.5" />
+                          <UiIcon name="refresh" className="size-3.5" />
                         )}
                         {copy.verify}
                       </button>
@@ -403,7 +395,7 @@ export function GitHubSources() {
                         }}
                         className={actionClass}
                       >
-                        <Pencil className="size-3.5" /> {copy.edit}
+                        <UiIcon name="edit" className="size-3.5" /> {copy.edit}
                       </button>
                       {!source.isDefault && source.status === "active" && (
                         <button
@@ -411,7 +403,7 @@ export function GitHubSources() {
                           disabled={busy === source.id}
                           className={actionClass}
                         >
-                          <Star className="size-3.5" /> {copy.makeDefault}
+                          <UiIcon name="star" className="size-3.5" /> {copy.makeDefault}
                         </button>
                       )}
                       <a
@@ -420,14 +412,14 @@ export function GitHubSources() {
                         rel="noopener noreferrer"
                         className={actionClass}
                       >
-                        {copy.manage} <ExternalLink className="size-3" />
+                        {copy.manage} <UiIcon name="arrow-up-right" className="size-3" />
                       </a>
                       <button
                         onClick={() => void remove(source)}
                         disabled={busy === source.id}
                         className={`${actionClass} ms-auto text-danger hover:bg-danger-bg`}
                       >
-                        <Trash2 className="size-3.5" /> {copy.delete}
+                        <UiIcon name="trash" className="size-3.5" /> {copy.delete}
                       </button>
                     </div>
 
@@ -497,7 +489,7 @@ function FormActions(props: {
         disabled={props.saving || props.disabled}
         className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
       >
-        {props.saving && <Loader2 className="size-4 animate-spin" />}
+        {props.saving && <UiIcon name="spinner" className="size-4 animate-spin" />}
         {props.saveLabel}
       </button>
       <button

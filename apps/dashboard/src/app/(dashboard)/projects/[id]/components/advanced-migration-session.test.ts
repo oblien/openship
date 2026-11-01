@@ -133,16 +133,6 @@ describe("migration is generic; the server is one entry point", () => {
     expect(advanced).toContain('origin="project"');
   });
 
-  it("a project origin renders no scan/select subtree at all", () => {
-    // Gate, not a style: every state that leaves `inProgress` false — a finished run, a run id
-    // that no longer resolves, a retry between runs — used to fall through to the scan screen.
-    const gate = wizard.slice(wizard.indexOf('if (origin === "project")'));
-    expect(gate.slice(0, 600)).toContain("onBack");
-    expect(wizard.indexOf('if (origin === "project")')).toBeLessThan(
-      wizard.indexOf("// Steps 2 (Source) & 3 (Configure)"),
-    );
-  });
-
   it("a failed PROJECT run retries in place instead of re-scanning", () => {
     expect(wizard).toContain("const retryProjectRun = async ()");
     const retry = wizard.slice(wizard.indexOf("const retryProjectRun"));

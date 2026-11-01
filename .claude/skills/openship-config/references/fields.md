@@ -14,11 +14,12 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `installCommand` | string | Dependency install command. |
 | `buildCommand` | string | Build command. |
 | `startCommand` | string | Production start command. |
+| `releaseCommands` | string[] | Commands run ONCE per deploy, after the build and before the new version goes live, typically migrations. Each runs with the start command's env; a non-zero exit fails the deploy and the previous version keeps serving. On Docker they run in a throwaway container, so only effects outside it persist (the database, a mounted volume): keep cache warms and `storage:link` in the start command. Laravel: `["php artisan migrate --force"]`. Rails: `["bundle exec rails db:prepare"]`. Omit for no release phase (the default — nothing is auto-injected). Requires a single-app Docker/Bare deployment; unsupported runtimes and full Compose/static deployments fail before activation. Rollbacks and explicitly service-scoped actions skip it. Commands must be idempotent; code rollback does not undo database changes. |
 | `outputDirectory` | string | Build output dir (`dist`, `.next`, `build`, `out`, …). |
 | `buildImage` | string | Build Docker image (e.g. `node:22`). |
 | `productionPaths` | string[] | Paths shipped as the production artifact. |
 
-**`framework` values:** `nextjs` `nuxt` `sveltekit` `remix` `astro` `vite` `angular` `gatsby`
+**`framework` values:** `nextjs` `farmjs` `nuxt` `sveltekit` `remix` `astro` `vite` `angular` `gatsby`
 `cra` `vue` `react` `express` `fastify` `hono` `nestjs` `koa` `adonis` `elysia` `go` `gin`
 `fiber` `echo` `rust` `actix` `axum` `rocket` `python` `django` `flask` `fastapi` `rails`
 `sinatra` `laravel` `symfony` `springboot` `quarkus` `kotlin` `dotnet` `blazor` `phoenix`
@@ -32,6 +33,7 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `productionMode` | `host` \| `static` \| `standalone` | `static` ⇒ served as files, no server (sets `hasServer=false`). |
 | `port` | integer 1–65535 | Server port. |
 | `volumes` | string[] | Paths kept across deploys. Bare path = relative to the app (`storage`), or a full mount (`uploads:/app/storage`, `/srv/data:/app/var`). Omit to inherit the framework defaults (Laravel keeps `storage/`); `[]` turns persistence off. Compose services use `services[].volumes` instead. |
+| `optimize` | boolean | Laravel only. Opt-in cache warming for the web role, default `false`. `true` prefixes the web command with `php artisan optimize && ` to warm Laravel's config/route/event/view caches. An absent or `false` flag keeps the web command byte-identical. Web role only (workers/schedulers stay unwarmed). Warms per-request throughput, not cold start. Runs at startup only: `config:cache` freezes the env present when it runs and makes `env()` outside `config/*.php` return `null`, so never put it in `buildCommand` or `releaseCommands`. To warm a worker, re-declare `roles` and prefix each `command` with `php artisan optimize && `. |
 
 ## Env
 

@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Settings → Updates. Update/advisory status + user controls, for the desktop
  * app and self-hosted servers. Security posture is explicit: auto-update is OFF
@@ -8,7 +11,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, ShieldCheck, Download, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
 import { changelogUrl } from "@repo/core";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsToggleRow } from "./SettingsToggleRow";
@@ -27,7 +29,9 @@ export function UpdatesTab() {
     void window.desktop?.config
       ?.get<boolean | undefined>("autoUpdate")
       .then((v) => setAutoUpdate(v === true))
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/UpdatesTab");
+      });
   }, [desktop]);
 
   const toggleAuto = useCallback((v: boolean) => {
@@ -46,7 +50,7 @@ export function UpdatesTab() {
   return (
     <div className="space-y-6">
       <SettingsSection
-        icon={RefreshCw}
+        icon={"refresh"}
         title={t.settings.updates.title}
         description={t.settings.updates.description}
       >
@@ -54,7 +58,7 @@ export function UpdatesTab() {
         <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-background px-4 py-3">
           <div className="flex items-center gap-3">
             <div className={`flex size-9 items-center justify-center rounded-xl ${upToDate ? "bg-success-bg text-success" : "bg-primary/10 text-primary"}`}>
-              {upToDate ? <CheckCircle2 className="size-[18px]" /> : <Download className="size-[18px]" />}
+              {upToDate ? <UiIcon name="check-circle" className="size-[18px]" /> : <UiIcon name="download" className="size-[18px]" />}
             </div>
             <div>
               <p className="text-[14px] font-medium text-foreground">
@@ -82,7 +86,7 @@ export function UpdatesTab() {
                 onClick={startDesktopUpdate}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background transition-opacity hover:opacity-90"
               >
-                <Download className="size-3.5" />
+                <UiIcon name="download" className="size-3.5" />
                 {t.settings.updates.updateNow}
               </button>
             )}
@@ -92,7 +96,7 @@ export function UpdatesTab() {
               disabled={checking}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-60"
             >
-              {checking ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {checking ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="refresh" className="size-3.5" />}
               {t.settings.updates.checkNow}
             </button>
           </div>
@@ -122,14 +126,14 @@ export function UpdatesTab() {
           rel="noopener noreferrer"
           className="mt-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground underline-offset-4 hover:underline"
         >
-          <ExternalLink className="size-3.5" />
+          <UiIcon name="external-link" className="size-3.5" />
           {t.settings.updates.viewChangelog}
         </a>
       </SettingsSection>
 
       {/* Security disclosure */}
       <SettingsSection
-        icon={ShieldCheck}
+        icon={"shield-check"}
         title={t.settings.updates.securityTitle}
         description={t.settings.updates.securityDescription}
         iconBg="bg-success-bg"

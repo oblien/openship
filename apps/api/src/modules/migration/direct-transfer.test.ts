@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { CommandExecutor } from "@repo/adapters";
-import { establishDirectLink, parseRsyncProgress, rsyncCommand, runRsync, sq, statPath } from "./direct-transfer";
+import { establishDirectLink, parseRsyncProgress, rsyncCommand, runRsync, sq, statPath } from "@repo/platform/engine/modules/migration/direct-transfer";
 
 describe("statPath (file vs dir vs missing)", () => {
   const oneShot = (reply: string): CommandExecutor =>
@@ -10,13 +10,13 @@ describe("statPath (file vs dir vs missing)", () => {
     expect(await statPath(oneShot("file"), "/x")).toBe("file");
     expect(await statPath(oneShot("missing"), "/x")).toBe("missing");
   });
-  test("treats an exec failure as missing", async () => {
+  test("preserves connection failures instead of misreporting a missing path", async () => {
     const throwing = {
       exec: async () => {
         throw new Error("ssh down");
       },
     } as unknown as CommandExecutor;
-    expect(await statPath(throwing, "/x")).toBe("missing");
+    await expect(statPath(throwing, "/x")).rejects.toThrow("ssh down");
   });
 });
 
@@ -27,10 +27,12 @@ describe("rsyncCommand file-vs-dir slash (the postgresql.conf bug)", () => {
     expect(cmd).toContain("'/a/postgresql.conf'");
     expect(cmd).not.toContain("'/a/postgresql.conf'/");
     expect(cmd).not.toContain("postgresql.conf'/");
+    expect(cmd).not.toContain("--delete");
   });
   test("dir=true (a directory) → trailing slash → sync CONTENTS", () => {
     const cmd = rsyncCommand("ssh -i k", peer, "/a", "/b", true, false, true);
     expect(cmd).toContain("'/a'/");
+    expect(cmd).toContain("--delete-delay");
   });
 });
 
@@ -117,6 +119,9 @@ function fakeExec(handlers: Handler[]): CommandExecutor & { calls: string[] } {
   const calls: string[] = [];
   const exec = async (command: string) => {
     calls.push(command);
+    if (command.startsWith("command -v ")) return "ok";
+    const pubkey = command.match(/cat '.*openship-migration-([a-z0-9]+)-(push|pull)\/id\.pub'/);
+    if (pubkey) return `ssh-ed25519 AAAAKEY openship-migration-${pubkey[1]}-${pubkey[2]}`;
     const h = handlers.find((x) => x.match.test(command));
     return h ? h.reply : "";
   };
@@ -139,6 +144,53 @@ const bootstrapOk: Handler[] = [
 ];
 
 describe("establishDirectLink", () => {
+  test.each(["push", "pull"] as const)(
+    "%s returns the loaded ID for digest images without a docker tag",
+    async (direction) => {
+      const sourceExec = fakeExec([
+        ...bootstrapOk,
+        {
+          match: /OPENSHIP_LINK_OK/,
+          reply: direction === "push" ? "OPENSHIP_LINK_OK" : "",
+        },
+      ]);
+      const targetExec = fakeExec([
+        ...bootstrapOk,
+        { match: /OPENSHIP_LINK_OK/, reply: "OPENSHIP_LINK_OK" },
+      ]);
+      const loaded = `sha256:${"b".repeat(64)}`;
+      const initiator = direction === "push" ? sourceExec : targetExec;
+      initiator.streamExec = async () => ({
+        code: 0,
+        output: `Loaded image ID: ${loaded}\n`,
+      });
+      const link = await establishDirectLink({
+        sourceExec,
+        targetExec,
+        sourceConn: conn("10.0.0.1"),
+        targetConn: conn("10.0.0.2"),
+        runId: "digest",
+        log: () => {},
+      });
+      try {
+        expect(link?.direction).toBe(direction);
+        expect(
+          await link!.transferImage({
+            id: `sha256:${"c".repeat(64)}`,
+            tag: `openship/app@sha256:${"a".repeat(64)}`,
+          }),
+        ).toBe(loaded);
+        expect(
+          [...sourceExec.calls, ...targetExec.calls].some((command) =>
+            command.includes("docker tag"),
+          ),
+        ).toBe(false);
+      } finally {
+        await link?.cleanup();
+      }
+    },
+  );
+
   test("push: source reaches target → direction 'push'", async () => {
     const sourceExec = fakeExec([
       ...bootstrapOk,
@@ -156,7 +208,7 @@ describe("establishDirectLink", () => {
     expect(link?.direction).toBe("push");
     // Cleanup strips the run marker on the peer (target) and removes the temp key.
     await link!.cleanup();
-    expect(targetExec.calls.some((c) => /grep -v .*openship-migration-run1-push/.test(c))).toBe(true);
+    expect(targetExec.calls.some((c) => /awk -v marker=.*openship-migration-run1-push/.test(c))).toBe(true);
     expect(sourceExec.calls.some((c) => /rm -rf .*openship-migration-run1-push/.test(c))).toBe(true);
   });
 
@@ -179,6 +231,16 @@ describe("establishDirectLink", () => {
       log: () => {},
     });
     expect(link?.direction).toBe("pull");
+  });
+
+  test("managed target without SSH pulls from the authenticated external source", async () => {
+    const sourceExec = fakeExec([]);
+    const targetExec = fakeExec([...bootstrapOk, { match: /OPENSHIP_LINK_OK/, reply: "OPENSHIP_LINK_OK" }]);
+    const link = await establishDirectLink({ sourceExec, targetExec, sourceConn: conn("8.8.4.4"), targetConn: null,
+      runId: "run3", log: () => {} });
+    expect(link?.direction).toBe("pull");
+    expect(sourceExec.calls.some(command => command.includes("authorized_keys"))).toBe(true);
+    await link?.cleanup();
   });
 
   test("neither direction connects → null", async () => {

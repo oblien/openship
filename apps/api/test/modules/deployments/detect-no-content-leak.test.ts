@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   projectInfoToPublicResponse,
   projectInfoToScanResponse,
-} from "../../../src/modules/deployments/prepare.service";
+} from "@repo/platform/engine/modules/deployments/prepare.service";
 
 /**
  * `/github/repos/:owner/:repo/detect` sits at METADATA tier — it is what makes
@@ -70,6 +70,7 @@ function infoWithSecrets() {
         dependsOn: [],
         volumes: [],
         environment: { STRIPE_SECRET: SENTINELS.serviceEnv },
+        buildArgs: { BUILD_CREDENTIAL: SENTINELS.serviceEnv },
       },
       {
         name: "db",
@@ -78,12 +79,33 @@ function infoWithSecrets() {
         dependsOn: [],
         volumes: [],
         environment: { POSTGRES_PASSWORD: SENTINELS.secondService },
+        buildArgs: { BUILD_CREDENTIAL: SENTINELS.secondService },
       },
     ],
   } as unknown as Parameters<typeof projectInfoToScanResponse>[0];
 }
 
 describe("detect cannot leak file content through env values", () => {
+  it.each([projectInfoToPublicResponse, projectInfoToScanResponse])("copies editable values only when explicitly requested and still strips parser provenance", project => {
+    const info = infoWithSecrets();
+    const service = info.services![0]!;
+    service.environmentTemplates = { STRIPE_SECRET: "${STRIPE_SECRET:-private-template}" };
+    service.environmentMeta = { STRIPE_SECRET: {
+      source: "default", resolvedValue: SENTINELS.serviceEnv, defaultValue: SENTINELS.serviceEnv,
+      expression: "${STRIPE_SECRET:-private-template}",
+    } };
+    const out = project(info, { includeEnv: true });
+    expect(out.rootEnv?.DATABASE_URL).toBe(SENTINELS.rootEnv);
+    expect(out.services?.[0]?.environment.STRIPE_SECRET).toBe(SENTINELS.serviceEnv);
+    expect(out.services?.[1]?.environment.POSTGRES_PASSWORD).toBe(SENTINELS.secondService);
+    expect(out.services?.[0]?.environmentMeta?.STRIPE_SECRET?.resolvedValue).toBe(SENTINELS.serviceEnv);
+    expect(out).not.toHaveProperty("openshipEnv");
+    expect(JSON.stringify(out)).not.toContain("private-template");
+    out.services![0]!.environment.STRIPE_SECRET = "edited";
+    expect(service.environment.STRIPE_SECRET).toBe(SENTINELS.serviceEnv);
+    expect(service.environmentTemplates.STRIPE_SECRET).toContain("private-template");
+  });
+
   it("masks every planted secret, in every env-bearing field", () => {
     const serialised = JSON.stringify(projectInfoToScanResponse(infoWithSecrets()));
     for (const [field, secret] of Object.entries(SENTINELS)) {

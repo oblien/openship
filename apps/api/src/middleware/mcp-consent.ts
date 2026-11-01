@@ -1,5 +1,6 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
-import { auth } from "../lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { isAllowedMcpResource, publicOriginFor, publicRequestUrl } from "../lib/mcp-resource";
 
 /**
@@ -47,7 +48,7 @@ export async function forceMcpConsent(c: Context, next: Next): Promise<Response 
 
   // (2) Desktop zero-auth: no session on this authorize request → mint one so we
   // land on consent, not login. Only when a session doesn't already exist.
-  const existing = await auth.api.getSession({ headers: c.req.raw.headers }).catch(() => null);
+  const existing = await auth.api.getSession({ headers: c.req.raw.headers }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/middleware/mcp-consent"); return null; });
   if (!existing) {
     const { zeroAuthAllowed } = await import("./zero-auth-guard");
     const gate = await zeroAuthAllowed(c);

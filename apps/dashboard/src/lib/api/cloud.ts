@@ -3,7 +3,7 @@ import { endpoints } from "./endpoints";
 
 export interface CloudStatus {
   connected: boolean;
-  user?: { name: string; email: string; image?: string | null };
+  user?: { id?: string; organizationId?: string; name: string; email: string; image?: string | null };
 }
 
 export interface CloudConnectFinalizeBody {

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Right column: the authoritative statement of what Authorize will grant.
  *
@@ -14,7 +16,6 @@
  */
 
 import { useMemo } from "react";
-import { AlertCircle, Check, Info, Lock, PlusCircle, ShieldCheck, X } from "lucide-react";
 import { Switch } from "@/components/ui/Switch";
 import {
   authorizeBlockedReason,
@@ -31,6 +32,7 @@ import {
 } from "./mcp-access-templates";
 import { ResourceAvatar } from "./ResourceAvatar";
 import { resourceTypeLabel, type ResourceType } from "@/lib/api";
+import type { CapabilityArea } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export function AccessScopeSummary({
@@ -89,7 +91,7 @@ export function AccessScopeSummary({
   return (
     <div className="rounded-2xl bg-card p-5">
       <div className="mb-3 flex items-center gap-2">
-        <ShieldCheck className="size-4 text-muted-foreground/70" />
+        <UiIcon name="shield-check" className="size-4 text-muted-foreground/70" />
         <h2 className="text-[14px] font-medium text-foreground">{m.summaryHeading}</h2>
         {!unscoped && rows.length > 0 && (
           <span className="ms-auto text-[11px] font-medium text-muted-foreground">
@@ -161,7 +163,7 @@ export function AccessScopeSummary({
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-              <Lock className="size-3.5 text-muted-foreground" />
+              <UiIcon name="lock" className="size-3.5 text-muted-foreground" />
               {m.readOnly}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{m.readOnlyDesc}</p>
@@ -178,7 +180,7 @@ export function AccessScopeSummary({
 
         {selection.readOnly && (
           <p className="mt-2.5 flex items-start gap-2 rounded-lg bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <UiIcon name="info" className="mt-0.5 size-3.5 shrink-0" />
             <span>{m.readOnlySecretsNote}</span>
           </p>
         )}
@@ -188,7 +190,7 @@ export function AccessScopeSummary({
         {(conflicts.create || conflicts.writes > 0) && (
           <div className="mt-2.5 rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs text-warning">
             <div className="flex items-start gap-2">
-              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+              <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
               <div className="min-w-0 space-y-1">
                 {conflicts.create && <p>{m.readOnlyConflictCreate}</p>}
                 {conflicts.writes > 0 && (
@@ -217,7 +219,7 @@ export function AccessScopeSummary({
       {/* ── Why Authorize is disabled ── */}
       {blocked && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs text-warning">
-          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
           <span>{blocked === "noResources" ? m.blockedNoResources : m.blockedNoPermissions}</span>
         </div>
       )}
@@ -242,9 +244,9 @@ function UnscopedBlock({
     >
       <p className={`flex items-start gap-2 text-sm font-medium ${readOnly ? "text-info" : "text-warning"}`}>
         {readOnly ? (
-          <Lock className="mt-0.5 size-3.5 shrink-0" />
+          <UiIcon name="lock" className="mt-0.5 size-3.5 shrink-0" />
         ) : (
-          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
         )}
         <span>{title}</span>
       </p>
@@ -268,6 +270,7 @@ function SummaryGroupBlock({
 }) {
   const { t } = useI18n();
   const m = t.misc.mcpAuthorize;
+  const w = t.widgets.permissions.resourcePicker;
 
   // The capability bucket has no level to set — "create" is collection-only and
   // must stay exactly ["create"] or the mint 400s.
@@ -276,7 +279,7 @@ function SummaryGroupBlock({
       <>
         {group.rows.map((row) => (
           <div key={row.resourceId} className="flex items-start gap-2.5 bg-primary/[0.04] px-3.5 py-3">
-            <PlusCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+            <UiIcon name="plus-circle" className="mt-0.5 size-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">{m.capabilityRowTitle}</p>
               <p className="text-xs text-muted-foreground">{m.capabilityRowDesc}</p>
@@ -327,7 +330,15 @@ function SummaryGroupBlock({
               {row.wildcard ? `${m.wildcardTag} ${resourceTypeLabel(type).toLowerCase()}` : row.label}
             </span>
             {/* Only when the group's levels diverge — otherwise the header said it. */}
-            {!group.sharedLevel && <LevelTag level={row.level} />}
+            {!group.sharedLevel && row.level && <LevelTag level={row.level} />}
+            {row.capabilities.map((c) => (
+              <span
+                key={c}
+                className="shrink-0 rounded-md bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {`${w.capabilityAreas[c.split(":")[0] as CapabilityArea]} · ${w.capabilityLabels[c]}`}
+              </span>
+            ))}
             <RemoveButton
               onClick={() => onRemove(type, row.resourceId)}
               disabled={disabled}
@@ -380,7 +391,7 @@ function RemoveButton({
         compact ? "p-0.5" : "p-1"
       }`}
     >
-      <X className={compact ? "size-3" : "size-3.5"} />
+      <UiIcon name="close" className={compact ? "size-3" : "size-3.5"} />
     </button>
   );
 }
@@ -403,9 +414,9 @@ function DigestList({
         {items.map((text) => (
           <li key={text} className="flex items-start gap-2 text-xs leading-relaxed">
             {tone === "can" ? (
-              <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
+              <UiIcon name="check" className="mt-0.5 size-3.5 shrink-0 text-success" />
             ) : (
-              <X className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50" />
+              <UiIcon name="close" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50" />
             )}
             <span className={tone === "can" ? "text-foreground/80" : "text-muted-foreground"}>{text}</span>
           </li>

@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import { sanitizeSignatureHtml } from './signature';
 
 export const userSettingsSchema = z.object({
   language: z.string().default('en'),
@@ -17,7 +18,8 @@ export const userSettingsSchema = z.object({
   isOnboarded: z.boolean().default(false),
   colorTheme: z.enum(['light', 'dark', 'system']).default('system'),
   inboxType: z.enum(['default', 'important-first', 'unread-first']).default('default'),
-  signature: z.string().default(''),
+  signature: z.string().max(100_000).transform(sanitizeSignatureHtml).default(''),
+  signatureEnabled: z.boolean().default(false),
   zeroSignature: z.boolean().default(true),
   undoSendTime: z.number().int().min(0).max(30).default(5),
   customPrompt: z.string().default(''),

@@ -16,10 +16,12 @@
     "storage"
   ],
   "framework": "docker-compose",
+  "minResources": { "cpuCores": 4, "memoryMb": 8192 },
   "services": [
     {
       "name": "db",
       "image": "supabase/postgres:17.6.1.136",
+      "resources": { "cpuCores": 1, "memoryMb": 3072, "diskMb": 40960 },
       "environment": {
         "POSTGRES_HOST": "/var/run/postgresql",
         "PGPORT": "5432",
@@ -51,6 +53,7 @@
     {
       "name": "kong",
       "image": "kong:3.9.1",
+      "resources": { "cpuCores": 0.5, "memoryMb": 768, "diskMb": 8192 },
       "exposedPort": 8000,
       "exposed": true,
       "routes": [
@@ -90,6 +93,7 @@
     {
       "name": "auth",
       "image": "supabase/gotrue:v2.189.0",
+      "resources": { "cpuCores": 0.25, "memoryMb": 256, "diskMb": 8192 },
       "dependsOn": [
         "db"
       ],
@@ -131,6 +135,7 @@
     {
       "name": "rest",
       "image": "postgrest/postgrest:v14.12",
+      "resources": { "cpuCores": 0.25, "memoryMb": 256, "diskMb": 8192 },
       "dependsOn": [
         "db"
       ],
@@ -148,6 +153,7 @@
     {
       "name": "realtime-dev.supabase-realtime",
       "image": "supabase/realtime:v2.102.3",
+      "resources": { "cpuCores": 0.5, "memoryMb": 1024, "diskMb": 8192 },
       "dependsOn": [
         "db"
       ],
@@ -175,6 +181,7 @@
     {
       "name": "storage",
       "image": "supabase/storage-api:v1.60.4",
+      "resources": { "cpuCores": 0.5, "memoryMb": 512, "diskMb": 8192 },
       "dependsOn": [
         "db",
         "rest",
@@ -216,6 +223,7 @@
     {
       "name": "imgproxy",
       "image": "darthsim/imgproxy:v3.30.1",
+      "resources": { "cpuCores": 0.25, "memoryMb": 512, "diskMb": 8192 },
       "environment": {
         "IMGPROXY_BIND": ":5001",
         "IMGPROXY_LOCAL_FILESYSTEM_ROOT": "/",
@@ -240,6 +248,7 @@
     {
       "name": "meta",
       "image": "supabase/postgres-meta:v0.96.6",
+      "resources": { "cpuCores": 0.25, "memoryMb": 256, "diskMb": 8192 },
       "dependsOn": [
         "db"
       ],
@@ -257,6 +266,7 @@
     {
       "name": "studio",
       "image": "supabase/studio:2026.07.07-sha-a6a04f2",
+      "resources": { "cpuCores": 0.5, "memoryMb": 1024, "diskMb": 8192 },
       "dependsOn": [
         "meta"
       ],
@@ -482,5 +492,22 @@
         }
       ]
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Postgres foundation",
+        "description": "Build on a relational database and SQL."
+      },
+      {
+        "title": "Application APIs",
+        "description": "Auth, REST, realtime, and storage in one stack."
+      },
+      {
+        "title": "Studio dashboard",
+        "description": "Inspect and manage the backend in your browser."
+      }
+    ],
+    "articleFile": "articles/supabase.md"
+  }
 }

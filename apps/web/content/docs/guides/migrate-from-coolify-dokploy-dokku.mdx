@@ -33,8 +33,6 @@ Openship models the move as a short, reversible pipeline:
 4. **Cut over** *(opt-in, confirmed)* — only when you say so does it stop and remove the *old* containers.
    Your source volumes are never touched.
 
-<Callout title="Screenshot">The import wizard's scan step, showing discovered containers with their detected domains + volumes. *(screenshot pending)*</Callout>
-
 ## Before you start
 
 <Callout type="warn" title="Keep your old proxy running for the scan">
@@ -59,7 +57,6 @@ Add the server over SSH, then start the import. Openship scans it read-only and 
 container with its recovered domain(s), ports, and volumes. (On a large or slow server, use the streaming
 scan so the client doesn't time out.)
 
-<Callout title="Screenshot">Servers → the connected server → **Import / Migrate**, mid-scan. *(screenshot pending)*</Callout>
 </Step>
 
 <Step>
@@ -68,6 +65,12 @@ scan so the client doesn't time out.)
 The wizard walks **select → link source → domains**. Your reverse proxy (Traefik / nginx / Caddy / …) is
 **automatically excluded** from the workload set and left running untouched — Openship never adopts or
 blind-stops it during import.
+
+Review the detected proxy and discovery notices before proceeding. Traefik routes are matched by the
+container's private network address as well as published ports, so services do not need a host port to keep
+their domains. Imported environment values are saved in each service's **Environment** tab. With reuse in
+place, edits are saved for the next environment reapply or redeploy; the existing container keeps running
+with its current values.
 </Step>
 
 <Step>
@@ -90,17 +93,22 @@ in-place** strategy is genuinely zero-downtime for the workload — the containe
 <Step>
 ### Take over the domains + edge
 
-When you add a domain to a migrated service, Openship runs its edge takeover: it **journals your old
-proxy's config, disables it, installs OpenResty on `:80/:443`, and re-registers your vhosts and
-certificates** — rolling back on any failure or an interrupted reboot. Existing sites are imported from
-**nginx, Caddy, Apache, or Traefik**; HAProxy/unknown proxies are replaced rather than imported.
+When the migration includes domains, Openship prepares the target edge during migration. It shows which
+existing sites belong to the selected project and services, then asks for confirmation before replacing
+the proxy. Choosing **Migrate sites & take over** journals the old configuration, installs OpenResty on
+`:80/:443`, and imports the existing sites and certificates, including sites outside the selected project.
+If takeover fails, Openship attempts to restore the previous proxy and reports the recovery outcome.
+
+Selected domains are attached to their migrated services and re-applied from the live containers. Existing
+certificates are reused and pending verification is retried immediately. Routes that cannot be reproduced
+are reported in discovery notices; review those before taking over. If routing or TLS still needs attention,
+the migration keeps a warning and does not automatically remove the old deploy-set containers.
 
 <Callout type="info" title="The only brief interruption">
-Your containers keep running the whole time. The single short blip is the moment `:80/:443` swaps from your
-old proxy to OpenResty while it installs — measured in seconds, and rollback-safe.
+With reuse in place, your containers keep running. Requests can be interrupted briefly while `:80/:443`
+moves from the old proxy to OpenResty. Copy and cross-server migrations also have the downtime described above.
 </Callout>
 
-<Callout title="Screenshot">A migrated service's Domains tab after the edge takeover — domain live on OpenResty with a valid certificate. *(screenshot pending)*</Callout>
 </Step>
 
 <Step>
@@ -132,8 +140,6 @@ Moving a whole stack from one host to another is the same flow, with the data st
 - Server-to-server always uses the **deploy path** (a downtime window), and it **can't move locally-built
   images** — those have no registry to pull from on B, so take them over **in place on their current server**
   instead.
-
-<Callout title="Screenshot">The server-to-server move showing volume transfer progress A → B. *(screenshot pending)*</Callout>
 
 ## Why the architecture is different
 

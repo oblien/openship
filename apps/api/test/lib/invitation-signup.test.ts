@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { db, eq, ilike, schema } from "@repo/db";
-import { createInvitedUserWithCredential } from "@/lib/invitation-signup";
+import { db, eq, ilike, schema, repos } from "@repo/db";
+import { createInvitedUserWithCredential } from "@repo/platform/engine/lib/invitation-signup";
 
 const invitationId = "inv_atomic_signup";
 const competingInvitationId = "inv_atomic_signup_competing";
@@ -9,6 +9,7 @@ const organizationId = "org_invitation_target";
 const invitedEmail = "new.user@example.com";
 
 async function cleanFixture() {
+  await db.delete(schema.personalAccessToken).where(eq(schema.personalAccessToken.userId, inviterId));
   await db.delete(schema.invitation).where(eq(schema.invitation.id, invitationId));
   await db.delete(schema.invitation).where(eq(schema.invitation.id, competingInvitationId));
 
@@ -59,6 +60,20 @@ beforeEach(cleanFixture);
 afterEach(cleanFixture);
 
 describe("createInvitedUserWithCredential", () => {
+  it("refuses account creation after the invitation's saved credential is revoked", async () => {
+    await seedClaim();
+    await db.insert(schema.member).values({ id: "mem_invitation_admin", organizationId, userId: inviterId, role: "owner" });
+    const token = await repos.personalAccessToken.create({
+      userId: inviterId, organizationId, name: "inviter", tokenPrefix: "test", tokenHash: "invitation-signup-test",
+      readOnly: false, scoped: false, expiresAt: null,
+    });
+    await db.update(schema.invitation).set({ executionAuthority: {
+      version: 1, userId: inviterId, organizationId, token: { id: token.id, kind: "pat", scoped: false }, restrictions: null,
+    } }).where(eq(schema.invitation.id, invitationId));
+    await repos.personalAccessToken.revoke(token.id, inviterId);
+    expect(await createInvitedUserWithCredential({ invitationId, name: "Revoked", passwordHash: "hash" })).toEqual({ status: "invalid" });
+    expect(await db.select().from(schema.user).where(ilike(schema.user.email, invitedEmail))).toEqual([]);
+  });
   it("locks the claim and commits the identity invariant with its credential", async () => {
     await seedClaim();
 

@@ -18,9 +18,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Only the runtime resolution is faked — the keep set has to run against real
 // rows or it isn't testing the query it exists for. `instanceof DockerRuntime`
 // gates the image half of the manifest, so the stand-in must satisfy it.
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => {
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../src/lib/deployment-runtime")>();
+    await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>();
   const { DockerRuntime } = await import("@repo/adapters");
   return {
     ...actual,
@@ -31,10 +31,10 @@ vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => {
 });
 
 const { collectDeploymentManifest } = await import(
-  "../../../src/modules/projects/project-cleanup.service"
+  "@repo/platform/engine/modules/projects/project-cleanup.service"
 );
 const { computeCleanupKeepSet } = await import(
-  "../../../src/modules/projects/cleanup-keep-set"
+  "@repo/platform/engine/modules/projects/cleanup-keep-set"
 );
 
 const {

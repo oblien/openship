@@ -1,0 +1,147 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "rabbitmq",
+  "name": "RabbitMQ",
+  "description": "A persistent message broker with the official management dashboard for queues, exchanges, and connections.",
+  "kind": "template",
+  "logo": "rabbitmq",
+  "category": "backend",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "rabbitmq",
+      "restart": "unless-stopped",
+      "image": "rabbitmq:4.3.6-management-alpine",
+      "environment": {
+        "RABBITMQ_DEFAULT_USER": "openship",
+        "RABBITMQ_DEFAULT_VHOST": "openship",
+        "RABBITMQ_NODENAME": "rabbit@rabbitmq"
+      },
+      "volumes": ["rabbitmq_data:/var/lib/rabbitmq"],
+      "exposedPort": 15672,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 15672
+        }
+      ],
+      "secretEnv": ["RABBITMQ_DEFAULT_PASS"],
+      "healthcheck": {
+        "test": ["CMD", "rabbitmq-diagnostics", "-q", "ping"],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 12,
+        "startPeriod": "60s"
+      },
+      "resources": {
+        "cpuCores": 1,
+        "memoryMb": 768,
+        "diskMb": 4096
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "service": "rabbitmq",
+      "key": "RABBITMQ_DEFAULT_PASS",
+      "label": "Broker password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to RabbitMQ",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Management dashboard",
+        "source": "publicUrl:rabbitmq",
+        "kind": "url"
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:rabbitmq:RABBITMQ_DEFAULT_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:rabbitmq:RABBITMQ_DEFAULT_PASS",
+        "secret": true,
+        "width": "half"
+      },
+      {
+        "id": "url",
+        "label": "AMQP URL",
+        "source": "template:amqp://openship:{{env:rabbitmq:RABBITMQ_DEFAULT_PASS}}@rabbitmq:5672/openship",
+        "service": "rabbitmq",
+        "secret": true,
+        "envKey": "AMQP_URL",
+        "recommended": true
+      }
+    ],
+    "guide": {
+      "defaultMode": "internal",
+      "useHint": "Use the private connection URL for projects on this server, or Open in localhost for a client on your machine."
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "rabbitmq",
+      "port": 15672,
+      "label": "Management dashboard",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "rabbitmq",
+      "port": 5672,
+      "label": "AMQP",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Message queues",
+        "description": "Route work between applications and background workers."
+      },
+      {
+        "title": "Management dashboard",
+        "description": "Inspect queues, exchanges, consumers, and connections."
+      },
+      {
+        "title": "Persistent broker",
+        "description": "A stable node name and persistent storage keep broker state across deployments."
+      }
+    ],
+    "articleFile": "articles/rabbitmq.md"
+  },
+  "provides": [
+    {
+      "id": "amqp",
+      "category": "backend",
+      "outputRefs": ["url"]
+    }
+  ],
+  "repository": "https://github.com/rabbitmq/rabbitmq-server",
+  "minResources": {
+    "cpuCores": 1,
+    "memoryMb": 768
+  },
+  "tags": ["amqp", "queue", "messaging", "workers"]
+}

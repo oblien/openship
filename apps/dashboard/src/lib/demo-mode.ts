@@ -1,7 +1,8 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useSyncExternalStore } from "react";
 
 /**
- * Demo mode — a per-browser toggle that blurs IPs / hosts across the dashboard
+ * Demo mode — a per-browser toggle that blurs IPs, hosts and env values across the dashboard
  * for screen-shares, recordings, and live demos. Purely cosmetic + client-side
  * (localStorage), so it's off by default and never touches the server. Consumed
  * by <BlurIp> and toggled from Settings → General → Demo mode.
@@ -13,7 +14,8 @@ function read(): boolean {
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem(KEY) === "1";
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/demo-mode");
     return false;
   }
 }
@@ -22,7 +24,8 @@ function read(): boolean {
 export function setDemoMode(on: boolean): void {
   try {
     window.localStorage.setItem(KEY, on ? "1" : "0");
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/demo-mode");
     /* private mode / storage disabled — ignore */
   }
   window.dispatchEvent(new Event(EVENT));

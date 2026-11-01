@@ -1,10 +1,14 @@
 "use client";
 
 import React from "react";
-import { isApexDomain } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
-import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
+import type { PublicEndpoint } from "@/context/deployment/types";
+import {
+  getWwwDomainRouting,
+  setWwwDomainRouting,
+  toggleWwwDomainRouting,
+} from "@/lib/www-domain-routing";
 
 /**
  * Free / Custom / None routing picker, rendered as a COMPACT segmented tab (the
@@ -65,50 +69,12 @@ export function RoutingModePicker({
   const { t } = useI18n();
   const w = t.widgets.routing.settingsCard;
 
-  // The apex the www variant would attach to: the first custom endpoint's hostname,
-  // but ONLY when it's a real registrable apex — `www.<subdomain>` is nonsensical,
-  // so a subdomain (app.example.com) or an already-www host offers no www toggle.
-  const apex = endpoints.find((e) => e.domainType === "custom")?.customDomain?.trim().toLowerCase();
-  const wwwCandidate = apex && isApexDomain(apex) ? apex : null;
-  const wwwIncluded =
-    !!wwwCandidate &&
-    endpoints.some(
-      (e) => e.domainType === "custom" && e.customDomain?.trim().toLowerCase() === `www.${wwwCandidate}`,
+  const www = getWwwDomainRouting(endpoints);
+  const changeWwwEndpoints = (next: PublicEndpoint[]) =>
+    onEndpointsChange(
+      next,
+      hasServer ? next.find((endpoint) => !endpoint.redirectTo)?.port || runtimePort : undefined,
     );
-
-  /**
-   * Add/remove the `www.` endpoint, mirroring the apex's port or target path.
-   *
-   * The sibling starts as a 301 to the apex: it's a full, independent endpoint
-   * (own DNS record, own verification, own certificate) whose job is to funnel
-   * traffic to the canonical host. Two hostnames both serving the app is
-   * duplicate content, and picking a canonical one later is a migration; the
-   * direction is editable on the endpoint's own card either way.
-   */
-  const toggleWww = (on: boolean) => {
-    if (!wwwCandidate) return;
-    const host = `www.${wwwCandidate}`;
-    if (!on) {
-      onEndpointsChange(
-        endpoints.filter(
-          (e) => !(e.domainType === "custom" && e.customDomain?.trim().toLowerCase() === host),
-        ),
-      );
-      return;
-    }
-    const primary = endpoints.find((e) => e.domainType === "custom");
-    onEndpointsChange([
-      ...endpoints,
-      createPublicEndpoint({
-        domainType: "custom",
-        customDomain: host,
-        redirectTo: wwwCandidate,
-        redirectStatus: 301,
-        ...(primary?.port ? { port: primary.port } : {}),
-        ...(primary?.targetPath ? { targetPath: primary.targetPath } : {}),
-      }),
-    ]);
-  };
   const tabs: Array<{ value: RoutingMode; label: string }> = [
     { value: "free", label: w.free },
     { value: "custom", label: w.custom },
@@ -117,7 +83,7 @@ export function RoutingModePicker({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {tabs.map((tab) => (
           <button
             key={tab.value}
@@ -152,10 +118,14 @@ export function RoutingModePicker({
             wwwToggle={
               mode === "custom"
                 ? {
-                    show: !!wwwCandidate,
-                    included: wwwIncluded,
-                    apex: wwwCandidate,
-                    onToggle: toggleWww,
+                    show: !!www,
+                    included: www?.included ?? false,
+                    apex: www?.apex ?? null,
+                    mode: www?.mode ?? null,
+                    onModeChange: (mode) =>
+                      changeWwwEndpoints(setWwwDomainRouting(endpoints, mode)),
+                    onToggle: (on) =>
+                      changeWwwEndpoints(toggleWwwDomainRouting(endpoints, on, allowRedirects)),
                   }
                 : undefined
             }

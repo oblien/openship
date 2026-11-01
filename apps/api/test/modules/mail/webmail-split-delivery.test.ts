@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   managedMailWebmailSettings,
   WEBMAIL_SETTING_KEYS,
-} from "../../../src/modules/mail/webmail/webmail-install.service";
+} from "@repo/platform/engine/modules/mail/webmail/webmail-install.service";
 
 function values(settings: ReturnType<typeof managedMailWebmailSettings>) {
   return new Map(settings.map((setting) => [setting.key, setting.value]));

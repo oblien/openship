@@ -5,6 +5,7 @@
  */
 
 /** Returns a URL for the country flag image for the given ISO country code. */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export function getCountryFlagUrl(
   countryCode: string,
   size: "16" | "24" | "32" | "48" | "64" | "128" = "24"
@@ -19,7 +20,8 @@ export function getCountryName(countryCode: string, locale = "en"): string {
   try {
     const regionNames = new Intl.DisplayNames([locale], { type: "region" });
     return regionNames.of(countryCode.toUpperCase()) ?? countryCode;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/country");
     return countryCode;
   }
 }

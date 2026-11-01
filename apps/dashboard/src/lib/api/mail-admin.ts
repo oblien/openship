@@ -1,3 +1,5 @@
+import type { Static } from "@sinclair/typebox";
+import type { MailDomainSchema, MailMailboxSchema, MailAliasSchema, MailStatsSchema, MailDnsScanSchema, MailRelaySchema, MailInboundRuleSchema } from "@repo/contracts";
 /**
  * Mail admin API client - domain / mailbox / alias CRUD against the
  * vmail schema on the provisioned mail server.
@@ -7,7 +9,7 @@
  * row shapes. The /emails admin tabs consume these directly.
  */
 
-import type { RelayProviderId } from "@repo/core";
+import type { RelayProviderId, MailCertificateStatus } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsRecords, DnsRecord, MailComponentStatus } from "./mail";
@@ -19,22 +21,7 @@ import type { BackupRun } from "./backups";
 /** What a rule watches. `all` covers every domain on the server. */
 export type InboundScope = "mailbox" | "domain" | "all";
 
-export interface InboundRule {
-  id: string;
-  name: string;
-  scope: InboundScope;
-  /** Address for `mailbox`, domain for `domain`, null for `all`. */
-  target: string | null;
-  fromPattern: string | null;
-  subjectPattern: string | null;
-  maxSpamScore: number | null;
-  channelIds: string[];
-  enabled: boolean;
-  /** Set when burst control paused the rule; the reason is operator-facing. */
-  pausedReason: string | null;
-  lastMatchedAt: string | null;
-  createdAt: string;
-}
+export type InboundRule = Static<typeof MailInboundRuleSchema>;
 
 export interface InboundRulePayload {
   name: string;
@@ -83,23 +70,7 @@ export interface SaveMailBackupPolicyInput {
 
 // ─── Domains ─────────────────────────────────────────────────────────────────
 
-export interface AdminDomain {
-  domain: string;
-  description: string;
-  /** Current count of active mailboxes for this domain. */
-  mailboxes: number;
-  /** Current count of active aliases. */
-  aliases: number;
-  /** Domain-wide cap (0 = unlimited). The upstream schema conflates "count" and "max"
-   *  on the same columns; both keys point at the same data so callers can
-   *  pick the more intentional one. */
-  maxMailboxes: number;
-  maxAliases: number;
-  /** Default per-mailbox quota cap in MB (0 = unlimited). */
-  defaultQuotaMB: number;
-  active: boolean;
-  createdAt: string;
-}
+export type AdminDomain = Static<typeof MailDomainSchema>;
 
 export interface CreateDomainPayload {
   domain: string;
@@ -145,23 +116,7 @@ export interface AdditionalDomainDnsState {
 
 // ─── Mailboxes ───────────────────────────────────────────────────────────────
 
-export interface AdminMailbox {
-  username: string;
-  name: string;
-  domain: string;
-  /** In megabytes - UI converts to GB for display. 0 = unlimited. */
-  quotaMB: number;
-  storagebasedirectory: string;
-  storagenode: string;
-  maildir: string;
-  active: boolean;
-  isAdmin: boolean;
-  isGlobalAdmin: boolean;
-  createdAt: string;
-  passwordLastChange: string;
-  /** Protected Openship-owned SMTP identity for the primary install. */
-  isPlatform: boolean;
-}
+export type AdminMailbox = Static<typeof MailMailboxSchema>;
 
 export interface CreateMailboxPayload {
   localPart: string;
@@ -181,16 +136,7 @@ export interface UpdateMailboxPayload {
 
 // ─── Aliases / forwards / catch-all ───────────────────────────────────────────
 
-export interface AdminAlias {
-  id: number;
-  address: string;
-  forwarding: string;
-  domain: string;
-  destDomain: string;
-  /** true when `address` is the bare domain (no @) - the domain's catch-all. */
-  isCatchAll: boolean;
-  active: boolean;
-}
+export type AdminAlias = Static<typeof MailAliasSchema>;
 
 export interface CreateAliasPayload {
   domain: string;
@@ -202,15 +148,7 @@ export interface CreateAliasPayload {
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
 
-export interface MailServerStats {
-  domains: { total: number; active: number };
-  mailboxes: { total: number; active: number };
-  aliases: { total: number };
-  /** Aggregated bytes from vmail.used_quota. May be stale by one IMAP
-   *  session - Dovecot updates the row on LOGOUT, not in real time. */
-  storageBytes: number;
-  messages: number;
-}
+export type MailServerStats = Static<typeof MailStatsSchema>;
 
 // ─── DNS scan ────────────────────────────────────────────────────────────────
 
@@ -228,11 +166,7 @@ export interface DnsCheck {
   message: string;
 }
 
-export interface DnsScanResult {
-  domain: string;
-  scannedAt: number;
-  checks: DnsCheck[];
-}
+export type DnsScanResult = Static<typeof MailDnsScanSchema>;
 
 // ─── Outbound relay ──────────────────────────────────────────────────────────
 
@@ -240,27 +174,7 @@ export interface DnsScanResult {
 export type RelayIdentityMap = Record<string, { mailFromDomain?: string; sesDkim?: { name: string; value: string }[] }>;
 
 /** Masked relay status from the server (password is never returned). */
-export interface OutboundRelayStatus {
-  enabled: boolean;
-  /** Provider id from `@repo/core` RELAY_PROVIDERS (`custom` for anything else). */
-  provider: RelayProviderId;
-  /** "all" senders via a global relayhost, or only `domains`/`addresses`. */
-  scope?: "all" | "selected";
-  domains?: string[];
-  /** Single senders (`contact@example.com`) relayed without their whole domain. */
-  addresses?: string[];
-  /** SPF include override — set when the provider's token isn't in the registry. */
-  spfInclude?: string;
-  region?: string;
-  host: string;
-  port: number;
-  username: string;
-  mailFromDomain?: string;
-  sesDkim?: { name: string; value: string }[];
-  identities?: RelayIdentityMap;
-  updatedAt: string;
-  hasPassword: boolean;
-}
+export type OutboundRelayStatus = Static<typeof MailRelaySchema>;
 
 /** Enable/update payload. `password` blank on update keeps the stored one. */
 export interface ConfigureRelayPayload {
@@ -282,6 +196,12 @@ export interface ConfigureRelayPayload {
 // ─── Client ──────────────────────────────────────────────────────────────────
 
 export const mailAdminApi = {
+  certificate: {
+    get: (serverId: string) => api.get<MailCertificateStatus>(endpoints.mail.admin.certificate(serverId), { timeout: 60_000 }),
+    check: (serverId: string) => api.post<MailCertificateStatus>(`${endpoints.mail.admin.certificate(serverId)}/check`, {}, { timeout: 60_000 }),
+    renew: (serverId: string) => api.post<MailCertificateStatus>(`${endpoints.mail.admin.certificate(serverId)}/renew`, {}, { timeout: 180_000 }),
+    update: (serverId: string, autoRenew: boolean) => api.patch<MailCertificateStatus>(endpoints.mail.admin.certificate(serverId), { autoRenew }, { timeout: 60_000 }),
+  },
   domains: {
     list: (serverId: string) =>
       api.get<{ domains: AdminDomain[] }>(endpoints.mail.admin.domains(serverId)),

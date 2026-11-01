@@ -98,6 +98,11 @@ const RULES: readonly OwnershipRule[] = [
       // Not the host: a pinned alpine helper CONTAINER, whose package manager is a fact
       // about the image we chose and not about the box it runs on. Narrowed below.
       "packages/adapters/src/backup/executors/docker.ts",
+      // Generated Dockerfile RUN instructions execute inside the selected Ruby image.
+      // The image's Debian/Alpine OS is independent of the deployment host profile;
+      // envOps(host) would install the wrong packages on a differently hosted image.
+      // Narrowed below, with stage/output behavior covered by the recipe tests.
+      "packages/adapters/src/runtime/docker-recipes/ruby.ts",
     ],
     why:
       "A per-package-manager table outside environment-ops.ts is how this bug happened — " +
@@ -107,7 +112,9 @@ const RULES: readonly OwnershipRule[] = [
   },
   {
     what: "a firewall",
-    pattern: /\b(?:ufw|firewall-cmd|nft|iptables|ip6tables)[ \t]+[\w$-]/,
+    // Match command flags/subcommands, not version output or user-facing prose.
+    pattern:
+      /\b(?:ufw|firewall-cmd|nft|iptables|ip6tables)[ \t]+(?:[$-]|(?:allow|deny|reject|limit|delete|enable|disable|reset|reload|status|show|app|route|logging|default|insert|prepend|add|create|destroy|list|flush|replace|rename|monitor|export|import|describe)\b)/,
     owners: [
       // The rules themselves, so the CLI, the API and the dashboard render one syntax:
       // `envOps` runs these steps, nobody re-spells them.
@@ -259,6 +266,31 @@ describe("the comment stripper", () => {
   });
 });
 
+describe("the firewall command matcher", () => {
+  const pattern = rule("a firewall").pattern;
+
+  it.each([
+    "iptables --version",
+    "iptables -m conntrack --help",
+    "ip6tables -I INPUT -j ACCEPT",
+    "ufw allow 22/tcp",
+    "firewall-cmd --reload",
+    "nft list ruleset",
+    "nft flush ruleset",
+    "iptables ${flags}",
+  ])("keeps command ownership enforced for %s", (command) => {
+    expect(command).toMatch(pattern);
+  });
+
+  it.each([
+    "iptables v1.8.11 (nf_tables)",
+    "iptables is required to enforce private connection policies on this host",
+    "# Installing iptables may materialize empty ACCEPT tables.",
+  ])("does not mistake prose or version output for a command: %s", (text) => {
+    expect(text).not.toMatch(pattern);
+  });
+});
+
 describe("per-host commands have exactly one author", () => {
   const files = sources();
 
@@ -332,7 +364,7 @@ describe("the detector looks and never touches", () => {
 
 describe("the container helper's package manager is the image's, not the host's", () => {
   /**
-   * The one exception in the package-manager rule, kept narrow. `apk add --no-cache zstd`
+   * The backup exception in the package-manager rule, kept narrow. `apk add --no-cache zstd`
    * runs inside the alpine image the backup executor pins, where the package manager is a
    * property of the image we chose. Anything else in that file would be a host command
    * wearing an exception, so the shape is asserted rather than the file trusted.
@@ -343,5 +375,11 @@ describe("the container helper's package manager is the image's, not the host's"
     const matches = read(HELPER).match(/\b(?:apt|apt-get|dnf|yum|apk|zypper|pacman)[ \t]+[a-z-]+/g);
     expect(matches?.length).toBeGreaterThan(0);
     for (const match of matches ?? []) expect(match).toBe("apk add");
+  });
+
+  it("limits the Dockerfile generator to Debian/Alpine image installation verbs", () => {
+    const source = read("packages/adapters/src/runtime/docker-recipes/ruby.ts");
+    const matches = source.match(/\b(?:apt|apt-get|dnf|yum|apk|zypper|pacman)[ \t]+[a-z-]+/g);
+    expect(matches).toEqual(["apk add", "apt-get update", "apt-get install"]);
   });
 });

@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  */
 describe("updateServer — every ssh* field it accepts is refused on the local row", () => {
   const SRC = readFileSync(
-    join(__dirname, "../../../src/modules/system/servers.controller.ts"),
+    join(__dirname, "../../../../../packages/platform/src/engine/modules/system/server.operations.ts"),
     "utf8",
   );
 

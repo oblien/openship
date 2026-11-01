@@ -1,4 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   sq,
   injectGitToken,
@@ -171,9 +175,52 @@ describe("assembleGitClone — relay (desktop credential helper) mode", () => {
   it("authenticates the first request instead of waiting for a GitHub challenge", () => {
     const command = gitShellCommand(inv, "clone 'https://github.com/owner/repo.git' '/tmp/repo'");
     expect(command).toContain("'/tmp/helper.sh' auth-header 'https' 'github.com' 'owner/repo.git'");
-    expect(command).toContain("GIT_CONFIG_KEY_3=http.extraHeader");
+    expect(command).toContain(
+      "GIT_CONFIG_KEY_3='http.https://github.com/owner/repo.git.extraHeader'",
+    );
     expect(command).toContain('GIT_CONFIG_VALUE_3="$OPENSHIP_GIT_AUTH_HEADER"');
     expect(command.indexOf("auth-header")).toBeLessThan(command.indexOf("git clone"));
+  });
+  it("Git scopes the relay header to the parent repo and excludes foreign submodules", () => {
+    // A CI checkout can carry its own host-wide authorization header. Use an
+    // empty repository and no host config so only the assembled config is read.
+    const cwd = mkdtempSync(join(tmpdir(), "openship-git-config-"));
+    const env = {
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+    };
+    // Replace only the out-of-process relay lookup, then let real Git parse the
+    // exact environment that a networked clone/submodule command would inherit.
+    const scoped = {
+      ...inv,
+      shellPrelude: "OPENSHIP_GIT_AUTH_HEADER='Authorization: Basic test-only'",
+    };
+    const lookup = (url: string) =>
+      execFileSync(
+        "sh",
+        [
+          "-c",
+          gitShellCommand(
+            scoped,
+            `config --get-urlmatch http.extraHeader ${sq(url)} || test $? -eq 1`,
+          ),
+        ],
+        { encoding: "utf8", cwd, env },
+      ).trim();
+    try {
+      execFileSync("git", ["init", "--quiet"], { cwd, env });
+      expect(lookup("https://github.com/owner/repo.git")).toBe("Authorization: Basic test-only");
+      expect(lookup("https://github.com/owner/repo.git/info/refs")).toBe(
+        "Authorization: Basic test-only",
+      );
+      expect(lookup("https://github.com/owner/other.git")).toBe("");
+      expect(lookup("https://github.com/owner/repo.git-evil")).toBe("");
+      expect(lookup("https://elsewhere.example/owner/repo.git")).toBe("");
+      expect(lookup("http://github.com/owner/repo.git")).toBe("");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
   it("does not put a credential or Authorization value in the assembled command", () => {
     const command = gitShellCommand(inv, "clone 'repo' 'target'");
@@ -275,5 +322,89 @@ describe("assembleGitClone — priority (ssh > relay > token)", () => {
     });
     expect(inv.cloneUrl).toBe("https://github.com/owner/repo.git");
     expect(inv.cloneUrl).not.toContain("tok123");
+  });
+});
+
+describe("expanded App credential scope", () => {
+  const token = "ghs_fixtureAppTokenNotReal0000001";
+  const inv = assembleGitClone({
+    repoUrl: "https://github.com/Acme/Parent.git",
+    gitToken: token,
+    gitTokenRepositories: ["Parent", "Shared"],
+  });
+  const fill = (protocol: string, host: string, path: string) =>
+    spawnSync(
+      "git",
+      [
+        // A stale ambient helper must never answer before the scoped helper.
+        "-c",
+        "credential.helper=!printf 'username=ambient\\npassword=ambient\\n'",
+        ...inv.credArgs,
+        "credential",
+        "fill",
+      ],
+      {
+        encoding: "utf8",
+        input: `protocol=${protocol}\nhost=${host}\npath=${path}\n\n`,
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+          ),
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          ...inv.env,
+        },
+      },
+    );
+
+  it("returns the App credential only for exact case-insensitive repository grants", () => {
+    for (const path of ["Acme/Parent.git", "aCME/sHARED.git", "acme/shared"]) {
+      const result = fill("https", "GitHub.com", path);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`password=${token}`);
+      expect(result.stdout).toContain("username=x-access-token");
+    }
+  });
+
+  it.each([
+    ["http", "github.com", "acme/shared.git"],
+    ["https", "elsewhere.example", "acme/shared.git"],
+    ["https", "github.com.evil.example", "acme/shared.git"],
+    ["https", "github.com:8443", "acme/shared.git"],
+    ["https", "github.com", "other/shared.git"],
+    ["https", "github.com", "acme/denied.git"],
+    ["https", "github.com", "acme/shared.git-evil"],
+    ["https", "github.com", "acme/shared.git/child"],
+    ["https", "github.com", "acme/shared%2egit"],
+    ["https", "github.com", "acme/shared.git other/secret"],
+  ])("refuses %s://%s/%s without an ambient credential fallback", (protocol, host, path) => {
+    const result = fill(protocol, host, path);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain(token);
+    expect(result.stdout).not.toContain("ambient");
+  });
+
+  it("keeps secrets out of repository URLs and Git configuration arguments", () => {
+    expect(inv.cloneUrl).toBe("https://github.com/Acme/Parent.git");
+    expect(inv.credArgs.join(" ")).not.toContain(token);
+    expect(inv.credFlag).not.toContain(token);
+    expect(inv.env.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(inv.env.GIT_ALLOW_PROTOCOL).toBe("https");
+    expect(inv.credArgs.join(" ")).not.toContain("extraHeader");
+  });
+
+  it.each([
+    { repositories: [] },
+    { repositories: ["Shared"] },
+    { repositories: ["Parent", "other/secret"] },
+    { repositories: ["Parent", ".."] },
+  ])("refuses an incomplete or malformed grant $repositories", ({ repositories }) => {
+    expect(() =>
+      assembleGitClone({
+        repoUrl: "https://github.com/acme/parent.git",
+        gitToken: token,
+        gitTokenRepositories: repositories,
+      }),
+    ).toThrow(/grant|grants/);
   });
 });

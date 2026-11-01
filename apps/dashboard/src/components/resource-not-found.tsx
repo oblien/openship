@@ -1,8 +1,10 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -102,7 +104,9 @@ function IdChip({ value, copyLabel }: { value: string; copyLabel?: string }) {
     p.then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {});
+    }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/components/resource-not-found");
+    });
   };
   return (
     <button
@@ -114,9 +118,9 @@ function IdChip({ value, copyLabel }: { value: string; copyLabel?: string }) {
     >
       <span className="truncate">{value}</span>
       {copied ? (
-        <Check className="size-3.5 shrink-0 text-success" />
+        <UiIcon name="check" className="size-3.5 shrink-0 text-success" />
       ) : (
-        <Copy className="size-3.5 shrink-0 opacity-60 transition-opacity group-hover:opacity-100" />
+        <UiIcon name="copy" className="size-3.5 shrink-0 opacity-60 transition-opacity group-hover:opacity-100" />
       )}
     </button>
   );

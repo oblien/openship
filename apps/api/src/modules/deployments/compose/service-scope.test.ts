@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isUntargetedAndUndeployable, resolveDeployImage } from "./service-scope";
+import { isUntargetedAndUndeployable, resolveDeployImage } from "@repo/platform/engine/modules/deployments/compose/service-scope";
 
 /**
  * GH-585. A deploy scoped with `--service-ids A` hard-failed when an UNSCOPED sibling B was

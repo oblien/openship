@@ -62,6 +62,7 @@
  */
 
 import { SYSTEM } from "@repo/core";
+import { isIP } from "node:net";
 import { CLOUDFLARE_IPV4, CLOUDFLARE_IPV6 } from "./cloudflare-ips.generated";
 
 /** Filename of the generated real-ip include, inside the OpenResty conf dir. */
@@ -96,11 +97,20 @@ export function edgeRealIpHeader(): string {
 export function edgeTrustedProxies(): string[] {
   const raw = process.env.OPENSHIP_EDGE_TRUSTED_PROXIES?.trim();
   if (!raw) return [];
-  const CIDR = /^(?:(?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]+)(?:\/\d{1,3})?$/;
   return raw
     .split(/[,\s]+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && s.length <= 64 && CIDR.test(s));
+    .filter((s) => {
+      if (!s || s.length > 64) return false;
+      const [address = "", prefix, ...extra] = s.split("/");
+      const family = isIP(address);
+      // nginx cannot use interface-scoped IPv6 literals in set_real_ip_from.
+      if (!family || address.includes("%") || extra.length) return false;
+      return (
+        prefix === undefined ||
+        (/^(?:0|[1-9]\d{0,2})$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128))
+      );
+    });
 }
 
 /**
@@ -171,6 +181,53 @@ export function edgeRealIpConf(): string {
     );
   }
 
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * Filename of the operator real-ip include on the CONTAINERIZED edge.
+ *
+ * That edge's `nginx.conf` is baked into the image, where {@link edgeRealIpConf} was
+ * rendered at build time with no operator env, so `OPENSHIP_EDGE_TRUSTED_PROXIES`
+ * never reached it. The only directory the api can write is the bind-mounted
+ * sites-enabled, which the baked `http {}` already includes. The leading `_` keeps the
+ * file out of the route namespace, like `_default.conf` and `_management.conf`.
+ */
+export const EDGE_CONTAINER_REAL_IP_CONF_NAME = "_openship-real-ip.conf";
+
+/**
+ * The operator half of the real-ip block, for the containerized edge.
+ *
+ * Only `set_real_ip_from` lines: they accumulate, so they extend the baked Cloudflare
+ * list. `real_ip_header` and `real_ip_recursive` cannot be set twice in one scope —
+ * nginx refuses the config as `[emerg] ... is duplicate` — so the baked header stands
+ * and an override is recorded in the file instead of breaking every reload.
+ *
+ * Written even when empty, so that removing the env var removes the trust on the next
+ * apply instead of leaving the last list behind.
+ */
+export function edgeContainerRealIpConf(): string {
+  const header = edgeRealIpHeader();
+  const extra = edgeTrustedProxies();
+  const lines: string[] = [
+    "# Openship — operator-declared front proxies for the containerized edge.",
+    "#",
+    "# GENERATED on every routing apply. Source: packages/adapters/src/infra/edge-real-ip.ts",
+    "#",
+    "# The baked nginx.conf already trusts Cloudflare's ranges and reads the client",
+    "# address from its real_ip_header. This file adds OPENSHIP_EDGE_TRUSTED_PROXIES, for",
+    "# a proxy in front of this edge that is not Cloudflare (for example a tunnel",
+    "# connector on this host). Each of these can set that header and be believed, so",
+    "# keep the list to hosts you control.",
+  ];
+  if (header.toLowerCase() !== "cf-connecting-ip") {
+    lines.push(
+      "#",
+      `# OPENSHIP_EDGE_REAL_IP_HEADER=${header} is NOT applied here: the baked config`,
+      "# already sets real_ip_header, and nginx rejects a second one in the same scope.",
+    );
+  }
+  lines.push("", ...extra.map((c) => `set_real_ip_from ${c};`));
   return lines.join("\n") + "\n";
 }
 

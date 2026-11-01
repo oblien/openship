@@ -1,0 +1,102 @@
+---
+title: server cluster runtime
+description: Commands, arguments, and options for openship server cluster runtime.
+cliGroup: openship server cluster runtime
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server cluster runtime
+
+Install or recover the shared scaling runtime
+
+```text
+openship server cluster runtime [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <id>`](/docs/cli/reference/server/cluster/runtime#openship-server-cluster-runtime-get) | Read runtime status and sequence |
+| [`setup [options] [file]`](/docs/cli/reference/server/cluster/runtime#openship-server-cluster-runtime-setup) | Install the runtime using a reviewed cluster revision and request ID |
+| [`retry [options] <id>`](/docs/cli/reference/server/cluster/runtime#openship-server-cluster-runtime-retry) | retry the runtime at the reviewed sequence |
+| [`remove [options] <id>`](/docs/cli/reference/server/cluster/runtime#openship-server-cluster-runtime-remove) | remove the runtime at the reviewed sequence |
+| [`events [options] <id>`](/docs/cli/reference/server/cluster/runtime#openship-server-cluster-runtime-events) | Stream runtime progress |
+
+## openship server cluster runtime events
+
+Stream runtime progress
+
+```text
+openship server cluster runtime events [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |
+
+## openship server cluster runtime get
+
+Read runtime status and sequence
+
+```text
+openship server cluster runtime get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+## openship server cluster runtime remove
+
+remove the runtime at the reviewed sequence
+
+```text
+openship server cluster runtime remove [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current sequence from runtime get |
+| `-y, --yes` | Confirm host changes |
+
+## openship server cluster runtime retry
+
+retry the runtime at the reviewed sequence
+
+```text
+openship server cluster runtime retry [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--sequence <number>` | Current sequence from runtime get |
+| `-y, --yes` | Confirm host changes |
+
+## openship server cluster runtime setup
+
+Install the runtime using a reviewed cluster revision and request ID
+
+```text
+openship server cluster runtime setup [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |

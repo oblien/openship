@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const h = vi.hoisted(() => ({
-  servers: [] as Array<{ id: string }>,
+  servers: [] as Array<{ id: string; isLocal?: boolean; workspaceId?: string; purpose?: string }>,
   cloudMode: false,
   /** serverId → whether the staleness gate says "recently scraped". */
   throttled: new Set<string>(),
@@ -27,7 +27,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
-    server: { list: vi.fn(async () => h.servers) },
+    server: { list: vi.fn(async () => h.servers), get: vi.fn(async (id: string) => h.servers.find(s => s.id === id)) },
     analytics: {
       getLastScrapedMinute: vi.fn(async () => null),
       upsertBuckets: vi.fn(async () => {}),
@@ -36,22 +36,22 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/config", () => ({ env: { get CLOUD_MODE() { return h.cloudMode; } } }));
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { get CLOUD_MODE() { return h.cloudMode; } } }));
 
 // A cacheStore whose `get` reports the throttle state the test set up.
-vi.mock("../../../src/lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: vi.fn(async () => ({
     get: async (key: string) => (h.throttled.has(key.replace("lastAt:", "")) ? 1 : undefined),
     set: async () => {},
   })),
 }));
 
-vi.mock("../../../src/lib/system-debug", () => ({
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({
   systemDebug: vi.fn(),
   formatDuration: () => "1ms",
 }));
 
-vi.mock("../../../src/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   probeMgmt: vi.fn(async (serverId: string) => {
     h.scraped.push(serverId);
     if (h.failing.has(serverId)) throw new Error("ssh refused");
@@ -61,7 +61,7 @@ vi.mock("../../../src/lib/project-analytics", () => ({
   postMgmt: vi.fn(async () => ({ buckets: [], flushed: 0 })),
 }));
 
-const { runAnalyticsScrapeSweep } = await import("../../../src/modules/system/analytics-scraper");
+const { runAnalyticsScrapeSweep } = await import("@repo/platform/engine/modules/system/analytics-scraper");
 
 beforeEach(() => {
   h.servers = [{ id: "s1" }, { id: "s2" }, { id: "s3" }];
@@ -98,7 +98,7 @@ describe("runAnalyticsScrapeSweep", () => {
   it("goes one server at a time — a 50-box control plane must not connect to all at once", async () => {
     let concurrent = 0;
     let peak = 0;
-    const { probeMgmt } = await import("../../../src/lib/project-analytics");
+    const { probeMgmt } = await import("@repo/platform/engine/lib/project-analytics");
     (probeMgmt as unknown as { mockImplementation: (f: unknown) => void }).mockImplementation(
       async (serverId: string) => {
         concurrent += 1;
@@ -114,11 +114,12 @@ describe("runAnalyticsScrapeSweep", () => {
     expect(peak).toBe(1);
   });
 
-  it("hard-stops in cloud mode — the SaaS has no managed servers to dial", async () => {
+  it("collects hosted customer edges, excluding provider VMs, import connections and the API host", async () => {
     h.cloudMode = true;
+    h.servers = [{ id: "customer" }, { id: "provider", workspaceId: "cloud" }, { id: "local", isLocal: true }, { id: "import", purpose: "migration_source" }];
     const r = await runAnalyticsScrapeSweep();
-    expect(r).toEqual({ servers: 0, skipped: 0 });
-    expect(h.scraped).toEqual([]);
+    expect(r).toEqual({ servers: 1, skipped: 0 });
+    expect(h.scraped).toEqual(["customer"]);
   });
 
   it("is a no-op with no servers configured", async () => {

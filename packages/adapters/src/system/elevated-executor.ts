@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
 
 import type { CommandExecutor, LogEntry } from "../types";
@@ -72,20 +73,21 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
     } catch (err) {
       try {
         return await inner.exec(elevateCommand(`cat ${sq(path)}`));
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor");
         throw err;
       }
     }
   };
 
   const existsElevated = async (path: string): Promise<boolean> => {
-    if (await inner.exists(path).catch(() => false)) return true;
+    if (await inner.exists(path).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return false; })) return true;
     // `test -e` answers absence with exit 1, which `exec` surfaces as a throw — so a
     // false here means "root can't see it either", not "the probe broke".
     return await inner
       .exec(elevateCommand(`test -e ${sq(path)}`))
       .then(() => true)
-      .catch(() => false);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return false; });
   };
   /**
    * Stage where only the login user can look, then publish as root.
@@ -130,7 +132,7 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
       // Unelevated on purpose: the directory belongs to the login user, so this still
       // works when the failure being cleaned up after is sudo itself refusing — which is
       // the one case that used to leave plaintext in /tmp indefinitely.
-      await inner.exec(`rm -rf ${sq(stage)}`).catch(() => undefined);
+      await inner.exec(`rm -rf ${sq(stage)}`).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return undefined; });
     }
   };
 
@@ -189,7 +191,8 @@ export async function ensureOwnedDir(executor: CommandExecutor, path: string): P
   try {
     await executor.exec(`mkdir -p ${quoted} && [ -w ${quoted} ]`);
     return;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor");
     // Absent and uncreatable, or present and not ours — both need root.
   }
 
@@ -216,7 +219,7 @@ export async function ensureOwnedDir(executor: CommandExecutor, path: string): P
   const loginUser = await executor
     .exec("id -un")
     .then((out) => out.trim())
-    .catch(() => "");
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return ""; });
   const owner = loginUser ? sq(loginUser) : '"$SUDO_USER"';
 
   await executor.exec(

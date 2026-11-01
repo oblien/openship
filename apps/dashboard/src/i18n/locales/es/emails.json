@@ -1,4 +1,19 @@
 {
+  "cloudClient": {
+    "title": "Correo electrónico",
+    "subtitle": "Usa tus buzones actuales con Openship Webmail.",
+    "connectTitle": "Conecta tu servidor de correo",
+    "description": "Conecta cualquier servidor IMAP/SMTP. Tus buzones y la entrega del correo siguen con tu proveedor.",
+    "connectAction": "Conectar un servidor existente",
+    "signInHint": "Inicia sesión en webmail con la dirección de correo y la contraseña de tu buzón.",
+    "manageAction": "Gestionar aplicaciones de webmail"
+  },
+  "cloudComingSoon": {
+    "title": "Correo gestionado",
+    "badge": "Próximamente",
+    "description": "El correo gestionado en Openship Cloud llegará próximamente. Los planes de servidores Cloud alojan aplicaciones y no crean un servidor de correo.",
+    "selfHosted": "Puedes alojar correo en tu propio servidor con una instalación autohospedada de Openship."
+  },
   "page": {
     "title": "Servidor de correo",
     "subtitle": "Configura un servidor de correo autoalojado con unos pocos clics",
@@ -132,7 +147,17 @@
     "hide": "Ocultar",
     "reveal": "Mostrar",
     "generateTitle": "Generar una contraseña aleatoria segura",
-    "generate": "Generar"
+    "generate": "Generar",
+    "relay": {
+      "toggle": "Retransmitir el correo saliente a través de un proveedor de correo electrónico",
+      "hint": "Recomendado. Enviar a través de las IP de confianza de un proveedor: las IP de servidores nuevos suelen estar en listas de bloqueo y muchos proveedores bloquean el puerto 25 saliente. La recepción permanece en este servidor.",
+      "region": "Región",
+      "username": "Nombre de usuario SMTP",
+      "password": "Contraseña SMTP",
+      "perDomainNote": "Se aplica a todos los dominios. El enrutamiento por dominio y los registros DKIM / MAIL FROM del proveedor de cada dominio se configuran tras la instalación en la pestaña Envío."
+    },
+    "startFailed": "No se pudo iniciar la configuración del motor de correo.",
+    "startFailedFallback": "No se pudo conectar para iniciar la configuración. Verifica el acceso SSH e inténtalo de nuevo."
   },
   "sidebar": {
     "portConflict": {

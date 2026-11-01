@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { apiRaw } from "../lib/api-client";
+import { getRemoteClient } from "../lib/ship-client";
 import { err, printJson } from "../lib/output";
 
 /**
@@ -15,7 +15,8 @@ export const apiCommand = new Command("api")
   .option("-q, --query <kv...>", "Query parameter key=value (repeatable)")
   .action(async (path: string, opts) => {
     const method = (opts.method || (opts.data ? "POST" : "GET")).toUpperCase();
-    let url = path.startsWith("/") ? path : `/${path}`;
+    // The client already prefixes /api, so accept full route paths (/api/projects) too.
+    let url = (path.startsWith("/") ? path : `/${path}`).replace(/^\/api(?=\/|$)/, "");
     if (opts.query?.length) {
       const sp = new URLSearchParams();
       for (const kv of opts.query as string[]) {
@@ -29,7 +30,7 @@ export const apiCommand = new Command("api")
     if (opts.data) init.body = opts.data;
 
     try {
-      const res = await apiRaw(url, init);
+      const res = await getRemoteClient().http.raw(url, init);
       const text = await res.text();
       let body: unknown = text;
       try {

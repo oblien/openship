@@ -20,10 +20,13 @@
  * update must never leave the box without the thing it was serving.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { posix } from "node:path";
+import { safeErrorMessage } from "@repo/core";
 
 import type { CommandExecutor, LogEntry } from "../types";
 import { sq } from "./local-shell";
+import { isRuntimeNotFoundError } from "./errors";
 import type { SystemLog, SystemLogCallback } from "./types";
 
 function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
@@ -35,7 +38,7 @@ function titleCase(label: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-export type ManagedImageKind = "edge" | "mail";
+export type ManagedImageKind = "edge" | "mail" | "buildkit";
 
 // Whether THIS control plane builds a given managed image from a source checkout (dev)
 // rather than pulling a published tag (prod). Injected at boot PER COMPONENT from the
@@ -47,7 +50,7 @@ export type ManagedImageKind = "edge" | "mail";
 // control-plane build/ship didn't complete: the tag is unpublished, so a `docker pull`
 // can only 404. The create/swap paths surface that plainly instead of a doomed pull.
 // Default false ⇒ prod pulls exactly as before.
-const fromSourceManaged: Record<ManagedImageKind, boolean> = { edge: false, mail: false };
+const fromSourceManaged: Record<ManagedImageKind, boolean> = { edge: false, mail: false, buildkit: false };
 export function setManagedImagesFromSource(kind: ManagedImageKind, value: boolean): void {
   fromSourceManaged[kind] = value;
 }
@@ -70,12 +73,36 @@ export function fromSourceImageMissingMessage(label: string, image: string): str
 
 // ─── Inspection primitives ─────────────────────────────────────────────────────
 
+/** Read before replacement: a failed identity read must not become permission
+ * to remove the predecessor and recreate it without its ownership labels. */
+export async function containerIdentity(
+  executor: CommandExecutor,
+  container: string,
+): Promise<{ id: string; labels: Record<string, string> } | null> {
+  let raw: string;
+  try {
+    raw = await executor.exec(`docker inspect -f '{{.Id}}\t{{json .Config.Labels}}' ${sq(container)}`);
+  } catch (error) {
+    if (isRuntimeNotFoundError(error) || /no such object:/i.test(safeErrorMessage(error))) return null;
+    throw error;
+  }
+  const separator = raw.indexOf("\t");
+  const id = raw.slice(0, separator).trim();
+  if (separator < 0 || !/^[a-f0-9]{64}$/.test(id))
+    throw new Error("Docker did not return a valid container identity; replacement was not started.");
+  const labels: unknown = JSON.parse(raw.slice(separator + 1).trim());
+  if (labels !== null && (typeof labels !== "object" || Array.isArray(labels) ||
+      Object.values(labels).some(value => typeof value !== "string" || value.includes("\0"))))
+    throw new Error("Docker did not return valid container labels; replacement was not started.");
+  return { id, labels: (labels ?? {}) as Record<string, string> };
+}
+
 /** Is Docker usable on this box? A container edge/engine needs it; a bare one doesn't. */
 export async function dockerAvailable(executor: CommandExecutor): Promise<boolean> {
   return executor
     .exec("docker version --format '{{.Server.Version}}' 2>/dev/null")
     .then((v) => Boolean(v.trim()))
-    .catch(() => false);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/managed-image"); return false; });
 }
 
 /**
@@ -91,15 +118,28 @@ export async function dockerAvailable(executor: CommandExecutor): Promise<boolea
 export async function containerState(
   executor: CommandExecutor,
   container: string,
+  options: { strict?: boolean } = {},
 ): Promise<{ running: boolean; image: string | null } | null> {
-  const out = await executor
-    .exec(`docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)} 2>/dev/null`)
-    .catch(() => "");
+  let out: string;
+  try {
+    out = await executor.exec(
+      `docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)} ${options.strict ? "2>&1" : "2>/dev/null"}`,
+    );
+  } catch (error) {
+    if (!options.strict) return null;
+    // A missing container or Docker executable rules out this topology. A
+    // failed transport/daemon/permission check establishes no container state.
+    if (isRuntimeNotFoundError(error) || /no such object:|docker: (?:command )?not found/i.test(safeErrorMessage(error))) return null;
+    throw error;
+  }
   const line = out
     .split("\n")
     .map((l) => l.trim())
-    .find(Boolean);
-  if (!line) return null;
+    .find((value) => options.strict ? /^(?:true|false)\t/.test(value) : Boolean(value));
+  if (!line) {
+    if (options.strict) throw new Error("Docker did not return a valid container state");
+    return null;
+  }
   const [running, image] = line.split("\t");
   return { running: running?.trim() === "true", image: image?.trim() || null };
 }
@@ -116,7 +156,7 @@ export async function containerImageRef(
 export async function imageExistsLocally(executor: CommandExecutor, ref: string): Promise<boolean> {
   const out = await executor
     .exec(`docker image inspect -f '{{.Id}}' ${sq(ref)} 2>/dev/null`)
-    .catch(() => "");
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/managed-image"); return ""; });
   return Boolean(out.trim());
 }
 

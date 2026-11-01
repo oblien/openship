@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * A card that folds away, remembering whether it was open.
  *
@@ -21,7 +24,6 @@
  */
 
 import React, { useState } from "react";
-import { ChevronRight } from "lucide-react";
 
 interface Props {
   title: string;
@@ -39,7 +41,8 @@ function initialOpen(key: string, fallback: boolean): boolean {
   try {
     const v = window.localStorage.getItem(key);
     return v === null ? fallback : v === "1";
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/CollapsibleCard");
     // Private mode / storage disabled — the fold still works for this session.
     return fallback;
   }
@@ -59,7 +62,8 @@ export const CollapsibleCard: React.FC<Props> = ({
     setOpen(next);
     try {
       window.localStorage.setItem(storageKey, next ? "1" : "0");
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/monitoring/CollapsibleCard");
       /* nothing to do; the choice applies for this session */
     }
   };
@@ -72,7 +76,7 @@ export const CollapsibleCard: React.FC<Props> = ({
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-5 py-3.5 text-left"
       >
-        <ChevronRight
+        <UiIcon name="chevron-right"
           aria-hidden
           className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ${
             open ? "rotate-90" : ""

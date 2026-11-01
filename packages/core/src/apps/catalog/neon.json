@@ -8,7 +8,7 @@
   },
   "id": "neon",
   "name": "Neon",
-  "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI, so a community control plane is the only way to run self-hosted Neon with a dashboard. One container with no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints — sized for development and preview databases rather than critical data.",
+  "description": "Community-powered self-hosted Neon with Postgres branching, a console, and per-branch connection strings.",
   "repository": "https://github.com/matisiekpl/neond",
   "kind": "template",
   "logo": "neon",
@@ -176,5 +176,22 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Postgres branching",
+        "description": "Create database branches for development."
+      },
+      {
+        "title": "Community console",
+        "description": "Use the neond control plane and dashboard."
+      },
+      {
+        "title": "Branch connections",
+        "description": "Connect with per-branch connection strings."
+      }
+    ],
+    "articleFile": "articles/neon.md"
+  }
 }

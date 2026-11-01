@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// This file isolates subscription/default fan-out; real recipient policy is
+// exercised through notification SDK/HTTP parity and queue tests.
+vi.mock("@repo/platform/engine/lib/notification-access", () => ({ canReceiveNotification: async (userId: string) => !h.deniedUsers.has(userId) }));
+
 /**
  * Dispatcher tier-1 (explicit subscriptions) + tier-2 (org-default fallback)
  * fan-out. Tier-2 is the consumer that makes default-enabled categories notify
@@ -8,6 +12,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  */
 
 const h = vi.hoisted(() => ({
+  lookupFailure: false,
+  deniedUsers: new Set<string>(),
+  seededUsers: [] as string[],
+  durable: [] as Array<{ key: string; userId: string; organizationId: string; channelId: string }>,
   created: [] as Array<{ userId: string; channelId: string; channelKind: string; category: string }>,
   enabledSubs: [] as Array<{ id: string; userId: string; channelId: string }>,
   channelsById: {} as Record<string, { id: string; kind: string; enabled: boolean; verified: boolean; userId: string } | undefined>,
@@ -19,12 +27,14 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  createNotificationDeliveryRepo: () => ({ createOnce: async (key: string, data: { userId: string; organizationId: string; channelId: string }) => { h.durable.push({ key, ...data }); } }),
   repos: {
     notificationSubscription: {
-      listEnabledForDispatch: async () => h.enabledSubs,
+      listEnabledForDispatch: async () => { if (h.lookupFailure) throw new Error("database unavailable"); return h.enabledSubs; },
       listUserIdsWithSubscription: async () => h.touchedUserIds,
     },
     notificationChannel: {
+      ensureAccountChannels: async (userId: string) => { h.seededUsers.push(userId); },
       findById: async (id: string) => h.channelsById[id],
       listVerifiedForUsersByKinds: async (userIds: string[], kinds: string[]) =>
         h.verifiedByKinds.filter((c) => userIds.includes(c.userId) && kinds.includes(c.kind)),
@@ -46,13 +56,13 @@ vi.mock("@repo/db", () => ({
 
 // Job-trigger side-effect is irrelevant here — stub it so we don't pull the
 // job machinery (and its config/env chain) into this unit test.
-vi.mock("../../src/modules/jobs/job-events", () => ({
+vi.mock("@repo/platform/engine/modules/jobs/job-events", () => ({
   fireJobTriggers: (eventType: string, organizationId: string) => {
     h.jobTriggers.push({ eventType, organizationId });
   },
 }));
 
-import { notification } from "../../src/lib/notification-dispatcher";
+import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
 
 const ch = (id: string, userId: string, kind: string, over?: Partial<{ enabled: boolean; verified: boolean }>) => ({
   id,
@@ -63,6 +73,7 @@ const ch = (id: string, userId: string, kind: string, over?: Partial<{ enabled: 
 });
 
 beforeEach(() => {
+  h.lookupFailure = false; h.deniedUsers.clear(); h.seededUsers = []; h.durable = [];
   h.created = [];
   h.enabledSubs = [];
   h.channelsById = {};
@@ -74,6 +85,24 @@ beforeEach(() => {
 });
 
 describe("notification dispatcher", () => {
+  it("merges explicit workflow channels with subscriptions without duplicate recipients", async () => {
+    h.channelsById = { c_mail: ch("c_mail", "u1", "email"), c_denied: ch("c_denied", "u2", "email"), c_unverified: ch("c_unverified", "u1", "slack", { verified: false }) };
+    h.enabledSubs = [{ id: "s1", userId: "u1", channelId: "c_mail" }];
+    h.deniedUsers.add("u2");
+    const queue = await notification.prepare({ organizationId: "org", eventType: "action_run.failed", idempotencyKey: "action:run1", destinations: { channelIds: ["c_mail", "c_mail", "c_denied", "c_unverified"], includeSubscriptions: true } });
+    expect(h.durable).toHaveLength(0);
+    await queue({} as never);
+    expect(h.durable).toEqual([expect.objectContaining({ key: "action:run1", channelId: "c_mail" })]);
+  });
+
+  it("respects explicit empty job destinations without falling back to subscriptions", async () => {
+    h.channelsById = { c_mail: ch("c_mail", "u1", "email") };
+    h.enabledSubs = [{ id: "s1", userId: "u1", channelId: "c_mail" }];
+    const queue = await notification.prepare({ organizationId: "org", eventType: "job_run.failed", idempotencyKey: "action:run1", destinations: { channelIds: [] } });
+    await queue({} as never);
+    expect(h.durable).toEqual([]);
+  });
+
   it("carries the event organization into command-job dispatch", async () => {
     await notification.emitSync({
       organizationId: "org-source",
@@ -167,5 +196,26 @@ describe("notification dispatcher", () => {
   it("drops non-notifiable event types", async () => {
     await notification.emitSync({ organizationId: "org", eventType: "some.internal.thing" });
     expect(h.created).toEqual([]);
+  });
+});
+
+
+describe("durable billing notification preparation", () => {
+  it("resolves access and preferences, then waits for the caller transaction before enqueueing", async () => {
+    h.members = [{ userId: "owner" }, { userId: "outsider" }, { userId: "opted-out" }];
+    h.deniedUsers.add("outsider");
+    h.touchedUserIds = ["opted-out"];
+    h.verifiedByKinds = [ch("email", "owner", "email"), ch("app", "owner", "in_app"), ch("foreign", "outsider", "email")];
+    const queue = await notification.prepare({ organizationId: "org", eventType: "billing.credit_low", idempotencyKey: "evt1" });
+    expect(h.seededUsers).toEqual(["owner"]);
+    expect(h.created).toHaveLength(0);
+    expect(h.durable).toHaveLength(0);
+    await queue({} as never);
+    expect(h.durable.map(row => [row.key, row.userId, row.channelId])).toEqual([["evt1", "owner", "email"], ["evt1", "owner", "app"]]);
+  });
+  it("surfaces lookup failures so the webhook remains retryable instead of acknowledging lost notifications", async () => {
+    h.lookupFailure = true;
+    await expect(notification.prepare({ organizationId: "org", eventType: "billing.credit_low", idempotencyKey: "evt1" })).rejects.toThrow("database unavailable");
+    expect(h.durable).toHaveLength(0);
   });
 });

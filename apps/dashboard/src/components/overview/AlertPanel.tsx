@@ -1,6 +1,8 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
+import type { ReactNode } from "react";
 
 /**
  * The shell both home attention surfaces share: a card with a header strip (icon
@@ -23,6 +25,8 @@ import type { ComponentType, ReactNode } from "react";
  * nothing outranks it, so there is no tier to blur into.
  */
 export type AlertTone = "danger" | "warning" | "neutral";
+/** Compact for Home cards; comfortable for the full Monitoring list. */
+export type AlertDensity = "compact" | "comfortable";
 
 const TONE: Record<AlertTone, { tile: string; icon: string; title: string }> = {
   danger: {
@@ -64,7 +68,8 @@ export const ACTION_TONE: Record<AlertTone | "ghost", string> = {
 
 interface AlertPanelProps {
   tone: AlertTone;
-  icon: ComponentType<{ className?: string }>;
+  density?: AlertDensity;
+  icon: IconName;
   title: string;
   subtitle: string;
   count: number;
@@ -81,6 +86,7 @@ interface AlertPanelProps {
 
 export default function AlertPanel({
   tone,
+  density = "compact",
   icon: Icon,
   title,
   subtitle,
@@ -90,16 +96,23 @@ export default function AlertPanel({
   headerAction,
 }: AlertPanelProps) {
   const s = TONE[tone];
+  const compact = density === "compact";
   return (
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
       <div className="flex items-start gap-3 border-b border-border/50 px-5 py-4">
         <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${s.tile}`}>
-          <Icon className={`size-4 ${s.icon}`} />
+          <UiIcon name={Icon} className={`size-4 ${s.icon}`} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className={`truncate text-[14px] font-semibold ${s.title}`}>{title}</h3>
-            <span className="ms-auto shrink-0 rounded-full bg-muted px-1.5 py-px text-[11px] font-medium tabular-nums text-muted-foreground">
+            <h3
+              className={`truncate ${compact ? "text-[14px]" : "text-[15px]"} font-semibold ${s.title}`}
+            >
+              {title}
+            </h3>
+            <span
+              className={`ms-auto shrink-0 rounded-full bg-muted px-1.5 py-px ${compact ? "text-[11px]" : "text-xs"} font-medium tabular-nums text-muted-foreground`}
+            >
               {count}
             </span>
           </div>
@@ -107,7 +120,7 @@ export default function AlertPanel({
         </div>
         {headerAction && <div className="-me-2 -mt-1 shrink-0">{headerAction}</div>}
       </div>
-      <div className="px-5 py-3.5">{children}</div>
+      <div className={compact ? "px-5 py-3.5" : "px-5 py-4"}>{children}</div>
       {footer && <div className="border-t border-border/50 px-5 py-2.5">{footer}</div>}
     </div>
   );
@@ -121,9 +134,12 @@ export default function AlertPanel({
  * title's start edge. Keeping it inside meant sharing the row with a shrink-0
  * button, which in a ~320px sidebar column left the diagnosis about 150px — one
  * truncated fragment of the sentence that says what actually broke.
+ * Comfortable rows move the action below the details in narrow containers; the
+ * breakpoint follows the list column's width, including beside the summary rail.
  */
 export function AlertRow({
   tone,
+  density = "compact",
   icon: Icon,
   title,
   label,
@@ -131,7 +147,8 @@ export function AlertRow({
   action,
 }: {
   tone: AlertTone;
-  icon: ComponentType<{ className?: string }>;
+  density?: AlertDensity;
+  icon: IconName;
   /** ReactNode so a row can link its own title (the Issues feed does); plain
    *  strings still work and are what the home cards pass. */
   title: ReactNode;
@@ -140,25 +157,58 @@ export function AlertRow({
   action: ReactNode;
 }) {
   const s = TONE[tone];
+  const compact = density === "compact";
   return (
-    <li className="py-2.5 first:pt-0 last:pb-0">
-      <div className="flex items-center gap-2.5">
-        <div className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${s.tile}`}>
-          <Icon className={`size-3.5 ${s.icon}`} />
+    <li className={`@container ${compact ? "py-2.5" : "py-3.5"} first:pt-0 last:pb-0`}>
+      <div
+        className={`grid items-center ${
+          compact
+            ? "grid-cols-[1.75rem_minmax(0,1fr)_auto] gap-x-2.5 gap-y-1"
+            : "grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 @md:grid-cols-[2rem_minmax(0,1fr)_auto]"
+        }`}
+      >
+        <div
+          className={`col-start-1 row-start-1 flex ${compact ? "size-7" : "size-8"} items-center justify-center rounded-lg ${s.tile}`}
+        >
+          <UiIcon name={Icon} className={`${compact ? "size-3.5" : "size-4"} ${s.icon}`} />
         </div>
-        {/* Name and label split the line 50/50 (both `flex-1 min-w-0`), each
-            ellipsizing within its half — so a long label can't squeeze the name
-            down to "G..", and a long name can't push the label off the row. When
-            there's no label the name takes the whole width. */}
-        <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{title}</p>
+        {/* Inline names and labels share the space evenly. In a narrow full list,
+            let the label wrap so both can use the column's available width. */}
+        <div
+          className={`col-start-2 row-start-1 flex min-w-0 items-baseline ${
+            compact ? "gap-1.5" : "flex-wrap gap-x-2.5 gap-y-0.5 @md:flex-nowrap"
+          }`}
+        >
+          <p
+            className={`min-w-0 truncate ${compact ? "flex-1 text-[13px]" : "max-w-full text-sm @md:flex-1"} font-medium text-foreground`}
+          >
+            {title}
+          </p>
           {label && (
-            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{label}</span>
+            <span
+              className={`min-w-0 truncate ${compact ? "flex-1 text-[11px]" : "max-w-full text-xs @md:flex-1"} text-muted-foreground`}
+            >
+              {label}
+            </span>
           )}
         </div>
-        {action}
+        {children && (
+          <div
+            className={`col-start-2 row-start-2 min-w-0 ${compact ? "col-span-2" : "@md:col-span-2 @md:col-start-2"}`}
+          >
+            {children}
+          </div>
+        )}
+        <div
+          className={
+            compact
+              ? "col-start-3 row-start-1 flex justify-self-end"
+              : "col-start-2 row-start-3 mt-1 flex min-w-0 max-w-full justify-self-start @md:col-start-3 @md:row-start-1 @md:mt-0 @md:justify-self-end"
+          }
+        >
+          {action}
+        </div>
       </div>
-      {children && <div className="mt-1 ps-[2.375rem]">{children}</div>}
     </li>
   );
 }

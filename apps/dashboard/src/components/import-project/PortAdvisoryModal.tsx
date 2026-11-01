@@ -1,14 +1,21 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { getPortCheckIssue, getPortCheckTarget } from "@repo/core";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi } from "@/lib/api/projects";
 import { servicesApi } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
 import type { PortCheckUI, PublicEndpoint } from "@/context/deployment/types";
+import type { Dictionary } from "@/i18n";
 
 interface PortAdvisoryModalProps {
   deploymentId: string | null;
@@ -19,23 +26,13 @@ interface PortAdvisoryModalProps {
   isCompose: boolean;
   /** Single-app: current public endpoints, so a port change updates the routed target too. */
   publicEndpoints?: PublicEndpoint[];
-}
-
-/** A stable local key for a check (so resolving one closes just that advisory). */
-function keyOf(check: PortCheckUI, isCompose: boolean): string {
-  return isCompose && check.serviceId ? `svc:${check.serviceId}` : `port:${check.port}`;
-}
-
-/** The value persisted to `meta.portCheckSkipped` — service id for compose, port for single-app. */
-function skipTarget(check: PortCheckUI, isCompose: boolean): number | string {
-  return isCompose && check.serviceId ? check.serviceId : check.port;
+  onResolved: (deploymentId: string, target: number | string) => void;
 }
 
 /**
- * Advisory "nothing is responding on port X — is that the right port?" modal.
- * Rendered on the build page after a deploy is live. Renders nothing unless a
- * probe conclusively found a non-listening exposed port. Change-port re-applies
- * routing live (no redeploy); Skip dismisses + persists so it won't re-nag.
+ * One review flow for exposed ports after a deployment is live. Missing
+ * listeners keep the port editor; loopback binds need app/proxy configuration.
+ * A failed dismissal must leave the warning visible and retryable.
  */
 export function PortAdvisoryModal({
   deploymentId,
@@ -44,28 +41,23 @@ export function PortAdvisoryModal({
   skipped,
   isCompose,
   publicEndpoints,
+  onResolved,
 }: PortAdvisoryModalProps) {
   const { t } = useI18n();
   const pa = t.importProject.deploymentProcessing.portAdvisory;
   const { showToast } = useToast();
 
-  // Advisories the user has changed/skipped this session — dismissed immediately
-  // without waiting for a refetch.
-  const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const autoOpenedRef = useRef(false);
 
   const advisories = useMemo(
     () =>
       checks.filter(
-        (c) =>
-          c.checked &&
-          !c.listening &&
-          !skipped.includes(skipTarget(c, isCompose)) &&
-          !resolvedKeys.includes(keyOf(c, isCompose)),
+        (c) => getPortCheckIssue(c) !== null && !skipped.includes(getPortCheckTarget(c, isCompose)),
       ),
-    [checks, skipped, resolvedKeys, isCompose],
+    [checks, skipped, isCompose],
   );
+  const hasLoopback = advisories.some((check) => getPortCheckIssue(check) === "loopback-only");
 
   // Open once when an advisory first appears; the banner reopens it afterwards.
   useEffect(() => {
@@ -80,8 +72,10 @@ export function PortAdvisoryModal({
   return (
     <>
       <div className="mt-4 flex items-center gap-3 rounded-xl border border-warning-border bg-warning-bg px-4 py-3">
-        <AlertTriangle className="size-4 shrink-0 text-warning" />
-        <span className="flex-1 text-sm font-medium text-warning">{pa.bannerTitle}</span>
+        <UiIcon name="warning" className="size-4 shrink-0 text-warning" />
+        <span className="flex-1 text-sm font-medium text-warning">
+          {hasLoopback ? pa.loopbackTitle : pa.bannerTitle}
+        </span>
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -95,21 +89,33 @@ export function PortAdvisoryModal({
         <div className="flex flex-col gap-4 p-6">
           <div className="flex items-start gap-3">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-warning-bg">
-              <AlertTriangle className="size-5 text-warning" />
+              <UiIcon name="warning" className="size-5 text-warning" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-foreground">{pa.title}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{pa.note}</p>
+              <h2 className="text-base font-semibold text-foreground">
+                {hasLoopback ? pa.loopbackTitle : pa.title}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {hasLoopback ? pa.loopbackNote : pa.note}
+              </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-3">
             {advisories.map((check) => (
               <AdvisoryRow
-                key={keyOf(check, isCompose)}
+                key={`${getPortCheckTarget(check, isCompose)}:${check.port}`}
                 check={check}
                 isCompose={isCompose}
                 strings={pa}
+                canSkip={!!deploymentId}
+                settingsHref={
+                  projectId
+                    ? isCompose && check.serviceId
+                      ? `/projects/${projectId}/services/${check.serviceId}`
+                      : `/projects/${projectId}/advanced`
+                    : undefined
+                }
                 onChangePort={async (newPort) => {
                   if (!projectId) return;
                   try {
@@ -126,16 +132,27 @@ export function PortAdvisoryModal({
                         ...(endpoints.length > 0 ? { publicEndpoints: endpoints } : {}),
                       });
                     }
-                    setResolvedKeys((r) => [...r, keyOf(check, isCompose)]);
+                    if (deploymentId)
+                      onResolved(deploymentId, getPortCheckTarget(check, isCompose));
                     showToast(interpolate(pa.applied, { port: String(newPort) }), "success");
-                  } catch {
+                  } catch (diagnosticFailure) {
+                    observeCaughtError(diagnosticFailure, "dashboard/components/import-project/PortAdvisoryModal");
                     showToast(pa.changeError, "error");
                   }
                 }}
-                onSkip={() => {
-                  setResolvedKeys((r) => [...r, keyOf(check, isCompose)]);
-                  if (deploymentId) {
-                    void deployApi.skipPortCheck(deploymentId, skipTarget(check, isCompose));
+                onSkip={async () => {
+                  if (!deploymentId) return;
+                  try {
+                    const target = getPortCheckTarget(check, isCompose);
+                    const result = await deployApi.skipPortCheck(deploymentId, target);
+                    if (!result.success) throw new Error("Port review dismissal was not saved");
+                    onResolved(deploymentId, target);
+                  } catch (diagnosticFailure) {
+                    observeCaughtError(
+                      diagnosticFailure,
+                      "dashboard/components/import-project/PortAdvisoryModal",
+                    );
+                    showToast(pa.skipError, "error");
                   }
                 }}
               />
@@ -150,67 +167,100 @@ export function PortAdvisoryModal({
 interface AdvisoryRowProps {
   check: PortCheckUI;
   isCompose: boolean;
-  strings: {
-    body: string;
-    bodyService: string;
-    newPortLabel: string;
-    changePort: string;
-    skip: string;
-  };
+  strings: Dictionary["importProject"]["deploymentProcessing"]["portAdvisory"];
+  canSkip: boolean;
+  settingsHref?: string;
   onChangePort: (newPort: number) => Promise<void>;
-  onSkip: () => void;
+  onSkip: () => Promise<void>;
 }
 
-function AdvisoryRow({ check, isCompose, strings, onChangePort, onSkip }: AdvisoryRowProps) {
+function AdvisoryRow({
+  check,
+  isCompose,
+  strings,
+  canSkip,
+  settingsHref,
+  onChangePort,
+  onSkip,
+}: AdvisoryRowProps) {
   const [value, setValue] = useState(String(check.port));
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"change" | "skip" | null>(null);
+  const loopbackOnly = getPortCheckIssue(check) === "loopback-only";
 
   const message =
     isCompose && check.serviceName
-      ? interpolate(strings.bodyService, { service: check.serviceName, port: String(check.port) })
-      : interpolate(strings.body, { port: String(check.port) });
+      ? interpolate(loopbackOnly ? strings.loopbackBodyService : strings.bodyService, {
+          service: check.serviceName,
+          port: String(check.port),
+        })
+      : interpolate(loopbackOnly ? strings.loopbackBody : strings.body, {
+          port: String(check.port),
+        });
 
   const newPort = Number(value);
   const canApply = Number.isInteger(newPort) && newPort > 0 && newPort <= 65535 && !busy;
 
   return (
-    <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+    <div className="rounded-xl bg-card p-4">
       <p className="text-sm text-foreground">{message}</p>
-      <div className="mt-3 flex items-end gap-2">
-        <label className="flex-1">
-          <span className="mb-1 block text-xs text-muted-foreground">{strings.newPortLabel}</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="w-full rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </label>
-        <button
+      {loopbackOnly && <p className="mt-2 text-xs text-muted-foreground">{strings.loopbackHelp}</p>}
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        {!loopbackOnly && (
+          <label className="min-w-28 flex-1">
+            <span className="mb-1 block text-xs text-muted-foreground">{strings.newPortLabel}</span>
+            <Input
+              variant="filled"
+              className="h-10"
+              type="number"
+              inputMode="numeric"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          </label>
+        )}
+        {!loopbackOnly && (
+          <Button
+            type="button"
+            disabled={!canApply}
+            onClick={async () => {
+              setBusy("change");
+              try {
+                await onChangePort(newPort);
+              } finally {
+                setBusy(null);
+              }
+            }}
+          >
+            {busy === "change" ? (
+              <UiIcon name="spinner" className="size-4 animate-spin" />
+            ) : (
+              <UiIcon name="arrow-right" className="size-4" />
+            )}
+            {strings.changePort}
+          </Button>
+        )}
+        {loopbackOnly && settingsHref && (
+          <Button asChild variant="secondary">
+            <Link href={settingsHref}>{strings.openSettings}</Link>
+          </Button>
+        )}
+        <Button
           type="button"
-          disabled={!canApply}
+          variant="ghost"
+          disabled={!!busy || !canSkip}
+          aria-busy={busy === "skip"}
           onClick={async () => {
-            setBusy(true);
+            setBusy("skip");
             try {
-              await onChangePort(newPort);
+              await onSkip();
             } finally {
-              setBusy(false);
+              setBusy(null);
             }
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-          {strings.changePort}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onSkip}
-          className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
-        >
+          {busy === "skip" && <UiIcon name="spinner" className="size-4 animate-spin" />}
           {strings.skip}
-        </button>
+        </Button>
       </div>
     </div>
   );

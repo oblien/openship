@@ -75,6 +75,9 @@
       "onFailureWarn": "保持部署上线，并标记为待复查",
       "onFailureFail": "让部署失败，并继续由上一个版本提供服务"
     },
+    "runtimeVersionLabel": "运行时版本",
+    "runtimeVersionDefault": "默认",
+    "runtimeVersionDesc": "使用与所选版本匹配的构建和运行镜像。需要由 Openship 生成的 Docker 构建。",
     "buildImageLabel": "构建镜像",
     "buildImageDesc": "用于云端或服务器构建的构建容器镜像。当检测到的基础镜像有误时可覆盖此项。",
     "productionPathsLabel": "生产路径",
@@ -105,7 +108,24 @@
     "modeWorker": "工作进程",
     "modeStatic": "静态",
     "workerModeDesc": "持续运行，无端口或公共 URL — 队列消费者、定时任务或机器人。",
-    "buildSettingsTitle": "构建设置"
+    "buildSettingsTitle": "构建设置",
+    "releaseTitle": "激活前",
+    "releaseDescription": "构建后执行的可选命令。失败会停止部署。仅适用于 Docker 和 Bare 应用。",
+    "releaseCommand": "命令 {number}",
+    "addReleaseCommand": "添加命令",
+    "removeReleaseCommand": "删除命令 {number}",
+    "runtimeImageLabel": "运行镜像",
+    "runtimeImageDesc": "可选的 Docker 生产基础镜像。必须与运行时和生成的构建方案兼容；留空以使用默认值。",
+    "staticPathHint": "从边缘节点作为静态文件提供服务 — 不作为进程运行。",
+    "runtimeTitle": "运行时",
+    "runtimeDesc": "选择运行应用的镜像。刷新镜像会保留所选版本和固定摘要。",
+    "runtimeBareDesc": "此应用直接在服务器上运行。请在服务器上管理已安装的运行时。",
+    "runtimeStaticDesc": "构建镜像负责准备静态文件。部署后不会运行应用运行时。",
+    "runtimeDockerfileDesc": "运行时镜像由 Dockerfile 指定。",
+    "runtimeServicesDesc": "请在“服务”中为每项服务选择运行时镜像。",
+    "runtimePrebuiltDesc": "所选应用镜像已包含运行时。",
+    "runtimeOverrideUnused": "这些已保存的覆盖设置不适用于本次部署。请先清除再保存。",
+    "clearRuntimeOverrides": "清除已保存的覆盖设置"
   },
   "projectSettings": {
     "framework": "框架",
@@ -123,6 +143,7 @@
     "noneSet": "未设置",
     "pasteEnv": "粘贴 .env",
     "uploadEnv": "上传 .env",
+    "downloadEnv": "下载 .env",
     "edit": "编辑",
     "cancel": "取消",
     "saving": "正在保存……",
@@ -144,6 +165,7 @@
       "interpolated": "已插值"
     },
     "toast": {
+      "downloadFailed": "无法下载环境变量。",
       "title": "环境变量",
       "added": "已添加 {count} 个",
       "updated": "已更新 {count} 个",
@@ -173,7 +195,9 @@
       "domainLabel": "域名",
       "free": "免费",
       "custom": "自定义",
-      "routingTrafficPrefix": "将流量路由到端口"
+      "routingTrafficPrefix": "将流量路由到端口",
+      "duplicateTitle": "重复域名",
+      "duplicateDescription": "两条路由指向同一个域名 — 请修改其中一条，使每条路由都有专属域名："
     },
     "shared": {
       "title": "共享环境",
@@ -205,9 +229,9 @@
       "volumes": "卷",
       "statefulWarnPart1": "云端上的有状态服务：数据存储在工作区的持久磁盘上（重启后仍保留），但在重新构建时",
       "statefulWarnBold": "不会被保留",
-      "statefulWarnPart2": "，除非启用了备份。Docker 卷挂载不适用。",
+      "statefulWarnPart2": "。替换工作区之前，请明确执行数据备份和恢复。",
       "volumeHint": "命名卷或主机路径 → 容器路径。",
-      "volumeCloudNote": "在云端这些挂载不适用 —— 数据保存在工作区的磁盘上（未启用备份时不会跨重新构建保留）。",
+      "volumeCloudNote": "Openship Cloud 不支持持久卷挂载。需要卷的工作负载请选择服务器。",
       "sourcePlaceholder": "来源",
       "containerPathPlaceholder": "容器路径",
       "readOnlyMount": "只读挂载",
@@ -285,7 +309,51 @@
       "singleDesc": "提升某一个子应用的构建 + 启动命令，从一个运行时暴露每个应用的端口。"
     },
     "deploymentMode": "部署模式",
-    "deploymentModeDesc": "{mode} · 在按应用运行时与单应用处理之间切换。"
+    "deploymentModeDesc": "{mode} · 在按应用运行时与单应用处理之间切换。",
+    "selection": {
+      "title": "要部署的应用",
+      "chooseApps": "选择应用",
+      "changeSelection": "更改选择",
+      "selected": "已选择 {count} 个",
+      "chooseHint": "选择要运行的应用。命令行工具、移动应用和共享包可以不选。",
+      "applySelection": "使用所选应用",
+      "manualReview": "检查配置",
+      "detectedApp": "检测到的应用",
+      "empty": "从此仓库选择应用或添加文件夹。未选择的应用不会部署。",
+      "addFromRepo": "从仓库添加应用",
+      "addMore": "添加更多",
+      "cancel": "取消",
+      "addApp": "添加应用",
+      "chooseFolder": "更改文件夹",
+      "useFolder": "使用此文件夹",
+      "folderHint": "选择应用文件夹。构建仍可访问仓库的共享包和锁定文件。",
+      "appFolder": "应用文件夹",
+      "invalidPath": "输入相对于仓库的文件夹路径，例如 apps/web 或 .",
+      "alreadyAdded": "此文件夹已在应用列表中。请通过“更改选择”启用它。",
+      "browseError": "无法加载仓库文件夹。",
+      "scanError": "无法检查此文件夹。",
+      "composeFolder": "此文件夹定义了 Compose 服务栈。请将该 Compose 文件作为项目导入。",
+      "scanning": "正在检查…",
+      "inspect": "检查文件夹",
+      "parentFolder": "上级文件夹",
+      "retry": "重试",
+      "loadingFolders": "正在加载文件夹…",
+      "noSubfolders": "没有子文件夹。你可以选择此文件夹。",
+      "reviewHint": "添加此应用以在部署前检查框架、命令和环境变量。",
+      "domains": "域名",
+      "manage": "管理",
+      "domainNeeded": "需要域名",
+      "viewAll": "查看全部 {count} 个域名",
+      "domainHint": "这些域名将在部署时应用。",
+      "privateHint": "所选应用没有公开域名。",
+      "done": "完成",
+      "private": "私有",
+      "publicAccess": "公开访问",
+      "accessHint": "关闭后，此应用只能从项目内部访问。",
+      "app": "应用",
+      "appLimit": "此项目已有 50 个应用。请创建另一个项目以添加更多应用。",
+      "folderMismatch": "此文件夹指向其他项目配置。请选择该文件夹或编辑其 openship.json。"
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Cloud",
@@ -315,7 +383,7 @@
       "successful": "部署成功",
       "deploying": "正在部署……"
     },
-    "visitSite": "访问站点",
+    "openSite": "打开网站",
     "warningTitle": "部署已完成，但部分服务仍需处理。",
     "productionLogs": "生产日志",
     "buildTerminal": "构建终端",
@@ -325,7 +393,7 @@
     "stopDeployment": "停止部署",
     "redeploy": "重新部署",
     "goToProject": "前往项目",
-    "openDashboard": "打开仪表盘",
+    "openProject": "打开项目",
     "edit": "编辑",
     "status": {
       "cancelled": "已取消",
@@ -342,7 +410,38 @@
     "detailFramework": "框架",
     "detailBranch": "分支",
     "detailDomains": "域名",
-    "detailDomain": "域名"
+    "detailDomain": "域名",
+    "portAdvisory": {
+      "loopbackTitle": "应用无法接收路由流量",
+      "loopbackNote": "部署仍在运行，但有一个路由端口需要处理。",
+      "loopbackBody": "端口 {port} 仅接受容器内部的连接。",
+      "loopbackBodyService": "服务“{service}”的端口 {port} 仅接受容器内部的连接。",
+      "loopbackHelp": "对于需要接收路由流量的应用，请监听 0.0.0.0 后重新部署，或将流量路由到其预期的代理。",
+      "openSettings": "打开设置",
+      "skipError": "无法忽略此警告，请重试。",
+      "title": "端口不匹配提示",
+      "bannerTitle": "检测到容器端口不匹配",
+      "review": "检查端口",
+      "note": "边缘路由器指向端口 {port}，但您的应用程序未在此响应。",
+      "body": "端口 {port} 上没有响应。如果您的应用程序监听其他端口，请在下方更新。",
+      "bodyService": "服务 \"{service}\"：端口 {port} 上没有响应。如果它监听其他端口，请在此处设置正确的端口。",
+      "newPortLabel": "正确端口",
+      "changePort": "更改端口",
+      "skip": "跳过",
+      "applied": "路由已更新至端口 {port}。",
+      "changeError": "无法更新端口。请重试。"
+    }
+  },
+  "deploymentHealth": {
+    "recheck": "重新检查健康状态",
+    "checking": "正在检查…",
+    "healthy": "服务运行正常",
+    "atDeployment": "部署时的警告",
+    "currentHealth": "当前服务状态",
+    "startupHint": "如果应用仍在启动，请稍等后重新检查。如果不断重启或报告错误，请打开日志查找原因。",
+    "viewLogs": "查看日志",
+    "unavailable": "无法验证健康状态。服务器恢复连接后请重试。",
+    "historical": "此部署已不再活动。请打开项目检查当前服务。"
   },
   "composeDeployment": {
     "title": {
@@ -416,12 +515,12 @@
     "rowType": "类型"
   },
   "configDiagnostics": {
-    "title": "此仓库的 openship.json 有部分未生效",
-    "description": "下列字段被跳过，文件的其余部分已生效。本次部署将继续。",
+    "title": "部分仓库部署设置未应用",
+    "description": "部署前请检查以下跳过的设置。",
     "titleWholeFile": "已忽略此仓库的 openship.json",
     "descriptionWholeFile": "文件中没有任何内容生效。本次部署将使用 Openship 自动检测到的设置继续。",
     "refused": "已拒绝",
     "unrecognized": "无法识别",
-    "hint": "下次部署前，请在仓库中运行 `openship config validate` 检查该文件。"
+    "hint": "下次部署前，请检查指定的配置文件并更新不受支持的设置。"
   }
 }

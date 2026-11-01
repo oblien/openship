@@ -19,6 +19,10 @@
     "enterprise": {
       "name": "Enterprise",
       "tagline": "Custom limits, dedicated infrastructure, and an SLA."
+    },
+    "hobby": {
+      "name": "Hobby",
+      "tagline": "A small managed server for personal projects and everyday apps."
     }
   },
   "features": {
@@ -26,11 +30,10 @@
     "staticOnly": "Static sites only — SSG, SPA, and plain HTML",
     "anyWorkload": "Run anything — containers, Compose, workers, Postgres, Redis",
     "runningServices": "{runningServices} running apps, databases or workers",
-    "computeMinutes": "{computeMinutes} compute minutes per month",
     "buildMinutes": "{buildMinutes} build minutes per month",
+    "sharedBuilds": "Builds share your server, with no monthly time cap",
     "power": "Up to {powerCpu} vCPU and {powerRamGb} GB RAM per app",
     "projects": "{maxProjects} projects",
-    "projectsUnlimited": "Unlimited projects",
     "freeSubdomains": "{freeSubdomains} free {freeDomainSuffix} subdomains",
     "freeSubdomainsUnlimited": "Unlimited free {freeDomainSuffix} subdomains",
     "gitDeploys": "Deploy from GitHub, GitLab, or any Git remote",
@@ -50,7 +53,9 @@
     "selfHostedUnlimited": "Unlimited deploys, projects, servers, and domains",
     "selfHostedServices": "Every managed service — Postgres, Redis, mail",
     "selfHostedClients": "CLI, web, and desktop — one backend",
-    "selfHostedFreeSubdomains": "{freeSubdomains} free {freeDomainSuffix} subdomains when you connect to Cloud"
+    "selfHostedFreeSubdomains": "{freeSubdomains} free {freeDomainSuffix} subdomains when you connect to Cloud",
+    "monthlyCoverage": "CPU, RAM and storage covered for the paid period",
+    "namespaceCapacity": "Total: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB disk"
   },
   "selfHosted": {
     "name": "Self-hosted",
@@ -60,9 +65,14 @@
     "cta": "Start self-hosting"
   },
   "creditPacks": {
-    "pack_5k": "{computeMinutes} compute minutes",
-    "pack_25k": "{computeMinutes} compute minutes",
-    "pack_100k": "{computeMinutes} compute minutes"
+    "pack_5k": "{credits} credits",
+    "pack_25k": "{credits} credits",
+    "pack_100k": "{credits} credits",
+    "pack_500": "{credits} credits",
+    "pack_2k": "{credits} credits",
+    "pack_400": "{credits} credits",
+    "pack_1700": "{credits} credits",
+    "pack_4500": "{credits} credits"
   },
   "ui": {
     "perMonth": "/mo",
@@ -80,6 +90,6 @@
     "campaignEnds": "Offer ends {date}",
     "wasPrice": "was {price}",
     "standardTitle": "In every plan",
-    "creditPackNote": "≈ {appHours} hours of a small app, or {buildMinutes} build minutes"
+    "creditPackNote": "Applied to metered Cloud usage; duration depends on your workload."
   }
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 
 import type { SystemIssue } from "@/lib/api/issues";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -47,7 +48,7 @@ export default function SystemStatusRow({
         ? "text-danger"
         : "text-warning";
 
-  const Icon = loaded && broken.length > 0 ? AlertTriangle : CheckCircle2;
+  const Icon = loaded && broken.length > 0 ? "warning" : "check-circle";
   const value = !loaded
     ? "–"
     : broken.length === 0
@@ -62,12 +63,12 @@ export default function SystemStatusRow({
   const body = (
     <>
       <div className="flex min-w-0 items-center gap-2">
-        <Icon className={`size-4 shrink-0 ${tone}`} />
+        <UiIcon name={Icon} className={`size-4 shrink-0 ${tone}`} />
         <span className="truncate text-sm text-muted-foreground">{c.systemStatus}</span>
       </div>
       <span className={`inline-flex shrink-0 items-center gap-1 text-sm font-medium ${tone}`}>
         {value}
-        {loaded && broken.length > 0 && <ArrowRight className="size-3.5 rtl:rotate-180" />}
+        {loaded && broken.length > 0 && <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />}
       </span>
     </>
   );

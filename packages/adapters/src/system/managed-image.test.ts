@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildImage,
+  containerIdentity,
   managedImagesAreFromSource,
   setManagedImagesFromSource,
   swapManagedImage,
@@ -11,6 +12,29 @@ import type { CommandExecutor } from "../types";
 afterEach(() => {
   setManagedImagesFromSource("edge", false);
   setManagedImagesFromSource("mail", false);
+});
+
+describe("container identity before replacement", () => {
+  const id = "a".repeat(64);
+  const executor = (read: () => Promise<string>) => ({ exec: vi.fn(read) }) as unknown as CommandExecutor;
+
+  it("reads an exact ID and labels, including an unlabeled predecessor", async () => {
+    expect(await containerIdentity(executor(async () => `${id}\t{"openship.project":"project-one"}`), "edge"))
+      .toEqual({ id, labels: { "openship.project": "project-one" } });
+    expect(await containerIdentity(executor(async () => `${id}\tnull`), "edge")).toEqual({ id, labels: {} });
+  });
+
+  it("distinguishes an absent container from a failed read", async () => {
+    expect(await containerIdentity(executor(async () => { throw new Error("No such container: edge"); }), "edge")).toBeNull();
+    await expect(containerIdentity(executor(async () => { throw new Error("permission denied"); }), "edge"))
+      .rejects.toThrow("permission denied");
+  });
+
+  it.each(["", "short\t{}", `${id}\t[]`, `${id}\t{"invalid":1}`, `${id}\t{bad`, `${id}\t${JSON.stringify({ invalid: "\0" })}`])(
+    "rejects malformed Docker identity output (%j)", async (raw) => {
+      await expect(containerIdentity(executor(async () => raw), "edge")).rejects.toThrow();
+    },
+  );
 });
 
 describe("setManagedImagesFromSource / managedImagesAreFromSource", () => {

@@ -1,9 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useI18n } from "@/components/i18n-provider";
 import { locales } from "@/i18n";
 import { Button } from "@/components/ui/button";
-import { Globe } from "lucide-react";
 
 /**
  * Cycles through available locales on click.
@@ -25,7 +26,7 @@ export function LanguageSwitcher() {
       aria-label={t.settings.language.title}
       className="text-xs font-semibold"
     >
-      <Globe className="size-4" />
+      <UiIcon name="globe" className="size-4" />
     </Button>
   );
 }

@@ -3,8 +3,8 @@ import {
   resolveDnsProvider,
   listDnsProviders,
   describeDnsProviders,
-} from "../../../src/modules/dns/registry";
-import { UnknownDnsProviderError } from "../../../src/modules/dns/types";
+} from "@repo/platform/engine/modules/dns/registry";
+import { UnknownDnsProviderError } from "@repo/platform/engine/modules/dns/types";
 
 describe("dns registry", () => {
   it("resolves the registered cloudflare provider", () => {

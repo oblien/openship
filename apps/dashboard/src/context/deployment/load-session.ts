@@ -23,6 +23,8 @@ import {
  */
 export interface BuildSessionLoadResult {
   success: boolean;
+  /** A newer deployment view replaced this request; ignore its result. */
+  superseded?: boolean;
   /** `true` ONLY when the server itself said the deployment isn't there — a
    *  soft-failed status response or an HTTP 404. Never set for a client-side
    *  hydration exception, a 5xx, or a network failure: those mean "couldn't

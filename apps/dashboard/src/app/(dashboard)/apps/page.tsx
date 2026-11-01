@@ -1,314 +1,203 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Project } from "@/constants/mock";
-import ProjectCard from "../projects/components/ProjectCard";
-import { projectsApi } from "@/lib/api";
-import { updatesApi } from "@/lib/api/updates";
-import { useI18n, interpolate } from "@/components/i18n-provider";
-import { AVAILABLE_APP_IDS } from "@repo/core";
-import {
-  Plus,
-  Mail,
-  Database,
-  FileText,
-  Activity,
-  KeyRound,
-  BarChart3,
-  ArrowRight,
-  type LucideIcon,
-} from "lucide-react";
-import { PageContainer } from "@/components/ui/PageContainer";
+import { Icon } from "@repo/ui/icons";
 import { AppLogo } from "@/components/AppLogo";
 import { HelpMenu } from "@/components/HelpMenu";
+import { useI18n, interpolate } from "@/components/i18n-provider";
+import HomeAppsIllustration from "@/components/overview/HomeAppsIllustration";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { PageContainer } from "@/components/ui/PageContainer";
+import { useDashboardHome } from "@/hooks/useDashboardHome";
+import { appsApi, type AppCatalogEntry } from "@/lib/api";
+import { updatesApi } from "@/lib/api/updates";
+import ProjectCard from "../projects/components/ProjectCard";
 
-/**
- * Apps tab — catalog-installed managed services. Shares `projects/home` data with
- * the Projects page; keeps only `isApp` projects. When empty it becomes a showcase
- * of the catalog: a chain-of-apps hero (real brand logos) + a tap-to-install tile
- * per featured app. The featured list is static so the showcase never renders
- * empty; install always routes into the real /apps/new flow.
- */
-
-interface FeaturedApp {
-  id: string;
-  name: string;
-  desc: string;
-  /** Fallback icon if the brand logo can't load. */
-  icon: LucideIcon;
+// Keep the original showcase order; availability and app details come from the catalog.
+const FEATURED_APP_IDS = [
+  "supabase", "convex", "mongodb", "neon", "mail",
+  "ghost", "uptime-kuma", "vaultwarden", "metabase",
+];
+function CatalogShortcut({ app }: { app: AppCatalogEntry }) {
+  const { t } = useI18n();
+  const localizedDesc = (t.library as any)?.catalog?.apps?.[app.id] || app.description;
+  return (
+    <Link
+      href={`/apps/new?app=${encodeURIComponent(app.id)}`}
+      className="group flex min-w-0 items-center gap-3 rounded-xl bg-card p-4 text-start transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/60">
+        <AppLogo appId={app.id} className="size-6" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{app.name}</p>
+        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{localizedDesc}</p>
+      </div>
+      <Icon name="arrow-right" className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground rtl:rotate-180" />
+    </Link>
+  );
 }
 
-// Enabled apps (mail / neon / convex) lead; the rest render dimmed "coming soon"
-// (single source: AVAILABLE_APP_IDS in @repo/core).
-const FEATURED_APPS: FeaturedApp[] = [
-  { id: "supabase", name: "Supabase", desc: "Postgres backend + Studio", icon: Database },
-  { id: "convex", name: "Convex", desc: "Reactive backend & database", icon: Database },
-  { id: "mongodb", name: "MongoDB", desc: "Document database + Mongo Express", icon: Database },
-  { id: "neon", name: "Neon", desc: "Serverless Postgres engine", icon: Database },
-  { id: "mail", name: "Openship Mail", desc: "Self-hosted mail server + webmail", icon: Mail },
-  { id: "ghost", name: "Ghost", desc: "Publishing & newsletters", icon: FileText },
-  { id: "uptime-kuma", name: "Uptime Kuma", desc: "Uptime monitoring", icon: Activity },
-  { id: "vaultwarden", name: "Vaultwarden", desc: "Self-hosted password manager", icon: KeyRound },
-  { id: "metabase", name: "Metabase", desc: "BI & dashboards", icon: BarChart3 },
-];
-
-/** Installable this version? Drives the dimmed "coming soon" treatment. */
-const isAppEnabled = (id: string) => AVAILABLE_APP_IDS.has(id);
+function CatalogSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }, (_, index) => (
+        <div key={index} className="flex animate-pulse items-center gap-3 rounded-xl bg-card p-4" aria-hidden="true">
+          <div className="size-10 shrink-0 rounded-lg bg-muted" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-4 w-24 max-w-full rounded bg-muted" />
+            <div className="h-3 w-40 max-w-full rounded bg-muted/60" />
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
 
 export default function AppsPage() {
   const { t } = useI18n();
-  const router = useRouter();
-  const ap = t.dashboard.pages.apps;
-  const [projects, setProjects] = useState<Project[]>([]);
+  const copy = t.dashboard.pages.apps;
+  const { projects, loading, removeProject } = useDashboardHome();
+  const apps = useMemo(() => projects.filter(project => project.isApp), [projects]);
+  const [catalog, setCatalog] = useState<AppCatalogEntry[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [updatesBehind, setUpdatesBehind] = useState<Set<string>>(new Set());
-  const [isLoading, setIsLoading] = useState(true);
-  const isLoadingRef = useRef(false);
-
-  const load = useCallback(async () => {
-    if (isLoadingRef.current) return;
-    isLoadingRef.current = true;
-    setIsLoading(true);
-    try {
-      const home = await projectsApi.getHome();
-      if (home.success && Array.isArray(home.projects)) setProjects(home.projects);
-    } catch (error) {
-      console.error("Error fetching apps:", error);
-    } finally {
-      setIsLoading(false);
-      isLoadingRef.current = false;
-    }
-  }, []);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    load();
-    // Which installed apps have a pending update (fed by the update scan). Best-
-    // effort — a failure just hides the badge.
-    updatesApi
-      .list(true)
-      .then((res) => setUpdatesBehind(new Set(res.data.map((u) => u.projectId))))
-      .catch(() => {});
-    return () => {
-      isLoadingRef.current = false;
-    };
-  }, [load]);
+    let cancelled = false;
+    appsApi.catalog()
+      .then(response => { if (!cancelled) setCatalog(response.data ?? []); })
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/apps/page");
+      })
+      .finally(() => { if (!cancelled) setCatalogLoading(false); });
+    updatesApi.list(true)
+      .then(response => {
+        if (!cancelled) setUpdatesBehind(new Set(response.data.map(update => update.projectId)));
+      })
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/apps/page");
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  const apps = projects.filter((p) => p.isApp);
+  const availableCatalog = useMemo(() => {
+    const priority = new Map(FEATURED_APP_IDS.map((id, index) => [id, index]));
+    return catalog
+      .filter(app => !app.custom && !app.comingSoon && !app.requiresUpdate)
+      .sort((a, b) => (priority.get(a.id) ?? priority.size) - (priority.get(b.id) ?? priority.size));
+  }, [catalog]);
+  const installed = new Set(apps.map(app => app.appTemplateId));
+  const suggestions = availableCatalog.filter(app => !installed.has(app.id)).slice(0, 5);
+  const query = search.trim().toLowerCase();
+  const filteredApps = apps.filter(app =>
+    [app.name, app.slug, app.appTemplateId].some(value => value?.toLowerCase().includes(query)),
+  );
+  const remainingApps = availableCatalog.length - suggestions.length;
 
   return (
-    <PageContainer outerClassName="pb-20">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+    <PageContainer outerClassName="pb-20" className="@container/apps-page">
+      <header className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1
-            className="text-2xl font-medium text-foreground/80"
-            style={{ letterSpacing: "-0.2px" }}
-          >
-            {ap.title}
-          </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">
-            {isLoading
-              ? ap.loading
-              : interpolate(apps.length === 1 ? ap.countOne : ap.countOther, {
-                  count: String(apps.length),
-                })}
+          <h1 className="text-2xl font-medium tracking-tight text-foreground">{copy.title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {loading ? copy.loading : interpolate(apps.length === 1 ? copy.countOne : copy.countOther, { count: String(apps.length) })}
           </p>
         </div>
-        {/* Primary action + the shared ⋮ help menu (support / report issue /
-            feedback / docs / community) that the other page headers carry. The
-            menu renders even with no apps installed — the header's Install
-            button doesn't, but help shouldn't depend on having apps. */}
         <div className="flex w-full items-center gap-2 sm:w-auto">
           {apps.length > 0 && (
-            <Link
-              href="/apps/new"
-              className="inline-flex flex-1 items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 sm:flex-none justify-center"
-            >
-              <Plus className="size-4" />
-              <span>{ap.createButton}</span>
-            </Link>
+            <Button asChild className="flex-1 sm:flex-none">
+              <Link href="/apps/new"><Icon name="plus" className="size-4" />{copy.createButton}</Link>
+            </Button>
           )}
           <HelpMenu className="ms-auto sm:ms-0" />
         </div>
-      </div>
+      </header>
 
-      {isLoading ? (
-        <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/50">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="px-5 py-4 flex items-center gap-4 animate-pulse">
-              <div className="w-10 h-10 bg-muted rounded-xl" />
-              <div className="flex-1 space-y-2">
-                <div className="h-4 bg-muted rounded-lg w-32" />
-                <div className="h-3 bg-muted/60 rounded-lg w-48" />
+      {loading ? (
+        <div className="divide-y divide-border/50 rounded-2xl bg-card" aria-busy="true" aria-label={copy.loading}>
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="flex animate-pulse items-center gap-4 px-5 py-4" aria-hidden="true">
+              <div className="size-10 shrink-0 rounded-xl bg-muted" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-4 w-32 max-w-full rounded-lg bg-muted" />
+                <div className="h-3 w-48 max-w-full rounded-lg bg-muted/60" />
               </div>
             </div>
           ))}
         </div>
       ) : apps.length === 0 ? (
-        <div className="py-12 sm:py-16">
-          {/* Hero — a chain of real app logos ending in an "add" node. */}
-          <div className="flex items-center justify-center">
-            {FEATURED_APPS.slice(0, 3).map((a, i) => (
-              <Fragment key={a.id}>
-                {i > 0 && (
-                  <span className="mx-1.5 h-0 w-8 border-t-2 border-dashed border-border/60" />
-                )}
-                <div
-                  className={`flex items-center justify-center rounded-2xl border bg-card ${
-                    i === 1
-                      ? "size-16 border-primary/30 ring-4 ring-primary/5"
-                      : "size-14 border-border/60"
-                  }`}
-                >
-                  <AppLogo appId={a.id} icon={a.icon} className={i === 1 ? "size-8" : "size-7"} />
+        <div className="py-8 sm:py-12">
+          <div className="flex items-center justify-center" aria-hidden="true">
+            {FEATURED_APP_IDS.slice(0, 3).map((id, index) => (
+              <Fragment key={id}>
+                {index > 0 && <span className="mx-1.5 w-4 border-t-2 border-dashed border-border sm:w-8" />}
+                <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-card ${index === 1 ? "size-16 ring-4 ring-primary/10" : "size-14"}`}>
+                  <AppLogo appId={id} className={index === 1 ? "size-8" : "size-7"} />
                 </div>
               </Fragment>
             ))}
-            <span className="mx-1.5 h-0 w-8 border-t-2 border-dashed border-border/60" />
-            <div className="flex size-14 items-center justify-center rounded-2xl border border-dashed border-primary/40 bg-primary/5">
-              <Plus className="size-6 text-primary" />
+            <span className="mx-1.5 w-4 border-t-2 border-dashed border-border sm:w-8" />
+            <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-dashed border-primary/40 bg-primary/5">
+              <Icon name="plus" className="size-6 text-primary" />
             </div>
           </div>
-
           <div className="mt-8 text-center">
-            <h2
-              className="text-2xl font-medium text-foreground/80"
-              style={{ letterSpacing: "-0.2px" }}
-            >
-              {ap.emptyTitle}
-            </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground/70">
-              {ap.emptyDescription}
-            </p>
-            <Link
-              href="/apps/new"
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
-            >
-              <Plus className="size-4" />
-              {ap.createButton}
-            </Link>
+            <h2 className="text-2xl font-medium tracking-tight text-foreground">{copy.emptyTitle}</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">{copy.emptyDescription}</p>
+            <Button asChild className="mt-6">
+              <Link href="/apps/new"><Icon name="plus" className="size-4" />{copy.createButton}</Link>
+            </Button>
           </div>
 
-          {/* Popular apps — tap to install (routes into the real flow). */}
-          <div className="mx-auto mt-10 max-w-2xl">
-            <p className="mb-4 text-xs uppercase tracking-wider text-muted-foreground/60">
-              {ap.popular}
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {FEATURED_APPS.slice(0, 5).map((a) => {
-                const enabled = isAppEnabled(a.id);
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    disabled={!enabled}
-                    aria-disabled={!enabled}
-                    onClick={() => enabled && router.push(`/apps/new/${a.id}`)}
-                    className={`group flex items-center gap-3 rounded-xl border border-border/50 bg-card p-4 text-left transition-all ${
-                      enabled
-                        ? "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-                        : "cursor-not-allowed opacity-45 saturate-50"
-                    }`}
-                  >
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
-                      <AppLogo appId={a.id} icon={a.icon} className="size-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">{a.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{a.desc}</p>
-                    </div>
-                    {enabled ? (
-                      <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
-                    ) : (
-                      <span className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        {ap.comingSoon}
-                      </span>
+          {(catalogLoading || suggestions.length > 0) && (
+            <section className="mx-auto mt-10 max-w-2xl" aria-labelledby="popular-apps">
+              <h2 id="popular-apps" className="mb-4 text-sm font-medium text-muted-foreground">{copy.popular}</h2>
+              <div className="grid grid-cols-1 gap-3 @xl/apps-page:grid-cols-2" aria-busy={catalogLoading}>
+                {catalogLoading ? <CatalogSkeleton /> : suggestions.map(app => <CatalogShortcut key={app.id} app={app} />)}
+                <Link href="/apps/new" className="group flex items-center gap-3 rounded-xl bg-muted/40 p-4 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
+                    <Icon name="plus" className="size-5 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">{copy.browseAll}</p>
+                    {!catalogLoading && remainingApps > 0 && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">{interpolate(copy.moreApps, { count: String(remainingApps) })}</p>
                     )}
-                  </button>
-                );
-              })}
-              {/* Explore-all tile — collapses the rest of the catalog into one
-                  card next to the last featured app instead of a wall of dimmed
-                  "coming soon" rows. Routes into the full catalog. */}
-              <button
-                type="button"
-                onClick={() => router.push("/apps/new")}
-                className="group flex items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-md"
-              >
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
-                  <Plus className="size-5 text-muted-foreground transition-colors group-hover:text-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">{ap.browseAll}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {interpolate(ap.moreApps, { count: String(FEATURED_APPS.length - 5) })}
-                  </p>
-                </div>
-                <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
-              </button>
-            </div>
-          </div>
+                  </div>
+                  <Icon name="arrow-right" className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+                </Link>
+              </div>
+            </section>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
-          {/* Left: installed apps */}
-          <div className="min-w-0">
-            <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/50">
-              {apps.map((app) => (
-                <ProjectCard
-                  key={app.id}
-                  project={app}
-                  preferAppLogo
-                  updateAvailable={updatesBehind.has(app.id)}
-                  onChanged={load}
-                />
-              ))}
+        <div className="grid grid-cols-1 items-start gap-6 @min-[60rem]/apps-page:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="min-w-0 space-y-4" aria-label={copy.title}>
+            <div className="relative">
+              <Icon name="search" className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input variant="filled" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={copy.catalogSearchPlaceholder} aria-label={copy.catalogSearchPlaceholder} className="h-10 bg-muted/60 ps-10 pe-4" />
             </div>
-          </div>
+            <div className="divide-y divide-border/50 rounded-2xl bg-card">
+              {filteredApps.length > 0 ? filteredApps.map(app => (
+                <ProjectCard key={app.id} project={app} preferAppLogo updateAvailable={updatesBehind.has(app.id)} onChanged={() => removeProject(app.id)} />
+              )) : (
+                <p className="px-5 py-12 text-center text-sm text-muted-foreground">{copy.catalogNoResults}</p>
+              )}
+            </div>
+          </section>
 
-          {/* Right: catalog apps you can also deploy (excludes installed ones) */}
-          {(() => {
-            const installed = new Set(apps.map((a) => (a.name ?? "").toLowerCase()));
-            // Only AVAILABLE apps — a "deploy this now" list shouldn't offer
-            // "coming soon" placeholders you can't actually install.
-            const suggestions = FEATURED_APPS.filter(
-              (a) => isAppEnabled(a.id) && !installed.has(a.name.toLowerCase()),
-            );
-            return (
-              <div className="lg:sticky lg:top-6 lg:self-start">
-                <div className="bg-card rounded-2xl border border-border/50 p-5">
-                  <p className="mb-4 text-xs uppercase tracking-wider text-muted-foreground/60">
-                    {ap.alsoDeploy}
-                  </p>
-                  <div className="space-y-2">
-                    {suggestions.map((a) => (
-                      <Link
-                        key={a.id}
-                        href={`/apps/new/${a.id}`}
-                        className="group flex w-full items-center gap-3 rounded-xl border border-border/50 p-3 text-left transition-all hover:border-primary/40 hover:bg-muted/30"
-                      >
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60">
-                          <AppLogo appId={a.id} icon={a.icon} className="size-[18px]" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-medium text-foreground">{a.name}</p>
-                          <p className="truncate text-[11px] text-muted-foreground">{a.desc}</p>
-                        </div>
-                        <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground rtl:rotate-180" />
-                      </Link>
-                    ))}
-                  </div>
-                  <Link
-                    href="/apps/new"
-                    className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-muted/50 px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Plus className="size-3.5" />
-                    {ap.browseAll}
-                  </Link>
-                </div>
-              </div>
-            );
-          })()}
+          <aside className="rounded-2xl bg-card p-5 @min-[60rem]/apps-page:sticky @min-[60rem]/apps-page:top-6" aria-labelledby="suggested-apps">
+            <h2 id="suggested-apps" className="mb-4 text-sm font-medium text-foreground">{copy.alsoDeploy}</h2>
+            <HomeAppsIllustration suggestions={suggestions} loading={catalogLoading} />
+            <Button asChild variant="secondary" className="mt-4 w-full">
+              <Link href="/apps/new">{copy.browseAll}<Icon name="arrow-right" className="size-4 rtl:rotate-180" /></Link>
+            </Button>
+          </aside>
         </div>
       )}
     </PageContainer>

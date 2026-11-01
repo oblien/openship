@@ -1,0 +1,25 @@
+---
+title: login
+description: Commands, arguments, and options for openship login.
+cliGroup: openship login
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship login
+
+Connect to Cloud or self-hosted Openship with a Personal Access Token
+
+```text
+openship login [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--token <token>` | Personal Access Token (opsh_pat_...) |
+| `--token-file <file>` | Token file, or - for stdin (keeps credentials out of process arguments) |
+| `--cloud` | Connect directly to Openship Cloud |
+| `--api-url <url>` | API or public instance URL (prompts on a fresh interactive login) |
+| `--dashboard-url <url>` | Dashboard URL if different from the API's public instance URL |
+| `--context <name>` | Connection name (cloud with --cloud; saved connection when logging in again) |
+| `--organization <id>` | Save a fixed organization for this connection |

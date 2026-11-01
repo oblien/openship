@@ -33,7 +33,7 @@ describe("Docker container information normalization", () => {
 
   it.each([
     ["running", "running"],
-    ["restarting", "running"],
+    ["restarting", "deploying"],
     ["dead", "failed"],
     ["exited", "stopped"],
   ] as const)("maps Docker state %s to runtime state %s", (state, status) => {
@@ -52,6 +52,7 @@ describe("Docker container information normalization", () => {
 
     expect(containerInfoFromDockerSummary(summary)).toEqual({
       containerId: "container-id",
+      imageId: "sha256:api",
       status,
       ip: "172.18.0.8",
     });

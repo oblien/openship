@@ -23,19 +23,20 @@
  *     deploy to stop the API running it.
  */
 
-import { shellQuote } from "@repo/core";
+import { AppError, assertStandaloneContainer, shellQuote, swarmTaskOwner } from "@repo/core";
 
 import { MAIL_CONTAINER, MAIL_DB_CONTAINER } from "../infra/mail-container";
 import type { ExecOnly } from "../types";
 import type { ProxyKind } from "./types";
 import { tryExec } from "./probe-exec";
 
-/** The labels `DockerRuntime.labels()` stamps on everything Openship creates. */
+/** Labels Openship stamps on what it creates: `DockerRuntime.labels()`, plus `role` from `deployRole`. */
 export const OPENSHIP_LABEL = {
   project: "openship.project",
   deployment: "openship.deployment",
   service: "openship.service",
   build: "openship.build",
+  role: "openship.role",
 } as const;
 
 /** A container publishing a host port, with the labels that decide ownership. */
@@ -50,6 +51,7 @@ export interface PortContainer {
   buildSessionId?: string;
   composeProject?: string;
   composeService?: string;
+  swarmService?: string;
 }
 
 /**
@@ -80,6 +82,10 @@ const PS_FIELDS = [
   `{{.Label "${OPENSHIP_LABEL.build}"}}`,
   '{{.Label "com.docker.compose.project"}}',
   '{{.Label "com.docker.compose.service"}}',
+  '{{.Label "com.docker.swarm.service.name"}}',
+  '{{.Label "com.docker.swarm.service.id"}}',
+  '{{.Label "com.docker.swarm.task.id"}}',
+  '{{.Label "com.docker.stack.namespace"}}',
 ];
 const PS_FORMAT = PS_FIELDS.join("\\t");
 
@@ -95,6 +101,12 @@ function parsePsLines(out: string): PortContainer[] {
     // turning a single stoppable owner into a bogus "2 containers publish this port".
     // A real row always starts with a hex id, which no label tail can imitate.
     if (!id || !name || !/^[0-9a-f]{12,64}$/i.test(id)) continue;
+    const swarmService = swarmTaskOwner({
+      "com.docker.swarm.service.name": f[9] ?? "",
+      "com.docker.swarm.service.id": f[10] ?? "",
+      "com.docker.swarm.task.id": f[11] ?? "",
+      "com.docker.stack.namespace": f[12] ?? "",
+    });
     containers.push({
       id,
       name: name.replace(/^\//, ""),
@@ -105,6 +117,7 @@ function parsePsLines(out: string): PortContainer[] {
       ...(f[6]?.trim() ? { buildSessionId: f[6].trim() } : {}),
       ...(f[7]?.trim() ? { composeProject: f[7].trim() } : {}),
       ...(f[8]?.trim() ? { composeService: f[8].trim() } : {}),
+      ...(swarmService ? { swarmService } : {}),
     });
   }
   return containers;
@@ -187,8 +200,32 @@ export function containerIdFromCgroup(cgroup: string | null | undefined): string
  * `ref` may be an id or a name; it is quoted either way.
  */
 export async function stopContainerDurably(executor: ExecOnly, ref: string): Promise<void> {
-  await tryExec(executor, `docker update --restart=no ${shellQuote(ref)} 2>/dev/null || true`);
-  await tryExec(executor, `docker stop ${shellQuote(ref)} 2>/dev/null || true`);
+  await (await prepareContainerStop(executor, ref))();
+}
+
+/** Validate before any stop in a batch, then pin the immutable container identity. */
+export async function prepareContainerStop(
+  executor: ExecOnly,
+  ref: string,
+): Promise<() => Promise<void>> {
+  const raw = await executor.exec(
+    `docker inspect --format '{{json .Id}} {{json .Config.Labels}}' ${shellQuote(ref)}`,
+    { timeout: 10_000 },
+  );
+  const match = raw.trim().match(/^"([a-f0-9]{64})"\s+(\{.*\}|null)$/s);
+  if (!match)
+    throw new AppError(
+      "Could not verify container ownership. Refresh the server before retrying.",
+      409,
+      "CONTAINER_OWNERSHIP_UNKNOWN",
+    );
+  const labels = JSON.parse(match[2]!) as Record<string, string> | null;
+  assertStandaloneContainer(labels);
+  const id = shellQuote(match[1]!);
+  return async () => {
+    await tryExec(executor, `docker update --restart=no ${id} 2>/dev/null || true`);
+    await tryExec(executor, `docker stop ${id} 2>/dev/null || true`);
+  };
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   isUnlimited,
   resolveTierResources,
   validateAgainstCapacity,
+  validateSwapDisabled,
   type HostCapacity,
 } from "./resources";
 
@@ -216,5 +217,29 @@ describe("formatters", () => {
     expect(formatMemoryMb(2048)).toBe("2 GB");
     expect(formatMemoryMb(1536)).toBe("1.5 GB");
     expect(formatCpuCores(0.5)).toBe("0.5 vCPU");
+  });
+});
+
+describe("swap requires the effective service memory limit", () => {
+  it("accepts own or inherited positive memory", () => {
+    expect(() => validateSwapDisabled({ swapDisabled: true, memoryMb: 128 })).not.toThrow();
+    expect(() => validateSwapDisabled({ swapDisabled: true }, { memoryMb: 128 })).not.toThrow();
+  });
+  it.each([undefined, null, { memoryMb: 0 }])(
+    "refuses an absent effective limit (%j)",
+    (inherited) => {
+      expect(() => validateSwapDisabled({ swapDisabled: true }, inherited)).toThrow(
+        /positive memory limit/,
+      );
+    },
+  );
+  it("treats explicit zero as an override of inherited memory", () => {
+    expect(() =>
+      validateSwapDisabled({ swapDisabled: true, memoryMb: 0 }, { memoryMb: 1024 }),
+    ).toThrow(/positive memory limit/);
+  });
+  it("does not require memory when swap is allowed or unspecified", () => {
+    expect(() => validateSwapDisabled({ swapDisabled: false, memoryMb: 0 })).not.toThrow();
+    expect(() => validateSwapDisabled({ memoryMb: 0 })).not.toThrow();
   });
 });

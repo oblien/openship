@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
@@ -65,27 +66,27 @@ vi.mock("@repo/adapters", () => ({
   ownsBuiltImage: (ref: string) => ref.startsWith("openship/"),
 }));
 
-vi.mock("../../lib/server-reachability", () => ({
+vi.mock("@repo/platform/engine/lib/server-reachability", () => ({
   createReachabilityProbe: () => ({ isReachable: h.isReachable }),
 }));
 
-vi.mock("../../lib/remote-state", () => ({ isConnectionLoss: () => false }));
+vi.mock("@repo/platform/engine/lib/remote-state", () => ({ isConnectionLoss: () => false }));
 
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentPlatform: h.resolveDeploymentPlatform,
   disposePlatform: h.disposePlatform,
 }));
 
-vi.mock("../deployments/pinned-host-ports", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   convergeTargetHostPortClaims: h.convergeClaims,
 }));
 
-vi.mock("../../lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   releaseManagedHostnames: h.releaseManagedHostnames,
 }));
 
 import { DockerRuntime } from "@repo/adapters";
-import { runOrphanSweep } from "./orphan-gc-schedule";
+import { runOrphanSweep } from "@repo/platform/engine/modules/projects/orphan-gc-schedule";
 
 const routeOrphan = (over: Record<string, unknown> = {}) => ({
   id: "orphan-route-1",
@@ -205,7 +206,7 @@ describe("runOrphanSweep route claim lifecycle", () => {
   it("defers the orphan and keeps its row when fresh claim convergence fails", async () => {
     h.orphans = [routeOrphan()];
     h.convergeClaims.mockRejectedValueOnce(new Error("strict edge scan failed"));
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 1 });
 
@@ -215,8 +216,10 @@ describe("runOrphanSweep route claim lifecycle", () => {
     expect(h.bumpAttempt).toHaveBeenCalledWith("orphan-route-1");
     expect(h.deleteOrphan).not.toHaveBeenCalled();
     expect(errorLog).toHaveBeenCalledWith(
+      expect.any(String),
       "[orphan-gc] route app.example.com failed:",
       "strict edge scan failed",
+      expect.any(Error),
     );
 
     errorLog.mockRestore();
@@ -225,7 +228,7 @@ describe("runOrphanSweep route claim lifecycle", () => {
   it("keeps the route orphan when its managed edge registration cannot be released", async () => {
     h.orphans = [routeOrphan({ ref: "app.opsh.io" })];
     h.releaseManagedHostnames.mockResolvedValueOnce({ failures: ["app.opsh.io"] });
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 1 });
 
@@ -237,8 +240,10 @@ describe("runOrphanSweep route claim lifecycle", () => {
     expect(h.bumpAttempt).toHaveBeenCalledWith("orphan-route-1");
     expect(h.deleteOrphan).not.toHaveBeenCalled();
     expect(errorLog).toHaveBeenCalledWith(
+      expect.any(String),
       "[orphan-gc] route app.opsh.io failed:",
       expect.stringContaining("Cloud edge route not released"),
+      expect.any(Error),
     );
 
     errorLog.mockRestore();
@@ -276,15 +281,17 @@ describe("runOrphanSweep route claim lifecycle", () => {
       released: 0,
       retained: [{ port: 23_000 }],
     });
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 1 });
 
     expect(h.bumpAttempt).toHaveBeenCalledWith("orphan-route-1");
     expect(h.deleteOrphan).not.toHaveBeenCalled();
     expect(errorLog).toHaveBeenCalledWith(
+      expect.any(String),
       "[orphan-gc] route app.example.com failed:",
       expect.stringContaining("23000"),
+      expect.any(Error),
     );
 
     errorLog.mockRestore();
@@ -304,7 +311,7 @@ describe("runOrphanSweep route claim lifecycle", () => {
         platform: { ...resolvedPlatform().platform, executor: null },
       }),
     );
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 1 });
 
@@ -325,7 +332,7 @@ describe("runOrphanSweep route claim lifecycle", () => {
       routeOrphan(),
     ];
     h.destroy.mockRejectedValueOnce(new Error("container destroy failed"));
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 2 });
 
@@ -353,9 +360,9 @@ describe("runOrphanSweep route claim lifecycle", () => {
         targetKey: "local",
       }),
     ];
-    h.getServer.mockResolvedValueOnce({ id: "self-server-row", isLocal: true });
+    h.getServer.mockResolvedValueOnce({ id: "self-server-row", isLocal: true, sshHost: "127.0.0.1", workspaceId: null });
     h.destroy.mockRejectedValueOnce(new Error("container still owns the bind"));
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 2 });
 
@@ -487,7 +494,7 @@ describe("runOrphanSweep target selection", () => {
     h.resolveDeploymentPlatform.mockResolvedValueOnce(
       resolvedPlatform({ platform: { ...resolvedPlatform().platform, runtime } }),
     );
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 1 });
 
@@ -534,7 +541,7 @@ describe("runOrphanSweep target selection", () => {
         platform: { ...resolvedPlatform().platform, runtime },
       }),
     );
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorLog = vi.spyOn(errorDiagnostics, "error").mockImplementation(() => {});
 
     await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 1 });
 

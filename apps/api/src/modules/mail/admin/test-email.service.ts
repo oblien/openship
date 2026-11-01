@@ -45,21 +45,22 @@
  * 465) so DKIM signs and SPF aligns from the first message.
  */
 
-import nodemailer, { type Transporter } from "nodemailer";
-import { sshManager } from "../../../lib/ssh-manager";
-import { readState } from "../mail-state";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import nodemailer from "nodemailer";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { readState } from "@repo/platform/engine/modules/mail/mail-state";
 import { safeErrorMessage } from "@repo/core";
 import {
   ensureOpenshipPlatformMailbox,
   type PlatformMailboxCreds,
-} from "./platform-mailbox.service";
+} from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
 import { ensureOpenshipTestMailbox } from "./test-mailbox.service";
-import { isSmtpAuthFailure } from "../smtp-auth-error";
+import { isSmtpAuthFailure } from "@repo/platform/engine/modules/mail/smtp-auth-error";
 import {
   checkMailPortReachability,
   mailReachabilityFailureMessage,
   resolvePublicMailAddress,
-} from "../mail-port-reachability.service";
+} from "@repo/platform/engine/modules/mail/mail-port-reachability.service";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
@@ -204,6 +205,7 @@ export async function sendTestEmail(
         secure: minted.secure,
       };
     } catch (err) {
+      observeCaughtError(err, "api/modules/mail/admin/test-email.service");
       throw new TestEmailError(
         `Could not provision openship@${input.fromDomain}: ${safeErrorMessage(err)}`,
       );
@@ -246,7 +248,7 @@ export async function sendTestEmail(
   // Postfix is healthy on 0.0.0.0:465. `servername` keeps TLS validating
   // against the hostname, so certificate checking is unchanged.
   const connectHost = await resolvePublicMailAddress(smtpHost);
-  const transporter: Transporter = nodemailer.createTransport({
+  const transporter = nodemailer.createTransport({
     host: connectHost,
     tls: { servername: smtpHost },
     port: SUBMISSION_PORT,
@@ -264,6 +266,7 @@ export async function sendTestEmail(
   try {
     await transporter.verify();
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/test-email.service");
     // ensure* has already confirmed that the mailbox and forwarding rows are
     // live. A 535 now means SMTP rejected the cached secret (or the mailbox was
     // changed in the narrow race after reconciliation), so the explicit rotate
@@ -283,7 +286,8 @@ export async function sendTestEmail(
         suffix = submission && submission.status !== "reachable" && submission.status !== "unknown"
           ? ` - ${mailReachabilityFailureMessage(reachability, [SUBMISSION_PORT])}`
           : ` - The connection timed out. The SMTP daemon may be unavailable, or a host/cloud provider firewall may be dropping TCP ${SUBMISSION_PORT}.`;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "api/modules/mail/admin/test-email.service");
         suffix =
           ` - The connection timed out. The SMTP daemon may be unavailable, or a host/cloud ` +
           `provider firewall may be dropping TCP ${SUBMISSION_PORT}.`;
@@ -316,6 +320,7 @@ export async function sendTestEmail(
       // against the sender domain automatically.
     });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/test-email.service");
     throw wrapSmtpError(err, `Mail server accepted auth but rejected delivery`);
   } finally {
     transporter.close();

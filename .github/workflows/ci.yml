@@ -28,6 +28,13 @@ concurrency:
 # unmergeable forever with no visible reason.
 
 jobs:
+  actions-runner:
+    name: Actions execution
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/actions-e2e.yml
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -38,13 +45,14 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Cache bun install
         uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          # Avoid scanning installed dependencies again during cache finalization.
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
@@ -53,6 +61,21 @@ jobs:
 
       - name: Typecheck apps/api
         run: bun run --cwd apps/api lint
+
+      - name: Typecheck SDK
+        run: bun run --cwd packages/sdk lint
+
+      - name: Typecheck shared packages
+        run: |
+          bun run --cwd packages/contracts lint
+          bun run --cwd packages/db lint
+          bun run --cwd packages/adapters lint
+          bun run --cwd packages/platform lint
+
+      - name: Audit structured error boundaries
+        run: |
+          bun test scripts/audit-error-boundaries.test.ts
+          bun run errors:check
 
       - name: Typecheck apps/dashboard
         working-directory: apps/dashboard
@@ -66,9 +89,99 @@ jobs:
             exit 1
           fi
 
-  test:
-    name: Test
+  test_suites:
+    name: Tests (${{ matrix.suite }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: API 1/2
+            command: bun run --cwd apps/api test --shard=1/2
+          - suite: API 2/2
+            command: bun run --cwd apps/api test --shard=2/2
+          - suite: Deployment automation
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/deployment-automation.e2e.test.ts
+              test/e2e/monorepo-runtime-images.e2e.test.ts
+          - suite: Database
+            command: bun run --cwd packages/db test
+          - suite: Mail database actions
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/mail-fail2ban-db.e2e.test.ts
+          # Separate API processes and databases exercise both move directions,
+          # recovery, authentication and Desktop relays on every PR. No live
+          # server, provider account or outbound email is used.
+          - suite: Instance control plane
+            command: >-
+              bun run --cwd apps/api test:e2e
+              test/e2e/instance-handoff.e2e.test.ts
+              test/e2e/instance-protocol.e2e.test.ts
+              test/e2e/instance-relay.e2e.test.ts
+              test/e2e/instance-invitation.e2e.test.ts
+              test/e2e/error-reporting.e2e.test.ts
+          - suite: Cloud Docker workspaces
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/cloud-build-capacity.e2e.test.ts
+              test/e2e/cloud-shared-workspace.e2e.test.ts
+              test/e2e/cloud-error-storage.e2e.test.ts
+              test/e2e/migration-direct-transfer.e2e.test.ts
+              test/e2e/migration-takeover.e2e.test.ts
+              test/e2e/backup-volume-roundtrip.e2e.test.ts
+              test/e2e/backup-project-app.e2e.test.ts
+              test/e2e/docker-exec-watchdog.e2e.test.ts
+          # Inventory identity, atomic cutover and role handover use real Docker.
+          - suite: Compose cutover and rollback
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/deployment-artifact-retry.e2e.test.ts
+              test/e2e/buildkit-session-health.e2e.test.ts
+              test/e2e/compose-port-preflight-atomic.e2e.test.ts
+              test/e2e/rollback-compose-cycle.e2e.test.ts
+              test/e2e/runtime-roles.e2e.test.ts
+              test/e2e/primary-app-infrastructure.e2e.test.ts
+              test/e2e/image-volume-persistence.e2e.test.ts
+              test/e2e/image-gc-concurrent-build.e2e.test.ts
+              test/e2e/image-refresh.e2e.test.ts
+              test/e2e/service-swap.e2e.test.ts
+              test/e2e/compose-overlap-cutover.e2e.test.ts
+              test/e2e/compose-engine-overlap.e2e.test.ts
+          - suite: Security advisories
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/security-advisories.e2e.test.ts
+          # Run routing, certificate selection and the rule guard with real HTTP on
+          # every PR. A missing daemon must fail, not silently skip this gate.
+          - suite: Edge routing
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/routing-rules.e2e.test.ts
+              test/e2e/route-protection.e2e.test.ts
+              test/e2e/edge-not-found-page.e2e.test.ts
+          - suite: Kubernetes manifests
+            command: >-
+              RUN_KUBERNETES_E2E=1 bun run --cwd packages/adapters test
+              test/project-manifests.e2e.test.ts
+          - suite: Swarm inspection and deployment
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/swarm-inspection.e2e.test.ts
+          # Both suites rebuild the same native bundle. Keep them sequential on
+          # their own runner; the other packages do not share that filesystem.
+          - suite: SDK and CLI
+            command: bunx turbo run test --filter=@repo/sdk --filter=@repo/cli --concurrency=1 --log-order=stream
+          # Exclusions keep new workspace test scripts included automatically.
+          # Keep filters on the workspace runner. Script tests run once below,
+          # independently of the root command's argument-forwarding behavior.
+          - suite: Other packages
+            command: |
+              bunx turbo run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --filter=!@repo/email --concurrency=1 --log-order=stream
+              bun run test:scripts
+              bun run --cwd packages/adapters test:bun
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -76,26 +189,93 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Cache bun install
         uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Runs `turbo run test` → vitest across every package that defines a test
-      # script (@repo/core, @repo/adapters, @repo/db [PGlite — no external DB],
-      # apps/api, apps/dashboard). Packages resolve to src, so no build needed.
-      # apps/api excludes test/e2e/** here — those need a daemon and run in the
-      # e2e-docker job in release-gate.yml, where they gate the publish.
+      - name: Prepare execution assets used by installed-package tests
+        if: matrix.suite == 'SDK and CLI' || matrix.suite == 'Other packages'
+        uses: ./.github/actions/actions-runner
+
+      - name: Install composer dependencies for the real browser compatibility test
+        if: matrix.suite == 'Other packages'
+        working-directory: apps/email/client
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Run every workspace test, with the large API suite split across runners.
+      # Direct Vitest runs and Turbo's stream mode expose progress immediately.
+      # The complete API test/e2e/** suite also runs in release-gate.yml.
       - name: Run tests
-        run: bun run test
+        run: ${{ matrix.command }}
+
+      - name: Verify Cloud build coordination on PostgreSQL
+        if: matrix.suite == 'Database'
+        env:
+          OPENSHIP_TEST_CLOUD_POSTGRES: "1"
+        run: |
+          OPENSHIP_TEST_PG_BIN="$(pg_config --bindir)" bun run --cwd packages/db test src/repos/cloud-build-postgres.integration.test.ts
+
+  # Preserve the existing required "Test" check. A failed, skipped, or canceled
+  # matrix must fail this check; no individual shard can make the PR green.
+  test:
+    name: Test
+    needs: [test_suites, actions-runner]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every test suite to pass
+        env:
+          TEST_SUITES_RESULT: ${{ needs.test_suites.result }}
+          ACTIONS_RESULT: ${{ needs.actions-runner.result }}
+        run: |
+          if [ "$TEST_SUITES_RESULT" != "success" ] || [ "$ACTIONS_RESULT" != "success" ]; then
+            echo "::error::Test suites: $TEST_SUITES_RESULT; Actions execution: $ACTIONS_RESULT"
+            exit 1
+          fi
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - uses: ./.github/actions/actions-runner
+
+      - name: Build public SDK and CLI
+        run: bun run build:sdk
+
+      - name: Check documentation and public examples
+        run: bun run docs:check
+
+      - name: Build documentation website
+        run: bun run --cwd apps/web build
+
+      - name: Verify social preview images on public pages
+        run: bun run --cwd apps/web test:metadata
 
   # The webmail server's own suite, which nothing else runs.
   #
@@ -122,7 +302,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Cache bun install
         uses: actions/cache@v6
@@ -142,4 +322,28 @@ jobs:
 
       - name: Run webmail server tests
         working-directory: apps/email/server
+        run: bun test
+
+  webmail-client-test:
+    name: Test webmail client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install webmail server dependencies for shared client imports
+        working-directory: apps/email/server
+        run: bun install --frozen-lockfile
+
+      - name: Install webmail client dependencies
+        working-directory: apps/email/client
+        run: bun install --frozen-lockfile
+
+      - name: Run webmail client tests
+        working-directory: apps/email/client
         run: bun test

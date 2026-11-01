@@ -25,9 +25,10 @@ export const jobRun = pgTable(
     trigger: text("trigger").notNull().default("schedule"),
     /** running | success | failed. */
     status: text("status").notNull(),
-    /** Target server for this run (multi-server jobs fire one run per server);
-     *  null for builtin / older rows. */
+    /** Single target, or null for a multi-server aggregate/builtin. */
     serverId: text("server_id"),
+    /** Immutable command targets at acceptance; null for builtins and legacy rows. */
+    serverIds: text("server_ids").array(),
     /** Retry attempt number (1-based); one run row per attempt. */
     attempt: integer("attempt").notNull().default(1),
     startedAt: timestamp("started_at").notNull().defaultNow(),

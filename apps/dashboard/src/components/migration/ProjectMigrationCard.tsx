@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Boxes, Copy, Loader2, Server, Trash2 } from "lucide-react";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -12,6 +13,7 @@ import { Choice } from "@/components/ui/Choice";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { servicesApi } from "@/lib/api/services";
 import { dockerMigrationApi } from "@/lib/api/server-migration";
+import { toggleMigrationService, validMigrationServiceScope, type MigrationServiceScope } from "./service-scope";
 
 /**
  * Move this project to another server — the BODY of the Advanced tab's Migration card.
@@ -45,6 +47,8 @@ export function ProjectMigrationCard({
   sourceServerName,
   onStarted,
   initialIntent = "move",
+  initialServiceNames,
+  copyOnly = false,
 }: {
   projectId: string;
   projectName: string;
@@ -59,6 +63,10 @@ export function ProjectMigrationCard({
    * never reach because `intent` is internal state with no other way in.
    */
   initialIntent?: "move" | "copy";
+  /** Topology can open the existing copy flow on exactly the selected service. */
+  initialServiceNames?: string[];
+  /** A service-level entry must not silently widen into a whole-project move. */
+  copyOnly?: boolean;
 }) {
   const { t } = useI18n();
   const mg = t.projectSettings.advanced.migration;
@@ -70,30 +78,35 @@ export function ProjectMigrationCard({
   const [target, setTarget] = useState<ServerOption | null>(null);
   // "move" first, and the default: it is what the card is titled, and the destructive
   // reading of an unchanged control should be the one the operator came for.
-  const [intent, setIntent] = useState<"move" | "copy">(initialIntent);
+  const [intent, setIntent] = useState<"move" | "copy">(copyOnly ? "copy" : initialIntent);
   // Rows, not bare names: the volume count is what an operator needs beside a service name
   // here, because it decides how long the copy takes and whether data comes with it.
   const [services, setServices] = useState<Array<{ name: string; volumes: number }> | null>(
     null,
   );
-  // EMPTY = every service, which is why the checkboxes render as all-checked while it is.
-  // Sent as `undefined` so the server reads "whole project" rather than an explicit list
-  // that happens to be complete — the two mean the same thing but only one survives a
-  // service being added between the plan and the run.
-  const [scoped, setScoped] = useState<Set<string>>(() => new Set());
+  // null is the only whole-project sentinel. Deselecting the final checkbox must
+  // never turn a one-service copy back into "copy everything".
+  const [scoped, setScoped] = useState<MigrationServiceScope>(() => initialServiceNames ? new Set(initialServiceNames) : null);
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    setServices(null);
+    setServicesError(null);
     void servicesApi
       .list(projectId)
-      .then((res) =>
+      .then((res) => {
+        if (cancelled) return;
+        if (res.success === false) throw new Error("Services could not be loaded.");
         setServices(
           res.services
             .filter((svc) => svc.name)
             .map((svc) => ({ name: svc.name, volumes: svc.volumes?.length ?? 0 })),
-        ),
-      )
-      .catch(() => setServices([]));
+        );
+      })
+      .catch((error) => { if (!cancelled) setServicesError(getApiErrorMessage(error, "Services could not be loaded.")); });
+    return () => { cancelled = true; };
   }, [projectId]);
 
   /** Toggle one service. Going from "all" to a narrowed set starts from every OTHER
@@ -101,26 +114,14 @@ export function ProjectMigrationCard({
    *  which is what an all-checked list implies. */
   const toggleService = useCallback(
     (name: string) => {
-      setScoped((prev) => {
-        if (prev.size === 0) {
-          return new Set((services ?? []).map((s) => s.name).filter((n) => n !== name));
-        }
-        const next = new Set(prev);
-        if (next.has(name)) next.delete(name);
-        else next.add(name);
-        // Back to everything → back to the "all" sentinel, so the request stays
-        // scope-free.
-        return next.size === (services ?? []).length ? new Set() : next;
-      });
+      setScoped((prev) => toggleMigrationService(prev, name, (services ?? []).map((service) => service.name)));
     },
     [services],
   );
 
-  // Only a COPY may narrow, and an empty set means "everything" — so both collapse to
-  // `undefined`, the one value that keeps the plan and the run agreeing about the whole
-  // project even if a service is added between them.
+  const scopeValid = validMigrationServiceScope(scoped, services?.map((service) => service.name) ?? null);
   const scopeForRequest = useMemo(
-    () => (intent === "copy" && scoped.size > 0 ? [...scoped] : undefined),
+    () => (intent === "copy" && scoped !== null ? [...scoped] : undefined),
     [intent, scoped],
   );
 
@@ -138,7 +139,7 @@ export function ProjectMigrationCard({
    * source stopped but intact, and a duplicate never touches the original at all.
    */
   const start = useCallback(async () => {
-    if (!target) return;
+    if (!target || starting || (intent === "copy" && (!scopeValid || servicesError))) return;
     setStarting(true);
     try {
       const res = await dockerMigrationApi.startProjectMove({
@@ -147,6 +148,7 @@ export function ProjectMigrationCard({
         intent,
         serviceNames: scopeForRequest,
       });
+      if (!res.migrationId) throw new Error(mg.startFailed);
       onStarted(res.migrationId);
     } catch (err) {
       // Only the free refusals reach here (Cloud-hosted, same server, a scoped move) — the
@@ -161,7 +163,7 @@ export function ProjectMigrationCard({
     } finally {
       setStarting(false);
     }
-  }, [projectId, target, intent, scopeForRequest, onStarted, showToast, mg]);
+  }, [projectId, target, intent, scopeForRequest, onStarted, showToast, mg, starting, scopeValid, servicesError]);
 
   const targetName = target?.name ?? "";
 
@@ -178,7 +180,7 @@ export function ProjectMigrationCard({
    * and what happens next is the session taking over the tab.
    */
   const confirm = useCallback(() => {
-    if (!target) return;
+    if (!target || starting || (intent === "copy" && (!scopeValid || servicesError))) return;
     const id = showModal({
       title: interpolate(intent === "move" ? mg.confirmTitle : mg.confirmTitleCopy, {
         project: projectName,
@@ -188,6 +190,7 @@ export function ProjectMigrationCard({
       // because that is the slot the shared dialog gives, and these are three short
       // sentences rather than a form.
       message: [
+        ...(intent === "copy" && scopeForRequest ? [`Services: ${scopeForRequest.join(", ")}.`] : []),
         mg.confirmSubtitle,
         intent === "move" ? mg.downtimeNote : mg.downtimeNoteCopy,
         intent === "move" ? mg.dnsNote : mg.copyNoDomainsNote,
@@ -207,7 +210,7 @@ export function ProjectMigrationCard({
         },
       ],
     });
-  }, [target, intent, projectName, mg, showModal, hideModal, start]);
+  }, [target, intent, projectName, mg, showModal, hideModal, start, starting, scopeValid, servicesError, scopeForRequest]);
 
   return (
     <div className="space-y-4">
@@ -221,7 +224,7 @@ export function ProjectMigrationCard({
           <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{mg.fromLabel}</p>
           <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-3.5 py-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-              <Server className="size-4 text-muted-foreground" />
+              <UiIcon name="server" className="size-4 text-muted-foreground" />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">
@@ -242,7 +245,7 @@ export function ProjectMigrationCard({
 
         {/* Centred against the boxes, not the column: the label above them is 11px + a
             6px gap, so the arrow drops by half a box height minus that. */}
-        <ArrowRight className="mx-auto mb-5 hidden size-4 shrink-0 text-muted-foreground sm:block" />
+        <UiIcon name="arrow-right" className="mx-auto mb-5 hidden size-4 shrink-0 text-muted-foreground sm:block" />
 
         <div className="min-w-0">
           <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{mg.toLabel}</p>
@@ -253,6 +256,7 @@ export function ProjectMigrationCard({
               its own menu, so an operator with one server can create the destination here
               instead of hitting a dead end. */}
           <ServerSelector
+            requiredCapability="ssh"
             compact
             value={target?.id ?? null}
             onSelect={setTarget}
@@ -268,7 +272,7 @@ export function ProjectMigrationCard({
           product's own segmented control — a quiet track with the selection carried by a
           filled pill that slides. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SlidingToggle
+        {!copyOnly && <SlidingToggle
           value={intent}
           onChange={setIntent}
           variant="square"
@@ -278,12 +282,12 @@ export function ProjectMigrationCard({
             { value: "move" as const, label: mg.intentMove },
             { value: "copy" as const, label: mg.intentCopy },
           ]}
-        />
+        />}
 
         <button
           type="button"
           onClick={confirm}
-          disabled={!target}
+          disabled={!target || starting || (intent === "copy" && (!scopeValid || !!servicesError))}
           className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-5 text-[13px] font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {intent === "move" ? mg.migrate : mg.duplicate}
@@ -292,9 +296,9 @@ export function ProjectMigrationCard({
 
       <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         {intent === "move" ? (
-          <Trash2 className="mt-0.5 size-3 shrink-0" />
+          <UiIcon name="trash" className="mt-0.5 size-3 shrink-0" />
         ) : (
-          <Copy className="mt-0.5 size-3 shrink-0" />
+          <UiIcon name="copy" className="mt-0.5 size-3 shrink-0" />
         )}
         <span>{intent === "move" ? mg.intentMoveHint : mg.intentCopyHint}</span>
       </p>
@@ -308,39 +312,36 @@ export function ProjectMigrationCard({
         <div className="rounded-xl bg-muted/25 p-3.5">
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Boxes className="size-3.5 text-muted-foreground" />
+              <UiIcon name="layers" className="size-3.5 text-muted-foreground" />
               <p className="text-[12px] font-medium text-foreground">{mg.scopeLabel}</p>
               <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                {scoped.size === 0 ? (services?.length ?? 0) : scoped.size}
+                {scoped === null ? (services?.length ?? 0) : scoped.size}
                 {"/"}
                 {services?.length ?? 0}
               </span>
             </div>
             {/* Only offered once a narrowing exists to undo — a "Select all" that is
                 already true is a control that does nothing. */}
-            {scoped.size > 0 && (
+            {scoped !== null && (
               <button
                 type="button"
-                onClick={() => setScoped(new Set())}
+                onClick={() => setScoped(null)}
                 className="rounded-lg px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
               >
                 {mg.scopeAll}
               </button>
             )}
           </div>
-          {services === null ? (
+          {servicesError ? <p role="alert" className="text-xs text-danger">{servicesError}</p> : services === null ? (
             <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
+              <UiIcon name="spinner" className="size-3.5 animate-spin" />
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
               {services.map((svc) => (
                 <Choice
                   key={svc.name}
-                  // Empty selection means "everything", so every row reads as checked
-                  // until the operator narrows it — otherwise the default (copy the whole
-                  // project) would render as nothing selected.
-                  checked={scoped.size === 0 || scoped.has(svc.name)}
+                  checked={scoped === null || scoped.has(svc.name)}
                   onToggle={() => toggleService(svc.name)}
                   label={svc.name}
                   // The volume count, not the image tag: it is the part that decides how
@@ -356,10 +357,11 @@ export function ProjectMigrationCard({
             </div>
           )}
           <p className="mt-2.5 text-[11px] text-muted-foreground">
-            {scoped.size === 0
+            {scoped === null
               ? mg.scopeHintAll
               : interpolate(mg.scopeHintSome, { count: String(scoped.size) })}
           </p>
+          {scoped !== null && !scopeValid && services !== null && <p role="alert" className="mt-2 text-xs text-danger">Select at least one existing service to clone.</p>}
         </div>
       )}
 

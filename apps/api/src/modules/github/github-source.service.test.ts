@@ -39,11 +39,11 @@ vi.mock("@repo/db", () => ({
     },
   },
 }));
-vi.mock("../../lib/credential-encryption", () => ({
+vi.mock("@repo/platform/engine/lib/credential-encryption", () => ({
   encryptSecretField: h.encrypt,
   decryptSecretField: h.decrypt,
 }));
-vi.mock("../../lib/public-url", () => ({
+vi.mock("@repo/platform/engine/lib/public-url", () => ({
   getInstanceReachability: vi.fn(async () => ({
     configured: true,
     url: "https://ship.example",
@@ -51,14 +51,14 @@ vi.mock("../../lib/public-url", () => ({
   resolveDashboardPublicUrl: vi.fn(() => "https://ship.example"),
   sharedWebhookUrl: vi.fn(() => "https://ship.example/api/webhooks/github"),
 }));
-vi.mock("./github.app-client", () => ({ githubAppFetch: h.appFetch }));
-vi.mock("./github.auth", () => ({ invalidateOrgGitHubCache: h.invalidateOrg }));
+vi.mock("@repo/platform/engine/modules/github/github.app-client", () => ({ githubAppFetch: h.appFetch }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({ invalidateOrgGitHubCache: h.invalidateOrg }));
 
 import {
   beginGitHubManifestFlow,
   convertGitHubManifest,
   createManualGitHubSource,
-} from "./github-source.service";
+} from "@repo/platform/engine/modules/github/github-source.service";
 
 const now = new Date("2026-01-01T00:00:00.000Z");
 const ctx = {
@@ -179,15 +179,16 @@ describe("workspace GitHub source service", () => {
     expect(h.sourceCreate).not.toHaveBeenCalled();
   });
 
-  it("builds a state-bound least-privilege GitHub manifest", async () => {
+  it("builds a state-bound GitHub manifest for workflows and repository runners", async () => {
     const result = await beginGitHubManifestFlow(ctx, { name: "Acme Production" });
 
-    expect(result.url).toBe("https://github.com/settings/apps/new");
+    expect(result.url).toMatch(
+      /^https:\/\/github\.com\/settings\/apps\/new\?state=[A-Za-z0-9_-]+$/,
+    );
     expect(result.manifest).toMatchObject({
       url: "https://ship.example",
-      redirect_url: expect.stringMatching(
-        /^https:\/\/ship\.example\/auth\/callback\/github-app\?flow=manifest&state=/,
-      ),
+      // GitHub rejects a redirect_url with a query string; the state rides on result.url instead.
+      redirect_url: "https://ship.example/auth/callback/github-app",
       setup_url: "https://ship.example/auth/callback/github-app",
       public: false,
       request_oauth_on_install: false,
@@ -195,14 +196,17 @@ describe("workspace GitHub source service", () => {
         url: "https://ship.example/api/webhooks/github",
         active: true,
       },
-      default_permissions: {
-        checks: "write",
-        contents: "read",
-        metadata: "read",
-        pull_requests: "read",
-        statuses: "write",
-      },
-      default_events: ["check_run", "installation", "pull_request", "push"],
+      default_events: ["check_run", "pull_request", "push", "workflow_job", "workflow_run"],
+    });
+    expect(result.manifest.default_permissions).toEqual({
+      actions: "write",
+      administration: "write",
+      checks: "write",
+      contents: "write",
+      workflows: "write",
+      metadata: "read",
+      pull_requests: "write",
+      statuses: "write",
     });
     expect(h.stateCreate).toHaveBeenCalledWith(
       expect.objectContaining({

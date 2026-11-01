@@ -37,6 +37,11 @@ export const openshipMetadataParser: MetadataParser = {
     if (config.startCommand) metadata.startCommand = config.startCommand;
     if (config.framework) metadata.framework = config.framework;
     if (config.routes) metadata.routing = config.routes;
+    // Opt-in Laravel web-role cache warming (#19). Threaded through to the stack
+    // detector, which prefixes the FINAL web command once the stack resolves to
+    // laravel. Projected here so `optimize` ALONE is signal enough to carry the
+    // flag even when the project overrides no command/framework.
+    if (config.optimize) metadata.optimize = config.optimize;
 
     const hasSignal =
       config.installCommand ||
@@ -44,7 +49,8 @@ export const openshipMetadataParser: MetadataParser = {
       config.outputDirectory ||
       config.startCommand ||
       config.framework ||
-      config.routes;
+      config.routes ||
+      config.optimize;
     return hasSignal ? metadata : null;
   },
 };

@@ -13,11 +13,31 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface TestCert {
   certPem: string;
   keyPem: string;
+}
+
+/** Required file references and renewal settings in Certbot's on-disk format. */
+export function makeTestRenewalConf(
+  certDir: string,
+  name: string,
+  server = "https://acme-v02.api.letsencrypt.org/directory",
+): string {
+  return [
+    "version = 4.0.0",
+    `archive_dir = ${join(dirname(certDir), "archive", name)}`,
+    ...["cert", "privkey", "chain", "fullchain"].map(
+      (kind) => `${kind} = ${join(certDir, name, `${kind}.pem`)}`,
+    ),
+    "[renewalparams]",
+    "authenticator = standalone",
+    "key_type = rsa",
+    `server = ${server}`,
+    "",
+  ].join("\n");
 }
 
 const cache = new Map<string, TestCert>();

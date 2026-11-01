@@ -72,7 +72,7 @@ describe("ServerForm variants", () => {
     const page = placeholders(render({ server }));
     const modal = placeholders(render({ server, variant: "modal", onCancel: () => {} }));
     expect(modal).toEqual(page);
-    expect(page).toContain("-o StrictHostKeyChecking=no");
+    expect(page).toContain("-o ConnectTimeout=30");
     expect(page).toContain("user@bastion.example.com");
     expect(page).toContain("/root/.ssh/id_ed25519");
   });
@@ -221,8 +221,8 @@ describe("ServerForm variants", () => {
   });
 
   it("only the modal variant is dismissable in place", () => {
-    expect(render({ variant: "modal", onCancel: () => {} })).toContain("lucide-x");
-    expect(render()).not.toContain("lucide-x");
+    expect(render({ variant: "modal", onCancel: () => {} })).toContain("data-icon=\"close\"");
+    expect(render()).not.toContain("data-icon=\"close\"");
   });
 
   it("lets the caller override the primary label in either chrome", () => {

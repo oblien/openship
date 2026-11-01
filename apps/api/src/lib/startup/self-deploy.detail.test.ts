@@ -23,24 +23,24 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("./self-edge", () => ({ ensureSelfEdgeInfra: async () => h.infra }));
-vi.mock("./self-services", () => ({ linkSelfAppServices: vi.fn(async () => {}) }));
-vi.mock("./index", () => ({ registerStartupHook: vi.fn() }));
-vi.mock("../../modules/deployments/build.service", () => ({ createQueuedDeployment: vi.fn() }));
-vi.mock("../../modules/deployments/deployment-lifecycle", () => ({ onSuccess: vi.fn() }));
-vi.mock("../../modules/domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/lib/startup/self-services", () => ({ linkSelfAppServices: vi.fn(async () => {}) }));
+vi.mock("@repo/platform/engine/lib/startup/index", () => ({ registerStartupHook: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({ createQueuedDeployment: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({ onSuccess: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   reapplyProjectLiveRoutes: h.reapply,
 }));
-vi.mock("../domain-ssl", () => ({
+vi.mock("@repo/platform/engine/lib/domain-ssl", () => ({
   manageDomainSsl: vi.fn(async () => ({ verified: false, reason: "challenge failed" })),
   tlsIssuedElsewhere: () => null,
   describeTlsIssuedElsewhere: () => "",
 }));
-vi.mock("../public-url", () => ({ refreshSelfAppPublicUrl: vi.fn(async () => {}) }));
+vi.mock("@repo/platform/engine/lib/public-url", () => ({ refreshSelfAppPublicUrl: vi.fn(async () => {}) }));
 vi.mock("@repo/adapters", () => ({
   BareRuntime: class {},
   foreignProxyOnEdge: async () => h.foreignProxy,
 }));
-vi.mock("../ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { withHostExecutor: async (fn: (e: unknown) => unknown) => fn({}) },
 }));
 vi.mock("@repo/db", () => ({
@@ -58,7 +58,7 @@ import {
   createSetupSession,
   updateComponentProgress,
   subscribeSetupSession,
-} from "../../modules/system/setup-session";
+} from "@repo/platform/engine/modules/system/setup-session";
 
 /** Records every step event so the returned payload and the wizard's stream can be
  *  compared — the bug was one of them carrying the diagnosis and the other not. */

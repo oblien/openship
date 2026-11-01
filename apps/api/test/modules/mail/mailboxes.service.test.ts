@@ -11,13 +11,13 @@ const mocks = vi.hoisted(() => ({
   recountDomain: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: async (_serverId: string, fn: (exec: object) => unknown) => fn({}),
   },
 }));
 
-vi.mock("../../../src/modules/mail/admin/psql-runner", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/psql-runner", () => ({
   execute: mocks.execute,
   queryOne: mocks.queryOne,
   queryRows: mocks.queryRows,
@@ -26,11 +26,11 @@ vi.mock("../../../src/modules/mail/admin/psql-runner", () => ({
   transaction: mocks.transaction,
 }));
 
-vi.mock("../../../src/modules/mail/mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: mocks.readState,
 }));
 
-vi.mock("../../../src/modules/mail/admin/maildir", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   createMaildirOnDisk: vi.fn(),
   generateMaildir: vi.fn(),
   removeMaildirOnDisk: mocks.removeMaildirOnDisk,
@@ -38,16 +38,16 @@ vi.mock("../../../src/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("../../../src/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
   recountDomain: mocks.recountDomain,
   validateDomain: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/mail/admin/password", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/password", () => ({
   hashPassword: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/mail/admin/platform-mailbox.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/platform-mailbox.service", () => ({
   buildInsertMailboxSql: vi.fn(),
   buildInsertSelfForwardingSql: vi.fn(),
   PLATFORM_LOCAL_PART: "openship",
@@ -60,7 +60,7 @@ import {
   PlatformMailboxProtectedError,
   softDeleteMailbox,
   updateMailbox,
-} from "../../../src/modules/mail/admin/mailboxes.service";
+} from "@repo/platform/engine/modules/mail/admin/mailboxes.service";
 
 function mailbox(username: string, domain: string) {
   return {

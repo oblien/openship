@@ -75,6 +75,9 @@
       "onFailureWarn": "Deployment live lassen und zur Prüfung markieren",
       "onFailureFail": "Deployment abbrechen und die vorherige Version weiter ausliefern"
     },
+    "runtimeVersionLabel": "Runtime-Version",
+    "runtimeVersionDefault": "Standard",
+    "runtimeVersionDesc": "Verwendet passende Build- und Runtime-Images für die gewählte Version. Erfordert einen von Openship generierten Docker-Build.",
     "buildImageLabel": "Build-Image",
     "buildImageDesc": "Builder-Container-Image für Cloud- oder Server-Builds. Überschreibe es, wenn das erkannte Basis-Image falsch ist.",
     "productionPathsLabel": "Produktionspfade",
@@ -105,7 +108,24 @@
     "modeWorker": "Worker",
     "modeStatic": "Statisch",
     "workerModeDesc": "Läuft kontinuierlich ohne Port oder öffentliche URL – ein Queue-Consumer, Cronjob oder Bot.",
-    "buildSettingsTitle": "Build-Einstellungen"
+    "buildSettingsTitle": "Build-Einstellungen",
+    "releaseTitle": "Vor der Aktivierung",
+    "releaseDescription": "Optionale Befehle nach dem Build. Ein Fehler stoppt das Deployment. Nur für Docker- und Bare-Apps.",
+    "releaseCommand": "Befehl {number}",
+    "addReleaseCommand": "Befehl hinzufügen",
+    "removeReleaseCommand": "Befehl {number} entfernen",
+    "runtimeImageLabel": "Runtime-Image",
+    "runtimeImageDesc": "Optionales Produktions-Basisimage für Docker-Builds. Muss zur Runtime und zum generierten Rezept passen; leer lassen für den verwalteten Standard.",
+    "staticPathHint": "Wird als statische Dateien vom Edge bereitgestellt — es läuft kein Hintergrundprozess.",
+    "runtimeTitle": "Laufzeit",
+    "runtimeDesc": "Wähle das Image für deine App. Beim Aktualisieren bleiben die gewählte Version und festgelegte Digests erhalten.",
+    "runtimeBareDesc": "Diese App läuft direkt auf dem Server. Verwalte die installierte Laufzeit dort.",
+    "runtimeStaticDesc": "Das Build-Image bereitet deine statischen Dateien vor. Nach dem Deployment läuft keine App-Laufzeit.",
+    "runtimeDockerfileDesc": "Dein Dockerfile legt das Laufzeit-Image fest.",
+    "runtimeServicesDesc": "Wähle die Laufzeit-Images der einzelnen Dienste unter Dienste.",
+    "runtimePrebuiltDesc": "Das gewählte Anwendungs-Image enthält seine Laufzeit.",
+    "runtimeOverrideUnused": "Diese gespeicherten Überschreibungen gelten nicht für dieses Deployment. Entferne sie vor dem Speichern.",
+    "clearRuntimeOverrides": "Gespeicherte Überschreibungen entfernen"
   },
   "projectSettings": {
     "framework": "Framework",
@@ -123,6 +143,7 @@
     "noneSet": "Keine festgelegt",
     "pasteEnv": ".env einfügen",
     "uploadEnv": ".env hochladen",
+    "downloadEnv": ".env herunterladen",
     "edit": "Bearbeiten",
     "cancel": "Abbrechen",
     "saving": "Wird gespeichert...",
@@ -144,6 +165,7 @@
       "interpolated": "Interpoliert"
     },
     "toast": {
+      "downloadFailed": "Umgebungsvariablen konnten nicht heruntergeladen werden.",
       "title": "Umgebungsvariablen",
       "added": "{count} hinzugefügt",
       "updated": "{count} aktualisiert",
@@ -173,7 +195,9 @@
       "domainLabel": "Domain",
       "free": "Kostenlos",
       "custom": "Benutzerdefiniert",
-      "routingTrafficPrefix": "Verkehr wird geleitet an Port"
+      "routingTrafficPrefix": "Verkehr wird geleitet an Port",
+      "duplicateTitle": "Doppelte Domain",
+      "duplicateDescription": "Zwei Routen verweisen auf dieselbe Domain — ändern Sie eine, damit jede Route eine eigene Domain hat:"
     },
     "shared": {
       "title": "Gemeinsame Umgebung",
@@ -205,9 +229,9 @@
       "volumes": "Volumes",
       "statefulWarnPart1": "Zustandsbehafteter Service in der Cloud: Daten liegen auf der persistenten Festplatte des Workspace (überstehen Neustarts), werden aber ",
       "statefulWarnBold": "nicht über Rebuilds hinweg übernommen",
-      "statefulWarnPart2": ", sofern keine Backups aktiviert sind. Docker-Volume-Mounts gelten nicht.",
+      "statefulWarnPart2": ". Sichere und stelle die Daten ausdrücklich wieder her, bevor du den Workspace ersetzt.",
       "volumeHint": "Benanntes Volume oder Host-Pfad → Container-Pfad.",
-      "volumeCloudNote": "In der Cloud gelten diese Mounts nicht – Daten bleiben auf der Festplatte des Workspace erhalten (ohne Backups nicht über Rebuilds hinweg).",
+      "volumeCloudNote": "Persistente Volume-Mounts werden in Openship Cloud nicht unterstützt. Wähle einen Server für Workloads, die Volumes benötigen.",
       "sourcePlaceholder": "Quelle",
       "containerPathPlaceholder": "Container-Pfad",
       "readOnlyMount": "Schreibgeschützter Mount",
@@ -285,7 +309,51 @@
       "singleDesc": "Den Build- + Startbefehl einer Sub-App hochstufen, den Port jeder App aus einer Laufzeit freigeben."
     },
     "deploymentMode": "Bereitstellungsmodus",
-    "deploymentModeDesc": "{mode} · Zwischen Laufzeiten pro App und Einzel-App-Verarbeitung wechseln."
+    "deploymentModeDesc": "{mode} · Zwischen Laufzeiten pro App und Einzel-App-Verarbeitung wechseln.",
+    "selection": {
+      "title": "Apps zum Bereitstellen",
+      "chooseApps": "Apps auswählen",
+      "changeSelection": "Auswahl ändern",
+      "selected": "{count} ausgewählt",
+      "chooseHint": "Wähle die Apps, die laufen sollen. CLI-Tools, mobile Apps und gemeinsame Pakete können abgewählt bleiben.",
+      "applySelection": "Ausgewählte Apps verwenden",
+      "manualReview": "Einrichtung prüfen",
+      "detectedApp": "Erkannte App",
+      "empty": "Wähle Apps aus diesem Repository oder füge einen Ordner hinzu. Ohne Auswahl wird nichts bereitgestellt.",
+      "addFromRepo": "App aus Repository hinzufügen",
+      "addMore": "Weitere hinzufügen",
+      "cancel": "Abbrechen",
+      "addApp": "App hinzufügen",
+      "chooseFolder": "Ordner ändern",
+      "useFolder": "Diesen Ordner verwenden",
+      "folderHint": "Wähle den App-Ordner. Builds behalten Zugriff auf gemeinsame Pakete und Lockdateien im Repository.",
+      "appFolder": "App-Ordner",
+      "invalidPath": "Gib einen repositoryrelativen Ordner ein, etwa apps/web oder .",
+      "alreadyAdded": "Dieser Ordner ist bereits in der App-Liste. Aktiviere ihn über „Auswahl ändern“.",
+      "browseError": "Repository-Ordner konnten nicht geladen werden.",
+      "scanError": "Dieser Ordner konnte nicht geprüft werden.",
+      "composeFolder": "Dieser Ordner definiert einen Compose-Stack. Importiere die Compose-Datei als eigenes Projekt.",
+      "scanning": "Wird geprüft…",
+      "inspect": "Ordner prüfen",
+      "parentFolder": "Übergeordneter Ordner",
+      "retry": "Erneut versuchen",
+      "loadingFolders": "Ordner werden geladen…",
+      "noSubfolders": "Keine Unterordner. Du kannst diesen Ordner auswählen.",
+      "reviewHint": "Füge diese App hinzu, um Framework, Befehle und Umgebung vor der Bereitstellung zu prüfen.",
+      "domains": "Domains",
+      "manage": "Verwalten",
+      "domainNeeded": "Domain erforderlich",
+      "viewAll": "Alle {count} Domains anzeigen",
+      "domainHint": "Diese Domains werden bei der Bereitstellung angewendet.",
+      "privateHint": "Die ausgewählten Apps haben keine öffentlichen Domains.",
+      "done": "Fertig",
+      "private": "Privat",
+      "publicAccess": "Öffentlicher Zugriff",
+      "accessHint": "Deaktivieren, damit diese App nur innerhalb des Projekts erreichbar ist.",
+      "app": "App",
+      "appLimit": "Dieses Projekt hat bereits 50 Apps. Erstelle ein weiteres Projekt für zusätzliche Apps.",
+      "folderMismatch": "Dieser Ordner verweist auf eine andere Projektkonfiguration. Wähle diesen Ordner oder bearbeite seine openship.json."
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Cloud",
@@ -315,7 +383,7 @@
       "successful": "Bereitstellung erfolgreich",
       "deploying": "Wird bereitgestellt..."
     },
-    "visitSite": "Website besuchen",
+    "openSite": "Website öffnen",
     "warningTitle": "Bereitstellung abgeschlossen, aber einige Services benötigen noch Aufmerksamkeit.",
     "productionLogs": "Produktionsprotokolle",
     "buildTerminal": "Build-Terminal",
@@ -325,7 +393,7 @@
     "stopDeployment": "Bereitstellung stoppen",
     "redeploy": "Erneut bereitstellen",
     "goToProject": "Zum Projekt",
-    "openDashboard": "Dashboard öffnen",
+    "openProject": "Projekt öffnen",
     "edit": "Bearbeiten",
     "status": {
       "cancelled": "Abgebrochen",
@@ -342,7 +410,38 @@
     "detailFramework": "Framework",
     "detailBranch": "Branch",
     "detailDomains": "Domains",
-    "detailDomain": "Domain"
+    "detailDomain": "Domain",
+    "portAdvisory": {
+      "loopbackTitle": "Die App kann keinen weitergeleiteten Datenverkehr empfangen",
+      "loopbackNote": "Die Bereitstellung läuft, aber ein weitergeleiteter Port erfordert Aufmerksamkeit.",
+      "loopbackBody": "Port {port} lauscht nur innerhalb des Containers.",
+      "loopbackBodyService": "Dienst \"{service}\" lauscht nur innerhalb des Containers auf Port {port}.",
+      "loopbackHelp": "Für eine App mit weitergeleitetem Datenverkehr: auf 0.0.0.0 lauschen und erneut bereitstellen oder den vorgesehenen Proxy als Ziel verwenden.",
+      "openSettings": "Einstellungen öffnen",
+      "skipError": "Dieser Hinweis konnte nicht ausgeblendet werden. Bitte erneut versuchen.",
+      "title": "Hinweis auf abweichenden Port",
+      "bannerTitle": "Abweichender Container-Port erkannt",
+      "review": "Port überprüfen",
+      "note": "Der Edge-Router leitet den Datenverkehr an Port {port} weiter, aber Ihre Anwendung hat dort nicht geantwortet.",
+      "body": "Auf Port {port} hat nichts geantwortet. Wenn Ihre Anwendung auf einem anderen Port lauscht, aktualisieren Sie ihn unten.",
+      "bodyService": "Dienst „{service}“: Auf Port {port} hat nichts geantwortet. Wenn er auf einem anderen Port lauscht, geben Sie hier den richtigen an.",
+      "newPortLabel": "Korrekter Port",
+      "changePort": "Port ändern",
+      "skip": "Überspringen",
+      "applied": "Routing auf Port {port} aktualisiert.",
+      "changeError": "Der Port konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut."
+    }
+  },
+  "deploymentHealth": {
+    "recheck": "Zustand erneut prüfen",
+    "checking": "Wird geprüft…",
+    "healthy": "Die Dienste sind gesund",
+    "atDeployment": "Warnung beim Deployment",
+    "currentHealth": "Aktueller Dienststatus",
+    "startupHint": "Wenn die App noch startet, warten Sie und prüfen Sie erneut. Bei Neustarts oder Fehlern öffnen Sie die Logs, um die Ursache zu finden.",
+    "viewLogs": "Logs anzeigen",
+    "unavailable": "Der Zustand konnte nicht geprüft werden. Versuchen Sie es erneut, wenn der Server erreichbar ist.",
+    "historical": "Dieses Deployment ist nicht mehr aktiv. Öffnen Sie das Projekt für die aktuellen Dienste."
   },
   "composeDeployment": {
     "title": {
@@ -416,12 +515,12 @@
     "rowType": "Typ"
   },
   "configDiagnostics": {
-    "title": "Teile der openship.json dieses Repos wurden nicht angewendet",
-    "description": "Die unten aufgeführten Felder wurden übersprungen; der Rest der Datei wurde angewendet. Das Deployment läuft weiter.",
+    "title": "Einige Deployment-Einstellungen wurden nicht angewendet",
+    "description": "Prüfe die unten aufgeführten übersprungenen Einstellungen vor dem Deployment.",
     "titleWholeFile": "Die openship.json dieses Repos wurde ignoriert",
     "descriptionWholeFile": "Nichts davon wurde angewendet. Das Deployment läuft weiter, mit den von Openship erkannten Einstellungen.",
     "refused": "Abgelehnt",
     "unrecognized": "Nicht erkannt",
-    "hint": "Führe `openship config validate` im Repo aus, um die Datei vor dem nächsten Deployment zu prüfen."
+    "hint": "Prüfe die genannten Konfigurationsdateien und aktualisiere nicht unterstützte Einstellungen vor dem nächsten Deployment."
   }
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 
 import { useI18n } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
@@ -58,7 +59,7 @@ export function ProjectStatusBadge({
       )}
     >
       {label}
-      <ChevronRight className="size-3 rtl:rotate-180" aria-hidden="true" />
+      <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" aria-hidden="true" />
     </Link>
   );
 }

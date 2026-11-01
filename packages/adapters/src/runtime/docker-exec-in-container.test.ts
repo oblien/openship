@@ -1,5 +1,8 @@
 import Dockerode from "dockerode";
 import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
@@ -85,11 +88,12 @@ function fakeDaemon(opts: {
 function runWatchdog(
   command: string,
   timeoutMs: number,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ code: number | null; stdout: string; stderr: string; elapsedMs: number }> {
   const argv = buildInContainerExecCmd(command, timeoutMs);
   const startedAt = Date.now();
   return new Promise((resolve) => {
-    const child = spawn(argv[0], argv.slice(1));
+    const child = spawn(argv[0], argv.slice(1), { env });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (c: Buffer) => (stdout += c.toString()));
@@ -290,6 +294,45 @@ describe("buildInContainerExecCmd — the container enforces the deadline", () =
     expect(r.code).toBe(0);
     expect(r.elapsedMs).toBeLessThan(2_000);
   });
+
+  it.each([false, true])(
+    "reaps the timer promptly even if TERM is ignored: %s",
+    async (ignoreTerm) => {
+      const dir = await mkdtemp(join(tmpdir(), "openship-watchdog-"));
+      const pidFile = join(dir, "timer.pid");
+      let timerPid: number | undefined;
+      try {
+        await writeFile(
+          join(dir, "sleep"),
+          // Model cancellation arriving while a shell child cannot act on TERM.
+          // BusyBox can hit that startup window for an immediately completed command.
+          `#!/bin/sh\n${ignoreTerm ? 'trap "" TERM\n' : ""}printf "%s\\n" "$$" > "$OPENSHIP_WATCHDOG_TEST_PID_FILE"\nexec /bin/sleep "$@"\n`,
+          { mode: 0o700 },
+        );
+        const result = await runWatchdog(
+          'while [ ! -s "$OPENSHIP_WATCHDOG_TEST_PID_FILE" ]; do /bin/sleep 0.01; done',
+          5_000,
+          {
+            ...process.env,
+            PATH: `${dir}:${process.env.PATH}`,
+            OPENSHIP_WATCHDOG_TEST_PID_FILE: pidFile,
+          },
+        );
+        expect(result.code).toBe(0);
+        expect(result.elapsedMs).toBeLessThan(2_000);
+        const pid = Number((await readFile(pidFile, "utf8")).trim());
+        timerPid = pid;
+        expect(() => process.kill(pid, 0)).toThrow();
+      } finally {
+        if (timerPid) {
+          try {
+            process.kill(timerPid, "SIGKILL");
+          } catch {}
+        }
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("kills the command in-container at the deadline instead of orphaning it", async () => {
     const r = await runWatchdog("sleep 30", 1_000);

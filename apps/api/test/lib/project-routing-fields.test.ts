@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compileProjectRoutingFields } from "../../src/lib/project-routing-fields";
+import { compileProjectRoutingFields } from "@repo/platform/engine/lib/project-routing-fields";
 
 /**
  * `registerRoute` REPLACES the whole vhost, so a register site that omits these fields

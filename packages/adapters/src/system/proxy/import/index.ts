@@ -4,6 +4,7 @@
  * routes. All parsing is read-only and best-effort (warnings, never throws).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../../../types";
 import type { ImportedSite, ProxyKind, ProxyScanResult } from "../../types";
 import { EDGE_CONTAINER_MOUNTS } from "../../../infra/openresty-lua";
@@ -60,7 +61,8 @@ export async function detectInstalledProxy(executor: CommandExecutor): Promise<P
   let out = "";
   try {
     out = await executor.exec(`{ ${probe}; } 2>/dev/null; true`, { timeout: 10_000 });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/proxy/import/index");
     return null;
   }
   const found = new Set(

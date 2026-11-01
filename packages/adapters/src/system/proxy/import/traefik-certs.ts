@@ -38,6 +38,20 @@ function prop(obj: Record<string, unknown>, name: string): unknown {
   return hit === undefined ? undefined : obj[hit];
 }
 
+/** Read the declarations from the same host/container that serves the routes. */
+async function configurationTexts(exec: CommandExecutor, container?: string | null): Promise<string[]> {
+  const declaration = container
+    ? await tryExec(exec, `docker inspect ${sq(container)} --format '{{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}' 2>/dev/null`)
+    : "";
+  const paths = new Set(TRAEFIK_STATIC_CONFIGS);
+  for (const match of (declaration ?? "").matchAll(/(?:--configfile|TRAEFIK_CONFIGFILE)[=\s"',:]+(\/[^\s"',}]+)/gi)) {
+    if (isSafeCertPath(match[1])) paths.add(match[1]);
+  }
+  const texts = [declaration ?? ""];
+  for (const path of paths) texts.push(await readMaybeInContainer(exec, path, container));
+  return texts;
+}
+
 /**
  * Storage paths this Traefik might use, most-specific first: whatever its own
  * CLI args / env / static config declares, then the well-known defaults.
@@ -62,17 +76,7 @@ async function candidateStoragePaths(
     }
   };
 
-  if (container) {
-    collect(
-      await tryExec(
-        exec,
-        `docker inspect ${sq(container)} --format '{{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}' 2>/dev/null`,
-      ),
-    );
-    for (const cfg of TRAEFIK_STATIC_CONFIGS) {
-      collect(await readMaybeInContainer(exec, cfg, container));
-    }
-  }
+  for (const text of await configurationTexts(exec, container)) collect(text);
   return [...new Set([...found, ...DEFAULT_ACME_PATHS])];
 }
 
@@ -175,13 +179,35 @@ export async function traefikDeclaredCertPaths(
   container?: string | null,
 ): Promise<Array<{ certPath: string; keyPath: string }>> {
   const pairs: Array<{ certPath: string; keyPath: string }> = [];
-  for (const cfg of TRAEFIK_STATIC_CONFIGS) {
-    const text = await readMaybeInContainer(exec, cfg, container);
+  const texts = await configurationTexts(exec, container);
+  const files = new Set<string>();
+  const directories = new Set<string>();
+  for (const text of texts) {
+    // CLI flags, environment variables and YAML/TOML static configuration all
+    // point to the dynamic file provider. Its TLS declarations are not normally
+    // inside traefik.yml itself.
+    for (const match of text.matchAll(/(?:providers[._]file[._])?(filename|directory)[=:\s"']+(\/[^\s"',}]+)/gi)) {
+      if (!isSafeCertPath(match[2])) continue;
+      (match[1].toLowerCase() === "filename" ? files : directories).add(match[2]);
+    }
+  }
+  for (const directory of directories) {
+    const command = `find ${sq(directory)} -maxdepth 1 -type f 2>/dev/null`;
+    const listing = container
+      ? await tryExec(exec, `docker exec ${sq(container)} sh -c ${sq(command)}`)
+      : await tryExec(exec, command);
+    for (const path of (listing ?? "").split("\n")) {
+      if (isSafeCertPath(path) && /\.(ya?ml|toml)$/i.test(path)) files.add(path);
+    }
+  }
+  for (const file of files) texts.push(await readMaybeInContainer(exec, file, container));
+  for (const text of texts) {
     if (!text.trim()) continue;
-    const certFiles = [...text.matchAll(/certFile:\s*["']?(\/[^\s"',}]+)/gi)].map((m) => m[1]);
-    const keyFiles = [...text.matchAll(/keyFile:\s*["']?(\/[^\s"',}]+)/gi)].map((m) => m[1]);
+    const certFiles = [...text.matchAll(/certFile\s*[:=]\s*["']?(\/[^\s"',}]+)/gi)].map((m) => m[1]);
+    const keyFiles = [...text.matchAll(/keyFile\s*[:=]\s*["']?(\/[^\s"',}]+)/gi)].map((m) => m[1]);
     for (let i = 0; i < Math.min(certFiles.length, keyFiles.length); i++) {
-      if (isSafeCertPath(certFiles[i]) && isSafeCertPath(keyFiles[i])) {
+      if (isSafeCertPath(certFiles[i]) && isSafeCertPath(keyFiles[i]) &&
+          !pairs.some((pair) => pair.certPath === certFiles[i] && pair.keyPath === keyFiles[i])) {
         pairs.push({ certPath: certFiles[i], keyPath: keyFiles[i] });
       }
     }

@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Reverse-proxy tunables for a project's vhosts, rendered FROM the
  * `PROXY_DIRECTIVES` table in `@repo/core` — the same table the API schema, the
@@ -16,12 +18,14 @@
  *    directive the box's nginx is too old for all leave the two apart, and until this
  *    read-back nothing surfaced it.
  *
- * Every field is labelled with its nginx directive name, so the value is searchable
- * in nginx's own docs and a new row needs no new translation.
+ * Human labels lead; optional technical details keep directive names available.
+ * New directives still render from the shared table with a readable fallback label.
  */
 
-import React from "react";
-import { ChevronDown, RefreshCw, TriangleAlert } from "lucide-react";
+import React, { useId } from "react";
+import { Input } from "@/components/ui/input";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Button } from "@/components/ui/button";
 import {
   PROXY_DIRECTIVES,
   type ProxyDirectiveGroup,
@@ -41,9 +45,6 @@ const GROUP_ORDER: ProxyDirectiveGroup[] = [
   "headers",
   "upstreamTls",
 ];
-
-const inputCls =
-  "w-full px-2.5 py-1.5 bg-muted/30 border border-border/50 rounded-lg text-sm text-foreground font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20";
 
 /** Placeholder = the shape of a valid value, so an empty box is still instructive. */
 function placeholderFor(spec: ProxyDirectiveSpec): string {
@@ -114,12 +115,7 @@ export const ProxySettingsSection: React.FC<{
   const proxy = (cfg.proxy ?? {}) as ProxyValues;
   const live = summarizeLive(edge, w.proxyNotSet);
   const driftKeys = [...live.byKey.entries()].filter(([, c]) => c.drift).map(([k]) => k);
-  const [open, setOpen] = React.useState(
-    () => Object.keys(proxy).length > 0 || driftKeys.length > 0,
-  );
-
-  /** Human hint for the handful of directives whose effect isn't obvious from the
-   *  name. Absent for the rest — the directive name is the documentation. */
+  const fieldId = useId();
   const hints: Record<string, string | undefined> = {
     clientMaxBodySize: w.maxBodySizeHint,
     proxyReadTimeout: w.readTimeoutHint,
@@ -128,15 +124,9 @@ export const ProxySettingsSection: React.FC<{
     proxyBuffering: w.proxyBufferingHint,
     gzip: w.gzipHint,
   };
-  /** Friendly label for the same handful, above the directive name. */
-  const labels: Record<string, string | undefined> = {
-    clientMaxBodySize: w.maxBodySize,
-    proxyReadTimeout: w.readTimeout,
-    proxySendTimeout: w.sendTimeout,
-    clientBodyTimeout: w.bodyTimeout,
-    proxyBuffering: w.proxyBuffering,
-    gzip: w.gzip,
-  };
+  const labels: Record<string, string> = w.proxyLabels;
+  const labelFor = (spec: ProxyDirectiveSpec) =>
+    labels[spec.key] ?? spec.key.replace(/([a-z])([A-Z])/g, "$1 $2");
 
   /** Drop the key when a field is cleared, so an empty box means "nginx default"
    *  rather than persisting a blank that fails validation on save. */
@@ -159,7 +149,7 @@ export const ProxySettingsSection: React.FC<{
     const title = entries.map(([v, hosts]) => `${hosts.join(", ")}: ${v}`).join("\n");
     return (
       <p
-        className={`text-[10px] font-mono ${cell.drift ? "text-warning" : "text-muted-foreground"}`}
+        className={`text-xs break-words ${cell.drift ? "text-warning" : "text-muted-foreground"}`}
         title={title}
       >
         {w.proxyLiveLabel} {text}
@@ -168,140 +158,132 @@ export const ProxySettingsSection: React.FC<{
     );
   };
 
-  const boolField = (spec: ProxyDirectiveSpec) => {
+  const field = (spec: ProxyDirectiveSpec) => {
+    const id = `${fieldId}-${spec.key}`;
     const value = proxy[spec.key];
     return (
-      <select
-        className={inputCls}
-        disabled={disabled}
-        value={value === true ? "on" : value === false ? "off" : ""}
-        onChange={(e) =>
-          setValue(spec.key, e.target.value === "" ? undefined : e.target.value === "on")
-        }
-      >
-        {/* Three states, because nginx has three: unset inherits its default, which a
-            checkbox cannot express once a value has been stored. */}
-        <option value="">{w.proxyInherit}</option>
-        <option value="on">on</option>
-        <option value="off">off</option>
-      </select>
+      <div key={spec.key} className="min-w-0 space-y-2">
+        <label htmlFor={id} className="block text-sm font-medium text-foreground">
+          {labelFor(spec)}
+        </label>
+        {spec.kind === "bool" ? (
+          <CustomSelect
+            id={id}
+            aria-label={labelFor(spec)}
+            variant="filled"
+            triggerClassName="bg-muted/60 hover:bg-muted"
+            disabled={disabled}
+            value={value === true ? "on" : value === false ? "off" : ""}
+            onChange={(next) => setValue(spec.key, next === "" ? undefined : next === "on")}
+            options={[
+              { value: "", label: w.proxyInherit },
+              { value: "on", label: w.enabled },
+              { value: "off", label: w.disabled },
+            ]}
+          />
+        ) : (
+          <Input
+            id={id}
+            dir="ltr"
+            variant="filled"
+            type="text"
+            inputMode={spec.kind === "int" ? "numeric" : "text"}
+            aria-describedby={hints[spec.key] ? `${id}-hint` : undefined}
+            value={value === undefined ? "" : String(value)}
+            disabled={disabled}
+            placeholder={placeholderFor(spec)}
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              setValue(spec.key, raw === "" ? undefined : spec.kind === "int" ? Number(raw) : raw);
+            }}
+          />
+        )}
+        {hints[spec.key] && (
+          <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+            {hints[spec.key]}
+          </p>
+        )}
+        {liveCell(spec.key)}
+      </div>
     );
   };
 
-  const field = (spec: ProxyDirectiveSpec) => (
-    <div key={spec.key} className="space-y-1">
-      <label className="block">
-        {labels[spec.key] && (
-          <span className="text-[11px] font-medium text-foreground">{labels[spec.key]}</span>
-        )}
-        <span
-          className={`block font-mono text-[10px] ${labels[spec.key] ? "text-muted-foreground" : "text-foreground"}`}
-        >
-          {spec.directive}
-        </span>
-      </label>
-      {spec.kind === "bool" ? (
-        boolField(spec)
-      ) : (
-        <input
-          type="text"
-          inputMode={spec.kind === "int" ? "numeric" : "text"}
-          value={proxy[spec.key] === undefined ? "" : String(proxy[spec.key])}
-          disabled={disabled}
-          placeholder={placeholderFor(spec)}
-          onChange={(e) => {
-            const raw = e.target.value.trim();
-            if (spec.kind === "int") {
-              setValue(spec.key, raw === "" ? undefined : Number(raw));
-            } else {
-              setValue(spec.key, raw === "" ? undefined : raw);
-            }
-          }}
-          className={inputCls}
-        />
-      )}
-      {hints[spec.key] && <p className="text-[10px] text-muted-foreground">{hints[spec.key]}</p>}
-      {liveCell(spec.key)}
-    </div>
-  );
-
   return (
-    <div className="space-y-2 border-t border-border/50 pt-4">
+    <section className="space-y-4" aria-label={w.proxyLimits}>
       <div className="flex items-start justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className="flex flex-1 items-center justify-between text-left"
-        >
-          <div>
-            <h4 className="text-[13px] font-semibold text-foreground">{w.proxyLimits}</h4>
-            <p className="text-[11px] text-muted-foreground">{w.proxyLimitsHint}</p>
-          </div>
-          <ChevronDown
-            className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        </button>
+        <div>
+          <h3 className="text-base font-medium text-foreground">{w.proxyLimits}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{w.proxyLimitsHint}</p>
+        </div>
         {onRefreshEdge && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={onRefreshEdge}
             disabled={edgeLoading}
             aria-label={w.proxyRefreshLive}
             title={w.proxyRefreshLive}
-            className="mt-0.5 rounded-md p-1.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground disabled:opacity-40"
           >
-            <RefreshCw className={`size-3.5 ${edgeLoading ? "animate-spin" : ""}`} />
-          </button>
+            <UiIcon name="refresh" className={`size-4 ${edgeLoading ? "animate-spin" : ""}`} />
+          </Button>
         )}
       </div>
-
       {driftKeys.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/30 bg-warning-bg px-2.5 py-2">
-          <TriangleAlert className="size-3.5 shrink-0 text-warning" />
-          <p className="flex-1 text-[11px] text-warning">
-            {w.proxyDriftSummary}{" "}
-            <span className="font-mono">{driftKeys.join(", ")}</span>
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-warning-bg p-4">
+          <p className="min-w-0 flex-1 text-sm text-warning">
+            {w.proxyDriftSummary} {driftKeys.map((key) => labels[key] ?? key).join(", ")}
           </p>
           {Object.keys(live.adoptable).length > 0 && (
-            <button
-              type="button"
-              onClick={adoptLive}
-              disabled={disabled}
-              className="shrink-0 text-[11px] font-medium text-primary hover:underline disabled:opacity-40"
-            >
+            <Button type="button" variant="secondary" onClick={adoptLive} disabled={disabled}>
               {w.proxyAdoptLive}
-            </button>
+            </Button>
           )}
         </div>
       )}
-
-      {open && (
-        <div className="space-y-4 pt-1">
-          {GROUP_ORDER.map((group) => {
-            const specs = PROXY_DIRECTIVES.filter((s) => s.group === group);
-            if (specs.length === 0) return null;
-            return (
-              <div key={group} className="space-y-2">
-                <h5 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {w.proxyGroups[group]}
-                </h5>
-                <div className="grid gap-3 sm:grid-cols-2">{specs.map(field)}</div>
-              </div>
-            );
-          })}
-          {edge && !edge.reachable && (
-            <p className="text-[10px] text-muted-foreground">{w.proxyLiveUnavailable}</p>
-          )}
-          {edge?.reachable && live.hosts.length > 0 && (
-            <p className="text-[10px] text-muted-foreground">
-              {w.proxyLiveSource} <span className="font-mono">{live.hosts.join(", ")}</span>
-              {edge.nginxVersion ? ` · nginx ${edge.nginxVersion}` : ""}
-            </p>
-          )}
-        </div>
+      <div className="grid items-start gap-4 @3xl:grid-cols-2">
+        {GROUP_ORDER.map((group) => {
+          const specs = PROXY_DIRECTIVES.filter((s) => s.group === group);
+          if (specs.length === 0) return null;
+          return (
+            <section
+              key={group}
+              className="@container min-w-0 rounded-2xl bg-card p-5"
+              aria-labelledby={`${fieldId}-${group}`}
+            >
+              <h4 id={`${fieldId}-${group}`} className="mb-4 text-sm font-medium text-foreground">
+                {w.proxyGroups[group]}
+              </h4>
+              <div className="grid gap-4 @sm:grid-cols-2">{specs.map(field)}</div>
+              <details className="mt-4 text-xs text-muted-foreground">
+                <summary className="w-fit cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-ring">
+                  {w.technicalDetails}
+                </summary>
+                <dl className="mt-2 space-y-2">
+                  {specs.map((spec) => (
+                    <div key={spec.key}>
+                      <dt>{labelFor(spec)}</dt>
+                      <dd dir="ltr" className="break-all">
+                        {spec.directive}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            </section>
+          );
+        })}
+      </div>
+      {edge && !edge.reachable && (
+        <p className="text-xs text-muted-foreground">{w.proxyLiveUnavailable}</p>
       )}
-    </div>
+      {edge?.reachable && live.hosts.length > 0 && (
+        <p className="break-words text-xs text-muted-foreground">
+          {w.proxyLiveSource} {live.hosts.join(", ")}
+          {edge.nginxVersion ? ` · nginx ${edge.nginxVersion}` : ""}
+        </p>
+      )}
+    </section>
   );
 };
 

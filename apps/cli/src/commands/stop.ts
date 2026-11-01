@@ -1,3 +1,5 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { reportCliMessage } from "../lib/output";
 import { Command } from "commander";
 import chalk from "chalk";
 import { stop } from "../lib/service";
@@ -10,7 +12,7 @@ export const stopCommand = new Command("stop")
     if (readInstallMethod() === "compose") {
       const ok = composeDown();
       if (ok) console.log(chalk.green("\n  ✔ Openship stopped (docker compose down).\n"));
-      else console.error(chalk.red("\n  docker compose down failed (or no stack found).\n"));
+      else reportCliMessage("error", chalk.red("\n  docker compose down failed (or no stack found).\n"));
       process.exit(ok ? 0 : 1);
     }
     try {
@@ -19,7 +21,8 @@ export const stopCommand = new Command("stop")
       // on the next boot, so a later `openship up` isn't blocked by a stale lock.
       console.log(chalk.green("\n  ✔ Openship stopped.\n") + chalk.dim(`  ${res.detail}\n`));
     } catch (e) {
-      console.error(chalk.red(`\n  Couldn't stop the service: ${(e as Error).message}\n`));
+      observeCaughtError(e, "cli/commands/stop");
+      reportCliMessage("error", chalk.red(`\n  Couldn't stop the service: ${(e as Error).message}\n`));
       process.exit(1);
     }
   });

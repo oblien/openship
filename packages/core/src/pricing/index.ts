@@ -31,6 +31,7 @@ import copyJa from "./locales/ja.json";
 import copyPt from "./locales/pt.json";
 import copyTr from "./locales/tr.json";
 import copyZh from "./locales/zh.json";
+import copyRu from "./locales/ru.json";
 
 /* ─── Catalog ─────────────────────────────────────────────────────────────── */
 
@@ -40,10 +41,11 @@ import copyZh from "./locales/zh.json";
  * (and locally) rather than degrade a price to `undefined` inside a checkout.
  */
 export const PRICING: PricingCatalogRaw = pricingCatalogSchema.parse(rawCatalog);
+export { planLimitsSchema } from "./schema";
 
 /** Plan tier identifier. Mirrors `pricing.json#plans[].id`; the pricing test
  *  asserts the two never drift (a new tier is a compile error, by design). */
-export type PlanTierId = "free" | "starter" | "pro" | "team" | "enterprise";
+export type PlanTierId = "free" | "hobby" | "starter" | "pro" | "team" | "enterprise";
 
 /** Ordered plan ids, display order = catalog order. */
 export const PLAN_IDS: readonly PlanTierId[] = PRICING.plans.map((p) => p.id as PlanTierId);
@@ -53,7 +55,7 @@ export const DEFAULT_PLAN_TIER: PlanTierId = "free";
 
 /* ─── Locales ─────────────────────────────────────────────────────────────── */
 
-export const PRICING_LOCALES = ["en", "ar", "de", "es", "fr", "ja", "pt", "tr", "zh"] as const;
+export const PRICING_LOCALES = ["en", "ar", "de", "es", "fr", "ja", "pt", "tr", "zh", "ru"] as const;
 export type PricingLocale = (typeof PRICING_LOCALES)[number];
 
 /** English copy — the source of truth and the fallback for every other locale. */
@@ -77,6 +79,7 @@ const COPY: Record<PricingLocale, PartialCopy> = {
   pt: copyPt,
   tr: copyTr,
   zh: copyZh,
+  ru: copyRu,
 };
 
 /**
@@ -143,27 +146,31 @@ function featureTemplate(key: string, locale: PricingLocale): string | null {
 
 /* ─── Public types ────────────────────────────────────────────────────────── */
 
-/**
- * Oblien per-workspace ceilings pushed at provision time. `null` means the tier
- * is custom (enterprise) and limits are negotiated per contract.
- */
+/** Declared namespace caps. null inherits Oblien's effective capacity. */
 export interface OblienLimits {
-  max_workspaces: number;
-  max_vcpus: number;
-  max_ram_mb: number;
-  max_disk_gb: number;
+  max_workspaces: number | null;
+  max_vcpus: number | null;
+  max_ram_mb: number | null;
+  max_disk_gb: number | null;
+  max_total_vcpus: number | null;
+  max_total_ram_mb: number | null;
+  max_total_disk_gb: number | null;
 }
 
-/** Numeric plan limits, in customer-facing units. `null` is ALWAYS "unlimited". */
+/** Numeric application limits. null removes that separate limit; paid usage
+ * still draws from the namespace's credit allowance and shared capacity. */
 export interface PlanLimits {
   workloads: readonly WorkloadType[];
   services: boolean;
-  /** Concurrently running services — one Oblien workspace each. */
+  /** Concurrent services; several Compose services may share a workspace. */
   runningServices: number | null;
+  concurrentBuilds?: number | null;
   maxProjects: number | null;
-  /** Largest per-service machine this tier may select, or null for uncapped. */
+  /** Preset ceiling for saved offers without explicit service resources. */
   maxResourceTier: FixedResourceTier | null;
-  /** App runtime included per month, in `low`-machine minutes. See the schema. */
+  /** Explicit per-service ceiling; null is uncapped, absent retains the saved preset. */
+  maxServiceResources?: { cpuCores: number; memoryMb: number } | null;
+  /** Legacy display field; paid offers use credits rather than fixed runtime minutes. */
   computeMinutesPerMonth: number | null;
   buildMinutesPerMonth: number | null;
   freeSubdomains: number | null;
@@ -176,6 +183,7 @@ export interface PlanLimits {
  * already interpolated and locale-formatted) — the UI renders them verbatim.
  */
 export interface PlanDefinition {
+  availableForPurchase: boolean;
   id: PlanTierId;
   name: string;
   /**
@@ -192,11 +200,14 @@ export interface PlanDefinition {
    *  payload shape, which clients already read.) */
   description: string;
   price: { monthly: number | null; annual: number | null };
-  /** Milli-credits granted per period; null = granted by hand (enterprise). */
+  billingMode: "metered" | "monthly";
+  /** Milli-credits per period; null when compute is covered by a monthly pool or custom contract. */
   monthlyCredits: number | null;
-  oblienLimits: OblienLimits | null;
+  oblienLimits: OblienLimits;
   limits: PlanLimits;
   features: readonly string[];
+  /** Stable keys aligned with `features`, so clients can group facts without parsing copy. */
+  featureKeys: readonly string[];
   popular: boolean;
   support: string;
   contactSales?: string;
@@ -208,15 +219,7 @@ export interface CreditPackDefinition {
   credits_milli: number;
   price_cents: number;
   sortOrder: number;
-  /**
-   * One line saying what the pack BUYS, in things the customer recognises —
-   * hours of a running app, or build minutes.
-   *
-   * "+25,000 compute minutes" is a true statement that answers nothing: nobody
-   * knows whether that is an afternoon or a year. Both figures are derived from
-   * the catalog's own rates (`computeUnitsPerMinute`, `oblien.buildResources`), so
-   * they cannot drift from what the pack actually gets spent on.
-   */
+  /** Describes how metered credits are used, without promising runtime hours. */
   explains: string;
 }
 
@@ -225,8 +228,8 @@ export interface CreditPackDefinition {
 const PLAN_BY_ID = new Map(PRICING.plans.map((p) => [p.id, p]));
 
 /**
- * The raw limits for a tier — locale-free, the ONLY thing enforcement should
- * read. An unknown tier string (a stale `plan_tier_id` in the DB, a hand-edited
+ * Current catalog limits for a tier. Paid reseller subscriptions instead use
+ * the immutable limits saved with their offer. An unknown tier string (a stale `plan_tier_id` in the DB, a hand-edited
  * row) falls back to the free tier's limits: the safe direction is the most
  * restrictive one, and it can never be `undefined` at a gate.
  */
@@ -235,57 +238,31 @@ export function planLimits(planId: string | null | undefined): PlanLimits {
   return plan.limits;
 }
 
-/**
- * Milli-credits burned by one compute minute — one minute of a `low` machine.
- *
- * Lives here, not beside `MILLI_PER_CREDIT` in the API's `billing-credit-units.ts`:
- * that file is deliberately import-free and owns a different boundary (openship
- * milli ↔ Oblien whole credits). This is a CATALOG unit, and `packages/core`
- * cannot import from `apps/api` anyway. One compute minute ≡ one credit, so the
- * two constants agree by construction; the pricing test asserts it.
- */
+/** Resolve the supplied contract, never substitute current catalog limits for a saved offer. */
+export function planServiceResources(limits: Pick<PlanLimits, "maxResourceTier" | "maxServiceResources">): {
+  cpuCores: number; memoryMb: number;
+} | null {
+  if (limits.maxServiceResources !== undefined) return limits.maxServiceResources;
+  if (limits.maxResourceTier === null) return null;
+  const { cpuCores, memoryMb } = RESOURCE_TIER_SPECS[limits.maxResourceTier];
+  return { cpuCores, memoryMb };
+}
+
+/** @deprecated Historical display conversion. Not an Oblien metering rate. */
 export const MILLI_PER_COMPUTE_MINUTE = 1000;
 
 /**
- * Compute units burned per minute by a machine size — `low` is the unit, so it is
- * 1× and everything else is its ratio.
- *
- * Derived from `RESOURCE_TIER_SPECS`, never a hand-written table, for the same
- * reason `placeholders()` quotes `powerCpu` from it: the published rate has to
- * follow the sizes the deploy wizard actually offers. A hand-written multiplier
- * would silently keep charging 4× for `high` after `high` was re-specced.
+ * Relative CPU size compared with `low`. This is not a credit metering rate;
+ * Oblien bills actual resource usage independently of this display helper.
  */
 export function computeUnitsPerMinute(tier: FixedResourceTier): number {
   return RESOURCE_TIER_SPECS[tier].cpuCores / RESOURCE_TIER_SPECS.low.cpuCores;
 }
 
-/** Compute units a minute of the BUILD machine burns (its own workspace, and
- *  Oblien meters it like any other). */
-function buildUnitsPerMinute(): number {
-  return PRICING.oblien.buildResources.cpuCores / RESOURCE_TIER_SPECS.low.cpuCores;
-}
-
-/**
- * Milli-credits a tier grants per period; null = hand-granted (enterprise).
- *
- * DERIVED from the two published allowances rather than authored, so the figure on
- * the pricing page and the quota pushed to Oblien are one number in two units.
- * (Same direction as `toOblienLimits` below, and for the same reason.)
- *
- * Build minutes are in the sum, and that is load-bearing rather than tidy:
- * `toOblienCredits()` REJECTS a non-positive quota, and a static-only tier
- * legitimately publishes 0 compute minutes — so a compute-only derivation would
- * make every free-tier quota push throw. Builds are also real metered work in a
- * real workspace, so counting them is the honest reading either way.
- */
+/** Metered namespace credits, in milli-credits. Monthly pools have no credit allowance. */
 export function planMonthlyCredits(planId: string | null | undefined): number | null {
   const plan = PLAN_BY_ID.get(planId ?? "") ?? PLAN_BY_ID.get(DEFAULT_PLAN_TIER)!;
-  const { computeMinutesPerMonth, buildMinutesPerMonth } = plan.limits;
-  // Either allowance being unlimited makes the whole grant hand-managed — there is
-  // no finite number to push.
-  if (computeMinutesPerMonth === null || buildMinutesPerMonth === null) return null;
-  const units = computeMinutesPerMonth + buildMinutesPerMonth * buildUnitsPerMinute();
-  return Math.round(units * MILLI_PER_COMPUTE_MINUTE);
+  return plan.billing.mode === "monthly" || plan.billing.creditsPerCycle === null ? null : plan.billing.creditsPerCycle * 1000;
 }
 
 /** May this tier run that workload? Free ships static-only. */
@@ -299,58 +276,6 @@ export function planAllowsServices(planId: string | null | undefined): boolean {
 }
 
 /**
- * DERIVE Oblien's per-namespace ceilings from the customer-facing limits.
- *
- * Three of Oblien's four ceilings are PER-WORKSPACE (`max_vcpus`, `max_ram_mb`,
- * `max_disk_gb`); only `max_workspaces` is namespace-wide. So:
- *
- *   max_workspaces = running services + build headroom — a build runs in its own
- *     workspace and Oblien counts it, so without headroom a tier's last service
- *     slot would block every deploy.
- *   max_vcpus / max_ram_mb / max_disk_gb = the MAX of what a service may select
- *     and what a BUILD needs. A ceiling below the build machine means Oblien 409s
- *     every build — which is exactly how the free tier (2 vCPU / 2 GB against a
- *     4 vCPU / 8 GB build) would have lost the only workload it's allowed to run.
- *
- * Returns null only for a genuinely uncapped tier (enterprise). Previously this
- * returned null when ANY single dimension was null, so loosening one knob
- * silently un-enforced all four.
- *
- * CONSEQUENCE WORTH UNDERSTANDING: because the build machine dominates the max,
- * `max_vcpus`/`max_ram_mb` come out IDENTICAL on every tier. Oblien applies one
- * per-workspace ceiling to the whole namespace and cannot tell a build workspace
- * from a runtime one, so it physically cannot both fit a build and cap a
- * service. Oblien is therefore the coarse BACKSTOP; the per-service size cap
- * (`maxResourceTier`) is enforced Openship-side by `assertPlanAllowsResourceTier`
- * where the machine is actually chosen. Do not read equal ceilings as a bug.
- */
-function toOblienLimits(limits: PlanLimits): OblienLimits | null {
-  const { runningServices, maxResourceTier } = limits;
-  if (runningServices === null && maxResourceTier === null) return null;
-
-  const build = PRICING.oblien.buildResources;
-  const svc = maxResourceTier ? RESOURCE_TIER_SPECS[maxResourceTier] : null;
-
-  return {
-    max_workspaces:
-      runningServices === null
-        ? UNCAPPED_WORKSPACES
-        : runningServices + PRICING.oblien.buildWorkspaceHeadroom,
-    max_vcpus: Math.ceil(Math.max(svc?.cpuCores ?? 0, build.cpuCores)),
-    max_ram_mb: Math.max(svc?.memoryMb ?? 0, build.memoryMb),
-    max_disk_gb: Math.max(svc ? Math.ceil(svc.diskMb / 1024) : 0, build.diskGb),
-  };
-}
-
-/**
- * What `max_workspaces` becomes for a tier with unlimited services but a capped
- * machine size. Oblien takes a number, not "unlimited", so a high sentinel is the
- * only way to express "don't cap the count but do cap the size" — and leaving the
- * whole ceiling null instead would drop the size cap too.
- */
-const UNCAPPED_WORKSPACES = 10_000;
-
-/**
  * Placeholder values a feature string may interpolate for a given plan.
  *
  * Every per-service machine figure comes from `RESOURCE_TIER_SPECS` — the same
@@ -362,18 +287,22 @@ function placeholders(plan: PricingCatalogRaw["plans"][number], locale: PricingL
   const unlimited = uiString(locale, "unlimited");
   const n = (v: number | null) => (v === null ? unlimited : formatCount(v, locale));
   const { limits } = plan;
-  const svc = limits.maxResourceTier ? RESOURCE_TIER_SPECS[limits.maxResourceTier] : null;
+  const svc = planServiceResources(limits);
   return {
+    credits: n(plan.billing.creditsPerCycle),
+    namespaceCpu: n(plan.billing.resourceLimits.max_total_vcpus),
+    namespaceRamGb: n(plan.billing.resourceLimits.max_total_ram_mb == null ? null : plan.billing.resourceLimits.max_total_ram_mb / 1024),
+    namespaceDiskGb: n(plan.billing.resourceLimits.max_total_disk_gb),
     buildMinutes: n(limits.buildMinutesPerMonth),
     freeSubdomains: n(limits.freeSubdomains),
     customDomains: n(limits.customDomains),
     seats: n(limits.seats),
     runningServices: n(limits.runningServices),
+    concurrentBuilds: n(limits.concurrentBuilds ?? null),
     maxProjects: n(limits.maxProjects),
     // Per-SERVICE machine size, not a pool — the copy must say so.
     powerCpu: svc ? formatDecimal(svc.cpuCores, locale) : unlimited,
     powerRamGb: svc ? formatDecimal(svc.memoryMb / 1024, locale) : unlimited,
-    powerDiskGb: svc ? formatCount(Math.round(svc.diskMb / 1024), locale) : unlimited,
     computeMinutes: n(limits.computeMinutesPerMonth),
     inherited: plan.inherits ? planName(plan.inherits, locale) : "",
     freeDomainSuffix: PRICING.freeDomainSuffix,
@@ -388,13 +317,21 @@ const EVERYTHING_IN_KEY = "everythingIn";
 export function resolvePlan(planId: PlanTierId, locale: PricingLocale = "en"): PlanDefinition {
   const plan = PLAN_BY_ID.get(planId) ?? PLAN_BY_ID.get(DEFAULT_PLAN_TIER)!;
   const values = placeholders(plan, locale);
+  const features = plan.features
+    .filter((key) => key !== EVERYTHING_IN_KEY)
+    .flatMap((key) => {
+      const template = featureTemplate(key, locale);
+      return template === null ? [] : [{ key, label: fill(template, values) }];
+    });
   return {
     id: plan.id as PlanTierId,
+    availableForPurchase: plan.availableForPurchase,
     name: planName(plan.id, locale),
     description: planTagline(plan.id, locale),
     price: plan.price,
+    billingMode: plan.billing.mode,
     monthlyCredits: planMonthlyCredits(plan.id),
-    oblienLimits: toOblienLimits(plan.limits),
+    oblienLimits: { ...plan.billing.resourceLimits },
     limits: plan.limits,
     ...(() => {
       // `everythingIn` is authored inside `features` so the catalog keeps ONE
@@ -405,13 +342,8 @@ export function resolvePlan(planId: PlanTierId, locale: PricingLocale = "en"): P
         : null;
       return lead === null ? {} : { inheritedFrom: fill(lead, values) };
     })(),
-    features: plan.features
-      .filter((key) => key !== EVERYTHING_IN_KEY)
-      .map((key) => {
-        const template = featureTemplate(key, locale);
-        return template === null ? null : fill(template, values);
-      })
-      .filter((s): s is string => s !== null),
+    features: features.map(({ label }) => label),
+    featureKeys: features.map(({ key }) => key),
     popular: plan.popular,
     support: plan.support,
     ...(plan.contactSales ? { contactSales: plan.contactSales } : {}),
@@ -588,28 +520,17 @@ export function resolveCreditPacks(locale: PricingLocale = "en"): CreditPackDefi
   return [...PRICING.creditPacks]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((pack) => {
-      const template = copyFor(locale).creditPacks?.[pack.id] ?? copyEn.creditPacks[pack.id as keyof PricingCopy["creditPacks"]] ?? "{computeMinutes}";
-      // Both tokens carry the same number. A pack is still AUTHORED in credits —
-      // `creditsMilli` and its live Stripe price id are untouched — but it is SOLD
-      // as compute minutes, because that is the unit the plans publish and one
-      // compute minute ≡ one credit. `{credits}` stays accepted so a translation
-      // that hasn't been updated yet still renders a number instead of a literal
-      // placeholder.
-      const minutes = pack.creditsMilli / MILLI_PER_COMPUTE_MINUTE;
-      const amount = formatCount(minutes, locale);
-      // What the pack is worth in the two things people actually spend it on. The
-      // app figure is the BASE (`low`) machine — the honest floor, since a bigger
-      // machine burns a multiple — and the build figure divides by the build
-      // machine's own rate.
+      const template =
+        copyFor(locale).creditPacks?.[pack.id] ??
+        copyEn.creditPacks[pack.id as keyof PricingCopy["creditPacks"]] ??
+        "{credits}";
+      const amount = formatCount(pack.creditsMilli / 1000, locale);
       const noteTemplate =
         copyFor(locale).ui?.creditPackNote ?? copyEn.ui.creditPackNote;
       return {
         id: pack.id,
-        name: fill(template, { computeMinutes: amount, credits: amount }),
-        explains: fill(noteTemplate, {
-          appHours: formatCount(Math.round(minutes / 60), locale),
-          buildMinutes: formatCount(Math.round(minutes / buildUnitsPerMinute()), locale),
-        }),
+        name: fill(template, { credits: amount }),
+        explains: noteTemplate,
         credits_milli: pack.creditsMilli,
         price_cents: pack.priceCents,
         sortOrder: pack.sortOrder,
@@ -693,11 +614,8 @@ export interface PlanPriceIdValidation {
 }
 
 /**
- * Boot check: every PURCHASABLE price in the catalog has a real Stripe price id
- * in the environment. CLOUD_MODE callers treat a non-empty result as fatal —
- * otherwise checkout reaches Stripe with an undefined price and fails with a
- * cryptic Stripe-side error. Self-hosted callers may log and continue (billing
- * is disabled there).
+ * Legacy direct-Stripe configuration helper. Cloud reseller checkout uses
+ * dynamic Oblien offers and does not require these historical price IDs.
  */
 export function validatePlanPriceIds(): PlanPriceIdValidation {
   const missing: string[] = [];

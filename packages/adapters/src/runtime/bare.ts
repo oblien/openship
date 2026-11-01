@@ -17,6 +17,8 @@
  *   "local"  → clone + build on the API host, then transfer output to target
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { randomUUID } from "node:crypto";
 import type {
   BuildConfig,
   CommandExecutor,
@@ -25,6 +27,7 @@ import type {
   DeploymentResult,
   LogEntry,
   LogCallback,
+  RuntimeLogStreamOptions,
   ContainerInfo,
   ResourceUsage,
 } from "../types";
@@ -32,11 +35,12 @@ import type {
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
 import { ensureOwnedDir } from "../system/elevated-executor";
 import { execReliable } from "../system/remote-journal";
-import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, nodeBinPathExport, type StackId, type StackDefinition } from "@repo/core";
+import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, nodeBinPathExport, withTimeout, type StackId, type StackDefinition } from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type {
   RuntimeAdapter,
   RuntimeCapability,
+  ReleaseCommandOptions,
   DeploymentRef,
   RollbackInput,
   MakeActiveResult,
@@ -52,13 +56,16 @@ import {
 } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
-import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
+import { resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
+import { nodeOutputOptions, prepareNodeOutput, prepareNodeOutputCommand, AUTOMATIC_START } from "./node-output";
 import { isExcludedDocRootEntry } from "./docker-build-plan";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
-import type { ProcessSupervisor } from "./supervisor/types";
+import type { ProcessSupervisor, SupervisorFactory } from "./supervisor/types";
 import { detectSupervisor } from "./supervisor/detect";
 import { probeListeningPort } from "./port-conflict";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
+import { releaseCommandDeadline } from "./release-command-deadline";
+import { HostBuildForbiddenError } from "./host-build-policy";
 
 /** Parent of a POSIX path on the TARGET machine — node:path would resolve
  *  against the local platform's separator, which is wrong over SSH from Windows. */
@@ -88,6 +95,16 @@ export interface BareRuntimeOptions {
   executor?: CommandExecutor;
   /** Optional system manager for ensuring remote runtime prerequisites. */
   systemManager?: BareSystemManager;
+  /** Supply the host's process manager while keeping the shared build/release lifecycle. */
+  supervisorFactory?: SupervisorFactory;
+  /** Optional project boundary for a managed/shared execution host. */
+  projectId?: string;
+  /** Managed control planes never execute builds or read project sources locally. */
+  allowHostBuild?: boolean;
+  /** Supply uploaded/inline source through the same build pipeline as Git. */
+  prepareSource?: (config: BuildConfig, directory: string, logger: BuildLogger) => Promise<boolean>;
+  /** Host admission (subscription and availability) before billable application work. */
+  beforeWork?: () => Promise<void>;
 }
 
 const DEFAULT_WORK_DIR = "/opt/openship";
@@ -108,6 +125,26 @@ export const STATIC_RELEASE_BASE = "/opt/openship/static";
 
 // ─── Bare runtime ────────────────────────────────────────────────────────────
 
+/**
+ * The env a bare deployment's processes get: the supervised app (`deploy`) and its
+ * release commands (`runReleaseCommand`) both take it from here, so a migration
+ * can never resolve a different DSN, PATH or PORT than the app it prepares.
+ * `dropped` is what `splitRuntimeEnv` refused, returned so each caller can say so.
+ */
+function bareProcessEnv(config: DeployConfig): { env: Record<string, string>; dropped: string[] } {
+  const projectEnv = splitRuntimeEnv(
+    Object.fromEntries(Object.entries(config.envVars ?? {}).map(([k, v]) => [k, String(v)])),
+  );
+  return {
+    env: {
+      ...Object.fromEntries(projectEnv.entries),
+      PORT: String(config.port),
+      NODE_ENV: config.environment === "production" ? "production" : "development",
+    },
+    dropped: projectEnv.dropped,
+  };
+}
+
 export class BareRuntime implements RuntimeAdapter {
   readonly name = "bare";
   readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
@@ -127,16 +164,18 @@ export class BareRuntime implements RuntimeAdapter {
     "usage",
     "containerIp",
     "rollback",
-    // The release dir + supervisor unit survive a redeploy, so restoring a
-    // past release really is an in-place unit swap (see makeActive).
+    // Systemd releases support a unit swap. canRestoreUnit verifies that this
+    // host's supervisor and the particular release still support it.
     "unitRestore",
     "inContainerExec",
+    "releaseCommand",
   ]);
 
   private readonly workDir: string;
   private readonly buildTimeout: number;
   private executor: CommandExecutor;
   private readonly systemManager: BareSystemManager | null;
+  private readonly supervisorFactory: SupervisorFactory;
   /** True if we created the executor ourselves (must dispose on cleanup) */
   private readonly ownsExecutor: boolean;
   /** Track active builds by sessionId for cancellation */
@@ -145,7 +184,8 @@ export class BareRuntime implements RuntimeAdapter {
   private _supervisor: ProcessSupervisor | null = null;
   private _supervisorPromise: Promise<ProcessSupervisor> | null = null;
 
-  constructor(opts?: BareRuntimeOptions) {
+  constructor(private readonly options: BareRuntimeOptions = {}) {
+    const opts = options;
     this.workDir = opts?.workDir ?? DEFAULT_WORK_DIR;
     this.buildTimeout = opts?.buildTimeout ?? DEFAULT_BUILD_TIMEOUT;
 
@@ -158,6 +198,8 @@ export class BareRuntime implements RuntimeAdapter {
     }
 
     this.systemManager = opts?.systemManager ?? null;
+    this.supervisorFactory = opts?.supervisorFactory ?? detectSupervisor;
+    if (opts.projectId) (this.capabilities as Set<RuntimeCapability>).add("projectContainerSweep");
   }
 
   /** The underlying command executor (local or SSH). Exposed so the
@@ -165,6 +207,10 @@ export class BareRuntime implements RuntimeAdapter {
    *  connection (mirrors how DockerRuntime exposes its client). */
   get commandExecutor(): CommandExecutor {
     return this.executor;
+  }
+
+  get scopedProjectId(): string | undefined {
+    return this.options.projectId;
   }
 
   /** A bare deployment is a host process, so "inside the instance" == the host.
@@ -181,16 +227,19 @@ export class BareRuntime implements RuntimeAdapter {
   async retainedReleaseArtifact(deploymentId: string): Promise<string | null> {
     if (!deploymentId || deploymentId.includes("/") || deploymentId.includes("\\")) return null;
     const path = this.releaseDir(deploymentId);
-    return (await this.executor.exists(path).catch(() => false)) ? path : null;
+    return (await this.executor.exists(path).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/bare"); return false; })) ? path : null;
   }
 
   /** Get or lazily initialise the process supervisor. */
   private async supervisor(): Promise<ProcessSupervisor> {
     if (this._supervisor) return this._supervisor;
     if (!this._supervisorPromise) {
-      this._supervisorPromise = detectSupervisor(this.executor, this.workDir).then((s) => {
+      this._supervisorPromise = this.supervisorFactory(this.executor, this.workDir).then((s) => {
         this._supervisor = s;
         return s;
+      }).catch((error) => {
+        this._supervisorPromise = null;
+        throw error;
       });
     }
     return this._supervisorPromise;
@@ -200,7 +249,29 @@ export class BareRuntime implements RuntimeAdapter {
     return this.capabilities.has(cap);
   }
 
+  async listProjectContainerIds(projectId: string): Promise<string[]> {
+    this.assertProject(projectId);
+    const supervisor = await this.supervisor();
+    if (!supervisor.listProjectDeploymentIds) throw new Error("This supervisor does not support project inventory");
+    return supervisor.listProjectDeploymentIds(projectId);
+  }
+
+  /** This runtime's root is project-owned only when a project boundary was supplied. */
+  async cleanupProject(projectId: string, options?: { wipeVolumes?: boolean }): Promise<void> {
+    if (!this.options.projectId) return;
+    this.assertProject(projectId);
+    if ((await this.listProjectContainerIds(projectId)).length)
+      throw new Error("Project processes must be removed before their release files");
+    const paths = ["releases", ".builds", ".pids", projectId];
+    if (options?.wipeVolumes) paths.push("shared");
+    // The entire base is scoped to this project; never remove a shared host root.
+    for (const relative of paths) {
+      await this.executor.exec(`rm -rf -- ${sq(`${this.workDir}/${relative}`)}`);
+    }
+  }
+
   async dispose(): Promise<void> {
+    await this._supervisor?.dispose?.();
     if (this.ownsExecutor) {
       await this.executor.dispose();
     }
@@ -220,10 +291,23 @@ export class BareRuntime implements RuntimeAdapter {
     return `${this.workDir}/releases/${deploymentId}`;
   }
 
+  private isRetainedArtifact(path: string): boolean {
+    return path.startsWith(`${this.workDir}/releases/`);
+  }
+
   /** Per-project directory holding the paths that must survive a release swap.
    *  The `shared/` half of the Capistrano layout `releases/` already implements. */
   private sharedDir(projectId: string): string {
     return `${this.workDir}/shared/${projectId}`;
+  }
+
+  persistentPaths(projectId: string, volumes: readonly string[]) {
+    this.assertProject(projectId);
+    return [...new Set(appVolumeTargets(volumes))].map(relative => {
+      if (!relative || relative.includes("\0") || relative.split("/").some(part => !part || part === "." || part === ".."))
+        throw new Error("Persistent paths must stay inside the application directory");
+      return { relative, source: `${this.sharedDir(projectId)}/${relative}`, target: `/app/${relative}` };
+    });
   }
 
   /**
@@ -237,31 +321,32 @@ export class BareRuntime implements RuntimeAdapter {
    * `framework/cache`, `framework/sessions`, …) and an app handed an empty
    * directory instead would fail on write.
    *
-   * Best-effort per path: a box without the shared dir writable is a storage
-   * problem to report, not a reason to fail an otherwise good release.
+   * Declared persistence must be ready before application or release commands
+   * run. Continuing without it would put new data in a replaceable release.
    */
   private async linkPersistentPaths(
     releaseDir: string,
     projectId: string,
     volumes: string[] | undefined,
     log?: LogCallback,
+    signal?: AbortSignal,
   ): Promise<void> {
-    const targets = appVolumeTargets(volumes ?? []);
+    const targets = this.persistentPaths(projectId, volumes ?? []);
     if (targets.length === 0) return;
 
-    const shared = this.sharedDir(projectId);
-    for (const relative of targets) {
-      const sharedPath = `${shared}/${relative}`;
+    for (const { relative, source: sharedPath } of targets) {
+      signal?.throwIfAborted();
       const releasePath = `${releaseDir}/${relative}`;
       try {
         if (!(await this.executor.exists(sharedPath))) {
-          await this.executor.mkdir(parentPath(sharedPath));
+          await ensureOwnedDir(this.executor, parentPath(sharedPath));
           if (await this.executor.exists(releasePath)) {
             await this.executor.exec(`cp -a ${sq(releasePath)} ${sq(sharedPath)}`);
           } else {
             await this.executor.mkdir(sharedPath);
           }
         }
+        signal?.throwIfAborted();
         await this.executor.rm(releasePath);
         await this.executor.mkdir(parentPath(releasePath));
         // -n so a pre-existing symlink is replaced rather than followed into
@@ -273,11 +358,9 @@ export class BareRuntime implements RuntimeAdapter {
           level: "info",
         });
       } catch (err) {
-        log?.({
-          timestamp: new Date().toISOString(),
-          message: `Could not persist ${relative}: ${safeErrorMessage(err)}\n`,
-          level: "warn",
-        });
+        observeCaughtError(err, "adapters/runtime/bare");
+        signal?.throwIfAborted();
+        throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
       }
     }
   }
@@ -309,7 +392,7 @@ export class BareRuntime implements RuntimeAdapter {
      * The same path fires on a scoped compose deploy that carries an untargeted
      * static sub-app forward.
      */
-    const consumeSource = !artifactPath.startsWith(`${this.workDir}/releases/`);
+    const consumeSource = !this.isRetainedArtifact(artifactPath);
 
     await ensureOwnedDir(this.executor, `${this.workDir}/releases`);
     await this.executor.rm(releaseDir);
@@ -344,14 +427,19 @@ export class BareRuntime implements RuntimeAdapter {
           `deploy:${deploymentId}:promote-rsync`,
           `rsync -a --delete --link-dest=${sq(previousReleaseDir)} ${sq(artifactPath)}/ ${sq(releaseDir)}/`,
         );
-        if (consumeSource) await this.executor.rm(artifactPath).catch(() => {});
+        if (consumeSource) await this.executor.rm(artifactPath).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
+        });
         return releaseDir;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
         // rsync missing or failed (older minimal images) — fall back to
         // plain move below. We log nothing because either the move
         // succeeds (no user impact) or the move fails and the outer
         // deploy() reports it.
-        await this.executor.rm(releaseDir).catch(() => {});
+        await this.executor.rm(releaseDir).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
+        });
       }
     }
 
@@ -406,6 +494,11 @@ export class BareRuntime implements RuntimeAdapter {
   // ── Build lifecycle ────────────────────────────────────────────────────
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
+    this.assertProject(config.projectId);
+    if (this.options.allowHostBuild === false && (config.buildStrategy === "local" || config.localPath)) {
+      throw new HostBuildForbiddenError("Managed builds execute on the selected server; local control-plane sources are unavailable");
+    }
+    await this.options.beforeWork?.();
     const log = logger ?? new BuildLogger();
 
     // "local" = build on the API host, then transfer output to the target.
@@ -459,6 +552,7 @@ export class BareRuntime implements RuntimeAdapter {
           }
         },
         transferOutput: async (buildDir) => {
+          await ensureOwnedDir(this.executor, parentPath(remoteDir));
           await this.executor.rm(remoteDir);
           await this.executor.mkdir(remoteDir);
 
@@ -466,10 +560,8 @@ export class BareRuntime implements RuntimeAdapter {
           // emitted a wholesale-shippable bundle (e.g. Next's `output:'standalone'`),
           // ship it as-is — traced node_modules included — and skip the on-target
           // install. Absent → falls through to host mode.
-          const selfContained = await prepareStackOutput(
-            config.stack,
-            resolveProjectDir(buildDir, config.rootDirectory),
-          );
+          const outputOptions = nodeOutputOptions(config, resolveProjectDir(buildDir, config.rootDirectory));
+          const selfContained = outputOptions ? await prepareNodeOutput(outputOptions) : null;
           if (selfContained) {
             log.log("Detected self-contained build output — shipping the bundle (no install on target).\n");
             await transferLocalDirectory(
@@ -531,6 +623,7 @@ export class BareRuntime implements RuntimeAdapter {
         },
       });
     } catch (err) {
+      observeCaughtError(err, "adapters/runtime/bare");
       const msg = safeErrorMessage(err);
       log.log(`Failed to transfer local build output: ${msg}`, "error");
       return {
@@ -559,8 +652,13 @@ export class BareRuntime implements RuntimeAdapter {
   ): Promise<BuildResult> {
     log.log("Build strategy: server (build on target)\n");
     const dir = this.buildDir(config.sessionId);
+    // Provision the staging parent before cleanup or source writes. Handing
+    // over only the session leaf would still prevent promotion's later rename.
+    await ensureOwnedDir(this.executor, parentPath(dir));
     await this.executor.rm(dir);
     await this.executor.mkdir(dir);
+
+    const sourceStaged = await this.options.prepareSource?.(config, dir, log);
 
     const buildEnv: BuildEnvironment = {
       projectDir: dir,
@@ -591,13 +689,38 @@ export class BareRuntime implements RuntimeAdapter {
       writeSecretFile: (p, content) => this.executor.writeFile(p, content),
     };
 
-    const result = await runBuildPipeline(buildEnv, config, log);
+    const result = await runBuildPipeline(
+      buildEnv,
+      sourceStaged ? { ...config, sourceStaged: true } : config,
+      log,
+    );
+    const prepareOutput = result.status === "deploying"
+      ? prepareNodeOutputCommand(config, resolveProjectDir(dir, config.rootDirectory))
+      : undefined;
+    if (prepareOutput) await buildEnv.exec(prepareOutput, log.callback);
+    const root = config.rootDirectory?.trim().replace(/^\/+|\/+$/g, "");
+    const defaultStart = STACKS[config.stack as StackId]?.defaultStartCommand;
+    const usesDefaultStart =
+      !config.startCommand?.trim() || config.startCommand.trim() === defaultStart;
+    const automaticStart = prepareOutput && usesDefaultStart;
+    const start = automaticStart
+      ? AUTOMATIC_START
+      : config.startCommand || defaultStart || "npm start";
+    // Managed defaults run in the app directory used by the build. Explicit
+    // commands keep the existing repository cwd, including their own `cd` steps.
+    const appPath = root
+      ? nodeBinPathExport(config.packageManager, [".", root.split("/").map(() => "..").join("/")])
+      : "";
+    const startCommand = usesDefaultStart && root
+      ? `cd ${sq(root)} && ${appPath ? `${appPath} && ` : ""}${start}`
+      : automaticStart ? start : undefined;
     return {
       sessionId: config.sessionId,
       status: result.status,
       imageRef: dir,
       durationMs: result.durationMs,
       errorMessage: result.errorMessage,
+      ...(startCommand ? { startCommand } : {}),
     };
   }
 
@@ -657,6 +780,8 @@ export class BareRuntime implements RuntimeAdapter {
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
   async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
+    this.assertProject(config.projectId);
+    await this.options.beforeWork?.();
     // Adopt mode: attach to an already-running, externally-supervised process
     // (e.g. the Openship control plane launched by `openship up`). We never
     // promote a build artifact or start a supervisor unit — that would bind a
@@ -701,22 +826,14 @@ export class BareRuntime implements RuntimeAdapter {
     // below prepends to. The dependency binary would still resolve, but the
     // interpreter behind its shebang (`#!/usr/bin/env node`) would not once
     // /usr/bin is gone.
-    const projectEnv = splitRuntimeEnv(
-      Object.fromEntries(Object.entries(config.envVars ?? {}).map(([k, v]) => [k, String(v)])),
-    );
-    if (projectEnv.dropped.length > 0) {
+    const { env, dropped } = bareProcessEnv(config);
+    if (dropped.length > 0) {
       _onLog?.({
         timestamp: new Date().toISOString(),
         level: "warn",
-        message: droppedRuntimeEnvMessage(projectEnv.dropped),
+        message: droppedRuntimeEnvMessage(dropped),
       });
     }
-
-    const env: Record<string, string> = {
-      ...Object.fromEntries(projectEnv.entries),
-      PORT: String(config.port),
-      NODE_ENV: config.environment === "production" ? "production" : "development",
-    };
 
     // `next start` / `gatsby serve` / `remix-serve` name a DEPENDENCY binary, and
     // the supervisor hands the command to a bare `sh -lc` — nothing prepends
@@ -741,12 +858,17 @@ export class BareRuntime implements RuntimeAdapter {
         workDir,
         startCommand: startBinPath ? `${startBinPath} && ${resolvedStart}` : resolvedStart,
         port: config.port,
+        ports: config.portless ? [] : [...new Set([config.port, ...(config.publicEndpoints ?? []).map(endpoint => endpoint.port ?? config.port)])],
         env,
       });
     } catch (err) {
       if (workDir !== stagedDir) {
-        await sv.destroy(config.deploymentId).catch(() => {});
-        await this.executor.rm(workDir).catch(() => {});
+        await sv.destroy(config.deploymentId).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
+        });
+        await this.executor.rm(workDir).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
+        });
       }
       throw err;
     }
@@ -756,6 +878,115 @@ export class BareRuntime implements RuntimeAdapter {
       containerId: config.deploymentId,
       status: "running",
     };
+  }
+
+  /**
+   * Run one release command in the STAGED artifact directory, before it is
+   * promoted to a release and before the supervisor starts anything.
+   *
+   * That directory is the exact tree `deploy` promotes seconds later, so the
+   * command sees the code it is migrating for. It runs through a login shell
+   * (`sh -lc`, via the same wrap the build steps use) with the deploy's env
+   * exported — the closest match available to what `ExecStart=/bin/sh -lc` gives
+   * the start command.
+   *
+   * Persistent paths are attached before execution, using the same helper as
+   * deploy. A storage failure must stop the command before it migrates a copy
+   * that would be discarded when the real shared path is attached later.
+   */
+  async runReleaseCommand(
+    config: DeployConfig,
+    command: string,
+    onLog: LogCallback,
+    opts?: ReleaseCommandOptions,
+  ): Promise<void> {
+    this.assertProject(config.projectId);
+    await this.options.beforeWork?.();
+    const artifactPath = config.imageRef;
+    if (!artifactPath) throw new Error("Release commands require a staged build artifact");
+    // A forward deploy may reuse the active release for an environment refresh.
+    // Never run against its live files (or hard-link them into the scratch copy).
+    const temporaryCopy = this.isRetainedArtifact(artifactPath);
+    const workDir = temporaryCopy
+      ? this.buildDir(`${config.buildSessionId}-release-${randomUUID()}`)
+      : artifactPath;
+
+    // The start command's env, from the same function deploy uses. Logged here
+    // too: this phase runs, and can fail, before deploy ever gets to say it.
+    // Non-identifier keys are dropped rather than breaking the `export` prefix,
+    // matching the build pipeline's env handling.
+    const { env, dropped } = bareProcessEnv(config);
+    if (dropped.length > 0) {
+      onLog({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        message: droppedRuntimeEnvMessage(dropped),
+      });
+    }
+    const envPrefix = Object.entries(env)
+      .filter(([k]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k))
+      .map(([k, v]) => `export ${k}=${sq(v)}`)
+      .join(" && ");
+    // The same dependency-binary resolution the start command gets (see deploy):
+    // `prisma migrate deploy` names a node_modules/.bin binary exactly the way
+    // `next start` does, and nothing else puts that directory on PATH here.
+    const binPath = nodeBinPathExport(config.packageManager, [workDir]);
+    const full =
+      `${envPrefix ? `${envPrefix} && ` : ""}cd ${sq(workDir)} && ` +
+      `${binPath ? `${binPath} && ` : ""}${command}`;
+    // Login-shell wrap for a LOCAL target only — same rule buildOnTarget applies,
+    // and the reason a version-managed toolchain (nvm, rbenv) is on PATH at all.
+    const effective = this.executor instanceof LocalExecutor ? wrapLocalBuildCommand(full) : full;
+    const deadline = releaseCommandDeadline(opts);
+    let execution: Promise<{ code: number; output: string }> | undefined;
+    const execute = (shellCommand: string) => deadline.wait(() => {
+      execution = this.executor instanceof LocalExecutor
+        ? this.executor.streamExec(shellCommand, onLog, { signal: deadline.signal, killProcessTree: true })
+        : this.executor.streamExec(shellCommand, onLog, { signal: deadline.signal });
+      return execution;
+    });
+
+    try {
+      deadline.signal.throwIfAborted();
+      // Scope remote filesystem work to the same deadline as execution, and
+      // await preparation to settle before acknowledging cancellation.
+      const prepare = async () => {
+        if (temporaryCopy) {
+          await ensureOwnedDir(this.executor, parentPath(workDir));
+          await this.executor.mkdir(workDir);
+          const copy = await execute(`cd ${sq(workDir)} && cp -a ${sq(artifactPath)}/. .`);
+          if (copy.code !== 0) throw new Error(`Could not stage retained release: ${copy.output.trim().slice(-1000)}`);
+        }
+        await this.linkPersistentPaths(
+          workDir, config.projectId, config.volumes, onLog, deadline.signal,
+        );
+      };
+      if (this.executor.runWithAbortSignal) await this.executor.runWithAbortSignal(deadline.signal, prepare);
+      else await prepare();
+      const result = await execute(effective);
+      deadline.signal.throwIfAborted();
+      if (result.code !== 0) {
+        const tail = result.output.trim().slice(-1000);
+        throw new Error(`Release command failed with exit code ${result.code}${tail ? `\n${tail}` : ""}`);
+      }
+    } finally {
+      deadline.dispose();
+      if (deadline.signal.aborted && execution) {
+        const cleanup: Promise<unknown> = this.executor instanceof LocalExecutor
+          ? execution
+          : Promise.all([killProcessesUnderDir(this.executor, workDir), execution]);
+        await withTimeout(cleanup, 5_000,
+          "Release command cleanup could not be confirmed").catch(error => { observeCaughtError(error, "adapters/runtime/bare"); return onLog({
+          timestamp: new Date().toISOString(), level: "warn", message: `${safeErrorMessage(error)}\n`,
+        }); });
+      }
+      if (temporaryCopy) {
+        await withTimeout(removeManagedArtifact(this.executor, workDir, this.workDir), 5_000,
+          "Release scratch directory cleanup could not be confirmed").catch(error => { observeCaughtError(error, "adapters/runtime/bare"); return onLog({
+          timestamp: new Date().toISOString(), level: "warn", message: `${safeErrorMessage(error)}\n`,
+        }); });
+      }
+    }
   }
 
   async deployStatic(config: DeployConfig & { outputDirectory: string }): Promise<DeploymentResult> {
@@ -812,7 +1043,9 @@ export class BareRuntime implements RuntimeAdapter {
 
     const abort = async (message: string): Promise<never> => {
       if (workDir !== stagedDir) {
-        await this.executor.rm(workDir).catch(() => {});
+        await this.executor.rm(workDir).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
+        });
       }
       throw new Error(message);
     };
@@ -878,7 +1111,7 @@ export class BareRuntime implements RuntimeAdapter {
   private async pruneBuildFilesFromDocRoot(root: string): Promise<string[]> {
     const listed = await this.executor
       .exec(`ls -A ${sq(root)} 2>/dev/null; true`)
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/bare"); return null; });
     if (listed === null) return [];
     const doomed = listed
       .split("\n")
@@ -888,7 +1121,9 @@ export class BareRuntime implements RuntimeAdapter {
     if (doomed.length === 0) return [];
     await this.executor
       .exec(`rm -rf ${doomed.map((n) => sq(`${root}/${n}`)).join(" ")}`)
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/bare");
+      });
     // Verify rather than trust the exit status: this is the difference between a
     // pruned doc root and a published access token.
     const survivors: string[] = [];
@@ -910,7 +1145,7 @@ export class BareRuntime implements RuntimeAdapter {
     const p = sq(path);
     const out = await this.executor
       .exec(`if [ -d ${p} ]; then echo DIR; ls -A ${p} 2>/dev/null | head -1; fi; true`)
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/bare"); return null; });
     if (out === null) return false; // inconclusive → never fail the deploy
     const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
     return lines.length === 1 && lines[0] === "DIR";
@@ -944,7 +1179,7 @@ export class BareRuntime implements RuntimeAdapter {
     // reporting a failure, so a teardown blocked by a root-owned tree looked
     // identical to a clean one.
     if (isArtifactPathRef(containerId)) {
-      await removeManagedArtifact(this.executor, containerId);
+      await removeManagedArtifact(this.executor, containerId, this.workDir);
       return;
     }
 
@@ -968,36 +1203,49 @@ export class BareRuntime implements RuntimeAdapter {
   //     (the actual rollback-restorable artifact).
   //   purge     — destroy the supervisor unit + rm -rf the release dir.
 
+  async canRestoreUnit(deployment: DeploymentRef): Promise<boolean> {
+    if (!deployment.containerId || isArtifactPathRef(deployment.containerId)) return false;
+    const sv = await this.supervisor();
+    return await sv.canStart(deployment.containerId) && !!await this.retainedReleaseArtifact(deployment.id);
+  }
+
   async makeActive(input: RollbackInput): Promise<MakeActiveResult> {
-    if (input.from?.containerId) {
-      try {
-        await this.stop(input.from.containerId);
-      } catch {
-        // already stopped / gone — ignore
-      }
+    this.assertProject(input.to.projectId);
+    if (input.from && input.from.projectId !== input.to.projectId)
+      throw new Error("Rollback releases must belong to the same project");
+    // Nohup has no saved restart configuration; a removed systemd unit cannot
+    // restart either. Refuse before stopping the currently serving process.
+    if (!await this.canRestoreUnit(input.to)) {
+      throw new Error(`Cannot restart deployment ${input.to.id} from its retained unit. Redeploy it from source.`);
     }
-    if (!input.to.containerId) {
-      // No containerId means the supervisor unit was destroyed. The
-      // release dir might still be on disk but without the unit we
-      // can't restart it. Fail closed — the orchestrator will return
-      // ARTIFACT_GONE upstream.
-      throw new Error(
-        `Cannot make deployment ${input.to.id} active: supervisor unit is gone. Artifact has been purged.`,
-      );
+    const targetId = input.to.containerId!;
+    const previousId = input.from?.containerId;
+    if (previousId === targetId) return { containerId: targetId };
+    const supervisor = await this.supervisor();
+    const restorePrevious = previousId && await supervisor.isRunning(previousId);
+    let activationStarted = false;
+    try {
+      if (previousId) await this.stop(previousId);
+      activationStarted = true;
+      await this.start(targetId);
+    } catch (error) {
+      const failures: unknown[] = [error];
+      // A start can fail after spawning the process. Free its port before
+      // restoring the current release, and keep both failures observable.
+      if (activationStarted) await this.stop(targetId).catch(failure => { observeCaughtError(failure, "adapters/runtime/bare"); return failures.push(failure); });
+      if (restorePrevious) await this.start(previousId!).catch(failure => { observeCaughtError(failure, "adapters/runtime/bare"); return failures.push(failure); });
+      if (failures.length > 1)
+        throw new AggregateError(failures, "Rollback failed and the previous process could not be fully restored", { cause: error });
+      throw error;
     }
-    await this.start(input.to.containerId);
-    return { containerId: input.to.containerId };
+    return { containerId: targetId };
   }
 
   async archive(deployment: DeploymentRef): Promise<void> {
     // Stop the supervisor unit. Release dir is intentionally NOT
     // removed — it's the artifact for future makeActive.
     if (!deployment.containerId) return;
-    try {
-      await this.stop(deployment.containerId);
-    } catch {
-      // already stopped — ignore
-    }
+    if (!isArtifactPathRef(deployment.containerId)) await this.stop(deployment.containerId);
   }
 
   async purge(deployment: DeploymentRef): Promise<void> {
@@ -1017,15 +1265,15 @@ export class BareRuntime implements RuntimeAdapter {
     // must not keep the disk from being reclaimed.
     const failures: unknown[] = [];
     if (deployment.containerId) {
-      await this.destroy(deployment.containerId).catch((err: unknown) => failures.push(err));
+      await this.destroy(deployment.containerId).catch((err: unknown) => { observeCaughtError(err, "adapters/runtime/bare"); return failures.push(err); });
     }
     // For a static release the two are the SAME directory — `containerId` is the
     // doc-root — and `destroy` above already removed it, and already reported its
     // failure.
     const releaseDir = this.releaseDir(deployment.id);
     if (releaseDir !== deployment.containerId) {
-      await removeManagedArtifact(this.executor, releaseDir).catch((err: unknown) =>
-        failures.push(err),
+      await removeManagedArtifact(this.executor, releaseDir, this.workDir).catch((err: unknown) =>
+        { observeCaughtError(err, "adapters/runtime/bare"); return failures.push(err); },
       );
     }
     if (failures.length === 1) throw failures[0];
@@ -1042,12 +1290,20 @@ export class BareRuntime implements RuntimeAdapter {
 
   async getContainerInfo(containerId: string): Promise<ContainerInfo> {
     const sv = await this.supervisor();
+    if (sv.getInfo) return sv.getInfo(containerId);
     const running = await sv.isRunning(containerId);
 
     return {
       containerId,
       status: running ? "running" : "stopped",
     };
+  }
+
+  private assertProject(projectId: string) {
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(projectId)) throw new Error("Invalid project identity");
+    if (this.options.projectId && this.options.projectId !== projectId) {
+      throw new Error("Application does not belong to this runtime's project");
+    }
   }
 
   async getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]> {
@@ -1058,7 +1314,7 @@ export class BareRuntime implements RuntimeAdapter {
   async streamRuntimeLogs(
     containerId: string,
     onLog: LogCallback,
-    opts?: { tail?: number },
+    opts?: RuntimeLogStreamOptions,
   ): Promise<() => void> {
     const sv = await this.supervisor();
     return sv.streamLogs(containerId, onLog, opts);

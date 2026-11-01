@@ -1,4 +1,6 @@
+import type { ExecutionContext, PermissionInput } from "@repo/platform";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { withServerInventoryLock } from "@repo/platform/engine/lib/server-inventory-lock";
 
 /**
  * Removing a server has to resolve the fate of everything running on it.
@@ -29,7 +31,9 @@ type Teardown = {
 const ok = (): Teardown => ({ ok: true, rowDeleted: true, unrecoverable: [], orphaned: [] });
 
 const h = vi.hoisted(() => ({
-  assert: vi.fn(async () => {}),
+  ingress: vi.fn(async () => null as { id: string } | null),
+  clusterMembership: vi.fn(async () => null as { clusterId: string } | null),
+  assert: vi.fn(async (_ctx: ExecutionContext, _input: PermissionInput) => {}),
   /** Call log in order, so "row deleted last" is checkable rather than assumed. */
   calls: [] as string[],
   workloads: [] as Record<string, unknown>[],
@@ -71,7 +75,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   repos: {
+    ingress: { byServer: h.ingress },
+    serverCluster: { membership: h.clusterMembership },
     server: {
       listByOrganization: vi.fn(async () => h.rows),
       getInOrganization: vi.fn(async (id: string) => h.rows.find((r) => r.id === id) ?? null),
@@ -89,26 +96,31 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("@repo/adapters", () => ({ hostControlDisabled: () => false }));
+vi.mock("@repo/adapters", async (original) => ({ ...(await original<Record<string, unknown>>()), hostControlDisabled: () => false }));
 vi.mock("../../lib/permission", () => ({ permission: { assert: h.assert } }));
+vi.mock("../../lib/operation-context", () => ({
+  operationContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
+  operationData: async (_c: unknown, work: Promise<{ data: unknown }>) => (await work).data,
+}));
 vi.mock("../../lib/request-context", () => ({
   getRequestContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
 }));
-vi.mock("@/lib/startup/self-server", () => ({
+vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({
   ensureLocalServer: vi.fn(async () => null),
   localServerHostChannel: vi.fn(async () => null),
 }));
-vi.mock("@/lib/geo-ip", () => ({ primeGeo: vi.fn(async () => {}), countryForIp: () => null }));
-vi.mock("../../lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/geo-ip", () => ({ primeGeo: vi.fn(async () => {}), countryForIp: () => null }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { invalidate: vi.fn(() => {}), diagnoseReachability: h.reachable },
 }));
 vi.mock("../../lib/audit", () => ({
   audit: { recordAsync: (_c: unknown, e: { eventType: string; after?: unknown }) => h.audit(e) },
   auditContextFrom: () => ({}),
+  operationAuditContext: () => ({}),
 }));
 // The teardown is reached through a DYNAMIC import inside the handler (the static
 // edge into the mail/webmail graph is a cycle risk); vi.mock intercepts it anyway.
-vi.mock("../projects/project-teardown", () => ({ teardownProject: h.teardown }));
+vi.mock("@repo/platform/engine/modules/projects/project-teardown", () => ({ teardownProject: h.teardown }));
 
 import { deleteServer, serverDeletionPreview } from "./servers.controller";
 
@@ -141,6 +153,8 @@ const project = (id: string, over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.clusterMembership.mockResolvedValue(null);
+  h.ingress.mockResolvedValue(null);
   h.calls.length = 0;
   h.assert.mockImplementation(async () => {});
   h.teardown.mockImplementation(async (_ctx, id) => {
@@ -156,6 +170,37 @@ beforeEach(() => {
   h.github.mockImplementation(async () => undefined);
   h.destinations.mockImplementation(async () => []);
   h.workloads = [project("p1"), project("p2", { isApp: true, appTemplateId: "plausible" })];
+});
+
+it("refuses an enrolled server before tearing down any workload", async () => {
+  h.clusterMembership.mockResolvedValueOnce({ clusterId: "cluster-a" });
+  const { c } = context("srv1");
+  await expect(deleteServer(c)).rejects.toMatchObject({ code: "SERVER_IN_CLUSTER", statusCode: 409 });
+  expect(h.teardown).not.toHaveBeenCalled();
+  expect(h.serverDelete).not.toHaveBeenCalled();
+});
+
+it("rechecks membership after a concurrent enrollment releases the inventory lock", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const enrollment = withServerInventoryLock("org1", async () => {
+    entered();
+    await hold;
+    h.clusterMembership.mockResolvedValue({ clusterId: "cluster-a" });
+  });
+  await started;
+  const { c } = context("srv1", { destroyOnSource: "true" });
+  const removal = deleteServer(c);
+  const rejected = expect(removal).rejects.toMatchObject({ code: "SERVER_IN_CLUSTER" });
+  await Promise.resolve();
+  expect(h.teardown).not.toHaveBeenCalled();
+  release();
+  await enrollment;
+  await rejected;
+  expect(h.teardown).not.toHaveBeenCalled();
+  expect(h.serverDelete).not.toHaveBeenCalled();
 });
 
 describe("GET /servers/:id/deletion-preview", () => {
@@ -212,6 +257,13 @@ describe("GET /servers/:id/deletion-preview", () => {
 });
 
 describe("DELETE /servers/:id resolves every workload", () => {
+  it("keeps the server if bound workloads cannot be enumerated", async () => {
+    h.listActiveByServer.mockRejectedValueOnce(new Error("workload query failed"));
+    const { c } = context("srv1");
+    await expect(deleteServer(c)).rejects.toThrow("workload query failed");
+    expect(h.teardown).not.toHaveBeenCalled();
+    expect(h.serverDelete).not.toHaveBeenCalled();
+  });
   it("defaults to a control-plane-only teardown: rows go, the workload keeps running", async () => {
     const { c, sent } = context("srv1");
     await deleteServer(c);
@@ -311,8 +363,7 @@ describe("DELETE /servers/:id resolves every workload", () => {
 
   it("refuses the local host before touching a single workload", async () => {
     const { c, sent } = context("local");
-    await deleteServer(c);
-    expect(sent.status).toBe(400);
+    await expect(deleteServer(c)).rejects.toMatchObject({ statusCode: 400 });
     // Ordering again: a refused removal that had already destroyed a container would
     // be the worst possible outcome of this endpoint.
     expect(h.teardown).not.toHaveBeenCalled();
@@ -374,4 +425,32 @@ describe("DELETE /servers/:id resolves every workload", () => {
     expect(h.serverDelete).toHaveBeenCalledWith("srv1");
     expect(sent.body).toMatchObject({ ok: true, serverRemoved: true, removed: 0 });
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: ExecutionContext, input: PermissionInput) => { await h.assert(ctx, input); return ctx; } },
+}));
+
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
+  audit: { recordAsync: (_c: unknown, e: { eventType: string; after?: unknown }) => h.audit(e) },
+  auditContextFrom: () => ({}),
+  operationAuditContext: () => ({}),
+}));
+
+// Keep the controller unit focused on this real shared operation group.
+vi.mock("@repo/platform/engine/lib/platform", async () => {
+  const { createServerOperations } = await import("@repo/platform");
+  const { serverDependencies } = await import("@repo/platform/engine/modules/system/server.operations");
+  const { authorization } = await import("@repo/platform/engine/lib/authorization");
+  const servers = createServerOperations(authorization, serverDependencies);
+  return { getPlatformKernel: () => ({ servers }) };
+});
+
+it("keeps ingress cleanup authority before starting destructive workload removal", async () => {
+  h.ingress.mockResolvedValueOnce({id:"igc_pending_cleanup"});
+  const {c}=context("srv1", {destroyOnSource:"true"});
+  await expect(deleteServer(c)).rejects.toMatchObject({code:"SERVER_INGRESS_CONNECTED",statusCode:409});
+  expect(h.teardown).not.toHaveBeenCalled();
+  expect(h.serverDelete).not.toHaveBeenCalled();
 });

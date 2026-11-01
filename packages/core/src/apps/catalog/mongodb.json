@@ -161,5 +161,21 @@
       "label": "Database",
       "kind": "tcp"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Document database",
+        "description": "Store flexible documents for your application."
+      },
+      {
+        "title": "Web administration",
+        "description": "Mongo Express is included."
+      },
+      {
+        "title": "Persistent data",
+        "description": "Keep database files in a project-scoped volume."
+      }
+    ]
+  }
 }

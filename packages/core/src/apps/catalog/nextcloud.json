@@ -1,0 +1,271 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "nextcloud",
+  "name": "Nextcloud",
+  "description": "Private file sync and sharing with Nextcloud Admin, MariaDB, Redis file locking, and scheduled background jobs.",
+  "kind": "template",
+  "logo": "nextcloud",
+  "category": "other",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "nextcloud-db",
+      "restart": "unless-stopped",
+      "image": "mariadb:11.4.13",
+      "environment": {
+        "MARIADB_USER": "nextcloud",
+        "MARIADB_DATABASE": "nextcloud"
+      },
+      "volumes": ["nextcloud_db_data:/var/lib/mysql"],
+      "secretEnv": ["MARIADB_ROOT_PASSWORD", "MARIADB_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "30s"
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "nextcloud-redis",
+      "restart": "unless-stopped",
+      "image": "redis:7.4.6-alpine",
+      "volumes": ["nextcloud_redis:/data"],
+      "commandArgv": ["redis-server", "--appendonly", "yes"],
+      "healthcheck": {
+        "test": ["CMD", "redis-cli", "ping"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 6
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 1024
+      }
+    },
+    {
+      "name": "nextcloud",
+      "restart": "unless-stopped",
+      "image": "nextcloud:35.0.1-apache",
+      "environment": {
+        "MYSQL_HOST": "nextcloud-db",
+        "MYSQL_DATABASE": "nextcloud",
+        "MYSQL_USER": "nextcloud",
+        "REDIS_HOST": "nextcloud-redis",
+        "NEXTCLOUD_ADMIN_USER": "admin",
+        "OPENSHIP_PUBLIC_URL": "{{publicUrl:nextcloud}}"
+      },
+      "volumes": ["nextcloud_data:/var/www/html"],
+      "exposedPort": 80,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 80
+        }
+      ],
+      "dependsOn": ["nextcloud-db", "nextcloud-redis"],
+      "secretEnv": ["MYSQL_PASSWORD", "NEXTCLOUD_ADMIN_PASSWORD"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1/status.php | grep -q '\"installed\":true'"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 15,
+        "startPeriod": "180s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 1024,
+        "diskMb": 8192
+      }
+    },
+    {
+      "name": "nextcloud-cron",
+      "restart": "unless-stopped",
+      "image": "nextcloud:35.0.1-apache",
+      "environment": {
+        "MYSQL_HOST": "nextcloud-db",
+        "MYSQL_DATABASE": "nextcloud",
+        "MYSQL_USER": "nextcloud",
+        "REDIS_HOST": "nextcloud-redis",
+        "NEXTCLOUD_ADMIN_USER": "admin",
+        "OPENSHIP_PUBLIC_URL": "{{publicUrl:nextcloud}}"
+      },
+      "volumes": ["nextcloud_data:/var/www/html"],
+      "dependsOn": ["nextcloud"],
+      "commandArgv": ["/cron.sh"],
+      "secretEnv": ["MYSQL_PASSWORD", "NEXTCLOUD_ADMIN_PASSWORD"],
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 256,
+        "diskMb": 1024
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "service": "nextcloud-db",
+      "key": "MARIADB_ROOT_PASSWORD",
+      "label": "Database root password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "nextcloud-db",
+      "key": "MARIADB_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "nextcloud-db"
+    },
+    {
+      "service": "nextcloud",
+      "key": "MYSQL_PASSWORD",
+      "label": "Nextcloud database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "nextcloud-db"
+    },
+    {
+      "service": "nextcloud-cron",
+      "key": "MYSQL_PASSWORD",
+      "label": "Background job database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "nextcloud-db"
+    },
+    {
+      "service": "nextcloud",
+      "key": "NEXTCLOUD_ADMIN_PASSWORD",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "nextcloud-admin"
+    },
+    {
+      "service": "nextcloud-cron",
+      "key": "NEXTCLOUD_ADMIN_PASSWORD",
+      "label": "Background job admin password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "nextcloud-admin"
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Nextcloud",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Nextcloud",
+        "source": "publicUrl:nextcloud",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Admin username",
+        "source": "env:nextcloud:NEXTCLOUD_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:nextcloud:NEXTCLOUD_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "nextcloud",
+      "port": 80,
+      "label": "Nextcloud",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "nextcloud-db",
+      "port": 3306,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    },
+    {
+      "service": "nextcloud-redis",
+      "port": 6379,
+      "label": "File locking cache",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "File sync and sharing",
+        "description": "Access and share files through the web, mobile, and desktop clients."
+      },
+      {
+        "title": "Private storage",
+        "description": "Keep the files and database on your server."
+      },
+      {
+        "title": "Background jobs",
+        "description": "Includes Redis file locking and a dedicated cron service."
+      }
+    ],
+    "articleFile": "articles/nextcloud.md"
+  },
+  "files": [
+    {
+      "service": "nextcloud",
+      "path": "/usr/src/nextcloud/config/openship.config.php",
+      "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
+    }
+  ],
+  "prepare": [
+    {
+      "service": "nextcloud",
+      "command": "su -s /bin/sh www-data -c 'php occ background:cron' && printf 'cron'",
+      "capture": "background-mode",
+      "phase": "post-ready",
+      "mustSucceed": true,
+      "readiness": {
+        "test": "su -s /bin/sh www-data -c 'php occ status --output=json' | grep -q '\"installed\":true'",
+        "interval": 2000,
+        "retries": 90
+      }
+    }
+  ],
+  "repository": "https://github.com/nextcloud/server",
+  "minResources": {
+    "cpuCores": 1.5,
+    "memoryMb": 1920
+  },
+  "tags": ["files", "sync", "storage", "collaboration"]
+}

@@ -1,6 +1,7 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { repairEdgeVhosts } from "../../src/lib/edge-vhost-repair";
+import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 
 type Routing = Parameters<typeof repairEdgeVhosts>[0];
 type Sweep = Awaited<ReturnType<NonNullable<NonNullable<Routing>["reapplyStoredRoutes"]>>>;
@@ -67,7 +68,7 @@ describe("repairEdgeVhosts", () => {
     // One route whose sidecar is unreadable must not hide the ones that converged: a
     // half-repaired edge that says so is strictly better than a silent one.
     const onLog = vi.fn();
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     const result = await repairEdgeVhosts(
       sweeper({
         scanned: 2,
@@ -88,7 +89,7 @@ describe("repairEdgeVhosts", () => {
     // edge/routing block and `ensure-edge` inside a fire-and-forget — routing failures
     // never fail a deploy, so a wedged edge box must come back as a reported failure
     // rather than an exception that skips the steps after it.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     const result = await repairEdgeVhosts(
       sweeper(() => {
         throw new Error("edge unreachable");
@@ -99,6 +100,6 @@ describe("repairEdgeVhosts", () => {
       repaired: [],
       failed: [{ slug: "*", reason: "edge unreachable" }],
     });
-    expect(String(warn.mock.calls[0]?.[0])).toContain("edge unreachable");
+    expect(String(warn.mock.calls[0]?.[1])).toContain("edge unreachable");
   });
 });

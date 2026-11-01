@@ -11,8 +11,8 @@
  */
 
 import type { PromptPayload } from "@repo/adapters";
-import { PromptRegistry } from "../../lib/prompt-gateway";
-import { TtlCache } from "../../lib/cache";
+import { PromptRegistry } from "@repo/platform/engine/lib/prompt-gateway";
+import { TtlCache } from "@repo/platform/engine/lib/cache";
 
 export type SseWriter = (event: string, data: string) => boolean;
 export type EdgeSessionStatus = "running" | "completed" | "failed";
@@ -35,7 +35,11 @@ export interface EdgeConsentSession {
   pendingPrompt?: PromptPayload;
 }
 
-const sessions = new TtlCache<EdgeConsentSession>({ maxSize: 50, sweepIntervalMs: 60_000 });
+const sessions = new TtlCache<EdgeConsentSession>({
+  maxSize: 50,
+  sweepIntervalMs: 60_000,
+  canEvict: (session) => session.status !== "running" && !session.pendingPrompt,
+});
 const promptRegistry = new PromptRegistry();
 
 const heartbeat = setInterval(() => {

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { chmod, mkdtemp, rm as fsRm, writeFile as fsWriteFile } from "node:fs/promises";
@@ -15,6 +16,7 @@ import {
   sq,
 } from "./local-shell";
 import { reconcileKnownHosts } from "./ssh-support";
+import { buildSshTransportArgs } from "./system-ssh";
 
 /**
  * Shared helpers for the single-archive source transfer: pack the tree into ONE
@@ -94,7 +96,9 @@ export async function extractRemoteArchive(
 ): Promise<void> {
   const received = Number((await exec(`wc -c < ${sq(remoteArchive)}`)).trim());
   if (received !== expectedBytes) {
-    await exec(`rm -f ${sq(remoteArchive)}`).catch(() => {});
+    await exec(`rm -f ${sq(remoteArchive)}`).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/system/remote-transfer");
+    });
     throw new Error(`upload truncated: sent ${expectedBytes} bytes, server received ${received}`);
   }
   await exec(
@@ -133,6 +137,9 @@ export function formatPrivateKeyForOpenSsh(privateKey: string): string {
 export async function canUseRemoteRsync(
   deps: RsyncDeps,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  // Native Windows rsync is not part of the supported toolchain; SFTP/streaming
+  // also avoids mixing Windows and POSIX path parsing in rsync's -e command.
+  if (process.platform === "win32") return { ok: false, reason: "using the SSH transfer on Windows" };
   if (deps.config.privateKey && deps.config.privateKeyPassphrase && !deps.config.sshAgent) {
     return {
       ok: false,
@@ -159,7 +166,7 @@ export async function canUseRemoteRsync(
 /** Build the `-e` transport command rsync uses (ssh, or sshpass+ssh for password
  *  auth). Password is passed via the SSHPASS env var (set in runRsync), never in
  *  argv. */
-function buildRsyncSshCommand(config: SshConfig, keyPath?: string): string {
+export function buildRsyncSshCommand(config: SshConfig, keyPath?: string): string {
   const args = config.password
     ? [
         "sshpass",
@@ -194,7 +201,12 @@ function buildRsyncSshCommand(config: SshConfig, keyPath?: string): string {
     args.push("-i", keyPath, "-o", "IdentitiesOnly=yes");
   }
 
-  return args.map(sq).join(" ");
+  args.push(...buildSshTransportArgs(config));
+
+  // rsync parses -e itself: it accepts doubled quotes within a quoted word,
+  // not the POSIX shell '\'' escape. ProxyCommand contains its own quoting,
+  // which must survive this first parser intact (especially paths with spaces).
+  return args.map(arg => `"${arg.replaceAll('"', '""')}"`).join(" ");
 }
 
 /** Materialize config.privateKey to a temp file (0600) for rsync's `-i`, clean up
@@ -215,7 +227,9 @@ async function withTemporaryPrivateKey<T>(
     await chmod(keyPath, 0o600);
     return await fn(keyPath);
   } finally {
-    await fsRm(tempDir, { recursive: true, force: true }).catch(() => {});
+    await fsRm(tempDir, { recursive: true, force: true }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/system/remote-transfer");
+    });
   }
 }
 
@@ -231,6 +245,7 @@ async function runRsync(
       cwd,
       env: {
         ...getTarCreateEnv(),
+        ...(config.sshAgent ? { SSH_AUTH_SOCK: config.sshAgent } : {}),
         ...(config.password ? { SSHPASS: config.password } : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -247,7 +262,7 @@ async function runRsync(
       emitBufferedLines(chunk, stderrState, (line) => onLog?.(logEntry(line)));
     });
 
-    proc.on("error", (err) => {
+    proc.on("error", (err) => { observeCaughtError(err, "adapters/system/remote-transfer");
       reject(new Error(`rsync failed to start: ${err.message}`));
     });
 
@@ -276,7 +291,7 @@ export async function uploadFileWithRsync(
   onLog?: LogCallback,
   opts?: { retries?: number },
 ): Promise<void> {
-  await reconcileKnownHosts(deps.config);
+  if (deps.config.sshTransport !== "cloudflare") await reconcileKnownHosts(deps.config);
   const retries = Math.max(1, opts?.retries ?? 3);
   const host = deps.config.host.includes(":") ? `[${deps.config.host}]` : deps.config.host;
   const user = deps.config.username ?? "root";

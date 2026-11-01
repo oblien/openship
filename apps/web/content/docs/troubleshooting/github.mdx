@@ -150,3 +150,19 @@ deployments from one push. Nothing to fix.
   <Card title="GitHub API" href="/docs/api/github" description="The endpoints behind the connection, repo browsing, and webhooks." />
   <Card title="Common errors" href="/docs/troubleshooting/common-errors" description="Errors that aren't specific to GitHub." />
 </Cards>
+
+
+## Hosted App connected but no repositories appear
+
+On a self-hosted instance using the hosted Openship GitHub App, keep the correct Cloud workspace connected,
+then choose **Connect Openship App** in **Settings → Git**. Complete GitHub authorization and select the
+personal account or organization whose installation you want to connect. Existing installations are offered
+without reinstalling the App; use the same flow again to add another authorized account.
+
+OAuth identity alone does not grant a workspace repository access. Installation claims are verified and
+stored in Cloud for the selected workspace. Refreshing or reconnecting does not move those claims to a
+different workspace, and the self-hosted database does not keep a second installation catalog.
+
+If the connection attempt expires, start a new one. If an organization approval is pending, connect again
+after its administrator approves the App. Cloud/API failures must be retried; an unavailable installation
+lookup is not evidence that the account has no installations.

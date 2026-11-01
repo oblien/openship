@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { setSignedCookie } from "hono/cookie";
-import { env } from "../config/env";
-import { COOKIE_PREFIX } from "./auth";
+import { env } from "@repo/platform/engine/config/env";
+import { COOKIE_PREFIX } from "@repo/platform/engine/lib/auth";
 
 /**
  * Stamp the response with a signed Better Auth session cookie. Shared by every

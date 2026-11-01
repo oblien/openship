@@ -1,0 +1,231 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "odoo",
+  "name": "Odoo Community",
+  "description": "Run CRM, sales, inventory, and other Community business apps with PostgreSQL and a ready-to-use administrator account.",
+  "kind": "template",
+  "logo": "odoo",
+  "category": "other",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "odoo-db",
+      "restart": "unless-stopped",
+      "image": "postgres:17.11-alpine",
+      "environment": {
+        "POSTGRES_USER": "postgres",
+        "POSTGRES_DB": "postgres"
+      },
+      "volumes": ["odoo_db_data:/var/lib/postgresql/data"],
+      "secretEnv": ["POSTGRES_PASSWORD", "OPENSHIP_APP_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "odoo",
+      "restart": "unless-stopped",
+      "environment": {
+        "HOST": "odoo-db",
+        "USER": "odoo"
+      },
+      "volumes": ["odoo_data:/var/lib/odoo", "odoo_addons:/mnt/extra-addons"],
+      "exposedPort": 8069,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 8069
+        }
+      ],
+      "dependsOn": ["odoo-db"],
+      "secretEnv": ["PASSWORD", "OPENSHIP_ADMIN_PASSWORD", "OPENSHIP_MASTER_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "curl -fsS http://127.0.0.1:8069/web/login >/dev/null"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "180s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 1536,
+        "diskMb": 8192
+      },
+      "image": "odoo:19.0-20260926",
+      "commandArgv": ["python3", "/etc/openship/odoo-start.py"],
+      "replacesBuilds": ["23a86dd7a57a0061fc72b9b72ae8157d10c10e3c914fe1933cd2464e834f0ac1"]
+    }
+  ],
+  "configFields": [
+    {
+      "service": "odoo-db",
+      "key": "POSTGRES_PASSWORD",
+      "label": "Database administrator password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "odoo",
+      "key": "PASSWORD",
+      "label": "Odoo database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "odoo-db"
+    },
+    {
+      "service": "odoo",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "odoo",
+      "key": "OPENSHIP_MASTER_PASSWORD",
+      "label": "Database master password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "OPENSHIP_ADMIN_EMAIL",
+      "service": "odoo",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "service": "odoo-db",
+      "key": "OPENSHIP_APP_PASSWORD",
+      "label": "Application database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "odoo-db"
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Odoo Community",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Odoo",
+        "source": "template:{{publicUrl:odoo}}/web/login",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "email",
+        "label": "Admin email",
+        "source": "env:odoo:OPENSHIP_ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:odoo:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "odoo",
+      "port": 8069,
+      "label": "Odoo",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "odoo-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Business applications",
+        "description": "Install Community CRM, sales, inventory, and other modules from Odoo."
+      },
+      {
+        "title": "Ready to sign in",
+        "description": "A generated administrator account is initialized before the application serves requests."
+      },
+      {
+        "title": "Persistent filestore",
+        "description": "Keep attachments, database records, and custom addons across deployments."
+      }
+    ],
+    "articleFile": "articles/odoo.md"
+  },
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "Setup",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "odoo",
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+          "fullWidth": true
+        }
+      ]
+    }
+  ],
+  "repository": "https://github.com/odoo/odoo",
+  "minResources": {
+    "cpuCores": 1.0,
+    "memoryMb": 2048
+  },
+  "files": [
+    {
+      "service": "odoo-db",
+      "path": "/docker-entrypoint-initdb.d/openship-role.sh",
+      "content": "#!/bin/sh\nset -eu\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" --set app_password=\"$OPENSHIP_APP_PASSWORD\" <<'SQL'\nCREATE ROLE odoo WITH LOGIN NOSUPERUSER NOCREATEROLE CREATEDB PASSWORD :'app_password';\nSQL\n"
+    },
+    {
+      "service": "odoo",
+      "path": "/etc/openship/odoo-start.py",
+      "content": "import configparser\nimport os\nimport subprocess\nimport time\nfrom pathlib import Path\nimport psycopg2\n\nenv = os.environ\ndeadline = time.monotonic() + 120\nwhile True:\n    try:\n        connection = psycopg2.connect(host=env['HOST'], user=env['USER'], password=env['PASSWORD'], dbname='postgres', connect_timeout=5)\n        break\n    except psycopg2.OperationalError:\n        if time.monotonic() >= deadline:\n            raise RuntimeError('PostgreSQL did not become ready') from None\n        time.sleep(2)\nwith connection, connection.cursor() as cursor:\n    cursor.execute('SELECT 1 FROM pg_database WHERE datname = %s', ('odoo',))\n    exists = cursor.fetchone() is not None\nconnection.close()\nconfig = configparser.ConfigParser(interpolation=None)\nconfig['options'] = {'admin_passwd': env['OPENSHIP_MASTER_PASSWORD'], 'data_dir': '/var/lib/odoo', 'addons_path': '/mnt/extra-addons', 'db_host': env['HOST'], 'db_user': env['USER'], 'db_password': env['PASSWORD'], 'db_port': '5432'}\npath = '/var/lib/odoo/openship.conf'\nwith open(path, 'w') as file:\n    os.chmod(path, 0o600)\n    config.write(file)\nif not exists:\n    result = subprocess.run(['odoo', 'db', '--config', path, 'init', 'odoo', '--username', env['OPENSHIP_ADMIN_EMAIL'], '--password', env['OPENSHIP_ADMIN_PASSWORD']])\n    if result.returncode:\n        raise RuntimeError('Odoo database initialization failed; existing data has been preserved')\n# Never delete, recreate, or reset credentials in an existing database.\nos.execvp('odoo', ['odoo', '--config', path, '--database=odoo', '--db-filter=^odoo$', '--no-database-list', '--proxy-mode'])\n"
+    }
+  ],
+  "tags": ["erp", "crm", "sales", "inventory", "business"]
+}

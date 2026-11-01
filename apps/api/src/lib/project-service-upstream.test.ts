@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseServiceHostPort, parseServicePort } from "./deployable-service";
-import { parseComposePort } from "../modules/migration/docker-reconcile";
+import { parseServiceHostPort, parseServicePort } from "@repo/platform/engine/lib/deployable-service";
+import { parseComposePort } from "@repo/platform/engine/modules/migration/docker-reconcile";
 import {
   buildProjectServiceUpstream,
   describeCandidatePorts,
   pickProjectPortOwner,
   resolveProjectServiceUpstream,
-} from "./project-service-upstream";
+} from "@repo/platform/engine/lib/project-service-upstream";
 
 /**
  * The adopted stack from #618. postgres comes FIRST, and nothing is `exposed` —

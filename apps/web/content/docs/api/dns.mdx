@@ -1,6 +1,6 @@
 ---
-title: DNS API
-description: Connect a DNS provider, preview each DNS change, and apply a domain's records without copying them by hand.
+title: DNS providers
+description: Connect DNS providers and check zones.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -14,31 +14,32 @@ route never changes the provider's zone silently. In the dashboard, credentials 
 Cloudflare is the only provider today. The provider list is served by the API rather than hard-coded in the
 dashboard, so `GET /api/dns/providers` is the authoritative answer to "what can I connect?".
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/dns/credentials`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) for the full auth model.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/dns/providers` | `settings:read` | List supported providers and the token scopes each needs. |
-| `GET /api/dns/credentials` | `settings:read` | List connected credentials for the organization. |
-| `GET /api/dns/credentials/:id` | `settings:read` | Read one connected credential. |
-| `POST /api/dns/credentials` | `settings:admin` | Connect a credential. The token is verified before it is stored. |
-| `DELETE /api/dns/credentials/:id` | `settings:admin` | Disconnect a credential. Records already written are left alone. |
-| `POST /api/dns/verify-zone` | `settings:read` | Check whether a connected provider manages a hostname's zone. Creates and changes nothing. |
-| `GET /api/domains/:id/dns/plan` | `domain:read` | Preview the exact record actions for one persisted domain. Creates and changes nothing. |
-| `POST /api/domains/:id/dns/apply` | `domain:write` | Apply that domain's records through the matching connected provider. |
-
 ## Connect a provider
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.dns.addCredential({
+  provider: "cloudflare",
+  name: "Cloudflare production",
+  apiToken: "cf-...",
+});
+console.log(result);
 ```
-POST /api/dns/credentials
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/dns/credentials" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"cloudflare","name":"Cloudflare production","apiToken":"cf-..."}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -47,13 +48,6 @@ POST /api/dns/credentials
     apiToken: { type: 'string', description: 'The provider API token. Verified against the provider before it is stored, so a token that does not work is rejected here rather than failing silently later.', required: true },
   }}
 />
-
-```bash
-curl -X POST https://your-host/api/dns/credentials \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"provider":"cloudflare","name":"Cloudflare production","apiToken":"cf-..."}'
-```
 
 For Cloudflare, create a token at
 [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) scoped to
@@ -70,9 +64,28 @@ Rotating `BETTER_AUTH_SECRET` makes stored tokens undecryptable. The credential 
 
 ## Check a zone
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.dns.verifyZone({
+  hostname: "app.example.com",
+});
+console.log(result);
 ```
-POST /api/dns/verify-zone
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/dns/verify-zone" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"app.example.com"}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
@@ -89,13 +102,6 @@ The response separates four outcomes, because they call for different actions:
 | `unauthorized` | `false` | A stored token was rejected. Re-connect it — `credentialId` says which. |
 | `unavailable` | `false` | The provider could not be reached (rate limit, outage). Unknown, **not** a sign of misconfiguration. |
 
-```bash
-curl -X POST https://your-host/api/dns/verify-zone \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"hostname":"app.example.com"}'
-```
-
 ## Add, preview, and apply a domain
 
 `POST /api/domains` persists a pending domain and returns the records it needs. It does not call the DNS
@@ -104,10 +110,24 @@ row, and that row supplies the `:id` used by the shared plan and apply endpoints
 
 Preview the exact provider changes before writing anything:
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.domains.dnsPlan("dom_123");
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl https://your-host/api/domains/dom_123/dns/plan \
+curl "$OPENSHIP_URL/api/domains/dom_123/dns/plan" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 ```json
 {
@@ -128,10 +148,24 @@ the records returned by `POST /api/domains` (or `GET /api/domains/:id/records`) 
 
 Apply the previewed records explicitly:
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.domains.dnsApply("dom_123");
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
 ```bash
-curl -X POST https://your-host/api/domains/dom_123/dns/apply \
+curl -X POST "$OPENSHIP_URL/api/domains/dom_123/dns/apply" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 The response reports `applied`, `skipped`, or `failed` for every record. `provisioned` is `true` only when
 the matching provider has every actionable record in place; a partial write returns `provisioned: false`
@@ -165,3 +199,33 @@ repointing is not adoption: Openship leaves such a record's comment untouched, s
 | `DNS_PROVIDER_NOT_READY` | 400 | The provider rejected the token during the pre-store check. |
 | `DNS_RECORD_CONFLICT` | 409 | Several records already answer for that name and type and none are Openship's — a round-robin or multi-host set it will not rewrite. |
 | `DNS_API_ERROR` | 502 | The provider's API failed. The upstream status is in the message. |
+
+## Operations
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List supported DNS providers and their credential fields. | `dns.listProviders()` | `GET /api/dns/providers`<br />`settings:read` |
+| List the organization’s DNS credentials. | `dns.listCredentials()` | `GET /api/dns/credentials`<br />`settings:read` |
+| Read a DNS credential with secrets masked. | `dns.getCredential(input)` | `GET /api/dns/credentials/:id`<br />`settings:read` |
+| Store a DNS provider credential. | `dns.addCredential(input)` | `POST /api/dns/credentials`<br />`settings:admin` |
+| Remove a DNS credential. | `dns.removeCredential(input)` | `DELETE /api/dns/credentials/:id`<br />`settings:admin` |
+| Check access to the requested DNS zone. | `dns.verifyZone(input)` | `POST /api/dns/verify-zone`<br />`settings:read` |
+
+### Cloudflare Tunnel ingress
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read persisted tunnel connections, optionally filtered by deployment server. | `dns.listIngressConnections(input)` | `GET /api/dns/ingress`<br />`settings:read` |
+| Discover accounts, named tunnels and optional reusable Access policies using a saved Cloudflare credential. Requires an organization administrator. | `dns.discoverIngress(input)` | `POST /api/dns/ingress/discover`<br />`settings:admin` |
+| Connect or create a named Cloudflare Tunnel on a self-hosted deployment server. Setup continues asynchronously. | `dns.connectIngress(input)` | `POST /api/dns/ingress`<br />`settings:admin` |
+| Set automatic enrollment and Access policy defaults for future custom domains. Existing hostnames keep their settings. | `dns.updateIngress(input)` | `PUT /api/dns/ingress/:id`<br />`settings:admin` |
+| Retry persisted tunnel setup or cleanup without creating another connection. | `dns.retryIngress(input)` | `POST /api/dns/ingress/:id/retry`<br />`settings:admin` |
+| Disconnect a server tunnel and queue ownership-checked cleanup. Existing tunnels and reusable policies are retained. | `dns.removeIngress(input)` | `DELETE /api/dns/ingress/:id`<br />`settings:admin` |
+| Read persisted tunnel, DNS and Access status for a project domain. | `dns.getDomainIngress(input)` | `GET /api/dns/ingress/domains/:id`<br />`settings:read` |
+| Connect a custom domain to its deployment server tunnel, change its Access policy or request disconnection. | `dns.setDomainIngress(input)` | `PUT /api/dns/ingress/domains/:id`<br />`settings:admin` |
+
+{/* api-operations:end */}

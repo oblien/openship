@@ -1,4 +1,6 @@
 "use client";
+import { useEffect } from "react";
+import { reportClientError } from "@/lib/error-reporting";
 
 /**
  * Root global-error boundary. Next prerenders `/_global-error` at build time; its
@@ -19,6 +21,7 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => { reportClientError(error, { component: "global-error", handled: false }); }, [error]);
   return (
     <html lang="en">
       <head>

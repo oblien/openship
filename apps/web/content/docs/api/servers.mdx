@@ -1,0 +1,852 @@
+---
+title: Servers
+description: Register and operate servers through the SDK or REST API.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+Servers identify where Openship builds and runs applications. The same `serverId`
+is used for Cloud-managed instances and connected SSH/local hosts. Responses
+include `capabilities`; offer only the actions supported by that server. The
+`terminalSessionLimit` field reports the supported concurrent host shell count.
+
+Server administration requires a server grant. Shared host access can affect all
+projects on that host. Connected hosts use their SSH configuration for deployment
+access. Managed Cloud servers expose their own SSH and Runtime API controls below;
+Openship continues to manage their base image and edge infrastructure.
+
+## Managed Cloud servers
+
+The normal Cloud flow creates the first shared server automatically when a
+customer chooses a plan or creates a project. To create an additional server:
+
+```ts
+const purchaseKey = crypto.randomUUID();
+const managed = await ship.servers.createManaged({ name: "Production", idempotencyKey: purchaseKey });
+const checkoutKey = crypto.randomUUID();
+const checkout = await ship.billing.createSubscription({
+  workspaceId: managed.id,
+  planTierId: "pro",
+  interval: "monthly",
+  idempotencyKey: checkoutKey,
+});
+```
+
+Complete checkout through the [billing workflow](/docs/api/billing). Verified
+payment queues server setup. Use `managed.serverId` for project placement,
+server usage, terminal access and lifecycle operations. `managed.id` is the
+subscription owner identifier used only for billing.
+Keep the creation key and checkout key for retries after an uncertain response.
+Creation reuses the same server within your organization, including its current
+name; a deleted purchase cannot be recreated with its old key.
+
+Self-hosted and desktop installations can use these same managed servers after
+connecting an Openship Cloud account. Create a new server with `createManaged`,
+or list and link an existing server:
+
+```ts
+const available = await ship.servers.availableManaged();
+const selected = available.servers[0];
+if (selected) {
+  const linked = await ship.servers.connectManaged({ serverId: selected.id });
+  console.log(linked.serverId); // This installation's deployment destination.
+}
+```
+
+Linking requires administration of the server in Cloud and permission to add a
+server locally. The link pins the Cloud API, account and organization. Changing
+the connected account cannot silently redirect existing projects. Project
+configuration stays on the installation that created it; the managed server's
+subscription and host lifecycle remain controlled by Cloud.
+
+`servers.ensure(id)`, `resize(id, input)`, `retry(id)` and `removeManaged(id, input)`
+queue durable work. Poll `servers.get(id)` and read `managed.operation` for logs,
+errors and retry timing. An HTTP 202 means accepted; inspect operation completion
+before claiming readiness. Reads never create or resume a server.
+
+`servers.usage(id)` returns measured host usage and accessible projects. Missing
+measurements are `null`; purchased disk capacity is never substituted for bytes
+used. `servers.previewResize(id)` returns the current and purchased sizes, affected
+projects and a revision. After approval, send that revision with
+`confirmRestart: true` and an idempotency key to `servers.resize`.
+
+Reuse the same resize key after an uncertain response. A changed plan or project
+membership requires a fresh preview. Disk shrinking requires migration. Deleting
+a managed server also requires billing administration, no projects, no unsettled
+checkout and an ended subscription. Deleting one project never deletes a shared
+server or its siblings.
+
+Cloud includes projects registered by linked installations when checking whether
+a server is empty or safe to resize. A linked installation must finish or recover
+its active operation before another controller can change that server. Cloud
+cannot report complete service counts or build minutes for projects whose records
+live on another installation; those billing counters are `null` rather than a
+partial total. Host measurements and provider billing remain available.
+
+`servers.getNetworkSettings(id)` reads internet access and route-managed ingress
+ports. Pass `{ details: true }` to also read outbound rules, IP diagnostics and
+the revision required when editing rules.
+`updateNetworkSettings(id, { internetAccess, expectedInternetAccess, confirm: true })`
+changes outbound internet. To edit the destination allowlist too, include `egress`
+and the `expectedRevision` from the read. Disabling internet affects external APIs
+and builds for every project. Ingress, domains and private connectivity remain managed by
+project routing. Host terminals use the normal authenticated terminal endpoint;
+the provider supports one host terminal session per managed server at a time.
+
+Use these same operations through [MCP](/docs/api/mcp-tools), checking permissions,
+capabilities and operation results. See the [managed server guide](/docs/guides/cloud-workspaces)
+for deployment, capacity and recovery behavior.
+
+## Register a server
+
+On self-hosted Openship, register a machine you own as an SSH deployment target. Responses never include SSH secrets — passwords and key passphrases
+are encrypted at rest and only decrypted inside the SSH client. See the
+[custom servers guide](/docs/guides/custom-servers).
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.servers.create({
+  sshHost: "203.0.113.10",
+  sshUser: "root",
+  sshAuthMethod: "agent",
+});
+console.log(result);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/system/servers" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"sshHost":"203.0.113.10","sshUser":"root","sshAuthMethod":"agent"}'
+```
+
+</Tab>
+</Tabs>
+
+<TypeTable
+  type={{
+    sshHost: { type: 'string', description: 'SSH host / IP.', required: true },
+    name: { type: 'string', description: 'Display name.' },
+    sshPort: { type: 'number', description: 'SSH port.', default: '22' },
+    sshUser: { type: 'string', description: 'SSH user.', default: 'root' },
+    sshAuthMethod: { type: 'string', description: 'Auth method: password, key, or agent.' },
+    sshPassword: { type: 'string', description: 'SSH password (encrypted at rest).' },
+    sshKeyPath: { type: 'string', description: 'Path to a private key on the host.' },
+    sshKeyPassphrase: { type: 'string', description: 'Private-key passphrase (encrypted at rest).' },
+    sshJumpHost: { type: 'string', description: 'SSH jump / bastion host.' },
+    sshArgs: { type: 'string', description: 'Extra raw ssh args.' },
+  }}
+/>
+
+`PATCH /api/system/servers/:id` takes the same fields, all optional — only the keys you send are changed.
+
+## Managed server access and native processes
+
+Use the Openship `serverId`, not an Oblien VM ID. Each operation resolves that
+server's organization, subscription and namespace. API-key read-only restrictions
+and server resource permissions apply equally to native SDK, HTTP SDK and REST.
+The API and dashboard must be from a release that includes these operations.
+Existing server-list and server-detail response shapes are unchanged.
+
+`managedInfo`, `managedSshStatus`, `managedRuntimeStatus` and `managedWorkloads`
+are safe reads and never start a VM. Credentials, logs and all changes require
+**`server:admin`**. Gateway credentials grant full access to every project on that
+server. They do not grant access to another server, namespace or the reseller account.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const info = await ship.servers.managedInfo("srv_123");
+const processes = await ship.servers.managedWorkloads("srv_123");
+const access = await ship.servers.managedRuntimeCredential("srv_123", { confirm: true });
+// Store access.token as a secret; access.endpoint is the Runtime API origin.
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -H "Authorization: Bearer $OPENSHIP_TOKEN" "$OPENSHIP_API/api/system/servers/srv_123/managed/info"
+curl -X POST -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"confirm":true}' \
+  "$OPENSHIP_API/api/system/servers/srv_123/managed/runtime-api/credential"
+```
+
+</Tab>
+</Tabs>
+
+Credential responses are `private, no-store`. Runtime reveal does not enable a
+disabled API; use `enableManagedRuntime` explicitly. The Runtime API powers Openship,
+so there is no managed-server disable operation. `rotateManagedRuntimeCredential`
+requires `expectedRevision` from the current credential plus `confirm: true`.
+A stale revision returns `409 MANAGED_RUNTIME_TOKEN_CHANGED`; reveal the current
+token instead of repeatedly rotating after an uncertain response. SSH connection
+responses include host, port, username, temporary password, expiry and host-key
+fingerprint. SSH public-key replacement accepts one public key and affects root
+access to the server; private keys are rejected.
+
+`getNetworkSettings(id, { details: true })` (REST: `?details=true`) adds
+`egress`, `revision`, `ingressAll`, `privateIp`, `outboundIp` and `outboundMode`.
+Omitting this option preserves the original two-field response for existing clients.
+Send `expectedInternetAccess`, `expectedRevision`, `internetAccess`,
+`egress` and `confirm: true` to change outbound destinations. Use `*` alone for all
+hosts, or up to 50 hostnames/IPs. When disabling internet, omit `egress`; the
+provider clears it. Writes with `expectedRevision` return the detailed response;
+older internet-only writes retain the original response.
+A changed policy returns `409 SERVER_NETWORK_SETTINGS_CHANGED`.
+The operation patches outbound fields only; routing, private peers and proxy
+credentials keep their owning control flows.
+
+A manual workload runs inside the shared server as root and consumes its existing
+resources. It creates neither a project nor a public route. Creation accepts a
+name, shell command, absolute `workingDirectory`, `environment` entries of the
+form `KEY=value`, and a `restartPolicy` of `never`, `on-failure` or `always`.
+It saves the process **stopped**. Reuse its `idempotencyKey` with the identical
+request after a timeout; changing the payload under that key returns a conflict.
+Then use `controlManagedWorkload` with `start`, `stop` or `delete` and `confirm: true`.
+Only processes created as manual workloads can be changed here; application and
+platform workloads return `409 MANAGED_WORKLOAD_PROTECTED`. Logs require a tail
+of 1–500 lines and return at most 64 KiB. Lists omit commands and environments and
+show `unknown` when live process status cannot be observed.
+
+Mutations participate in the managed server's existing activity lock. Active
+builds, terminal sessions, migrations or lifecycle operations may delay/refuse
+changes. Resume, resize, subscription changes and image selection retain their
+existing workflows; these access controls do not bypass billing or replace the VM.
+
+## Server health check & install
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const health = await ship.servers.check("srv_123", { components: ["docker"] });
+console.log(health.ready, health.missing);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/system/check" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"serverId":"srv_123","components":["docker"]}'
+```
+
+</Tab>
+</Tabs>
+
+Test a connection before saving, check what a saved server has installed, then install or remove components.
+These routes identify the server by `serverId` in the **body** (not a URL param), and each handler runs its
+own per-server `server:admin` (or `server:read`) check.
+
+`POST /api/system/test-connection` opens an ephemeral SSH connection from body credentials and returns
+`{ ok, message }` — nothing is persisted. It requires the caller be an org owner/admin.
+
+<TypeTable
+  type={{
+    serverId: { type: 'string', description: 'The saved server to check.', required: true },
+    components: { type: 'string[]', description: 'Limit the check to these component names (validated against an allowlist). Omit to check the required + detected infrastructure components.' },
+  }}
+/>
+
+Returns `{ components, ready, missing }`.
+
+<TypeTable
+  type={{
+    serverId: { type: 'string', description: 'The saved server to install onto.', required: true },
+    component: { type: 'string', description: 'A single installable component name (e.g. docker, openresty, certbot). Validated against an allowlist.', required: true },
+    config: { type: 'object', description: 'Optional installer-specific configuration.', default: '{}' },
+  }}
+/>
+
+`POST /api/system/remove` mirrors `install` for a single removable component. `POST /api/system/install/stream`
+takes `{ serverId, components: string[], config? }` and returns a **Server-Sent Events** stream
+(`progress`, `log`, `complete`, `end`); it returns **409 `install_in_progress`** if a session is already
+running.
+
+<Callout title="SSE, not JSON" type="info">
+`install/stream` and `monitor/stream` are event streams. Read `GET /api/system/install/session` to poll a
+running session's state instead, or `GET /api/system/install/stream?id=<sessionId>` to re-attach after a page
+reload.
+</Callout>
+
+`GET /api/system/monitor/stream?serverId=<id>` emits a `stats` event every few seconds with CPU %, memory,
+disk, uptime, and load average gathered over SSH — `openship server monitor <serverId>`.
+
+## Per-server rate limiting
+
+Read or update the OpenResty request rate limit for a server. OpenResty on the target server is the source of
+truth; the API parses and rewrites its `ratelimit.conf`.
+
+```
+PATCH /api/system/servers/:id/rate-limit
+```
+
+<TypeTable
+  type={{
+    rps: { type: 'number', description: 'Requests per second (0 removes the limit). Floored to an integer.' },
+    burst: { type: 'number', description: 'Burst allowance above rps.' },
+    whitelist: { type: 'string[]', description: 'CIDR ranges exempt from the limit; invalid entries are dropped.' },
+  }}
+/>
+
+## Port-forward tunnels
+
+Desktop-only. Forward a remote server port to `localhost` on the operator's machine, VS Code style. Every
+handler additionally asserts desktop mode; on a non-desktop instance they refuse.
+
+```
+POST /api/system/servers/:id/tunnels
+```
+
+<TypeTable
+  type={{
+    remotePort: { type: 'number', description: 'Remote port to forward (1–65535).', required: true },
+    remoteHost: { type: 'string', description: 'Remote host to bind on the server side.', default: '127.0.0.1' },
+    localPort: { type: 'number', description: 'Preferred local port; 0 lets the OS choose. Omit for auto.' },
+    autoStart: { type: 'boolean', description: 'Reopen this tunnel automatically on desktop startup.', default: 'false' },
+  }}
+/>
+
+Start / stop / delete a saved tunnel with `POST .../tunnels/:tunnelId/start`, `.../stop`, and
+`DELETE .../tunnels/:tunnelId`. A started tunnel returns the actually-bound `localPort` and a
+`http://localhost:<port>` URL.
+
+## Server clusters and private networking
+
+On a self-hosted OpenShip instance, private networks connect 2–16 registered Linux
+servers over an existing private IPv4 network or a managed WireGuard mesh. Read
+`ship.servers.networkCapabilities()` for the available provider profiles and your
+management permissions. Local and desktop self-hosted controllers support
+network inventory and manual network checks. Oblien-managed Cloud does not offer
+this infrastructure management.
+
+Compute clusters are separate records that group selected servers on an existing
+private network. Use the `*Network` methods and `/api/system/networks` for networking,
+and `*ComputeCluster` methods and `/api/system/compute-clusters` for those groups.
+The older `*Cluster` methods and `/api/system/clusters` URLs remain compatibility
+aliases for private networks.
+
+For existing networks, create saves configuration; verify starts a separate, persisted operation.
+Reuse the same `requestId` when retrying an unchanged creation request. Update,
+verify, and remove require the network's current `revision`. Concurrent edits
+return a conflict, and active verification blocks configuration changes.
+
+```ts
+const network = await ship.servers.createNetwork({
+  requestId: crypto.randomUUID(),
+  name: "Production EU",
+  network: {
+    mode: "native",
+    cidrs: ["10.20.0.0/24"],
+    mtu: 1400,
+    probePort: 51821,
+  },
+  members: [
+    { serverId: "srv_a", providerId: "hetzner-dedicated", privateIp: "10.20.0.2" },
+    { serverId: "srv_b", providerId: "hetzner-dedicated", privateIp: "10.20.0.3" },
+  ],
+});
+const verification = await ship.servers.verifyNetwork({
+  networkId: network.id,
+  revision: network.revision,
+});
+console.log(verification.id, verification.status);
+```
+
+Subscribe to the read-only SSE endpoint `GET /api/system/networks/stream` for
+verification progress, including after reconnecting. Use
+`ship.servers.getNetwork({ networkId })` to read a saved snapshot. Reports contain
+per-direction TCP, UDP, MTU, UDP round-trip latency, packet loss, and jitter
+results. Managed WireGuard reports also contain per-peer handshake observations.
+Hosts need Linux, Python 3, iproute2, a persistent
+machine identity, and working private interfaces and routes. The chosen probe
+port must permit TCP and UDP between members. The inspector
+`ship.servers.inspectNetwork(serverId)` reads interfaces without configuring them.
+
+Temporary authenticated listeners bind to the selected private addresses and
+expire locally if cleanup loses contact. Runs expire after four minutes;
+successful observations are considered stale after fifteen minutes. The probe
+tests its selected port and packet size. Encryption and application-port access
+are not verified.
+
+After a verification has finished, optionally measure a selected connection in
+both directions using the same endpoint:
+
+```ts
+const network = await ship.servers.getNetwork({ networkId: "network_id" });
+const speedTest = await ship.servers.verifyNetwork({
+  networkId: network.id,
+  revision: network.revision,
+  speedTest: { sourceServerId: "srv_a", targetServerId: "srv_b" },
+});
+```
+
+Speed tests first check connectivity, then transfer at most 32 MiB or for three
+seconds per direction. `report.throughput` records receiver-confirmed bytes,
+elapsed time, and Mbps, or a specific transfer error. Ordinary verification does
+not send bulk traffic. Both servers must belong to the private network; a different test
+cannot start while a verification is active. Repeating an active request for the
+same pair reuses its run. Progress and final results use the same SSE stream.
+
+Network reads require fleet-wide server read access. Management requires
+fleet-wide server admin access, with each member also authorized. Removing an
+adopted private network removes OpenShip's inventory records; servers and the
+externally managed network remain. Managed networks use the reviewed cleanup
+flow below. Membership and active operations must be settled before removing a
+server. A private network connects hosts; a [compute cluster](#compute-clusters)
+with a ready runtime can run [application replicas and databases](/docs/api/projects#scale-a-stateless-application-on-a-cluster).
+[Shared storage](#share-files-across-servers) is enabled separately. Provider
+API/VLAN provisioning remains outside the managed-network setup.
+
+### Managed private networks
+
+Managed networking creates an encrypted WireGuard mesh with automatically
+allocated private addresses. Start server preparation to check infrastructure,
+install missing tools, and create a reviewable plan:
+
+```ts
+const preparation = await ship.servers.prepareManagedNetwork({
+  requestId: crypto.randomUUID(),
+  name: "Production mesh",
+  members: [
+    { serverId: "srv_a", providerId: "hetzner-dedicated" },
+    { serverId: "srv_b", providerId: "custom" },
+  ],
+});
+console.log(preparation.id, preparation.status, preparation.hosts);
+
+for await (const event of ship.servers.managedNetworkPreparationEvents(preparation.id)) {
+  if (event.event === "snapshot") {
+    const { run } = JSON.parse(event.data);
+    console.log(run.sequence, run.status, run.hosts);
+  }
+}
+```
+
+The subscription sends a complete saved `snapshot` on connect and whenever progress
+changes, then `complete` before closing for a settled attempt. The dashboard reconnects
+with backoff after a dropped connection. SDK callers can reattach using the same
+method; a reconnect never starts work. Replace local state with each snapshot instead
+of appending its logs. The monotonic `sequence` also protects against late responses.
+
+`ship.servers.getManagedNetworkPreparation({ preparationId })` remains available for
+a single saved-state read. When its status is `ready`, use its `operationId` to
+read the network plan. Retry a failed or interrupted preparation by calling
+`prepareManagedNetwork` with the same input and request ID. Already healthy tools
+are checked and reused. `listManagedNetworkPreparations()` lists recent work that
+still needs attention or review. No tunnel changes start during preparation.
+
+To discard a stopped preparation, call
+`discardManagedNetworkPreparation({ preparationId, sequence })` with its latest
+progress sequence. An unapplied plan can be discarded with
+`discardManagedNetworkPlan({ operationId, planHash })`. Both require fleet
+administration. The preparation and any unapplied plan close in one transaction
+and disappear from pending setup; existing servers, services, and installed tools
+are retained. Cancelled records remain readable for diagnostics and prevent late
+retries from reviving discarded work. Active preparation must finish first.
+
+To remove one server from an unfinished **initial cluster setup**, call
+`removeManagedNetworkPreparationMember({ preparationId, serverId, sequence, requestId })`.
+For an initial network operation, use
+`removeManagedNetworkOperationMember({ operationId, serverId, sequence, planHash, requestId })`.
+At least two servers must remain. Use a new UUID for `requestId`, then reuse it if
+the response is lost. A different selection requires a different request.
+Both methods require fleet administration and return `{ preparation, operation }`.
+The original records link to the replacement through `replacementPreparationId`;
+settings and diagnostics remain available, and the original request cannot resume.
+
+Before network apply, removal cancels the old selection and saves the remaining
+servers in a paused (`pending`) preparation. After a partial apply, it also has a
+`cleanupOperationId`. OpenShip reuses rollback to restore this attempt's network
+changes on **all original hosts**, including peer entries for the removed server.
+The server, its workloads, disks, other networks, and shared installed tools remain.
+The pending preparation stream stays open while cleanup runs; subscribe to the
+cleanup operation for per-host progress. An unreachable or externally modified
+host keeps cleanup and reservations open. Retry that operation with
+`action: "rollback"` after resolving the problem. Once all hosts acknowledge
+rollback, preparation remains paused. Explicitly call `prepareManagedNetwork` with
+the replacement's saved input to retry; it rejects the request until cleanup is
+complete. Removal, cleanup retries, and stream reconnection do not start preparation.
+The resulting network plan always requires a fresh review and apply.
+Established clusters use their existing reviewed membership-change workflow.
+
+For hosts that already meet the prerequisites, `planManagedNetwork` accepts the
+same input and performs read-only inspection without installing packages.
+
+After review, pass that operation ID and hash to
+`ship.servers.applyManagedNetwork({ operationId, planHash, action: "apply" })`.
+Plans expire after fifteen minutes and reject changes to the cluster revision,
+host identities, or inspected networking. Subscribe with
+`ship.servers.managedNetworkOperationEvents(operationId)` for durable progress;
+`getManagedNetworkOperation({ operationId })` provides a single state read.
+The same operation supports `action: "resume"` or `action: "rollback"` after an
+interruption. Active work is idempotent and cannot be started twice.
+Once network changes have started, discard is blocked. Use `action: "rollback"`
+to clean up an unfinished new cluster or restore an existing cluster's previous
+network. Every host must acknowledge cleanup before inventory and reservations
+are released. An unreachable host keeps recovery open; retry rollback when access
+is restored. A restored existing cluster can then use the reviewed removal flow.
+
+`ship.servers.clusterEvents()` streams overview snapshots containing `clusters` and
+`preparations`. All three subscription methods accept `{ signal }` to disconnect a
+viewer without cancelling setup. Streams use saved database state, validate fleet
+read permission again during the subscription, and reconcile every fifteen seconds
+to detect another controller's updates and expired worker leases.
+
+Hosts require Linux with WireGuard kernel support, Python 3.8+, iproute2, systemd,
+and root or passwordless sudo. Preparation automatically installs missing
+Python 3.8+, iproute2 (4.15+), and WireGuard tools (1.0+) through the shared toolchain.
+It verifies installation before inspection. Kernel, init-system, and privilege
+problems stop at a named step; OpenShip does not replace kernels or reboot hosts.
+Installed tools remain installed if the later network operation rolls back. Supported
+firewalls are no active host firewall, raw iptables, or nftables with standard
+`inet filter input/output` chains and no additional filtering IPv4 input/output
+base chains. UFW, firewalld, and unsupported nftables layouts fail inspection.
+Provider firewalls must allow the reviewed transport ports (default 51820/UDP).
+Transport uses reachable IPv4 endpoints with no relay or automatic NAT traversal.
+IPv6 SSH management works when explicit IPv4 transport endpoints are supplied.
+Preparation checks local prerequisites and routes; it does not prove UDP access
+between hosts. After Apply, the `transport` step stages WireGuard endpoints and
+owned host firewall rules. The `handshake` step tests every peer before `configure`
+assigns private addresses and routes. Failures retain per-peer endpoints and ports
+and restore the previous configuration. Provider firewall or NAT changes require
+administrator action before an explicit retry.
+
+Private keys stay on their hosts. Each host has a persistent twenty-minute
+rollback timer, so incomplete setup can restore even if the controller disconnects
+or the host reboots. OpenShip changes only its own interface, peer routes, and
+firewall rules. The transport stage uses the same receipt and rollback timer;
+successful promotion preserves the verified interface and keys. Handshakes and
+every directed TCP/UDP/MTU check must succeed before
+commit. Committed networking restarts locally without the controller. Unreachable
+or externally edited hosts retain their claims until recovery is confirmed.
+
+For managed edits, include `clusterId` and `revision` in a new plan. Membership,
+transport endpoints/ports, MTU, and `rotateKeys` can change; existing addresses and
+the allocated subnet remain stable. To remove a managed cluster, plan with
+`intent: "remove"` and review its host cleanup before applying. These network
+operations do not drain workloads or migrate their data.
+
+## Compute clusters
+
+Create a compute cluster by selecting servers already attached to a private network.
+The network and compute-cluster memberships are independent. Reuse the same
+`requestId` to retry an unchanged create request; updates and removals require the
+compute cluster's current `revision`.
+
+```ts
+const cluster = await ship.servers.createComputeCluster({
+  requestId: crypto.randomUUID(),
+  name: "Production EU",
+  networkId: "network_id",
+  serverIds: ["srv_a", "srv_b"],
+});
+console.log(cluster.id, cluster.networkId, cluster.serverIds);
+```
+
+`removeComputeCluster({ clusterId, revision })` removes this grouping and retains
+its servers and private network. `ship.servers.infrastructure(serverId)` reports
+the networks and compute cluster associated with a server.
+
+### Managed K3s setup
+
+Creating a pool does not install software. Start its separate runtime operation
+after connecting the selected servers to their private network:
+
+```ts
+const runtime = await ship.servers.setupClusterRuntime({
+  clusterId: "cluster_id",
+  revision: 1,
+  requestId: crypto.randomUUID(),
+});
+console.log(runtime.status);
+
+const abort = new AbortController();
+for await (const event of ship.servers.clusterRuntimeEvents("cluster_id", { signal: abort.signal })) {
+  console.log(event.data);
+  abort.abort(); // Close the subscription when leaving the setup view.
+  break;
+}
+```
+
+Setup installs missing tools, pins and checksum-verifies K3s, configures private
+host firewall rules, joins the servers, and checks actual pod traffic, Services
+and DNS. One control server is used for one/two-member pools; larger pools use
+three controls and additional workers. Initial support requires Linux
+amd64/arm64, systemd, root or passwordless sudo, disabled swap, and unfiltered or
+raw iptables host firewalls. Provider private-network ACLs remain the operator's
+responsibility; the dashboard lists exact private peer ports. These ports should
+not be exposed publicly.
+
+Read saved progress with `getClusterRuntime({ clusterId })`; it returns `null`
+before setup. Retry an interrupted or failed operation explicitly using
+`retryClusterRuntime({ clusterId, sequence })`. The retry retains the pinned
+version/configuration and reconciles host state. Reconnecting to SSE never starts
+or retries installation. Runtime streams remain open to observe later changes;
+cancel them when leaving the page. Snapshots contain dated verification, not
+continuous workload monitoring.
+
+`removeClusterRuntime({ clusterId, sequence })` starts owned cleanup. Application
+workloads, persistent volumes and additional operators must be removed first.
+Cleanup preserves the private network and existing Docker applications, and can
+resume after a partial removal. Removing the pool or changing its members/network
+is blocked while a runtime remains installed or unfinished.
+
+Once setup is ready, select the cluster from a project's topology to run the
+application across its servers, or add managed PostgreSQL and Redis databases.
+Existing project deployments move only when you select the new target and deploy.
+
+### Share files across servers
+
+Use **Share storage** on the cluster to prepare independent copies on at least two
+servers. The setup installs required tools, checks the selected empty directories,
+configures shared storage and verifies a write/read across servers. It never
+formats disks. Its technical implementation is shown in collapsed details.
+
+`setupClusterStorage` accepts the reviewed disks, copy count and a stable request ID.
+Read `getClusterStorage` or subscribe to `clusterStorageEvents` until setup is ready.
+After an interruption, inspect the saved error and explicitly retry with the latest
+sequence. Use `observe: true` when reading status for current capacity and disk health.
+
+Choose an external backup destination to enable recoverable file archives. Projects
+can then create, mount, expand, back up and restore their own shared volumes.
+Replicated copies keep files available inside the cluster; an external backup
+provides a recovery point after deletion or data corruption.
+
+Disconnect and remove project volumes before removing shared storage. Empty-storage
+cleanup preserves external archives and the cluster's other storage classes. Remove
+shared storage before removing the cluster runtime.
+
+## Operations
+
+{/* api-operations:start */}
+
+### Managed containers
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Apply a managed container configuration. | `servers.applyContainer(id, input, options?)` | `POST /api/system/servers/:id/containers/:component/apply/stream`<br />`server:write` |
+| Stream a managed-container apply session. | `servers.containerApplyEvents(id, input, options?)` | `GET /api/system/servers/:id/containers/:component/apply/stream`<br />`server:read` |
+| List managed containers across accessible servers. | `servers.listAllContainers()` | `GET /api/system/containers`<br />`server:read` |
+| Refresh managed-container state across accessible servers. | `servers.scanAllContainers()` | `POST /api/system/containers/scan`<br />`server:write` |
+| List managed containers with available updates. | `servers.containersBehind()` | `GET /api/system/containers/behind`<br />`server:read` |
+| List managed-container health or configuration issues. | `servers.containerIssues()` | `GET /api/system/containers/issues`<br />`server:read` |
+| Read currently active container apply sessions. | `servers.applyingContainers()` | `GET /api/system/containers/applying`<br />`server:read` |
+| Apply requested managed-container changes across servers. | `servers.applyAllContainers(input?)` | `POST /api/system/containers/apply-all`<br />`server:write` |
+| List one server’s managed containers. | `servers.listContainers(id)` | `GET /api/system/servers/:id/containers`<br />`server:read` |
+| Refresh one server’s managed-container state. | `servers.scanContainers(id)` | `POST /api/system/servers/:id/containers/scan`<br />`server:write` |
+| Read a container’s active apply session. | `servers.containerApplySession(id, input)` | `GET /api/system/servers/:id/containers/:component/apply/session`<br />`server:read` |
+
+### Components and installation
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read an installation session. | `servers.getInstallSession(input?)` | `GET /api/system/install/session`<br />`server:read` |
+| Answer a pending installation prompt. | `servers.respondToInstall(input)` | `POST /api/system/install/respond`<br />`server:admin` |
+| Submit installation of selected components. | `servers.installComponents(id, input, options?)` | `POST /api/system/install/stream`<br />`server:admin` |
+| Stream installation progress. | `servers.installEvents(input?, options?)` | `GET /api/system/install/stream`<br />`server:read` |
+| List the server’s managed components. | `servers.listModules(id)` | `GET /api/system/servers/:id/modules`<br />`server:read` |
+| Refresh managed-component state. | `servers.scanModules(id)` | `POST /api/system/servers/:id/modules/scan`<br />`server:write` |
+| Apply a managed component’s configuration. | `servers.applyModule(id, input)` | `POST /api/system/servers/:id/modules/:module/apply`<br />`server:write` |
+| Install one managed component. | `servers.installComponent(id, input)` | `POST /api/system/install`<br />`server:admin` |
+| Remove a managed component. | `servers.removeComponent(id, input)` | `POST /api/system/remove`<br />`server:admin` |
+
+### Server lifecycle
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Stream server monitoring data. | `servers.monitor(id, options?)` | `GET /api/system/monitor/stream`<br />`server:read` |
+| List accessible connected or managed servers with their supported capabilities. | `servers.list()` | `GET /api/system/servers`<br />`server:list` |
+| Register an SSH server. | `servers.create(input)` | `POST /api/system/servers`<br />`server:write` |
+| Test the supplied SSH connection configuration. | `servers.testConnection(input)` | `POST /api/system/test-connection`<br />`server:write` |
+| Read the private networks and compute cluster associated with a server. | `servers.infrastructure(id)` | `GET /api/system/servers/:id/infrastructure`<br />`server:read` |
+| Read server details, managed plan, live provider state and durable operation progress. | `servers.get(id)` | `GET /api/system/servers/:id`<br />`server:read` |
+| Read server reachability. | `servers.reachability(id)` | `GET /api/system/servers/:id/reachability`<br />`server:read` |
+| Change registered server configuration. | `servers.update(id, input)` | `PATCH /api/system/servers/:id`<br />`server:write` |
+| Inspect workloads affected by removing the server. | `servers.deletionPreview(id)` | `GET /api/system/servers/:id/deletion-preview`<br />`server:read` |
+| Remove a server using the requested workload cleanup policy. | `servers.remove(id, input?)` | `DELETE /api/system/servers/:id`<br />`server:admin` |
+| Execute an authorized command on the server. | `servers.exec(id, input)` | `POST /api/system/servers/:id/exec`<br />`server:admin` |
+| Run a server health check. | `servers.check(id, input?)` | `POST /api/system/check`<br />`server:admin` |
+| Scan ports on an authorized server. | `servers.scanPorts(id)` | `POST /api/system/servers/:id/ports/scan`<br />`server:read` |
+
+### Private networks
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read infrastructure availability, provider profiles, and supported network operations. | `servers.networkCapabilities()` | `GET /api/system/networks/capabilities`<br />`server:read` · Self-hosted |
+| List organization-owned private networks and their latest verification. | `servers.listNetworks()` | `GET /api/system/networks`<br />`server:read` · Self-hosted |
+| Read a private network, its server attachments, and verification report. | `servers.getNetwork(input)` | `GET /api/system/networks/:id`<br />`server:read` · Self-hosted |
+| Save an existing private network using an idempotent request ID. | `servers.createNetwork(input)` | `POST /api/system/networks`<br />`server:admin` · Self-hosted |
+| Update idle native-network inventory using its current revision; invalidate earlier verification. | `servers.updateNetwork(input)` | `PATCH /api/system/networks/:id`<br />`server:admin` · Self-hosted |
+| Verify private connectivity, latency, and loss; optionally measure bounded throughput for a selected pair. | `servers.verifyNetwork(input)` | `POST /api/system/networks/:id/verify`<br />`server:admin` · Self-hosted |
+| Remove unused native-network inventory at the current revision, preserving servers and external networks. | `servers.removeNetwork(input)` | `DELETE /api/system/networks/:id`<br />`server:admin` · Self-hosted |
+| Revise the private connection policy of stopped setup using its current progress sequence and an idempotent request ID. | `servers.reviseManagedNetworkAccess(input)` | `PATCH /api/system/networks/preparations/:preparationId/connections`<br />`server:admin` · Self-hosted |
+| Prepare missing networking tools on selected servers, retain per-step logs, and produce a reviewable plan. Repeat the same request to retry a failed preparation. | `servers.prepareManagedNetwork(input)` | `POST /api/system/networks/preparations`<br />`server:admin` · Self-hosted |
+| Read saved prerequisite checks, installation logs, failures, and the resulting network operation. | `servers.getManagedNetworkPreparation(input)` | `GET /api/system/networks/preparations/:preparationId`<br />`server:read` · Self-hosted |
+| Discard stopped setup and its unapplied plan using the current progress sequence. Installed tools and servers are retained; completed network cleanup is required once apply has started. | `servers.discardManagedNetworkPreparation(input)` | `DELETE /api/system/networks/preparations/:preparationId`<br />`server:admin` · Self-hosted |
+| Remove one server from stopped initial setup and save a paused replacement selection. Preparation starts only on explicit retry; diagnostics, services, data, and installed tools are retained. | `servers.removeManagedNetworkPreparationMember(input)` | `DELETE /api/system/networks/preparations/:preparationId/members/:serverId`<br />`server:admin` · Self-hosted |
+| Remove a server from an unfinished initial network operation. Restore its changes on the original hosts and save the remaining selection, paused until preparation is explicitly retried. | `servers.removeManagedNetworkOperationMember(input)` | `DELETE /api/system/networks/operations/:operationId/members/:serverId`<br />`server:admin` · Self-hosted |
+| List recent server preparations that still need attention or network review. | `servers.listManagedNetworkPreparations()` | `GET /api/system/networks/preparations`<br />`server:read` · Self-hosted |
+| Subscribe to saved preparation snapshots and completion. Reconnecting only reads progress; it never restarts preparation. | `servers.managedNetworkPreparationEvents(id, options?)` | `GET /api/system/networks/preparations/:preparationId/stream`<br />`server:read` · Self-hosted |
+| Subscribe to durable network apply, verification, and recovery progress. | `servers.managedNetworkOperationEvents(id, options?)` | `GET /api/system/networks/operations/:operationId/stream`<br />`server:read` · Self-hosted |
+| Subscribe to private-network overview and unfinished preparation snapshots. | `servers.clusterEvents(options?)` | `GET /api/system/networks/stream`<br />`server:read` · Self-hosted |
+| Inspect servers and persist a reviewable WireGuard plan without changing host networking. | `servers.planManagedNetwork(input)` | `POST /api/system/networks/plans`<br />`server:admin` · Self-hosted |
+| Read a managed network plan, per-host progress, verification, and recovery state. | `servers.getManagedNetworkOperation(input)` | `GET /api/system/networks/operations/:operationId`<br />`server:read` · Self-hosted |
+| Apply an approved network plan, resume an interrupted operation, or restore its previous network. | `servers.applyManagedNetwork(input)` | `POST /api/system/networks/operations/:operationId/apply`<br />`server:admin` · Self-hosted |
+| Discard an unapplied plan and its stopped preparation atomically. Active or unresolved host changes must be recovered through the network operation. | `servers.discardManagedNetworkPlan(input)` | `DELETE /api/system/networks/operations/:operationId`<br />`server:admin` · Self-hosted |
+| Inspect a server’s machine identity and private interfaces without changing its network. | `servers.inspectNetwork(id)` | `POST /api/system/servers/:id/network/inspect`<br />`server:admin` · Self-hosted |
+
+### Compute clusters
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List organization-owned compute clusters and their private networks. | `servers.listComputeClusters()` | `GET /api/system/compute-clusters`<br />`server:read` · Self-hosted |
+| Read a compute cluster, its selected servers, and private network. | `servers.getComputeCluster(input)` | `GET /api/system/compute-clusters/:id`<br />`server:read` · Self-hosted |
+| Group selected servers on an existing private network using an idempotent request ID. | `servers.createComputeCluster(input)` | `POST /api/system/compute-clusters`<br />`server:admin` · Self-hosted |
+| Update a compute cluster and its selected servers using the current revision. | `servers.updateComputeCluster(input)` | `PATCH /api/system/compute-clusters/:id`<br />`server:admin` · Self-hosted |
+| Remove compute-cluster inventory at the current revision, retaining its servers and private network. | `servers.removeComputeCluster(input)` | `DELETE /api/system/compute-clusters/:id`<br />`server:admin` · Self-hosted |
+
+### Cluster runtime
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read saved K3s setup, verification and cleanup progress; null before setup. | `servers.getClusterRuntime(input)` | `GET /api/system/compute-clusters/:id/runtime`<br />`server:read` · Self-hosted |
+| Start automated K3s setup with the compute-cluster revision and an idempotent request ID. | `servers.setupClusterRuntime(input)` | `POST /api/system/compute-clusters/:id/runtime`<br />`server:admin` · Self-hosted |
+| Resume failed or interrupted setup or removal using its current progress sequence. | `servers.retryClusterRuntime(input)` | `POST /api/system/compute-clusters/:id/runtime/retry`<br />`server:admin` · Self-hosted |
+| Remove the owned runtime after verifying an empty cluster, retaining Docker services and networking. | `servers.removeClusterRuntime(input)` | `DELETE /api/system/compute-clusters/:id/runtime`<br />`server:admin` · Self-hosted |
+| Subscribe to saved runtime progress through read-only, replayable SSE. | `servers.clusterRuntimeEvents(id, options?)` | `GET /api/system/compute-clusters/:id/runtime/stream`<br />`server:read` · Self-hosted |
+
+### Shared storage
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read saved storage setup and capacity, or request current disk and volume health with observe=true. | `servers.getClusterStorage(input)` | `GET /api/system/compute-clusters/:id/storage`<br />`server:read` · Self-hosted |
+| Enable shared storage across reviewed cluster servers and empty directories. Installs prerequisites without formatting disks; a stable request ID avoids duplicate setup. | `servers.setupClusterStorage(input)` | `POST /api/system/compute-clusters/:id/storage`<br />`server:admin` · Self-hosted |
+| Explicitly resume failed or interrupted setup or removal using its current sequence. | `servers.retryClusterStorage(input)` | `POST /api/system/compute-clusters/:id/storage/retry`<br />`server:admin` · Self-hosted |
+| Configure an external backup destination using the current storage sequence. An existing destination is preserved so its archives remain recoverable. | `servers.configureClusterStorageBackup(input)` | `PATCH /api/system/compute-clusters/:id/storage/backup`<br />`server:admin` · Self-hosted |
+| Remove an empty storage installation using its latest sequence. Persistent or retained volumes block removal; external archives are preserved. | `servers.removeClusterStorage(input)` | `DELETE /api/system/compute-clusters/:id/storage`<br />`server:admin` · Self-hosted |
+| Subscribe to saved storage setup and removal progress through replayable SSE. | `servers.clusterStorageEvents(id, options?)` | `GET /api/system/compute-clusters/:id/storage/stream`<br />`server:read` · Self-hosted |
+
+### Docker Swarm
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Connect a verified existing Swarm manager for new project deployments. Requires fleet administration. Reuse requestId after a lost response; does not alter existing stacks or nodes. | `servers.connectSwarm(id, input)` | `POST /api/system/servers/:id/swarm/connect`<br />`server:admin` · Self-hosted |
+
+### Docker Swarm inspection
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Inspect membership on a connected self-hosted Docker server. Set details=true for a manager's stacks, services and nodes. Requires server administration; does not adopt or change workloads. | `servers.inspectSwarm(id, input?)` | `GET /api/system/servers/:id/swarm`<br />`server:admin` · Self-hosted |
+
+### Legacy network methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Compatibility method for private-network capabilities; prefer networkCapabilities. | `servers.clusterCapabilities()` | `GET /api/system/clusters/capabilities`<br />`server:read` · Self-hosted |
+| Compatibility method for private-network inventory; prefer listNetworks. | `servers.listClusters()` | `GET /api/system/clusters`<br />`server:read` · Self-hosted |
+| Read private-network details using the legacy clusterId input; prefer getNetwork. | `servers.getCluster(input)` | `GET /api/system/clusters/:id`<br />`server:read` · Self-hosted |
+| Create private-network inventory using the legacy method; prefer createNetwork. | `servers.createCluster(input)` | `POST /api/system/clusters`<br />`server:admin` · Self-hosted |
+| Update private-network inventory using the legacy clusterId input; prefer updateNetwork. | `servers.updateCluster(input)` | `PATCH /api/system/clusters/:id`<br />`server:admin` · Self-hosted |
+| Verify private-network connectivity using the legacy clusterId input; prefer verifyNetwork. | `servers.verifyCluster(input)` | `POST /api/system/clusters/:id/verify`<br />`server:admin` · Self-hosted |
+| Remove native-network inventory using the legacy clusterId input; prefer removeNetwork. | `servers.removeCluster(input)` | `DELETE /api/system/clusters/:id`<br />`server:admin` · Self-hosted |
+
+### Git credentials
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the server’s GitHub authentication status. | `servers.githubStatus(id)` | `GET /api/system/servers/:id/github`<br />`server:read` · Self-hosted |
+| Start GitHub authentication for a server. | `servers.connectGitHub(id)` | `POST /api/system/servers/:id/github/connect`<br />`server:write` · Self-hosted |
+| Poll a server’s GitHub authentication flow. | `servers.pollGitHubConnection(id)` | `GET /api/system/servers/:id/github/connect/poll`<br />`server:read` · Self-hosted |
+| Store a GitHub token for a server. | `servers.setGitHubToken(id, input)` | `PUT /api/system/servers/:id/github/token`<br />`server:write` · Self-hosted |
+| Generate a GitHub SSH key on the server. | `servers.generateGitHubKey(id)` | `POST /api/system/servers/:id/github/ssh-key`<br />`server:write` · Self-hosted |
+| Select repository deploy keys for server clones. | `servers.useGitHubDeployKeys(id)` | `PUT /api/system/servers/:id/github/deploy-key-mode`<br />`server:write` · Self-hosted |
+| Remove the server’s GitHub authentication. | `servers.disconnectGitHub(id)` | `DELETE /api/system/servers/:id/github`<br />`server:write` · Self-hosted |
+
+### Networking
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the server’s port-forward configurations. | `servers.listTunnels(id)` | `GET /api/system/servers/:id/tunnels`<br />`server:read` · Self-hosted |
+| Create or update a port-forward configuration. | `servers.saveTunnel(id, input)` | `POST /api/system/servers/:id/tunnels`<br />`server:write` · Self-hosted |
+| Start an authorized port forward. | `servers.startTunnel(id, input)` | `POST /api/system/servers/:id/tunnels/:tunnelId/start`<br />`server:write` · Self-hosted |
+| Stop a port forward. | `servers.stopTunnel(id, input)` | `POST /api/system/servers/:id/tunnels/:tunnelId/stop`<br />`server:write` · Self-hosted |
+| Remove a port-forward configuration. | `servers.removeTunnel(id, input)` | `DELETE /api/system/servers/:id/tunnels/:tunnelId`<br />`server:write` · Self-hosted |
+| Read per-server request rate-limit configuration. | `servers.getRateLimit(id)` | `GET /api/system/servers/:id/rate-limit`<br />`server:read` |
+| Update per-server request rate limits. | `servers.updateRateLimit(id, input)` | `PATCH /api/system/servers/:id/rate-limit`<br />`server:admin` |
+
+### Managed servers
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Create a server identity without purchasing or provisioning resources. | `servers.createManaged(input)` | `POST /api/system/servers/managed`<br />`server:admin` |
+| List servers available through the connected Cloud account without creating resources or copying projects. | `servers.availableManaged()` | `GET /api/system/servers/managed/available`<br />`server:admin` |
+| Link an existing Cloud server to this organization after verifying its administrator and account identity; return the local serverId for deployments. | `servers.connectManaged(input)` | `POST /api/system/servers/managed/connect`<br />`server:admin` |
+| Measure host usage and accessible project disk data separately from provisioned capacity. | `servers.usage(id)` | `GET /api/system/servers/:id/usage`<br />`server:read` |
+| Queue idempotent provisioning or resume of the subscribed Docker host. | `servers.ensure(id)` | `POST /api/system/servers/:id/ensure`<br />`server:write` |
+| Retry a failed server operation using its saved provider identity and recovery checkpoint. | `servers.retry(id)` | `POST /api/system/servers/:id/retry`<br />`server:admin` |
+| Preview purchased capacity and projects that may restart, without changing the host. | `servers.previewResize(id)` | `GET /api/system/servers/:id/resize`<br />`server:read` |
+| Queue a reviewed resize with a revision, request key and explicit restart confirmation. | `servers.resize(id, input)` | `POST /api/system/servers/:id/resize`<br />`server:admin` |
+| Remove an empty server after its subscription ends and provider cleanup is confirmed. | `servers.removeManaged(id, input)` | `DELETE /api/system/servers/:id/managed`<br />`server:admin` |
+| Read outbound internet and route-managed ingress without starting the server; request details for egress rules, IP diagnostics and a revision. | `servers.getNetworkSettings(id, input?)` | `GET /api/system/servers/:id/network-settings`<br />`server:read` |
+| Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity. | `servers.updateNetworkSettings(id, input)` | `PATCH /api/system/servers/:id/network-settings`<br />`server:admin` |
+
+### Observe
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read accessible deployment servers, including linked managed servers, with their capabilities and readiness. | `servers.destinations()` | `GET /api/system/servers/destinations`<br />`server:list` |
+
+### Managed server controls
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the current outbound connection and revision without proxy credentials. Does not start the managed server. | `servers.managedOutbound(id)` | `GET /api/system/servers/:id/managed/outbound`<br />`server:read` |
+| List available managed outbound IPs and countries for this owned server, without credentials or internal pool identifiers. | `servers.managedOutboundOptions(id)` | `GET /api/system/servers/:id/managed/outbound/options`<br />`server:read` |
+| Apply a reviewed managed IP or custom public IPv4 HTTP/HTTPS proxy using expectedRevision and confirm:true. Changes outgoing connections for all projects; preserves internet policy, ingress and routes. Credentials are never returned or audited. | `servers.setManagedOutbound(id, input)` | `PATCH /api/system/servers/:id/managed/outbound`<br />`server:admin` |
+| Read the selected managed server image, operating system, lifecycle and purchased allocation. Does not start the VM or return its raw configuration. | `servers.managedInfo(id)` | `GET /api/system/servers/:id/managed/info`<br />`server:read` |
+| Read a bounded tail of managed server boot logs. Requires server admin; logs may contain application output. | `servers.managedBootLogs(id, input)` | `POST /api/system/servers/:id/managed/boot-logs`<br />`server:admin` |
+| Read SSH enablement and public connection instructions for this managed server. Never returns passwords. | `servers.managedSshStatus(id)` | `GET /api/system/servers/:id/managed/ssh`<br />`server:read` |
+| Enable or disable SSH with explicit confirmation and expected enablement. Changes all SSH users on this server. | `servers.setManagedSsh(id, input)` | `PATCH /api/system/servers/:id/managed/ssh`<br />`server:admin` |
+| Replace the root authorized public key on this server. Accepts one OpenSSH public key; never a private key. Requires confirmation. | `servers.setManagedSshKey(id, input)` | `PUT /api/system/servers/:id/managed/ssh/key`<br />`server:admin` |
+| Set the root SSH password on this managed server. Requires confirmation. The password is never returned or audited. | `servers.setManagedSshPassword(id, input)` | `PUT /api/system/servers/:id/managed/ssh/password`<br />`server:admin` |
+| Issue a short-lived SSH connection for this managed server. Requires server admin and confirmation. Treat its password as a secret. | `servers.managedSshConnection(id, input)` | `POST /api/system/servers/:id/managed/ssh/connection`<br />`server:admin` |
+| Read the managed server Runtime API status without enabling it or returning a token. | `servers.managedRuntimeStatus(id)` | `GET /api/system/servers/:id/managed/runtime-api`<br />`server:read` |
+| Enable the Runtime API used by Openship for deployments and server management. Requires server admin and active server entitlement. | `servers.enableManagedRuntime(id, input)` | `POST /api/system/servers/:id/managed/runtime-api/enable`<br />`server:admin` |
+| Reveal the current workspace-only Runtime API credential. Requires server admin and confirmation. Does not enable the service or issue an account/namespace token. | `servers.managedRuntimeCredential(id, input)` | `POST /api/system/servers/:id/managed/runtime-api/credential`<br />`server:admin` |
+| Rotate the Runtime API credential after reviewing the current revision. Invalidates prior tokens and sessions. A stale revision cannot repeat a successful rotation. | `servers.rotateManagedRuntimeCredential(id, input)` | `POST /api/system/servers/:id/managed/runtime-api/rotate`<br />`server:admin` |
+| List native managed processes with live status, capped at 100 entries. Distinguishes manual, project and system workloads; does not return environments or commands. | `servers.managedWorkloads(id)` | `GET /api/system/servers/:id/managed/workloads`<br />`server:read` |
+| Read bounded logs for a process on this managed server. Requires server admin. Process ID is scoped to the server. | `servers.managedWorkloadLogs(id, input)` | `POST /api/system/servers/:id/managed/workloads/logs`<br />`server:admin` |
+| Create a stopped manual native process on this server. Reuse the same idempotency key after an uncertain response. Commands and environment are admin-only and not audited. Start it explicitly after creation. | `servers.createManagedWorkload(id, input)` | `POST /api/system/servers/:id/managed/workloads`<br />`server:admin` |
+| Start, stop or delete a manual process created by the server controls. Requires confirmation. Project and platform processes must use their own lifecycle controls. | `servers.controlManagedWorkload(id, input)` | `POST /api/system/servers/:id/managed/workloads/control`<br />`server:admin` |
+
+### Legacy network URLs
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Compatibility alias for `POST /api/system/networks/preparations`. | HTTP only | `POST /api/system/clusters/network-preparations`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `GET /api/system/networks/preparations/:preparationId`. | HTTP only | `GET /api/system/clusters/network-preparations/:preparationId`<br />`server:read` · Self-hosted |
+| Compatibility alias for `DELETE /api/system/networks/preparations/:preparationId`. | HTTP only | `DELETE /api/system/clusters/network-preparations/:preparationId`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `DELETE /api/system/networks/preparations/:preparationId/members/:serverId`. | HTTP only | `DELETE /api/system/clusters/network-preparations/:preparationId/members/:serverId`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `DELETE /api/system/networks/operations/:operationId/members/:serverId`. | HTTP only | `DELETE /api/system/clusters/network-operations/:operationId/members/:serverId`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `GET /api/system/networks/preparations`. | HTTP only | `GET /api/system/clusters/network-preparations`<br />`server:read` · Self-hosted |
+| Compatibility alias for `GET /api/system/networks/preparations/:preparationId/stream`. | HTTP only | `GET /api/system/clusters/network-preparations/:preparationId/stream`<br />`server:read` · Self-hosted |
+| Compatibility alias for `GET /api/system/networks/operations/:operationId/stream`. | HTTP only | `GET /api/system/clusters/network-operations/:operationId/stream`<br />`server:read` · Self-hosted |
+| Compatibility alias for `GET /api/system/networks/stream`. | HTTP only | `GET /api/system/clusters/stream`<br />`server:read` · Self-hosted |
+| Compatibility alias for `POST /api/system/networks/plans`. | HTTP only | `POST /api/system/clusters/network-plans`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `GET /api/system/networks/operations/:operationId`. | HTTP only | `GET /api/system/clusters/network-operations/:operationId`<br />`server:read` · Self-hosted |
+| Compatibility alias for `POST /api/system/networks/operations/:operationId/apply`. | HTTP only | `POST /api/system/clusters/network-operations/:operationId/apply`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `DELETE /api/system/networks/operations/:operationId`. | HTTP only | `DELETE /api/system/clusters/network-operations/:operationId`<br />`server:admin` · Self-hosted |
+| Compatibility alias for `PATCH /api/system/networks/preparations/:preparationId/connections`. | HTTP only | `PATCH /api/system/clusters/network-preparations/:preparationId/connections`<br />`server:admin` · Self-hosted |
+
+{/* api-operations:end */}

@@ -30,10 +30,18 @@ glance:
   only the other services can reach it (a database is almost always Internal).
 - A **status** dot: **Running**, **Stopped**, **Starting**, **Failed**, or **Disabled**.
 
-Click any row to open that service's full screen. If the repo changed a value you'd edited, the row also
-shows an **Upstream change** badge — more on that in [Drift](#when-the-repo-and-your-edits-disagree-drift).
+Click any row to open that service's full screen. Repo updates preserve your explicit edits and apply
+other changes automatically — see [how Compose changes merge](#when-the-repo-and-your-edits-disagree-drift).
 
-<Callout title="Screenshot">Project → **Services** tab: the list of service rows, each with its Public/Internal badge and status. *(screenshot pending)*</Callout>
+### Private services on a server with another proxy
+
+A stack with no domains or public routes can run without Openship's edge. Private services with no
+host publish, or an explicit mapping such as `127.0.0.1:25774:25774`, do not prompt to take over an
+existing reverse proxy. Missing-edge warnings only apply to deployed projects with configured routes.
+
+Automatically selected host ports still require a readable route inventory to prevent capturing a port
+another hostname uses. That safety check remains strict; an unavailable inventory does not authorize
+replacing your proxy. Use an explicit host mapping for a private service when you manage that boundary.
 
 ## How services get into a stack
 
@@ -167,8 +175,6 @@ You land on a catalog. Browse a category on the left (Databases, Caches, Search,
 Streams, Object Storage, Auth & Identity, Mail & SMTP, Runtimes), search by name, or choose **Custom image**
 to type any image tag yourself. Click the one you want.
 
-<Callout title="Screenshot">The Add Service catalog: category rail on the left, a grid of service cards, and the **Custom image** tile. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -239,8 +245,6 @@ Click a service row to open its screen. Across the top is a row of tabs:
 - **Backup** — schedule and run backups. This tab shows only for compose services (the stateful containers),
   not for source-built sub-apps.
 
-<Callout title="Screenshot">A single service's detail screen showing the Overview / Terminal / Logs / Environment / Settings / Backup tab strip. *(screenshot pending)*</Callout>
-
 ## Start, stop, restart
 
 The lifecycle buttons live on the service's **Settings** tab. Which ones appear depends on the state:
@@ -276,10 +280,8 @@ Target a service by its name or its `svc_…` id.
 
 ## When the repo and your edits disagree: drift
 
-Here's the tricky bit, made simple. You can edit a service in the dashboard **and** keep a
-`docker-compose.yml` in your repo. What happens when both change the same value?
-
-On each deploy Openship does a **three-way compare** for every service:
+On each deploy Openship merges the current Compose source with your saved service configuration,
+comparing each field against the previously imported version:
 
 - **base** — the compose values it last read in,
 - **yours** — the service's current values (including your dashboard edits),
@@ -287,31 +289,32 @@ On each deploy Openship does a **three-way compare** for every service:
 
 | Repo changed? | You edited it? | What Openship does |
 | --- | --- | --- |
-| no | — | nothing — your values stand |
+| no | — | keeps your values |
 | yes | no | **applies the repo's value** automatically |
-| yes | yes | **keeps your value** and flags it as **drift** for you to review |
+| yes | yes | **keeps the edited field** and applies the other repo changes |
 | new service in the repo | — | adds it automatically |
-| removed from the repo | no | removes it |
-| removed from the repo | yes | keeps it — your work is never silently deleted |
+| removed from the repo | no | removes it only if it has no saved environment |
+| removed from the repo | yes | keeps it until you explicitly delete it |
 
-So services you never touched track the repo on their own, and your edits are never overwritten without
-asking. When a value you'd edited changes in the repo, the Services tab shows an amber **drift banner** with a
-per-field `from → to` diff and two choices per service:
+Routine Compose changes do not require **Accept upstream** or **Keep mine** before redeploying.
+Saved project and service environment values remain in place. A key omitted from the repo is retained
+as a local override, and an unresolved expression cannot replace the only saved value for that key.
+Remove a saved variable explicitly from the environment editor when you no longer need it.
 
-- **Accept upstream** — take the repo's value and move your baseline to it.
-- **Keep mine** — keep your value; the flag clears so it stops nagging, but your edit stays in effect.
-
-<Callout title="Screenshot">The Services tab drift banner: a service name, its `from → to` field diffs, and the **Keep mine** / **Accept upstream** buttons. *(screenshot pending)*</Callout>
+If an older version left a pending review, the next deploy reconciles it automatically. The legacy
+resolution actions remain available: **Accept upstream** applies source configuration while preserving
+saved environment values; **Keep mine** retains the current configuration.
 
 <Tabs items={['Dashboard', 'CLI']}>
 
 <Tab value="Dashboard">
-On the **Services** tab, use the drift banner's **Keep mine** or **Accept upstream** button for each service.
+Redeploy the project to apply current source changes. You can also resolve a review left by an older
+version from its existing banner.
 </Tab>
 
 <Tab value="CLI">
 ```bash
-# Take the repo's values, discarding your edits
+# Accept a legacy source review; saved environment values are preserved
 openship service drift accept --project my-app web
 
 # Keep your edits and stop flagging the change
@@ -320,6 +323,52 @@ openship service drift keep --project my-app web
 </Tab>
 
 </Tabs>
+
+## Service replacement and spare capacity
+
+For one independently replaced service on a self-hosted Docker server using
+container-IP routing, Openship can start the replacement while the previous
+container keeps serving. It checks readiness before publishing the replacement's
+service aliases, updates the stack's routes, and records the successful release
+before retiring the previous container.
+
+If routing recovery exceeds its 30-second deadline, Openship requests cancellation
+and keeps both containers. Any route pass already in progress must finish before
+the attempt releases execution ownership, so it cannot overwrite a later retry's
+routes. A recovery timeout does not permit the next routing pass to start.
+
+Overlap is optional. It requires saved CPU and memory limits and fresh
+measurements showing that the deployment host has enough spare capacity for the
+replacement. Missing limits or unavailable measurements keep the normal
+replacement order; Openship does not invent resource limits to enable overlap.
+Every routed upstream port must also be present in the frozen configuration of
+the outgoing container's own deployment. Changed or unverifiable ports keep the
+normal replacement order so routing recovery cannot dial the old container on a
+new port.
+
+Fixed host ports, managed Cloud ingress, shared namespaces, devices, additional
+networks, static network addresses, Docker-owned health checks, and dependent
+multi-service replacements keep their existing deployment order. The deployment
+log explains when an optional overlap check falls back.
+
+Writable persistent storage is checked after image-declared and anonymous
+volumes have been resolved. Shared writers prevent overlap by default. An
+operator may opt a mount into overlap only when the application supports
+concurrent writers, using `OPENSHIP_CUTOVER_SHARED_VOLUMES` on the API server:
+
+```text
+my-project/web:/var/www/uploads
+```
+
+Entries are scoped to the exact project, service and container path. This does
+not bypass capacity, port or namespace checks. Do not opt a database's data
+directory into concurrent access.
+
+If startup or routing fails, Openship keeps the previous container and restores
+its routing before cleaning up the replacement. If it cannot verify recovery,
+it preserves both containers and records the attempt as failed (or cancelled),
+with the routing recovery error in its logs. Review and repair routing before
+removing either container; Openship does not automatically promote that attempt.
 
 ## Ports & volumes: cloud vs self-hosted
 
@@ -346,7 +395,7 @@ that declares a volume — get an amber reminder that their data isn't kept acro
 backups. Later, on the **Services** tab, a cloud service's **Overview** shows a **Workspace ID** in place of
 the Container ID.
 
-## Prefer the terminal?
+## CLI
 
 Every service action has a CLI command. All of them target a stack with `-p / --project` (id, slug, or name)
 and a service by name or `svc_…` id.
@@ -364,7 +413,7 @@ openship service drift accept --project my-app web        # resolve drift
 openship service delete  --project my-app cache           # remove a service
 ```
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="I added a service but nothing is running" type="warn">
 Adding a service saves it, but a container only starts on a deploy. If the project already had a live
@@ -378,14 +427,13 @@ on the machine where you run the command, then try again. You can always add or 
 dashboard instead.
 </Callout>
 
-<Callout title="A service keeps re-flagging the same drift" type="warn">
-That means the repo file and your dashboard edit still disagree. Pick one source of truth: press **Accept
-upstream** to take the repo's value, or **Keep mine** to lock in your edit. To make the change permanent for
-everyone, edit `docker-compose.yml` in your repo and push — once your value matches the repo, the drift
-clears on its own.
+<Callout title="An old Compose review banner is still visible" type="info">
+Redeploy to reconcile it with the current source. Your explicit overrides remain in effect and other
+repo changes apply automatically. A genuinely missing required variable still needs a value in the
+environment editor; the deployment error identifies its service and key.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Get your repo — compose file and all — online in the first place." />

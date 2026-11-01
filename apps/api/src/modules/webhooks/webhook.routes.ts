@@ -19,7 +19,7 @@ import { secureRouter } from "../../lib/secure-router";
 import { handleWebhook } from "./webhook.controller";
 import { webhookRawBody } from "./webhook.middleware";
 import { triggerHook as triggerIncomingHook } from "../incoming-webhooks/incoming.controller";
-import { triggerBackupViaWebhook } from "../backups/triggers/webhook";
+import { triggerBackupViaWebhook } from "@repo/platform/engine/modules/backups/triggers/webhook";
 
 const r = secureRouter(new Hono(), {
   module: "webhooks",

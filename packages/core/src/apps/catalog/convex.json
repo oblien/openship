@@ -4,7 +4,7 @@
   "id": "convex",
   "name": "Convex",
   "description": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
-  "repository": "https://github.com/get-convex/convex-backend",
+  "repository": "https://github.com/convex/convex-backend",
   "kind": "template",
   "logo": "convex",
   "category": "backend",
@@ -17,7 +17,7 @@
   "services": [
     {
       "name": "backend",
-      "image": "ghcr.io/get-convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
+      "image": "ghcr.io/convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
       "ports": [
         "3210:3210",
         "3211:3211"
@@ -59,7 +59,7 @@
     },
     {
       "name": "dashboard",
-      "image": "ghcr.io/get-convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
+      "image": "ghcr.io/convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
       "ports": [
         "6791:6791"
       ],
@@ -86,6 +86,9 @@
   ],
   "management": {
     "kind": "schema"
+  },
+  "installLayout": {
+    "settings": "split"
   },
   "prepare": [
     {
@@ -151,7 +154,7 @@
           "key": "INSTANCE_NAME",
           "service": "backend",
           "label": "Instance name",
-          "help": "Sets the deployment name. Changing it AFTER the first deploy invalidates the admin key and locks the dashboard/CLI out — safest to set it here, at install.",
+          "help": "Used by the Convex dashboard and CLI. Changing it after deployment invalidates the admin key.",
           "type": "text",
           "default": "convex-self-hosted",
           "advanced": true,
@@ -170,5 +173,22 @@
         }
       ]
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Reactive backend",
+        "description": "Keep client queries in sync with changing data."
+      },
+      {
+        "title": "Developer dashboard",
+        "description": "Manage the backend through its included dashboard."
+      },
+      {
+        "title": "Persistent database",
+        "description": "Store backend data in a persistent volume."
+      }
+    ],
+    "articleFile": "articles/convex.md"
+  }
 }

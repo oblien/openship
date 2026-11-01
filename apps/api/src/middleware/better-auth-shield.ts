@@ -1,5 +1,6 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
-import { auth } from "../lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { repos } from "@repo/db";
 
 /**
@@ -35,7 +36,7 @@ import { repos } from "@repo/db";
  *   - `admin` / `owner` → pass through to Better Auth; the plugin's own
  *                        access controller still applies for fine-grained
  *                        action gating.
- *   - unknown / no session → pass through; Better Auth handles 401.
+ *   - unknown / no session → fail closed.
  *
  * CRITICAL: the role lookup is performed against the TARGET org from
  * the request, NOT the session's activeOrganizationId (HIGH F5). The
@@ -51,8 +52,8 @@ import { repos } from "@repo/db";
  *   leave                     → body.organizationId
  *   set-active                → body.organizationId
  *
- * Fall back to session.activeOrganizationId only when the request does
- * not supply one (matches Better Auth's own resolution order).
+ * GET endpoints supporting organizationSlug resolve it BEFORE organizationId,
+ * matching Better Auth. POST reads only its body, never a query-string override.
  *
  * UNIT-TEST NOTE: `restricted` is declared with an empty AC statement
  * (`ac: []` in lib/auth.ts) — Better Auth's role-merge logic treats
@@ -62,12 +63,8 @@ import { repos } from "@repo/db";
  * keep the empty-AC invariant OR move the shield into Better Auth's
  * own statement system.
  *
- * Failure-safe: if anything throws while reading the session or the
- * caller's membership, we fall through and let Better Auth respond.
- * We never confirm cross-tenant existence in the error path.
+ * Lookup failures deny access; they must never bypass this extra role policy.
  */
-
-//TODO: ensure the flow fully clean and secure
 
 /** Endpoints that only need a member-tier read (current org directory). */
 const READ_PATHS = new Set<string>([
@@ -127,7 +124,8 @@ async function filterFullOrganization(c: Context, next: Next, userId: string): P
   let data: unknown;
   try {
     data = await res.clone().json();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/middleware/better-auth-shield");
     return; // not JSON — leave untouched
   }
   if (!data || typeof data !== "object") return;
@@ -149,10 +147,14 @@ async function extractTargetOrgId(
   c: Context,
   fallbackSessionOrg: string | null,
 ): Promise<string | null> {
-  // Query string takes priority for GETs — that's how list-members
-  // and friends supply the target org.
-  const qsOrg = c.req.query("organizationId");
-  if (typeof qsOrg === "string" && qsOrg.trim()) return qsOrg.trim();
+  const path = c.req.path.replace(/\/+$/, "");
+  if (c.req.method === "GET") {
+    const slug = c.req.query("organizationSlug");
+    if (slug && SLUG_READ_PATHS.has(path)) {
+      return (await repos.organization.findBySlug(slug))?.id ?? null;
+    }
+    return c.req.query("organizationId") || fallbackSessionOrg;
+  }
 
   // POST mutations carry the target in the JSON body. We need a
   // clone-safe read because Better Auth's plugin will re-read the body
@@ -160,17 +162,28 @@ async function extractTargetOrgId(
   if (c.req.method === "POST") {
     try {
       const cloned = c.req.raw.clone();
-      const body = (await cloned.json()) as { organizationId?: unknown } | null;
-      if (body && typeof body.organizationId === "string" && body.organizationId.trim()) {
-        return body.organizationId.trim();
+      const body = (await cloned.json()) as { organizationId?: unknown; organizationSlug?: unknown } | null;
+      if (path.endsWith("/set-active") && body?.organizationId === null) return null;
+      if (body && typeof body.organizationId === "string" && body.organizationId) {
+        return body.organizationId;
       }
-    } catch {
-      // Empty/malformed body — fall through to the session default.
+      if (path.endsWith("/set-active") && typeof body?.organizationSlug === "string" && body.organizationSlug) {
+        return (await repos.organization.findBySlug(body.organizationSlug))?.id ?? null;
+      }
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/middleware/better-auth-shield");
+      return null;
     }
   }
 
   return fallbackSessionOrg;
 }
+
+const SLUG_READ_PATHS = new Set([
+  "/api/auth/organization/get-full-organization",
+  "/api/auth/organization/list-members",
+  "/api/auth/organization/get-active-member-role",
+]);
 
 export async function betterAuthShield(c: Context, next: Next) {
   // Hono's c.req.path strips query string already; normalise just in
@@ -185,23 +198,30 @@ export async function betterAuthShield(c: Context, next: Next) {
   let session: Awaited<ReturnType<typeof auth.api.getSession>> | null;
   try {
     session = await auth.api.getSession({ headers: c.req.raw.headers });
-  } catch {
-    return next();
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/middleware/better-auth-shield");
+    return c.json({ error: "Authorization unavailable" }, 503);
   }
 
-  if (!session?.user?.id) return next();
+  if (!session?.user?.id) return c.json({ error: "Unauthorized" }, 401);
+
+  // These self-service operations are authorized by their downstream handler.
+  // In particular set-active(null) must work without a current organization.
+  if (ALWAYS_ALLOWED_FOR_SELF.has(path)) return next();
 
   const sessionOrgId =
     (session.session as { activeOrganizationId?: string | null }).activeOrganizationId ?? null;
 
-  const targetOrgId = await extractTargetOrgId(c, sessionOrgId);
-  if (!targetOrgId) {
-    // No org context at all — let Better Auth surface its own 400.
-    return next();
-  }
-
   let role: string;
   try {
+    const targetOrgId = await extractTargetOrgId(c, sessionOrgId);
+    if (!targetOrgId) {
+      // The dashboard legitimately asks for the current org before choosing
+      // one. Return null ourselves only when no target was supplied.
+      if (FILTERED_READ_PATHS.has(path) && !sessionOrgId &&
+          !c.req.query("organizationId") && !c.req.query("organizationSlug")) return c.json(null);
+      return c.json({ error: "Forbidden" }, 403);
+    }
     const member = await repos.member.find(targetOrgId, session.user.id);
     if (!member) {
       // Caller isn't a member of the target org. Same generic 403 the
@@ -209,8 +229,9 @@ export async function betterAuthShield(c: Context, next: Next) {
       return c.json({ error: "Forbidden" }, 403);
     }
     role = member.role ?? "member";
-  } catch {
-    return next();
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/middleware/better-auth-shield");
+    return c.json({ error: "Authorization unavailable" }, 503);
   }
 
   // Owners / admins: full access to the plugin endpoints (plugin's own

@@ -2,7 +2,7 @@
   "available": true,
   "id": "nocodb",
   "name": "NocoDB",
-  "description": "Airtable-style spreadsheet UI over an SQL database. Sign in with the admin account below.",
+  "description": "An Airtable-style spreadsheet interface for working with SQL-backed data.",
   "kind": "template",
   "logo": "nocodb",
   "category": "database",
@@ -76,5 +76,21 @@
       "note": "Anyone who reaches this URL can still create their own account (they land in their own workspace and cannot see your bases). Turn sign-up off in Account Settings → Authentication right after your first sign-in — the NC_INVITE_ONLY_SIGNUP env var no longer works in this version."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Spreadsheet interface",
+        "description": "Work with records in a familiar grid."
+      },
+      {
+        "title": "SQL data",
+        "description": "Add a visual interface to your database."
+      },
+      {
+        "title": "Browser access",
+        "description": "Manage records without a desktop client."
+      }
+    ]
+  }
 }

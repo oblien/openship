@@ -22,7 +22,7 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
 }));
 
 // Health-gate reports everything up so the step reaches its success return.
-vi.mock("../../../src/modules/mail/mail-health.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-health.service", () => ({
   checkMailHealth: vi.fn(async () => [
     { key: "postfix", label: "Postfix", description: "", unit: "postfix", severity: "required", status: "active" },
     { key: "dovecot", label: "Dovecot", description: "", unit: "dovecot", severity: "required", status: "active" },
@@ -35,7 +35,7 @@ vi.mock("../../../src/modules/mail/mail-health.service", () => ({
   MAIL_COMPONENTS: [],
 }));
 
-import { stepDeployEngine } from "../../../src/modules/mail/mail.service";
+import { stepDeployEngine } from "@repo/platform/engine/modules/mail/mail.service";
 
 /** Every command succeeds; capture anything streamed so we can assert no iRedMail.sh. */
 function engineExecutor() {

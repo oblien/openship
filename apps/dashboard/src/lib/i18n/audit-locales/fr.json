@@ -1,0 +1,724 @@
+{
+  "deployment.failed": {
+    "action": "échec du déploiement de",
+    "label": "Échec du déploiement",
+    "description": "Un déploiement a échoué avant d'atteindre un état sain."
+  },
+  "deployment.cancelled": {
+    "action": "a annulé le déploiement de",
+    "label": "Déploiement annulé",
+    "description": "Un déploiement a été arrêté avant sa fin."
+  },
+  "deployment:write": {
+    "action": "a lancé un déploiement pour",
+    "actionWithoutResource": "a lancé un déploiement",
+    "label": "Action de déploiement",
+    "description": "Un point de terminaison de déploiement a été appelé : démarrage, nouvel essai, restauration ou promotion."
+  },
+  "deployment:admin": {
+    "action": "a exécuté une action d’administrateur sur le déploiement de",
+    "actionWithoutResource": "a exécuté une action d’administrateur sur le déploiement",
+    "label": "Action d’administrateur de déploiement",
+    "description": "Une action administrative a été appelée sur un déploiement."
+  },
+  "project.created": {
+    "label": "Application créée",
+    "action": "a créé",
+    "description": "Une nouvelle application et sa configuration ont été créées."
+  },
+  "project.updated": {
+    "label": "Application mise à jour",
+    "action": "a mis à jour",
+    "description": "Les paramètres, services, variables d'environnement ou le routage ont été modifiés."
+  },
+  "project.deleted": {
+    "label": "Application supprimée",
+    "action": "a supprimé",
+    "description": "L'application et ses charges de travail ont été supprimées."
+  },
+  "project.deletion.rejected": {
+    "label": "Suppression de l'application refusée",
+    "action": "a tenté de supprimer",
+    "description": "La suppression a été refusée — d'autres ressources dépendent encore de cette application."
+  },
+  "project.deletion.failed": {
+    "label": "Échec de la suppression de l'application",
+    "action": "n'a pas pu supprimer",
+    "description": "Le nettoyage ne s'est pas terminé ; l'enregistrement de l'application a été conservé pour une nouvelle tentative sécurisée."
+  },
+  "project.build_cache.cleared": {
+    "label": "Cache de build vidé",
+    "action": "a vidé le cache de build Docker pour",
+    "description": "Le cache de build inutilisé a été supprimé de l'hôte Docker de l'application."
+  },
+  "project:write": {
+    "action": "a modifié",
+    "label": "Projet modifié",
+    "description": "Un point de terminaison d'écriture d'application a été appelé."
+  },
+  "job:write": {
+    "action": "a modifié la tâche",
+    "actionWithoutResource": "a modifié la tâche",
+    "label": "Tâche modifiée",
+    "description": "Une tâche planifiée ou personnalisée a été créée, modifiée, exécutée ou supprimée."
+  },
+  "job_run.started": {
+    "action": "a démarré la tâche",
+    "actionWithoutResource": "a démarré la tâche",
+    "label": "Tâche démarrée"
+  },
+  "job_run.succeeded": {
+    "action": "a exécuté la tâche avec succès",
+    "actionWithoutResource": "a exécuté la tâche avec succès",
+    "label": "Tâche réussie"
+  },
+  "job_run.failed": {
+    "action": "a exécuté la tâche défaillante",
+    "actionWithoutResource": "a exécuté la tâche défaillante",
+    "label": "Échec de la tâche"
+  },
+  "service.down": {
+    "label": "Application arrêtée",
+    "action": "a signalé l'arrêt de",
+    "description": "Un conteneur qui devrait tourner est arrêté."
+  },
+  "service.crash_loop": {
+    "label": "Application en boucle de crash",
+    "action": "a signalé une boucle de crash sur",
+    "description": "Un conteneur redémarre continuellement au lieu de rester actif."
+  },
+  "service.unhealthy": {
+    "label": "Application dégradée",
+    "action": "a signalé un échec de santé sur",
+    "description": "Un conteneur tourne mais son bilan de santé a échoué."
+  },
+  "service.recovered": {
+    "label": "Application rétablie",
+    "action": "a signalé le rétablissement de",
+    "description": "L'incident est terminé et le conteneur fonctionne à nouveau normalement."
+  },
+  "server:write": {
+    "action": "a modifié le serveur",
+    "label": "Serveur modifié"
+  },
+  "server:admin": {
+    "action": "a exécuté une action d'administration sur le serveur",
+    "label": "Action d'administration sur le serveur",
+    "description": "Une action destructive sur le serveur a été appelée (suppression ou installation)."
+  },
+  "terminal:write": {
+    "action": "a ouvert un terminal sur",
+    "label": "Session de terminal ouverte",
+    "description": "Une session shell interactive a été ouverte sur le serveur."
+  },
+  "settings:write": {
+    "action": "a modifié les paramètres",
+    "label": "Paramètres modifiés"
+  },
+  "settings:admin": {
+    "action": "a exécuté une action d'administration sur les paramètres",
+    "label": "Action d'administration sur les paramètres",
+    "description": "Un paramètre système destructif a été invoqué."
+  },
+  "notification_channel.created": {
+    "action": "a ajouté le canal de notification",
+    "actionWithoutResource": "a ajouté le canal de notification",
+    "label": "Canal de notification ajouté"
+  },
+  "notification_channel.updated": {
+    "action": "a mis à jour le canal de notification",
+    "actionWithoutResource": "a mis à jour le canal de notification",
+    "label": "Canal de notification mis à jour"
+  },
+  "notification_channel.deleted": {
+    "action": "a supprimé le canal de notification",
+    "actionWithoutResource": "a supprimé le canal de notification",
+    "label": "Canal de notification supprimé"
+  },
+  "notification_subscription.updated": {
+    "action": "a modifié les envois vers",
+    "actionWithoutResource": "a modifié le routage des notifications",
+    "label": "Routage des notifications modifié"
+  },
+  "notification_subscription.deleted": {
+    "action": "a arrêté les notifications pour",
+    "actionWithoutResource": "a arrêté les notifications",
+    "label": "Notifications arrêtées"
+  },
+  "notification_default.updated": {
+    "action": "a modifié les valeurs par défaut de notification pour",
+    "actionWithoutResource": "a modifié les valeurs par défaut de notification",
+    "label": "Paramètres par défaut des notifications modifiés",
+    "description": "Le routage par défaut des notifications pour l'organisation a été mis à jour."
+  },
+  "notification_delivery.seen": {
+    "action": "a marqué comme vu",
+    "actionWithoutResource": "a marqué comme vu",
+    "label": "Alerte marquée comme vue"
+  },
+  "notifications:write": {
+    "action": "a modifié les notifications",
+    "actionWithoutResource": "a modifié les notifications",
+    "label": "Notifications modifiées"
+  },
+  "notifications:admin": {
+    "action": "a exécuté une action d'administrateur sur les notifications",
+    "actionWithoutResource": "a exécuté une action d'administrateur sur les notifications",
+    "label": "Action d'administrateur sur les notifications"
+  },
+  "deployment.succeeded": {
+    "label": "Déploiement réussi",
+    "action": "a déployé",
+    "description": "Un déploiement s'est terminé avec succès et gère le trafic."
+  },
+  "deployment.no_changes": {
+    "label": "Aucun changement à déployer",
+    "action": "n'a trouvé aucun changement à déployer pour",
+    "actionWithoutResource": "n'a trouvé aucun changement à déployer",
+    "description": "Tous les services sont déjà à jour, la version actuelle reste active."
+  },
+  "project:admin": {
+    "label": "Action admin sur l'application",
+    "action": "a exécuté une action admin sur",
+    "actionWithoutResource": "a exécuté une action admin",
+    "description": "Une action destructive d'application a été invoquée (suppression ou transfert)."
+  },
+  "project:service:write": {
+    "label": "Service modifié",
+    "action": "a modifié le service dans",
+    "actionWithoutResource": "a modifié le service",
+    "description": "Un service a été créé, mis à jour, démarré, arrêté ou redémarré."
+  },
+  "project:service:admin": {
+    "label": "Action admin sur le service",
+    "action": "a exécuté une action admin sur le service dans",
+    "actionWithoutResource": "a exécuté une action admin sur le service"
+  },
+  "service.exec": {
+    "label": "Commande exécutée dans le service",
+    "action": "a exécuté une commande dans le service",
+    "description": "Une commande shell a été exécutée dans le conteneur du service."
+  },
+  "domain.added": {
+    "label": "Domaine ajouté",
+    "action": "a ajouté le domaine"
+  },
+  "domain.removed": {
+    "label": "Domaine supprimé",
+    "action": "a supprimé le domaine"
+  },
+  "domain.verified": {
+    "label": "Domaine vérifié",
+    "action": "a vérifié le domaine",
+    "description": "Enregistrements DNS vérifiés et certificat émis avec succès."
+  },
+  "domain.verification_failed": {
+    "label": "Échec de vérification du domaine",
+    "action": "n'a pas pu vérifier le domaine",
+    "description": "Échec de la vérification DNS ou de l'émission du certificat."
+  },
+  "domain.verify_failed": {
+    "label": "Échec de vérification du domaine",
+    "action": "n'a pas pu vérifier le domaine",
+    "description": "Échec de la vérification DNS ou de l'émission du certificat."
+  },
+  "domain.set_primary": {
+    "label": "Domaine principal défini",
+    "action": "a défini comme domaine principal",
+    "description": "Le trafic vers les autres domaines redirigera désormais vers celui-ci."
+  },
+  "domain.dns_provisioned": {
+    "label": "DNS configuré automatiquement",
+    "action": "a configuré le DNS pour",
+    "actionWithoutResource": "a configuré le DNS",
+    "description": "Les enregistrements DNS ont été créés via le fournisseur connecté."
+  },
+  "domain.cert_uploaded": {
+    "label": "Certificat personnalisé téléversé",
+    "action": "a téléversé un certificat personnalisé pour",
+    "actionWithoutResource": "a téléversé un certificat personnalisé",
+    "description": "Un certificat SSL personnalisé a été téléversé au lieu du certificat automatique."
+  },
+  "ssl.renewal_failed": {
+    "label": "Échec du renouvellement SSL",
+    "action": "n'a pas pu renouveler le SSL pour",
+    "actionWithoutResource": "n'a pas pu renouveler le SSL",
+    "description": "Le renouvellement automatique du certificat a échoué."
+  },
+  "credential.created": {
+    "label": "Identifiant créé",
+    "action": "a ajouté l'identifiant",
+    "description": "Une clé de registre, un jeton de fournisseur ou une clé SSH a été enregistré."
+  },
+  "credential.updated": {
+    "label": "Identifiant mis à jour",
+    "action": "a mis à jour l'identifiant",
+    "description": "Les identifiants enregistrés ont été modifiés."
+  },
+  "credential.deleted": {
+    "label": "Identifiant supprimé",
+    "action": "a supprimé l'identifiant",
+    "description": "Les identifiants enregistrés ont été supprimés."
+  },
+  "credential.verified": {
+    "label": "Identifiant vérifié",
+    "action": "a vérifié l'identifiant",
+    "description": "Les identifiants ont été validés avec succès auprès du service distant."
+  },
+  "dns_credential.connected": {
+    "label": "Fournisseur DNS connecté",
+    "action": "a connecté le fournisseur DNS",
+    "description": "Identifiants DNS configurés pour la gestion automatique des domaines."
+  },
+  "dns_credential.disconnected": {
+    "label": "Fournisseur DNS déconnecté",
+    "action": "a déconnecté le fournisseur DNS",
+    "description": "Accès à l'API DNS supprimé ; les enregistrements DNS restent inchangés."
+  },
+  "domain:write": {
+    "label": "Domaine modifié",
+    "action": "a modifié le domaine",
+    "description": "Un point de terminaison de domaine a été appelé — ajout, vérification, routage."
+  },
+  "domain:admin": {
+    "label": "Action admin sur le domaine",
+    "action": "a exécuté une action admin sur le domaine"
+  },
+  "server.added": {
+    "label": "Serveur ajouté",
+    "action": "a ajouté le serveur"
+  },
+  "server.updated": {
+    "label": "Serveur mis à jour",
+    "action": "a mis à jour le serveur"
+  },
+  "server.removed": {
+    "label": "Serveur supprimé",
+    "action": "a supprimé le serveur"
+  },
+  "server.removal.rejected": {
+    "label": "Suppression du serveur refusée",
+    "action": "a tenté de supprimer le serveur",
+    "description": "Le serveur ne peut pas être supprimé car des charges de travail y sont encore actives."
+  },
+  "server.exec": {
+    "label": "Commande exécutée sur le serveur",
+    "action": "a exécuté une commande sur le serveur",
+    "description": "Une commande shell a été exécutée sur l'hôte."
+  },
+  "server.unreachable": {
+    "label": "Serveur inaccessible",
+    "action": "a signalé le serveur inaccessible",
+    "description": "Openship n'a pas pu ouvrir de connexion SSH vers ce serveur."
+  },
+  "server.reachable": {
+    "label": "Serveur à nouveau accessible",
+    "action": "a signalé le serveur accessible à nouveau"
+  },
+  "migration.source_connected": {
+    "label": "Source de migration connectée",
+    "action": "a connecté la source de migration",
+    "description": "Un serveur SSH externe a été connecté pour importer des projets."
+  },
+  "migration.source_disconnected": {
+    "label": "Source de migration déconnectée",
+    "action": "a déconnecté la source de migration",
+    "description": "La connexion de migration enregistrée a été supprimée."
+  },
+  "mail_server:write": {
+    "label": "Serveur de messagerie modifié",
+    "action": "a modifié le serveur de messagerie",
+    "description": "Action sur le serveur de messagerie invoquée."
+  },
+  "mail_server:admin": {
+    "label": "Action admin sur le serveur de messagerie",
+    "action": "a exécuté une action admin sur le serveur de messagerie"
+  },
+  "mail.inbound_received": {
+    "label": "Courriel entrant reçu",
+    "action": "a reçu un courriel correspondant à une règle de notification sur",
+    "actionWithoutResource": "a reçu un courriel"
+  },
+  "identity.provisioned": {
+    "label": "Identité provisionnée",
+    "action": "a provisionné l'identité",
+    "description": "Un hôte de confiance a associé une identité externe à un utilisateur Openship."
+  },
+  "organization.created": {
+    "label": "Organisation créée",
+    "action": "a créé l'organisation"
+  },
+  "organization.deleted": {
+    "label": "Organisation supprimée",
+    "action": "a supprimé l'organisation"
+  },
+  "organization.deletion.blocked": {
+    "label": "Suppression de l'organisation bloquée",
+    "action": "a tenté de supprimer l'organisation",
+    "description": "Suppression refusée — des ressources actives ou la facturation y sont encore liées."
+  },
+  "member.added": {
+    "label": "Membre ajouté",
+    "action": "a ajouté"
+  },
+  "member.removed": {
+    "label": "Membre supprimé",
+    "action": "a supprimé"
+  },
+  "member.role_changed": {
+    "label": "Rôle du membre modifié",
+    "action": "a modifié le rôle de",
+    "actionWithoutResource": "a modifié le rôle"
+  },
+  "member.updated": {
+    "label": "Adhésion mise à jour",
+    "action": "a modifié l'adhésion de",
+    "actionWithoutResource": "a modifié l'adhésion",
+    "description": "Un hôte de confiance a ajouté, modifié ou supprimé une adhésion."
+  },
+  "member.joined": {
+    "label": "Membre a rejoint",
+    "action": "a rejoint",
+    "description": "Un invité a accepté l'invitation et a désormais accès."
+  },
+  "member.invited": {
+    "label": "Membre invité",
+    "action": "a invité"
+  },
+  "member.removal.grant_cleanup_failed": {
+    "label": "Permissions du membre non nettoyées",
+    "action": "a supprimé avec permissions restantes",
+    "description": "Le membre est parti mais des permissions subsistent — vérification manuelle requise."
+  },
+  "member.removal.subscription_cleanup_failed": {
+    "label": "Facturation du membre non nettoyée",
+    "action": "a supprimé avec facturation restante",
+    "description": "Le membre est parti mais un abonnement lié subsiste — vérifiez la facturation."
+  },
+  "invitation.created": {
+    "label": "Invitation créée",
+    "action": "a invité"
+  },
+  "invitation.sent": {
+    "label": "Invitation envoyée avec permissions",
+    "action": "a invité avec permissions en attente",
+    "description": "Les permissions ont été mises en file d'attente et s'appliqueront dès l'adhésion."
+  },
+  "invitation.resent": {
+    "label": "Invitation renouvelée",
+    "action": "a renouvelé l'invitation pour",
+    "actionWithoutResource": "a renouvelé l'invitation",
+    "description": "La validité et la clé de l'invitation ont été renouvelées."
+  },
+  "invitation.accepted": {
+    "label": "Invitation acceptée",
+    "action": "a accepté l'invitation de",
+    "actionWithoutResource": "a accepté l'invitation"
+  },
+  "invitation.rejected": {
+    "label": "Invitation refusée",
+    "action": "a décliné l'invitation de",
+    "actionWithoutResource": "a décliné l'invitation"
+  },
+  "invitation.cancelled": {
+    "label": "Invitation annulée",
+    "action": "a annulé l'invitation pour",
+    "actionWithoutResource": "a annulé l'invitation"
+  },
+  "team.created": {
+    "label": "Équipe créée",
+    "action": "a créé l'équipe"
+  },
+  "grant.granted": {
+    "label": "Permission accordée",
+    "action": "a accordé des permissions à",
+    "actionWithoutResource": "a accordé des permissions"
+  },
+  "grant.revoked": {
+    "label": "Permission révoquée",
+    "action": "a révoqué des permissions de",
+    "actionWithoutResource": "a révoqué des permissions"
+  },
+  "grant.replaced": {
+    "label": "Permission remplacée",
+    "action": "a remplacé les permissions de",
+    "actionWithoutResource": "a remplacé les permissions",
+    "description": "Une autorisation existante a été remplacée par une portée différente."
+  },
+  "grant.materialized": {
+    "label": "Permission en attente appliquée",
+    "action": "a reçu ses permissions en attente",
+    "description": "Une permission attachée à une invitation a été appliquée dès que l'invité a rejoint."
+  },
+  "permissions:write": {
+    "label": "Permissions modifiées",
+    "action": "a modifié les permissions pour",
+    "actionWithoutResource": "a modifié les permissions"
+  },
+  "permissions:admin": {
+    "label": "Action admin sur les permissions",
+    "action": "a exécuté une action admin sur les permissions pour",
+    "actionWithoutResource": "a exécuté une action admin sur les permissions"
+  },
+  "mcp.authorized": {
+    "label": "Client MCP autorisé",
+    "action": "a autorisé le client MCP",
+    "description": "Un agent IA a été connecté et s'est vu attribuer une portée d'action."
+  },
+  "mcp.scope_changed": {
+    "label": "Accès MCP modifié",
+    "action": "a modifié l'accès du client MCP",
+    "description": "La portée de l'agent connecté a été modifiée. Prend effet à sa prochaine requête."
+  },
+  "mcp.disconnected": {
+    "label": "Client MCP déconnecté",
+    "action": "a déconnecté le client MCP",
+    "description": "Les jetons, le consentement et la portée de l'agent connecté ont été révoqués."
+  },
+  "mcp.tool_called": {
+    "label": "Appel d'outil IA",
+    "action": "a exécuté l'outil MCP",
+    "description": "Un outil Openship a été exécuté par le client MCP."
+  },
+  "admin.bootstrapped": {
+    "label": "Premier compte admin créé",
+    "action": "a créé le premier compte administrateur",
+    "description": "Le propriétaire initial de l'instance a été créé."
+  },
+  "admin.password_reset": {
+    "label": "Mot de passe admin réinitialisé",
+    "action": "a réinitialisé un mot de passe administrateur"
+  },
+  "auth-mode-changed": {
+    "label": "Mode de connexion modifié",
+    "action": "a modifié le mode de connexion",
+    "description": "L'instance a basculé entre mono-utilisateur et authentification complète."
+  },
+  "instance.data.exported": {
+    "label": "Données d'instance exportées",
+    "action": "a exporté toutes les données d'instance",
+    "description": "Un dump complet de base de données a été extrait de cette instance."
+  },
+  "instance.data.receive_code_created": {
+    "label": "Code de réception créé",
+    "action": "a créé un code de réception directe",
+    "description": "Un code éphémère a été créé pour recevoir directement des données."
+  },
+  "instance.data.sent": {
+    "label": "Données d'instance envoyées",
+    "action": "a envoyé des données à une autre instance",
+    "description": "Les données sélectionnées ont été transférées vers une autre instance."
+  },
+  "instance.data.imported": {
+    "label": "Données d'instance importées",
+    "action": "a importé des données d'instance",
+    "description": "Un dump de base de données d'une autre instance a été chargé."
+  },
+  "instance.move_requested": {
+    "label": "Déplacement du plan de contrôle demandé",
+    "action": "a demandé un transfert vers une autre instance",
+    "description": "Un administrateur a demandé le transfert des données et du contrôle."
+  },
+  "instance.server_move_requested": {
+    "label": "Déplacement vers serveur demandé",
+    "action": "a demandé un transfert vers un serveur",
+    "description": "Un administrateur a demandé un plan de contrôle hébergé sur un serveur."
+  },
+  "audit.disabled": {
+    "label": "Journalisation désactivée",
+    "action": "a désactivé la journalisation",
+    "description": "Aucune action n'est enregistrée jusqu'à sa réactivation."
+  },
+  "audit.enabled": {
+    "label": "Journalisation activée",
+    "action": "a activé la journalisation"
+  },
+  "audit.retention_changed": {
+    "label": "Rétention d'activité modifiée",
+    "action": "a modifié la rétention d'activité"
+  },
+  "audit:write": {
+    "label": "Paramètres d'activité modifiés",
+    "action": "a modifié les paramètres d'activité"
+  },
+  "billing.hard_cap_tripped": {
+    "label": "Plafond de dépenses atteint",
+    "action": "a atteint le plafond de dépenses pour",
+    "actionWithoutResource": "a atteint le plafond de dépenses",
+    "description": "Les ressources Cloud ont peut-être été suspendues — vérifiez la facturation."
+  },
+  "billing.credit_low": {
+    "label": "Crédits Cloud faibles",
+    "action": "s'est approché de la limite de crédits pour",
+    "actionWithoutResource": "s'est approché de la limite de crédits",
+    "description": "Vérifiez le solde avant que les charges de travail ne soient interrompues."
+  },
+  "billing.credit_exhausted": {
+    "label": "Crédits épuisés",
+    "action": "a épuisé les crédits pour",
+    "actionWithoutResource": "a épuisé les crédits",
+    "description": "L'utilisation est suspendue jusqu'à rechargement ou réinitialisation."
+  },
+  "billing.credit_restored": {
+    "label": "Crédits restaurés",
+    "action": "a restauré les crédits pour",
+    "actionWithoutResource": "a restauré les crédits"
+  },
+  "billing.anniversary_reset": {
+    "label": "Crédits mensuels réinitialisés",
+    "action": "a réinitialisé les crédits mensuels de",
+    "actionWithoutResource": "a réinitialisé les crédits mensuels"
+  },
+  "quota.threshold_fired": {
+    "label": "Seuil d'utilisation franchi",
+    "action": "a franchi un seuil d'utilisation sur",
+    "actionWithoutResource": "a franchi un seuil d'utilisation"
+  },
+  "billing:write": {
+    "label": "Action de facturation",
+    "action": "a modifié la facturation pour",
+    "actionWithoutResource": "a modifié la facturation",
+    "description": "Une action de facturation a été déclenchée."
+  },
+  "billing:admin": {
+    "label": "Action admin sur la facturation",
+    "action": "a exécuté une action admin sur la facturation pour",
+    "actionWithoutResource": "a exécuté une action admin sur la facturation",
+    "description": "Une action destructive de facturation a été invoquée."
+  },
+  "settings.updated": {
+    "label": "Paramètres mis à jour",
+    "action": "a mis à jour les paramètres"
+  },
+  "updates:write": {
+    "label": "Mise à jour système",
+    "action": "a vérifié ou appliqué des mises à jour",
+    "description": "Une mise à jour des composants Openship a été lancée."
+  },
+  "cloud.disconnect": {
+    "label": "Cloud déconnecté",
+    "action": "a déconnecté l'intégration Cloud"
+  },
+  "cloud:write": {
+    "label": "Action Cloud",
+    "action": "a modifié l'intégration Cloud",
+    "description": "Un point de terminaison Cloud a été appelé."
+  },
+  "cloud:admin": {
+    "label": "Action admin sur Cloud",
+    "action": "a exécuté une action admin sur Cloud"
+  },
+  "github.install": {
+    "label": "Application GitHub installée",
+    "action": "a installé l'application GitHub"
+  },
+  "github.source.created": {
+    "label": "Source GitHub ajoutée",
+    "action": "a ajouté le dépôt GitHub",
+    "description": "Un dépôt GitHub a été ajouté comme source de projet."
+  },
+  "github.source.updated": {
+    "label": "Source GitHub mise à jour",
+    "action": "a mis à jour le dépôt GitHub",
+    "description": "La configuration de la source GitHub a été modifiée."
+  },
+  "github.source.verified": {
+    "label": "Source GitHub vérifiée",
+    "action": "a vérifié l'accès à GitHub"
+  },
+  "github.source.defaulted": {
+    "label": "Source GitHub par défaut",
+    "action": "a défini comme dépôt par défaut"
+  },
+  "github.source.deleted": {
+    "label": "Source GitHub supprimée",
+    "action": "a supprimé la source GitHub",
+    "description": "Le lien avec le dépôt GitHub a été supprimé."
+  },
+  "github.connect": {
+    "label": "Compte GitHub connecté",
+    "action": "a connecté le compte GitHub"
+  },
+  "github.installation.claim": {
+    "label": "Installation GitHub associée",
+    "action": "a associé l'installation GitHub"
+  },
+  "github.disconnect": {
+    "label": "Compte GitHub déconnecté",
+    "action": "a déconnecté le compte GitHub"
+  },
+  "github.repo.create": {
+    "label": "Dépôt GitHub créé",
+    "action": "a créé un dépôt sur GitHub"
+  },
+  "github.repo.delete": {
+    "label": "Dépôt GitHub supprimé",
+    "action": "a supprimé un dépôt sur GitHub"
+  },
+  "github.webhook.register": {
+    "label": "Webhook GitHub enregistré",
+    "action": "a enregistré un webhook GitHub"
+  },
+  "github.webhook.delete": {
+    "label": "Webhook GitHub supprimé",
+    "action": "a supprimé un webhook GitHub"
+  },
+  "github.instance_token.set": {
+    "label": "Jeton d'instance GitHub défini",
+    "action": "a défini le jeton d'instance GitHub",
+    "description": "Un jeton d'application GitHub personnalisé a été configuré."
+  },
+  "github:write": {
+    "label": "Action GitHub",
+    "action": "a modifié l'intégration GitHub"
+  },
+  "github:admin": {
+    "label": "Action admin sur GitHub",
+    "action": "a exécuté une action admin sur GitHub"
+  },
+  "backup_run.succeeded": {
+    "label": "Sauvegarde réussie",
+    "action": "a terminé la sauvegarde avec succès"
+  },
+  "backup_run.failed": {
+    "label": "Échec de la sauvegarde",
+    "action": "a échoué lors de la sauvegarde"
+  },
+  "backup_restore.completed": {
+    "label": "Restauration terminée",
+    "action": "a restauré avec succès à partir de la sauvegarde"
+  },
+  "backup_restore.failed": {
+    "label": "Échec de la restauration",
+    "action": "a échoué à restaurer depuis la sauvegarde"
+  },
+  "backup.webhook.fired": {
+    "label": "Webhook de sauvegarde déclenché",
+    "action": "a déclenché le webhook de sauvegarde"
+  },
+  "backup.webhook.disabled": {
+    "label": "Webhook de sauvegarde désactivé",
+    "action": "a désactivé le webhook de sauvegarde",
+    "description": "Le webhook a été désactivé après des échecs répétés."
+  },
+  "backup_destination:write": {
+    "label": "Destination de sauvegarde modifiée",
+    "action": "a modifié la destination de sauvegarde"
+  },
+  "backup_destination:admin": {
+    "label": "Action admin sur la destination de sauvegarde",
+    "action": "a exécuté une action admin sur la destination de sauvegarde"
+  },
+  "backup_destination:backup_policy:write": {
+    "label": "Politique de sauvegarde modifiée",
+    "action": "a modifié la politique de sauvegarde"
+  },
+  "backup_destination:backup_run:write": {
+    "label": "Exécution de sauvegarde modifiée",
+    "action": "a modifié l'exécution de sauvegarde"
+  },
+  "backup_destination:backup_restore:write": {
+    "label": "Restauration de sauvegarde modifiée",
+    "action": "a modifié la restauration de sauvegarde"
+  }
+}

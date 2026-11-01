@@ -13,6 +13,8 @@
  * session-vs-no-session.
  */
 
+import { emailVerificationHref } from "@/lib/cloud-auth";
+
 export type SignUpResultShape = {
   error?: { message?: string | null } | null;
   data?: { token?: string | null } | null;
@@ -28,9 +30,13 @@ export type SignUpNext =
 
 export function signUpNext(
   result: SignUpResultShape,
-  opts: { email: string; postLoginUrl?: string | null },
+  opts: {
+    email: string;
+    postLoginUrl?: string | null;
+    authParams?: Parameters<typeof emailVerificationHref>[1];
+  },
 ): SignUpNext {
-  const verifyHref = `/verify-email?email=${encodeURIComponent(opts.email)}`;
+  const verifyHref = emailVerificationHref(opts.email, opts.authParams ?? new URLSearchParams());
 
   if (result.error) {
     // Some deployments surface the requirement as an error instead of a null

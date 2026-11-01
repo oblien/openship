@@ -12,8 +12,9 @@
  *   - organizationId: string  (required — used to resolve namespace)
  */
 
-import { env } from "../../../config/env";
-import { getOblienClient, ensureNamespaceWithQuota } from "../../../lib/openship-cloud";
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { env } from "@repo/platform/engine/config/env";
+import { getOblienClient, ensureNamespaceWithQuota } from "@repo/platform/engine/lib/openship-cloud";
 import type {
   TunnelAgent,
   TunnelProvider,
@@ -56,6 +57,7 @@ export const oblienProvider: TunnelProvider = {
       // quota-asserting entry point like every other spend path.
       namespace = await ensureNamespaceWithQuota(organizationId);
     } catch (err) {
+      observeCaughtError(err, "api/modules/tunneling/providers/oblien.provider");
       throw new ProvisionFailedError(
         "oblien",
         err instanceof Error ? err.message : String(err),
@@ -71,6 +73,7 @@ export const oblienProvider: TunnelProvider = {
         namespace,
       });
     } catch (err) {
+      observeCaughtError(err, "api/modules/tunneling/providers/oblien.provider");
       const message = err instanceof Error ? err.message : String(err);
       // Oblien returns a textual conflict error for slug collisions.
       // Don't swallow other failures behind the same code.
@@ -92,7 +95,7 @@ export const oblienProvider: TunnelProvider = {
     // string. Coerce + reject NaN so we never send DELETE /tunnels/NaN.
     const idNum = Number(externalId);
     if (!Number.isFinite(idNum)) {
-      console.warn(
+      errorDiagnostics.warn("api/modules/tunneling/providers/oblien.provider",
         "[tunneling.oblien] delete skipped — externalId is not a finite number",
         { externalId },
       );

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { CommandExecutor } from "@repo/adapters";
-import { provisionDomainDkim } from "../../../src/modules/mail/mail.service";
+import { provisionDomainDkim } from "@repo/platform/engine/modules/mail/mail.service";
 
 const NON_ROOT_SUDO_PROFILE = [
   "opsh_begin=1",

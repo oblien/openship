@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Status pill - small rounded badge with a consistent tone palette.
  *
@@ -23,7 +25,6 @@
  */
 
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
 
 export type PillTone = "success" | "warning" | "danger" | "info" | "neutral";
 
@@ -37,7 +38,7 @@ const TONE_CLASSES: Record<PillTone, string> = {
 
 interface StatusPillProps {
   tone: PillTone;
-  icon?: LucideIcon;
+  icon?: IconName;
   children: React.ReactNode;
   className?: string;
 }
@@ -51,7 +52,7 @@ export function StatusPill({ tone, icon: Icon, children, className }: StatusPill
         className,
       )}
     >
-      {Icon && <Icon className="size-3" strokeWidth={2} />}
+      {Icon && <UiIcon name={Icon} className="size-3" />}
       {children}
     </span>
   );

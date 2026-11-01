@@ -44,6 +44,7 @@
  * with a TTY the daemon sends raw bytes and there is nothing to demux.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Readable, Writable } from "node:stream";
 
 /** Frame header: `[streamType, 0, 0, 0, uint32be payloadLength]`. */
@@ -240,7 +241,7 @@ export function demuxDockerStream(
 
   // A source that dies mid-artifact must not look like a clean end to the
   // consumer, which would record a truncated dump as a complete one.
-  src.on("error", (cause: Error) => fail(cause));
+  src.on("error", (cause: Error) => { observeCaughtError(cause, "adapters/runtime/docker-demux"); return fail(cause); });
 
   // Ending with an incomplete frame still buffered is a definitive truncation: the
   // daemon only ever writes whole frames, so a partial one at EOF means the stream

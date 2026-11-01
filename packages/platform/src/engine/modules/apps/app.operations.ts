@@ -1,0 +1,143 @@
+import { assertCloudProxyScope } from "../../lib/cloud/scope";
+import {
+  AppError,
+  NotFoundError,
+  OperationError,
+  AppHostFitSchema,
+  InstallAppResultSchema,
+  type AppHostFit,
+  type InstallAppResult,
+  type AppProjectSchemas,
+} from "@repo/contracts";
+import { Value } from "@sinclair/typebox/value";
+import { UNKNOWN_CAPACITY } from "@repo/core";
+import { repos } from "@repo/db";
+import type { AppDependencies } from "../../../apps";
+import type { ExecutionContext } from "../../../context";
+import type { ResourceServices } from "../../../resource-operations";
+import { authorization } from "../../lib/authorization";
+import { audit, operationAuditContext } from "../../lib/audit-emitter";
+import { resolveProjectAuthority } from "../../lib/cloud/project-authority";
+import { assertServerExecution } from "../system/server-access";
+import * as install from "./app-install.service";
+import * as custom from "./custom-app.service";
+import * as settings from "./app-settings.service";
+import { getTemplateForOrg } from "./catalog-source";
+import { maybeCloudProjectRequest } from "../../lib/cloud/project-creation";
+
+function record(ctx: ExecutionContext, operation: string, resourceId: string, after: unknown) {
+  audit.recordAsync(operationAuditContext(ctx), { eventType: "project:write", resourceType: "project", resourceId, after: { operation, ...after as object } });
+}
+async function projectAuthority(ctx: ExecutionContext, id: string) {
+  if (await resolveProjectAuthority(id, ctx.organizationId) === "cloud") assertCloudProxyScope(ctx);
+}
+
+export const appDependencies: AppDependencies = {
+  collection: {
+    listCatalog: install.getAppCatalog,
+    listCustom: custom.listCustomApps,
+    async saveCustom(ctx, input) {
+      const result = await custom.saveCustomApp(ctx, input);
+      record(ctx, "saveCustomApp", "*", result);
+      return result;
+    },
+    async install(ctx, input) {
+      try {
+        // Uploaded definitions belong to this instance, just like local-folder
+        // sources. Cloud resolves its own catalog rather than receiving a copy.
+        const localDefinition = (await getTemplateForOrg(ctx.organizationId, input.templateId))
+          ?.custom;
+        const cloud = localDefinition
+          ? null
+          : await maybeCloudProjectRequest(
+              ctx,
+              "/api/apps",
+              input,
+              (value): value is InstallAppResult => Value.Check(InstallAppResultSchema, value),
+              { envelope: "data" },
+            );
+        if (cloud) return cloud;
+        const result = await install.installApp(ctx, input, {
+          async assertDraft(projectId) {
+            await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "project", resourceId: projectId, action: "write" });
+          },
+        });
+        record(ctx, "installApp", result.kind === "template" ? result.projectId : "*", { templateId: input.templateId, ...result });
+        return result;
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new OperationError(error instanceof Error ? error.message : "Failed to install app", 400, "APP_INSTALL_FAILED");
+      }
+    },
+  },
+  resources: {
+    async getCatalogEntry(ctx, id) {
+      const template = await getTemplateForOrg(ctx.organizationId, id);
+      if (!template) throw new NotFoundError("App", id);
+      let draft = await install.findOpenAppDraft(ctx, template.id);
+      if (draft && !await authorization.checkPermissionOnResource(ctx, { resourceType: "project", resourceId: draft.projectId, action: "read" })) draft = null;
+      return { template, draft };
+    },
+    async hostFit(ctx, id, input = {}) {
+      const localDefinition = (await getTemplateForOrg(ctx.organizationId, id))?.custom;
+      const cloud = localDefinition
+        ? null
+        : await maybeCloudProjectRequest(
+            ctx,
+            `/api/apps/catalog/${encodeURIComponent(id)}/host-fit`,
+            input,
+            (value): value is AppHostFit => Value.Check(AppHostFitSchema, value),
+            { method: "GET", envelope: "data" },
+          );
+      if (cloud) return cloud;
+      if (input.projectId) {
+        await authorization.authorize(
+          { ...ctx, scopeMode: "fixed" },
+          { resourceType: "project", resourceId: input.projectId, action: "read" },
+        );
+        const project = await repos.project.findByIdInOrganization(input.projectId, ctx.organizationId);
+        if (!project) throw new NotFoundError("Project", input.projectId);
+        if (input.serverId && input.serverId !== project.serverId)
+          throw new AppError("The selected server differs from this project", 409, "PROJECT_SERVER_TARGET_CONFLICT");
+        input = { ...input, serverId: project.serverId ?? undefined };
+      }
+      if (input.serverId) {
+        const server = await repos.server.getInOrganization(input.serverId, ctx.organizationId);
+        if (!server) throw new NotFoundError("Server", input.serverId);
+        await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "server", resourceId: server.id, action: "read" });
+        if (server.workspaceId && input.deployTarget && input.deployTarget !== "cloud")
+          throw new AppError("This managed server is a Cloud destination", 409, "PROJECT_SERVER_TARGET_CONFLICT");
+        if (!server.workspaceId) await assertServerExecution(server);
+      } else if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") {
+        const template = await getTemplateForOrg(ctx.organizationId, id);
+        return { minResources: template?.minResources ?? null, capacity: { ...UNKNOWN_CAPACITY }, fit: { ok: true } };
+      }
+      return install.getAppHostFit(ctx, id, input);
+    },
+    async removeCustom(ctx, id) {
+      await custom.deleteCustomApp(ctx, id);
+      record(ctx, "removeCustomApp", "*", { appId: id });
+      return { ok: true };
+    },
+  },
+};
+
+export const appProjectOperations: ResourceServices<typeof AppProjectSchemas> = {
+  async getAppSettings(ctx, id) {
+    await projectAuthority(ctx, id);
+    return settings.getAppProjectSettings(ctx, id);
+  },
+  async updateAppSettings(ctx, id, input) {
+    await projectAuthority(ctx, id);
+    const changes = input.changes ?? [];
+    const result = await settings.updateAppProjectSettings(ctx, id, changes);
+    record(ctx, "updateAppSettings", id, { fields: changes.map(({ service, key }) => ({ service, key })), ...result });
+    return result;
+  },
+  async getAppConnection(ctx, id) {
+    await projectAuthority(ctx, id);
+    const result = await settings.getAppConnectionView(ctx, id);
+    record(ctx, "getAppConnection", id, { revealedOutputs: result.outputs.filter(output => output.secret).map(output => output.id) });
+    return result;
+  },
+};

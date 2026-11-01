@@ -13,14 +13,16 @@
 
 import { Hono } from "hono";
 import { db, eq, repos, schema } from "@repo/db";
-import { env } from "../../config/env";
-import { auth, isSaasDeployment } from "../../lib/auth";
+import { env } from "@repo/platform/engine/config/env";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
-import { invitationLifecycleMiddleware } from "../../lib/invitation-lifecycle-lock";
+import { authMiddleware } from "../../middleware/auth";
+import * as organizationController from "./organization.controller";
 import { internalAuth } from "../../middleware/internal-auth";
-import { isLoopbackRequest } from "../../middleware/loopback-peer";
+import { firstSignupGuard } from "../../middleware/local-bootstrap";
 import * as ctrl from "./auth.controller";
 import { handleMcpTokenRequest } from "./mcp-token.handler";
+import { REPOSITORY_OAUTH_STATE_PREFIX } from "@repo/platform/engine/modules/github/github-repository-authorization";
 
 export const authRoutes = new Hono();
 
@@ -38,36 +40,23 @@ if (env.DEPLOY_MODE === "desktop") {
 // lookup requires a session, which a brand-new invitee cannot have yet.
 authRoutes.get("/invitation-preview/:id", ctrl.invitationPreview);
 
-// Better Auth's invitation lifecycle is a read + write + (for acceptance)
-// membership insert rather than one database transaction. Serialize every
-// terminal mutation by invitation id so accept cannot cross cancel/reject, and
-// use the same lock as token-bound account creation.
-for (const path of [
-  "/organization/accept-invitation",
-  "/organization/reject-invitation",
-  "/organization/cancel-invitation",
-]) {
-  authRoutes.on("POST", path, invitationLifecycleMiddleware);
-}
+// Compatibility URLs use the same authorized operations as the SDK. The shared
+// invitation service owns the serialization boundary.
+authRoutes.post("/organization/invite-member", authMiddleware, organizationController.inviteMember);
+authRoutes.post("/organization/accept-invitation", authMiddleware, organizationController.acceptInvitation);
+authRoutes.post("/organization/reject-invitation", authMiddleware, organizationController.rejectInvitation);
+authRoutes.post("/organization/cancel-invitation", authMiddleware, organizationController.cancelInvitation);
+authRoutes.post("/organization/update-member-role", authMiddleware, organizationController.updateMemberRole);
+authRoutes.post("/organization/remove-member", authMiddleware, organizationController.removeMember);
+authRoutes.post("/organization/leave", authMiddleware, organizationController.leaveOrganization);
 
 // Invite-only sign-up guard (runs BEFORE the Better Auth catch-all). SaaS keeps
 // open public signup. On self-host the ONLY Better Auth signup allowed is the
-// FIRST account and only from loopback (CLI bootstrap / local dev) — this closes
-// the remote first-admin race and public invite-hijack signup. Every other new
+// FIRST account on an explicitly local instance and from a loopback peer.
+// Public/CLI instances bootstrap through the host-token flow. Every other new
 // account is created via the token-bound POST /api/system/invite-signup, so a
 // remote peer can never create an account through /sign-up here.
-authRoutes.on("POST", "/sign-up/*", async (c, next) => {
-  if (isSaasDeployment) return next();
-  const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
-  if (!anyUser && isLoopbackRequest(c)) return next();
-  return c.json(
-    {
-      error: "Public sign-up is disabled on this instance. Use your invitation link to join.",
-      code: "SIGNUP_DISABLED",
-    },
-    403,
-  );
-});
+authRoutes.on("POST", "/sign-up/*", firstSignupGuard);
 
 // The mcp() plugin's discovery metadata advertises `jwks_uri` and
 // `userinfo_endpoint` under /api/auth/mcp/* but implements NEITHER — both fell
@@ -105,6 +94,14 @@ authRoutes.get("/mcp/userinfo", async (c) => {
 });
 
 // Better Auth catch-all — must be last so the desktop overrides + signup guard win.
+// Reuse the registered GitHub callback. Repository-grant states are separate
+// from Better Auth's sign-in states and never create or transfer login links.
+authRoutes.get("/callback/github", async (c, next) => {
+  if (!env.CLOUD_MODE || !c.req.query("state")?.startsWith(REPOSITORY_OAUTH_STATE_PREFIX)) return next();
+  const { finishRepositoryAuthorization } = await import("../github/github-repository.controller");
+  return finishRepositoryAuthorization(c);
+});
+
 authRoutes.on(["GET", "POST"], "/*", async (c) => {
   const request = await normalizeMcpRedirectUri(c.req.raw, async (clientId) => {
     const [client] = await db

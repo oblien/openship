@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { Navbar } from "@/components/landing";
 import HomeContent from "./_components/home/HomeContent";
 
@@ -6,7 +7,7 @@ const TITLE = "Mail - Built-in transactional and team email";
 const DESCRIPTION =
   "Send and receive on your own domains without a third-party SMTP provider. Built into Openship - unlimited domains, unlimited mailboxes, Apache 2.0 open source.";
 
-export const metadata: Metadata = {
+const metadata: Metadata = {
   title: "Mail",
   description: DESCRIPTION,
   alternates: { canonical: "/mail" },
@@ -34,6 +35,13 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
   },
 };
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(metadata, parent);
+}
 
 const serviceLd = {
   "@context": "https://schema.org",

@@ -8,12 +8,12 @@ const { listByProjectMock } = vi.hoisted(() => ({ listByProjectMock: vi.fn() }))
 vi.mock("@repo/db", () => ({
   repos: { service: { listByProject: listByProjectMock } },
 }));
-vi.mock("../session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
 }));
 
-import { buildComposeImages } from "./build.service";
+import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
 
 /**
  * A cancelled service build must NOT be laundered into a build failure. The

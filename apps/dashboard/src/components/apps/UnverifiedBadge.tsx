@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { BadgeTooltip } from "./BadgeTooltip";
 
 /**
@@ -25,12 +26,12 @@ export function UnverifiedBadge({ className = "" }: { className?: string }) {
       align="end"
       trigger={
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
-          <AlertTriangle className="size-3" aria-hidden /> Unverified
+          <UiIcon name="warning" className="size-3" aria-hidden /> Unverified
         </span>
       }
       title={
         <>
-          <AlertTriangle className="size-3.5 text-warning" /> Custom app — not verified
+          <UiIcon name="warning" className="size-3.5 text-warning" /> Custom app — not verified
         </>
       }
     >

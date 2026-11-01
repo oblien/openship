@@ -103,6 +103,12 @@
     "cloneTokenFailed": "Clone-Token konnte nicht erstellt werden",
     "newEnvironment": "Neue Umgebung",
     "selectBranch": "Branch auswählen",
+    "searchBranches": "Branches durchsuchen...",
+    "noBranchesMatch": "Keine passenden Branches",
+    "loadingBranches": "Branches werden geladen...",
+    "loadMoreBranches": "Weitere Branches laden",
+    "loadBranchesFailed": "Branches konnten nicht geladen werden.",
+    "retryBranches": "Erneut versuchen",
     "saving": "Wird gespeichert…",
     "saveChanges": "Änderungen speichern",
     "deploying": "Wird deployed…",
@@ -212,7 +218,11 @@
     "backupSummaryConfigured": "{count} Backup-Regel(n) · vor Deploy: {preDeploy}",
     "backupManage": "Backups verwalten",
     "on": "ein",
-    "off": "aus"
+    "off": "aus",
+    "previewTitle": "Bereitstellungsvorschau",
+    "previewHint": "Weiter zur App-Konfiguration. Die Bereitstellung startet auf der nächsten Seite.",
+    "back": "Zurück",
+    "gpuBadge": "GPU"
   },
   "summary": {
     "buildAndDeploy": "Bauen & deployen:",
@@ -231,8 +241,8 @@
     "rollbackOne": "{count} Version",
     "rollbackOther": "{count} Versionen",
     "rollbackAuto": "Rollback: automatisch",
-    "rollbackSnapshotHint": "Von jeder Version wird eine Kopie behalten, sodass ein Rollback nie neu baut. Änderbar unter „Erweitert“.",
-    "rollbackGitHint": "Wie viele frühere Versionen wiederherstellbar bleiben. Änderbar unter „Erweitert“."
+    "rollbackSnapshotHint": "Jede Version wird gespeichert, damit ein Rollback keinen Neubau benötigt. In den Bereitstellungseinstellungen ändern.",
+    "rollbackGitHint": "Anzahl wiederherstellbarer Versionen. In den Bereitstellungseinstellungen ändern."
   },
   "power": {
     "heading": "Leistung",
@@ -296,7 +306,12 @@
     "legacyBody": "Es wurde von einem älteren Openship deployt, das Webmail als Bundle statt als Image auslieferte, und kann daher nicht erneut deployt werden. Ein Deploy entfernt es jetzt – Projekt, Container und seine Sitzungsdatenbank – und installiert an seiner Stelle die Webmail-App. Alle angemeldeten Personen werden abgemeldet, und benutzerspezifische Webmail-Einstellungen gehen verloren.",
     "legacyKept": "Postfächer, Mail-Daten und alle Nachrichten bleiben unangetastet auf dem Mail-Server.",
     "deployFailedTitle": "Deploy fehlgeschlagen",
-    "deployFailed": "Deploy konnte nicht gestartet werden"
+    "deployFailed": "Deploy konnte nicht gestartet werden",
+    "reconnectTitle": "Vorhandenes Webmail neu verknüpfen",
+    "reconnectBody": "Die Verknüpfung zum Mailserver fehlt. Wähle die vorhandene App, um Projekt, Zugangsdaten und gespeicherte Einstellungen zu behalten.",
+    "reconnectChoose": "Wähle vor dem Fortfahren die zu verknüpfende Webmail-App.",
+    "reconnectPlacement": "Die Verknüpfung behält Server und Hostnamen bei. Das Ziel kannst du danach ändern.",
+    "reconnectButton": "Verknüpfen und bereitstellen"
   },
   "serveMode": {
     "heading": "How it's served",

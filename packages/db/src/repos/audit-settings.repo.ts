@@ -7,6 +7,7 @@
  * invalidates the entry so a toggle in the UI reads back immediately.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { eq } from "drizzle-orm";
 import type { Database } from "../client";
 import { auditSettings } from "../schema/audit-settings";
@@ -80,7 +81,8 @@ export function createAuditSettingsRepo(db: Database) {
           columns: { enabled: true },
         });
         value = row?.enabled ?? true;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "db/repos/audit-settings.repo");
         return true; // don't cache a failure
       }
       enabledCache.set(organizationId, { value, expires: now + ENABLED_TTL_MS });

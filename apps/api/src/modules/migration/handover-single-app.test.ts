@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
  *                          keys off the same value, which is what suppresses the clone.
  * The migration set only the first, so every single-app move rebuilt from git.
  */
-const orch = readFileSync(new URL("./migration.orchestrator.ts", import.meta.url), "utf8");
+const orch = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/migration/migration.orchestrator.ts", import.meta.url), "utf8");
 const request = (() => {
   // Anchor on semantic statements, not Prettier's current argument layout.
   // `requestBuildAccess(ctx, {` may be one line or several; the assignment
@@ -46,7 +46,7 @@ describe("the migration's target deploy", () => {
 
 describe("the fields the pin has to satisfy", () => {
   const pinned = readFileSync(
-    new URL("../deployments/pinned-artifacts.ts", import.meta.url),
+    new URL("../../../../../packages/platform/src/engine/modules/deployments/pinned-artifacts.ts", import.meta.url),
     "utf8",
   );
 
@@ -67,11 +67,11 @@ describe("the fields the pin has to satisfy", () => {
  */
 describe("no git source is fetched when the image is pinned", () => {
   const pinned = readFileSync(
-    new URL("../deployments/pinned-artifacts.ts", import.meta.url),
+    new URL("../../../../../packages/platform/src/engine/modules/deployments/pinned-artifacts.ts", import.meta.url),
     "utf8",
   );
   const pipeline = readFileSync(
-    new URL("../deployments/build-pipeline.ts", import.meta.url),
+    new URL("../../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts", import.meta.url),
     "utf8",
   );
 

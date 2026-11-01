@@ -1,7 +1,7 @@
 {
   "checking": "DNS sağlayıcınız kontrol ediliyor…",
   "noProviderTitle": "Bu kayıtları otomatik olarak ayarla",
-  "noProviderDesc": "Bir DNS sağlayıcısı bağlayın; Openship bu kayıtları sizin için eklesin.",
+  "noProviderDesc": "Bu alan adının bölgesine erişimi olan bir DNS sağlayıcısı bağlayın, ardından kayıtları inceleyip uygulayın.",
   "connect": "DNS sağlayıcısı bağla",
   "unauthorizedTitle": "DNS sağlayıcısının yeniden bağlanması gerekiyor",
   "unauthorizedDesc": "Kayıtlı belirteciniz reddedildi. DNS'i otomatik yapılandırmak için yeniden bağlayın.",
@@ -25,5 +25,20 @@
   "outcomeFailed": "Başarısız",
   "resultDone": "DNS güncellendi.",
   "resultPartial": "Bazı kayıtlar dikkat gerektiriyor.",
-  "applyFailed": "DNS yapılandırılamadı."
+  "applyFailed": "DNS yapılandırılamadı.",
+  "preDeployHint": "Sağlayıcı bağlandı. Önce dağıtın, ardından projenin alan adı ayarlarından DNS'yi otomatik yapılandır seçeneğini kullanın.",
+  "currentValue": "Mevcut değer",
+  "desiredValue": "Yeni değer",
+  "checkAgain": "Tekrar kontrol et",
+  "manualSetup": "Manuel DNS kurulumu",
+  "recordsFailed": "DNS kayıtları yüklenemedi. Lütfen tekrar deneyin.",
+  "connection": {
+    "description": "Bu çalışma alanı için bir kez bağlayın. DNS değişikliklerini uygulamadan önce inceleyin.",
+    "provider": "DNS sağlayıcısı",
+    "connection": "Bağlantı",
+    "newConnection": "Bağlantı ekle",
+    "createToken": "API belirteci oluştur",
+    "adminRequired": "DNS sağlayıcısını bir sahip veya yönetici bağlamalıdır. Kayıtları yine de manuel olarak ekleyebilirsiniz.",
+    "loadFailed": "DNS bağlantıları yüklenemedi. Lütfen tekrar deneyin."
+  }
 }

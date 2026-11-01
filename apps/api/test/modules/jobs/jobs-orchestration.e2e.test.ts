@@ -9,8 +9,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const ssh = vi.hoisted(() => ({ state: { code: 0, output: "ok" } }));
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
+    acquire: async () => ({}),
     retain: () => {},
     release: () => {},
     withExecutor: async (_sid: string, fn: (ex: { streamExec: (cmd: string, onLine: (e: unknown) => void) => Promise<{ code: number; output: string }> }) => unknown) =>
@@ -19,8 +20,8 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
 }));
 
 import { db, schema, repos, resetJobs, seedOwner, installFakeRunner } from "./_harness";
-import * as jobService from "../../../src/modules/jobs/job.service";
-import { runDueOnceJobs } from "../../../src/modules/jobs/job-command";
+import * as jobService from "@repo/platform/engine/modules/jobs/job.service";
+import { runDueOnceJobs } from "@repo/platform/engine/modules/jobs/job-command";
 
 const runner = installFakeRunner();
 let owner: Awaited<ReturnType<typeof seedOwner>>;
@@ -29,6 +30,8 @@ beforeEach(async () => {
   await resetJobs();
   ssh.state = { code: 0, output: "ok" };
   owner = await seedOwner();
+  await db.insert(schema.servers).values({ id: "srv-1", organizationId: owner.orgId, name: "Jobs server", sshHost: "192.0.2.10" })
+    .onConflictDoUpdate({ target: schema.servers.id, set: { organizationId: owner.orgId } });
 });
 
 let n = 0;

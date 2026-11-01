@@ -1,22 +1,21 @@
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useState } from "react";
-import { Inbox, Layers, ArrowRight, Pencil, KeyRound, Cpu } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { isServicesFramework } from "@repo/core";
+import { getRuntimeVersionPolicy, isServicesFramework } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useI18n } from "@/components/i18n-provider";
 import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
 import { EnvVarsEditor } from "./EnvVarsEditor";
 import { StorageSettings } from "./StorageSettings";
+import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
 import { ResourceSettings } from "./ResourceSettings";
+import { CommandEnvironmentNotice } from "@/components/import-project/CommandEnvironmentNotice";
 
 /**
- * Project → Runtime tab. READ-ONLY by design.
- *
- * Config (build/runtime/env) has a single edit owner: the deploy wizard. This
- * tab only DISPLAYS the project's current configuration and links to the wizard
- * (opened with ?projectId) for any change — so editing never lives in two
- * places and every change goes through the create-a-new-version flow.
+ * Configuration cards within project Settings. Build settings link to the deploy wizard; project
+ * environment, resources and storage use their existing focused editors.
+ * Shared project environment remains available for every workload type.
  *
  * Visual shell (SectionCard + ICON_TONES) mirrors the sibling settings tabs
  * (GitSettings / BackupSettings / DomainSettings) so the tab fills the same
@@ -41,7 +40,7 @@ function SectionCard({
   actions,
   children,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   iconTone?: keyof typeof ICON_TONES;
   title: string;
   description: string;
@@ -52,7 +51,7 @@ function SectionCard({
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
       <div className={`flex items-start gap-3 px-5 py-4 ${children ? "border-b border-border/40" : ""}`}>
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}>
-          <Icon className="size-4" />
+          <UiIcon name={Icon} className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
@@ -88,22 +87,21 @@ function Row({
 }
 
 export const BuildSettings = () => {
-  const { buildData, projectData, servicesData, id } = useProjectSettings();
+  const { buildData, projectData, servicesData, id, updateBuild, refreshEnvironment } = useProjectSettings();
   const { t } = useI18n();
   const router = useRouter();
-  const [envOpen, setEnvOpen] = useState(false);
 
   const isWebmail = projectData?.framework === "webmail";
   const services = servicesData.services;
-  const monorepoCount = services.filter((s) => s.kind === "monorepo").length;
-  const composeCount = services.length - monorepoCount;
   // SERVICE-FIRST = the project itself is a set of services (a compose-stack
   // project) or a monorepo of sub-apps — its config genuinely lives per-service.
   // A single/static APP that merely had a sidecar service ADDED is NOT
   // service-first: it keeps its own primary-app Configuration below. Keyed on
   // the project's framework, never on "a service row exists" (which conflates
   // the two — the whole point of this fix).
-  const isServiceFirst = monorepoCount > 0 || isServicesFramework(projectData?.framework);
+  const isServiceFirst =
+    services.some((service) => service.kind === "monorepo") ||
+    isServicesFramework(projectData?.framework);
 
   // Edit = the deploy wizard, rehydrated from this project. The single place
   // config is editable; this tab never mutates it.
@@ -125,7 +123,7 @@ export const BuildSettings = () => {
         onClick={openWizard}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
       >
-        <Pencil className="size-3.5" />
+        <UiIcon name="edit" className="size-3.5" />
         {t.projectSettings.build.edit}
       </button>
     ) : null;
@@ -135,7 +133,7 @@ export const BuildSettings = () => {
     return (
       <div className="space-y-5">
         <SectionCard
-          icon={Inbox}
+          icon={"inbox"}
           iconTone="muted"
           title={t.projectSettings.build.webmail.title}
           description={t.projectSettings.build.webmail.description}
@@ -148,38 +146,11 @@ export const BuildSettings = () => {
   //    (A single/static app with an added sidecar service falls through to the
   //    single-app config below — it is NOT service-first.) ──
   if (isServiceFirst) {
-    const subAppsLabel = interpolate(
-      monorepoCount === 1 ? t.projectSettings.build.services.subAppOne : t.projectSettings.build.services.subAppOther,
-      { count: String(monorepoCount) },
-    );
-    const composeLabel = interpolate(
-      composeCount === 1 ? t.projectSettings.build.services.composeOne : t.projectSettings.build.services.composeOther,
-      { count: String(composeCount) },
-    );
-    const serviceLabel =
-      monorepoCount && composeCount
-        ? interpolate(t.projectSettings.build.services.both, { subApps: subAppsLabel, composeServices: composeLabel })
-        : monorepoCount
-          ? subAppsLabel
-          : composeLabel;
     return (
       <div className="space-y-5">
-        <SectionCard
-          icon={Layers}
-          iconTone="primary"
-          title={t.projectSettings.build.services.title}
-          description={interpolate(t.projectSettings.build.services.descriptionTemplate, { serviceLabel })}
-          actions={
-            <button
-              type="button"
-              onClick={() => router.push(`/projects/${id}/services`)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              {t.projectSettings.build.services.open}
-              <ArrowRight className="size-3.5" />
-            </button>
-          }
-        />
+        <ProjectEnvironmentSettings />
+      <BuildCacheMigration key={id} projectId={id} />
+        <ResourceSettings />
       </div>
     );
   }
@@ -194,18 +165,22 @@ export const BuildSettings = () => {
   // (sandboxed like a web app), so classify via the resolved workload — only a
   // static site has "no runtime" (#538).
   const workload = workloadOf(buildData);
-  const runtimeModeLabel = workload === "static"
-    ? t.projectSettings.build.runtime.modeStatic
-    : projectData?.runtimeMode === "docker"
-      ? t.projectSettings.build.runtime.modeSandboxed
-      : projectData?.runtimeMode === "bare"
-        ? t.projectSettings.build.runtime.modeDirect
-        : t.projectSettings.build.runtime.modeDefault;
+  const runtimeModeLabel =
+    workload === "static"
+      ? projectData?.deployTarget === "cloud"
+        ? t.projectSettings.cloudStaticHosting[projectData.cloudStaticHosting ?? "pages"]
+        : t.projectSettings.build.runtime.modeStatic
+      : projectData?.runtimeMode === "docker"
+        ? t.projectSettings.build.runtime.modeSandboxed
+        : projectData?.runtimeMode === "bare"
+          ? t.projectSettings.build.runtime.modeDirect
+          : t.projectSettings.build.runtime.modeDefault;
 
   return (
     <div className="space-y-5">
+      <CommandEnvironmentNotice commands={buildData} projectId={id} onMigrated={async commands => { updateBuild(commands); await refreshEnvironment(); }} />
       <SectionCard
-        icon={Cpu}
+        icon={"cpu"}
         iconTone="orange"
         title={t.projectSettings.build.runtime.title}
         description={t.projectSettings.build.runtime.description}
@@ -225,6 +200,8 @@ export const BuildSettings = () => {
             value={buildData.hasBuild ? buildData.buildCommand : t.projectSettings.build.runtime.noBuildStep}
             mono={buildData.hasBuild}
           />
+          {getRuntimeVersionPolicy(projectData?.framework) && <Row label={t.importProject.buildSettings.runtimeVersionLabel} value={projectData?.runtimeVersion ?? getRuntimeVersionPolicy(projectData?.framework)!.defaultVersion} mono />}
+          {projectData?.runtimeImage && <Row label={t.importProject.buildSettings.runtimeImageLabel} value={projectData.runtimeImage} mono />}
           <Row label={t.projectSettings.build.runtime.outputDirectory} value={buildData.outputDirectory} mono />
           <Row label={t.projectSettings.build.runtime.rootDirectory} value={buildData.rootDirectory || "."} mono />
           {/* Only when pinned — a blank row would be noise for the vast majority
@@ -240,21 +217,31 @@ export const BuildSettings = () => {
         </div>
       </SectionCard>
 
-      {/* Machine power — cpu/memory caps. Editable in place, like Storage: you
-          reach for it BECAUSE a container just got OOM-killed, and routing that
-          through the full re-deploy wizard is the wrong shape. Only meaningful
-          for a project that actually runs a container. */}
-      {workload !== "static" && <ResourceSettings />}
+      <ProjectEnvironmentSettings />
+      <BuildCacheMigration key={id} projectId={id} />
+
+      {/* Project-wide limits also apply to companion services on a static site. */}
+      {(workload !== "static" || services.length > 0) && <ResourceSettings />}
 
       {/* Storage — persistent paths + object storage. Editable in place (see the
           component's own note on why it doesn't route through the wizard). Only
           meaningful for a project with a running container. */}
       {workload !== "static" && <StorageSettings />}
+    </div>
+  );
+};
 
+/** Shared project inputs remain editable for single apps, Compose and monorepos. */
+export function ProjectEnvironmentSettings() {
+  const { id } = useProjectSettings();
+  const { t } = useI18n();
+  const [envOpen, setEnvOpen] = useState(false);
+  return (
+    <>
       {/* Environment variables — edited in place via a safe per-variable editor
           (diff-merge; untouched secrets are never re-sent), NOT the wizard. */}
       <SectionCard
-        icon={KeyRound}
+        icon={"key"}
         iconTone="violet"
         title={t.projectSettings.build.env.title}
         description={t.projectSettings.build.env.description}
@@ -264,13 +251,13 @@ export const BuildSettings = () => {
             onClick={() => setEnvOpen(true)}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
           >
-            <Pencil className="size-3.5" />
+            <UiIcon name="edit" className="size-3.5" />
             {t.projectSettings.build.env.edit}
           </button>
         }
       />
 
-      <EnvVarsEditor projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
-    </div>
+      <EnvVarsEditor key={id} projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
+    </>
   );
-};
+}

@@ -85,10 +85,15 @@ export async function moveThreadsTo({ threadIds, currentFolder, destination }: M
               ? LABELS.TRASH
               : '';
         break;
-      case 'bin':
-        addLabel = LABELS.TRASH;
-        removeLabel = isInInbox ? LABELS.INBOX : isInSpam ? LABELS.SPAM : '';
-        break;
+      case 'bin': {
+        // IMAP-only mailboxes need a real mailbox move, not a Gmail-style
+        // label. deleteThreads moves to Trash when the source is not Trash,
+        // and permanently deletes when it is.
+        return trpcClient.mail.bulkDelete.mutate({
+          ids: threadIds,
+          folder: currentFolder,
+        });
+      }
       default:
         return;
     }
@@ -100,6 +105,7 @@ export async function moveThreadsTo({ threadIds, currentFolder, destination }: M
 
     return trpcClient.mail.modifyLabels.mutate({
       ids: threadIds,
+      folder: currentFolder,
       addLabels: addLabel ? [addLabel] : [],
       removeLabels: removeLabel ? [removeLabel] : [],
     });

@@ -15,6 +15,7 @@ import { parseTraefikLabels, scanTraefik, type TraefikContainer } from "./traefi
 const box = (over: Partial<TraefikContainer> & { name: string }): TraefikContainer => ({
   labels: {},
   ip: "172.18.0.5",
+  exposedPorts: ["80/tcp"],
   ...over,
 });
 
@@ -130,7 +131,7 @@ describe("traefik: port and scheme resolution", () => {
     expect(res.warnings).toEqual([]);
   });
 
-  test("two exposed ports and no label is ambiguous — assumes :80 and SAYS so", () => {
+  test("uses the lowest exposed TCP port, as the Docker provider does", () => {
     const res = parseTraefikLabels([
       box({
         name: "app",
@@ -138,8 +139,8 @@ describe("traefik: port and scheme resolution", () => {
         exposedPorts: ["3000/tcp", "9229/tcp"],
       }),
     ]);
-    expect(urlOf(res.sites[0])).toBe("http://172.18.0.5:80");
-    expect(res.warnings.some((w) => w.includes("assumed :80"))).toBe(true);
+    expect(urlOf(res.sites[0])).toBe("http://172.18.0.5:3000");
+    expect(res.warnings).toEqual([]);
   });
 
   test("a router names a service defined on ANOTHER container", () => {
@@ -159,9 +160,8 @@ describe("traefik: port and scheme resolution", () => {
         labels: { "traefik.http.services.elsewhere.loadbalancer.server.port": "7000" },
       }),
     ]);
-    // The upstream IP is the ROUTER's container (that's what Traefik dials for a
-    // docker-provider service), with the cross-container port applied.
-    expect(urlOf(res.sites[0])).toBe("http://172.18.0.5:7000");
+    // The backend service owns both the IP and port; the router may live elsewhere.
+    expect(urlOf(res.sites[0])).toBe("http://172.18.0.9:7000");
   });
 
   test("a service@provider suffix on the router still resolves", () => {
@@ -189,7 +189,8 @@ describe("traefik: port and scheme resolution", () => {
         },
       }),
     ]);
-    expect(urlOf(res.sites[0])).toBe("http://172.18.0.5:80");
+    expect(res.sites).toEqual([]);
+    expect(res.warnings[0]).toContain("no valid backend port");
   });
 });
 
@@ -297,7 +298,7 @@ describe("traefik: rule parsing", () => {
     expect(res.sites[0].serverNames).toEqual(["a.example.com", "b.example.com"]);
   });
 
-  test("a hostname repeated across matchers isn't duplicated", () => {
+  test("a hostname with only path matches is not imported as a catch-all", () => {
     const res = parseTraefikLabels([
       box({
         name: "a",
@@ -307,7 +308,23 @@ describe("traefik: rule parsing", () => {
         },
       }),
     ]);
+    expect(res.sites).toHaveLength(1);
     expect(res.sites[0].serverNames).toEqual(["a.example.com"]);
+    expect(res.sites[0].routes).toEqual([
+      { path: "/x", url: "http://172.18.0.5:80" },
+      { path: "/y", url: "http://172.18.0.5:80" },
+    ]);
+    expect(res.warnings).toEqual([]);
+  });
+
+  test.each(["/mcp", "/"])("preserves a single exact %s match without a catch-all", (path) => {
+    const res = parseTraefikLabels([
+      box({ name: "a", labels: { "traefik.http.routers.r.rule": `Host(\`a.example.com\`) && Path(\`${path}\`)` } }),
+    ]);
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0].routes).toEqual([
+      { path, exact: true, url: expect.stringMatching(/^http:\/\//) },
+    ]);
   });
 
   test("uppercase HOST( and single quotes both parse", () => {
@@ -336,7 +353,7 @@ describe("scanTraefik: the real docker-inspect shape", () => {
     name: string,
     labels: Record<string, string>,
     nets: string,
-    ports = "",
+    ports = "80/tcp ",
     cmd = "",
   ) => `${name}\t${JSON.stringify(labels)}\t${nets}\t${ports}\t${cmd}`;
 

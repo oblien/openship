@@ -17,14 +17,14 @@ const resolveInstancePublicIp = vi.hoisted(() => vi.fn(async () => "203.0.113.9"
 const hostControlDisabled = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock("@repo/db", () => ({ repos: { server: serverRepo } }));
-vi.mock("../../src/lib/box-org", () => ({ boxOwningOrgId }));
-vi.mock("../../src/lib/server-target", () => ({ resolveInstancePublicIp }));
+vi.mock("@repo/platform/engine/lib/box-org", () => ({ boxOwningOrgId }));
+vi.mock("@repo/platform/engine/lib/server-target", () => ({ resolveInstancePublicIp }));
 vi.mock("@repo/adapters", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/adapters")>();
   return { ...actual, hostControlDisabled };
 });
 
-import { ensureLocalServer } from "../../src/lib/startup/self-server";
+import { ensureLocalServer } from "@repo/platform/engine/lib/startup/self-server";
 
 const readSrc = async (rel: string) =>
   (await import("node:fs")).readFileSync(new URL(rel, import.meta.url), "utf8");
@@ -169,13 +169,13 @@ describe("wiring", () => {
   });
 
   it("GET /servers self-heals, so no install order can show an empty list", async () => {
-    const src = await readSrc("../../src/modules/system/servers.controller.ts");
-    const list = src.slice(src.indexOf("export async function listServers"));
+    const src = await readSrc("../../../../packages/platform/src/engine/modules/system/server.operations.ts");
+    const list = src.slice(src.indexOf("async function listServers"));
     expect(list.indexOf("ensureLocalServer()")).toBeLessThan(list.indexOf("listByOrganization"));
   });
 
   it("createServer adopts through the primitive — no second creation site", async () => {
-    const src = await readSrc("../../src/modules/system/servers.controller.ts");
+    const src = await readSrc("../../../../packages/platform/src/engine/modules/system/server.operations.ts");
     expect(src).not.toContain("isLocal: true");
     expect(src).toContain("ensureLocalServer({ name:");
   });

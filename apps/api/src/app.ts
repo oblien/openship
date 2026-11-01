@@ -1,23 +1,37 @@
+import { referralRoutes } from "./modules/affiliates/referral.routes";
+import { affiliateRoutes } from "./modules/affiliates/affiliate.routes";
+import { actionRoutes } from "./modules/actions/action.routes";
+import { actionRuntimeRoutes, actionTwirpRoutes } from "./modules/actions/action-runtime.routes";
+import { actionOidcRoutes } from "./modules/actions/action-oidc.routes";
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { env, trustedOrigins } from "./config/env";
+import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { handleApiError } from "./middleware/error-handler";
-import { authRouteLimiter } from "./middleware/rate-limiter";
+import { observeRequestErrors } from "./middleware/error-observation";
+import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
 import { forceMcpConsent } from "./middleware/mcp-consent";
 import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
+import {
+  controllerIsActive,
+  registerControllerLifecycle,
+} from "./modules/system/instance/controller-state";
+import { resumeControllerSockets } from "./lib/ws";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
+import { instanceAuthorityGuard } from "./modules/system/instance/authority-guard";
+import { quiesceController } from "./modules/system/instance/quiescence";
 import { initPlatform } from "@repo/adapters";
-import { validatePlanPriceIds } from "@repo/core";
-import { resolvePlatformConfig } from "./lib/controller-helpers";
-import { runWithRequestStore } from "./lib/request-store";
+import { resolvePlatformConfig } from "@repo/platform/engine/lib/platform-config";
+import { runWithRequestStore } from "@repo/platform/engine/lib/request-store";
 import { runWithCallSource } from "./lib/call-source";
 import { sanitizeRequestLogLine } from "./lib/request-log-redaction";
 
 import { authRoutes } from "./modules/auth/auth.routes";
-import { auth } from "./lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import {
   MCP_RESOURCE_PATHS,
@@ -44,7 +58,7 @@ import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
-import * as githubAuth from "./modules/github/github.auth";
+import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
 import { tokenRoutes } from "./modules/tokens/token.routes";
 import { mcpRoutes } from "./modules/mcp/mcp.routes";
@@ -55,18 +69,19 @@ import { backupRoutes } from "./modules/backups/backup.routes";
 import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
-import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
-import { reconcileJobs } from "./modules/jobs/job.service";
-import { scheduleBillingAnniversary } from "./modules/billing/billing-anniversary.cron";
-import { ensureOblienWebhook } from "./lib/openship-cloud";
-import { ensureOblienDefaultQuota } from "./modules/billing/billing-oblien-quota";
-import { backfillWebhookSecrets } from "./modules/github/github.service";
-import { backupOrchestrator } from "./modules/backups/backup.orchestrator";
-import { getJobRunner } from "./lib/job-runner";
+import { reconcileAllSchedules } from "@repo/platform/engine/modules/backups/triggers/cron";
+import { reconcileJobs, runScheduledJob } from "@repo/platform/engine/modules/jobs/job.service";
+import { scheduleBillingAnniversary } from "@repo/platform/engine/modules/billing/billing-anniversary.cron";
+import { ensureOblienWebhook } from "@repo/platform/engine/lib/openship-cloud";
+import { ensureOblienDefaultQuota } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { backfillWebhookSecrets } from "@repo/platform/engine/modules/github/github.service";
+import { backupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 import { repos } from "@repo/db";
 
 /* ---------- Initialize platform (runtime + infra + system) ---------- */
 await initPlatform(resolvePlatformConfig());
+if (await controllerIsActive()) await repos.configurationSecrets.backfillLegacy();
 
 export const app = new Hono();
 
@@ -110,20 +125,26 @@ const serveAuthServerMetadata = requestScopedMetadata(oauthAuthServerMetadata);
 const serveProtectedResourceMetadata = requestScopedMetadata(oauthProtectedResourceMetadata);
 
 /* ---------- Global middleware ---------- */
+app.use("*", observeRequestErrors);
 app.use(
   "*",
   cors({
     origin: trustedOrigins,
     credentials: true,
+    exposeHeaders: ["X-Request-ID"],
   }),
 );
 // Hono's default logger includes the raw query string and path. Invitation ids
 // are bearer credentials embedded in a path, while OAuth/signed credentials
 // commonly live in queries, so sanitize both before anything reaches stdout.
-app.use(
-  "*",
-  logger((line) => console.log(sanitizeRequestLogLine(line))),
-);
+// Bypass logging for periodic healthcheck probes to prevent log flooding.
+const requestLogger = logger((line) => console.log(sanitizeRequestLogLine(line)));
+app.use("*", (c, next) => {
+  if (c.req.path === "/api/health" || c.req.path === "/health") {
+    return next();
+  }
+  return requestLogger(c, next);
+});
 // Seed a per-request memo store FIRST so every downstream handler shares it.
 // Collapses idempotent-per-request reads (cloud session validation, GitHub
 // auth-mode, installations) to one call each — a single /github/status was
@@ -139,6 +160,7 @@ app.use("*", clientIpMiddleware);
 // send an Origin header so they pass through; CLI/server-to-server
 // callers using Bearer also have no Origin and pass through.
 app.use("*", originGuard);
+app.use("*", instanceAuthorityGuard);
 app.use("*", migrationGuard);
 
 // Primary error path: Hono's compose() catches thrown errors at each
@@ -148,13 +170,18 @@ app.use("*", migrationGuard);
 // AppError / ZodError get serialized with their statusCode and code.
 app.onError(handleApiError);
 
-// Rate limiting now lives in the route chain, NOT in a global `/api/*`
-// middleware (fixes #123). secureRouter injects a per-route limiter AFTER
+// Per-route rate limiting lives after authentication (fixes #123).
+// secureRouter injects a per-route limiter AFTER
 // authMiddleware — `default-authed` (per user) for permission-tagged routes,
 // `default-anon` (per IP) for public ones, or the route's explicit `rateLimit`
 // policy. A global limiter ran upstream of auth, so it could never see `ctx`
 // (always default-anon) and double-charged routes with their own policy.
 //
+// An independent pre-auth ceiling protects the session lookup on standalone
+// installations. Its flood-ip bucket does not charge the per-route policies.
+// Cloud mode and OPENSHIP_TRUST_EDGE delegate this ceiling to the trusted edge.
+app.use("/api/*", floodGuard);
+
 // Better Auth is a RAW catch-all (not secureRouter), so it carries one central
 // limiter: POSTs and invitation bearer-token previews use `auth-tight`; ordinary
 // session/OAuth GETs use `default-anon`. A route must not add a second limiter.
@@ -193,6 +220,8 @@ app.route("/api/settings", settingsRoutes);
 app.route("/api/tokens", tokenRoutes);
 app.route("/api/mcp", mcpRoutes);
 app.route("/api/billing", billingPlansRoutes);
+app.route("/api/affiliates", affiliateRoutes);
+app.route("/api/referrals", referralRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);
@@ -203,6 +232,10 @@ app.route("/api/updates", updatesRoutes);
 // Org-wide issue feed — reads the caches the jobs above write; no detection of its own.
 app.route("/api/issues", issuesRoutes);
 app.route("/api/jobs", jobRoutes);
+app.route("/api/actions", actionRoutes);
+app.route("/api/actions/runtime", actionRuntimeRoutes);
+app.route("/api/actions/oidc", actionOidcRoutes);
+app.route("/twirp", actionTwirpRoutes);
 // Platform status notices — banner feed (public read) + operator push (internal).
 // Both modes; primarily consumed on the SaaS.
 app.route("/api/notices", noticeRoutes);
@@ -294,8 +327,26 @@ setupWebSocket(app);
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
+// Host resources resolve their own connection; machine-local setup remains self-hosted.
+{
+  const { serverResourceRoutes } = await import("./modules/system/server-resource.routes");
+  app.route("/api/system", serverResourceRoutes);
+  const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
+  app.route("/api/terminal", terminalRoutes);
+  const { migrationRoutes } = await import("./modules/migration/migration.routes");
+  app.route("/api/migration", migrationRoutes);
+}
+
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
+  const { connectedServerRoutes } = await import("./modules/system/connected-server.routes");
+  app.route("/api/system", connectedServerRoutes);
+  const { diagnosticsRoutes } = await import("./modules/diagnostics/diagnostics.routes");
+  app.route("/api/diagnostics", diagnosticsRoutes);
+  const { cloudSupportRoutes } = await import("./modules/cloud-support/cloud-support.routes");
+  app.route("/api/cloud/support", cloudSupportRoutes);
+  const { cloudAnalyticsRoutes } = await import("./modules/cloud-analytics/cloud-analytics.routes");
+  app.route("/api/cloud/telemetry", cloudAnalyticsRoutes);
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
 
@@ -310,6 +361,12 @@ if (env.CLOUD_MODE) {
    * (admin user creation), and all their dependencies don't exist in
    * the cloud runtime - not just "protected", but fully absent.
    */
+  const { instanceRoutes } = await import("./modules/system/instance/instance.routes");
+  app.route("/api/system/instance", instanceRoutes);
+  if (process.env.OPENSHIP_API_ONLY === "true") {
+    const { instanceAccessPages } = await import("./modules/system/instance/access-page");
+    app.route("/", instanceAccessPages);
+  }
   const { systemRoutes } = await import("./modules/system/system.routes");
   app.route("/api/system", systemRoutes);
 
@@ -317,22 +374,14 @@ if (env.CLOUD_MODE) {
   const { mailRoutes } = await import("./modules/mail/mail.routes");
   app.route("/api/mail", mailRoutes);
 
-  /** Docker migration - inspect a server's Docker and adopt it as a project */
-  const { migrationRoutes } = await import("./modules/migration/migration.routes");
-  app.route("/api/migration", migrationRoutes);
-
-  /**
-   * Interactive SERVER terminal (xterm.js ↔ WebSocket ↔ ssh2 PTY).
-   * Self-hosted only — exposes the host's SSH-managed servers.
-   * setupWebSocket(app) already ran unconditionally above; this
-   * branch only mounts the SSH-flavored routes.
-   */
-  const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
-  app.route("/api/terminal", terminalRoutes);
-
   /** Cloud account management - connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);
+
+  /** Private support uses the caller's personal Cloud connection. */
+  const { cloudSupportLocalRoutes } =
+    await import("./modules/cloud-support/cloud-support-local.routes");
+  app.route("/api/cloud/support", cloudSupportLocalRoutes);
 
   /** Billing proxy - cloud-connected local instances proxy to SaaS */
   const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
@@ -345,185 +394,219 @@ if (env.CLOUD_MODE) {
   // and dedups, so they collapse rather than compete.
 }
 
-// ─── Backup job runner + boot reconcile ─────────────────────────────
-//
-// One JobRunner powers all backup work — BullMQ when Redis is
-// reachable, in-process otherwise. Same code path for SaaS and
-// desktop installs. The runner is module-singleton; first access
-// here triggers Redis detection.
-{
-  // These rows represent process-owned work. A self-hosted instance has one API
-  // process, so its boot proves the previous owner died. CLOUD_MODE has several
-  // replicas sharing the same DB: one replica starting proves nothing about a
-  // worker or teardown on another, and sweeping it would manufacture false
-  // quiescence while that other process can still mutate runtime resources.
-  if (!env.CLOUD_MODE) {
-    // A self-hosted process restart proves every in-process worker from the old
-    // process is gone. Complete reconciliation BEFORE starting the runner: a
-    // fire-and-forget sweep can otherwise terminalize a backup/deploy/restore
-    // that the new process has already claimed.
-    const [runs, restores, deployments] = await Promise.all([
-      repos.backupRun.sweepStaleRuns("API restart while backup in flight"),
-      repos.backupRestore.sweepStaleRestores("API restart while restore in flight"),
-      repos.deployment.sweepStaleInFlight(
-        "Interrupted by a server restart — redeploy to try again.",
-      ),
-    ]);
-    if (runs > 0 || restores > 0) {
-      console.log(`[boot] swept ${runs} stale backup runs + ${restores} stale restores`);
-    }
-    if (deployments > 0) {
-      console.log(`[boot] cancelled ${deployments} stale in-flight deployment(s)`);
-    }
+let backgroundStarted = false;
+let startupRegistered = false;
+async function startControllerBackground(): Promise<void> {
+  if (backgroundStarted) return;
+  backgroundStarted = true;
+  try {
+    resumeControllerSockets();
+    // ─── Backup job runner + boot reconcile ─────────────────────────────
+    //
+    // One JobRunner powers all backup work — BullMQ when Redis is
+    // reachable, in-process otherwise. Same code path for SaaS and
+    // desktop installs. The runner is module-singleton; first access
+    // here triggers Redis detection.
+    {
+      // These rows represent process-owned work. A self-hosted instance has one API
+      // process, so its boot proves the previous owner died. CLOUD_MODE has several
+      // replicas sharing the same DB: one replica starting proves nothing about a
+      // worker or teardown on another, and sweeping it would manufacture false
+      // quiescence while that other process can still mutate runtime resources.
+      if (!env.CLOUD_MODE) {
+        await Promise.all([
+          repos.terminalSession.closeAllActive("server_error"),
+          repos.serviceTerminalSession.closeAllActive("server_error"),
+        ]);
+        // A self-hosted process restart proves every in-process worker from the old
+        // process is gone. Complete reconciliation BEFORE starting the runner: a
+        // fire-and-forget sweep can otherwise terminalize a backup/deploy/restore
+        // that the new process has already claimed.
+        const [runs, restores, deployments] = await Promise.all([
+          repos.backupRun.sweepStaleRuns("API restart while backup in flight"),
+          repos.backupRestore.sweepStaleRestores("API restart while restore in flight"),
+          repos.deployment.sweepStaleInFlight(
+            "Interrupted by a server restart — redeploy to try again.",
+          ),
+        ]);
+        if (runs > 0 || restores > 0) {
+          console.log(`[boot] swept ${runs} stale backup runs + ${restores} stale restores`);
+        }
+        if (deployments > 0) {
+          console.log(`[boot] cancelled ${deployments} stale in-flight deployment(s)`);
+        }
+        // The sweep proves old in-process workers are gone. Journals still fence
+        // admission while exact role identities are recovered under the project
+        // lock. Unreachable servers retry through deployment reconciliation.
+        void trackBackgroundWork(
+          import("@repo/platform/engine/modules/deployments/role-handover")
+            .then(({ runRoleHandoverRecovery }) => runRoleHandoverRecovery())
+            .catch((error) =>
+              errorDiagnostics.warn("api/app", "Role handover recovery deferred", error),
+            ),
+        );
 
-    // Stale project deletion flags are reclaimed under the project advisory
-    // lock by the next teardown attempt. A blanket boot sweep can overlap work
-    // started by this process and clear a fresh fence, so it is deliberately
-    // not used here.
-  }
-  // A Docker migration is an in-memory FSM that quiesces (stops) the source
-  // containers before the target deploy — a restart mid-migration would strand
-  // a stopped production stack forever. Restart the originals + roll back any
-  // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
-  // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
-  if (!env.CLOUD_MODE) {
-    const { migrationOrchestrator } = await import("./modules/migration/migration.orchestrator");
-    await migrationOrchestrator.recoverInterruptedMigrations();
-  }
+        // Stale project deletion flags are reclaimed under the project advisory
+        // lock by the next teardown attempt. A blanket boot sweep can overlap work
+        // started by this process and clear a fresh fence, so it is deliberately
+        // not used here.
+      }
+      // A Docker migration is an in-memory FSM that quiesces (stops) the source
+      // containers before the target deploy — a restart mid-migration would strand
+      // a stopped production stack forever. Restart the originals + roll back any
+      // interrupted run. Per-run advisory leases leave workers on other Cloud
+      // replicas untouched; the same recovery is used by self-hosted installations.
+      {
+        const { migrationOrchestrator } =
+          await import("@repo/platform/engine/modules/migration/migration.orchestrator");
+        await migrationOrchestrator.recoverInterruptedMigrations();
+      }
 
-  const runner = await getJobRunner();
-  await runner.start({
-    processRun: (runId) => backupOrchestrator.execute(runId),
-  });
-  console.log(`[boot] backup runner: ${runner.describe()}`);
+      const runner = await getJobRunner();
+      await runner.start({
+        processRun: (runId) => backupOrchestrator.execute(runId),
+        processRecurring: runScheduledJob,
+      });
+      console.log(`[boot] backup runner: ${runner.describe()}`);
+      (await import("@repo/platform/engine/modules/actions/lifecycle")).startActionController();
+      (await import("@repo/platform/engine/modules/ingress/lifecycle")).startIngressController();
 
-  // Generic job schedule: seed built-in system jobs (SSL renewal, orphan GC,
-  // prunes, deployment reconcile) into the `job` table and register every
-  // enabled row on the runner. Operator cron/enabled overrides survive restarts.
-  void reconcileJobs()
-    .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
-    .catch((err) => console.warn("[boot] reconcileJobs failed:", err));
+      // Generic job schedule: seed built-in system jobs (SSL renewal, orphan GC,
+      // prunes, deployment reconcile) into the `job` table and register every
+      // enabled row on the runner. Operator cron/enabled overrides survive restarts.
+      void trackBackgroundWork(
+        reconcileJobs()
+          .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
+          .catch((err) => errorDiagnostics.warn("api/app", "[boot] reconcileJobs failed:", err)),
+      );
 
-  // Self-hosted (single box): any job_run still "running" at boot was orphaned
-  // by a crash/restart mid-run — close it out so the Jobs UI doesn't show a
-  // perpetual "Running" spinner. Not run in CLOUD_MODE, where a shared queue +
-  // multiple replicas mean a "running" row may be live on another replica.
-  if (!env.CLOUD_MODE) {
-    void repos.jobRun
-      .failStaleRunning()
-      .then((n) => n > 0 && console.log(`[boot] reconciled ${n} orphaned job run(s)`))
-      .catch((err) => console.warn("[boot] failStaleRunning failed:", err));
-  }
-
-  // Hourly billing-period rollover — re-arms Oblien quota for orgs
-  // whose current_period_end has passed (safety net for paid orgs
-  // whose Stripe webhook lagged, and the primary mechanism for
-  // free-tier orgs).
-  void scheduleBillingAnniversary().catch((err) =>
-    console.warn("[boot] scheduleBillingAnniversary failed:", err),
-  );
-
-  // Register the Oblien billing webhook (credits usage/low/depleted + quota
-  // threshold). Idempotent + self-gating on CLOUD_MODE; without it Oblien
-  // never calls our receiver.
-  void ensureOblienWebhook().catch((err) =>
-    console.warn("[boot] ensureOblienWebhook failed:", err),
-  );
-
-  // Account-wide default credit ceiling, auto-applied by Oblien to any namespace
-  // created without an explicit setQuota. Backstop only — the spend path asserts
-  // the real ceiling — but it makes the free tier, not "unlimited", the failure
-  // mode of a forgotten quota push. Self-gating on CLOUD_MODE.
-  void ensureOblienDefaultQuota().catch((err) =>
-    console.warn("[boot] ensureOblienDefaultQuota failed:", err),
-  );
-
-  // Drain orgs that have no Oblien namespace recorded. Every org predates
-  // namespace persistence (the column was read in eleven places and written in
-  // none), so until this sweep finishes their credit quotas and resource
-  // ceilings do not exist on Oblien's side. Bounded per boot.
-  void import("./modules/billing/billing-namespace.provision")
-    .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
-    .then((stats) => {
-      if (stats.done > 0 || stats.failed > 0) {
-        console.log(
-          `[boot] Oblien namespaces backfilled: ${stats.done} provisioned, ${stats.failed} failed`,
+      // Self-hosted (single box): any job_run still "running" at boot was orphaned
+      // by a crash/restart mid-run — close it out so the Jobs UI doesn't show a
+      // perpetual "Running" spinner. Not run in CLOUD_MODE, where a shared queue +
+      // multiple replicas mean a "running" row may be live on another replica.
+      if (!env.CLOUD_MODE) {
+        void trackBackgroundWork(
+          repos.jobRun
+            .failStaleRunning()
+            .then((n) => n > 0 && console.log(`[boot] reconciled ${n} orphaned job run(s)`))
+            .catch((err) =>
+              errorDiagnostics.warn("api/app", "[boot] failStaleRunning failed:", err),
+            ),
         );
       }
-    })
-    .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
 
-  // Every PUBLISHED price must have a real Stripe price id in the environment.
-  // Now that the pricing catalog states actual prices, a missing id is a
-  // customer-visible failure: the plan card shows $39 and checkout 503s. This
-  // check already existed but had NO caller in either mode — wired here.
-  //
-  // Loud, not fatal: refusing to boot the whole SaaS over an unset price id
-  // would trade a broken checkout button for a total outage, and checkout
-  // already fails closed on its own (503 BILLING_NOT_CONFIGURED at the point of
-  // use, plus BILLING_ENABLED defaults off). Self-hosted logs it as information
-  // — it never sells anything.
-  // A live campaign must match its Stripe coupon, or the page advertises a
-  // discount the customer won't get. Only reaches Stripe when a campaign is
-  // actually running, so the common case costs nothing.
-  void import("./modules/billing/billing.service")
-    .then(({ verifyCampaigns }) => verifyCampaigns())
-    .then((problems) => {
-      for (const p of problems) console.error(`[boot] pricing campaign: ${p}`);
-    })
-    .catch((err) => console.warn("[boot] verifyCampaigns failed:", err));
+      // Refresh entitlement mirrors every five minutes; Oblien owns renewals.
+      void trackBackgroundWork(
+        scheduleBillingAnniversary().catch((err) =>
+          errorDiagnostics.warn("api/app", "[boot] scheduleBillingAnniversary failed:", err),
+        ),
+      );
 
-  {
-    const { missing } = validatePlanPriceIds();
-    if (missing.length > 0) {
-      const detail = missing.join(", ");
+      // Register signed payment, entitlement, and credit notifications.
+      void trackBackgroundWork(
+        ensureOblienWebhook().catch((err) =>
+          errorDiagnostics.warn("api/app", "[boot] ensureOblienWebhook failed:", err),
+        ),
+      );
+
+      // Validate onboarding policy without modifying provider quotas or grants.
+      void trackBackgroundWork(
+        ensureOblienDefaultQuota().catch((err) =>
+          errorDiagnostics.warn("api/app", "[boot] ensureOblienDefaultQuota failed:", err),
+        ),
+      );
+
       if (env.CLOUD_MODE) {
-        console.error(
-          `[boot] FATAL: published prices with no Stripe price id configured: ${detail}. Set those env vars or unpublish the price in packages/core/src/pricing/pricing.json.`,
-        );
-      } else {
-        console.log(`[boot] billing not configured (self-hosted, expected): ${detail}`);
+        void import("@repo/platform/engine/modules/cloud-support/index")
+          .then(({ startCloudSupport }) => startCloudSupport())
+          .catch(() =>
+            errorDiagnostics.warn(
+              "api/app",
+              "[cloud-support] Background delivery could not start; requests remain saved.",
+            ),
+          );
+        void import("@repo/platform/engine/modules/cloud-analytics/index")
+          .then(({ startCloudAnalytics }) => startCloudAnalytics())
+          .catch(() =>
+            errorDiagnostics.warn(
+              "api/app",
+              "[cloud-analytics] Background delivery could not start.",
+            ),
+          );
+        void import("@repo/platform/engine/lib/oblien-client")
+          .then(({ getOblienBillingApi }) => getOblienBillingApi().assertResellerSupport())
+          .catch((error) =>
+            errorDiagnostics.error(
+              "api/app",
+              "[boot] Oblien reseller billing contract unavailable:",
+              error,
+            ),
+          );
       }
+
+      // Self-hosted only: backfill per-project GitHub webhook secrets for
+      // auto-deploy projects registered before per-project secrets were wired
+      // (self-gates on !CLOUD_MODE). Fixes silently-broken auto-deploy on installs
+      // that followed the "GITHUB_WEBHOOK_SECRET is ignored" guidance.
+      void trackBackgroundWork(
+        backfillWebhookSecrets().catch((err) =>
+          errorDiagnostics.warn("api/app", "[boot] backfillWebhookSecrets failed:", err),
+        ),
+      );
+
+      // Re-register every enabled cron policy with the runner.
+      void trackBackgroundWork(
+        reconcileAllSchedules().then((stats) =>
+          console.log(
+            `[boot] backup schedules: ${stats.registered} registered, ${stats.skipped} skipped`,
+          ),
+        ),
+      );
     }
+
+    // ─── Notification delivery runner ───────────────────────────────────
+    //
+    // Polls notification_delivery for queued rows every few seconds and
+    // dispatches them to per-channel workers (email/webhook/in_app/slack).
+    // Lightweight in-process timer — fine for the cluster sizes we target.
+    {
+      const { startNotificationRunner } =
+        await import("@repo/platform/engine/lib/notification-workers");
+      startNotificationRunner();
+      console.log("[boot] notification runner started");
+    }
+
+    // ─── Feature startup hooks (self-hosted only) ───────────────────────
+    //
+    // Registry-based home for boot behavior that individual features opt
+    // into via `registerStartupHook` — e.g. desktop re-establishing its
+    // saved port-forward tunnels. No-op under CLOUD_MODE; each hook is
+    // further gated by its declared modes. The ad-hoc boot blocks above
+    // stay as-is (some are cloud); new self-hosted boot work belongs here.
+    {
+      const { registerStartupHooks } = await import("./lib/startup/register");
+      const { runStartupHooks } = await import("@repo/platform/engine/lib/startup/index");
+      if (!startupRegistered) {
+        registerStartupHooks();
+        startupRegistered = true;
+      }
+      await runStartupHooks();
+    }
+  } catch (error) {
+    backgroundStarted = false;
+    throw error;
   }
-
-  // Self-hosted only: backfill per-project GitHub webhook secrets for
-  // auto-deploy projects registered before per-project secrets were wired
-  // (self-gates on !CLOUD_MODE). Fixes silently-broken auto-deploy on installs
-  // that followed the "GITHUB_WEBHOOK_SECRET is ignored" guidance.
-  void backfillWebhookSecrets().catch((err) =>
-    console.warn("[boot] backfillWebhookSecrets failed:", err),
-  );
-
-  // Re-register every enabled cron policy with the runner.
-  void reconcileAllSchedules().then((stats) =>
-    console.log(
-      `[boot] backup schedules: ${stats.registered} registered, ${stats.skipped} skipped`,
-    ),
-  );
 }
-
-// ─── Notification delivery runner ───────────────────────────────────
-//
-// Polls notification_delivery for queued rows every few seconds and
-// dispatches them to per-channel workers (email/webhook/in_app/slack).
-// Lightweight in-process timer — fine for the cluster sizes we target.
-{
-  const { startNotificationRunner } = await import("./lib/notification-workers");
-  startNotificationRunner();
-  console.log("[boot] notification runner started");
-}
-
-// ─── Feature startup hooks (self-hosted only) ───────────────────────
-//
-// Registry-based home for boot behavior that individual features opt
-// into via `registerStartupHook` — e.g. desktop re-establishing its
-// saved port-forward tunnels. No-op under CLOUD_MODE; each hook is
-// further gated by its declared modes. The ad-hoc boot blocks above
-// stay as-is (some are cloud); new self-hosted boot work belongs here.
-{
-  const { registerStartupHooks } = await import("./lib/startup/register");
-  const { runStartupHooks } = await import("./lib/startup");
-  registerStartupHooks();
-  await runStartupHooks();
-}
+registerControllerLifecycle({
+  start: startControllerBackground,
+  stop: async () => {
+    try {
+      await quiesceController();
+    } finally {
+      // A late Actions dispatch can refuse the handoff after its reconciler
+      // has stopped. Cancelling that move must be able to start it again.
+      backgroundStarted = false;
+    }
+  },
+});
+if (await controllerIsActive()) await startControllerBackground();

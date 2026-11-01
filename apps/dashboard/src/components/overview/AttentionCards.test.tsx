@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { I18nProvider } from "@/components/i18n-provider";
 import { EDGE_ERROR, ISSUE_FIXTURES } from "@/components/issues/issue-fixtures";
 import { IssuesCard, UpdatesCard } from "./AttentionCards";
+import type { SystemIssue } from "@/lib/api/issues";
 
 /**
  * Do the home attention cards render what an operator needs to act on?
@@ -30,7 +31,7 @@ const card =
       <I18nProvider>
         <Card
           issues={issues}
-          busyId={null}
+          busyIds={new Set()}
           onResolve={() => {}}
           onInfraFix={() => {}}
           onHide={onHide}
@@ -45,6 +46,23 @@ const broken = (key: keyof typeof ISSUE_FIXTURES) =>
   ISSUE_FIXTURES[key]!.filter((i) => i.severity !== "advisory");
 
 describe("IssuesCard", () => {
+  it("presents unavailable monitoring as a connection notice with no repair action", () => {
+    const issue: SystemIssue = {
+      id: "platform:monitoring-offline", kind: "monitoring_offline", severity: "action_required",
+      scope: "platform", source: "component", title: "Openship", message: "Current health is unknown",
+      details: { affectedServers: [{ name: "Mail", reason: "connect ENETUNREACH 192.0.2.1:22" }] },
+      target: { id: "observer", name: "Openship", scope: "platform", href: "/monitoring" }, resolveWith: [],
+    };
+    const html = issues([issue]);
+    expect(html).toContain("Connection interrupted");
+    expect(html).toContain("Their current health is unknown");
+    expect(html).not.toContain("Something is broken");
+    expect(html).not.toContain("Mail engine down");
+    expect(html).not.toContain(">Fix<");
+    expect(html).toMatch(/<details[^>]*>.*Technical details.*ENETUNREACH/s);
+    expect(html).not.toMatch(/<details[^>]*\bopen\b/);
+  });
+
   it("names the server, what broke on it, and the recorded failure", () => {
     const html = issues();
     expect(html).toContain("web-01");

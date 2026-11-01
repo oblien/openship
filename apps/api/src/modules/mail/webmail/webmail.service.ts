@@ -7,13 +7,16 @@
  */
 
 import { repos } from "@repo/db";
+import type { ExecutionContext } from "@repo/platform";
+import { assertResourceInOrg } from "@repo/platform/engine/lib/resource-access";
+import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 
 // ─── Targets discovery ──────────────────────────────────────────────────────
 
 export interface WebmailTargetOption {
-  /** "mail" → the mail server itself. "server" → another openship server. "opshcloud" → reserved. */
+  /** The mail host, another connected host, or a real managed Cloud server. */
   kind: "mail" | "server" | "opshcloud";
-  /** openship serverId. For "opshcloud" this is empty and disabled in UI. */
+  /** Server identity from the shared destination inventory. */
   serverId: string;
   label: string;
   description?: string;
@@ -21,53 +24,29 @@ export interface WebmailTargetOption {
   disabledReason?: string;
 }
 
-/**
- * Build the list of places the webmail can be deployed to. The mail
- * server itself is always option #1; every other openship-managed
- * server follows. Opshcloud is listed as a coming-soon placeholder.
- */
+/** Reuse the authorized destination inventory instead of inventing a Cloud target. */
 export async function listWebmailTargets(
   mailServerId: string,
-  organizationId: string,
+  ctx: ExecutionContext,
 ): Promise<WebmailTargetOption[]> {
-  // ORG-SCOPED: only this org's servers are valid deploy targets. The
-  // route tag (mail_server:read with no :id param) only proves org
-  // membership, not that `mailServerId` belongs to the org — so listing
-  // the global server set here leaked every tenant's servers.
-  const all = await repos.server.listByOrganization(organizationId);
-  const mailServer = all.find((s) => s.id === mailServerId);
-  const others = all.filter((s) => s.id !== mailServerId);
-
-  const options: WebmailTargetOption[] = [];
-
-  if (mailServer) {
-    const label = mailServer.name || mailServer.sshHost || "Mail server";
-    const description = mailServer.sshHost && mailServer.sshHost !== label
-      ? `This mail server · ${mailServer.sshHost}`
-      : "This mail server";
-    options.push({
-      kind: "mail",
-      serverId: mailServer.id,
-      label,
-      description,
-    });
-  }
-
-  for (const s of others) {
-    options.push({
-      kind: "server",
-      serverId: s.id,
-      label: s.name || s.sshHost || s.id,
-      description: s.sshHost ?? undefined,
-    });
-  }
-
-  options.push({
-    kind: "opshcloud",
-    serverId: "",
-    label: "Opshcloud (managed)",
-    description: "Managed hosting · we provision the VM, route the domain, and run the cert",
-  });
-
-  return options;
+  const mailServer = await repos.server.get(mailServerId);
+  assertResourceInOrg(mailServer, "mail_server", ctx.organizationId, mailServerId);
+  const {
+    data: { servers },
+  } = await getPlatformKernel().servers.destinations(ctx);
+  const ordered = [...servers].sort(
+    (a, b) => Number(b.id === mailServerId) - Number(a.id === mailServerId),
+  );
+  return ordered.map((server) => ({
+    kind: server.id === mailServerId ? "mail" : server.managed ? "opshcloud" : "server",
+    serverId: server.id,
+    label: server.name || server.sshHost || server.id,
+    description: server.managed ? "Managed Cloud server" : (server.sshHost ?? undefined),
+    ...(server.source === "cloud"
+      ? {
+          disabled: true,
+          disabledReason: "Connect this managed server in Servers before deploying webmail.",
+        }
+      : {}),
+  }));
 }

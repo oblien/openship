@@ -45,11 +45,11 @@ vi.mock("@repo/db", () => ({
     patGrant: { findForResource: vi.fn(async () => null), listByToken: vi.fn(async () => []) },
   },
 }));
-vi.mock("../../src/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
 
 import { checkPermission, ORG_SINGLETON_RESOURCES } from "../../src/lib/permission";
 import { GRANTABLE_RESOURCE_TYPES } from "../../src/lib/grantable-types";
-import { canUseGitHubRepo } from "../../src/modules/github/github-access";
+import { canUseGitHubRepo } from "@repo/platform/engine/modules/github/github-access";
 
 type G = { resourceType: string; resourceId: string; permissions: string[] };
 

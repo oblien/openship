@@ -14,6 +14,7 @@
  *   as a fallback for environments without a database.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -82,7 +83,8 @@ export class FileStateStore implements SetupStateStore {
 
       const content = await this.executor.readFile(this.statePath);
       return JSON.parse(content) as SetupState;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/system/state");
       return null;
     }
   }

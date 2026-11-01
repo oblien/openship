@@ -1,6 +1,6 @@
 // SSR markup only: effects don't run, so ConnectionCard stays in its skeleton
 // state — enough to assert the connect surface is (or isn't) mounted.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
@@ -13,6 +13,14 @@ import {
 import type { StepStatus } from "@/components/deploy/InstallStepper";
 
 type Props = React.ComponentProps<typeof CleanDeployProgressCard>;
+
+// xterm paints after mount; snapshot rendering and incremental writes have
+// their own DOM tests. This suite checks which output the progress page passes.
+vi.mock("@/components/import-project/LogSnapshotTerminal", () => ({
+  LogSnapshotTerminal: ({ logs, emptyLabel }: { logs: string; emptyLabel: string }) => (
+    <pre>{logs || emptyLabel}</pre>
+  ),
+}));
 
 const baseProps: Props = {
   appId: "grafana",
@@ -45,7 +53,7 @@ function text(html: string) {
 }
 
 describe("CleanDeployProgressCard — installing", () => {
-  it("with phases: renders the JSON-mapped stepper + foldable logs, not the legacy bar", () => {
+  it("renders the phase checklist and the deployment console with search and copy", () => {
     const html = render({
       phase: "installing",
       phases: { images: "done", services: "active" },
@@ -57,13 +65,14 @@ describe("CleanDeployProgressCard — installing", () => {
     expect(out).toContain("Preparing images");
     expect(out).toContain("Starting services");
     expect(out).toContain("backend"); // per-service sub-list
-    expect(out).toContain("Hide logs"); // logs open by default → toggle offers "Hide"
+    expect(out).toContain("hello");
+    expect(html).toContain('aria-label="Copy"');
     // The legacy CENTERED layout must be gone. Matched on its container, not on a
     // utility class: the stepper layout now has a progress bar of its own in the
     // aside, so "no bar" no longer identifies the layout at all.
     expect(html).not.toContain("mx-auto max-w-2xl");
     // images done → check icon; services active → spinner
-    expect(html).toContain("lucide-circle-check");
+    expect(html).toContain("data-icon=\"check-circle\"");
     expect(html).toContain("animate-spin");
   });
 
@@ -142,7 +151,7 @@ describe("CleanDeployProgressCard — install progress readout", () => {
     });
     expect(text(html)).toContain("prod-vps");
     expect(text(html)).toContain("Live");
-    expect(html).toContain("lucide-check");
+    expect(html).toContain("data-icon=\"check\"");
     expect(html).not.toContain("animate-progress-sweep"); // no bar once it's settled
   });
 
@@ -331,11 +340,11 @@ describe("CleanDeployProgressCard — error", () => {
   // A settled install must not mount a console that can only ever say "waiting".
   it("mounts no log panel when the install produced no output", () => {
     const empty = render({ phase: "error", phases: {}, cancelled: true, logs: "" });
-    expect(empty).not.toContain("deploy logs");
+    expect(empty).not.toContain("Deployment Logs");
     expect(text(empty)).not.toContain("Waiting for output");
 
     const withLogs = render({ phase: "error", phases: {}, logs: "boot: ok" });
-    expect(withLogs).toContain("deploy logs");
+    expect(withLogs).toContain("Deployment Logs");
     expect(text(withLogs)).toContain("boot: ok");
   });
 
@@ -354,8 +363,8 @@ describe("CleanDeployProgressCard — error", () => {
     // The in-flight phase settles to the neutral slash, not a spinner and not a
     // danger alert — a cancel is not a fault.
     expect(html).not.toContain("animate-spin");
-    expect(html).toContain("lucide-circle-slash");
-    expect(html).not.toContain("lucide-circle-alert");
+    expect(html).toContain("data-icon=\"ban\"");
+    expect(html).not.toContain("data-icon=\"alert-circle\"");
     expect(out).not.toContain("Failed");
   });
 
@@ -367,7 +376,7 @@ describe("CleanDeployProgressCard — error", () => {
       deploymentId: "dep_9",
     });
     expect(text(html)).toContain("Stopped at Starting services");
-    expect(html).toContain("lucide-circle-alert"); // the in-flight phase carries the fault
+    expect(html).toContain("data-icon=\"alert-circle\""); // the in-flight phase carries the fault
     expect(html).not.toContain("animate-spin");
   });
 
@@ -399,8 +408,8 @@ describe("CleanDeployProgressCard — error", () => {
     // The phase holding a failed service carries the fault, and `ready` is demoted
     // from done to unreached — an install that failed is not live.
     expect(out).toContain("Stopped at Starting services · 1 of 2 services ready");
-    expect(html).toContain("lucide-circle-slash"); // `ready`, unreached
-    expect(html).toContain("lucide-circle-alert"); // `services`, holding the failure
+    expect(html).toContain("data-icon=\"ban\""); // `ready`, unreached
+    expect(html).toContain("data-icon=\"alert-circle\""); // `services`, holding the failure
   });
 
   // A compose run can carry on past a failed phase (a partial image build still

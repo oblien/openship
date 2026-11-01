@@ -1,0 +1,291 @@
+{
+  "cloudSubtitle": "在托管服务器上按计划或按需执行命令。",
+  "create": {
+    "commandHint": "在每台选定的服务器上运行。使用 docker run --rm 执行容器任务。",
+    "cloudServersHint": "使用现有服务器，或添加拥有独立订阅的专用服务器。",
+    "cloudUsageHint": "任务共享所选服务器的资源和使用额度。运行任务需要有效的套餐。",
+    "addDedicatedServer": "添加专用服务器",
+    "title": "新建任务",
+    "name": "名称",
+    "namePlaceholder": "每夜数据库清理",
+    "server": "服务器",
+    "servers": "服务器",
+    "noServers": "尚未连接服务器 — 请先添加一台。",
+    "command": "命令",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "scheduleType": "运行时间",
+    "scheduleTypes": {
+      "recurring": "按计划",
+      "once": "单次",
+      "manual": "手动"
+    },
+    "sections": {
+      "basics": "基础设置",
+      "schedule": "计划",
+      "servers": "目标服务器",
+      "reliability": "可靠性",
+      "environment": "环境",
+      "triggers": "依赖与触发器",
+      "notifications": "通知"
+    },
+    "schedule": "计划 (cron)",
+    "runAt": "运行时间",
+    "manualHint": "仅在触发时运行 — 立即运行、依赖任务或事件。",
+    "timeout": "超时 (秒)",
+    "retryAttempts": "最大重试次数",
+    "retryBackoff": "重试间隔 (秒)",
+    "advanced": "高级",
+    "env": "环境变量",
+    "addVar": "添加变量",
+    "secrets": "机密",
+    "addSecret": "添加机密",
+    "replaceSecrets": "替换机密",
+    "secretsSet": "个已设置机密",
+    "noSecrets": "未设置机密。",
+    "dependencies": "在此之后运行",
+    "dependenciesHint": "此任务将在所选任务成功后运行。",
+    "triggers": "事件触发器",
+    "notifications": "通知",
+    "noChannels": "暂无通知渠道 — 请在“监控 → 通知”中添加。",
+    "notificationsHint": "覆盖此任务的全局通知设置。",
+    "submit": "创建任务",
+    "creating": "正在保存…",
+    "cancel": "取消",
+    "needServer": "请先连接服务器",
+    "pasteEnv": "粘贴 .env",
+    "uploadEnv": "上传 .env",
+    "envPasteEmpty": "未找到变量",
+    "comingSoon": "即将推出",
+    "setupChannel": "配置渠道",
+    "customTriggerSoon": "自定义触发器",
+    "docsLink": "了解任务",
+    "docsBody": "计划、重试、机密与通知",
+    "summary": {
+      "title": "摘要",
+      "command": "命令",
+      "schedule": "计划",
+      "targets": "目标",
+      "retry": "重试",
+      "timeout": "超时",
+      "notify": "通知",
+      "none": "—",
+      "retryOff": "无"
+    }
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub 部署检查",
+    "cloud:workspace-recovery": "云工作区操作",
+    "ssl:renew": "SSL 证书续订",
+    "projects:orphan-gc": "孤立资源清理",
+    "images:gc": "部署产物清理",
+    "domains:verify-pending": "验证自定义域名",
+    "updates:scan": "更新扫描",
+    "backups:retention-prune": "清理已过期的备份",
+    "backups:stale-sweep": "未完成备份对齐",
+    "prune:audit": "清理审计日志",
+    "prune:incidents": "清理事件历史记录",
+    "sampler:resources": "资源使用采样器",
+    "system:analytics-scraper": "分析数据收集器",
+    "build-cache:gc": "构建缓存清理",
+    "cloud:https-health": "云端 HTTPS 健康检查",
+    "system:server-modules": "服务器模块扫描",
+    "system:server-containers": "服务器容器扫描",
+    "system:health-watch": "健康检查巡检",
+    "jobs:due-once": "运行排队的一次性任务",
+    "edge:verify": "边缘验证巡检",
+    "audit:retention-prune": "审计日志清理",
+    "retention-prune-daily": "备份保留清理",
+    "backups:stale-run-sweep": "停滞备份对齐",
+    "domains:check-https": "云端 HTTPS 健康状态",
+    "analytics:scrape": "流量分析收集",
+    "resources:sample": "资源使用率采样",
+    "analytics:retention-prune": "流量分析清理",
+    "resources:retention-prune": "资源使用率清理",
+    "migrations:recover": "迁移恢复",
+    "deployments:cloud-build-queue": "云构建队列",
+    "deployments:cloud-build-recovery": "云构建恢复",
+    "deployments:reconcile": "部署对齐",
+    "permissions:pending-grant-prune": "待处理邀请清理",
+    "github:webhook-event-prune": "GitHub Webhook 清理",
+    "edge:target-verify": "免费域名目标验证",
+    "modules:scan": "原生模块扫描",
+    "infra:scan": "托管容器扫描",
+    "mail:inbound-watch": "入站邮件规则",
+    "mail:inbound-reconcile": "入站邮件规则对齐",
+    "services:health-watch": "容器健康巡检",
+    "incidents:prune": "事件历史清理",
+    "jobs:oneshot": "单次任务调度",
+    "Audit log prune": "审计日志清理",
+    "Backup in-flight stale reconciliation": "停滞备份对齐",
+    "Backup retention prune": "备份保留清理",
+    "Cloud HTTPS health": "云端 HTTPS 健康状态",
+    "Cloud workspace operations": "云工作区操作",
+    "Container health watch": "容器健康巡检",
+    "Deployment artifact cleanup": "部署产物清理",
+    "Deployment reconcile": "部署对齐",
+    "GitHub deployment Checks": "GitHub 部署检查",
+    "GitHub webhook event prune": "GitHub Webhook 清理",
+    "Incident history prune": "事件历史清理",
+    "Managed-container update scan": "托管容器扫描",
+    "Migration recovery": "迁移恢复",
+    "Native-module update scan": "原生模块扫描",
+    "Notification rule capture drift": "入站邮件规则对齐",
+    "Notification rules": "入站邮件规则",
+    "One-time job dispatcher": "单次任务调度",
+    "Orphaned resource cleanup": "孤立资源清理",
+    "Pending grant prune": "待处理邀请清理",
+    "Resource usage prune": "资源使用率清理",
+    "Resource usage sampling": "资源使用率采样",
+    "SSL certificate renewal": "SSL 证书续期",
+    "Traffic analytics collection": "流量分析收集",
+    "Traffic analytics prune": "流量分析清理",
+    "Update scan": "更新扫描",
+    "Free-domain target verification": "免费域名目标验证",
+    "Domain DNS verification": "域名 DNS 验证"
+  },
+  "backups": {
+    "section": "备份计划",
+    "sectionDesc": "按项目或服务设定的自动备份计划。在各项目的“备份”标签页中管理。",
+    "projectDefault": "项目默认",
+    "mailServer": "邮件服务器",
+    "manage": "在备份中管理",
+    "badge": "备份",
+    "never": "从未运行",
+    "status": {
+      "succeeded": "成功",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "running": "运行中"
+    }
+  },
+  "title": "任务",
+  "subtitle": "在您的服务器上运行的内置维护任务和自定义命令。",
+  "empty": "暂无计划任务。",
+  "searchPlaceholder": "搜索任务…",
+  "noResults": "没有符合筛选条件的任务。",
+  "overview": {
+    "title": "概览",
+    "subtitle": "此实例上的任务",
+    "all": "所有任务",
+    "running": "运行中",
+    "failed": "失败",
+    "scheduled": "已计划",
+    "disabled": "已禁用"
+  },
+  "loadFailed": "加载任务失败。",
+  "kind": {
+    "system": "系统",
+    "custom": "自定义"
+  },
+  "fields": {
+    "schedule": "计划",
+    "nextRun": "下次运行",
+    "lastRun": "上次运行",
+    "never": "从未运行",
+    "notScheduled": "未安排"
+  },
+  "status": {
+    "success": "成功",
+    "failed": "失败",
+    "running": "运行中"
+  },
+  "actions": {
+    "run": "立即运行",
+    "running": "运行中…",
+    "edit": "编辑计划",
+    "save": "保存",
+    "cancel": "取消",
+    "enable": "启用",
+    "disable": "停用",
+    "viewLogs": "日志"
+  },
+  "cronHint": "标准 5 段式 cron（分 时 日 月 周），UTC。",
+  "toast": {
+    "ran": "{label} 已启动。",
+    "ranFailed": "运行 {label} 失败。",
+    "saved": "已更新 {label} 的计划。",
+    "saved2": "任务已更新。",
+    "saveFailed": "更新 {label} 失败。",
+    "enabled": "{label} 已启用。",
+    "disabled": "{label} 已停用。",
+    "toggleFailed": "更新 {label} 失败。",
+    "title": "任务",
+    "created": "任务已创建。",
+    "createFailed": "创建任务失败。",
+    "deleted": "任务已删除。",
+    "deleteFailed": "删除任务失败。"
+  },
+  "newJob": "新建任务",
+  "sections": {
+    "system": "系统任务",
+    "systemDesc": "此实例的内置维护任务。",
+    "custom": "自定义任务",
+    "customDesc": "按计划在服务器上运行的命令。"
+  },
+  "customEmpty": {
+    "title": "暂无自定义任务",
+    "desc": "在您的服务器上按计划、单次或基于事件运行命令 — 包含重试、密钥、实时日志和通知支持。",
+    "cta": "创建任务",
+    "docs": "文档"
+  },
+  "edit": {
+    "title": "编辑任务",
+    "action": "编辑",
+    "save": "保存更改"
+  },
+  "detail": {
+    "back": "返回任务",
+    "tabs": {
+      "overview": "概览",
+      "runs": "运行记录"
+    },
+    "servers": "服务器",
+    "retry": "重试",
+    "retryValue": "{n} 次尝试，{s} 秒退避",
+    "notifyValue": "在 {s} 触发 {c} 个渠道",
+    "onceAt": "单次运行于",
+    "noRuns": "暂无运行记录。"
+  },
+  "delete": {
+    "action": "删除",
+    "confirm": "删除此任务？",
+    "deleting": "正在删除…"
+  },
+  "logs": {
+    "title": "运行日志",
+    "streaming": "正在流式传输…",
+    "empty": "暂无输出。",
+    "close": "关闭",
+    "exit": "退出代码 {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "部署成功",
+      "description": "生产环境部署已成功完成。"
+    },
+    "deployment.failed": {
+      "label": "部署失败",
+      "description": "构建或部署发生错误。"
+    },
+    "backup_run.succeeded": {
+      "label": "备份成功",
+      "description": "计划或手动备份已完成。"
+    },
+    "backup_run.failed": {
+      "label": "备份失败",
+      "description": "备份执行发生错误。"
+    },
+    "backup_restore.completed": {
+      "label": "恢复完成",
+      "description": "恢复操作已完成。"
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL 续期失败",
+      "description": "证书未能成功续期。"
+    },
+    "domain.verification_failed": {
+      "label": "域名验证失败",
+      "description": "域名的 DNS 检查未通过。"
+    }
+  }
+}

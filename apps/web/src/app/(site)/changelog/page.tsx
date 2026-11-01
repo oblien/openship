@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { getChangelog } from "@/lib/changelog";
 import { Navbar } from "@/components/landing/navbar";
 import { Footer } from "@/components/landing/footer";
@@ -10,7 +11,7 @@ const CHANGELOG_DESC = "New features, fixes, and improvements to Openship.";
 // Driven by the repo CHANGELOG.md + GitHub releases; refresh on a short cache.
 export const revalidate = 600;
 
-export const metadata: Metadata = {
+const metadata: Metadata = {
   // Plain string — the root layout's "%s - Openship" template adds the suffix
   // (the old value double-suffixed to "Changelog – Openship - Openship").
   title: "Changelog",
@@ -30,6 +31,13 @@ export const metadata: Metadata = {
     description: CHANGELOG_DESC,
   },
 };
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(metadata, parent);
+}
 
 export default async function ChangelogPage() {
   const entries = await getChangelog();

@@ -13,6 +13,7 @@ import type { DeployConfig } from "../src/types";
  */
 async function captureCreate(config: Partial<DeployConfig>) {
   const runtime = await DockerRuntime.create();
+  runtime.docker.getImage = (() => ({ inspect: async () => ({ Config: {} }) })) as any;
   let created: any = null;
   runtime.docker.createContainer = (async (opts: any) => {
     created = opts;

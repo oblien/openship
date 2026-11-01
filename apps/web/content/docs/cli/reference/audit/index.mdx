@@ -1,0 +1,78 @@
+---
+title: audit
+description: Commands, arguments, and options for openship audit.
+cliGroup: openship audit
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship audit
+
+Inspect audit events and retention settings
+
+```text
+openship audit [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/audit#openship-audit-list) | List audit events with pagination |
+| [`facets [options]`](/docs/cli/reference/audit#openship-audit-facets) | Show counts and available audit filters |
+| [`settings`](/docs/cli/reference/audit#openship-audit-settings) | Manage audit logging and retention |
+
+## openship audit facets
+
+Show counts and available audit filters
+
+```text
+openship audit facets [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--query <file>` | JSON audit filters, dates, cursor or page settings |
+
+## openship audit list
+
+List audit events with pagination
+
+```text
+openship audit list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--query <file>` | JSON audit filters, dates, cursor or page settings |
+
+## openship audit settings
+
+Manage audit logging and retention
+
+```text
+openship audit settings [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get`](/docs/cli/reference/audit#openship-audit-settings-get) | Show audit settings and management capability |
+| [`set <file>`](/docs/cli/reference/audit#openship-audit-settings-set) | Update audit settings |
+
+## openship audit settings get
+
+Show audit settings and management capability
+
+```text
+openship audit settings get [options]
+```
+
+## openship audit settings set
+
+Update audit settings
+
+```text
+openship audit settings set [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON patch with enabled and/or retentionDays |

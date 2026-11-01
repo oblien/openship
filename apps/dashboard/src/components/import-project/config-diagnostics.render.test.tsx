@@ -37,11 +37,11 @@ describe("ConfigDiagnostics (#641)", () => {
     expect(render({ errors: [], warnings: [] })).toBe("");
   });
 
-  it("lists a refused field and says the rest still applied", () => {
+  it("lists a refused field and asks users to review skipped settings", () => {
     const html = render({ errors: ["framework: must be one of: nextjs, vite"], warnings: [] });
     expect(text(html)).toContain("framework: must be one of");
     expect(text(html)).toContain("Refused");
-    expect(text(html)).toContain("the rest of the file was applied");
+    expect(text(html)).toContain("Review the skipped settings");
     expect(text(html)).not.toContain("None of it was applied");
   });
 

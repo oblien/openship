@@ -26,7 +26,7 @@ const { githubFetch, memberFind, listByMember } = vi.hoisted(() => ({
   listByMember: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   githubFetch,
   getUserStatus: vi.fn(),
   getUserInstallations: vi.fn(),
@@ -34,10 +34,10 @@ vi.mock("../../../src/modules/github/github.auth", () => ({
   mapAccounts: vi.fn(),
   getGitHubAuthMode: vi.fn(),
 }));
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   getLocalGhStatus: vi.fn(),
 }));
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { GITHUB_WEBHOOK_SECRET: "envsecret" },
   runtimeTarget: { id: "local", dashboard: "http://localhost:3000" },
 }));
@@ -56,7 +56,7 @@ import {
   deleteRepository,
   deleteWebhook,
   registerWebhook,
-} from "../../../src/modules/github/github.service";
+} from "@repo/platform/engine/modules/github/github.service";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ctx = { userId: "m1", organizationId: "o1" } as any;

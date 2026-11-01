@@ -97,13 +97,14 @@ function groupCustomHostnames(hostnames: readonly string[]): DeploymentDnsTarget
 /**
  * Every custom hostname the deployment wizard is about to publish.
  *
- * Single apps and monorepos store routes in `config.publicEndpoints`; Compose
- * stores them per service, either in `publicEndpoints` (multi-route) or in the
+ * Single apps store routes in `config.publicEndpoints`; monorepos own them per
+ * app. Compose stores them per service, either in `publicEndpoints` or in the
  * legacy scalar fields. Keeping this traversal here prevents pre-deploy gates
  * from accidentally supporting only one deployment shape (#663).
  */
 export function deploymentDnsTargets(
-  config: Pick<DeploymentConfig, "publicEndpoints" | "services">,
+  config: Pick<DeploymentConfig, "publicEndpoints" | "services" | "monorepoApps"> &
+    Partial<Pick<DeploymentConfig, "serviceDeploymentMode">>,
 ): DeploymentDnsTarget[] {
   const hostnames: string[] = [];
   const add = (hostname: string) => {
@@ -111,6 +112,11 @@ export function deploymentDnsTargets(
   };
 
   for (const endpoint of config.publicEndpoints ?? []) add(customHostname(endpoint));
+
+  for (const app of config.serviceDeploymentMode === "single" ? [] : config.monorepoApps ?? []) {
+    if (app.enabled && app.exposed !== false)
+      for (const endpoint of app.publicEndpoints) add(customHostname(endpoint));
+  }
 
   for (const service of config.services ?? []) {
     if (!service.exposed) continue;

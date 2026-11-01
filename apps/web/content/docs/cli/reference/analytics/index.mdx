@@ -1,0 +1,266 @@
+---
+title: analytics
+description: Commands, arguments, and options for openship analytics.
+cliGroup: openship analytics
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship analytics
+
+Read project traffic, deployments and runtime resource measurements
+
+```text
+openship analytics [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`dashboard`](/docs/cli/reference/analytics#openship-analytics-dashboard) | Show totals for accessible projects and deployments |
+| [`summary [options] <project>`](/docs/cli/reference/analytics#openship-analytics-summary) | Show request, visitor and bandwidth totals |
+| [`traffic [options] <project>`](/docs/cli/reference/analytics#openship-analytics-traffic) | Show traffic totals and time buckets |
+| [`periods [options] <project>`](/docs/cli/reference/analytics#openship-analytics-periods) | Read traffic time buckets |
+| [`geo [options] <project>`](/docs/cli/reference/analytics#openship-analytics-geo) | Read traffic geography and request paths |
+| [`deployments <project>`](/docs/cli/reference/analytics#openship-analytics-deployments) | Show deployment reliability and build duration |
+| [`usage <project>`](/docs/cli/reference/analytics#openship-analytics-usage) | Read current project runtime usage |
+| [`container <project>`](/docs/cli/reference/analytics#openship-analytics-container) | Read runtime container details |
+| [`resources <project>`](/docs/cli/reference/analytics#openship-analytics-resources) | Read service measurements and destination capacity |
+| [`history [options] <project>`](/docs/cli/reference/analytics#openship-analytics-history) | Read historical CPU, memory and network usage |
+| [`paths <project> <state>`](/docs/cli/reference/analytics#openship-analytics-paths) | Enable or disable collection of request paths |
+| [`watch [options] <project>`](/docs/cli/reference/analytics#openship-analytics-watch) | Stream live project resource measurements |
+| [`server`](/docs/cli/reference/analytics#openship-analytics-server) | Inspect traffic for a domain handled by a particular server |
+
+## openship analytics container
+
+Read runtime container details
+
+```text
+openship analytics container [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship analytics dashboard
+
+Show totals for accessible projects and deployments
+
+```text
+openship analytics dashboard [options]
+```
+
+## openship analytics deployments
+
+Show deployment reliability and build duration
+
+```text
+openship analytics deployments [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship analytics geo
+
+Read traffic geography and request paths
+
+```text
+openship analytics geo [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--from <timestamp>` | ISO start time |
+| `--to <timestamp>` | ISO end time |
+| `--domain <domain>` | Route filter |
+
+## openship analytics history
+
+Read historical CPU, memory and network usage
+
+```text
+openship analytics history [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--from <timestamp>` | ISO start time |
+| `--to <timestamp>` | ISO end time |
+| `--service <key>` | Service key from history results |
+
+## openship analytics paths
+
+Enable or disable collection of request paths
+
+```text
+openship analytics paths [options] <project> <state>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+| `state` | on \| off |
+
+## openship analytics periods
+
+Read traffic time buckets
+
+```text
+openship analytics periods [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--from <timestamp>` | ISO start time |
+| `--to <timestamp>` | ISO end time |
+| `--domain <domain>` | Route filter |
+
+## openship analytics resources
+
+Read service measurements and destination capacity
+
+```text
+openship analytics resources [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship analytics server
+
+Inspect traffic for a domain handled by a particular server
+
+```text
+openship analytics server [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`buckets [options] <server> <domain>`](/docs/cli/reference/analytics#openship-analytics-server-buckets) | Read stored domain traffic buckets |
+| [`geo [options] <server> <domain>`](/docs/cli/reference/analytics#openship-analytics-server-geo) | Read domain traffic geography |
+| [`live <server> <domain>`](/docs/cli/reference/analytics#openship-analytics-server-live) | Read current domain traffic counters |
+
+## openship analytics server buckets
+
+Read stored domain traffic buckets
+
+```text
+openship analytics server buckets [options] <server> <domain>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `domain` | Hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `--from <timestamp>` | ISO start time |
+| `--to <timestamp>` | ISO end time |
+
+## openship analytics server geo
+
+Read domain traffic geography
+
+```text
+openship analytics server geo [options] <server> <domain>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `domain` | Hostname |
+
+| Option | Meaning |
+| --- | --- |
+| `--day <date>` | UTC day as YYYYMMDD |
+
+## openship analytics server live
+
+Read current domain traffic counters
+
+```text
+openship analytics server live [options] <server> <domain>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `domain` | Hostname |
+
+## openship analytics summary
+
+Show request, visitor and bandwidth totals
+
+```text
+openship analytics summary [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--domain <domain>` | Route filter |
+
+## openship analytics traffic
+
+Show traffic totals and time buckets
+
+```text
+openship analytics traffic [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--from <timestamp>` | ISO start time |
+| `--to <timestamp>` | ISO end time |
+| `--domain <domain>` | Route filter |
+
+## openship analytics usage
+
+Read current project runtime usage
+
+```text
+openship analytics usage [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship analytics watch
+
+Stream live project resource measurements
+
+```text
+openship analytics watch [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |

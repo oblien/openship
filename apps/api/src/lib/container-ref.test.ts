@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { COMPOSE_SENTINEL, isArtifactRef, isRealContainerRef, usableRef } from "./container-ref";
+import { COMPOSE_SENTINEL, isArtifactRef, isRealContainerRef, usableRef } from "@repo/platform/engine/lib/container-ref";
 
 /**
  * `deployment.container_id` and `*.image_ref` are polymorphic columns: each can

@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { FolderUp, Github, Link2, Sparkles, Boxes } from "lucide-react";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useGitHub } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -14,14 +16,14 @@ import { LocalProjects } from "./components/LocalProjects";
 import { FolderUpload } from "./components/FolderUpload";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { UrlImport } from "./components/UrlImport";
-import { TemplateGrid } from "./components/TemplateGrid";
+import { RepositoryAccounts } from "./components/RepositoryAccounts";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HelpMenu } from "@/components/HelpMenu";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
-import { useToast } from "@/context/ToastContext";
+import { AppCatalog } from "@/components/apps/AppCatalog";
 
-type Tab = "folder" | "repositories" | "url" | "template" | "server";
+type Tab = "folder" | "repositories" | "url" | "server" | "apps";
 
 /** One-time gh-CLI repo-read consent flag (per browser — desktop is single-user). */
 const GH_CLI_CONSENT_KEY = "openship.gh-cli-consent";
@@ -29,17 +31,18 @@ const GH_CLI_CONSENT_KEY = "openship.gh-cli-consent";
 interface TabItem {
   key: Tab;
   label: string;
-  icon: React.ElementType;
+  icon: IconName;
 }
 
 export default function LibraryPage() {
   const { t } = useI18n();
-  const { showToast } = useToast();
+  const router = useRouter();
   const {
     state,
     connected,
     connecting,
     loading,
+    capabilities,
     connect,
     cliAction,
     accounts,
@@ -54,15 +57,44 @@ export default function LibraryPage() {
   const libRepos = useLibraryRepos(selectedOwner, connected);
   const { selfHosted, deployMode } = usePlatform();
   // Only the desktop app can read the user's folder off disk (native picker +
-  // co-located API). A remote self-hosted browser can't — it uploads like SaaS.
+  // co-located API). A remote self-hosted browser uploads it instead.
   const isDesktop = deployMode === "desktop";
-  const { connected: cloudConnected, startConnect: startCloudConnect } = useCloud();
+  const { connected: cloudConnected } = useCloud();
 
-  // Default to the GitHub tab everywhere. When GitHub isn't connected it shows
-  // the connect prompt (a fine call-to-action); the Folder/URL/Template tabs
-  // are one click away for local/self-hosted deploys.
+  // Cloud has a dedicated URL tab. Self-hosted instances keep its shortcut in
+  // the account row; both use the same selection and public import flow.
   const [activeTab, setActiveTab] = useState<Tab>("repositories");
+  const appsTabRef = useRef<HTMLButtonElement>(null);
+  const importingUrl = activeTab === "url";
   const [showMigrate, setShowMigrate] = useState(false);
+
+  const importUrl = () => setActiveTab("url");
+  const selectOwner = (login: string) => {
+    setActiveTab("repositories");
+    if (login) setSelectedOwner(login);
+  };
+  const addAccount = () => {
+    setActiveTab("repositories");
+    const app = capabilities?.methods.find((method) => method.kind === "app");
+    const available = app
+      ? app.available && (!app.requiresCloud || cloudConnected)
+      : !selfHosted || !!installUrl;
+    if (available) void connect("oauth");
+    else router.push("/settings?tab=git");
+  };
+  const sourceHeader = (
+    <div className="px-5 pt-4">
+      <RepositoryAccounts
+        accounts={accounts}
+        selectedOwner={selectedOwner}
+        onSelectOwner={selectOwner}
+        onAddAccount={addAccount}
+        addingAccount={loading || connecting}
+        onImportUrl={selfHosted ? importUrl : undefined}
+        importingUrl={importingUrl}
+      />
+    </div>
+  );
 
   // First-run consent before the gh-CLI source lists repos. The gh path runs
   // entirely on this machine (nothing to the cloud), but we ask once so the
@@ -84,19 +116,14 @@ export default function LibraryPage() {
     (state.sources.ghCli.method ?? "host-cli") === "host-cli" &&
     !ghCliConsent;
 
-  // One "Folder" tab, environment-dependent behavior:
-  //   - self-hosted / desktop → deploy straight from a path on the box (native
-  //     picker, no upload, no stack pick — the local pipeline reads it).
-  //   - SaaS → upload the folder to a cloud build workspace (stack picked up
-  //     front so we know which image to provision).
+  // Folder import is available on self-hosted instances. Cloud offers a Git URL tab.
   const tabs: TabItem[] = [
-    { key: "folder", label: t.library.page.tabs.folder, icon: FolderUp },
-    { key: "repositories", label: t.library.page.tabs.github, icon: Github },
-    { key: "url", label: t.library.page.tabs.url, icon: Link2 },
-    { key: "template", label: t.library.page.tabs.template, icon: Sparkles },
-    // Adopting a running Docker deployment needs SSH into the user's own box —
-    // self-hosted / desktop only (cloud mode has no server inventory).
-    ...(selfHosted ? [{ key: "server" as const, label: t.migration.entry.tab, icon: Boxes }] : []),
+    { key: "apps", label: t.dashboard.pages.apps.title, icon: "grid" },
+    { key: "repositories", label: t.library.page.tabs.github, icon: "github" },
+    ...(selfHosted
+      ? [{ key: "folder" as const, label: t.library.page.tabs.folder, icon: "folder-out" as const }]
+      : [{ key: "url" as const, label: t.library.page.tabs.gitUrl, icon: "link" as const }]),
+    { key: "server", label: t.migration.entry.tab, icon: "migration" },
   ];
 
   return (
@@ -116,20 +143,28 @@ export default function LibraryPage() {
       </div>
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 mb-6">
+      <div className="flex flex-wrap items-center gap-1 mb-6">
         {tabs.map((tab) => {
           const Icon = tab.icon;
+          const selected =
+            activeTab === tab.key || (selfHosted && importingUrl && tab.key === "repositories");
           return (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab.key
+              ref={tab.key === "apps" ? appsTabRef : undefined}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => {
+                setActiveTab(tab.key);
+                if (tab.key === "server") setShowMigrate(true);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                selected
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               }`}
             >
-              <Icon className="size-4" />
+              <UiIcon name={Icon} className="size-4" />
               {tab.label}
             </button>
           );
@@ -137,67 +172,49 @@ export default function LibraryPage() {
       </div>
 
       {/* ── Main Grid ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+      <div className={activeTab === "server" ? "hidden" : "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6"}>
         {/* ── LEFT COLUMN ────────────────────────────────────────── */}
         <div className="space-y-6 min-w-0">
-          {activeTab === "server" ? (
-            // Clean centered empty state, matching the GitHub tab's ConnectPrompt
-            // (bg-card + illustration-style icon + heading/desc + primary button).
-            <div className="bg-card rounded-2xl border border-border/50">
-              <div className="px-6 py-12 text-center">
-                <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-2xl bg-info/10 ring-4 ring-info/5">
-                  <Boxes className="size-6 text-info" />
-                </div>
-                <h3 className="mb-1.5 text-lg font-medium text-foreground/85">
-                  {t.migration.entry.cardTitle}
-                </h3>
-                <p className="mx-auto mb-7 max-w-md text-sm leading-relaxed text-muted-foreground">
-                  {t.migration.entry.cardDesc}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowMigrate(true)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
-                >
-                  <Boxes className="size-4" />
-                  {t.migration.entry.action}
-                </button>
-              </div>
-            </div>
-          ) : activeTab === "folder" ? (
-            // Desktop reads the folder off disk (native picker, no upload/
-            // stack). SaaS AND remote self-hosted browsers upload it instead
-            // (they can't see the user's filesystem).
+          {activeTab === "apps" ? (
+            <AppCatalog embedded />
+          ) : selfHosted && activeTab === "folder" ? (
+            // Desktop reads the folder off disk; remote self-hosted browsers upload it.
             isDesktop ? (
               <LocalProjects />
             ) : (
               <FolderUpload />
             )
-          ) : activeTab === "url" ? (
-            <UrlImport />
-          ) : activeTab === "template" ? (
-            <TemplateGrid />
+          ) : importingUrl ? (
+            <UrlImport header={selfHosted ? sourceHeader : undefined} />
           ) : loading ? (
-            <LoadingSkeleton />
+            <LoadingSkeleton header={sourceHeader} />
           ) : !connected ? (
             <ConnectPrompt
+              header={sourceHeader}
               connecting={connecting}
               onConnect={connect}
               cliAction={cliAction}
               onRefresh={refresh}
+              onBrowseApps={() => {
+                setActiveTab("apps");
+                appsTabRef.current?.focus();
+              }}
               selfHosted={selfHosted}
             />
           ) : needsGhCliConsent ? (
-            <GhCliConsent login={state.sources.ghCli.login} onAllow={allowGhCli} />
+            <GhCliConsent header={sourceHeader} login={state.sources.ghCli.login} onAllow={allowGhCli} />
           ) : (
             <RepositoryList
               repos={libRepos.repos}
               accounts={accounts}
               selectedOwner={selectedOwner}
-              setSelectedOwner={setSelectedOwner}
+              setSelectedOwner={selectOwner}
               loading={loading}
               loadingRepos={libRepos.loading}
               installUrl={installUrl}
+              onInstall={addAccount}
+              installing={connecting}
+              onImportUrl={selfHosted ? importUrl : undefined}
               server={{
                 search: libRepos.search,
                 onSearch: libRepos.setSearch,
@@ -229,7 +246,17 @@ export default function LibraryPage() {
         />
       </div>
 
-      <ServerMigrationWizard isOpen={showMigrate} onClose={() => setShowMigrate(false)} />
+      {showMigrate && (
+        <div className={activeTab === "server" ? undefined : "hidden"}>
+          <ServerMigrationWizard
+            variant="tab"
+            onClose={() => {
+              setShowMigrate(false);
+              setActiveTab("repositories");
+            }}
+          />
+        </div>
+      )}
     </PageContainer>
   );
 }

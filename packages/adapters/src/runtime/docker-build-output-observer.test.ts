@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import Dockerode from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubProtectedBuildWorker } from "../../test/fixtures/remote-build-worker";
 import { statusResponse } from "../../test/fixtures/docker-buildkit";
 import type { BuildConfig, CommandExecutor, LogEntry } from "../types";
 import { BuildLogger } from "./build-pipeline";
@@ -86,6 +87,7 @@ describe("raw Docker build output observers", () => {
     } as unknown as CommandExecutor;
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
     Object.assign(runtime, { connectionOptions: { executor } });
+    stubProtectedBuildWorker(runtime);
     const onOutput = vi.fn();
     const entries: LogEntry[] = [];
     const config: BuildConfig = {

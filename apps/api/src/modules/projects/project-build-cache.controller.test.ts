@@ -33,11 +33,11 @@ vi.mock("../../lib/audit", () => ({
   auditContextFrom: () => ({}),
 }));
 
-vi.mock("../../middleware/instance-admin", () => ({
-  assertInstanceAdmin: h.assertInstanceAdmin,
+vi.mock("@repo/platform/engine/lib/instance-authorization", () => ({
+  instanceAuthorization: { assert: h.assertInstanceAdmin },
 }));
 
-vi.mock("../deployments/build-cache-gc", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build-cache-gc", () => ({
   clearProjectBuildCache: h.clearBuildCache,
 }));
 
@@ -55,7 +55,7 @@ describe("project build-cache controller", () => {
     h.findProject.mockResolvedValue({
       id: "proj_1",
       organizationId: "org_1",
-      cloudWorkspaceId: null,
+      workspaceId: null,
       serverId: "srv_1",
       activeDeploymentId: null,
     });
@@ -86,7 +86,7 @@ describe("project build-cache controller", () => {
     expect(h.assertInstanceAdmin).toHaveBeenCalledOnce();
     expect(h.clearBuildCache).toHaveBeenCalledWith(expect.objectContaining({ id: "proj_1" }));
     expect(h.audit).toHaveBeenCalledWith(
-      {},
+      expect.objectContaining({ actorUserId: "user_1", organizationId: "org_1", source: "api" }),
       expect.objectContaining({
         eventType: "project.build_cache.cleared",
         resourceId: "proj_1",
@@ -95,3 +95,16 @@ describe("project build-cache controller", () => {
     );
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: import("@repo/platform").ExecutionContext, input: import("@repo/platform").PermissionInput) => {
+    await Reflect.apply(h.permission, undefined, [ctx, input]);
+    return ctx;
+  } },
+}));
+
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
+  audit: { recordAsync: h.audit },
+  auditContextFrom: () => ({}),
+}));

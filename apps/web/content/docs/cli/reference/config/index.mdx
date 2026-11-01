@@ -1,0 +1,45 @@
+---
+title: config
+description: Commands, arguments, and options for openship config.
+cliGroup: openship config
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship config
+
+Author and validate openship.json (declarative deploy config)
+
+```text
+openship config [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`init [options]`](/docs/cli/reference/config#openship-config-init) | Scaffold an openship.json in the current directory |
+| [`validate [file]`](/docs/cli/reference/config#openship-config-validate) | Validate an openship.json against the deploy schema |
+
+## openship config init
+
+Scaffold an openship.json in the current directory
+
+```text
+openship config init [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--dir <path>` | Directory to write into (default: ".") |
+| `--force` | Overwrite an existing openship.json |
+
+## openship config validate
+
+Validate an openship.json against the deploy schema
+
+```text
+openship config validate [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | Path to the config file (default: "openship.json") |

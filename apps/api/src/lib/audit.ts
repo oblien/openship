@@ -18,62 +18,9 @@
  */
 
 import type { Context } from "hono";
-import { repos } from "@repo/db";
+export { audit, type AuditContext, type AuditEventInput } from "@repo/platform/engine/lib/audit-emitter";
+import type { AuditContext } from "@repo/platform/engine/lib/audit-emitter";
 import { resolveCallClientId, resolveCallSource, type AuditSource } from "./call-source";
-
-export interface AuditContext {
-  organizationId: string;
-  actorUserId?: string | null;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  /** Where the action came in from. Filled by `auditContextFrom`. */
-  source?: AuditSource | null;
-  /** Which client of that surface — `oauth:<clientId>` / `pat:<tokenId>`. Only
-   *  MCP dispatch sets it; see call-source.ts. */
-  sourceClientId?: string | null;
-}
-
-export interface AuditEventInput {
-  eventType: string;
-  resourceType?: string | null;
-  resourceId?: string | null;
-  before?: unknown;
-  after?: unknown;
-  /** Overrides the context's source. For emitters with no request to read
-   *  (crons, Better Auth hooks, webhook deliveries). */
-  source?: AuditSource | null;
-  /** Overrides the context's client id. For the MCP endpoint itself, which knows
-   *  the calling client before any sub-request has carried the signed header. */
-  sourceClientId?: string | null;
-}
-
-export const audit = {
-  /** Awaited write. See module header. */
-  async record(ctx: AuditContext, event: AuditEventInput): Promise<void> {
-    try {
-      await repos.auditEvent.create({
-        organizationId: ctx.organizationId,
-        actorUserId: ctx.actorUserId ?? null,
-        eventType: event.eventType,
-        resourceType: event.resourceType ?? null,
-        resourceId: event.resourceId ?? null,
-        before: (event.before ?? null) as never,
-        after: (event.after ?? null) as never,
-        ipAddress: ctx.ipAddress ?? null,
-        userAgent: ctx.userAgent ?? null,
-        source: event.source ?? ctx.source ?? null,
-        sourceClientId: event.sourceClientId ?? ctx.sourceClientId ?? null,
-      });
-    } catch (err) {
-      console.error("[audit] failed to record event", event.eventType, err);
-    }
-  },
-
-  /** Fire-and-forget. Errors are swallowed by `record`. See module header. */
-  recordAsync(ctx: AuditContext, event: AuditEventInput): void {
-    void this.record(ctx, event);
-  },
-};
 
 export function auditContextFrom(
   c: Context,

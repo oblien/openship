@@ -1,0 +1,168 @@
+.topology-page {
+  container: project-topology / inline-size;
+}
+.topology-page[data-fullscreen="true"] {
+  position: fixed;
+  inset: var(--titlebar-h, 0px) 0 0;
+  z-index: 60;
+  height: auto;
+  padding: 16px;
+  background: var(--background);
+}
+.topology-page[data-fullscreen="true"] .topology-workspace {
+  min-height: 0;
+}
+@container project-topology (max-width: 760px) {
+  .topology-toolbar {
+    width: 100%;
+  }
+  .topology-environment {
+    flex: 1;
+  }
+}
+@container project-topology (max-width: 450px) {
+  .topology-environment {
+    flex-basis: 100%;
+  }
+  .topology-actions {
+    flex: 1;
+    flex-wrap: wrap;
+  }
+  .topology-add-service {
+    flex: 1;
+  }
+}
+.topology-workspace {
+  min-height: 380px;
+}
+.topology-workspace .react-flow {
+  --xy-background-color: var(--th-card-on-page);
+}
+.topology-workspace .react-flow__node-resource {
+  /* Keep the canvas grid behind translucent selection surfaces. */
+  background: var(--th-card-on-page);
+  border-radius: 1rem;
+}
+.topology-workspace .react-flow__node-resource.topology-replica-group {
+  background: transparent;
+}
+.topology-notice {
+  top: 16px;
+}
+.topology-node {
+  transition: background-color 160ms ease-out;
+}
+.topology-node:not([data-picked="true"]) {
+  border: 0;
+  background: color-mix(in oklab, var(--scale-node-color) 12%, var(--th-card-on-page));
+  box-shadow: none;
+}
+.topology-node:not([data-picked="true"]):hover {
+  background: color-mix(in oklab, var(--scale-node-color) 18%, var(--th-card-on-page));
+}
+.topology-node[data-picked="true"] .topology-node-action {
+  color: var(--foreground);
+}
+.topology-node[data-unavailable="true"] .topology-node-action {
+  cursor: not-allowed;
+}
+.topology-node-icon {
+  background: var(--scale-node-tint);
+  color: var(--scale-node-color);
+}
+.topology-port.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--th-card-on-page);
+  background: var(--muted-foreground);
+}
+.topology-port.react-flow__handle::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+.topology-port.react-flow__handle:hover,
+.topology-port.react-flow__handle.connectingto {
+  background: var(--scale-node-color, var(--foreground));
+}
+.topology-canvas-controls {
+  background: var(--background);
+  box-shadow: none;
+}
+.topology-status {
+  color: var(--muted-foreground);
+}
+.topology-status[data-state="running"],
+.topology-status[data-state="succeeded"] {
+  color: var(--success);
+}
+.topology-status[data-state="starting"],
+.topology-status[data-state="restarting"] {
+  color: var(--info);
+}
+.topology-status[data-state="pending"] {
+  color: var(--warning);
+}
+.topology-status[data-state="failed"] {
+  color: var(--danger);
+}
+.topology-input {
+  display: block;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--background);
+  outline: none;
+  font-size: 13px;
+}
+.topology-input:focus {
+  border-color: var(--primary);
+}
+.topology-service-form [class*="grid-cols-"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.topology-service-form > form > div {
+  min-width: 0;
+}
+.topology-service-form input {
+  min-width: 0;
+}
+.topology-workspace[data-inspector="expanded"] .topology-pending,
+.topology-workspace[data-inspector="expanded"] .topology-hint {
+  pointer-events: none;
+}
+@container scale-workspace (max-width: 720px) {
+  .topology-workspace[data-inspector] .topology-notice {
+    top: calc(30px + var(--scale-preview-height, 82px));
+  }
+  .topology-pending {
+    bottom: 68px;
+    inset-inline-start: 16px;
+    justify-content: space-between;
+  }
+  .topology-hint {
+    display: none;
+  }
+}
+@container scale-workspace (max-width: 560px) {
+  .topology-pending {
+    gap: 4px;
+  }
+  .topology-pending > span {
+    font-size: 11px;
+  }
+  .topology-pending button {
+    padding-inline: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topology-page *,
+  .topology-page *::before,
+  .topology-page *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

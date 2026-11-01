@@ -12,14 +12,15 @@
  *   useProjectUsageStream  — SSE, ~5s. Live resources; keeps nothing.
  *   useProjectUsageHistory — sampled 5-minute buckets. What the stream forgets.
  *   useAnalyticsGeo        — per-DAY rollups: countries, visitors, paths, statuses.
- *   useAnalyticsData       — per-MINUTE series for the traffic chart.
+ *   useAnalyticsData       — hourly requests over the last 24 hours.
  *
  * The geo/overview split isn't arbitrary: countries, visitors and paths are only
- * aggregated daily at the edge (per-minute would multiply its shared-dict cardinality
- * by ~1440 and evict the request counters they annotate), so they can't come from the
+ * aggregated daily at the edge (per-minute would multiply the shared-dict cardinality
+ * by ~1440 and evict the counters they annotate), so they can't come from the
  * same fetch as the minute series.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import React, { useMemo, useState } from "react";
 import { TrafficChart, TopPaths } from "./general";
 import { MonitoringView } from "@/components/monitoring/MonitoringView";
@@ -33,6 +34,7 @@ import {
   useAnalyticsData,
   useAnalyticsGeo,
   useProjectUsageHistory,
+  retryProjectRequests,
 } from "@/hooks/useProjectEndpoints";
 import { useProjectUsageStream } from "@/hooks/useProjectUsageStream";
 import { MOCK_VARIANTS, type MockVariant } from "@/components/monitoring/fixtures";
@@ -52,7 +54,7 @@ const USAGE_HISTORY_POLL_MS = 60_000;
  * rather than `useSearchParams()`.
  *
  * Deliberate: `useSearchParams` is empty during prerender and only fills after
- * hydration, and this needs to be right on the FIRST client render or the tab
+ * hydration, and this needs to be right on the FIRST client render or the URL
  * flashes its empty state. Reading `window.location` in a lazy `useState`
  * initializer runs exactly once, on the client, after the URL is final.
  *
@@ -89,9 +91,7 @@ export const MonitoringTab = () => {
   const [domainScope, setDomainScope] = useState<string | null>(null);
   const domains = useMemo<string[]>(() => {
     const list = (projectData?.domains ?? []) as Array<{ domain?: string }>;
-    return Array.from(
-      new Set(list.map((d) => d.domain?.trim()).filter((d): d is string => !!d)),
-    );
+    return Array.from(new Set(list.map((d) => d.domain?.trim()).filter((d): d is string => !!d)));
   }, [projectData?.domains]);
   // Primary-first, so the live-stream cap (MAX_STREAMS) drops the least-used tail, not the
   // domain that matters most. Mirrors ServerLogs so the map's default All scope fans out
@@ -114,15 +114,36 @@ export const MonitoringTab = () => {
   // Hooks always run — calling them conditionally would break the hook order. The
   // mock swaps their RESULTS, and passes `null` id so no request is made.
   const liveId = mock ? null : id;
-  const { data: liveAnalytics, isLoading: isLoadingAnalytics } = useAnalyticsData(liveId, domainScope);
-  const { data: liveGeo, isLoading: isLoadingGeo } = useAnalyticsGeo(liveId, domainScope);
-  const { usage: liveUsage, isConnected, error: usageError, reconnect } = useProjectUsageStream(liveId);
+  const {
+    data: liveAnalytics,
+    isLoading: isLoadingAnalytics,
+    error: liveAnalyticsError,
+    isRefreshing: isRefreshingAnalytics,
+  } = useAnalyticsData(liveId, domainScope);
+  const {
+    data: liveGeo,
+    isLoading: isLoadingGeo,
+    error: geoError,
+    isRefreshing: isRefreshingGeo,
+  } = useAnalyticsGeo(liveId, domainScope);
+  const {
+    usage: liveUsage,
+    isConnected,
+    isConnecting,
+    error: usageError,
+    reconnect,
+  } = useProjectUsageStream(liveId);
 
   /** Scope for the history read. Held here rather than in the view because it keys the
    *  fetch — the view raises changes through `onServiceKeyChange`. */
   const [serviceKey, setServiceKey] = React.useState<string | null>(null);
-  const { data: liveHistory, isLoading: isLoadingHistory } = useProjectUsageHistory(
-    liveId,
+  const {
+    data: liveHistory,
+    isLoading: isLoadingHistory,
+    error: historyError,
+    isRefreshing: isRefreshingHistory,
+  } = useProjectUsageHistory(
+    isDesktop ? null : liveId,
     serviceKey,
     isDesktop ? undefined : USAGE_HISTORY_POLL_MS,
   );
@@ -141,7 +162,7 @@ export const MonitoringTab = () => {
   const [liveOn, setLiveOn] = useState(false);
   const hits = useLiveHits();
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
-  useRequestLogStream({
+  const { reconnect: reconnectRequests } = useRequestLogStream({
     projectId: id,
     domain: domainScope,
     // When no single domain is scoped (default All), fan out across every route so the map
@@ -152,9 +173,9 @@ export const MonitoringTab = () => {
     // preview gets simulated hits instead — see below.
     enabled: liveOn && !mock,
     onEntry: (e) => hits.push({ country: e.country, path: e.path, statusCode: e.statusCode }),
-    onStatus: (st) => setLiveStatus(st.state === "error" || st.state === "unavailable" ? st.state : null),
+    onStatus: (st) =>
+      setLiveStatus(st.state === "open" || st.state === "idle" ? null : st.state),
   });
-
 
   // Turning it off, or changing which domain is in scope, clears the counter and the feed —
   // carrying a total across a scope change would attribute one domain's hits to another.
@@ -164,9 +185,10 @@ export const MonitoringTab = () => {
   const setLive = React.useCallback(
     (on: boolean) => {
       resetHits();
+      setLiveStatus(on && !mock ? "connecting" : null);
       setLiveOn(on);
     },
-    [resetHits],
+    [resetHits, mock],
   );
   React.useEffect(() => {
     resetHits();
@@ -286,7 +308,8 @@ export const MonitoringTab = () => {
           enabled,
         });
         setPathsOverride(enabled);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/MonitoringTab");
         // Leave the card as it was — pretending it flipped would misreport what the edge
         // is actually doing to every request.
       } finally {
@@ -313,10 +336,6 @@ export const MonitoringTab = () => {
     }));
   }, [geo]);
 
-  const dateRange = analytics
-    ? `${new Date(analytics.summary.firstRequest).toLocaleDateString()} - ${new Date(analytics.summary.lastRequest).toLocaleDateString()}`
-    : undefined;
-
   return (
     <MonitoringView
       analytics={analytics}
@@ -330,8 +349,20 @@ export const MonitoringTab = () => {
       historySupported={fixture ? true : !isDesktop}
       usage={usage}
       isUsageConnected={fixture ? true : isConnected}
+      isUsageConnecting={fixture ? false : isConnecting}
       usageError={fixture ? null : usageError}
       onReconnectUsage={reconnect}
+      analyticsError={fixture ? null : liveAnalyticsError}
+      geoError={fixture ? null : geoError}
+      historyError={fixture ? null : historyError}
+      isRefreshingData={
+        !fixture && !!(
+          (liveAnalyticsError && isRefreshingAnalytics) ||
+          (geoError && isRefreshingGeo) ||
+          (historyError && isRefreshingHistory)
+        )
+      }
+      onRetryAnalytics={() => id && retryProjectRequests(id)}
       serviceKey={serviceKey}
       onServiceKeyChange={setServiceKey}
       // Shown on the traffic block's fold line, so a collapsed block still states the
@@ -347,7 +378,7 @@ export const MonitoringTab = () => {
         <TrafficChart
           trafficData={analytics?.trafficByHour ?? []}
           isLoading={fixture ? false : isLoadingAnalytics}
-          dateRange={dateRange}
+          scopeLabel={domainScope ?? t.projects.monitoring.allDomains}
           totalRequests={analytics?.summary.totalRequests}
         />
       }
@@ -378,6 +409,7 @@ export const MonitoringTab = () => {
         ripples: hits.ripples,
         feed: hits.feed,
         status: liveStatus,
+        onReconnect: reconnectRequests,
       }}
       onDomainScopeChange={setDomainScope}
     />

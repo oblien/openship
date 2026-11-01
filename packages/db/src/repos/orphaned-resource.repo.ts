@@ -4,7 +4,7 @@
  * bumpAttempt when a sweep can't yet reach the server.
  */
 
-import { eq, asc, sql } from "drizzle-orm";
+import { eq, asc, inArray, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { orphanedResource } from "../schema/orphaned-resource";
@@ -42,6 +42,11 @@ export function createOrphanedResourceRepo(db: Database) {
 
     async delete(id: string): Promise<void> {
       await db.delete(orphanedResource).where(eq(orphanedResource.id, id));
+    },
+
+    /** Retire a proven ownership handoff in one statement, under the GC lock. */
+    async deleteMany(ids: string[]): Promise<void> {
+      if (ids.length) await db.delete(orphanedResource).where(inArray(orphanedResource.id, ids));
     },
 
     /** Record a failed/deferred GC attempt so the sweep can back off / observe. */

@@ -6,9 +6,9 @@
  */
 
 import { Hono } from "hono";
+import { AppHostFitInputSchema, InstallAppBody, AddCustomAppBody } from "@repo/contracts";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./app.controller";
-import { InstallAppBody, AddCustomAppBody } from "./app.schema";
 
 const r = secureRouter(new Hono(), {
   module: "apps",
@@ -19,7 +19,8 @@ r.get(
   "/catalog",
   {
     tag: "project:list",
-    mcp: { description: "List the one-click app catalog (Convex, WordPress, mail, …)." },
+     mcp: { description: "List the one-click app catalog (Convex, WordPress, mail, …).",
+   },
   },
   ctrl.catalog,
 );
@@ -27,7 +28,8 @@ r.get(
   "/catalog/:id",
   {
     tag: "project:list",
-    mcp: { description: "Get one app's full template (services, config, endpoints) by id." },
+     mcp: { description: "Get one app's full template (services, config, endpoints) by id.",
+   },
   },
   ctrl.catalogEntry,
 );
@@ -37,8 +39,9 @@ r.get(
     tag: "project:list",
     mcp: {
       description:
-        "Check whether a destination meets an app's declared minimum resources, before installing. Query: deployTarget, serverId.",
+        "Preview app capacity before installing. Self-hosted minimums are advisory; Cloud checks the shared workspace allocation against the plan. Pass projectId to include an existing draft's saved resource settings. Query: deployTarget, serverId, projectId.",
     },
+    query: AppHostFitInputSchema,
   },
   ctrl.hostFit,
 );
@@ -46,7 +49,8 @@ r.get(
   "/custom",
   {
     tag: "project:list",
-    mcp: { description: "List this org's custom (user-uploaded, unverified) apps." },
+     mcp: { description: "List this org's custom (user-uploaded, unverified) apps.",
+   },
   },
   ctrl.listCustom,
 );
@@ -56,6 +60,7 @@ r.post(
     tag: "project:write",
     collection: true,
     body: AddCustomAppBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Add a custom app from an uploaded JSON definition (stored per-org, unverified).",
@@ -72,7 +77,9 @@ r.delete(
     // middleware demands a `:id` this route doesn't have and 400s every call.
     // Org scoping happens in the handler, exactly like the POST above.
     collection: true,
-    mcp: { description: "Remove a custom app from this org's catalog." },
+     mcp: { description: "Remove a custom app from this org's catalog.",
+   },
+    auditHandledByOperation: true,
   },
   ctrl.removeCustom,
 );
@@ -83,6 +90,7 @@ r.post(
     collection: true,
     projectCreate: true,
     body: InstallAppBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Install an app from the catalog as a project (or return a flow route for wizard apps). Public hostnames come ONLY from `routes` — omit it and the app installs port-only (no domain is invented).",

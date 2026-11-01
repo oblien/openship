@@ -15,25 +15,23 @@ vi.mock("@repo/db", () => ({
     webhookDelivery: { record },
   },
 }));
-vi.mock("../../lib/encryption", () => ({ encrypt: vi.fn(), decrypt: vi.fn() }));
-vi.mock("../webhooks/webhook.service", () => ({ verifyHmacSha256: vi.fn() }));
-vi.mock("../github/webhook-shared", () => ({
-  webhookActorCtx: (userId: string, organizationId: string, source: string) => ({
-    userId,
-    organizationId,
-    source,
-  }),
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ encrypt: vi.fn(), decrypt: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/webhooks/webhook.service", () => ({ verifyHmacSha256: vi.fn() }));
+// These cases exercise service targeting; saved-actor revocation is covered by
+// the real-database SDK parity suite.
+vi.mock("@repo/platform/engine/lib/execution-authority", () => ({
+  resolveExecutionAuthority: async () => ({ userId: "creator-1", organizationId: "org-1" }),
 }));
-vi.mock("../../lib/org-actor", () => ({
-  resolveOrgOwner: vi.fn().mockResolvedValue({ userId: "owner-1" }),
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: unknown) => ctx },
 }));
-vi.mock("../deployments/build.service", () => ({ triggerDeployment }));
-vi.mock("../jobs/job.service", () => ({ runJobNow: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({ triggerDeployment }));
+vi.mock("@repo/platform/engine/modules/jobs/job.service", () => ({ runJobNow: vi.fn() }));
 vi.mock("../../lib/audit", () => ({ audit: { recordAsync: vi.fn() } }));
-vi.mock("../../lib/public-url", () => ({ incomingWebhookUrl: vi.fn() }));
-vi.mock("../../config", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/lib/public-url", () => ({ incomingWebhookUrl: vi.fn() }));
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false } }));
 
-import { triggerIncomingWebhook } from "./incoming.service";
+import { triggerIncomingWebhook } from "@repo/platform/engine/modules/incoming-webhooks/incoming.service";
 
 describe("incoming webhook multi-service dispatch", () => {
   beforeEach(() => {
@@ -65,7 +63,7 @@ describe("incoming webhook multi-service dispatch", () => {
 
     expect(triggerDeployment).toHaveBeenCalledTimes(1);
     expect(triggerDeployment).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "owner-1", organizationId: "org-1" }),
+      expect.objectContaining({ userId: "creator-1", organizationId: "org-1" }),
       {
         projectId: "project-1",
         trigger: "webhook",
@@ -173,3 +171,6 @@ describe("incoming webhook multi-service dispatch", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn() } }));

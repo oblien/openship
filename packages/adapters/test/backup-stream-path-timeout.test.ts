@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ServiceHandle } from "../src/backup/types";
 import { drive, FakeAttachStream, harness } from "./helpers/docker-helper-harness";
+import { VolumeCopyProducer } from "../src/backup/producers/volume";
 
 /** Set by captureHarness before each executor call; read by the module mock below. */
 const attachControl = vi.hoisted(() => ({
@@ -443,6 +444,19 @@ describe("quiesce — a point-in-time archive, or a loud refusal", () => {
   }
 
   const SERVICE_WITH_CONTAINER: ServiceHandle = { ...SERVICE, containerId: "ctr_app" };
+
+  it("finishes helper cleanup and thaws before returning a failed upload's producer", async () => {
+    const h = await quiesceHarness(stream, { wait: "hang" });
+    const producer = VolumeCopyProducer.produce(SERVICE_WITH_CONTAINER, h.exec, {
+      compression: "none", quiesce: true,
+    })[Symbol.asyncIterator]();
+    const first = await producer.next();
+    expect(first.done).toBe(false);
+    expect(h.calls).not.toContain("unpause:ctr_app");
+    await drive(producer.return!(), 1_000);
+    expect(h.calls).toContain("unpause:ctr_app");
+    expect(stream.destroyed_).toBe(true);
+  });
 
   it("freezes BEFORE the copy starts and thaws only after it drains", async () => {
     // Ordering is the whole property. Freezing after the helper has begun reading, or

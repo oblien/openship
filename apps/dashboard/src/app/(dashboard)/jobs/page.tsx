@@ -1,18 +1,18 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Clock, Loader2, Play, Pencil, Check, X,
-  Plus, Trash2, ScrollText, DatabaseBackup, ArrowRight, Search,
-} from "lucide-react";
 import { jobsApi, getApiErrorMessage, type JobView, type BackupScheduleView } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { JobRunLogsModal } from "@/components/jobs/JobRunLogs";
 import { JobsEmptyState } from "@/components/jobs/JobsEmptyState";
 import { formatTime, formatDuration, statusTone, statusIcon } from "@/components/jobs/jobFormat";
 import { usePlatform } from "@/context/PlatformContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -39,6 +39,7 @@ export default function JobsPage() {
   const { t } = useI18n();
   const j = t.jobs;
   const { selfHosted } = usePlatform();
+  const showCloudPricing = useCloudDeployPricing();
   const { showToast } = useToast();
   const router = useRouter();
 
@@ -59,7 +60,7 @@ export default function JobsPage() {
       // whole page, so their fetch degrades to empty on error.
       const [res, bs] = await Promise.all([
         jobsApi.list(),
-        jobsApi.backupSchedules().catch(() => ({ data: [] as BackupScheduleView[] })),
+        jobsApi.backupSchedules().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/jobs/page"); return ({ data: [] as BackupScheduleView[] }); }),
       ]);
       setJobs(res?.data ?? []);
       setBackupSchedules(bs?.data ?? []);
@@ -71,9 +72,8 @@ export default function JobsPage() {
   }, [j.loadFailed, j.toast.title, showToast]);
 
   useEffect(() => {
-    if (selfHosted) void load();
-    else setLoading(false);
-  }, [selfHosted, load]);
+    void load();
+  }, [load]);
 
   const handleRun = async (job: JobView) => {
     if (busyKey) return;
@@ -84,6 +84,7 @@ export default function JobsPage() {
       if (res?.data?.runId) setLogRunId(res.data.runId);
       await load();
     } catch (err) {
+      if (showCloudPricing(err)) return;
       showToast(getApiErrorMessage(err, interpolate(j.toast.ranFailed, { label: job.label })), "error", j.toast.title);
     } finally {
       setBusyKey(null);
@@ -134,14 +135,26 @@ export default function JobsPage() {
     }
   };
 
+  const getJobLabel = (job: JobView) => {
+    if (job.kind !== "custom" && j.systemJobLabels) {
+      const labels = j.systemJobLabels as Record<string, string>;
+      if (labels[job.key]) return labels[job.key]!;
+      if (labels[job.label]) return labels[job.label]!;
+    }
+    return job.label;
+  };
+
   const systemJobs = jobs.filter((job) => job.kind !== "custom");
   const customJobs = jobs.filter((job) => job.kind === "custom");
 
   // Search (by label) + status facet. Counts are over ALL jobs so the overview
   // is stable while a filter narrows the list.
   const q = query.trim().toLowerCase();
-  const jobMatches = (job: JobView) =>
-    (!q || job.label.toLowerCase().includes(q)) && matchesJobStatus(job, statusFilter);
+  const jobMatches = (job: JobView) => {
+    const localized = getJobLabel(job).toLowerCase();
+    const raw = job.label.toLowerCase();
+    return (!q || localized.includes(q) || raw.includes(q)) && matchesJobStatus(job, statusFilter);
+  };
   const filteredCustom = customJobs.filter(jobMatches);
   const filteredSystem = systemJobs.filter(jobMatches);
   const counts: Record<JobStatusFilter, number> = {
@@ -184,9 +197,9 @@ export default function JobsPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Clock className="size-4 text-muted-foreground/70" />
+              <UiIcon name="clock" className="size-4 text-muted-foreground/70" />
               <Link href={`/jobs/${encodeURIComponent(job.key)}`} className="text-[14px] font-medium text-foreground hover:text-primary">
-                {job.label}
+                {getJobLabel(job)}
               </Link>
               <span className="rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {isCustom ? j.kind.custom : j.kind.system}
@@ -200,7 +213,7 @@ export default function JobsPage() {
                 onClick={() => job.lastRun && setLogRunId(job.lastRun.id)}
                 className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
               >
-                <ScrollText className="size-3.5" /> {j.actions.viewLogs}
+                <UiIcon name="file-text" className="size-3.5" /> {j.actions.viewLogs}
               </button>
             )}
             <button
@@ -208,7 +221,7 @@ export default function JobsPage() {
               disabled={busy}
               className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1] disabled:opacity-50"
             >
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+              {busy ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="play" className="size-3.5" />}
               {busy ? j.actions.running : j.actions.run}
             </button>
             <button
@@ -226,7 +239,7 @@ export default function JobsPage() {
                 title={j.delete.action}
                 className="inline-flex min-h-8 items-center rounded-lg px-2 text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
               >
-                <Trash2 className="size-3.5" />
+                <UiIcon name="trash" className="size-3.5" />
               </button>
             )}
           </div>
@@ -239,14 +252,14 @@ export default function JobsPage() {
               <div className="flex items-center gap-1.5">
                 <input value={cronDraft} onChange={(e) => setCronDraft(e.target.value)} spellCheck={false}
                   className="w-40 rounded-md border border-border/60 bg-background px-2 py-1 font-mono text-[12px] text-foreground outline-none focus:border-primary" />
-                <button onClick={() => void handleSaveCron(job)} disabled={busy} className="text-success disabled:opacity-50"><Check className="size-4" /></button>
-                <button onClick={() => setEditingKey(null)} disabled={busy} className="text-muted-foreground hover:text-foreground disabled:opacity-50"><X className="size-4" /></button>
+                <button onClick={() => void handleSaveCron(job)} disabled={busy} className="text-success disabled:opacity-50"><UiIcon name="check" className="size-4" /></button>
+                <button onClick={() => setEditingKey(null)} disabled={busy} className="text-muted-foreground hover:text-foreground disabled:opacity-50"><UiIcon name="close" className="size-4" /></button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
                 <code className="font-mono text-[12px] text-foreground">{scheduleText}</code>
                 {job.scheduleType === "recurring" && (
-                  <button onClick={() => { setEditingKey(job.key); setCronDraft(job.cronExpression ?? ""); }} title={j.actions.edit} className="text-muted-foreground/60 hover:text-foreground"><Pencil className="size-3.5" /></button>
+                  <button onClick={() => { setEditingKey(job.key); setCronDraft(job.cronExpression ?? ""); }} title={j.actions.edit} className="text-muted-foreground/60 hover:text-foreground"><UiIcon name="edit" className="size-3.5" /></button>
                 )}
               </div>
             )}
@@ -269,25 +282,23 @@ export default function JobsPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{j.title}</h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">{j.subtitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{selfHosted ? j.subtitle : j.cloudSubtitle}</p>
         </div>
-        {selfHosted && (
-          <button onClick={() => router.push("/jobs/new")}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-            <Plus className="size-4" /> {j.newJob}
-          </button>
-        )}
+        <button onClick={() => router.push("/jobs/new")}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+          <UiIcon name="plus" className="size-4" /> {j.newJob}
+        </button>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+        <div className="flex items-center justify-center py-20"><UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <>
           {/* Search sits above the columns so the overview card starts level
               with the list, not the search box (matches the projects page). */}
           {showOverview && (
             <div className="relative mb-4 max-w-md">
-              <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <UiIcon name="search" className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <input
                 type="text"
                 value={query}
@@ -379,7 +390,7 @@ function JobsOverview({
     <div className="rounded-2xl border border-border/50 bg-card">
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         <div className="flex size-9 items-center justify-center rounded-xl bg-muted">
-          <ScrollText className="size-[18px] text-muted-foreground" />
+          <UiIcon name="file-text" className="size-[18px] text-muted-foreground" />
         </div>
         <div>
           <h2 className="text-[15px] font-semibold text-foreground">{o.title}</h2>
@@ -425,7 +436,7 @@ function StatusPill({ job }: { job: JobView }) {
   const label = run.status === "success" ? j.status.success : run.status === "failed" ? j.status.failed : j.status.running;
   return (
     <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${tone}`}>
-      <Icon className={`size-3.5 ${run.status === "running" ? "animate-spin" : ""}`} />
+      <UiIcon name={Icon} className={`size-3.5 ${run.status === "running" ? "animate-spin" : ""}`} />
       {label}
       <span className="text-muted-foreground/60 font-normal">
         · {formatTime(run.startedAt)}{run.durationMs != null ? ` (${formatDuration(run.durationMs)})` : ""}
@@ -479,7 +490,7 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <DatabaseBackup className="size-4 shrink-0 text-muted-foreground/70" />
+            <UiIcon name="database-backup" className="size-4 shrink-0 text-muted-foreground/70" />
             <span className="truncate text-[14px] font-medium text-foreground">{title}</span>
             <span className="rounded-md bg-info-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info">{j.backups.badge}</span>
             {!isMail && !s.serviceName && (
@@ -490,7 +501,7 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
           <div className="mt-1.5">
             {run && Icon ? (
               <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusTone(norm!)}`}>
-                <Icon className={`size-3.5 ${norm === "running" ? "animate-spin" : ""}`} />
+                <UiIcon name={Icon} className={`size-3.5 ${norm === "running" ? "animate-spin" : ""}`} />
                 {runLabel}
                 <span className="font-normal text-muted-foreground/60">· {formatTime(run.startedAt)}</span>
               </span>
@@ -504,7 +515,7 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
             href={manageHref}
             className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
           >
-            {j.backups.manage} <ArrowRight className="size-3.5 rtl:rotate-180" />
+            {j.backups.manage} <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
           </Link>
         )}
       </div>
@@ -522,4 +533,3 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
     </div>
   );
 }
-

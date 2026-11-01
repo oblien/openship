@@ -39,7 +39,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   syncProjectRouteState: async () => {},
   reapplyProjectLiveRoutes: async () => {},
   resolveProjectRouteState: async () => ({ projectDomains: [], publicEndpoints: [] }),
@@ -49,14 +49,14 @@ vi.mock("../domains/project-route.service", () => ({
   deriveEnvironmentPublicEndpoints: () => [],
 }));
 
-vi.mock("../domains/routing-apply.service", () => ({ applyProjectRouting: async () => {} }));
-vi.mock("./project-runtime.service", () => ({ syncProjectManagedEdge: async () => {} }));
-vi.mock("../../lib/free-domain-guard", () => ({ assertFreeEndpointsAllowed: async () => {} }));
+vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", () => ({ applyProjectRouting: async () => {} }));
+vi.mock("@repo/platform/engine/modules/projects/project-runtime.service", () => ({ syncProjectManagedEdge: async () => {} }));
+vi.mock("@repo/platform/engine/lib/free-domain-guard", () => ({ assertFreeEndpointsAllowed: async () => {} }));
 vi.mock("../../lib/controller-helpers", () => ({
   assertResourceInOrg: () => {},
   platform: () => ({ runtime: { name: "docker" } }),
 }));
-vi.mock("../github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   resolveDefaultBranch: async () => "main",
   listBranches: async () => [],
   getLatestCommit: async () => null,
@@ -64,27 +64,27 @@ vi.mock("../github/github.service", () => ({
   // The seam the state depends on: which delivery mechanism this instance can use.
   resolveWebhookStrategy: async () => h.strategy,
 }));
-vi.mock("../github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   getInstallationIdByOrg: async () => h.installationId,
   resolveInstallUrl: async () => ({ url: "", state: "" }),
 }));
-vi.mock("./project-git-webhook", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-git-webhook", () => ({
   ensureSharedWebhook: async () => null,
   findSharedWebhookId: async () => {
     h.sharedLookups += 1;
     return h.siblingWebhookId;
   },
 }));
-vi.mock("../../lib/release-resolver", () => ({
+vi.mock("@repo/platform/engine/lib/release-resolver", () => ({
   resolveLatestVersion: async () => null,
   resolveLatestReleaseTag: async () => null,
   readApiVersion: () => "0.0.0",
 }));
-vi.mock("../../lib/image-registry", () => ({ resolveLatestImageDigest: async () => null }));
-vi.mock("./folder/session-store", () => ({ getFolderSession: () => null }));
-vi.mock("../../config", () => ({ env: { CLOUD_MODE: false, CLOUD_MAX_PROJECTS_PER_USER: 2 } }));
+vi.mock("@repo/platform/engine/lib/image-registry", () => ({ resolveLatestImageDigest: async () => null }));
+vi.mock("@repo/platform/engine/modules/projects/folder/session-store", () => ({ getFolderSession: () => null }));
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false, CLOUD_MAX_PROJECTS_PER_USER: 2 } }));
 
-const load = () => import("./project-crud.service");
+const load = () => import("@repo/platform/engine/modules/projects/project-crud.service");
 
 const gitProject = {
   gitOwner: "acme",
@@ -189,3 +189,14 @@ describe("resolveProjectWebhookState", () => {
     expect(state.webhookActive).toBe(false);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  assertResourceInOrg: () => {},
+  platform: () => ({ runtime: { name: "docker" } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  assertResourceInOrg: () => {},
+  platform: () => ({ runtime: { name: "docker" } }),
+}));

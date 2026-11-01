@@ -38,6 +38,7 @@ import { cp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createReleaseServerPackage } from './release-server-package';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CLIENT_DIR = join(ROOT, 'client');
@@ -166,7 +167,7 @@ async function writeJson(path: string, data: unknown): Promise<void> {
  * The server's `package.json` is workspace-coupled in dev (catalog refs,
  * postinstall reaching back to the monorepo). For the release we want a
  * stand-alone shape: name/version/type/scripts + plain semver-resolved
- * dependencies, no workspace-protocol entries.
+ * dependencies and validated runtime overrides, no workspace-protocol entries.
  *
  * `resolve-catalog-refs.ts` already runs as part of the dev install
  * pipeline and produces semver pins from the catalog. Re-running it
@@ -175,27 +176,7 @@ async function writeJson(path: string, data: unknown): Promise<void> {
  */
 async function buildServerPackageJson(): Promise<Record<string, unknown>> {
   const source = await readJson(join(SERVER_DIR, 'package.json'));
-  const out: Record<string, unknown> = {
-    name: '@zero/server',
-    version: source.version ?? '0.0.0',
-    private: true,
-    type: 'module',
-    scripts: {
-      start: 'bun run src/main.ts',
-    },
-    dependencies: source.dependencies ?? {},
-  };
-  // Strip workspace-protocol values if any leaked through.
-  const deps = out.dependencies as Record<string, string>;
-  for (const [k, v] of Object.entries(deps)) {
-    if (typeof v === 'string' && v.startsWith('workspace:')) {
-      throw new Error(
-        `Server package.json still has workspace-protocol dep "${k}": "${v}". ` +
-          `Run \`bun run resolve-catalogs\` in apps/email before building the release.`,
-      );
-    }
-  }
-  return out;
+  return createReleaseServerPackage(source);
 }
 
 const ROOT_PACKAGE_JSON = {

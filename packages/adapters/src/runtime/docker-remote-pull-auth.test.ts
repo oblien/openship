@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DockerRuntime, type DockerConnectionOptions } from "./docker";
+import { BuildLogger } from "./build-pipeline";
 
 /**
  * A REMOTE pull shells out on the target host, so it reads that host's credentials — which
@@ -29,7 +30,7 @@ const executor = {
     if (h.failPull && command.includes("docker pull")) throw new Error("pull exploded");
     return "";
   }),
-  streamExec: vi.fn(async () => ({ code: 0, output: "" })),
+  streamExec: vi.fn(async (_command: string, _onLog: BuildLogger["callback"], _opts?: { signal?: AbortSignal }) => ({ code: 0, output: "" })),
   writeFile: vi.fn(async (path: string, content: string) => {
     h.writes.push({ path, content });
   }),
@@ -64,6 +65,32 @@ beforeEach(() => {
   h.writes = [];
   h.failPull = false;
   vi.clearAllMocks();
+});
+
+describe("remote image preparation progress", () => {
+  it("streams pull output using the existing private credential file", async () => {
+    const entries: string[] = [];
+    const logger = new BuildLogger(entry => entries.push(entry.message));
+    executor.streamExec.mockImplementationOnce(async (_command, onLog) => {
+      onLog({ timestamp: new Date().toISOString(), level: "info", message: "layer-a: Downloading 4 MB / 8 MB" });
+      return { code: 0, output: "Pull complete" };
+    });
+    const runtime = await runtimeWith(async () => ({ username: "bob", password: SECRET, serveraddress: "ghcr.io" }));
+    await runtime.pullImage("ghcr.io/o/img:1", { force: true, logger });
+    expect(entries).toContain("layer-a: Downloading 4 MB / 8 MB");
+    const [command] = executor.streamExec.mock.calls[0]!;
+    expect(command).toContain("DOCKER_CONFIG=");
+    expect(command).not.toContain(SECRET);
+    expect(entries.join("\n")).not.toContain(SECRET);
+    expect(h.execs.at(-1)).toMatch(/^rm -rf /);
+  });
+
+  it("fails a streamed pull on a nonzero exit and still cleans its credentials", async () => {
+    executor.streamExec.mockResolvedValueOnce({ code: 1, output: "registry unavailable" });
+    const runtime = await runtimeWith(async () => ({ username: "bob", password: SECRET, serveraddress: "ghcr.io" }));
+    await expect(runtime.pullImage("ghcr.io/o/img:1", { force: true, logger: new BuildLogger() })).rejects.toThrow("registry unavailable");
+    expect(h.execs.at(-1)).toMatch(/^rm -rf /);
+  });
 });
 
 describe("remote pull — no Openship credential", () => {

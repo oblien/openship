@@ -1,0 +1,135 @@
+---
+title: webhook
+description: Commands, arguments, and options for openship webhook.
+cliGroup: openship webhook
+---
+
+See the [workflow guide](/docs/cli/operations) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship webhook
+
+Manage incoming deploy and job webhooks
+
+```text
+openship webhook [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options]`](/docs/cli/reference/webhook#openship-webhook-list) | List a project's incoming webhooks |
+| [`create [options] <file>`](/docs/cli/reference/webhook#openship-webhook-create) | Create a webhook; credentials in the result must be kept private |
+| [`update [options] <id> <file>`](/docs/cli/reference/webhook#openship-webhook-update) | Update a webhook using the shared authorization rules |
+| [`invoke [options] <id>`](/docs/cli/reference/webhook#openship-webhook-invoke) | Run this webhook's configured action as the current caller |
+| [`rotate [options] <id>`](/docs/cli/reference/webhook#openship-webhook-rotate) | Rotate a webhook's credential |
+| [`remove [options] <id>`](/docs/cli/reference/webhook#openship-webhook-remove) | Remove a webhook |
+| [`deliveries [options]`](/docs/cli/reference/webhook#openship-webhook-deliveries) | Inspect webhook deliveries with cursor pagination |
+
+## openship webhook create
+
+Create a webhook; credentials in the result must be kept private
+
+```text
+openship webhook create [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON webhook definition |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+
+## openship webhook deliveries
+
+Inspect webhook deliveries with cursor pagination
+
+```text
+openship webhook deliveries [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `--hook <id>` | Only one webhook's deliveries |
+| `--cursor <cursor>` | Continue from the returned nextCursor |
+| `--limit <n>` | Page size (default: "50") |
+
+## openship webhook invoke
+
+Run this webhook's configured action as the current caller
+
+```text
+openship webhook invoke [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Webhook ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+
+## openship webhook list
+
+List a project's incoming webhooks
+
+```text
+openship webhook list [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+
+## openship webhook remove
+
+Remove a webhook
+
+```text
+openship webhook remove [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Webhook ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `-y, --yes` | Skip confirmation |
+
+## openship webhook rotate
+
+Rotate a webhook's credential
+
+```text
+openship webhook rotate [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Webhook ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |
+| `-y, --yes` | Skip confirmation |
+
+## openship webhook update
+
+Update a webhook using the shared authorization rules
+
+```text
+openship webhook update [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Webhook ID |
+| `file` | JSON webhook patch |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id>` | Project ID |

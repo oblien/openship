@@ -32,7 +32,8 @@
       "total": "Total",
       "successful": "Correctos",
       "failed": "Fallidos",
-      "inProgress": "En curso"
+      "inProgress": "En curso",
+      "pageTitle": "En esta página"
     },
     "autoDeploy": {
       "title": "Despliegue automático",
@@ -191,5 +192,75 @@
     "untouchedNote": "Estos siguen en ejecución y no se modifican: {names}",
     "confirm": "Revertir",
     "cancel": "Cancelar"
+  },
+  "loadFailed": "No se pudo cargar el historial de despliegues.",
+  "retry": "Reintentar",
+  "pagination": {
+    "label": "Páginas del historial de despliegues",
+    "previous": "Página anterior",
+    "next": "Página siguiente",
+    "pageOf": "Página {page} de {total}",
+    "range": "Despliegues {from}–{to} de {total}"
+  },
+  "resourceGuidance": {
+    "label": "Orientación sobre recursos del despliegue",
+    "reviewCapacity": "Revisar capacidad",
+    "reviewTitle": "Revisar la capacidad del espacio Cloud",
+    "reviewHint": "Revisa primero el uso y los límites configurados. La mejora es opcional; abrir esta revisión no modifica ni reintenta el despliegue.",
+    "slowTitle": "Esta compilación está tardando",
+    "slowDescription": "Las descargas, la red o los comandos pueden ser lentos. Más capacidad puede ayudar en compilaciones intensivas; revisa primero los registros.",
+    "titles": {
+      "container-oom": "El contenedor se quedó sin memoria",
+      "memory-allocation": "Falló la asignación de memoria",
+      "process-heap": "Se alcanzó el límite de memoria del proceso",
+      "storage-full": "Falló la asignación de almacenamiento",
+      "storage-low": "No hay suficiente almacenamiento libre para compilar",
+      "process-killed": "El proceso de compilación fue terminado"
+    },
+    "causes": {
+      "container-oom": "Docker confirmó una terminación por falta de memoria. Revisa el límite del contenedor y la capacidad del espacio Cloud antes de reintentar.",
+      "memory-allocation": "El proceso no pudo asignar memoria. Revisa los límites configurados y la capacidad disponible antes de elegir un plan mayor.",
+      "process-heap": "El proceso alcanzó su propio límite de memoria heap. Revisa la configuración del entorno; un plan mayor por sí solo podría no resolverlo.",
+      "storage-full": "La operación agotó el espacio en disco o los inodos. Revisa el uso y los artefactos sin utilizar, preservando los datos de la aplicación.",
+      "storage-low": "El sistema de archivos de Docker tiene poco espacio libre o ningún inodo libre. Revisa el uso o aumenta el almacenamiento.",
+      "process-killed": "El proceso recibió SIGKILL (código de salida 137). Esto por sí solo no demuestra falta de memoria. Revisa los registros."
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "Cola de compilación en la nube",
+    "title": "Compilación en cola",
+    "position": "Compilación en cola · Posición {position}",
+    "concurrency": "Esperando un espacio para una compilación simultánea.",
+    "resources": "Esperando CPU o memoria disponible en el servidor.",
+    "server": "Esperando a que el servidor acepte esta compilación.",
+    "automaticStart": "Se iniciará automáticamente.",
+    "allowance": "Compilaciones simultáneas permitidas por tu plan: {count}.",
+    "unlimited": "Tu plan no limita las compilaciones simultáneas.",
+    "active": "Compilaciones activas: {count}.",
+    "comparePlans": "Comparar planes",
+    "optionalUpgrade": "Cambiar a un plan superior es opcional. Puedes seguir esperando.",
+    "compareConcurrency": "Compara planes para ejecutar más compilaciones simultáneas. Tu compilación puede permanecer en la cola.",
+    "compareResources": "Compara planes para obtener más CPU o memoria. Puedes seguir esperando a que haya recursos disponibles en el servidor."
+  },
+  "monitoring": {
+    "title": "Resumen de despliegues",
+    "scope": "Proyecto y búsqueda seleccionados · días UTC · historial conservado",
+    "period": "Período",
+    "days": "{count} días",
+    "refresh": "Actualizar",
+    "attempts": "Intentos de despliegue",
+    "window": "En el período seleccionado",
+    "successRate": "Tasa de éxito",
+    "rateHint": "Exitosos / (exitosos + fallidos); excluye cancelaciones",
+    "failedHint": "Incluye versiones parciales y bloqueadas",
+    "activeHint": "Intentos en ejecución o en cola en este período",
+    "unavailable": "Resumen no disponible. Intenta actualizar.",
+    "trend": "Resultados diarios",
+    "avgBuild": "Compilación exitosa media",
+    "empty": "No hay despliegues en este período.",
+    "projects": "Desglose por proyecto",
+    "projectHint": "Los 6 primeros por fallos, luego intentos activos",
+    "failedShort": "fallidos",
+    "history": "Historial de despliegues"
   }
 }

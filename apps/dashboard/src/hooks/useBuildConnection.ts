@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { useCallback, useRef, useState } from 'react';
 import { connectToBuildStream, reconnectToBuildStream, NoRetryError } from '@/lib/sseClient';
 import { useToast } from '@/context/ToastContext';
@@ -71,11 +72,11 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
             }
           },
           onError: (error) => {
-            console.error('[BuildConnection] Build stream error:', error);
+            errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Build stream error:', error);
             
             // Check if this is a NoRetryError - if so, stop immediately
             if (error instanceof NoRetryError || error.name === 'NoRetryError') {
-              console.log('[BuildConnection] Terminal error - stopping:', error.message);
+              errorDiagnostics.warn("dashboard/hooks/useBuildConnection", '[BuildConnection] Terminal error - stopping:', error);
               isActiveRef.current = false;
               setState(prev => ({ ...prev, isConnecting: false }));
               showToast(error.message, 'error', 'Build Failed');
@@ -117,11 +118,11 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
             }
           },
           onError: (error) => {
-            console.error('[BuildConnection] Attach error:', error);
+            errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Attach error:', error);
             
             // Check if this is a NoRetryError - if so, stop immediately
             if (error instanceof NoRetryError || error.name === 'NoRetryError') {
-              console.log('[BuildConnection] Terminal error during attach - stopping:', error.message);
+              errorDiagnostics.warn("dashboard/hooks/useBuildConnection", '[BuildConnection] Terminal error during attach - stopping:', error);
               isActiveRef.current = false;
               setState(prev => ({ ...prev, isConnecting: false }));
               showToast(error.message, 'error', 'Build Failed');
@@ -137,12 +138,12 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
         });
       }
     } catch (err: any) {
-      console.error('[BuildConnection] Failed to connect:', err);
+      errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Failed to connect:', err);
       setState(prev => ({ ...prev, isConnecting: false }));
       
       // Check if this is a NoRetryError - if so, stop immediately
       if (err instanceof NoRetryError || err.name === 'NoRetryError') {
-        console.log('[BuildConnection] Terminal error during connect - stopping:', err.message);
+        errorDiagnostics.warn("dashboard/hooks/useBuildConnection", '[BuildConnection] Terminal error during connect - stopping:', err);
         isActiveRef.current = false;
         showToast(err.message, 'error', 'Build Failed');
         options.onError?.(err);
@@ -176,7 +177,7 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
     const newAttempts = currentAttempts + 1;
     
     if (newAttempts > MAX_RECONNECT_ATTEMPTS) {
-      console.error('[BuildConnection] Max reconnection attempts reached');
+      errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Max reconnection attempts reached');
       showToast('Unable to reconnect after multiple attempts', 'error', 'Connection Error');
       isActiveRef.current = false;
       options.onError?.(new Error('Max reconnection attempts reached'));
@@ -229,18 +230,18 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
             if (isActiveRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
               setTimeout(() => reconnect(), 1000);
             } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-              console.error('[BuildConnection] Max reconnection attempts reached after disconnect');
+              errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Max reconnection attempts reached after disconnect');
               isActiveRef.current = false;
               showToast('Unable to reconnect after multiple attempts', 'error', 'Connection Error');
             }
           },
           onError: (error) => {
-            console.error('[BuildConnection] Reconnection error:', error);
+            errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Reconnection error:', error);
             setState(prev => ({ ...prev, isReconnecting: false }));
             
             // Check if this is a NoRetryError - if so, stop immediately
             if (error instanceof NoRetryError || error.name === 'NoRetryError') {
-              console.log('[BuildConnection] Terminal error - stopping reconnection:', error.message);
+              errorDiagnostics.warn("dashboard/hooks/useBuildConnection", '[BuildConnection] Terminal error - stopping reconnection:', error);
               isActiveRef.current = false;
               showToast(error.message, 'error', 'Connection Stopped');
               options.onError?.(error);
@@ -252,7 +253,7 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
             if (isActiveRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
               setTimeout(() => reconnect(), 2000);
             } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-              console.error('[BuildConnection] Max reconnection attempts reached after error');
+              errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Max reconnection attempts reached after error');
               isActiveRef.current = false;
               showToast('Unable to reconnect after multiple attempts', 'error', 'Connection Error');
             }
@@ -260,12 +261,12 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
         }
       );
     } catch (err: any) {
-      console.error('[BuildConnection] Reconnection failed:', err);
+      errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Reconnection failed:', err);
       setState(prev => ({ ...prev, isReconnecting: false }));
       
       // Check if this is a NoRetryError - if so, stop immediately
       if (err instanceof NoRetryError || err.name === 'NoRetryError') {
-        console.log('[BuildConnection] Terminal error - stopping reconnection:', err.message);
+        errorDiagnostics.warn("dashboard/hooks/useBuildConnection", '[BuildConnection] Terminal error - stopping reconnection:', err);
         isActiveRef.current = false;
         showToast(err.message, 'error', 'Connection Stopped');
         options.onError?.(err);
@@ -285,7 +286,7 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
       if (isActiveRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectTimerRef.current = setTimeout(() => reconnect(), 2000);
       } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        console.error('[BuildConnection] Max reconnection attempts reached');
+        errorDiagnostics.error("dashboard/hooks/useBuildConnection", '[BuildConnection] Max reconnection attempts reached', err);
         isActiveRef.current = false;
         showToast('Unable to reconnect after multiple attempts', 'error', 'Connection Error');
       }

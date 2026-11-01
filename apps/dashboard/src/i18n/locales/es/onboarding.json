@@ -7,7 +7,9 @@
   },
   "topBar": {
     "website": "Sitio web",
-    "github": "GitHub"
+    "github": "GitHub",
+    "theme": "Tema",
+    "language": "Idioma"
   },
   "choose": {
     "title": "Te damos la bienvenida a Openship",
@@ -29,7 +31,8 @@
       "perk3": "Nosotros nos encargamos del resto",
       "cta": "Configurar mi servidor"
     },
-    "migrateNote": "Cambia entre Cloud y Autoalojado cuando quieras con un solo clic, sin ataduras, nunca."
+    "migrateNote": "Cambia entre Cloud y Autoalojado cuando quieras con un solo clic, sin ataduras, nunca.",
+    "skip": "Omitir por ahora"
   },
   "selfhost": {
     "title": "¿Dónde debería ejecutarse Openship?",
@@ -38,7 +41,9 @@
     "local": {
       "title": "Esta máquina",
       "badge": "Beta",
-      "desc": "Instala Openship aquí mismo, sin SSH ni configuración remota"
+      "desc": "Instala Openship aquí mismo, sin SSH ni configuración remota",
+      "comingSoon": "La instalación local estará disponible pronto.",
+      "comingSoonDesc": "Por ahora, hospeda en cualquier servidor Linux con Docker instalado."
     },
     "remote": {
       "title": "Otro servidor",
@@ -68,7 +73,12 @@
     "jumpHostLabel": "Host de salto",
     "extraArgsLabel": "Argumentos SSH adicionales",
     "submit": "Guardar y continuar",
-    "tutorial": "Tutorial de configuración paso a paso"
+    "tutorial": "Tutorial de configuración paso a paso",
+    "testConnection": "Probar conexión",
+    "testing": "Probando...",
+    "connected": "¡Conectado!",
+    "testFailed": "Error de conexión",
+    "testHint": "Asegúrate de que el host sea accesible, el puerto 22 esté abierto y las credenciales sean válidas."
   },
   "tunnel": {
     "title": "Acceso a internet",

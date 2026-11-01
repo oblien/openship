@@ -32,7 +32,8 @@
       "total": "Gesamt",
       "successful": "Erfolgreich",
       "failed": "Fehlgeschlagen",
-      "inProgress": "In Bearbeitung"
+      "inProgress": "In Bearbeitung",
+      "pageTitle": "Auf dieser Seite"
     },
     "autoDeploy": {
       "title": "Auto-Deploy",
@@ -191,5 +192,75 @@
     "untouchedNote": "Diese laufen weiter und werden nicht angetastet: {names}",
     "confirm": "Zurücksetzen",
     "cancel": "Abbrechen"
+  },
+  "loadFailed": "Bereitstellungen konnten nicht geladen werden.",
+  "retry": "Erneut versuchen",
+  "pagination": {
+    "label": "Seiten des Bereitstellungsverlaufs",
+    "previous": "Vorherige Seite",
+    "next": "Nächste Seite",
+    "pageOf": "Seite {page} von {total}",
+    "range": "Bereitstellungen {from}–{to} von {total}"
+  },
+  "resourceGuidance": {
+    "label": "Ressourcenhinweise zur Bereitstellung",
+    "reviewCapacity": "Kapazität prüfen",
+    "reviewTitle": "Kapazität des Cloud-Bereichs prüfen",
+    "reviewHint": "Prüfe zuerst Nutzung und konfigurierte Limits. Ein Upgrade ist optional; diese Ansicht ändert oder wiederholt die Bereitstellung nicht.",
+    "slowTitle": "Dieser Build dauert etwas länger",
+    "slowDescription": "Downloads, Netzwerkverzögerungen oder Build-Befehle können langsam sein. Mehr Kapazität kann rechenintensive Builds beschleunigen; prüfe zuerst die Logs.",
+    "titles": {
+      "container-oom": "Container hatte zu wenig Arbeitsspeicher",
+      "memory-allocation": "Speicherzuweisung fehlgeschlagen",
+      "process-heap": "Heap-Limit der Anwendung erreicht",
+      "storage-full": "Speicherplatzzuweisung fehlgeschlagen",
+      "storage-low": "Zu wenig freier Speicherplatz für den Build",
+      "process-killed": "Build-Prozess wurde beendet"
+    },
+    "causes": {
+      "container-oom": "Docker hat eine Beendigung wegen Speichermangels bestätigt. Prüfe das Speicherlimit des Containers und die Cloud-Kapazität vor einem erneuten Versuch.",
+      "memory-allocation": "Der fehlgeschlagene Prozess konnte keinen Arbeitsspeicher zuweisen. Prüfe konfigurierte Limits und verfügbare Kapazität, bevor du einen größeren Tarif wählst.",
+      "process-heap": "Der Prozess hat sein eigenes Heap-Limit erreicht. Prüfe die Laufzeiteinstellungen; ein größerer Tarif allein löst dies möglicherweise nicht.",
+      "storage-full": "Der Vorgang hatte keinen freien Speicherplatz oder keine freien Inodes mehr. Prüfe Nutzung und ungenutzte Artefakte und bewahre die Anwendungsdaten.",
+      "storage-low": "Das Docker-Dateisystem hat zu wenig freien Platz oder keine freien Inodes. Prüfe die Nutzung oder erweitere den Speicher.",
+      "process-killed": "Der Prozess erhielt SIGKILL (Exit-Code 137). Das allein beweist keinen Speichermangel. Prüfe die Logs."
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "Cloud-Build-Warteschlange",
+    "title": "Build eingereiht",
+    "position": "Build eingereiht · Position {position}",
+    "concurrency": "Warten auf einen freien Platz für einen gleichzeitigen Build.",
+    "resources": "Warten auf verfügbare CPU oder Arbeitsspeicher auf dem Server.",
+    "server": "Warten, bis der Server diesen Build annimmt.",
+    "automaticStart": "Der Build startet automatisch.",
+    "allowance": "Gleichzeitige Builds in deinem Tarif: {count}.",
+    "unlimited": "Dein Tarif begrenzt gleichzeitige Builds nicht.",
+    "active": "Aktive Builds: {count}.",
+    "comparePlans": "Tarife vergleichen",
+    "optionalUpgrade": "Ein Upgrade ist optional. Du kannst weiter warten.",
+    "compareConcurrency": "Vergleiche Tarife für mehr gleichzeitige Builds. Dein Build kann in der Warteschlange bleiben.",
+    "compareResources": "Vergleiche Tarife für mehr CPU oder Arbeitsspeicher. Du kannst weiter warten, bis Serverressourcen verfügbar sind."
+  },
+  "monitoring": {
+    "title": "Deployment-Übersicht",
+    "scope": "Gewähltes Projekt und Suche · UTC-Kalendertage · gespeicherter Verlauf",
+    "period": "Zeitraum",
+    "days": "{count} Tage",
+    "refresh": "Aktualisieren",
+    "attempts": "Deployment-Versuche",
+    "window": "Im gewählten Zeitraum",
+    "successRate": "Erfolgsquote",
+    "rateHint": "Erfolgreich / (erfolgreich + fehlgeschlagen); ohne Abbrüche",
+    "failedHint": "Einschließlich teilweiser und blockierter Releases",
+    "activeHint": "Laufende oder wartende Versuche im Zeitraum",
+    "unavailable": "Übersicht nicht verfügbar. Versuchen Sie es erneut.",
+    "trend": "Tägliche Ergebnisse",
+    "avgBuild": "Ø erfolgreicher Build",
+    "empty": "Keine Deployments in diesem Zeitraum.",
+    "projects": "Projektübersicht",
+    "projectHint": "Top 6 nach Fehlern, dann aktiven Versuchen",
+    "failedShort": "fehlgeschlagen",
+    "history": "Deployment-Verlauf"
   }
 }

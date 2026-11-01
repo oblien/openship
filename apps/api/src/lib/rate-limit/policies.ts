@@ -22,6 +22,9 @@ const MINUTE_MS = 60_000;
 
 /** All policy ids — keep in sync with `POLICIES` below. */
 export type PolicyId =
+  | "actions-runtime"
+  | "diagnostics"
+  | "flood-ip"
   | "default-anon"
   | "default-authed"
   | "auth-tight"
@@ -31,9 +34,55 @@ export type PolicyId =
   | "read-authed"
   | "write-authed"
   | "webhook-ingress"
-  | "billing-portal";
+  | "webhook-flood"
+  | "billing-portal"
+  | "support-contact"
+  | "support-reply";
 
 export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
+  "actions-runtime": {
+    id: "actions-runtime", limit: 1200, windowMs: MINUTE_MS, subject: "ip",
+    description: "Capability-authenticated Actions artifact/cache metadata and bounded upload chunks, including runners behind a shared NAT.",
+  },
+  "diagnostics": {
+    id: "diagnostics",
+    limit: 20,
+    windowMs: MINUTE_MS,
+    subject: "ip",
+    description: "Bounded browser error batches, including before sign-in; never an unmetered log ingestion endpoint.",
+  },
+  "support-reply": {
+    id: "support-reply",
+    limit: 30,
+    windowMs: 15 * MINUTE_MS,
+    subject: "user",
+    description: "New replies to Cloud support tickets per authenticated customer, across API replicas.",
+  },
+  // Intake has no account requirement. The route checks this policy directly
+  // using a hashed contact identity, alongside the ordinary per-IP limit.
+  "support-contact": {
+    id: "support-contact",
+    limit: 5,
+    windowMs: 15 * MINUTE_MS,
+    subject: "user",
+    description: "New Cloud support tickets per hashed contact address, across API replicas.",
+  },
+  /** Pre-auth flood ceiling on the whole `/api` tree (see middleware/
+   *  rate-limiter.ts `floodGuard`). Its ONLY job is bounding abusive per-IP
+   *  volume before authMiddleware runs its session DB lookup — a distinct
+   *  bucket from the per-route policies, so it never double-charges them.
+   *  Set well above the most generous per-user policy (`default-authed`, 3000)
+   *  so a single legitimate authed client is always governed by its own
+   *  per-route limit, never clipped by this guard. Coarse and generous on
+   *  purpose; operators behind large shared NATs can raise it. */
+  "flood-ip": {
+    id: "flood-ip",
+    limit: 6000,
+    windowMs: MINUTE_MS,
+    subject: "ip",
+    description: "Pre-auth per-IP flood ceiling on /api — abuse bound, not shaping.",
+  },
+
   /** Conservative default for unauthed routes. Per-IP. */
   "default-anon": {
     id: "default-anon",
@@ -115,15 +164,22 @@ export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
     description: "Write API — per-user.",
   },
 
-  /** Webhook ingress (GitHub, Stripe, etc.). Per-IP — sources hit us
-   *  from a fixed set of IPs and shouldn't burst beyond their published
-   *  delivery rate. */
+  /** Independent hook quotas preserve deliveries behind shared provider IPs. */
   "webhook-ingress": {
     id: "webhook-ingress",
     limit: 120,
     windowMs: MINUTE_MS,
+    subject: "webhook",
+    description: "Inbound webhook deliveries — per-endpoint and source IP.",
+  },
+  // Endpoint hints are untrusted before signature/token verification. Rotating
+  // IDs must not provide an unlimited bypass of the ingress rate limit.
+  "webhook-flood": {
+    id: "webhook-flood",
+    limit: 6000,
+    windowMs: MINUTE_MS,
     subject: "ip",
-    description: "Inbound webhook deliveries — per-source-IP.",
+    description: "Coarse inbound webhook ceiling per source IP, across endpoints.",
   },
 
   /** Billing portal — expensive Stripe round-trip. Per-org, tight. */

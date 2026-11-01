@@ -86,7 +86,8 @@
     "updateTo": "{version} sürümüne güncelle",
     "updating": "Güncelleniyor…",
     "updateFailed": "Güncelleme başarısız oldu",
-    "toastTitle": "Kaynak"
+    "toastTitle": "Kaynak",
+    "cliManaged": "Bu Openship kontrol panelidir — kendi kendini günceller. Yükseltmek için ana makinede \"openship update\" komutunu çalıştırın; burada değiştirilecek bir şey yoktur."
   },
   "appSettings": {
     "modeApp": "Uygulama ayarları",
@@ -109,6 +110,27 @@
     "unmanaged": "Bu uygulamanın henüz yapılandırılabilir bir ayarı yok."
   },
   "appInstall": {
+    "configurationLoading": "Uygulama yapılandırması yükleniyor…",
+    "catalogLoadFailed": "Uygulama ayrıntıları yüklenemedi. Yüklemeden önce yeniden deneyin.",
+    "routingLoadFailed": "Kaydedilmiş yönlendirme yüklenemedi. Yüklemeden önce yeniden deneyin.",
+    "retryConfiguration": "Yeniden dene",
+    "hostFitHint": "Devam edebilirsiniz. Bu makinede performans sınırlı olabilir.",
+    "cloudFitTitle": "Bu uygulama daha büyük bir Cloud planı gerektiriyor",
+    "upgradePlan": "Planı yükselt",
+    "checkingCapacity": "Kapasite kontrol ediliyor…",
+    "checkCapacityAgain": "Yeniden kontrol et",
+    "cloudFitUnavailable": "Kapasite kontrol edilemedi. Dağıtım sırasında yeniden kontrol edilecek.",
+    "withoutDomainsTitle": "Alan adları olmadan devam edilsin mi?",
+    "withoutDomainsBody": "Bu web uç noktalarına yalnızca yayınlanan bağlantı noktalarından erişilebilecek. Daha sonra projeden alan adları ekleyebilirsiniz.",
+    "withoutDomainsCloudBody": "Bu web uç noktalarının Cloud üzerinde herkese açık bir URL’si olmayacak. Bu uygulamadaki diğer hizmetler erişmeye devam edebilir. Daha sonra projeden alan adları ekleyebilirsiniz.",
+    "addDomains": "Alan adı ekle",
+    "continueWithoutDomains": "Alan adı olmadan devam et",
+    "generatedDomainsTitle": "Ücretsiz alan adları kullanılsın mı?",
+    "generatedDomainsBody": "Bu uç noktalar ücretsiz, herkese açık URL’ler alacak. Yüklemeden önce adlarını kendiniz seçebilirsiniz.",
+    "useGeneratedDomains": "Ücretsiz alan adları kullan",
+    "editDomains": "Alan adlarını düzenle",
+    "routePortCloudDesc": "Bu Cloud çalışma alanına özel. Herkese açık bir URL için alan adı ekleyin.",
+    "exposeTitle": "Alan adları ve yönlendirme",
     "install": "Kur",
     "installing": "Kuruluyor…",
     "advanced": "Gelişmiş dağıtım seçenekleri",
@@ -173,7 +195,7 @@
       "provider": "Sağlayıcı",
       "presets": {
         "custom": "Özel",
-        "ses": "Amazon SES",
+        "ses": "Amazon SES",
         "gmail": "Gmail",
         "fastmail": "Fastmail"
       },
@@ -192,7 +214,35 @@
       "deploying": "Dağıtılıyor…",
       "hostnameRequired": "Webmail adresini girin.",
       "hostsRequired": "Hem IMAP hem de SMTP sunucu adresini girin."
-    }
+    },
+    "nameLabel": "Ad",
+    "nameHint": "Bu uygulamanın Openship'te nasıl görüneceği.",
+    "showLogs": "Günlükleri göster",
+    "hideLogs": "Günlükleri gizle",
+    "deployLogs": "dağıtım günlükleri",
+    "needsTitle": "Gereksinimler",
+    "needsMemory": "{value} Bellek",
+    "needsCpu": "{value}",
+    "hostFitTitle": "Bu sunucu {app} için gerekenden daha küçük",
+    "hostFitMemory": "{needed} RAM gerekiyor — bu sunucuda {available} mevcut",
+    "hostFitCpu": "{needed} gerekiyor — bu sunucuda {available} mevcut",
+    "routePortLabel": "Yalnızca bağlantı noktası (etki alanı yok)",
+    "routePortDesc": "Ana makine adresi ve bağlantı noktasından erişilebilir — etki alanı veya Cloud gerekmez.",
+    "routeFreeLabel": "Ücretsiz alt etki alanı",
+    "routeFreeDesc": "Openship Cloud tarafından yönlendirilen, {domain} üzerinde ücretsiz bir alt etki alanı.",
+    "routeFreeNeedsCloud": "Ücretsiz bir alt etki alanı kullanmak için Openship Cloud'a bağlanın.",
+    "routeCustomLabel": "Kendi etki alanınız",
+    "routeCustomDesc": "Sahip olduğunuz bir etki alanını bu uygulamaya yönlendirin.",
+    "routeDomainLabel": "Etki alanı",
+    "routeDomainDesc": "Bir etki alanından erişin — ücretsiz bir alt etki alanı veya kendinize ait.",
+    "httpBadge": "Web",
+    "tcpBadge": "Veritabanı",
+    "tcpPublishLabel": "Bağlantı noktasını yayınla",
+    "tcpPublishDesc": "Harici araçların bağlanabilmesi için ana makinede yayınlayın.",
+    "tcpInternalLabel": "Yalnızca dahili",
+    "tcpInternalDesc": "Yalnızca bu uygulamadaki diğer hizmetler erişebilir.",
+    "tcpFirewallNote": "Dışarıdan bağlanmak için sunucu güvenlik duvarınızda {port} numaralı bağlantı noktasını açın.",
+    "desktopReachNote": "Masaüstünde localhost üzerinden açabilir — veya uzak bir sunucu için Sunucular → Bağlantı Noktaları bölümünden bağlantı noktasını iletebilirsiniz."
   },
   "advanced": {
     "projectInfo": {
@@ -346,6 +396,10 @@
         "failed": "Dahili ana bilgisayar adı güncellenemedi",
         "invalid": "En az bir harf veya rakam girin"
       }
+    },
+    "export": {
+      "title": "Projeyi dışa aktar",
+      "description": "Tüm proje ayarlarını, ortam değişkenlerini ve kimlik bilgilerini düz JSON olarak indirin."
     }
   },
   "routeRules": {
@@ -378,24 +432,26 @@
   },
   "backup": {
     "live": {
-      "title": "Canlı yedekleme",
+      "title": "Yedekleme etkinliği",
       "description": "Az önce başlattığınız yedekleme işleminin gerçek zamanlı ilerlemesi. Sayfa yenilense de izlenmeye devam eder.",
       "dismiss": "Kapat"
     },
     "destinations": {
       "title": "Yedekleme hedefleri",
-      "description": "Kullanıcı bazlı depolama hedefleri. S3-uyumlu bucket'lar, SFTP sunucuları veya yerel diskler ekleyin.",
+      "description": "Bu proje için kullanılabilir depolama hedefleri.",
       "manage": "Yönet",
       "loading": "Yükleniyor…",
       "emptyPrefix": "Henüz hedef yok. ",
       "emptyLink": "Bir tane oluşturun",
       "emptySuffix": " ve yedeklemeye başlayın.",
       "verified": "Doğrulandı",
-      "failed": "Başarısız"
+      "failed": "Başarısız",
+      "emptyHint": "Bir S3 kovası, SFTP sunucusu veya mevcut sunucunuzu bağlayın.",
+      "inUse": "Kullanımda"
     },
     "services": {
-      "title": "Servisler + ilkeler",
-      "description": "Her servisin kendi yedekleme ilkesi (zamanlama + hedef) olabilir. Proje düzeyindeki varsayılanlar 2. bölümde yer alır.",
+      "title": "Yedekleme politikaları",
+      "description": "Neyin, ne zaman ve nereye yedekleneceğini seçin.",
       "refresh": "Yenile",
       "empty": "Bu projenin henüz servisi yok. Bazı servisler eklediğinizde servis düzeyinde yedekler burada görünecektir.",
       "policyLabel": "İlke:",
@@ -407,22 +463,54 @@
       "editPolicy": "İlkeyi düzenle",
       "addDestinationFirst": "Önce bir hedef ekleyin",
       "createPolicyHint": "Bu servis için bir yedekleme ilkesi oluşturun",
-      "createPolicy": "İlke oluştur"
+      "createPolicy": "İlke oluştur",
+      "projectHint": "Bu projedeki tüm servisler için tek politika.",
+      "includedInProject": "Proje politikasına dahil.",
+      "retainCount": "{count} yedek sakla",
+      "retainDays": "En fazla {days} gün"
     },
     "recent": {
+      "loadOlder": "Eski yedekleri yükle",
       "title": "Son yedeklemeler",
-      "description": "Bu projedeki tüm servislerin son 25 yedekleme işlemi.",
+      "description": "Son çalıştırmalar, sonuçları ve geri yükleme seçenekleri.",
       "loading": "Yükleniyor…",
       "empty": "Henüz yedek yok.",
       "protectedTitle": "Saklama süresi temizliğinden korunanlar",
       "protected": "Korunan",
       "restoreTitle": "Bu yedekten geri yükle",
       "allowPrune": "Saklama süresi dolduğunda silinmesine izin ver",
-      "protectFrom": "Saklama süresi temizliğinden koru"
+      "protectFrom": "Saklama süresi temizliğinden koru",
+      "emptyHint": "Bir politika oluşturun, ardından ilk yedeğinizi burada çalıştırın.",
+      "backup": "Yedek",
+      "viewDetails": "Ayrıntıları görüntüle",
+      "restore": "Geri yükle",
+      "triggers": {
+        "manual": "İsteğe bağlı",
+        "cron": "Zamanlanmış",
+        "webhook": "Webhook",
+        "pre_deploy": "Dağıtımdan önce"
+      }
     },
     "toast": {
       "runFailed": "Yedekleme işlemi başarısız oldu",
       "toggleProtectionFailed": "Koruma durumu değiştirilemedi"
+    },
+    "overview": {
+      "description": "Yedeklemeleri zamanlayın ve proje verilerinizi geri yükleyin.",
+      "lastBackup": "Son başarılı yedek",
+      "noRecentBackup": "Yakın zamanda yedek yok",
+      "scheduledPolicies": "Zamanlanmış politikalar",
+      "projectScope": "Tüm proje",
+      "serviceBackup": "Servis yedeği",
+      "paused": "Duraklatıldı",
+      "loadFailed": "Yedekler yüklenemedi"
+    },
+    "schedule": {
+      "daily": "Her gün {time}",
+      "weekly": "Her {day}, {time}",
+      "monthly": "Her ayın {day}. günü, {time}",
+      "custom": "Özel zamanlama",
+      "timezone": "Sunucunun saat dilimini kullanır."
     }
   },
   "build": {
@@ -499,8 +587,8 @@
       "appliesOnDeploy": "Bir sonraki dağıtımda uygulanır."
     },
     "env": {
-      "title": "Ortam değişkenleri",
-      "description": "Depolanırken şifrelenir. Gizli veriler maskeli kalır — yalnızca değiştirdiğiniz değerler yazılır.",
+      "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+      "description": "İmaj derlemelerinde ve ortak çalışma zamanı girdisi olarak kullanılır. Çalışma zamanında Compose ve servise özel değerler önceliklidir. Gizli değerler maskeli kalır.",
       "edit": "Düzenle"
     }
   },
@@ -509,10 +597,10 @@
     "saveChanges": "Değişiklikleri kaydet",
     "close": "Kapat",
     "applyTitle": "Yeniden derleme olmadan uygula",
-    "applyText": "Kaydedildi. Bunları çalışan servise uygulayın — yeni ortam değişkenleriyle yeniden başlatılır, klonlama veya yeniden derleme yapılmaz.",
+    "applyText": "Kaydedildi. Çalışma zamanı değişikliklerini uygulamak için yeniden başlatın. İmaj derlenirken kullanılan değerler için yeniden derleyip dağıtın.",
     "applyButton": "Uygula (yeniden başlat, derleme yok)",
-    "title": "Ortam değişkenleri",
-    "description": "Canlı ortam. Depolanırken şifrelenir. Gizli veriler ayarlandı olarak görünür — değiştirmek için yazın; korumak için boş bırakın.",
+    "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+    "description": "Projenin üretim ortamı değişkenleri. Gizli değerler maskeli kalır; kayıtlı bir gizli değeri korumak için boş bırakın. Aynı anahtar için servis değerleri önceliklidir.",
     "empty": "Henüz ortam değişkeni yok.",
     "keyPlaceholder": "ANAHTAR",
     "secretPlaceholder": "•••••••• (ayarlandı — değiştirmek için yazın)",
@@ -570,6 +658,7 @@
       "install": "GitHub Uygulamasını Kur"
     },
     "webhookBanner": {
+      "summary": "Herkese açık uç nokta gerekli",
       "title": "Otomatik dağıtımı etkinleştirin",
       "description": "Otomatik dağıtım doğrudan bir webhook uç noktasına ihtiyaç duyar. Bu Openship API'sini herkese açık bir URL'de kullanıma sunun veya doğrudan teslimat için doğrulanmış bir webhook alan adı yapılandırın."
     },
@@ -586,6 +675,11 @@
       "updating": "Güncelleniyor...",
       "select": "Alan adı seçin...",
       "clear": "Seçimi temizle"
+    },
+    "buildQueue": {
+      "label": "Eski derlemeleri iptal et",
+      "description": "Yalnızca bekleyen en son push saklanır. Etkinleştirildiğinde yeni bir push, sürüm adımları başlamadan önce eski otomatik derlemeyi de iptal eder. Manuel dağıtımlar ve geri almalar korunur.",
+      "saveFailed": "Derleme iptal tercihi kaydedilemedi"
     },
     "autoDeployCard": {
       "title": "Otomatik Dağıtım",
@@ -608,13 +702,13 @@
       "title": "Geri alma stratejisi",
       "rebuild": "Yeniden derle (git)",
       "instant": "Anında (anlık görüntü - snapshot)",
-      "descRebuild": "Görüntüsü hâlâ makinede değilse eski commit'i yeniden derler.",
-      "descInstant": "Her sürümün görüntüsünü saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır.",
+      "descRebuild": "İmajı sunucuda yoksa eski commit yeniden derlenir.",
+      "descInstant": "Çıktıları geçmiş sınırı içinde saklar. Daha eski sürümlerin yeniden derlenmesi gerekebilir.",
       "toggleAria": "Anlık görüntü saklamayı değiştir",
-      "keepNone": "Ek kopya tutulmaz",
-      "keepCopies": "Sürüm başına bir kopya",
-      "descRebuildFiles": "Dosyaları hâlâ makinede değilse eski commit'i yeniden derler.",
-      "descInstantFiles": "Her sürümün dosyalarını saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır."
+      "keepNone": "İmajları yeniden kullan veya yeniden derle",
+      "keepCopies": "Geri alma çıktılarını sakla",
+      "descRebuildFiles": "Dosyaları sunucuda yoksa eski commit yeniden derlenir.",
+      "descInstantFiles": "Derlenmiş dosyaları geçmiş sınırı içinde saklar. Daha eski sürümlerin yeniden derlenmesi gerekebilir."
     },
     "rollbackHistory": {
       "title": "Geri alma geçmişi",
@@ -624,13 +718,19 @@
       "descGit": "Son görüntüler her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
       "decreaseAria": "Geri alma geçmişini azalt",
       "increaseAria": "Geri alma geçmişini artır",
-      "sizeEach": "her biri ~{size}",
+      "sizeEach": "paylaşılan katmanlar dahil imaj başına ~{size}",
       "diskFree": "{size} boş",
-      "autoBadge": "otomatik boyutlandırıldı",
+      "autoBadge": "Otomatik",
       "manualBadge": "elle ayarlandı",
       "kindFiles": "diskteki üretilmiş dosyalar",
       "kindImages": "sunucudaki imajlar",
-      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir."
+      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
+      "retentionHint": "Hızlı geri dönüş için son dağıtımların çıktılarını saklayın.",
+      "retentionDescription": "Saklanacak önceki sürümlerin en yüksek sayısıdır. Etkin ve sabitlenmiş sürümler bu sınıra dahil değildir. Eski çıktılar silinir; dağıtım geçmişi korunur. Yalnızca etkin ve sabitlenmiş sürümleri saklamak için 0 olarak ayarlayın.",
+      "automaticValue": "En fazla {count} sürüm",
+      "automaticDescription": "Varsayılan geçmiş sınırına kadar saklar. Disk alanı azaldığında yeniden oluşturulabilen çıktılar daha erken kaldırılabilir. Etkin ve sabitlenmiş sürümler sınıra dahil değildir. Commit ve yapılandırma geçmişi korunur; geri alma yeniden derleme gerektirebilir.",
+      "defaultBadge": "örnek varsayılanı",
+      "loadFailed": "Geri alma ayarları yüklenemedi."
     },
     "commits": {
       "title": "Son commitler",
@@ -693,7 +793,7 @@
   },
   "resources": {
     "title": "Makine gücü",
-    "description": "Bu projenin konteynerleri için CPU ve bellek sınırları.",
+    "description": "Projeler bu sunucuyu paylaşır. Yalnızca gerekirse CPU veya bellek sınırı ekleyin.",
     "loading": "Hedef makine okunuyor…",
     "unavailable": "Makine gücü kullanılamıyor",
     "loadFailed": "Makine gücü yüklenemedi",
@@ -703,9 +803,9 @@
     "appliesOnNextDeploy": "Sınırlar konteyner yeniden oluşturulduğunda uygulanır — değişikliğin etkili olması için yeniden dağıtın.",
     "tiers": {
       "unlimited": {
-        "name": "Sınır yok",
-        "description": "Makinenin tamamını kullan (varsayılan)",
-        "spec": "Makine kapasitesi"
+        "name": "Tam kapasite",
+        "description": "Sunucunun kullanılabilir CPU ve RAM kapasitesini kullan (varsayılan)",
+        "spec": "Diğer projelerle paylaşılır"
       },
       "micro": {
         "name": "Micro",
@@ -747,6 +847,10 @@
       "updated": "Makine gücü güncellendi",
       "updateFailed": "Makine gücü güncellenemedi",
       "invalidValues": "CPU ve bellek 0 veya pozitif bir sayı olmalıdır"
+    },
+    "customized": {
+      "name": "Özelleştirilmiş",
+      "description": "Hazır ayar seçin veya kendi sınırlarınızı belirleyin"
     }
   },
   "sleep": {
@@ -799,7 +903,12 @@
     "linkedTitleOne": "{count} proje bu uygulamaya bağlı",
     "linkedTitleOther": "{count} proje bu uygulamaya bağlı",
     "linkedNote": "Verileri dokunulmadan çalışmaya devam eder — yalnızca bu bağlantıyı kaybederler. Uygulamak için yeniden dağıtın.",
-    "linkedNoteRecordOnly": "Çalışmaya devam ederler, ama bağlantı kayıtla birlikte gider — uygulamayı sonra yeniden içe aktarmak onu geri getirmez."
+    "linkedNoteRecordOnly": "Çalışmaya devam ederler, ama bağlantı kayıtla birlikte gider — uygulamayı sonra yeniden içe aktarmak onu geri getirmez.",
+    "recordOnlyLabel": "Yalnızca Openship'ten kaldır",
+    "recordOnlyDesc": "Uygulamayı ve verilerini sunucunuzda çalışır durumda tutar — yalnızca Openship kaydı kaldırılır. Daha sonra tekrar içe aktarabilirsiniz.",
+    "recordOnlyReversible": "Geri alınabilir — uygulama sunucunuzda kalır.",
+    "recordOnlyNote": "Sunucudaki hiçbir şeye dokunulmaz — uygulama verileriyle çalışmaya devam eder. Yalnızca Openship'in kaydı kaldırılır ve daha sonra tekrar içe aktarılabilir.",
+    "confirmRecordOnly": "Kaydı kaldır"
   },
   "routing": {
     "title": "Yönlendirme",
@@ -820,23 +929,25 @@
       "active": "Aktif",
       "failed": "Başarısız",
       "removing": "Kaldırılıyor",
-      "pending": "Beklemede"
+      "pending": "Beklemede",
+      "waiting": "Bekliyor"
     },
     "ssl": {
       "includedByHost": "Barındırma hizmeti tarafından sağlanır",
       "active": "Aktif",
-      "provisioning": "Sağlanıyor",
+      "provisioning": "Sertifika bekleniyor",
       "expired": "Süresi Doldu",
       "error": "Hata",
       "inactive": "Pasif",
       "external": "Harici TLS",
-      "manual": "Manuel sertifika"
+      "manual": "Manuel sertifika",
+      "unknown": "Bilinmiyor"
     },
     "typeCustom": "Özel alan adı",
     "typeFree": "Ücretsiz alt alan adı",
     "primaryDomainTitle": "Birincil alan adı",
     "domainNTitle": "Alan adı {n}",
-    "portLabel": "Port {port}",
+    "portLabel": "Port: {port}",
     "noPortSelected": "Port seçilmedi",
     "meta": {
       "accessTitle": "Erişim URL'si",
@@ -879,10 +990,10 @@
       "includeWwwDesc": "Ayrıca www.{domain} için de kayıtlar oluştur",
       "includeWwwFallback": "alanadiniz.com",
       "externalIngress": "Harici trafik girişi ve TLS",
-      "externalIngressDesc": "TLS upstream katmanında sonlandırılır (Cloudflare Tunnel veya yük dengeleyici). Yalnızca TXT kaydıyla doğrulayın — alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "externalIngressDesc": "TLS ters proxy’nizde (Cloudflare Tunnel, Nginx Proxy Manager veya yük dengeleyici) sonlandırılır. Alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
       "dnsChallenge": "DNS-01 doğrulamasını kullan",
-      "dnsChallengeDesc": "Sertifikayı bağlı DNS sağlayıcınız üzerinden düzenleyin ve yenileyin. Port 80'e erişilemiyorsa bunu kullanın.",
-      "dnsChallengeWildcardDesc": "Wildcard sertifikalar DNS-01 ve bağlı bir DNS sağlayıcısı gerektirir.",
+      "dnsChallengeDesc": "Bir DNS sağlayıcısı veya geçici TXT kaydı ile doğrulayın. Port 80 kullanılamadığında yararlıdır.",
+      "dnsChallengeWildcardDesc": "Joker alan adı için HTTPS kurulumunda gereklidir. Bağlı bir DNS sağlayıcısı kullanın veya HTTPS kurulumu sırasında geçici bir TXT kaydı ekleyin.",
       "noWww": "Alan adını \"www.\" olmadan girin — eklemek için aşağıdan \"www dahil et\" seçeneğini açın.",
       "adding": "Ekleniyor...",
       "submit": "Alan adı ekle"
@@ -1028,10 +1139,143 @@
       "foreignProxyHint": "Başka bir proxy 80/443'ü kullanıyor"
     },
     "diagnosis": {
-      "title": "Bu neden çalışmıyor",
+      "title": "Alan adı ayrıntıları",
       "noneYet": "Henüz bir kontrol çalıştırılmadı, bu yüzden gösterilecek bir sonuç yok. Gösterilen DNS kayıtlarını ekleyin, ardından Doğrula'yı çalıştırın.",
       "attempts": "Şu ana kadar {count} başarısız deneme.",
-      "pillHint": "Nedenini göster"
+      "pillHint": "Nedenini göster",
+      "lastChecked": "Son kontrol:",
+      "nextCheck": "Sonraki planlanan kontrol:",
+      "scheduleHint": "Kontroller bu örnek çevrimiçiyken çalışır. Kuyruktaki işler başlangıcı geciktirebilir.",
+      "automaticDisabled": "Otomatik alan adı kontrolleri devre dışı. Elle yeniden deneyin veya Görevler bölümünden etkinleştirin.",
+      "scheduleUnavailable": "Otomatik kontrol zamanlaması kullanılamıyor. Elle yeniden deneyebilirsiniz.",
+      "retryNow": "Şimdi yeniden dene",
+      "checking": "Kontrol ediliyor…",
+      "reasons": {
+        "verification": "Alan adı doğrulaması tamamlanmadı. Yeniden denemeden önce DNS kayıtlarını kontrol edin.",
+        "certificate": "Siteyi sunan sunucuda HTTPS kontrol edilmeli. Yeniden deneme, yeni sertifika istemeden önce mevcut sertifikayı kontrol eder.",
+        "deployment": "Bu rota dağıtım bekliyor. Uygulamak için projeyi dağıtın.",
+        "disabled": "Bu proje veya hizmet devre dışı. Rotayı kontrol etmeden önce etkinleştirin.",
+        "removing": "Bu alan adı kaldırılıyor. Planlanmış doğrulama yok.",
+        "manual_certificate": "Bu alan adı yüklenmiş bir sertifika kullanıyor. Geçerli bir yenisini yükleyip tekrar kontrol edin. Openship bunu otomatik yenilemez.",
+        "managed_certificate": "TLS, harici vekil sunucunuz veya Openship Cloud tarafından yönetiliyor. Sağlayıcının yapılandırmasını kontrol edin.",
+        "route_missing": "Yapılandırılmış bu rota henüz uygulanmadı. Uygulamak için yönlendirmeyi yeniden deneyin. Otomatik yönlendirme denemesi planlanmamış.",
+        "manual_dns": "Bu sertifika manuel TXT doğrulaması kullanıyor. Yeni bir TXT kaydını onaylamak için HTTPS kurulumunu açın veya otomatik yenileme için bağlı bir DNS sağlayıcısı seçin.",
+        "managed_owner": "Bu ana makine adı ve sertifikası, sahibi olan hizmet tarafından yönetilir. O hizmetin alan adı ayarlarını kontrol edin."
+      }
+    },
+    "wildcard": {
+      "title": "DNS doğrulamalı HTTPS",
+      "scope": "Joker alan adı, tek bir alt alan adı düzeyini kapsar. Ana alan adının da bu uygulamayı sunmasını istiyorsanız onu ayrı olarak ekleyin.",
+      "notice": "Joker alan adı için HTTPS, DNS doğrulaması gerektirir. Kaydettikten sonra bir DNS sağlayıcısı bağlayın veya HTTPS kurulumundaki TXT kaydını ekleyin.",
+      "automatic": "Otomatik sağlayıcı",
+      "manual": "Manuel TXT",
+      "automaticHint": "Sertifika doğrulama kayıtları oluşturmak ve HTTPS'i otomatik yenilemek için Ayarlar → DNS bölümünden Cloudflare'i bağlayın.",
+      "manualHint": "DNS sağlayıcınızda geçici bir TXT kaydı ekleyin. Her yenileme yeni bir TXT kaydı gerektirir; Openship yenileme zamanını gösterecektir.",
+      "routing": "1. Alan adını bu sunucuya yönlendirin",
+      "certificate": "2. HTTPS'i etkinleştirin",
+      "startAutomatic": "HTTPS'i otomatik etkinleştir",
+      "startManual": "TXT kaydını al",
+      "renew": "Sertifikayı yenile",
+      "check": "TXT'yi kontrol et ve HTTPS'i etkinleştir",
+      "cancel": "Doğrulamayı iptal et",
+      "refresh": "Durumu yenile",
+      "close": "Kurulumu kapat",
+      "loading": "Sertifika kurulumu yükleniyor",
+      "loadFailed": "Sertifika kurulumu yüklenemedi. Güncel durumu görmek için yeniden deneyin.",
+      "recordsFailed": "Yönlendirme DNS kayıtları yüklenemedi. Kaydedilmiş sertifika doğrulamanız hâlâ kullanılabilir.",
+      "actionFailed": "Sertifika kurulumu güncellenemedi.",
+      "expires": "Bu doğrulamayı {date} tarihine kadar tamamlayın.",
+      "txtHint": "Bu TXT değerini aynen ekleyin. Aynı addaki diğer TXT değerlerini koruyun. Sağlayıcınız bölge adını ekliyorsa yalnızca göreli kısmı girin.",
+      "cleanup": "Bu denemeye ait TXT değerini kaldırabilirsiniz. Diğer tüm TXT kayıtlarını koruyun.",
+      "logs": "Sertifika günlükleri",
+      "states": {
+        "preparing": "Sertifika doğrulaması hazırlanıyor…",
+        "waiting": "TXT kaydınız bekleniyor",
+        "checking": "DNS ve sertifika sahipliği kontrol ediliyor…",
+        "installing": "HTTPS etkinleştiriliyor…",
+        "cancelling": "Doğrulama iptal ediliyor…",
+        "completed": "HTTPS hazır",
+        "failed": "Sertifika kurulumu müdahale gerektiriyor",
+        "cancelled": "Doğrulama iptal edildi",
+        "expired": "TXT doğrulamasının süresi doldu"
+      }
+    },
+    "removeRoute": {
+      "title": "Rotayı kaldır",
+      "description": "Uygulama çalışmaya devam eder — yalnızca bu rota ve edge kaydı kaldırılır. İstediğiniz zaman tekrar ekleyebilirsiniz.",
+      "confirm": "Rotayı kaldır",
+      "removing": "Kaldırılıyor…"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Servis çalışma zamanı ortamı",
+    "description": "Bu değişkenler yalnızca bu hizmete uygulanır ve Compose veya projedeki aynı adlı değerlerin yerini alır. Kaydedilen değerleri etkinleştirmek için Ortam değişikliklerini uygula seçeneğini kullanın.",
+    "overrides": "Bu serviste şu anahtarlar proje değerlerinden önceliklidir: {keys}.",
+    "buildArguments": "Derleme argümanları Compose dosyasında veya kaynak yapılandırmasında tanımlanır ve yeniden derleme gerektirir.",
+    "projectLink": "Ortak proje ortamını düzenle",
+    "loadFailed": "Geçersiz kılmaları denetlemek için proje değişkenlerinin adları yüklenemedi."
+  },
+  "cloudStaticHosting": {
+    "title": "Statik barındırma",
+    "description": "Derlenen dosyaların nereden sunulacağını seçin.",
+    "pages": "Cloud Pages (varsayılan)",
+    "pagesDescription": "Çalışan bir uygulama konteyneri olmadan dosyaları Cloud uç ağında yayınlayın.",
+    "server": "Yönetilen sunucu",
+    "serverDescription": "Dosyaları yönetilen sunucunuzdaki bir nginx konteynerinden sunun.",
+    "nextDeploy": "Kaydedilen barındırma değişiklikleri bir sonraki dağıtımda uygulanır."
+  },
+  "deploymentChecks": {
+    "title": "GitHub dağıtım kontrolleri",
+    "description": "Dağıtım ve hizmet sonuçlarını dağıtılan commit üzerinde gösterin.",
+    "customize": "Kontrolleri özelleştir",
+    "deployment": "Dağıtım sonucu",
+    "services": "Yeniler dahil tüm hizmetler",
+    "selectedServices": "Hizmetleri seç",
+    "includeErrors": "Hata ayrıntılarını dahil et",
+    "errorsHint": "Hassas veriler gizlenmiş hata özetleri, bu depoyu okuyabilen kişilerle paylaşılır.",
+    "emptySelection": "En az bir kontrol seçin veya raporlamayı kapatın.",
+    "connectionHint": "Checks yazma iznine sahip bir GitHub App gerektirir.",
+    "connection": "GitHub bağlantısı",
+    "deliveryFailed": "Kontroller iletilemedi",
+    "saveFailed": "GitHub kontrol ayarları kaydedilemedi."
+  },
+  "runtimeUpdates": {
+    "options": "Yeniden dağıtım seçenekleri",
+    "refresh": "İmajları yenile ve yeniden dağıt",
+    "refreshing": "İmajlar yenileniyor…",
+    "check": "İmaj güncellemelerini denetle",
+    "title": "İmaj güncellemeleri",
+    "failed": "İmaj yenileme başlatılamadı.",
+    "uncertain": "İstek zaman aşımına uğradı. Yeniden denemeden önce dağıtım geçmişini kontrol edin.",
+    "available": "İmaj güncellemeleri mevcut",
+    "current": "İmaj özetleri kayıt defterinde son gözlenen özetlerle eşleşiyor.",
+    "checkUnavailable": "Karşılaştırma için kayıtlı özetler ve kayıt deposuna erişim gerekir.",
+    "checkFailed": "İmaj güncellemeleri denetlenemedi.",
+    "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
+  },
+  "securityAdvisories": {
+    "sourceRedeployRequired": "Çalışma ortamını yenilemeden önce bu uygulamayı kayıtlı kaynak kodundan yeniden derleyin. Mevcut imajın doğrulanmış bir kaynak revizyonu yok. Kaynaktan yeniden dağıtım daha yeni kod içerebilir; Dağıtımlar bölümünde inceleyin, ardından bu güvenlik duyurusunu tekrar kontrol edin.",
+    "openSourceRedeploy": "Kaynaktan yeniden dağıtımı aç",
+    "reviewApps": "Etkilenen uygulamaları incele ({count})",
+    "pendingApps": "{count} uygulama için kontroller bekleniyor. Sonuçlar otomatik olarak görünecek.",
+    "checkAgain": "Tekrar kontrol et",
+    "checking": "Kontrol ediliyor…",
+    "title": "Güvenlik bildirimleri",
+    "unavailable": "Güvenlik kontrolleri kullanılamıyor veya güncel değil. Önceki bildirimler görünür kalır.",
+    "affected": "Geçerli kuruluşta erişebildiğiniz uygulamalara ait bulgular.",
+    "noMatches": "Kontrol edilen verilerle eşleşen bildirim yok. Bu, tam bir güvenlik açığı taraması değildir.",
+    "partial": "Bazı çalışma ortamları kontrol edilemedi.",
+    "guidance": "Bildirimi oku",
+    "automatic": "Doğrulanmış güvenlik yamalarını otomatik güncelle",
+    "automaticDescription": "Varsayılan olarak kapalıdır. Yalnızca mevcut etiketinde imzalı düzeltme bulunan imaj servisleri otomatik güncellenir. Kaynak derlemeleri, sabitlenmiş imajlar ve sürüm değişiklikleri inceleme gerektirir. Normal dağıtım ve sağlık kontrolleri geçerlidir.",
+    "notifications": "Güvenlik bildirimleri kanallarda varsayılan olarak açıktır. Her kanalı Ayarlar → Bildirimler bölümünden yönetebilirsiniz.",
+    "publicFeed": "Herkese açık akışı gör",
+    "checked": "Kanıtlar kontrol edildi",
+    "possible": "İmaj etiketi eşleşiyor; dağıtılan sürüm doğrulanmalı.",
+    "tab": "Güvenlik",
+    "monitoring": "İzlemede görüntüle",
+    "persistent": "Etkin bulgular, bildirim kapatıldıktan sonra da burada kalır.",
+    "otherApps": "Diğer uygulamalar ({count})",
+    "details": "Ayrıntılar ve öneriler"
   }
 }

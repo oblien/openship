@@ -9,7 +9,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -23,6 +24,7 @@ import type {
   DataTransferFile,
   ImportResult,
   SecretBundle,
+  ImportPreview,
 } from "../../src/modules/system/data-transfer/types";
 import { TRANSFER_CHUNK_BYTES } from "../../src/modules/system/data-transfer/chunk-store";
 
@@ -31,10 +33,9 @@ const API_ENTRY = join(REPO_ROOT, "apps/api/src/index.ts");
 const MAX_PROXY_BODY = TRANSFER_CHUNK_BYTES + 64;
 const SECRET_VALUE = "transfer-secret-816-✓";
 const FILE_SECRET_VALUE = "file-resume-secret-816-✓";
-const FILE_PASSPHRASE = "issue-816-http-e2e-passphrase";
 
 interface RunningApi {
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   baseUrl: string;
   dbDir: string;
   port: number;
@@ -163,7 +164,10 @@ async function jsonRequest<T>(apiBase: string, path: string, init: RequestInit =
   });
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`${init.method ?? "GET"} ${path} returned ${response.status}: ${text}`);
+    const api = [...children].find((child) => child.baseUrl === apiBase);
+    throw new Error(
+      `${init.method ?? "GET"} ${path} returned ${response.status}: ${text}\n${api?.logs() ?? ""}`,
+    );
   }
   return JSON.parse(text) as T;
 }
@@ -366,6 +370,26 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   await mergeEnv(source.baseUrl, project.id, [
     { key: "E2E_SECRET", value: SECRET_VALUE, isSecret: true },
   ]);
+  const inlineSecret = "inline-transfer-844-✓";
+  const buildSecret = "build-transfer-844-✓";
+  const fileSecret = "mounted-transfer-844-✓";
+  const created = await jsonRequest<{ service: { id: string; buildArgs: Record<string, string> } }>(
+    source.baseUrl,
+    `/api/projects/${project.id}/services`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "web",
+        kind: "compose",
+        image: "busybox:1.37.0",
+        exposed: false,
+        environment: { PASSWORD: inlineSecret },
+        buildArgs: { TOKEN: buildSecret },
+        advanced: { files: [{ path: "/run/config", content: fileSecret }] },
+      }),
+    },
+  );
+  expect(created.service.buildArgs.TOKEN).toBe("••••••••");
 
   const retryProxy = await startRetryProxy(destination.port);
   const receive = await jsonRequest<{ code: string }>(
@@ -403,18 +427,48 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   expect(masked.data).toContainEqual(
     expect.objectContaining({ key: "E2E_SECRET", value: "••••••••", isSecret: true }),
   );
+  const servicePath = `/api/projects/${project.id}/services/${created.service.id}`;
+  const serviceRead = await jsonRequest<{
+    service: { environment: Record<string, string>; buildArgs: Record<string, string> };
+  }>(destination.baseUrl, servicePath);
+  expect(serviceRead.service.environment.PASSWORD).toBe("••••••••");
+  expect(serviceRead.service.buildArgs.TOKEN).toBe("••••••••");
+  const revealed = await jsonRequest<{ environment: Record<string, string> }>(
+    destination.baseUrl,
+    `${servicePath}/env-reveal`,
+    {
+      method: "POST",
+      body: JSON.stringify({ keys: ["PASSWORD"] }),
+    },
+  );
+  expect(revealed.environment.PASSWORD).toBe(inlineSecret);
 
   const destinationExport = await jsonRequest<DataTransferFile>(
     destination.baseUrl,
     "/api/system/data-transfer/export",
     {
       method: "POST",
-      body: JSON.stringify({ passphrase: FILE_PASSPHRASE, selection: { history: [] } }),
+      body: JSON.stringify({ selection: { history: [] } }),
     },
   );
   expect(
-    findSecret(openTransferSecrets(destinationExport.secrets, FILE_PASSPHRASE), SECRET_VALUE),
+    findSecret(openTransferSecrets(destinationExport.secrets), SECRET_VALUE),
   ).toBe(true);
+  expect(destinationExport.envelopeVersion).toBe(4);
+  expect(destinationExport.secrets).toMatchObject({ encoding: "plaintext" });
+  const transferredConfig = openTransferSecrets(destinationExport.secrets)!;
+  for (const secret of [inlineSecret, buildSecret, fileSecret]) {
+    expect(JSON.stringify(destinationExport)).toContain(secret);
+    expect(JSON.stringify(transferredConfig)).toContain(secret);
+  }
+  expect(transferredConfig.entries).toContainEqual(
+    expect.objectContaining({
+      table: "service",
+      id: created.service.id,
+      column: "buildArgs",
+      json: { TOKEN: buildSecret },
+    }),
+  );
 
   // File upload uses the same import boundary. Upload one chunk, restart the
   // destination process against the same DB, then resume and finalize.
@@ -426,14 +480,26 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   await mergeEnv(source.baseUrl, fileProject.id, [
     { key: "FILE_RESUME_SECRET", value: FILE_SECRET_VALUE, isSecret: true },
   ]);
+  // The destination now has an older copy of this project. Replacement must
+  // restore the changed source value and remove destination-only keys.
+  const updatedInstanceSecret = `${SECRET_VALUE}-updated`;
+  await mergeEnv(source.baseUrl, project.id, [
+    { key: "E2E_SECRET", value: updatedInstanceSecret, isSecret: true },
+  ]);
+  await mergeEnv(destination.baseUrl, project.id, [
+    { key: "DESTINATION_ONLY", value: "obsolete-destination-value", isSecret: true },
+  ]);
   const transferFile = await jsonRequest<DataTransferFile>(
     source.baseUrl,
     "/api/system/data-transfer/export",
     {
       method: "POST",
-      body: JSON.stringify({ passphrase: FILE_PASSPHRASE, selection: { history: [] } }),
+      body: JSON.stringify({ selection: { history: [] } }),
     },
   );
+  expect(transferFile.envelopeVersion).toBe(4);
+  expect(transferFile.secrets).toMatchObject({ encoding: "plaintext" });
+  expect(findSecret(openTransferSecrets(transferFile.secrets), updatedInstanceSecret)).toBe(true);
   const fileBytes = Buffer.from(JSON.stringify(transferFile), "utf8");
   expect(fileBytes.byteLength).toBeGreaterThan(TRANSFER_CHUNK_BYTES);
   const upload = await jsonRequest<{
@@ -476,7 +542,7 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   const imported = await terminalSse<ImportResult>(
     destination.baseUrl,
     `/api/system/data-transfer/import/session/${upload.uploadId}/finalize/stream`,
-    { passphrase: FILE_PASSPHRASE, mode: "wipe" },
+    { mode: "wipe" },
   );
   expect(imported.mode).toBe("wipe");
   expect(imported.secretsRehydrated).toBeGreaterThan(0);
@@ -493,10 +559,166 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
     "/api/system/data-transfer/export",
     {
       method: "POST",
-      body: JSON.stringify({ passphrase: FILE_PASSPHRASE, selection: { history: [] } }),
+      body: JSON.stringify({ selection: { history: [] } }),
     },
   );
   expect(
-    findSecret(openTransferSecrets(finalExport.secrets, FILE_PASSPHRASE), FILE_SECRET_VALUE),
+    findSecret(openTransferSecrets(finalExport.secrets), FILE_SECRET_VALUE),
+  ).toBe(true);
+  expect(findSecret(openTransferSecrets(finalExport.secrets), updatedInstanceSecret)).toBe(true);
+  expect(JSON.stringify(finalExport)).not.toContain("obsolete-destination-value");
+  const replacedEnv = await jsonRequest<{ data: Array<{ key: string }> }>(
+    destination.baseUrl, `/api/projects/${project.id}/env`,
+  );
+  expect(replacedEnv.data.some((entry) => entry.key === "DESTINATION_ONLY")).toBe(false);
+
+  // Project downloads carry readable values without a password. The real HTTP
+  // upload and SSE import must restore them under the destination's key while
+  // preserving every unrelated project and identity.
+  const scopedProject = await createProject(source.baseUrl, "Scoped transfer", "scoped-transfer");
+  await mergeEnv(source.baseUrl, scopedProject.id, [
+    { key: "SCOPED_SECRET", value: "scoped-original", isSecret: true },
+  ]);
+  const scopedExport = () =>
+    jsonRequest<DataTransferFile>(source.baseUrl, "/api/system/data-transfer/export", {
+      method: "POST",
+      body: JSON.stringify({
+        selection: {
+          scope: "projects",
+          projectIds: [scopedProject.id],
+          history: [],
+          includeSecrets: true,
+        },
+      }),
+    });
+  const scopedFile = await scopedExport();
+  expect(scopedFile.kind).toBe("openship-project-export");
+  expect(scopedFile.envelopeVersion).toBe(4);
+  expect(scopedFile.secrets).toMatchObject({ encoding: "plaintext" });
+  expect(JSON.stringify(scopedFile)).toContain("scoped-original");
+  expect(scopedFile.dump.tables.project?.map((row) => row.id)).toEqual([scopedProject.id]);
+  expect(scopedFile.dump.tables.user).toBeUndefined();
+  const scopedBytes = Buffer.from(JSON.stringify(scopedFile));
+  const scopedUpload = await jsonRequest<{ uploadId: string }>(
+    destination.baseUrl,
+    "/api/system/data-transfer/import/session",
+    {
+      method: "POST",
+      body: JSON.stringify({ size: scopedBytes.byteLength }),
+    },
+  );
+  const chunkResponse = await fetch(
+    `${destination.baseUrl}/api/system/data-transfer/import/session/${scopedUpload.uploadId}/chunk/0`,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-openship-chunk-sha256": createHash("sha256").update(scopedBytes).digest("hex"),
+      },
+      body: scopedBytes,
+    },
+  );
+  expect(chunkResponse.ok).toBe(true);
+  const localServer = await jsonRequest<{ id: string }>(
+    destination.baseUrl,
+    "/api/system/servers",
+    {
+      method: "POST",
+      body: JSON.stringify({ name: "Scoped import target", sshHost: "127.0.0.1" }),
+    },
+  );
+  const sourceTarget = String(scopedFile.dump.tables.project![0]!.serverId ?? "local");
+  const scopedSelection = {
+    scope: "projects",
+    projectIds: [scopedProject.id],
+    serverMappings: { [sourceTarget]: localServer.id },
+  };
+  const reviewed = await jsonRequest<ImportPreview>(
+    destination.baseUrl,
+    `/api/system/data-transfer/import/session/${scopedUpload.uploadId}/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({ selection: scopedSelection }),
+    },
+  );
+  expect(reviewed.blockers).toEqual([]);
+  expect(reviewed.hasSecrets).toBe(true);
+  expect(reviewed.requiresPassphrase).toBe(false);
+  const beforeScopedImport = await jsonRequest<{ data: Array<{ id: string }> }>(
+    destination.baseUrl,
+    "/api/projects?perPage=100",
+  );
+  expect(beforeScopedImport.data.some((row) => row.id === scopedProject.id)).toBe(false);
+  const scopedResult = await terminalSse<ImportResult>(
+    destination.baseUrl,
+    `/api/system/data-transfer/import/session/${scopedUpload.uploadId}/finalize/stream`,
+    {
+      mode: "merge",
+      selection: scopedSelection,
+    },
+  );
+  expect(scopedResult.projectsCreated).toBe(1);
+  const afterScopedImport = await jsonRequest<{ data: Array<{ id: string }> }>(
+    destination.baseUrl,
+    "/api/projects?perPage=100",
+  );
+  expect(afterScopedImport.data.map((row) => row.id).sort()).toEqual(
+    [...beforeScopedImport.data.map((row) => row.id), scopedProject.id].sort(),
+  );
+  const targetScopedExport = () =>
+    jsonRequest<DataTransferFile>(destination.baseUrl, "/api/system/data-transfer/export", {
+      method: "POST",
+      body: JSON.stringify({
+        selection: { scope: "projects", projectIds: [scopedProject.id], history: [] },
+      }),
+    });
+  expect(
+    findSecret(
+      openTransferSecrets((await targetScopedExport()).secrets),
+      "scoped-original",
+    ),
+  ).toBe(true);
+
+  await mergeEnv(source.baseUrl, scopedProject.id, [
+    { key: "SCOPED_SECRET", value: "scoped-overwritten", isSecret: true },
+  ]);
+  const updatedFile = await scopedExport();
+  const skipped = await jsonRequest<ImportResult>(
+    destination.baseUrl,
+    "/api/system/data-transfer/import",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        file: updatedFile,
+        mode: "merge",
+        selection: scopedSelection,
+      }),
+    },
+  );
+  expect(skipped.rowsRestored).toBe(0);
+  expect(
+    findSecret(
+      openTransferSecrets((await targetScopedExport()).secrets),
+      "scoped-original",
+    ),
+  ).toBe(true);
+  const overwritten = await jsonRequest<ImportResult>(
+    destination.baseUrl,
+    "/api/system/data-transfer/import",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        file: updatedFile,
+        mode: "merge",
+        selection: { ...scopedSelection, conflictPolicy: "overwrite" },
+      }),
+    },
+  );
+  expect(overwritten.projectsUpdated).toBe(1);
+  expect(
+    findSecret(
+      openTransferSecrets((await targetScopedExport()).secrets),
+      "scoped-overwritten",
+    ),
   ).toBe(true);
 }, 300_000);

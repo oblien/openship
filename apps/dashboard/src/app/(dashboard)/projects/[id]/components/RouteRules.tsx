@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Loader2, Plus, Shield, Trash2 } from "lucide-react";
 import { projectsApi, getApiErrorMessage, type RouteRuleRow } from "@/lib/api";
 import type { RouteRuleSpec } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -203,7 +204,7 @@ export function RouteRules() {
       >
         <div className="flex items-center gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
-            <Shield className="size-[18px]" />
+            <UiIcon name="shield" className="size-[18px]" />
           </div>
           <div className="text-start">
             <h3 className="text-[14px] font-semibold text-foreground">{w.title}</h3>
@@ -216,7 +217,7 @@ export function RouteRules() {
               {rules.length}
             </span>
           )}
-          <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+          <UiIcon name="chevron-down" className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
 
@@ -225,7 +226,7 @@ export function RouteRules() {
         {/* Existing rules */}
         {loading ? (
           <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> {w.loading}
+            <UiIcon name="spinner" className="size-4 animate-spin" /> {w.loading}
           </div>
         ) : rules.length === 0 ? (
           <p className="py-1 text-[13px] text-muted-foreground">{w.empty}</p>
@@ -259,7 +260,7 @@ export function RouteRules() {
                   disabled={busyId === rule.id}
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
                 >
-                  {busyId === rule.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                  {busyId === rule.id ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="trash" className="size-3.5" />}
                   {w.remove}
                 </button>
               </div>
@@ -324,7 +325,7 @@ export function RouteRules() {
             disabled={saving || !canAdd()}
             className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+            {saving ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="plus" className="size-3.5" />}
             {w.add}
           </button>
         </div>

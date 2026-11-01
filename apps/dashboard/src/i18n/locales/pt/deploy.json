@@ -103,6 +103,12 @@
     "cloneTokenFailed": "Não foi possível gerar um token de clonagem",
     "newEnvironment": "Novo ambiente",
     "selectBranch": "Selecionar branch",
+    "searchBranches": "Pesquisar branches...",
+    "noBranchesMatch": "Nenhuma branch corresponde",
+    "loadingBranches": "Carregando branches...",
+    "loadMoreBranches": "Carregar mais branches",
+    "loadBranchesFailed": "Não foi possível carregar os branches.",
+    "retryBranches": "Tentar novamente",
     "saving": "Salvando…",
     "saveChanges": "Salvar alterações",
     "deploying": "Implantando…",
@@ -212,7 +218,11 @@
     "backupSummaryConfigured": "{count} política(s) de backup · pré-deploy: {preDeploy}",
     "backupManage": "Gerenciar backups",
     "on": "ativo",
-    "off": "inativo"
+    "off": "inativo",
+    "previewTitle": "Prévia da implantação",
+    "previewHint": "Continue para configurar seu app. A implantação começa na próxima página.",
+    "back": "Voltar",
+    "gpuBadge": "GPU"
   },
   "summary": {
     "buildAndDeploy": "Compilar e implantar:",
@@ -231,8 +241,8 @@
     "rollbackOne": "{count} versão",
     "rollbackOther": "{count} versões",
     "rollbackAuto": "Rollback: automático",
-    "rollbackSnapshotHint": "Uma cópia de cada versão é mantida, então um rollback nunca reconstrói. Altere em Avançado.",
-    "rollbackGitHint": "Quantas versões anteriores continuam restauráveis. Altere em Avançado."
+    "rollbackSnapshotHint": "Uma cópia de cada versão é mantida, sem reconstrução ao reverter. Altere nas configurações de implantação.",
+    "rollbackGitHint": "Quantas versões anteriores podem ser restauradas. Altere nas configurações de implantação."
   },
   "power": {
     "heading": "Potência",
@@ -296,7 +306,12 @@
     "legacyBody": "Ele foi implantado por uma versão mais antiga do Openship que entregava o webmail como pacote em vez de imagem, por isso não pode ser implantado novamente. Implantar agora o remove — o projeto, o contêiner e o banco de dados de sessões — e instala o app de webmail em seu lugar. Todos que estiverem conectados serão desconectados e as configurações de webmail de cada usuário serão perdidas.",
     "legacyKept": "As caixas de correio, os dados de e-mail e todas as mensagens permanecem intactos no servidor de e-mail.",
     "deployFailedTitle": "Falha na implantação",
-    "deployFailed": "Falha ao iniciar a implantação"
+    "deployFailed": "Falha ao iniciar a implantação",
+    "reconnectTitle": "Vincular novamente o webmail existente",
+    "reconnectBody": "O vínculo com o servidor de e-mail está ausente. Escolha o aplicativo existente para manter seu projeto, credenciais e configurações.",
+    "reconnectChoose": "Escolha o aplicativo de webmail a vincular antes de continuar.",
+    "reconnectPlacement": "O servidor e o nome de host atuais serão mantidos. Você pode alterar o destino depois.",
+    "reconnectButton": "Vincular e implantar"
   },
   "serveMode": {
     "heading": "How it's served",

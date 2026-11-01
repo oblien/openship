@@ -1,0 +1,17 @@
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
+WORKDIR /build
+COPY . .
+RUN bun install --frozen-lockfile --ignore-scripts \
+    && bun build packages/adapters/src/cluster/tasks/entry.ts --target=node --format=cjs --outfile=/task.cjs
+
+FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
+FROM redis:7.4.11-bookworm@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f AS redis
+FROM postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libatomic1 libstdc++6 libssl3 zstd \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=redis /usr/local/bin/redis-cli /usr/local/bin/redis-server /usr/local/bin/
+COPY --from=build /task.cjs /opt/openship/task.cjs
+RUN node --version && redis-cli --version && redis-server --version && pg_dump --version && pg_restore --version
+USER 1000:1000
+ENTRYPOINT ["node", "/opt/openship/task.cjs"]

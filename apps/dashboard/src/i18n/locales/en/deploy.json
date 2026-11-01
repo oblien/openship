@@ -103,6 +103,12 @@
     "cloneTokenFailed": "Could not mint a clone token",
     "newEnvironment": "New environment",
     "selectBranch": "Select branch",
+    "searchBranches": "Search branches...",
+    "noBranchesMatch": "No branches match",
+    "loadingBranches": "Loading branches...",
+    "loadMoreBranches": "Load more branches",
+    "loadBranchesFailed": "Could not load branches.",
+    "retryBranches": "Retry",
     "saving": "Saving…",
     "saveChanges": "Save changes",
     "deploying": "Deploying…",
@@ -212,7 +218,11 @@
     "backupSummaryConfigured": "{count} backup policy(ies) · pre-deploy: {preDeploy}",
     "backupManage": "Manage backups",
     "on": "on",
-    "off": "off"
+    "off": "off",
+    "previewTitle": "Deployment preview",
+    "previewHint": "Continue to configure your app. Deployment starts from the next page.",
+    "back": "Back",
+    "gpuBadge": "GPU"
   },
   "summary": {
     "buildAndDeploy": "Build & deploy:",
@@ -231,8 +241,8 @@
     "rollbackOne": "{count} version",
     "rollbackOther": "{count} versions",
     "rollbackAuto": "Rollback: auto",
-    "rollbackSnapshotHint": "A copy of each version is kept, so a rollback never rebuilds. Change under Advanced.",
-    "rollbackGitHint": "How many past versions stay restorable. Change under Advanced."
+    "rollbackSnapshotHint": "A copy of each version is kept, so a rollback never rebuilds. Change in deployment settings.",
+    "rollbackGitHint": "How many past versions stay restorable. Change in deployment settings."
   },
   "power": {
     "heading": "Power",
@@ -311,6 +321,11 @@
     "legacyBody": "It was deployed by an older Openship that shipped webmail as a bundle instead of an image, so it cannot be redeployed. Deploying now removes it - project, container and its session database - and installs the webmail app in its place. Everyone signed in to it is signed out, and per-user webmail settings are lost.",
     "legacyKept": "Mailboxes, mail data and every message stay on the mail server, untouched.",
     "deployFailedTitle": "Deploy failed",
-    "deployFailed": "Failed to start deploy"
+    "deployFailed": "Failed to start deploy",
+    "reconnectTitle": "Reconnect existing webmail",
+    "reconnectBody": "Its mail-server link is missing. Choose the existing app to keep its project, credentials and saved settings.",
+    "reconnectChoose": "Choose the webmail app to reconnect before continuing.",
+    "reconnectPlacement": "Reconnection keeps the current server and hostname. You can change the destination afterwards.",
+    "reconnectButton": "Reconnect and deploy"
   }
 }

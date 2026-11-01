@@ -52,13 +52,16 @@ const server = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: { terminalSession, server } }));
+vi.mock("../../../src/lib/terminal-authorization", () => ({
+  resolveTerminalContext: async (_headers: Headers, ctx: unknown) => ctx,
+}));
 vi.mock("../../../src/lib/ws", () => ({
   upgradeWebSocket: (fn: unknown) => fn,
 }));
-vi.mock("../../../src/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: vi.fn(), release: vi.fn() },
 }));
 vi.mock("../../../src/lib/permission", () => ({
@@ -77,8 +80,8 @@ import {
   type ConnState,
 } from "../../../src/modules/terminal/terminal.controller";
 import { issueTerminalTicket } from "../../../src/lib/terminal-session-manager";
-import { checkPermission } from "../../../src/lib/permission";
-import { trustedOrigins } from "../../../src/config/env";
+import { authorization } from "@repo/platform/engine/lib/authorization";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 function fakeShell(): ShellSession {
@@ -229,7 +232,7 @@ describe("terminal.controller WS upgrade", () => {
     // Both tenant gates must see the ticket's org. Resolving the org from
     // the user's memberships instead sends a member of several orgs to
     // whichever one sorts first, and every server outside it 404s.
-    expect(checkPermission).toHaveBeenCalledWith("user_1", "org_ticket", {
+    expect(authorization.checkPermissionOnResource).toHaveBeenCalledWith(expect.objectContaining({ userId: "user_1", organizationId: "org_ticket" }), {
       resourceType: "server",
       resourceId: "server_1",
       action: "admin",
@@ -240,3 +243,7 @@ describe("terminal.controller WS upgrade", () => {
     );
   });
 });
+
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { checkPermissionOnResource: vi.fn(async () => true) },
+}));

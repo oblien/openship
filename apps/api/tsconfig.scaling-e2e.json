@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["test/e2e/scaling-*.e2e.test.ts", "test/helpers/scaling-lab.ts"],
+  "exclude": ["node_modules", "dist"]
+}

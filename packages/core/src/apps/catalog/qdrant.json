@@ -76,5 +76,21 @@
         "help": "Send it as the `api-key` header on every request."
       }
     ]
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Vector search",
+        "description": "Store and query embeddings."
+      },
+      {
+        "title": "RAG workloads",
+        "description": "Add a vector database to your retrieval layer."
+      },
+      {
+        "title": "Web UI",
+        "description": "Browse collections and run queries."
+      }
+    ]
   }
 }

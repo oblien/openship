@@ -1,12 +1,14 @@
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
 import { randomUUID } from "node:crypto";
 import { repos } from "@repo/db";
-import { auth } from "../lib/auth";
-import { env, trustedOrigins } from "../config/env";
+import { SDK_SCOPE_HEADER, ValidationError } from "@repo/contracts";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { ensureLocalUser } from "../lib/local-user";
 import { resolveActiveOrganizationId } from "./active-organization";
 import { zeroAuthAllowed } from "./zero-auth-guard";
-import { hashPatToken } from "../lib/pat";
+import { hashPatToken } from "@repo/platform/engine/lib/pat";
 import { isPatToken, parseBearerToken } from "../lib/bearer";
 import {
   buildRequestContext,
@@ -125,6 +127,7 @@ async function finishBearer(
   boundOrg: string | null,
   patScope: { tokenId: string; scoped: boolean } | undefined,
   principalKind: PrincipalKind,
+  readOnly: boolean,
 ): Promise<Response | typeof PAT_HANDLED> {
   const applied = await applyAuthedRequest(
     c,
@@ -133,6 +136,7 @@ async function finishBearer(
     "bearer",
     patScope,
     principalKind,
+    { organizationId: boundOrg, readOnly },
   );
   if (!applied) {
     return c.json({ error: "Invalid or expired access token", code: "INVALID_TOKEN" }, 401);
@@ -200,7 +204,8 @@ export async function resolveBearerIdentity(
   let session: Awaited<ReturnType<typeof auth.api.getMcpSession>>;
   try {
     session = await auth.api.getMcpSession({ headers });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/middleware/auth");
     return null; // not an OAuth token (or introspection failed)
   }
   if (!session) return null;
@@ -290,7 +295,9 @@ async function tryBearerAuth(
 
   // Usage tracking only for a real token row (skip the synthetic unbound key).
   if (resolved.hasBinding) {
-    void repos.personalAccessToken.touchLastUsed(resolved.tokenId).catch(() => {});
+    void repos.personalAccessToken.touchLastUsed(resolved.tokenId).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/middleware/auth");
+    });
   }
 
   const patScope = resolved.scoped ? { tokenId: resolved.tokenId, scoped: true } : undefined;
@@ -302,6 +309,7 @@ async function tryBearerAuth(
     resolved.organizationId,
     patScope,
     resolved.kind,
+    resolved.readOnly,
   );
 }
 
@@ -324,7 +332,7 @@ export async function authMiddleware(c: Context, next: Next) {
     // failure, etc.) MUST NOT silently fall through to the zero-auth
     // path. Return a 503 with a typed code so callers can distinguish
     // "no session" (cookie missing) from "session machinery broken".
-    console.error("[auth] getSession threw:", err);
+    errorDiagnostics.error("api/middleware/auth", "[auth] getSession threw:", err);
     return c.json({ error: "Authentication service unavailable", code: "AUTH_UNAVAILABLE" }, 503);
   }
 
@@ -373,7 +381,7 @@ export async function authMiddleware(c: Context, next: Next) {
   const gate = await zeroAuthAllowed(c);
   if (!gate.ok) {
     if (!gate.reason.startsWith("authMode=")) {
-      console.warn(`[auth] zero-auth refused: ${gate.reason}`);
+      errorDiagnostics.warn("api/middleware/auth", `[auth] zero-auth refused: ${gate.reason}`);
     }
     return c.json({ error: "Unauthorized" }, 401);
   }
@@ -410,8 +418,24 @@ async function applyAuthedRequest(
   sessionKind: SessionKind,
   patScope?: { tokenId: string; scoped: boolean },
   principalKind?: PrincipalKind,
+  credential?: { organizationId: string | null; readOnly: boolean },
 ): Promise<boolean> {
-  const orgId = await resolveActiveOrganizationId(user.id, session?.activeOrganizationId ?? null);
+  const scopeHeader = c.req.header(SDK_SCOPE_HEADER)?.trim().toLowerCase();
+  if (scopeHeader !== undefined && scopeHeader !== "fixed") {
+    throw new ValidationError(`${SDK_SCOPE_HEADER} must be 'fixed' when provided`);
+  }
+  const fixedScope = scopeHeader === "fixed";
+  const requestedOrg = c.req.header("X-Organization-Id")?.trim();
+  if (fixedScope && !requestedOrg) {
+    throw new ValidationError("X-Organization-Id is required for fixed organization scope");
+  }
+  // A credential binding is not a UX default. If that membership disappeared,
+  // fail authentication instead of falling back to another organization.
+  const orgId =
+    credential?.organizationId ??
+    (fixedScope && requestedOrg
+      ? requestedOrg
+      : await resolveActiveOrganizationId(user.id, session?.activeOrganizationId ?? null));
   if (!orgId) return false;
 
   const membership = await repos.member.find(orgId, user.id);
@@ -450,9 +474,11 @@ async function applyAuthedRequest(
       sessionKind,
       principalKind: principalKind ?? null,
       tokenScope: patScope?.scoped ? { tokenId: patScope.tokenId } : null,
+      credential: credential ?? null,
+      scopeMode: fixedScope ? "fixed" : "resource",
       clientIp,
       userAgent,
-      traceId: randomUUID(),
+      traceId: c.get("diagnosticRequestId") ?? randomUUID(),
       hono: c,
     }),
   );

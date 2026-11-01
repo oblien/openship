@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import { createEncryption } from "../encryption";
 import { describe, it, expect, beforeEach } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -30,7 +32,7 @@ async function freshDb() {
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   await client.exec("SET session_replication_role = replica;");
-  return { db, projectRepo: createProjectRepo(db) };
+  return { db, projectRepo: createProjectRepo(db, createEncryption("repository-test-secret")) };
 }
 
 type Db = Awaited<ReturnType<typeof freshDb>>["db"];
@@ -145,6 +147,110 @@ describe("countActiveByServer and listActiveByServer describe the same set", () 
     await seedBound(db, "theirs", { organizationId: "org_2", serverId: "srv1" });
     const rows = await projectRepo.listActiveByServer("org_1", "srv1");
     expect(rows.map((r) => r.id)).toEqual(["mine"]);
+  });
+
+  it("limits edge requirements to routed projects without changing fleet project counts", async () => {
+    for (const id of ["private", "web", "legacy", "paused", "unbound", "paths", "foreign"]) {
+      await seedBound(db, id, {
+        serverId: "srv1",
+        organizationId: id === "foreign" ? "org_other" : "org_1",
+      });
+    }
+    await db
+      .insert(schema.service)
+      .values({
+        id: "svc_paused",
+        projectId: "paused",
+        name: "private",
+        exposed: false,
+        enabled: true,
+      });
+    for (const [id, fields] of Object.entries({
+      web: { targetPort: 8080 },
+      legacy: { targetPath: "/" },
+      paused: { serviceId: "svc_paused", targetPort: 8080 },
+      unbound: {},
+      paths: {},
+      foreign: { targetPort: 8080 },
+    })) {
+      await db
+        .insert(schema.domain)
+        .values({ id: `dom_${id}`, projectId: id, hostname: `${id}.example.com`, ...fields });
+    }
+    await db
+      .update(schema.project)
+      .set({
+        compositeRoutes: [
+          {
+            hostname: "paths.example.com",
+            isCustomDomain: true,
+            locations: [{ pathPrefix: "/api", serviceId: "backend", port: 8080 }],
+          },
+        ],
+      })
+      .where(eq(schema.project.id, "paths"));
+    expect(await projectRepo.countActiveByServer("org_1")).toEqual({ srv1: 6 });
+    expect(await projectRepo.countActiveByServer("org_1", { withRoutes: true })).toEqual({ srv1: 3 });
+  });
+
+  it("requires an edge for a public primary app while ignoring private, disabled and removing routes", async () => {
+    await seedBound(db, "primary", { serverId: "srv1" });
+    await seedBound(db, "private", { serverId: "srv2" });
+    await db.insert(schema.service).values([
+      {
+        id: "app",
+        projectId: "primary",
+        name: "app",
+        kind: "monorepo",
+        enabled: true,
+        exposed: true,
+      },
+      {
+        id: "database",
+        projectId: "primary",
+        name: "database",
+        kind: "compose",
+        enabled: true,
+        exposed: false,
+      },
+      { id: "disabled", projectId: "private", name: "disabled", enabled: false, exposed: true },
+      { id: "removed", projectId: "private", name: "removed", enabled: true, exposed: true },
+    ]);
+    await db.insert(schema.domain).values([
+      {
+        id: "app",
+        projectId: "primary",
+        serviceId: "app",
+        hostname: "app.example.com",
+        targetPort: 8080,
+      },
+      {
+        id: "database",
+        projectId: "primary",
+        serviceId: "database",
+        hostname: "db.example.com",
+        targetPort: 5432,
+      },
+      {
+        id: "disabled",
+        projectId: "private",
+        serviceId: "disabled",
+        hostname: "disabled.example.com",
+        targetPort: 8080,
+      },
+      {
+        id: "removed",
+        projectId: "private",
+        serviceId: "removed",
+        hostname: "removed.example.com",
+        targetPort: 8080,
+        status: "removing",
+      },
+    ]);
+    expect(await projectRepo.countActiveByServer("org_1")).toEqual({ srv1: 1, srv2: 1 });
+    expect(await projectRepo.countActiveByServer("org_1", { withRoutes: true })).toEqual({
+      srv1: 1,
+    });
   });
 
   it("carries what the confirm needs to render and the delete needs to decide", async () => {

@@ -157,8 +157,12 @@ local function parse(raw)
     local out, n = {}, 0
     for _, e in ipairs(entries) do
         if type(e) == "table" then
+            -- cjson.null is truthy userdata. Normalize once so both prefix
+            -- matching and rate-limit keys use nil for a whole-host rule.
+            local prefix = e.pathPrefix
+            if type(prefix) ~= "string" then prefix = nil end
             n = n + 1
-            out[n] = { pathPrefix = e.pathPrefix, spec = compile_spec(e.spec) }
+            out[n] = { pathPrefix = prefix, spec = compile_spec(e.spec) }
         end
     end
     return out

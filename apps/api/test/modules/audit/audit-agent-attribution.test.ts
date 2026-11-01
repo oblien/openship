@@ -18,7 +18,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { db, schema } from "@repo/db";
 import { repos } from "@repo/db";
-import { mintPatToken } from "../../../src/lib/pat";
+import { mintPatToken } from "@repo/platform/engine/lib/pat";
 import { makeApp, req, seedEvent, seedOwner } from "./_harness";
 import type { SeededOwner } from "./_harness";
 

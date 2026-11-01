@@ -17,8 +17,31 @@
  */
 
 import { shellQuote } from "./shell-split";
+import { managedPackageManagerEnsureCommand } from "./package-manager-bootstrap";
+import { PACKAGE_MANAGER_DEFAULTS } from "./package-manager-version";
+import { normalizeImageRef } from "./backup-image-detect";
+import { validateImageReference } from "./project-source";
 
 // ─── Language definitions ────────────────────────────────────────────────────
+
+export type DockerBuildRecipe = "generic" | "php" | "ruby" | "static";
+export type DockerRuntimeProbe = "node" | "bun" | "python" | "ruby" | "java" | "dotnet" | "elixir";
+
+/** Installed-version inspection, distinct from builder/runtime ABI compatibility.
+ * Keep executable commands compiled into the runtime registry, never in a feed. */
+export const RUNTIME_VERSION_COMMANDS = {
+  node: "node --version",
+  bun: "bun --version",
+  deno: "deno --version",
+  python: "python3 --version",
+  php: "php --version",
+  ruby: "ruby --version",
+  java: "java -version",
+  dotnet: "dotnet --list-runtimes",
+  go: "go version",
+} as const;
+export type InspectedRuntime = keyof typeof RUNTIME_VERSION_COMMANDS;
+export const INSPECTED_RUNTIMES = Object.keys(RUNTIME_VERSION_COMMANDS) as [InspectedRuntime, ...InspectedRuntime[]];
 
 export interface LanguageDefinition {
   name: string;
@@ -26,6 +49,8 @@ export interface LanguageDefinition {
   buildImage: string;
   /** Default runtime image */
   runtimeImage: string;
+  dockerRecipe?: DockerBuildRecipe;
+  dockerRuntimeProbe?: DockerRuntimeProbe;
   /** Package managers available for this language */
   packageManagers: readonly string[];
   /**
@@ -38,6 +63,7 @@ export interface LanguageDefinition {
 
 export const LANGUAGES = {
   javascript: {
+    dockerRuntimeProbe: "node",
     name: "JavaScript",
     buildImage: "node:22",
     runtimeImage: "node:22",
@@ -45,6 +71,7 @@ export const LANGUAGES = {
     requiredTools: ["node", "npm"],
   },
   typescript: {
+    dockerRuntimeProbe: "node",
     name: "TypeScript",
     buildImage: "node:22",
     runtimeImage: "node:22",
@@ -66,6 +93,7 @@ export const LANGUAGES = {
     requiredTools: ["rustc", "cargo"],
   },
   python: {
+    dockerRuntimeProbe: "python",
     name: "Python",
     buildImage: "python:3.12-slim",
     runtimeImage: "python:3.12-slim",
@@ -73,6 +101,8 @@ export const LANGUAGES = {
     requiredTools: ["python3", "pip"],
   },
   ruby: {
+    dockerRuntimeProbe: "ruby",
+    dockerRecipe: "ruby",
     name: "Ruby",
     buildImage: "ruby:3.3-slim",
     runtimeImage: "ruby:3.3-slim",
@@ -80,6 +110,7 @@ export const LANGUAGES = {
     requiredTools: ["ruby", "bundler"],
   },
   php: {
+    dockerRecipe: "php",
     name: "PHP",
     buildImage: "php:8.4-cli",
     // FrankenPHP, not php:*-fpm. An fpm image is a FastCGI backend, not a
@@ -94,6 +125,7 @@ export const LANGUAGES = {
     requiredTools: ["php", "composer"],
   },
   java: {
+    dockerRuntimeProbe: "java",
     name: "Java",
     // Maven image bundles both `mvn` and JDK 21, so the generated Dockerfile
     // builds Maven projects out of the box; Gradle/Kotlin projects build via
@@ -104,6 +136,7 @@ export const LANGUAGES = {
     requiredTools: ["java", "javac"],
   },
   csharp: {
+    dockerRuntimeProbe: "dotnet",
     name: "C#",
     buildImage: "mcr.microsoft.com/dotnet/sdk:8.0",
     runtimeImage: "mcr.microsoft.com/dotnet/aspnet:8.0",
@@ -111,6 +144,7 @@ export const LANGUAGES = {
     requiredTools: ["dotnet"],
   },
   elixir: {
+    dockerRuntimeProbe: "elixir",
     name: "Elixir",
     buildImage: "elixir:1.16-alpine",
     runtimeImage: "elixir:1.16-alpine",
@@ -168,6 +202,48 @@ export interface StackDetection {
   contentPatterns?: Readonly<Record<string, string>>;
 }
 
+// ─── Stack runtime roles (issue #935) ────────────────────────────────────────
+
+/** "web" is derived from `defaultStartCommand`, never declared as a role. */
+export type RoleKind = "web" | "worker" | "scheduler";
+export const ROLE_KINDS: readonly RoleKind[] = ["web", "worker", "scheduler"];
+
+export interface RoleHealth {
+  kind: "http" | "exec" | "process";
+  /** Path to probe. Only meaningful when `kind` is "http". */
+  path?: string;
+  /** Command to run. Only meaningful when `kind` is "exec". */
+  command?: string;
+}
+export const ROLE_HEALTH_KINDS: readonly RoleHealth["kind"][] = ["http", "exec", "process"];
+
+export interface StackRole {
+  name: string;
+  kind: RoleKind;
+  command: string;
+  /** Process count. Omit for the runtime default (1). */
+  replicas?: number;
+  /** Exactly one instance; incompatible with `replicas` > 1. Always true for "scheduler". */
+  singleton?: boolean;
+  /** Signal sent on stop (e.g. "SIGQUIT"). Absent means the runtime default (SIGTERM). */
+  stopSignal?: string;
+  /** Wait after the stop signal before SIGKILL, compose duration (e.g. "90s", "10m"). */
+  stopGracePeriod?: string;
+  health?: RoleHealth;
+  /** Preset-only exclusive slot. Independent roles omit this; never runtime configuration. */
+  slot?: string;
+  /** Preset gating only: every signal must match. Ignored for openship.json roles. */
+  when?: {
+    deps?: readonly string[];
+    files?: readonly string[];
+  };
+  /** Preset gating only: ANY signal here excludes the preset. */
+  unless?: {
+    deps?: readonly string[];
+    files?: readonly string[];
+  };
+}
+
 export interface StackDefinition {
   /** Human-readable display name */
   name: string;
@@ -179,6 +255,7 @@ export interface StackDefinition {
   buildImage?: string;
   /** Docker image for production runtime (overrides the language default) */
   runtimeImage?: string;
+  dockerRecipe?: DockerBuildRecipe;
   /** Default output directory after build */
   outputDirectory: string;
   /** Default port the application listens on */
@@ -187,6 +264,13 @@ export interface StackDefinition {
   defaultBuildCommand: string;
   /** Default start command */
   defaultStartCommand: string;
+  /** Verified self-contained server artifact; preparers share this across build runtimes. */
+  serverOutput?: { kind: "nextjs" | "node"; directory: string; entry: string };
+  /**
+   * Optional web startup optimization, enabled by openship.json `optimize`.
+   * Runs with the runtime environment before the resolved start command.
+   */
+  optimizeCommand?: string;
   /** Minimum tool versions required by this stack on bare metal. */
   requiredToolVersions?: Readonly<Record<string, string>>;
   /**
@@ -207,6 +291,9 @@ export interface StackDefinition {
    * Only framework-specific caches - generic ones (.git) are always excluded.
    */
   cacheDirs?: readonly string[];
+  /** Pure build caches, safe to mount outside the application image. Unlike
+   * transfer exclusions, these must never contain required build outputs. */
+  buildCacheDirs?: readonly string[];
   /**
    * Paths (relative to the app root) this framework WRITES at runtime and would
    * lose on redeploy. Declared here so a stock app keeps its data with no
@@ -229,6 +316,8 @@ export interface StackDefinition {
    * `stack-detector.ts` and `project-root-detector.ts`. See {@link StackDetection}.
    */
   detection?: StackDetection;
+  /** Non-web role presets, gated by `when` in `resolveStackRoles`. */
+  defaultRoles?: readonly StackRole[];
 }
 
 // ─── The registry ────────────────────────────────────────────────────────────
@@ -245,10 +334,43 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
+    serverOutput: { kind: "nextjs", directory: ".next", entry: "server.js" },
     requiredToolVersions: { node: "20.9.0" },
-    cacheDirs: [".next/cache"],    detection: {
+    cacheDirs: [".next/cache"],
+    buildCacheDirs: [".next/cache"],
+    detection: {
       rootMarkers: ["next.config.js", "next.config.mjs", "next.config.ts"],
       deps: ["next"],
+    },
+  },
+  farmjs: {
+    name: "Farm.js",
+    language: "typescript",
+    category: "fullstack",
+    // Farm's universal Node build is emitted under the default `.farm` dist
+    // directory. Keep the output directory and start command together so the
+    // runtime can launch the Nitro server without needing the source config or
+    // the Farm CLI in the production image.
+    outputDirectory: ".farm/.output",
+    defaultPort: 3000,
+    defaultBuildCommand: "farm build",
+    defaultStartCommand: "node .farm/.output/server/index.mjs",
+    productionPaths: [".farm/.output"],
+    detection: {
+      // Farm accepts all of these config extensions. Requiring both a config
+      // marker and the core/CLI package avoids classifying a library that only
+      // imports a Farm helper as a Farm application.
+      rootMarkers: [
+        "farm.config.ts",
+        "farm.config.tsx",
+        "farm.config.mts",
+        "farm.config.cts",
+        "farm.config.js",
+        "farm.config.jsx",
+        "farm.config.mjs",
+        "farm.config.cjs",
+      ],
+      deps: ["@farm.js/core", "@farm.js/cli"],
     },
   },
   nuxt: {
@@ -259,7 +381,9 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nuxt build",
     defaultStartCommand: "node .output/server/index.mjs",
-    cacheDirs: [".nuxt"],    detection: {
+    serverOutput: { kind: "node", directory: ".output", entry: "server/index.mjs" },
+    cacheDirs: [".nuxt"],
+    detection: {
       rootMarkers: ["nuxt.config.js", "nuxt.config.ts", "nuxt.config.mjs"],
       deps: ["nuxt", "@nuxt/core"],
     },
@@ -360,7 +484,8 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "gatsby build",
     defaultStartCommand: "gatsby serve",
-    cacheDirs: [".cache"],    detection: {
+    cacheDirs: [".cache"],
+    buildCacheDirs: [".cache"],    detection: {
       rootMarkers: ["gatsby-config.js", "gatsby-config.ts"],
       deps: ["gatsby"],
     },
@@ -659,13 +784,56 @@ export const STACKS = {
     category: "fullstack",
     outputDirectory: ".",
     defaultPort: 3000,
-    defaultBuildCommand: "bundle install && bundle exec rails assets:precompile",
-    defaultStartCommand: "bundle exec rails server -b 0.0.0.0",
+    // Precompile only — `bundle install` is already the install step. The dummy
+    // secret is what Rails' own Dockerfile sets: an app touching credentials
+    // during eager load raises without it.
+    defaultBuildCommand:
+      "RAILS_ENV=production SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile",
+    // Stock config/puma.rb reads PORT, but a trimmed one falls back to 3000.
+    defaultStartCommand: 'bundle exec rails server -b 0.0.0.0 -p "${PORT:-3000}"',
+    // Rails 8 keeps the SQLite database AND Active Storage here; Rails' own
+    // Dockerfile declares `VOLUME /rails/storage`. Not `db/` — it holds
+    // migrations, so mounting over it would shadow later releases'.
+    persistentPaths: ["storage"],
+    cacheDirs: ["tmp/cache", "tmp/pids"],
     detection: {
       // Rails: Gemfile is required; bin/rails or config/routes.rb confirms.
       // The conjunction is encoded as an override in stack-detector.
       rootMarkers: ["Gemfile", "bin/rails", "config/routes.rb"],
     },
+    // Commands use `exec` so the worker replaces the `sh -c` wrapper as PID 1
+    // and receives SIGTERM.
+    // Only one queue backend is registered per app in practice, but a repo can
+    // carry both gems mid-migration - resolveStackRoles drops the worker role
+    // entirely when that happens rather than guessing which one runs.
+    //
+    // Explicit shutdown budgets for the later runtime slice, sized to the
+    // workers' own timeouts: Solid Queue's `shutdown_timeout` defaults to 5s
+    // and Sidekiq's `timeout` to 25s, each measured to exit ~0.5s after it
+    // (solid_queue 1.7.0, sidekiq 8.1.7). 10s matches Docker's own default and
+    // is kept as explicit intent. Sidekiq gets 45s because exceeding the grace
+    // period loses the in-flight job rather than requeueing it, so the 4.5s a
+    // 30s budget left over one measured run was too thin. An explicit
+    // openship.json `roles` array replaces all presets, so declare grace
+    // periods there to keep these values.
+    defaultRoles: [
+      {
+        name: "jobs",
+        kind: "worker",
+        slot: "queue",
+        command: "exec bin/jobs",
+        stopGracePeriod: "10s",
+        when: { deps: ["solid_queue"], files: ["bin/jobs"] },
+      },
+      {
+        name: "sidekiq",
+        kind: "worker",
+        slot: "queue",
+        command: "exec bundle exec sidekiq",
+        stopGracePeriod: "45s",
+        when: { deps: ["sidekiq"] },
+      },
+    ],
   },
   sinatra: {
     name: "Sinatra",
@@ -699,6 +867,9 @@ export const STACKS = {
     defaultBuildCommand: "",
     defaultStartCommand:
       'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // Opt-in web cache warming after runtime environment injection. Keep the
+    // normal start command separate so existing projects stay unchanged.
+    optimizeCommand: "php artisan optimize",
     // Everything a stock Laravel app writes lives here: uploads
     // (storage/app), sessions + cache when the drivers are `file`, and the
     // framework's own scratch space. `database/` is deliberately NOT persisted —
@@ -710,6 +881,59 @@ export const STACKS = {
       rootMarkers: ["artisan", "composer.json"],
       deps: ["laravel/framework"],
     },
+    // queue and scheduler ship with laravel/framework, so they need no gate.
+    // Horizon replaces the plain worker: `queue` steps aside via `unless`
+    // and `horizon` takes over via `when`, so exactly one worker resolves.
+    // The scheduler sets `singleton: true` itself, because the parser's
+    // scheduler-forces-singleton rule never runs over stack presets.
+    //
+    // Commands use `exec` so PHP replaces the `sh -c` wrapper as PID 1 and
+    // receives SIGTERM. Without it, `queue:work` and `schedule:work` were
+    // killed after the grace period (Laravel 13.33.0, see #935). Horizon's
+    // shutdown was not measured separately.
+    //
+    // Role suggestions use production Composer dependencies to match --no-dev;
+    // framework detection can still inspect both require and require-dev.
+    //
+    // Explicit shutdown budgets. The workers' 90s exceeds the default 60s queue
+    // and Horizon supervisor timeouts, so size it to the application's own
+    // configured timeouts. Horizon's internal settings still govern worker
+    // draining. The scheduler's 10s favors short shutdown and handover latency
+    // over task completion. The inspected Laravel 12.x versions lack coordinated
+    // `schedule:work` shutdown, so work can continue until Docker kills the
+    // container. Laravel 13.18.0 with signal handling available stops new runs
+    // on INT, TERM or QUIT and waits for existing ones, but detached background
+    // tasks may not complete. A foreground scheduled command with more than 10
+    // seconds left can be killed on either version. Applications that need
+    // completion should use a verified draining version and size the grace for
+    // the whole remaining run. An explicit openship.json `roles` array replaces
+    // all presets, so declare grace periods there to keep these values.
+    defaultRoles: [
+      {
+        name: "queue",
+        kind: "worker",
+        slot: "queue",
+        command: "exec php artisan queue:work",
+        stopGracePeriod: "90s",
+        unless: { deps: ["laravel/horizon"] },
+      },
+      {
+        name: "horizon",
+        kind: "worker",
+        slot: "queue",
+        command: "exec php artisan horizon",
+        stopGracePeriod: "90s",
+        when: { deps: ["laravel/horizon"] },
+      },
+      {
+        name: "scheduler",
+        kind: "scheduler",
+        command: "exec php artisan schedule:work",
+        stopSignal: "SIGTERM",
+        stopGracePeriod: "10s",
+        singleton: true,
+      },
+    ],
   },
   symfony: {
     name: "Symfony",
@@ -1057,37 +1281,42 @@ export const STACK_ROOT_MARKERS: ReadonlySet<string> = new Set(
 /** JS/TS languages that should use oven/bun when the package manager is bun */
 const BUN_ELIGIBLE_LANGUAGES: ReadonlySet<string> = new Set(["javascript", "typescript"]);
 
-/** Get the resolved Docker build image for a stack */
-export function getBuildImage(stackId: StackId, packageManager?: string): string {
-  const stack = STACKS[stackId] as StackDefinition;
-  if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
-    return "oven/bun:latest";
-  }
-  return stack.buildImage ?? LANGUAGES[stack.language].buildImage;
+/** Only Ruby pins a runtime version today: bundler enforces the Gemfile's ruby
+ *  directive, so a hardcoded image fails before installing a single gem. */
+const RUNTIME_VERSION_RE = /^\d+\.\d+(?:\.\d+)?$/;
+
+/** Swap the version segment of a `ruby:<version><suffix>` tag, preserving the
+ *  variant (`-slim`). The version comes from a file in the repo being deployed,
+ *  so anything but a plain X.Y[.Z] is ignored rather than spliced into a tag. */
+function applyRuntimeVersion(image: string, language: Language, version?: string): string {
+  if (language !== "ruby" || !version || !RUNTIME_VERSION_RE.test(version)) return image;
+  return image.replace(/^ruby:[^-]+(-.*)?$/, (_full, suffix) => `ruby:${version}${suffix ?? ""}`);
 }
 
-/**
- * Command that ensures the detected JS package manager is on PATH before the
- * install step runs. npm/pnpm/yarn all ship through Node's `corepack` — enabling
- * it installs the pnpm/yarn shims and lets each project's
- * `package.json#packageManager` field select the exact version. Falls back to a
- * global npm install when corepack is unavailable (old Node / no perms), and is
- * fully swallowed so it never fails the build.
- *
- * `bun` gets a presence check instead: corepack doesn't manage it. Inside a
- * container this is a no-op — getBuildImage already resolves bun-eligible stacks
- * to oven/bun, so `command -v bun` short-circuits before the npm fallback (which
- * matters: that image ships no npm). It earns its keep on a BARE target, where we
- * install onto whatever the box already has (see runtime/bare.ts).
- *
- * Returns "" for `npm` (already present) and every non-node PM (in-image).
- */
-export function packageManagerEnsureCommand(packageManager?: string): string {
-  if (packageManager === "bun") {
-    return `(command -v bun >/dev/null 2>&1 || npm i -g bun) >/dev/null 2>&1 || true`;
+/** Get the resolved Docker build image for a stack */
+export function getBuildImage(
+  stackId: StackId,
+  packageManager?: string,
+  runtimeVersion?: string,
+): string {
+  const stack = STACKS[stackId] as StackDefinition;
+  if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
+    return `oven/bun:${PACKAGE_MANAGER_DEFAULTS.bun}`;
   }
-  if (packageManager !== "pnpm" && packageManager !== "yarn") return "";
-  return `(corepack enable ${packageManager} || corepack enable || npm i -g ${packageManager}) >/dev/null 2>&1 || true`;
+  const image = stack.buildImage ?? LANGUAGES[stack.language].buildImage;
+  return applyRuntimeVersion(image, stack.language, runtimeVersion);
+}
+
+/** Shared JavaScript toolchain bootstrap: select from repository configuration,
+ * install through the manager's adapter, then verify the actual version. Other
+ * language ecosystems retain their existing install contracts. */
+export function packageManagerEnsureCommand(packageManager?: string): string {
+  if (
+    packageManager === "npm" || packageManager === "pnpm" ||
+    packageManager === "yarn" || packageManager === "bun"
+  )
+    return managedPackageManagerEnsureCommand(packageManager);
+  return "";
 }
 
 /** Package managers that install dependency binaries into `node_modules/.bin`. */
@@ -1134,15 +1363,74 @@ export function nodeBinPathExport(packageManager: string | undefined, roots: str
   return `export PATH=${dirs.map(shellQuote).join(":")}:"$PATH"`;
 }
 
-/** Get the resolved Docker runtime image for a stack */
-export function getRuntimeImage(stackId: StackId, packageManager?: string): string {
+/** Resolve the runtime image. Keep explicit official Node/Ruby pins across
+ *  build and runtime, including the OS variant and digest. */
+export function getRuntimeImage(
+  stackId: StackId,
+  packageManager?: string,
+  buildImage?: string | null,
+): string {
   const stack = STACKS[stackId] as StackDefinition;
+  // An undetected/custom stack has no known runtime to switch to. Keep its
+  // selected toolchain instead of copying the app into a bare Ubuntu image.
+  if (stack.category === "generic" && buildImage && !validateImageReference(buildImage)) {
+    return buildImage;
+  }
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
-    return "oven/bun:latest";
+    if (
+      buildImage && !validateImageReference(buildImage) &&
+      /^(?:(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\/)?oven\/bun(?::|@|$)/.test(buildImage)
+    )
+      return buildImage;
+    return `oven/bun:${PACKAGE_MANAGER_DEFAULTS.bun}`;
+  }
+  if (stack.language === "ruby" && buildImage &&
+      !validateImageReference(buildImage) && /^ruby(?::|$)/.test(normalizeImageRef(buildImage))) {
+    return buildImage;
+  }
+  if (
+    (stack.language === "javascript" || stack.language === "typescript") &&
+    buildImage &&
+    !validateImageReference(buildImage) &&
+    /^(?:(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\/)?(?:library\/)?node(?::|@|$)/.test(
+      buildImage,
+    )
+  ) {
+    return buildImage;
   }
   return stack.runtimeImage ?? LANGUAGES[stack.language].runtimeImage;
 }
 
+
+/** Recipe identity comes from the stack, never from an image's display name. */
+export function getDockerBuildRecipe(
+  framework?: string | null,
+  isStatic = false,
+): DockerBuildRecipe {
+  if (isStatic) return "static";
+  const normalized = normalizeFramework(framework);
+  const stack = Object.hasOwn(STACKS, normalized)
+    ? (STACKS[normalized as StackId] as StackDefinition)
+    : undefined;
+  return (
+    stack?.dockerRecipe ??
+    (stack ? (LANGUAGES[stack.language] as LanguageDefinition).dockerRecipe : undefined) ??
+    "generic"
+  );
+}
+
+export function getDockerRuntimeProbe(
+  framework: string,
+  packageManager?: string,
+): DockerRuntimeProbe | undefined {
+  const normalized = normalizeFramework(framework);
+  const stack = Object.hasOwn(STACKS, normalized)
+    ? (STACKS[normalized as StackId] as StackDefinition)
+    : undefined;
+  if (!stack) return undefined;
+  if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) return "bun";
+  return (LANGUAGES[stack.language] as LanguageDefinition).dockerRuntimeProbe;
+}
 
 /** Get the full stack definition with resolved images */
 export function getStackDefaults(stackId: StackId, packageManager?: string) {
@@ -1195,6 +1483,8 @@ export function isServicesFramework(framework?: string | null): boolean {
   try {
     return getProjectType(framework as StackId) === "services";
   } catch {
+      /* diagnostics-ignore: Unknown framework identifiers intentionally use the Compose fallback. */
+
     return framework === "docker-compose";
   }
 }
@@ -1270,6 +1560,7 @@ const DI = "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons";
 export const STACK_ICONS: Partial<Record<StackId, string>> = {
   // JS/TS - Frontend & Fullstack
   nextjs:      `${DI}/nextjs/nextjs-original.svg`,
+  farmjs:      "https://raw.githubusercontent.com/farming-labs/farm.js/main/.github/assets/farmjs-avatar.svg",
   nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
   sveltekit:   `${DI}/svelte/svelte-original.svg`,
   remix:       `${DI}/react/react-original.svg`,
@@ -1337,3 +1628,11 @@ export const STACK_ICONS: Partial<Record<StackId, string>> = {
   docker:      `${DI}/docker/docker-original.svg`,
   "docker-compose": `${DI}/docker/docker-original.svg`,
 };
+
+/** A recorded role replica; reused configuration revisions retain its creation owner. */
+export interface RoleContainerRef {
+  role: string;
+  replica: number;
+  containerId: string;
+  ownerDeploymentId?: string;
+}

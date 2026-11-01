@@ -37,17 +37,17 @@ vi.mock("@repo/db", () => ({
     },
   },
 }));
-vi.mock("../projects/cleanup-keep-set", () => ({
+vi.mock("@repo/platform/engine/modules/projects/cleanup-keep-set", () => ({
   computeCleanupKeepSet: mocks.computeCleanupKeepSet,
 }));
 // Terminal-event side channels, each of which drags in auth/github/mail wiring.
-vi.mock("../../lib/notification-dispatcher", () => ({ notification: { emit: mocks.notify } }));
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: { emit: mocks.notify } }));
 vi.mock("../../lib/audit", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));
-vi.mock("../../lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn(async () => {}) }));
-vi.mock("../mail/webmail/webmail-install.service", () => ({
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn(async () => {}) }));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: vi.fn(async () => {}),
 }));
-vi.mock("./session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   updateStatus: mocks.sseUpdateStatus,
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
@@ -55,7 +55,7 @@ vi.mock("./session-manager", () => ({
   endSession: vi.fn(),
 }));
 
-import { onCancelled, onFailure, onSuccess, setDeploymentStatus } from "./deployment-lifecycle";
+import { onCancelled, onFailure, onSuccess, setDeploymentStatus } from "@repo/platform/engine/modules/deployments/deployment-lifecycle";
 
 /**
  * A cancel is the user's last word, but cancellation is COOPERATIVE and the deploy
@@ -222,3 +222,6 @@ describe("a cancelled deployment is final", () => {
     expect(mocks.computeCleanupKeepSet).not.toHaveBeenCalled();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));

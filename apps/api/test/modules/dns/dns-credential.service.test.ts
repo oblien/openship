@@ -23,7 +23,7 @@ const credentialRepo = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({ repos: { credential: credentialRepo } }));
 
 const decrypt = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/credential-encryption", () => ({
+vi.mock("@repo/platform/engine/lib/credential-encryption", () => ({
   encryptSecretField: (v: string | null | undefined) => (v ? `enc1:${v}` : null),
   decryptSecretField: decrypt,
 }));
@@ -41,9 +41,10 @@ const provider = vi.hoisted(() => ({
   listRecords: vi.fn(),
   upsertRecord: vi.fn(),
   deleteRecord: vi.fn(),
+  formatContent: vi.fn((_type: string, content: string) => content),
 }));
 
-vi.mock("../../../src/modules/dns/registry", () => ({
+vi.mock("@repo/platform/engine/modules/dns/registry", () => ({
   resolveDnsProvider: () => provider,
   listDnsProviders: () => ["cloudflare"],
   describeDnsProviders: () => [provider.descriptor],
@@ -56,8 +57,8 @@ const {
   planRecords,
   provisionRecords,
   releaseRecords,
-} = await import("../../../src/modules/dns/dns-credential.service");
-const { DnsApiError, OPENSHIP_RECORD_COMMENT } = await import("../../../src/modules/dns/types");
+} = await import("@repo/platform/engine/modules/dns/dns-credential.service");
+const { DnsApiError, OPENSHIP_RECORD_COMMENT } = await import("@repo/platform/engine/modules/dns/types");
 
 const row = (over: Record<string, unknown> = {}) => ({
   id: "dns_1",
@@ -90,6 +91,7 @@ const rec = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  provider.formatContent.mockImplementation((_type: string, content: string) => content);
   decrypt.mockImplementation((v: string) => String(v).replace(/^enc1:/, ""));
   provider.findZone.mockResolvedValue({ id: "zone_1", name: "example.com", status: "active" });
 });
@@ -181,6 +183,19 @@ describe("resolveDnsManager", () => {
 
 describe("planRecords", () => {
   beforeEach(() => credentialRepo.listActiveByProvider.mockResolvedValue([row()]));
+
+  it.each([["token", "update"], ['"token"', "in-sync"]])(
+    "plans Cloudflare's TXT formatting consistently for %s", async (content, action) => {
+      provider.formatContent.mockImplementation((type, value) => type === "TXT" ? `"${value}"` : value);
+      provider.listRecords.mockResolvedValue([rec({
+        type: "TXT", name: "_openship-challenge.app.example.com", content,
+      })]);
+      const plan = await planRecords("org_1", "app.example.com", [{
+        type: "TXT", name: "_openship-challenge.app.example.com", content: "token",
+      }]);
+      expect(plan.records[0]?.action).toBe(action);
+    },
+  );
 
   const plan1 = (over: Record<string, unknown> = {}) =>
     planRecords("org_1", "app.example.com", [

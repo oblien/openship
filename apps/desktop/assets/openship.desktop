@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Openship
+Comment=Manage deployments with Openship
+Exec=openship %U
+Icon=openship
+Terminal=false
+Categories=Development;Utility;
+MimeType=x-scheme-handler/openship;

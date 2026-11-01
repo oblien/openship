@@ -8,6 +8,8 @@
  * errors are evidence; a high memory percentage by itself is not.
  */
 
+import { buildFailureExitCode, deploymentResourceIssue } from "@repo/core";
+
 export const DEFAULT_DOCKER_BUILD_IDLE_TIMEOUT_MS = 10 * 60_000;
 export const MIN_DOCKER_BUILD_IDLE_TIMEOUT_MS = 60_000;
 export const MAX_DOCKER_BUILD_IDLE_TIMEOUT_MS = 24 * 60 * 60_000;
@@ -45,16 +47,6 @@ function memoryGuidance(context: DockerBuildDiagnosticContext): string {
   return "This build path was not under an OpenShip-enforced memory cap; check available RAM/swap and the host or Docker daemon OOM logs.";
 }
 
-function findNonZeroExitCode(output: string): number | null {
-  for (const match of output.matchAll(
-    /(?:returned a non-zero code|exit(?:ed)? with(?: exit)? code|exit code)\s*:?\s*(\d+)\b/gi,
-  )) {
-    const code = Number(match[1]);
-    if (code !== 0) return code;
-  }
-  return null;
-}
-
 /**
  * Turn Docker/compiler output into a useful failure hint while preserving the raw
  * line. Exit 137 is described as SIGKILL and a likely OOM, never as proof of
@@ -64,27 +56,28 @@ export function extractDockerBuildFailureHint(
   line: string,
   context: DockerBuildDiagnosticContext = {},
 ): string | null {
-  const code = findNonZeroExitCode(line);
-  if (code === 137) {
+  const resource = deploymentResourceIssue(line);
+  if (resource === "storage-full") {
+    return `${line} — The build server ran out of disk space or filesystem inodes. Images, build layers and application data share its storage. Check the server's disk usage, remove unused build cache or increase its disk capacity, then retry.`;
+  }
+  const code = buildFailureExitCode(line);
+  if (resource === "process-killed") {
     return `${line} — The build process was killed by SIGKILL (exit code 137). Memory exhaustion is the most common cause, but exit 137 alone does not prove OOM. ${memoryGuidance(context)}`;
   }
   if (code === 143) {
     return `${line} — The build process received SIGTERM (exit code 143), usually because it was cancelled or stopped by another supervisor.`;
   }
-  if (code !== null) return line;
-
   if (
-    /JavaScript heap out of memory|Fatal process out of memory|Ineffective mark-compacts near heap limit|Reached heap limit Allocation failed|fatal error:\s*(?:runtime:\s*)?out of memory/i.test(
-      line,
-    )
+    resource === "process-heap" ||
+    (resource === "memory-allocation" && !/\bENOMEM\b|cannot allocate memory/i.test(line))
   ) {
     return `${line} — The build process explicitly reported that it ran out of memory. ${memoryGuidance(context)}`;
   }
 
-  if (/\bENOMEM\b|cannot allocate memory/i.test(line)) {
+  if (resource === "memory-allocation") {
     return `${line} — The build process could not allocate memory (ENOMEM). ${memoryGuidance(context)}`;
   }
-
+  if (code !== null) return line;
   return null;
 }
 
@@ -97,6 +90,7 @@ export function chooseDockerBuildFailureHint(
   if (!current) return candidate;
 
   const score = (message: string): number => {
+    if (/ran out of disk space or filesystem inodes/i.test(message)) return 4;
     if (/explicitly reported that it ran out of memory|could not allocate memory/i.test(message)) {
       return 4;
     }

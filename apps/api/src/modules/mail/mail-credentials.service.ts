@@ -15,9 +15,9 @@
  */
 
 import type { CommandExecutor } from "@repo/adapters";
-import { hashPassword } from "./admin/password";
-import { execute, q } from "./admin/psql-runner";
-import { readState, mutateState } from "./mail-state";
+import { hashPassword } from "@repo/platform/engine/modules/mail/admin/password";
+import { execute, q } from "@repo/platform/engine/modules/mail/admin/psql-runner";
+import { readState, mutateState } from "@repo/platform/engine/modules/mail/mail-state";
 
 /**
  * Update the postmaster password for `<domain>`. Caller is responsible

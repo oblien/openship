@@ -1,7 +1,19 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { Suspense } from "react";
 import { MailConsole } from "./emails/_components/mail-console";
 import { serverApi } from "@/lib/server/api";
+import { getDeploymentInfoOrNull } from "@/lib/server/session";
 import { resolveRequestProductView } from "@/lib/server/product-view";
+import { CloudHomePlanCard } from "@/components/billing/CloudHomePlanCard";
+import { getBillingPageState } from "./billing/_components/billing-state";
 import DashboardHomeClient from "./DashboardHomeClient";
+
+async function HomePlanCard() {
+  const result = await getBillingPageState();
+  // Show an offer only after billing confirms this workspace's eligibility.
+  if (result.kind !== "ok") return null;
+  return <CloudHomePlanCard state={result.state} />;
+}
 
 /**
  * The dashboard home, per product view.
@@ -25,7 +37,8 @@ import DashboardHomeClient from "./DashboardHomeClient";
  * box whose rail has no projects page.
  */
 export default async function DashboardHome() {
-  if ((await resolveRequestProductView()) === "mail") {
+  const deploymentInfo = await getDeploymentInfoOrNull();
+  if ((await resolveRequestProductView(deploymentInfo)) === "mail") {
     return <MailConsole />;
   }
 
@@ -35,8 +48,19 @@ export default async function DashboardHome() {
       cache: "no-store",
     });
   } catch (error) {
-    console.error("Failed to fetch initial dashboard data", error);
+    errorDiagnostics.error("dashboard/app/(dashboard)/page", "Failed to fetch initial dashboard data", error);
   }
 
-  return <DashboardHomeClient initialData={initialData} />;
+  const hostedCloud = deploymentInfo?.selfHosted === false && deploymentInfo.deployMode !== "desktop";
+  return (
+    <DashboardHomeClient
+      initialData={initialData}
+      hostedCloud={hostedCloud}
+      planCard={hostedCloud ? (
+        <Suspense fallback={null}>
+          <HomePlanCard />
+        </Suspense>
+      ) : null}
+    />
+  );
 }

@@ -121,6 +121,7 @@ describe("serverRemovalSummary", () => {
   it("is partial when the server was kept, listing what needs attention", () => {
     const s = serverRemovalSummary({
       ok: false,
+      error: "Workload cleanup failed",
       code: "SERVER_WORKLOAD_TEARDOWN_FAILED",
       serverRemoved: false,
       destroyOnSource: true,
@@ -136,6 +137,8 @@ describe("serverRemovalSummary", () => {
   it("counts a workload that left an orphan as needing attention", () => {
     const s = serverRemovalSummary({
       ok: false,
+      error: "Workload cleanup failed",
+      code: "SERVER_WORKLOAD_TEARDOWN_FAILED",
       serverRemoved: false,
       destroyOnSource: true,
       // `ok: true` with a recorded orphan still blocked the removal server-side; a
@@ -145,7 +148,7 @@ describe("serverRemovalSummary", () => {
     expect(s.kind === "partial" && s.failed.map((f) => f.id)).toEqual(["a"]);
   });
 
-  it("falls back to the workload count when `removed` is absent", () => {
+  it("uses the reported removed count, including workloads with no teardown entry", () => {
     const s = serverRemovalSummary({
       ok: true,
       serverRemoved: true,
@@ -154,7 +157,8 @@ describe("serverRemovalSummary", () => {
         { id: "a", name: "a", ok: true },
         { id: "b", name: "b", ok: true },
       ],
+      removed: 3,
     });
-    expect(s).toMatchObject({ kind: "removed", count: 2 });
+    expect(s).toMatchObject({ kind: "removed", count: 3 });
   });
 });

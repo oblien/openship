@@ -5,7 +5,7 @@ const h = vi.hoisted(() => ({
   check: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/mail/mail-port-reachability.service", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-port-reachability.service", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   checkMailPortReachability: h.check,
 }));
@@ -15,7 +15,7 @@ import {
   STEP_RUNNERS,
   STEP_TIMEOUT_MS,
   stepVerifyMailReachability,
-} from "../../../src/modules/mail/mail.service";
+} from "@repo/platform/engine/modules/mail/mail.service";
 
 const executor = {} as never;
 

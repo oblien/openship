@@ -94,7 +94,7 @@ vi.mock("@repo/db", () => ({
 }));
 
 // The seams that prove property 2: the create path must not reach any of them.
-vi.mock("../domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   syncProjectRouteState: async () => ({ projectDomains: [], publicEndpoints: [] }),
   reapplyProjectLiveRoutes: async () => {},
   resolveProjectRouteState: async () => ({ projectDomains: [], publicEndpoints: [] }),
@@ -105,43 +105,44 @@ vi.mock("../domains/project-route.service", () => ({
   deriveNextProjectRouteState: () => ({ projectDomains: [], publicEndpoints: [] }),
   deriveEnvironmentPublicEndpoints: () => [{ domain: "site-staging.opsh.io", domainType: "free" }],
 }));
-vi.mock("../../lib/free-domain-guard", () => ({
+vi.mock("@repo/platform/engine/lib/free-domain-guard", () => ({
   assertFreeEndpointsAllowed: async () => {
     h.freeGateCalls += 1;
   },
 }));
 
-vi.mock("../domains/routing-apply.service", () => ({ applyProjectRouting: async () => {} }));
-vi.mock("./project-runtime.service", () => ({ syncProjectManagedEdge: async () => {} }));
+vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", () => ({ applyProjectRouting: async () => {} }));
+vi.mock("@repo/platform/engine/modules/projects/project-runtime.service", () => ({ syncProjectManagedEdge: async () => {} }));
 vi.mock("../../lib/controller-helpers", () => ({
   assertResourceInOrg: () => {},
   platform: () => ({ runtime: { name: "docker" } }),
 }));
-vi.mock("../github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   resolveDefaultBranch: async () => "main",
-  listBranches: async () => h.branches,
+  getBranch: async (_ctx: unknown, _owner: string, _repo: string, name: string) =>
+    h.branches.find((branch) => branch.name === name) ?? null,
   getLatestCommit: async () => null,
   getWebhookStrategy: () => "per-project",
   resolveWebhookStrategy: async () => ({}),
 }));
-vi.mock("../github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   getInstallationIdByOrg: async () => undefined,
   resolveInstallUrl: async () => ({ url: "", state: "" }),
 }));
-vi.mock("./project-git-webhook", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-git-webhook", () => ({
   ensureSharedWebhook: async () => null,
   findSharedWebhookId: async () => null,
 }));
-vi.mock("../../lib/release-resolver", () => ({
+vi.mock("@repo/platform/engine/lib/release-resolver", () => ({
   resolveLatestVersion: async () => null,
   resolveLatestReleaseTag: async () => null,
   readApiVersion: () => "0.0.0",
 }));
-vi.mock("../../lib/image-registry", () => ({ resolveLatestImageDigest: async () => null }));
-vi.mock("./folder/session-store", () => ({ getFolderSession: () => null }));
-vi.mock("../../config", () => ({ env: { CLOUD_MODE: false, CLOUD_MAX_PROJECTS_PER_USER: 20 } }));
+vi.mock("@repo/platform/engine/lib/image-registry", () => ({ resolveLatestImageDigest: async () => null }));
+vi.mock("@repo/platform/engine/modules/projects/folder/session-store", () => ({ getFolderSession: () => null }));
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false, CLOUD_MAX_PROJECTS_PER_USER: 20 } }));
 
-const load = () => import("./project-crud.service");
+const load = () => import("@repo/platform/engine/modules/projects/project-crud.service");
 const ctx = { userId: "user_1", organizationId: "org_1" } as never;
 
 describe("createProjectEnvironment", () => {
@@ -457,3 +458,14 @@ describe("createProject — release image source", () => {
     expect(h.creates).toHaveLength(0);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  assertResourceInOrg: () => {},
+  platform: () => ({ runtime: { name: "docker" } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  assertResourceInOrg: () => {},
+  platform: () => ({ runtime: { name: "docker" } }),
+}));

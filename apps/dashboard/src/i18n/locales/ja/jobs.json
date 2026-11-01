@@ -1,0 +1,291 @@
+{
+  "cloudSubtitle": "管理対象のサーバーでスケジュール実行または手動実行するコマンド。",
+  "create": {
+    "commandHint": "選択した各サーバーで実行します。コンテナ内のタスクには docker run --rm を使用してください。",
+    "cloudServersHint": "既存のサーバーを使うか、独立したサブスクリプションを持つ専用サーバーを追加できます。",
+    "cloudUsageHint": "ジョブは選択したサーバーのリソースと利用枠を共有します。実行には有効なプランが必要です。",
+    "addDedicatedServer": "専用サーバーを追加",
+    "title": "新規ジョブ",
+    "name": "名前",
+    "namePlaceholder": "毎晩の DB バキューム",
+    "server": "サーバー",
+    "servers": "サーバー",
+    "noServers": "サーバーがまだ接続されていません — 先に追加してください。",
+    "command": "コマンド",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "scheduleType": "実行タイミング",
+    "scheduleTypes": {
+      "recurring": "スケジュール実行",
+      "once": "1回のみ",
+      "manual": "手動"
+    },
+    "sections": {
+      "basics": "基本設定",
+      "schedule": "スケジュール",
+      "servers": "対象サーバー",
+      "reliability": "信頼性",
+      "environment": "環境",
+      "triggers": "依存関係とトリガー",
+      "notifications": "通知"
+    },
+    "schedule": "スケジュール (cron)",
+    "runAt": "実行日時",
+    "manualHint": "トリガー時のみ実行されます（「今すぐ実行」、依存関係、またはイベント）。",
+    "timeout": "タイムアウト (秒)",
+    "retryAttempts": "最大試行回数",
+    "retryBackoff": "バックオフ (秒)",
+    "advanced": "詳細設定",
+    "env": "環境変数",
+    "addVar": "変数を追加",
+    "secrets": "シークレット",
+    "addSecret": "シークレットを追加",
+    "replaceSecrets": "シークレットを置き換え",
+    "secretsSet": "個のシークレットが設定済み",
+    "noSecrets": "シークレットは設定されていません。",
+    "dependencies": "実行前提",
+    "dependenciesHint": "このジョブは選択したジョブが成功した後に実行されます。",
+    "triggers": "イベントトリガー",
+    "notifications": "通知",
+    "noChannels": "通知チャンネルがまだありません — 「モニタリング」→「通知」で追加してください。",
+    "notificationsHint": "このジョブのグローバル通知設定を上書きします。",
+    "submit": "ジョブを作成",
+    "creating": "保存中…",
+    "cancel": "キャンセル",
+    "needServer": "最初にサーバーを接続してください",
+    "pasteEnv": ".env を貼り付け",
+    "uploadEnv": ".env をアップロード",
+    "envPasteEmpty": "変数が見つかりません",
+    "comingSoon": "近日公開",
+    "setupChannel": "チャンネルを設定",
+    "customTriggerSoon": "カスタムトリガー",
+    "docsLink": "ジョブについて詳しく見る",
+    "docsBody": "スケジュール、リトライ、シークレット、通知",
+    "summary": {
+      "title": "概要",
+      "command": "コマンド",
+      "schedule": "スケジュール",
+      "targets": "対象",
+      "retry": "リトライ",
+      "timeout": "タイムアウト",
+      "notify": "通知",
+      "none": "—",
+      "retryOff": "なし"
+    }
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub デプロイチェック",
+    "cloud:workspace-recovery": "クラウドワークスペース運用",
+    "ssl:renew": "SSL 証明書の更新",
+    "projects:orphan-gc": "孤立したリソースのクリーンアップ",
+    "images:gc": "デプロイアーティファクトのクリーンアップ",
+    "domains:verify-pending": "カスタムドメインの検証",
+    "updates:scan": "アップデートのスキャン",
+    "backups:retention-prune": "期限切れバックアップの削除",
+    "backups:stale-sweep": "保留中バックアップの整合性確認",
+    "prune:audit": "監査ログの整理",
+    "prune:incidents": "インシデント履歴の整理",
+    "sampler:resources": "リソース使用状況サンプラー",
+    "system:analytics-scraper": "アナリティクススクレイパー",
+    "build-cache:gc": "ビルドキャッシュのクリーンアップ",
+    "cloud:https-health": "クラウド HTTPS ヘルスチェック",
+    "system:server-modules": "サーバーモジュールスキャン",
+    "system:server-containers": "サーバーコンテナスキャン",
+    "system:health-watch": "ヘルスチェック巡回",
+    "jobs:due-once": "キューに入った単発ジョブの実行",
+    "edge:verify": "エッジ検証スイープ",
+    "audit:retention-prune": "監査ログの整理",
+    "retention-prune-daily": "古いバックアップの削除",
+    "backups:stale-run-sweep": "停止したバックアップの調整",
+    "domains:check-https": "クラウドHTTPSヘルスチェック",
+    "analytics:scrape": "トラフィック分析の収集",
+    "resources:sample": "リソース使用状況のサンプリング",
+    "analytics:retention-prune": "トラフィック分析データの削除",
+    "resources:retention-prune": "リソース使用状況データの削除",
+    "migrations:recover": "移行のリカバリ",
+    "deployments:cloud-build-queue": "クラウドビルドキュー",
+    "deployments:cloud-build-recovery": "クラウドビルドの復旧",
+    "deployments:reconcile": "デプロイの調整",
+    "permissions:pending-grant-prune": "保留中の招待の削除",
+    "github:webhook-event-prune": "GitHub Webhookの整理",
+    "edge:target-verify": "無料ドメインのターゲット検証",
+    "modules:scan": "サーバーモジュールのスキャン",
+    "infra:scan": "管理対象コンテナのスキャン",
+    "mail:inbound-watch": "受信メールルール",
+    "mail:inbound-reconcile": "受信メールルールの同期",
+    "services:health-watch": "コンテナヘルス監視",
+    "incidents:prune": "インシデント履歴の削除",
+    "jobs:oneshot": "単発タスクのディスパッチャ",
+    "Audit log prune": "監査ログの整理",
+    "Backup in-flight stale reconciliation": "停止したバックアップの調整",
+    "Backup retention prune": "古いバックアップの削除",
+    "Cloud HTTPS health": "クラウドHTTPSヘルスチェック",
+    "Cloud workspace operations": "クラウドワークスペース操作",
+    "Container health watch": "コンテナヘルス監視",
+    "Deployment artifact cleanup": "デプロイアーティファクトのクリーンアップ",
+    "Deployment reconcile": "デプロイの調整",
+    "GitHub deployment Checks": "GitHubデプロイチェック",
+    "GitHub webhook event prune": "GitHub Webhookの整理",
+    "Incident history prune": "インシデント履歴の削除",
+    "Managed-container update scan": "管理対象コンテナのスキャン",
+    "Migration recovery": "移行のリカバリ",
+    "Native-module update scan": "サーバーモジュールのスキャン",
+    "Notification rule capture drift": "受信メールルールの同期",
+    "Notification rules": "受信メールルール",
+    "One-time job dispatcher": "単発タスクのディスパッチャ",
+    "Orphaned resource cleanup": "孤立したリソースのクリーンアップ",
+    "Pending grant prune": "保留中の招待の削除",
+    "Resource usage prune": "リソース使用状況データの削除",
+    "Resource usage sampling": "リソース使用状況のサンプリング",
+    "SSL certificate renewal": "SSL証明書の更新",
+    "Traffic analytics collection": "トラフィック分析の収集",
+    "Traffic analytics prune": "トラフィック分析データの削除",
+    "Update scan": "更新のスキャン",
+    "Free-domain target verification": "無料ドメインのターゲット検証",
+    "Domain DNS verification": "ドメインDNSの検証"
+  },
+  "backups": {
+    "section": "バックアップスケジュール",
+    "sectionDesc": "プロジェクトまたはサービスごとにスケジュールされた自動バックアップ。各プロジェクトの「バックアップ」タブで管理されます。",
+    "projectDefault": "プロジェクトのデフォルト",
+    "mailServer": "メールサーバー",
+    "manage": "バックアップで管理",
+    "badge": "バックアップ",
+    "never": "実行履歴なし",
+    "status": {
+      "succeeded": "成功",
+      "failed": "失敗",
+      "cancelled": "キャンセル",
+      "running": "実行中"
+    }
+  },
+  "title": "ジョブ",
+  "subtitle": "サーバー上で実行される組み込みのメンテナンスおよびカスタムコマンド。",
+  "empty": "スケジュールされたジョブはまだありません。",
+  "searchPlaceholder": "ジョブを検索…",
+  "noResults": "フィルターに一致するジョブはありません。",
+  "overview": {
+    "title": "概要",
+    "subtitle": "このインスタンスのジョブ",
+    "all": "すべてのジョブ",
+    "running": "実行中",
+    "failed": "失敗",
+    "scheduled": "スケジュール済み",
+    "disabled": "無効"
+  },
+  "loadFailed": "ジョブの読み込みに失敗しました。",
+  "kind": {
+    "system": "システム",
+    "custom": "カスタム"
+  },
+  "fields": {
+    "schedule": "スケジュール",
+    "nextRun": "次回実行",
+    "lastRun": "前回実行",
+    "never": "実行履歴なし",
+    "notScheduled": "未設定"
+  },
+  "status": {
+    "success": "成功",
+    "failed": "失敗",
+    "running": "実行中"
+  },
+  "actions": {
+    "run": "今すぐ実行",
+    "running": "実行中…",
+    "edit": "スケジュールを編集",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "enable": "有効化",
+    "disable": "無効化",
+    "viewLogs": "ログ"
+  },
+  "cronHint": "標準の 5 フィールド cron（分 時 日 月 曜日）、UTC。",
+  "toast": {
+    "ran": "{label} を開始しました。",
+    "ranFailed": "{label} の実行に失敗しました。",
+    "saved": "{label} のスケジュールを更新しました。",
+    "saved2": "ジョブを更新しました。",
+    "saveFailed": "{label} の更新に失敗しました。",
+    "enabled": "{label} を有効にしました。",
+    "disabled": "{label} を無効にしました。",
+    "toggleFailed": "{label} の更新に失敗しました。",
+    "title": "ジョブ",
+    "created": "ジョブを作成しました。",
+    "createFailed": "ジョブの作成に失敗しました。",
+    "deleted": "ジョブを削除しました。",
+    "deleteFailed": "ジョブの削除に失敗しました。"
+  },
+  "newJob": "新規ジョブ",
+  "sections": {
+    "system": "システムジョブ",
+    "systemDesc": "このインスタンスの組み込みメンテナンス。",
+    "custom": "カスタムジョブ",
+    "customDesc": "サーバー上でスケジュールに従って実行するコマンド。"
+  },
+  "customEmpty": {
+    "title": "カスタムジョブはまだありません",
+    "desc": "スケジュール、単発、またはイベント時に、リトライ、シークレット、リアルタイムログ、通知を備えたコマンドをサーバー上で実行します。",
+    "cta": "ジョブを作成",
+    "docs": "ドキュメント"
+  },
+  "edit": {
+    "title": "ジョブを編集",
+    "action": "編集",
+    "save": "変更を保存"
+  },
+  "detail": {
+    "back": "ジョブ一覧に戻る",
+    "tabs": {
+      "overview": "概要",
+      "runs": "実行履歴"
+    },
+    "servers": "サーバー",
+    "retry": "リトライ",
+    "retryValue": "{n} 回試行、{s} 秒バックオフ",
+    "notifyValue": "{s} 時に {c} 件のチャンネル",
+    "onceAt": "実行日時",
+    "noRuns": "実行履歴はまだありません。"
+  },
+  "delete": {
+    "action": "削除",
+    "confirm": "このジョブを削除しますか？",
+    "deleting": "削除中…"
+  },
+  "logs": {
+    "title": "実行ログ",
+    "streaming": "ストリーミング中…",
+    "empty": "出力はまだありません。",
+    "close": "閉じる",
+    "exit": "終了コード {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "デプロイ成功",
+      "description": "本番デプロイが正常に完了しました。"
+    },
+    "deployment.failed": {
+      "label": "デプロイ失敗",
+      "description": "ビルドまたはデプロイでエラーが発生しました。"
+    },
+    "backup_run.succeeded": {
+      "label": "バックアップ成功",
+      "description": "定期または手動バックアップが完了しました。"
+    },
+    "backup_run.failed": {
+      "label": "バックアップ失敗",
+      "description": "バックアップ実行でエラーが発生しました。"
+    },
+    "backup_restore.completed": {
+      "label": "復元完了",
+      "description": "復元処理が完了しました。"
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL更新失敗",
+      "description": "証明書を更新できませんでした。"
+    },
+    "domain.verification_failed": {
+      "label": "ドメイン確認失敗",
+      "description": "ドメインのDNS確認に失敗しました。"
+    }
+  }
+}

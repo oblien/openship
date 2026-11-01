@@ -32,7 +32,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { canUseGitHubRepo } from "./github-access";
+import { canUseGitHubRepo } from "@repo/platform/engine/modules/github/github-access";
 
 // A plain (non-owner) member on org o1, NOT a scoped token → owner-auto-access
 // only applies to the owner role, so grant matching actually runs.

@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   disposed: 0,
   created: 0,
+  cleanup: undefined as (() => Promise<void>) | undefined,
 }));
 
 // Only the transport is faked. The error CLASSIFIERS stay real on purpose: they
@@ -35,6 +36,7 @@ vi.mock("@repo/adapters", async () => {
         return {
           dispose: async () => {
             h.disposed += 1;
+            await h.cleanup?.();
           },
         };
       },
@@ -44,15 +46,15 @@ vi.mock("@repo/adapters", async () => {
 
 // Self-hosted base + a snapshot with no serverId → effective target "local",
 // which resolves through DockerRuntime.create above with no SSH anywhere.
-vi.mock("./controller-helpers", () => ({ platform: () => ({ target: "selfhosted" }) }));
+vi.mock("./controller-helpers", () => ({ platform: () => ({ target: "selfhosted", runtime: { name: "docker" } }) }));
 
 vi.mock("@repo/db", () => ({ repos: { service: { listByDeployment: async () => [] } } }));
-vi.mock("./cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
-vi.mock("./cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
-vi.mock("./ssh-manager", () => ({ buildSshConfig: async () => null, sshManager: {} }));
-vi.mock("./provision-lock", () => ({ createProvisionLock: () => ({}) }));
-vi.mock("./box-org", () => ({ isLocalHostRow: async () => true }));
-vi.mock("./acme-config", () => ({ resolveAcmeProviderOptions: () => ({}) }));
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ buildSshConfig: async () => null, sshManager: {} }));
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({ createProvisionLock: () => ({}) }));
+vi.mock("@repo/platform/engine/lib/box-org", () => ({ isLocalHostRow: async () => true, boxOwningOrgId: async () => "org_1" }));
+vi.mock("@repo/platform/engine/lib/acme-config", () => ({ resolveAcmeProviderOptions: () => ({}) }));
 
 const dep = { meta: {}, organizationId: "org_1" };
 
@@ -60,10 +62,11 @@ describe("withDeploymentRuntime", () => {
   beforeEach(() => {
     h.disposed = 0;
     h.created = 0;
+    h.cleanup = undefined;
   });
 
   it("returns the action's value and disposes the transport", async () => {
-    const { withDeploymentRuntime } = await import("./deployment-runtime");
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
 
     await expect(withDeploymentRuntime(dep, async () => "logs")).resolves.toBe("logs");
 
@@ -72,7 +75,7 @@ describe("withDeploymentRuntime", () => {
   });
 
   it("disposes the transport when the action throws", async () => {
-    const { withDeploymentRuntime } = await import("./deployment-runtime");
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
 
     await expect(
       withDeploymentRuntime(dep, async () => {
@@ -84,7 +87,7 @@ describe("withDeploymentRuntime", () => {
   });
 
   it("maps a refused SSH key to 503 HOST_UNREACHABLE, keeping the reason", async () => {
-    const { withDeploymentRuntime } = await import("./deployment-runtime");
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
     const reason =
       "SSH key authentication failed for root@65.109.55.23. Check the username, private key, " +
       "passphrase, or whether the server accepts this key. (All configured authentication methods failed)";
@@ -105,7 +108,7 @@ describe("withDeploymentRuntime", () => {
     ["Channel open failure: open failed"],
     ["Command timed out after 30000ms"],
   ])("maps transport failure %j to 503", async (message) => {
-    const { withDeploymentRuntime } = await import("./deployment-runtime");
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
 
     const err = await withDeploymentRuntime(dep, async () => {
       throw new Error(message);
@@ -115,7 +118,7 @@ describe("withDeploymentRuntime", () => {
   });
 
   it("leaves an ordinary failure alone — no invented 503", async () => {
-    const { withDeploymentRuntime } = await import("./deployment-runtime");
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
 
     const err = await withDeploymentRuntime(dep, async () => {
       throw new Error("(HTTP code 404) no such container: abc123");
@@ -123,6 +126,44 @@ describe("withDeploymentRuntime", () => {
 
     expect((err as { statusCode?: number }).statusCode).toBeUndefined();
     expect((err as Error).message).toContain("no such container");
+  });
+
+  it.each([false, true])("keeps managed admission until asynchronous transport cleanup finishes (action fails: %s)", async (fails) => {
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
+    const { withManagedCommandTracking, currentManagedCommandTracking } = await import("../../../../packages/adapters/src/runtime/cloud/command-tracking");
+    const pending = new Set<string>();
+    let finish!: () => void;
+    const cleaning = new Promise<void>(resolve => { finish = resolve; });
+    let started!: () => void;
+    const cleanupStarted = new Promise<void>(resolve => { started = resolve; });
+    h.cleanup = async () => {
+      // Cloud Docker closes its socket before removing staged source files.
+      await Promise.resolve();
+      const tracking = currentManagedCommandTracking()!;
+      await tracking.record({ workspaceId: "owned-vm", marker: "source-cleanup" });
+      started();
+      await cleaning;
+      await tracking.complete("source-cleanup");
+    };
+    let settled = false;
+    const operation = withManagedCommandTracking({
+      record: async command => { pending.add(command.marker); },
+      complete: async marker => { pending.delete(marker); },
+    }, () => withDeploymentRuntime(dep, async () => {
+      if (fails) throw new Error("app failed readiness");
+      return "ready";
+    })).then(value => ({ value }), error => ({ error })).finally(() => { settled = true; });
+    try {
+      await cleanupStarted;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(pending.size).toBe(1);
+      expect(settled).toBe(false);
+    } finally {
+      finish();
+      await operation;
+    }
+    expect(pending.size).toBe(0);
+    expect(await operation).toEqual(fails ? { error: new Error("app failed readiness") } : { value: "ready" });
   });
 });
 
@@ -132,14 +173,19 @@ describe("deploymentContainerIds", () => {
     vi.doMock("@repo/db", () => ({
       repos: { service: { listByDeployment: async () => [{ containerId: "svc-a" }, { containerId: null }] } },
     }));
-    const { deploymentContainerIds } = await import("./deployment-runtime");
+    const { deploymentContainerIds } = await import("@repo/platform/engine/lib/deployment-runtime");
 
-    expect(await deploymentContainerIds({ id: "dep_1", containerId: "app" })).toEqual(["svc-a"]);
+    expect(await deploymentContainerIds({ id: "dep_1", containerId: "app", roleContainers: null })).toEqual(["svc-a"]);
 
     vi.resetModules();
     vi.doMock("@repo/db", () => ({ repos: { service: { listByDeployment: async () => [] } } }));
-    const fresh = await import("./deployment-runtime");
-    expect(await fresh.deploymentContainerIds({ id: "dep_1", containerId: "app" })).toEqual(["app"]);
-    expect(await fresh.deploymentContainerIds({ id: "dep_1", containerId: null })).toEqual([]);
+    const fresh = await import("@repo/platform/engine/lib/deployment-runtime");
+    expect(await fresh.deploymentContainerIds({ id: "dep_1", containerId: "app", roleContainers: null })).toEqual(["app"]);
+    expect(await fresh.deploymentContainerIds({ id: "dep_1", containerId: null, roleContainers: null })).toEqual([]);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted", runtime: { name: "docker" } }) }));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({ platform: () => ({ target: "selfhosted", runtime: { name: "docker" } }) }));

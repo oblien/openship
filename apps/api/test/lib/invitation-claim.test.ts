@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
       }
     | undefined,
   organization: undefined as { id: string; name: string } | null | undefined,
-  inviter: undefined as { id: string; role: string } | undefined,
+  inviter: undefined as { id: string; role: string; name?: string } | undefined,
 }));
 
 vi.mock("@repo/db", () => ({
@@ -24,7 +24,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { invitationAccountCreationMode, resolveInvitationClaim } from "@/lib/invitation-claim";
+import { invitationAccountCreationMode, resolveInvitationClaim } from "@repo/platform/engine/lib/invitation-claim";
 
 const now = new Date("2026-09-01T12:00:00.000Z");
 
@@ -39,7 +39,7 @@ beforeEach(() => {
     organizationId: "org_team",
   };
   h.organization = { id: "org_team", name: "Acme" };
-  h.inviter = { id: "usr_admin", role: "admin" };
+  h.inviter = { id: "usr_admin", role: "admin", name: "Alex" };
 });
 
 describe("resolveInvitationClaim", () => {
@@ -50,6 +50,7 @@ describe("resolveInvitationClaim", () => {
       role: "member",
       expiresAt: new Date("2026-09-02T12:00:00.000Z"),
       inviterId: "usr_admin",
+      inviterName: "Alex",
       inviterIsInstanceAdmin: true,
       organization: { id: "org_team", name: "Acme" },
     });

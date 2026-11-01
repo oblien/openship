@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ValidationError } from "@repo/core";
 import {
-  assertRedirectSupported,
   assertRedirectTargets,
   normalizeRedirect,
   resolveRedirectStatus,
   resolveRouteRedirect,
-} from "../../src/lib/domain-redirect";
+} from "@repo/platform/engine/lib/domain-redirect";
 
 describe("normalizeRedirect", () => {
   it("normalizes a target the way hostnames are normalized everywhere else", () => {
@@ -108,19 +107,6 @@ describe("assertRedirectTargets", () => {
         { hostname: "Example.com" },
         { hostname: "WWW.example.com", redirectTo: "https://example.com/" },
       ]),
-    ).not.toThrow();
-  });
-});
-
-describe("assertRedirectSupported", () => {
-  it("refuses a cloud project, naming the reason", () => {
-    expect(() => assertRedirectSupported({ isCloudProject: true, hostname: "www.example.com" }))
-      .toThrow(/Openship Cloud/);
-  });
-
-  it("allows a self-hosted project", () => {
-    expect(() =>
-      assertRedirectSupported({ isCloudProject: false, hostname: "www.example.com" }),
     ).not.toThrow();
   });
 });

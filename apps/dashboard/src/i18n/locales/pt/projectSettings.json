@@ -1,4 +1,139 @@
 {
+  "appInstall": {
+    "configurationLoading": "A carregar a configuração da aplicação…",
+    "catalogLoadFailed": "Não foi possível carregar os detalhes da aplicação. Tente novamente antes de instalar.",
+    "routingLoadFailed": "Não foi possível carregar o encaminhamento guardado. Tente novamente antes de instalar.",
+    "retryConfiguration": "Tentar novamente",
+    "hostFitHint": "Você pode continuar. O desempenho nesta máquina pode ser limitado.",
+    "cloudFitTitle": "Este app precisa de um plano Cloud maior",
+    "upgradePlan": "Melhorar plano",
+    "checkingCapacity": "Verificando capacidade…",
+    "checkCapacityAgain": "Verificar novamente",
+    "cloudFitUnavailable": "Não foi possível verificar a capacidade. Ela será verificada novamente ao implantar.",
+    "withoutDomainsTitle": "Continuar sem domínios?",
+    "withoutDomainsBody": "Estes serviços web só estarão acessíveis através das suas portas publicadas. Pode adicionar domínios mais tarde no projeto.",
+    "withoutDomainsCloudBody": "Estes serviços web não terão um URL público no Cloud. Os outros serviços desta aplicação continuarão a ter acesso. Pode adicionar domínios mais tarde no projeto.",
+    "addDomains": "Adicionar domínios",
+    "continueWithoutDomains": "Continuar sem domínios",
+    "generatedDomainsTitle": "Usar domínios gratuitos?",
+    "generatedDomainsBody": "Estes pontos de acesso terão URLs públicos gratuitos. Pode escolher os nomes antes de instalar.",
+    "useGeneratedDomains": "Usar domínios gratuitos",
+    "editDomains": "Editar domínios",
+    "routePortCloudDesc": "Privado neste espaço de trabalho Cloud. Adicione um domínio para obter um URL público.",
+    "exposeTitle": "Domínios e roteamento",
+    "install": "Instalar",
+    "installing": "Instalando…",
+    "advanced": "Opções avançadas de deploy",
+    "nameLabel": "Nome",
+    "nameHint": "Como este aplicativo aparece no Openship.",
+    "domainTitle": "Onde ele deve ficar?",
+    "domainFree": "Subdomínio gratuito",
+    "domainFreeHint": "Um subdomínio gratuito em {domain}",
+    "domainCustom": "Seu próprio domínio",
+    "domainCustomPlaceholder": "app.exemplo.com",
+    "domainNone": "Sem URL pública",
+    "domainNoneHint": "Apenas interno — sem endereço público.",
+    "customRequired": "Informe seu domínio ou escolha outra opção.",
+    "progressPreparing": "Preparando…",
+    "progressDeploying": "Implantando…",
+    "progressLive": "Seu aplicativo está no ar",
+    "openApp": "Abrir aplicativo",
+    "goToApp": "Ir para o aplicativo",
+    "installFailed": "Falha na instalação",
+    "installFailedBody": "O processo parou antes de tudo estar em execução. Os detalhes técnicos contêm o log completo do build.",
+    "installCancelledSelf": "Você interrompeu esta instalação.",
+    "installCancelledBody": "Os contêineres e imagens criados foram removidos, e os volumes de dados foram mantidos — instalar novamente irá reutilizá-los. Tudo o que já estava ativo não foi alterado.",
+    "settledAtPhase": "Parado na fase {phase}",
+    "viewDetails": "Ver detalhes técnicos",
+    "showLogs": "Mostrar logs",
+    "hideLogs": "Ocultar logs",
+    "deployLogs": "logs de deploy",
+    "logsWaiting": "Aguardando saída…",
+    "logsEmpty": "Nenhuma saída foi capturada.",
+    "back": "Voltar",
+    "phaseImages": "Preparando imagens",
+    "phaseServices": "Iniciando serviços",
+    "phaseAppSetup": "Concluindo configuração",
+    "phaseReady": "No ar",
+    "phaseQueued": "Na fila…",
+    "stepperTitle": "Etapas de instalação",
+    "firstLoginTitle": "Primeiro login",
+    "firstLoginUser": "Nome de usuário",
+    "firstLoginPassword": "Senha",
+    "destinationTitle": "Onde instalar",
+    "destinationHint": "Escolha o servidor ou a nuvem onde este app roda.",
+    "descMore": "Mais",
+    "descLess": "Menos",
+    "needsTitle": "Requisitos de recursos",
+    "needsMemory": "{value} de RAM",
+    "needsCpu": "{value}",
+    "hostFitTitle": "Este servidor é menor do que {app} necessita",
+    "hostFitMemory": "Precisa de {needed} de RAM — este possui {available}",
+    "hostFitCpu": "Precisa de {needed} — este possui {available}",
+    "routePortLabel": "Apenas porta (sem domínio)",
+    "routePortDesc": "Acessível pelo endereço e porta do host — sem necessidade de domínio ou Cloud.",
+    "routeFreeLabel": "Subdomínio gratuito",
+    "routeFreeDesc": "Um subdomínio gratuito em {domain}, roteado pelo Openship Cloud.",
+    "routeFreeNeedsCloud": "Conecte o Openship Cloud para usar um subdomínio gratuito.",
+    "routeCustomLabel": "Seu próprio domínio",
+    "routeCustomDesc": "Aponte um domínio próprio para este aplicativo.",
+    "routeDomainLabel": "Domínio",
+    "routeDomainDesc": "Acesse através de um domínio — gratuito ou seu próprio.",
+    "httpBadge": "Web",
+    "tcpBadge": "Banco de dados",
+    "tcpPublishLabel": "Publicar porta",
+    "tcpPublishDesc": "Publique no host para que ferramentas externas possam se conectar.",
+    "tcpInternalLabel": "Apenas interno",
+    "tcpInternalDesc": "Apenas outros serviços deste aplicativo podem alcançá-lo.",
+    "tcpFirewallNote": "Abra a porta {port} no firewall do seu servidor para conectar externamente.",
+    "desktopReachNote": "No desktop você pode abrir no localhost — ou encaminhar a porta em Servidores → Portas para um servidor remoto.",
+    "statusInstalling": "Instalando",
+    "statusLive": "No ar",
+    "statusCancelled": "Cancelado",
+    "statusFailed": "Falhou",
+    "stopInstall": "Parar instalação",
+    "stopping": "Parando…",
+    "installCancelled": "Instalação cancelada",
+    "startOver": "Começar de novo",
+    "breadcrumbApps": "Aplicativos",
+    "appEyebrow": "Aplicativo",
+    "stopFailed": "Não foi possível parar a instalação",
+    "progressStep": "Etapa {current} de {total}",
+    "progressServicesReady": "{done} de {total} serviços prontos",
+    "summaryTitle": "Configuração",
+    "summaryDestination": "Destino",
+    "summaryServices": "Serviços",
+    "mail": {
+      "title": "Configurar e-mail",
+      "subtitle": "Implante o webmail no seu próprio domínio ou conecte uma caixa postal existente.",
+      "chooseSelf": "Hospedar seu próprio servidor de e-mail",
+      "chooseSelfDesc": "SMTP/IMAP completo + webmail (iRedMail) no seu servidor — nós configuramos tudo.",
+      "chooseConnect": "Conectar uma caixa postal existente",
+      "chooseConnectDesc": "Implante apenas a interface de webmail, conectada a qualquer provedor SMTP/IMAP externo — Amazon SES, Oracle Cloud, Gmail, Fastmail e outros.",
+      "provider": "Provedor",
+      "presets": {
+        "custom": "Personalizado",
+        "ses": "Amazon SES",
+        "gmail": "Gmail",
+        "fastmail": "Fastmail"
+      },
+      "sendOnlyNote": "O {provider} apenas envia e-mails — ele não armazena caixas postais. O IMAP precisa apontar para onde suas mensagens realmente ficam salvas.",
+      "sendOnlyNoInbox": "Ainda não tem caixa de entrada? Configure um servidor de e-mail aqui e faça o relay de envio via {provider} →",
+      "imapOnOurServer": "As caixas postais leem de {host} — o servidor de e-mail próprio desta instância. Apenas os envios passam pelo {provider}.",
+      "relayNote": "Esta instância já executa um servidor de e-mail. Se as caixas postais estão nele, faça o relay de envio na aba Entrega → Envio: o IMAP permanece local e apenas os envios vão para o {provider}, por domínio ou endereço, e o próprio webmail continua funcionando.",
+      "relayCta": "Configurar o relay em vez disso →",
+      "hostname": "Endereço do webmail",
+      "hostnameHint": "A URL pública que as pessoas acessam para ler e-mails, ex.: mail.exemplo.com.",
+      "imapHost": "Host IMAP",
+      "imapPort": "Porta IMAP",
+      "smtpHost": "Host SMTP",
+      "smtpPort": "Porta SMTP",
+      "deploy": "Implantar webmail",
+      "deploying": "Implantando…",
+      "hostnameRequired": "Informe o endereço do webmail.",
+      "hostsRequired": "Informe tanto o host IMAP quanto o host SMTP."
+    }
+  },
   "settingSection": {
     "edit": "Editar",
     "save": "Guardar",
@@ -240,28 +375,34 @@
         "failed": "Não foi possível atualizar o nome de host interno",
         "invalid": "Digite ao menos uma letra ou dígito"
       }
+    },
+    "export": {
+      "title": "Exportar projeto",
+      "description": "Baixe todas as configurações do projeto, variáveis de ambiente e credenciais em JSON simples."
     }
   },
   "backup": {
     "live": {
-      "title": "Cópia de segurança em tempo real",
+      "title": "Atividade de backups",
       "description": "Progresso em tempo real da execução que acabou de iniciar. Persiste ao atualizar a página.",
       "dismiss": "Dispensar"
     },
     "destinations": {
       "title": "Destinos de cópia de segurança",
-      "description": "Destinos de armazenamento por utilizador. Adicione buckets compatíveis com S3, servidores SFTP ou discos locais.",
+      "description": "Armazenamento disponível para este projeto.",
       "manage": "Gerir",
       "loading": "A carregar…",
       "emptyPrefix": "Ainda não há destinos. ",
       "emptyLink": "Crie um",
       "emptySuffix": " para começar a fazer cópias de segurança.",
       "verified": "Verificado",
-      "failed": "Falhou"
+      "failed": "Falhou",
+      "emptyHint": "Conecte um bucket S3, um host SFTP ou um servidor que você já usa.",
+      "inUse": "Em uso"
     },
     "services": {
-      "title": "Serviços + políticas",
-      "description": "Cada serviço pode ter a sua própria política de cópia de segurança (agendamento + destino). As predefinições ao nível do projeto chegam no Chunk 2.",
+      "title": "Políticas de backup",
+      "description": "Escolha os dados, o agendamento e onde armazenar os backups.",
       "refresh": "Atualizar",
       "empty": "Este projeto ainda não tem serviços. As cópias de segurança ao nível do serviço aparecem aqui assim que adicionar alguns.",
       "policyLabel": "Política:",
@@ -273,22 +414,54 @@
       "editPolicy": "Editar política",
       "addDestinationFirst": "Adicione primeiro um destino",
       "createPolicyHint": "Crie uma política de cópia de segurança para este serviço",
-      "createPolicy": "Criar política"
+      "createPolicy": "Criar política",
+      "projectHint": "Uma política para todos os serviços deste projeto.",
+      "includedInProject": "Incluído na política do projeto.",
+      "retainCount": "Manter {count} backups",
+      "retainDays": "Até {days} dias"
     },
     "recent": {
+      "loadOlder": "Carregar backups anteriores",
       "title": "Cópias de segurança recentes",
-      "description": "As 25 execuções mais recentes de todos os serviços deste projeto.",
+      "description": "Execuções recentes, resultados e opções de restauração.",
       "loading": "A carregar…",
       "empty": "Ainda não há cópias de segurança.",
       "protectedTitle": "Protegido da limpeza por retenção",
       "protected": "Protegido",
       "restoreTitle": "Restaurar a partir desta cópia de segurança",
       "allowPrune": "Permitir limpeza por retenção",
-      "protectFrom": "Proteger da retenção"
+      "protectFrom": "Proteger da retenção",
+      "emptyHint": "Crie uma política e execute seu primeiro backup aqui.",
+      "backup": "Cópia de segurança",
+      "viewDetails": "Ver detalhes",
+      "restore": "Restaurar",
+      "triggers": {
+        "manual": "Sob demanda",
+        "cron": "Agendado",
+        "webhook": "Webhook",
+        "pre_deploy": "Antes da implantação"
+      }
     },
     "toast": {
       "runFailed": "A execução da cópia de segurança falhou",
       "toggleProtectionFailed": "Falha ao alternar a proteção"
+    },
+    "overview": {
+      "description": "Agende backups e restaure os dados do seu projeto.",
+      "lastBackup": "Último backup concluído",
+      "noRecentBackup": "Nenhum backup recente",
+      "scheduledPolicies": "Políticas agendadas",
+      "projectScope": "Projeto inteiro",
+      "serviceBackup": "Backup do serviço",
+      "paused": "Pausada",
+      "loadFailed": "Não foi possível carregar os backups"
+    },
+    "schedule": {
+      "daily": "Diariamente às {time}",
+      "weekly": "Toda {day} às {time}",
+      "monthly": "Dia {day} de cada mês, {time}",
+      "custom": "Agendamento personalizado",
+      "timezone": "Usa o fuso horário do servidor."
     }
   },
   "build": {
@@ -365,16 +538,16 @@
       "appliesOnDeploy": "Aplicado no próximo deploy."
     },
     "env": {
-      "title": "Variáveis de ambiente",
-      "description": "Encriptadas em repouso. Os segredos permanecem ocultos — apenas os valores que alterar são gravados.",
+      "title": "Ambiente do projeto (compilação e execução compartilhada)",
+      "description": "Usado para compilar imagens e como entrada compartilhada em execução. Os valores do Compose e do serviço têm prioridade em execução. Os segredos permanecem ocultos.",
       "edit": "Editar"
     }
   },
   "envVars": {
     "cancel": "Cancelar",
     "saveChanges": "Guardar alterações",
-    "title": "Variáveis de ambiente",
-    "description": "Produção. Encriptadas em repouso. Os segredos aparecem como definidos — escreva para substituir; deixe em branco para manter.",
+    "title": "Ambiente do projeto (compilação e execução compartilhada)",
+    "description": "Variáveis de produção do projeto. Os segredos permanecem ocultos; deixe um segredo salvo em branco para mantê-lo. Os valores do serviço têm prioridade para a mesma chave.",
     "empty": "Ainda não há variáveis de ambiente.",
     "keyPlaceholder": "CHAVE",
     "secretPlaceholder": "•••••••• (definido — escreva para substituir)",
@@ -394,14 +567,21 @@
       "saveFailed": "Falha ao guardar as variáveis de ambiente",
       "saveFailedTitle": "Falha ao guardar",
       "noChanges": "Nenhuma alteração para guardar — os valores guardados foram mantidos.",
-      "noChangesTitle": "Nada para guardar"
+      "noChangesTitle": "Nada para guardar",
+      "applying": "Reiniciando o serviço com o novo ambiente — sem rebuild.",
+      "applyingTitle": "Aplicando",
+      "applyFailed": "Não foi possível aplicar o ambiente ao serviço em execução",
+      "applyFailedTitle": "Falha ao aplicar"
     },
     "linkedBadge": "Vinculado",
     "linkedManaged": "via {app}",
     "linkedTitle": "Integração vinculada",
     "linkedBody": "Este valor vem da conexão do {app}. Gerencie-o por esse app — alterações aqui não são mantidas.",
     "unlink": "Remover conexão",
-    "close": "Fechar"
+    "close": "Fechar",
+    "applyText": "Salvo. Reinicie para aplicar alterações de execução. Compile e implante novamente para aplicar valores usados na compilação de uma imagem.",
+    "applyTitle": "Aplicar sem rebuild",
+    "applyButton": "Aplicar (reiniciar sem rebuild)"
   },
   "gitInfo": {
     "autoDeploy": "Implementação automática"
@@ -429,6 +609,7 @@
       "install": "Instalar Aplicação GitHub"
     },
     "webhookBanner": {
+      "summary": "Endpoint público necessário",
       "title": "Ativar implementação automática",
       "description": "A implementação automática requer um endpoint de webhook direto. Exponha esta API da Openship num URL público ou configure um domínio de webhook verificado para entrega direta."
     },
@@ -445,6 +626,11 @@
       "updating": "A atualizar...",
       "select": "Selecionar domínio...",
       "clear": "Limpar seleção"
+    },
+    "buildQueue": {
+      "label": "Cancelar builds obsoletos",
+      "description": "Manter apenas o push pendente mais recente. Quando ativado, um novo push também cancela um build automático anterior antes das etapas de lançamento. Deploys manuais e reversões são preservados.",
+      "saveFailed": "Não foi possível salvar a preferência de cancelamento"
     },
     "autoDeployCard": {
       "title": "Implementação automática",
@@ -467,13 +653,13 @@
       "title": "Estratégia de reversão",
       "rebuild": "Recompilar (git)",
       "instant": "Instantâneo (snapshot)",
-      "descRebuild": "Reconstrói o commit antigo, a menos que a imagem ainda esteja no host.",
-      "descInstant": "Mantém a imagem de cada versão, então restaurar nunca reconstrói. Usa mais disco.",
+      "descRebuild": "Reconstrói o commit anterior, a menos que sua imagem ainda esteja no host.",
+      "descInstant": "Mantém os artefatos dentro do limite do histórico. Versões mais antigas podem precisar ser reconstruídas.",
       "toggleAria": "Alternar retenção de snapshots",
-      "keepNone": "Sem cópias extra",
-      "keepCopies": "Uma cópia por versão",
-      "descRebuildFiles": "Reconstrói o commit antigo, a menos que os arquivos ainda estejam no host.",
-      "descInstantFiles": "Mantém os arquivos de cada versão, então restaurar nunca reconstrói. Usa mais disco."
+      "keepNone": "Reutilizar imagens ou reconstruir",
+      "keepCopies": "Manter artefatos de reversão",
+      "descRebuildFiles": "Reconstrói o commit anterior, a menos que seus arquivos ainda estejam no host.",
+      "descInstantFiles": "Mantém os arquivos compilados dentro do limite do histórico. Versões mais antigas podem precisar ser reconstruídas."
     },
     "rollbackHistory": {
       "title": "Histórico de reversão",
@@ -483,13 +669,19 @@
       "descGit": "Imagens recentes são mantidas de qualquer forma, então um rollback pode pular a build.",
       "decreaseAria": "Diminuir o histórico de reversão",
       "increaseAria": "Aumentar o histórico de reversão",
-      "sizeEach": "~{size} cada",
+      "sizeEach": "~{size} por imagem, incluindo camadas compartilhadas",
       "diskFree": "{size} livres",
-      "autoBadge": "dimensionado automaticamente",
+      "autoBadge": "Automático",
       "manualBadge": "definido manualmente",
       "kindFiles": "arquivos gerados em disco",
       "kindImages": "imagens no host",
-      "descGitFiles": "Os arquivos das versões recentes são mantidos de qualquer forma, então um rollback pode pular a build."
+      "descGitFiles": "Os arquivos das versões recentes são mantidos de qualquer forma, então um rollback pode pular a build.",
+      "retentionHint": "Mantenha os artefatos das implantações recentes para reverter rapidamente.",
+      "retentionDescription": "Número máximo de versões anteriores a manter. As versões ativas e fixadas não contam para esse limite. Os artefatos antigos são removidos, mas o histórico permanece disponível. Use 0 para manter apenas as versões ativas e fixadas.",
+      "automaticValue": "Até {count} versões",
+      "automaticDescription": "Mantém até o limite padrão do histórico. Se faltar espaço em disco, artefatos recuperáveis podem ser removidos antes. Versões ativas e fixadas não entram no limite. O histórico de commits e configurações é preservado; a reversão pode exigir uma nova compilação.",
+      "defaultBadge": "padrão da instância",
+      "loadFailed": "Não foi possível carregar as configurações de reversão."
     },
     "commits": {
       "title": "Commits recentes",
@@ -552,7 +744,7 @@
   },
   "resources": {
     "title": "Potência da máquina",
-    "description": "Limites de CPU e memória para os contêineres deste projeto.",
+    "description": "Os projetos compartilham este servidor. Adicione limites de CPU ou memória apenas se necessário.",
     "loading": "Lendo a máquina de destino…",
     "unavailable": "Potência da máquina indisponível",
     "loadFailed": "Não foi possível carregar a potência da máquina",
@@ -562,9 +754,9 @@
     "appliesOnNextDeploy": "Os limites são aplicados quando o contêiner é recriado — reimplante para a alteração ter efeito.",
     "tiers": {
       "unlimited": {
-        "name": "Sem limites",
-        "description": "Usar a máquina inteira (padrão)",
-        "spec": "Capacidade da máquina"
+        "name": "Capacidade total",
+        "description": "Usar a CPU e RAM disponíveis do servidor (padrão)",
+        "spec": "Compartilhada com outros projetos"
       },
       "micro": {
         "name": "Micro",
@@ -606,6 +798,10 @@
       "updated": "Potência da máquina atualizada",
       "updateFailed": "Falha ao atualizar a potência da máquina",
       "invalidValues": "CPU e memória devem ser 0 ou um número positivo"
+    },
+    "customized": {
+      "name": "Personalizada",
+      "description": "Escolha um perfil ou defina seus limites"
     }
   },
   "sleep": {
@@ -658,7 +854,12 @@
     "linkedTitleOne": "{count} projeto está conectado a este app",
     "linkedTitleOther": "{count} projetos estão conectados a este app",
     "linkedNote": "Continuam em execução com os dados intactos — perdem apenas esta conexão. Reimplante-os para aplicar.",
-    "linkedNoteRecordOnly": "Continuam em execução, mas o vínculo vai com o registro — reimportar este app depois não o restaura."
+    "linkedNoteRecordOnly": "Continuam em execução, mas o vínculo vai com o registro — reimportar este app depois não o restaura.",
+    "recordOnlyLabel": "Remover apenas do Openship",
+    "recordOnlyDesc": "Mantém o app e seus dados rodando no seu servidor — apenas o registro do Openship é removido. Você pode importá-lo novamente mais tarde.",
+    "recordOnlyReversible": "Reversível — o aplicativo continua no seu servidor.",
+    "recordOnlyNote": "Nada no servidor é alterado — o aplicativo continua funcionando com seus dados. Apenas o registro do Openship é removido e pode ser reimportado mais tarde.",
+    "confirmRecordOnly": "Remover registro"
   },
   "routing": {
     "title": "Encaminhamento",
@@ -679,15 +880,19 @@
       "active": "Ativo",
       "failed": "Falhou",
       "removing": "A remover",
-      "pending": "Pendente"
+      "pending": "Pendente",
+      "waiting": "Aguardando"
     },
     "ssl": {
       "includedByHost": "Incluído pelo anfitrião",
       "active": "Ativo",
-      "provisioning": "A aprovisionar",
+      "provisioning": "Aguardando certificado",
       "expired": "Expirado",
       "error": "Erro",
-      "inactive": "Inativo"
+      "inactive": "Inativo",
+      "unknown": "Desconhecido",
+      "external": "TLS externo",
+      "manual": "Certificado manual"
     },
     "typeCustom": "Domínio personalizado",
     "typeFree": "Subdomínio gratuito",
@@ -731,12 +936,18 @@
       "mapsToPort": "Mapeia para a porta",
       "includeWww": "Incluir www",
       "dnsChallenge": "Usar desafio DNS-01",
-      "dnsChallengeDesc": "Emita e renove o certificado pelo provedor DNS conectado. Use quando a porta 80 não estiver acessível.",
-      "dnsChallengeWildcardDesc": "Certificados curinga exigem DNS-01 e um provedor DNS conectado.",
+      "dnsChallengeDesc": "Verifique por um provedor DNS ou por um registro TXT temporário. Útil quando a porta 80 não está disponível.",
+      "dnsChallengeWildcardDesc": "Obrigatório para HTTPS com curinga. Use um provedor DNS conectado ou adicione um registro TXT temporário durante a configuração de HTTPS.",
       "includeWwwDesc": "Gerar também registos para www.{domain}",
       "includeWwwFallback": "seudominio.com",
       "adding": "A adicionar...",
-      "submit": "Adicionar domínio"
+      "submit": "Adicionar domínio",
+      "servesPath": "Caminho atendido",
+      "servesPathHint": "Requisições para este domínio são atendidas a partir deste caminho no build final.",
+      "servesPathRedeploy": "Novos caminhos entram em vigor no seu próximo deploy.",
+      "externalIngress": "Ingress e TLS externo",
+      "externalIngressDesc": "O TLS termina no seu proxy reverso (Cloudflare Tunnel, Nginx Proxy Manager ou balanceador de carga). O domínio não precisa apontar para este servidor e o Openship não emitirá certificado.",
+      "noWww": "Esse domínio já está neste projeto."
     },
     "dns": {
       "title": "Registos DNS",
@@ -788,7 +999,8 @@
       "title": "Editar rota",
       "internalOnly": "Apenas interno",
       "close": "Fechar",
-      "disabledWarning": "O serviço está desativado — as rotas ficam inativas até o serviço ser reativado."
+      "disabledWarning": "O serviço está desativado — as rotas ficam inativas até o serviço ser reativado.",
+      "save": "Salvar alterações"
     },
     "menu": {
       "editRoute": "Editar rota",
@@ -799,7 +1011,8 @@
       "renewing": "A renovar...",
       "renewSsl": "Renovar SSL",
       "rechecking": "A verificar novamente...",
-      "recheckSsl": "Verificar SSL novamente"
+      "recheckSsl": "Verificar SSL novamente",
+      "uploadCert": "Enviar certificado"
     },
     "toast": {
       "enterPort": "Introduza a porta para a qual este domínio deve encaminhar (1–65535).",
@@ -830,7 +1043,11 @@
       "enterPortShort": "Introduza a porta para a qual este domínio deve encaminhar.",
       "noServicePort": "Nenhum serviço publica a porta {port}. Adicione primeiro essa porta a um serviço.",
       "enterCustom": "Introduza um domínio personalizado.",
-      "enterSubdomain": "Introduza um subdomínio."
+      "enterSubdomain": "Introduza um subdomínio.",
+      "certUploaded": "Certificado instalado para {hostname}.",
+      "certUploadFailed": "Falha ao instalar certificado para {hostname}.",
+      "publishing": "Publicando — implantando para instalar o edge e aplicar seu domínio…",
+      "publishFailed": "Domínio salvo, mas o deploy não foi iniciado — faça redeploy para publicar."
     },
     "edge": {
       "setUp": "Configurar edge",
@@ -840,19 +1057,225 @@
       "foreignProxyHint": "Outro proxy ocupa 80/443"
     },
     "diagnosis": {
-      "title": "Por que isso não está funcionando",
+      "title": "Detalhes do domínio",
       "noneYet": "Nenhuma verificação foi executada ainda, portanto não há resultado. Adicione os registros DNS exibidos e depois clique em Verificar.",
       "attempts": "{count} tentativa(s) com falha até agora.",
-      "pillHint": "Ver o motivo"
+      "pillHint": "Ver o motivo",
+      "lastChecked": "Última verificação:",
+      "nextCheck": "Próxima verificação agendada:",
+      "scheduleHint": "As verificações são executadas enquanto esta instância está online. Tarefas na fila podem atrasar o início.",
+      "automaticDisabled": "As verificações automáticas de domínios estão desativadas. Tente manualmente ou ative-as em Tarefas.",
+      "scheduleUnavailable": "O agendamento de verificações automáticas está indisponível. Você pode tentar manualmente.",
+      "retryNow": "Tentar novamente agora",
+      "checking": "Verificando…",
+      "reasons": {
+        "verification": "A verificação do domínio não foi concluída. Confira os registros DNS antes de tentar novamente.",
+        "certificate": "O HTTPS precisa ser verificado no servidor que hospeda o site. Um certificado existente será procurado antes de solicitar um novo.",
+        "deployment": "Esta rota aguarda uma implantação. Implante o projeto para aplicá-la.",
+        "disabled": "Este projeto ou serviço está desativado. Ative-o antes de verificar a rota.",
+        "removing": "Este domínio está sendo removido. Nenhuma verificação está agendada.",
+        "manual_certificate": "Este domínio usa um certificado enviado manualmente. Envie uma substituição válida e verifique-a. O Openship não o renova automaticamente.",
+        "managed_certificate": "O TLS é gerenciado pelo seu proxy externo ou pelo Openship Cloud. Confira a configuração desse provedor.",
+        "route_missing": "Esta rota configurada ainda não foi aplicada. Tente o roteamento novamente para aplicá-la. Nenhuma nova tentativa automática de roteamento está agendada.",
+        "manual_dns": "Este certificado usa verificação TXT manual. Abra a configuração de HTTPS para confirmar um novo registro TXT ou escolha um provedor DNS conectado para a renovação automática.",
+        "managed_owner": "Este nome de host e seu certificado são gerenciados pelo serviço proprietário. Verifique as configurações de domínio desse serviço."
+      }
     },
     "records": {
       "failed": "Não foi possível carregar os registros DNS deste domínio.",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "toggle": "Registros DNS",
+      "hint": "Adicione estes registros no seu provedor de DNS e clique em Verificar.",
+      "loading": "Carregando registros…",
+      "none": "Nenhum registro para adicionar para este domínio."
     },
     "outputHint": {
       "body": "Nenhuma saída de compilação encontrada em {path} — verifique seu diretório de saída e implante novamente.",
       "noIndex": "Existe saída em {path}, mas não há arquivo index — as solicitações retornarão 404. Verifique seu diretório de saída.",
       "notServed": "O proxy respondeu HTTP {status} para {path} — este caminho não está sendo servido. Verifique seu diretório de saída e a rota."
+    },
+    "wildcard": {
+      "title": "HTTPS com verificação DNS",
+      "scope": "Um curinga cobre um nível de subdomínios. Adicione o domínio base separadamente se ele também precisar servir este aplicativo.",
+      "notice": "HTTPS com curinga exige verificação DNS. Depois de salvar, conecte um provedor DNS ou adicione o registro TXT da configuração de HTTPS.",
+      "automatic": "Provedor automático",
+      "manual": "TXT manual",
+      "automaticHint": "Conecte o Cloudflare em Configurações → DNS para criar as verificações do certificado e renovar HTTPS automaticamente.",
+      "manualHint": "Adicione um registro TXT temporário no seu provedor DNS. Cada renovação precisa de um novo registro TXT; o Openship mostrará quando renovar.",
+      "routing": "1. Aponte o domínio para este servidor",
+      "certificate": "2. Ative HTTPS",
+      "startAutomatic": "Ativar HTTPS automaticamente",
+      "startManual": "Obter registro TXT",
+      "renew": "Renovar certificado",
+      "check": "Verificar TXT e ativar HTTPS",
+      "cancel": "Cancelar verificação",
+      "refresh": "Atualizar status",
+      "close": "Fechar configuração",
+      "loading": "Carregando a configuração do certificado",
+      "loadFailed": "Não foi possível carregar a configuração do certificado. Tente novamente para ver o estado atual.",
+      "recordsFailed": "Não foi possível carregar os registros DNS de roteamento. A verificação do certificado salva continua disponível.",
+      "actionFailed": "Não foi possível atualizar a configuração do certificado.",
+      "expires": "Conclua esta verificação até {date}.",
+      "txtHint": "Adicione exatamente este valor TXT. Mantenha os outros valores TXT com o mesmo nome. Se o seu provedor adicionar o nome da zona, insira apenas a parte relativa.",
+      "cleanup": "Você pode remover o valor TXT desta tentativa. Mantenha todos os outros registros TXT.",
+      "logs": "Logs do certificado",
+      "states": {
+        "preparing": "Preparando a verificação do certificado…",
+        "waiting": "Aguardando seu registro TXT",
+        "checking": "Verificando DNS e a titularidade do certificado…",
+        "installing": "Ativando HTTPS…",
+        "cancelling": "Cancelando a verificação…",
+        "completed": "HTTPS está pronto",
+        "failed": "A configuração do certificado precisa de atenção",
+        "cancelled": "Verificação cancelada",
+        "expired": "A verificação TXT expirou"
+      }
+    },
+    "verifyMissing": {
+      "both": "Nem o registro CNAME nem o TXT estão resolvendo ainda — adicione os registros abaixo, aguarde a propagação do DNS e clique em Verificar.",
+      "cname": "O registro CNAME ainda não está resolvendo — adicione-o abaixo, aguarde a propagação do DNS e clique em Verificar.",
+      "txt": "O registro TXT de verificação ainda não está resolvendo — adicione-o abaixo, aguarde a propagação do DNS e clique em Verificar."
+    },
+    "portHint": {
+      "body": "Nada respondeu na porta {port} — requisições podem retornar 502 até o app escutar nela.",
+      "bodyService": "Serviço \"{service}\": nada respondeu na porta {port} — requisições podem retornar 502 até ele escutar nela."
+    },
+    "certUpload": {
+      "title": "Enviar certificado",
+      "desc": "Distribua TLS a partir do seu próprio certificado (próprio ou Cloudflare Origin CA) em vez do Let's Encrypt. Use isto quando um proxy upstream estiver na frente do domínio e a origem ainda precisar de um certificado real (Cloudflare Full-strict). O Certbot é desativado para este domínio após o envio do certificado — renove enviando um novo.",
+      "certLabel": "Certificado (fullchain PEM)",
+      "certPlaceholder": "-----BEGIN CERTIFICATE-----",
+      "keyLabel": "Chave privada (PEM)",
+      "keyPlaceholder": "-----BEGIN PRIVATE KEY-----",
+      "submit": "Instalar certificado",
+      "submitting": "Instalando...",
+      "close": "Cancelar"
+    },
+    "removeRoute": {
+      "title": "Remover rota",
+      "description": "O aplicativo continuará funcionando — apenas esta rota e seu registro no edge são removidos. Você pode adicioná-la novamente a qualquer momento.",
+      "confirm": "Remover rota",
+      "removing": "Removendo…"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Ambiente de execução do serviço",
+    "description": "Estas variáveis se aplicam apenas a este serviço e substituem os valores correspondentes do Compose ou do projeto. Use Aplicar alterações de ambiente para ativar os valores salvos.",
+    "overrides": "Estas chaves têm prioridade sobre os valores do projeto para este serviço: {keys}.",
+    "buildArguments": "Os argumentos de compilação são definidos no arquivo Compose ou na configuração do código-fonte e exigem uma nova compilação.",
+    "projectLink": "Editar ambiente compartilhado do projeto",
+    "loadFailed": "Não foi possível carregar os nomes das variáveis do projeto para verificar substituições."
+  },
+  "cloudStaticHosting": {
+    "title": "Hospedagem estática",
+    "description": "Escolha onde os arquivos compilados serão servidos.",
+    "pages": "Cloud Pages (padrão)",
+    "pagesDescription": "Publique arquivos na borda da Cloud sem um contêiner de aplicação em execução.",
+    "server": "Servidor gerenciado",
+    "serverDescription": "Sirva arquivos de um contêiner nginx no seu servidor gerenciado.",
+    "nextDeploy": "As alterações salvas serão aplicadas na próxima implantação."
+  },
+  "deploymentChecks": {
+    "title": "Verificações de implantação no GitHub",
+    "description": "Publique os resultados da implantação e dos serviços no commit implantado.",
+    "customize": "Personalizar verificações",
+    "deployment": "Resultado da implantação",
+    "services": "Todos os serviços, incluindo os novos",
+    "selectedServices": "Escolher serviços",
+    "includeErrors": "Incluir detalhes do erro",
+    "errorsHint": "Resumos de erros, sem dados sensíveis, são compartilhados com quem pode ler este repositório.",
+    "emptySelection": "Escolha pelo menos uma verificação ou desative os relatórios.",
+    "connectionHint": "Requer um GitHub App com permissão de escrita em Checks.",
+    "connection": "Conexão com o GitHub",
+    "deliveryFailed": "Não foi possível enviar as verificações",
+    "saveFailed": "Não foi possível salvar as configurações das verificações do GitHub."
+  },
+  "appSource": {
+    "title": "Origem",
+    "description": "Este aplicativo é implantado a partir de uma versão — não há repositório para envio de código; as atualizações chegam como novas versões.",
+    "sourceType": "Origem",
+    "kindRelease": "Versão",
+    "kindImage": "Imagem de contêiner",
+    "current": "Versão atual",
+    "latest": "Última versão",
+    "repository": "Repositório",
+    "notChecked": "Ainda não verificado",
+    "upToDate": "Atualizado",
+    "updateAvailable": "Atualização disponível",
+    "checkForUpdates": "Verificar atualizações",
+    "checkFailed": "Não foi possível verificar atualizações",
+    "update": "Atualizar",
+    "updateTo": "Atualizar para {version}",
+    "updating": "Atualizando…",
+    "updateFailed": "Falha na atualização",
+    "toastTitle": "Origem",
+    "cliManaged": "Este é o painel de controle do Openship — ele se atualiza sozinho. Execute \"openship update\" no host para atualizá-lo; não há nada para alterar aqui."
+  },
+  "routeRules": {
+    "title": "Regras de rota",
+    "description": "Limite de taxa, bloqueios e regras de permissão/negação aplicadas na borda — instantâneas, sem redeploy.",
+    "loading": "Carregando regras…",
+    "empty": "Nenhuma regra de rota ainda. Adicione uma abaixo.",
+    "allHosts": "Todos os hostnames",
+    "allPaths": "Todos os caminhos",
+    "addTitle": "Adicionar uma regra",
+    "pathLabel": "Prefixo de caminho (opcional)",
+    "rps": "Requisições / seg",
+    "burst": "Pico (Burst)",
+    "methods": "Permitir apenas métodos",
+    "banIps": "Bloquear IPs / CIDRs",
+    "banCountries": "Bloquear países (ISO)",
+    "allowCountries": "Permitir apenas países (ISO)",
+    "denyCidrs": "Negar CIDRs",
+    "allowReferers": "Anti-hotlink: referers permitidos",
+    "banUserAgents": "Bloquear user-agents (substring)",
+    "blockEmptyUa": "Bloquear user-agent vazio",
+    "blockStatus": "Código de resposta de bloqueio",
+    "add": "Adicionar regra",
+    "remove": "Remover",
+    "enabled": "Ativado",
+    "disabled": "Desativado",
+    "saved": "Regra salva",
+    "saveFailed": "Falha ao salvar regra",
+    "loadFailed": "Falha ao carregar regras"
+  },
+  "runtimeUpdates": {
+    "options": "Opções de reimplantação",
+    "refresh": "Atualizar imagens e reimplantar",
+    "refreshing": "Atualizando imagens…",
+    "check": "Verificar atualizações de imagens",
+    "title": "Atualizações de imagens",
+    "failed": "Não foi possível iniciar a atualização de imagens.",
+    "uncertain": "O tempo da solicitação esgotou. Verifique o histórico de implantações antes de tentar novamente.",
+    "available": "Atualizações de imagens disponíveis",
+    "current": "Os digests das imagens correspondem aos últimos observados no registro.",
+    "checkUnavailable": "A comparação exige digests registrados e acesso ao registro.",
+    "checkFailed": "Não foi possível verificar atualizações de imagens.",
+    "pinned": "As imagens estão fixadas por digest. Edite a referência configurada para atualizá-las."
+  },
+  "securityAdvisories": {
+    "sourceRedeployRequired": "Recompile este aplicativo a partir do código-fonte salvo antes de atualizar seu ambiente de execução. A imagem atual não tem uma revisão de código verificada. Uma nova implantação a partir do código-fonte pode incluir código mais recente; revise-o em Implantações e verifique este aviso novamente.",
+    "openSourceRedeploy": "Abrir reimplantação a partir do código-fonte",
+    "reviewApps": "Rever apps afetadas ({count})",
+    "pendingApps": "Verificações pendentes para {count} apps. Os resultados aparecerão automaticamente.",
+    "checkAgain": "Verificar novamente",
+    "checking": "Verificando…",
+    "title": "Avisos de segurança",
+    "unavailable": "As verificações de segurança estão indisponíveis ou desatualizadas. Os avisos anteriores continuam visíveis.",
+    "affected": "Resultados das aplicações às quais tem acesso na organização atual.",
+    "noMatches": "Nenhum aviso corresponde aos dados verificados. Isto não é uma análise completa de vulnerabilidades.",
+    "partial": "Não foi possível verificar alguns ambientes de execução.",
+    "guidance": "Ler aviso",
+    "automatic": "Atualizar automaticamente correções de segurança verificadas",
+    "automaticDescription": "Desativado por padrão. Apenas serviços de imagens com uma correção assinada na tag atual são atualizados automaticamente. Compilações, imagens fixadas e mudanças de versão exigem revisão. As verificações normais de implantação e saúde continuam ativas.",
+    "notifications": "Alertas de segurança são ativados por padrão nos canais. Configure cada canal em Configurações → Notificações.",
+    "publicFeed": "Ver fonte pública",
+    "checked": "Evidências verificadas",
+    "possible": "A tag da imagem corresponde; a versão implantada precisa ser verificada.",
+    "tab": "Segurança",
+    "monitoring": "Ver em Monitorização",
+    "persistent": "Os resultados ativos permanecem aqui após fechar o aviso.",
+    "otherApps": "Outras aplicações ({count})",
+    "details": "Detalhes e orientações"
   }
 }

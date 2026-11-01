@@ -61,6 +61,32 @@ describe("webhookDelivery repo — GitHub idempotency (claim) + feed", () => {
     expect(page.rows.length).toBe(2);
   });
 
+  it("lets one redelivery reclaim a finished failure and deduplicates it after success (#847)", async () => {
+    const input = { deliveryId: "retry", event: "push", outcome: "received" };
+    const first = await repo.claimGithub(input);
+    await repo.markProcessed(first.id, { outcome: "failed", statusCode: 500, error: "deployment busy" });
+    const claims = await Promise.all([repo.claimGithub(input), repo.claimGithub(input)]);
+    expect(claims.filter((claim) => claim.claimed)).toEqual([
+      { claimed: true, id: first.id, handledProjectIds: [] },
+    ]);
+    await repo.markProcessed(first.id, { outcome: "received", statusCode: 200 });
+    expect(await repo.claimGithub(input)).toEqual({ claimed: false, id: "" });
+  });
+
+  it("preserves completed project receipts for the one caller that reclaims a partial failure", async () => {
+    const input = { deliveryId: "partial-retry", event: "push", outcome: "received" };
+    const first = await repo.claimGithub(input);
+    await repo.markProcessed(first.id, {
+      outcome: "failed",
+      statusCode: 500,
+      summary: { handledProjectIds: ["project-already-handled"] },
+    });
+    const claims = await Promise.all([repo.claimGithub(input), repo.claimGithub(input)]);
+    expect(claims.filter((claim) => claim.claimed)).toEqual([
+      { claimed: true, id: first.id, handledProjectIds: ["project-already-handled"] },
+    ]);
+  });
+
   it("keyset pagination returns every row exactly once, newest first", async () => {
     for (let i = 0; i < 5; i++) {
       await repo.record({ source: "incoming", hookId: "hp", event: "deploy", outcome: "dispatched" });

@@ -1,3 +1,4 @@
+import { createEncryption } from "../encryption";
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -25,7 +26,7 @@ async function freshRepo() {
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   await client.exec("SET session_replication_role = replica;"); // skip FK seeding
-  const repo = createDeploymentRepo(db);
+  const repo = createDeploymentRepo(db, createEncryption("repository-test-secret"));
   await db.insert(deployment).values({
     id: "d1",
     projectId: "p1",

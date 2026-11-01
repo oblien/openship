@@ -10,6 +10,7 @@
  * cache that the attention dot + issue list read from.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 const KEY = "openship:infraAutoScanAt";
 /** Re-scan at most this often per browser, across all surfaces. */
 const STALE_MS = 30 * 60 * 1000;
@@ -20,7 +21,8 @@ export function infraScanStale(): boolean {
     const v = localStorage.getItem(KEY);
     if (!v) return true;
     return Date.now() - Number(v) > STALE_MS;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/infra-autoscan");
     return true;
   }
 }
@@ -29,7 +31,8 @@ export function infraScanStale(): boolean {
 export function markInfraScanned(): void {
   try {
     localStorage.setItem(KEY, String(Date.now()));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/lib/infra-autoscan");
     /* storage disabled — the scan simply isn't throttled */
   }
 }

@@ -28,8 +28,8 @@ vi.mock("../../src/lib/controller-helpers", async (importOriginal) => {
   return { ...actual, platform: () => ({ runtime: {} }) };
 });
 
-import { getRoutingBaseDomain } from "../../src/lib/routing-domains";
-import { syncProjectPublicRoutes } from "../../src/lib/project-route-store";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
+import { syncProjectPublicRoutes } from "@repo/platform/engine/lib/project-route-store";
 
 describe("syncProjectPublicRoutes", () => {
   beforeEach(() => {
@@ -43,6 +43,25 @@ describe("syncProjectPublicRoutes", () => {
       id: "dom_created",
       ...data,
     }));
+  });
+
+  it("keeps wildcard routes on DNS-01 and chooses a concrete primary without resetting manual renewal", async () => {
+    const wildcard = {
+      id: "wildcard", projectId: "proj_123", serviceId: null, hostname: "*.example.com",
+      targetPort: 3000, targetPath: null, domainType: "custom", isPrimary: true,
+      sslChallenge: "http-01", sslDnsMode: "manual", verified: true, status: "active",
+      redirectTo: null, redirectStatus: null,
+    } as any;
+    await syncProjectPublicRoutes({
+      projectId: "proj_123", currentDomains: [wildcard],
+      endpoints: [
+        { domainType: "custom", customDomain: "*.example.com", port: 3000 },
+        { domainType: "custom", customDomain: "app.example.com", port: 3000 },
+      ],
+    });
+    expect(domainRepo.update).toHaveBeenCalledWith("wildcard", { isPrimary: false, sslChallenge: "dns-01" });
+    expect(domainRepo.create).toHaveBeenCalledWith(expect.objectContaining({ hostname: "app.example.com", isPrimary: true }));
+    expect(domainRepo.update.mock.calls.some(([, patch]) => "sslDnsMode" in patch)).toBe(false);
   });
 
   it("reuses an existing service-scoped hostname when switching to project-level routing", async () => {
@@ -160,6 +179,18 @@ describe("syncProjectPublicRoutes", () => {
       redirectTo: null,
       redirectStatus: null,
     };
+
+    it("chooses the serving hostname as primary when the redirect is submitted first", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123", currentDomains: [],
+        endpoints: [
+          { domainType: "custom", customDomain: "example.com", port: 3000, redirectTo: "www.example.com", redirectStatus: 301 },
+          { domainType: "custom", customDomain: "www.example.com", port: 3000 },
+        ],
+      });
+      expect(domainRepo.create).toHaveBeenCalledWith(expect.objectContaining({ hostname: "example.com", isPrimary: false }));
+      expect(domainRepo.create).toHaveBeenCalledWith(expect.objectContaining({ hostname: "www.example.com", isPrimary: true }));
+    });
 
     it("persists redirectTo + redirectStatus on a NEW row", async () => {
       await syncProjectPublicRoutes({
@@ -369,4 +400,15 @@ describe("syncProjectPublicRoutes", () => {
       );
     });
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: {} }) };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: {} }) };
 });

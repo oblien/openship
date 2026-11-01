@@ -8,7 +8,7 @@ import {
   normalizeTargetHostId,
   normalizeTargetMachineId,
   resolveHostPortTargetIdentity,
-} from "./host-port-target";
+} from "@repo/platform/engine/lib/host-port-target";
 
 function executorWithFiles(files: Record<string, string | Error>): CommandExecutor {
   return {

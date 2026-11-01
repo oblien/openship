@@ -6,7 +6,7 @@ import {
   liveMatchTiersForDeployment,
   resolveLiveServiceState,
   type LiveContainerLike,
-} from "./live-state";
+} from "@repo/platform/engine/modules/services/live-state";
 
 const container = (over: Partial<LiveContainerLike> & { id: string }): LiveContainerLike => ({
   names: [],
@@ -18,6 +18,18 @@ const container = (over: Partial<LiveContainerLike> & { id: string }): LiveConta
 });
 
 describe("liveContainerStatus", () => {
+  it.each([
+    ["Up 2 days (healthy)", "running", "healthy"],
+    ["Up 2 days (unhealthy)", "failed", "unhealthy"],
+    ["Up 5 seconds (health: starting)", "starting", "starting"],
+    ["Up 2 days", "running", null],
+  ])("preserves healthcheck evidence independently of runtime status: %s", (status, state, health) => {
+    const matches = resolveLiveServiceState({
+      services: [{ id: "svc", name: "app" }], projectId: "project", slug: "test",
+      live: [container({ id: "live", names: ["openship-test-app"], status })],
+    });
+    expect(matches.get("svc")).toMatchObject({ containerId: "live", status: state, health });
+  });
   it("reports a crash-looping container as restarting, NOT running", () => {
     // The regression that made a crash-looping api render a green "Running":
     // docker's `restarting` state was mapped to running.

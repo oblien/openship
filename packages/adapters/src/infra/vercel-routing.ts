@@ -502,7 +502,7 @@ export function compileVercelRouting(
     if (safe.length !== rule.headers.length) {
       out.skipped.push(`header ${rule.source} (dropped unsafe header(s))`);
     }
-    if (safe.length > 0) out.headerRules.push({ path: loc.path, headers: safe });
+    if (safe.length > 0) out.headerRules.push({ path: loc.path, ...(loc.exact ? { exact: true } : {}), headers: safe });
   }
 
   return out;

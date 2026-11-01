@@ -127,7 +127,7 @@ export function IssuesPreview() {
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
           <div className="min-w-0">
-            <IssueList issues={issues} busyId={null} onResolve={() => {}} onInfraFix={() => {}} />
+            <IssueList issues={issues} busyIds={new Set()} onResolve={() => {}} onInfraFix={() => {}} />
           </div>
           <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
             <IssueSummary issues={issues} tab={variant === "resolved" ? "resolved" : "open"} />

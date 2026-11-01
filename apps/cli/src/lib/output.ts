@@ -4,7 +4,14 @@
  * env var). In JSON mode, stdout is reserved for machine-readable data only —
  * ok/info/err always go to stderr so they never corrupt a piped JSON stream.
  */
+import { reportError, errorReporter } from "@repo/core/diagnostics";
 import chalk from "chalk";
+
+/** Retain human CLI output while also producing the shared structured event. */
+export function reportCliMessage(level: "warn" | "error", ...values: unknown[]): void {
+  errorReporter.log(level, "cli", ...values);
+  console[level](...values);
+}
 
 let jsonMode = process.env.OPENSHIP_JSON === "1" || process.env.OPENSHIP_JSON === "true";
 
@@ -19,6 +26,11 @@ export function isJsonMode(): boolean {
 /** Pretty-print any value as JSON to stdout. */
 export function printJson(obj: unknown): void {
   process.stdout.write(JSON.stringify(obj, null, 2) + "\n");
+}
+
+/** One record per line for streaming commands. */
+export function printJsonLine(obj: unknown): void {
+  process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
 /**
@@ -52,7 +64,8 @@ export function ok(msg: string): void {
 }
 
 /** Error message (stderr, red). Always shown, even in JSON mode. */
-export function err(msg: string): void {
+export function err(msg: string, error?: unknown): void {
+  reportError(error ?? msg, { source: "cli", component: "cli", handled: true });
   process.stderr.write(chalk.red(msg) + "\n");
 }
 

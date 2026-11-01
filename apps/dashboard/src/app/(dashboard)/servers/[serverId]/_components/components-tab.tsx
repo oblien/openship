@@ -1,13 +1,4 @@
-import {
-  Shield,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Download,
-  RotateCcw,
-  ChevronDown,
-  ArrowUpCircle,
-} from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import { useState, useRef, useEffect } from "react";
 import type {
   ComponentStatus,
@@ -60,13 +51,13 @@ function HealthRow({
     <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/30 transition-colors">
       <div className="shrink-0">
         {component.healthy ? (
-          <CheckCircle2 className="size-5 text-success" />
+          <UiIcon name="check-circle" className="size-5 text-success" />
         ) : (
-          <XCircle className="size-5 text-warning" />
+          <UiIcon name="x-circle" className="size-5 text-warning" />
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium text-foreground">
             {roleName}
           </p>
@@ -82,7 +73,7 @@ function HealthRow({
           )}
           {component.updateAvailable && component.availableVersion && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-warning bg-warning-bg px-1.5 py-0.5 rounded">
-              <ArrowUpCircle className="size-3" />
+              <UiIcon name="arrow-up-circle" className="size-3" />
               v{component.availableVersion}
             </span>
           )}
@@ -98,7 +89,7 @@ function HealthRow({
             : "bg-warning-bg text-warning"
         }`}
       >
-        {component.healthy ? "Healthy" : "Unhealthy"}
+        {component.healthy ? t.servers.overview.healthy : t.servers.overview.unhealthy}
       </div>
       {(canRunAction || (component.removable && component.installed)) && (
         <div className="flex items-center gap-2 shrink-0">
@@ -113,13 +104,13 @@ function HealthRow({
               }`}
             >
               {running ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : isUpdate ? (
-                <ArrowUpCircle className="size-3.5" />
+                <UiIcon name="arrow-up-circle" className="size-3.5" />
               ) : component.healthy || component.installed ? (
-                <RotateCcw className="size-3.5" />
+                <UiIcon name="rotate-left" className="size-3.5" />
               ) : (
-                <Download className="size-3.5" />
+                <UiIcon name="download" className="size-3.5" />
               )}
               {running ? t.servers.components.running : isUpdate ? "Update" : actionLabel}
             </button>
@@ -132,9 +123,9 @@ function HealthRow({
               className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-danger-bg hover:bg-danger/20 transition-colors text-danger disabled:opacity-50"
             >
               {running ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <XCircle className="size-3.5" />
+                <UiIcon name="x-circle" className="size-3.5" />
               )}
               {running ? t.servers.components.running : component.removeSupported === false ? t.servers.components.unsupported : t.servers.components.remove}
             </button>
@@ -188,6 +179,7 @@ export function ComponentsTab({
   const unhealthyInstallableCount = components.filter(
     (c) => !c.healthy && c.installable,
   ).length;
+  const canInstall = components.some((component) => component.installable);
   const completedCount = streamComponents.filter(
     (c) => c.status === "installed" || c.status === "removed" || c.status === "failed",
   ).length;
@@ -213,12 +205,12 @@ export function ComponentsTab({
   return (
     <div className="space-y-6">
       {/* Health checks card */}
-      <div className="bg-card rounded-2xl border border-border/50">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
+      <div className="bg-card rounded-2xl">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-border/50">
           <div className="w-9 h-9 bg-success-bg rounded-xl flex items-center justify-center">
-            <Shield className="size-[18px] text-success" />
+            <UiIcon name="shield" className="size-[18px] text-success" />
           </div>
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h2 className="font-semibold text-foreground text-[15px]">
               {t.servers.components.systemHealth}
             </h2>
@@ -227,31 +219,31 @@ export function ComponentsTab({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            {(canInstall || busy) && <button
               onClick={onInstallMissing}
               disabled={checking || busy || unhealthyInstallableCount === 0}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
             >
               {busy ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <Download className="size-3.5" />
+                <UiIcon name="download" className="size-3.5" />
               )}
               {busy
                 ? actionMode === "remove" ? t.servers.components.removing : t.servers.components.installing
                 : unhealthyInstallableCount > 0
                   ? interpolate(t.servers.components.installMissing, { count: String(unhealthyInstallableCount) })
                   : t.servers.components.allInstalled}
-            </button>
+            </button>}
             <button
               onClick={onRecheck}
               disabled={checking || busy}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
             >
               {checking ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <RotateCcw className="size-3.5" />
+                <UiIcon name="rotate-left" className="size-3.5" />
               )}
               {checking ? t.servers.components.checking : t.servers.components.recheck}
             </button>
@@ -270,7 +262,7 @@ export function ComponentsTab({
           {checking && components.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="flex flex-col items-center gap-2">
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">
                   {t.servers.components.runningHealthChecks}
                 </p>
@@ -333,12 +325,12 @@ export function ComponentsTab({
             >
               {installDone ? (
                 installFinalStatus === "completed" ? (
-                  <CheckCircle2 className="size-[18px] text-success" />
+                  <UiIcon name="check-circle" className="size-[18px] text-success" />
                 ) : (
-                  <XCircle className="size-[18px] text-danger" />
+                  <UiIcon name="x-circle" className="size-[18px] text-danger" />
                 )
               ) : (
-                <Download className="size-[18px] text-primary" />
+                <UiIcon name="download" className="size-[18px] text-primary" />
               )}
             </div>
             <div className="flex-1">
@@ -393,11 +385,11 @@ export function ComponentsTab({
               <div key={comp.name} className="flex items-center gap-2 py-1.5">
                 <div className="shrink-0">
                   {comp.status === "installing" || comp.status === "removing" ? (
-                    <Loader2 className="size-3.5 text-primary animate-spin" />
+                    <UiIcon name="spinner" className="size-3.5 text-primary animate-spin" />
                   ) : comp.status === "installed" || comp.status === "removed" ? (
-                    <CheckCircle2 className="size-3.5 text-success" />
+                    <UiIcon name="check-circle" className="size-3.5 text-success" />
                   ) : comp.status === "failed" ? (
-                    <XCircle className="size-3.5 text-danger" />
+                    <UiIcon name="x-circle" className="size-3.5 text-danger" />
                   ) : (
                     <div className="size-3.5 rounded-full border-2 border-border/50" />
                   )}
@@ -439,7 +431,7 @@ export function ComponentsTab({
                 onClick={() => setLogsExpanded((v) => !v)}
                 className="flex items-center gap-2 w-full px-5 py-3 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                <ChevronDown
+                <UiIcon name="chevron-down"
                   className={`size-3.5 transition-transform ${logsExpanded ? "rotate-180" : ""}`}
                 />
                 {progressLogsLabel} ({installLogs.length})

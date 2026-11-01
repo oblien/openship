@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -32,19 +33,19 @@ vi.mock("@repo/db", () => ({
 
 // Stubbed for the same reason the sibling install test stubs them: importing the real
 // service layer drags in lib/auth, which needs a full `schema` export off @repo/db.
-vi.mock("../../../src/modules/projects/project-crud.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-crud.service", () => ({
   createProject: vi.fn(),
 }));
-vi.mock("../../../src/modules/services/service.service", () => ({
+vi.mock("@repo/platform/engine/modules/services/service.service", () => ({
   createService: vi.fn(),
   updateService: vi.fn(),
   setServiceEnvVars: vi.fn(),
 }));
-vi.mock("../../../src/lib/cloud/require-cloud", () => ({ requireCloud: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/cloud/require-cloud", () => ({ requireCloud: vi.fn() }));
 
 import { getAppTemplate } from "@repo/core";
-import { ensureGeneratedAppSecrets } from "../../../src/modules/apps/app-install.service";
-import { decrypt, encrypt } from "../../../src/lib/encryption";
+import { ensureGeneratedAppSecrets } from "@repo/platform/engine/modules/apps/app-install.service";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
 
 const WEBMAIL = getAppTemplate("webmail")!;
 
@@ -132,7 +133,7 @@ describe("ensureGeneratedAppSecrets", () => {
     listByProject.mockResolvedValue(
       (redis.services ?? []).map((s, i) => ({ id: `svc-${i}`, name: s.name })),
     );
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
 
     const written = await ensureGeneratedAppSecrets("prj_1", redis);
 
@@ -196,7 +197,7 @@ describe("ensureGeneratedAppSecrets", () => {
     getEnvMap.mockImplementation(async (_p: string, _e: string, serviceId: string) =>
       serviceId === "svc-ghost-db" ? { MYSQL_ROOT_PASSWORD: "unreadable-ciphertext" } : {},
     );
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
 
     // Anything minted here would disagree with the copy MySQL is already using.
     expect(await ensureGeneratedAppSecrets("prj_1", ghost)).toEqual([]);

@@ -1,0 +1,103 @@
+---
+title: project connections
+description: Commands, arguments, and options for openship project connections.
+cliGroup: openship project connections
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship project connections
+
+Wire app outputs into a project's environment through the engine
+
+```text
+openship project connections [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <id>`](/docs/cli/reference/project/connections#openship-project-connections-list) | List this project's incoming app connections |
+| [`candidates <id>`](/docs/cli/reference/project/connections#openship-project-connections-candidates) | List apps that can supply connection outputs |
+| [`consumers <id>`](/docs/cli/reference/project/connections#openship-project-connections-consumers) | List projects consuming this project's outputs |
+| [`create <id> <file>`](/docs/cli/reference/project/connections#openship-project-connections-create) | Connect one app output; redeploy to apply it |
+| [`bundle <id> <file>`](/docs/cli/reference/project/connections#openship-project-connections-bundle) | Connect several app outputs atomically; redeploy to apply them |
+| [`remove\|rm [options] <id> <connection>`](/docs/cli/reference/project/connections#openship-project-connections-remove) | Remove an app connection |
+
+## openship project connections bundle
+
+Connect several app outputs atomically; redeploy to apply them
+
+```text
+openship project connections bundle [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Target project ID |
+| `file` | JSON connection bundle with sourceProjectId and items |
+
+## openship project connections candidates
+
+List apps that can supply connection outputs
+
+```text
+openship project connections candidates [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project connections consumers
+
+List projects consuming this project's outputs
+
+```text
+openship project connections consumers [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project connections create
+
+Connect one app output; redeploy to apply it
+
+```text
+openship project connections create [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Target project ID |
+| `file` | JSON connection with sourceProjectId, outputId, envKey and optional mode |
+
+## openship project connections list
+
+List this project's incoming app connections
+
+```text
+openship project connections list [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project connections remove
+
+Remove an app connection
+
+```text
+openship project connections remove|rm [options] <id> <connection>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Target project ID |
+| `connection` | Connection ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Skip confirmation |

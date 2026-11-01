@@ -1,0 +1,999 @@
+---
+title: MCP tool catalog
+description: Generated tool descriptions, API mappings, availability, and intentional HTTP-only routes.
+---
+
+This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
+
+The current API has **525 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+
+## Tools
+
+### actions
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_actions_runners_by_id`<br />`DELETE /api/actions/runners/:id` | Disable a runner for new jobs, retaining active jobs and history. | `job:admin` |
+| `delete_actions_workflows_by_id`<br />`DELETE /api/actions/workflows/:id` | Disable a workflow while retaining its execution history. | `job:write` |
+| `get_actions_discover`<br />`GET /api/actions/discover` | Discover workflow files in a repository. | `job:read` |
+| `get_actions_jobs_by_id_events`<br />`GET /api/actions/jobs/:id/events` | Read masked job logs after a durable cursor. Resume with next after reconnecting. | `job:read` |
+| `get_actions_project`<br />`GET /api/actions/project` | Read project workflows and deployment automation. | `job:read` |
+| `get_actions_projects`<br />`GET /api/actions/projects` | List projects available for linking to workflows. | `job:read` |
+| `get_actions_repository_checks`<br />`GET /api/actions/repository-checks` | Read the connected account and verify Checks access for the selected repository without starting a workflow or publishing a Check. | `job:read` |
+| `get_actions_repository_source`<br />`GET /api/actions/repository-source` | Read a repository workflow and preview its topology. | `job:read` |
+| `get_actions_runners`<br />`GET /api/actions/runners` | List Actions runners and their verified OS, architecture and Docker capabilities. | `job:read` |
+| `get_actions_runs`<br />`GET /api/actions/runs` | List durable workflow runs and their job states. | `job:read` |
+| `get_actions_runs_by_id`<br />`GET /api/actions/runs/:id` | Read workflow topology, jobs, outputs and completion. | `job:read` |
+| `get_actions_runs_by_id_artifacts`<br />`GET /api/actions/runs/:id/artifacts` | List the artifacts retained for an authorized workflow run. | `job:read` |
+| `get_actions_workflows`<br />`GET /api/actions/workflows` | List authorized GitHub-compatible Openship Actions workflows. | `job:read` |
+| `get_actions_workflows_by_id`<br />`GET /api/actions/workflows/:id` | Read a configured workflow without secret values. | `job:read` |
+| `patch_actions_runners_by_id`<br />`PATCH /api/actions/runners/:id` | Update an idle runner's configuration. | `job:admin` |
+| `patch_actions_workflows_by_id`<br />`PATCH /api/actions/workflows/:id` | Update an Actions workflow's configuration. | `job:write` |
+| `post_actions_preview`<br />`POST /api/actions/preview` | Validate workflow YAML and preview its dependency graph without executing it. | `job:read` |
+| `post_actions_project_requests`<br />`POST /api/actions/project/requests` | Retry or cancel a project's pending Actions deployment approval. | `job:write` |
+| `post_actions_runners`<br />`POST /api/actions/runners` | Enable Actions on an authorized server. Native runners execute trusted workflow code as the server's connected user. | `job:admin` |
+| `post_actions_runners_by_id_probe`<br />`POST /api/actions/runners/:id/probe` | Recheck an authorized runner's capabilities. | `job:admin` |
+| `post_actions_runners_emulation`<br />`POST /api/actions/runners/emulation` | Enable and verify Docker CPU emulation on an authorized Actions server. Installs only missing binfmt emulators; does not restart Docker or applications. | `job:admin` |
+| `post_actions_runners_inspect`<br />`POST /api/actions/runners/inspect` | Check OS, architecture, Git and Docker on an authorized Actions destination without changing the server. | `job:admin` |
+| `post_actions_runs_by_id_approve`<br />`POST /api/actions/runs/:id/approve` | Approve the reviewed commit and attempt for its allowed Actions destinations. The approval key must match the current run policy. | `job:admin` |
+| `post_actions_runs_by_id_artifacts_download`<br />`POST /api/actions/runs/:id/artifacts/download` | Get a short-lived download link for one authorized artifact. | `job:read` |
+| `post_actions_runs_by_id_cancel`<br />`POST /api/actions/runs/:id/cancel` | Request cancellation. Runner capacity is released only after execution has stopped. | `job:write` |
+| `post_actions_runs_by_id_rerun`<br />`POST /api/actions/runs/:id/rerun` | Retry the same immutable workflow and commit as a new attempt. | `job:write` |
+| `post_actions_workflows`<br />`POST /api/actions/workflows` | Configure an Actions workflow and its authorized runner destinations. Secrets are encrypted and never returned. | `job:write` |
+| `post_actions_workflows_by_id_dispatch`<br />`POST /api/actions/workflows/:id/dispatch` | Dispatch a workflow using an idempotency key and an immutable resolved commit. | `job:write` |
+| `post_actions_workflows_import`<br />`POST /api/actions/workflows/import` | Import repository workflows together, reusing existing workflows and linking authorized projects. | `job:write` |
+| `put_actions_project`<br />`PUT /api/actions/project` | Configure required workflow checks before automatic project deployment. | `job:write` |
+| `put_actions_repository_source`<br />`PUT /api/actions/repository-source` | Commit reviewed workflow YAML to its branch using the expected file SHA. | `job:write` |
+
+### analytics
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_analytics`<br />`GET /api/analytics` | Read request and traffic totals for query.projectId, optionally filtered by domain. Requires a project ID; use dashboard for the workspace rollup. | `analytics:read` |
+| `get_analytics_container`<br />`GET /api/analytics/container` | Container-level metrics for a project's runtime. | `analytics:read` |
+| `get_analytics_dashboard`<br />`GET /api/analytics/dashboard` | Dashboard analytics rollup (headline metrics). | `analytics:read` |
+| `get_analytics_deployments`<br />`GET /api/analytics/deployments` | Deployment statistics (frequency, success rate, durations). | `analytics:read` |
+| `get_analytics_geo`<br />`GET /api/analytics/geo` | Visitor geography for a project: requests per country, distinct visitors, top paths. | `analytics:read` |
+| `get_analytics_overview`<br />`GET /api/analytics/overview` | Analytics overview (traffic, status codes, top paths). | `analytics:read` |
+| `get_analytics_periods`<br />`GET /api/analytics/periods` | Available analytics time periods. | `analytics:read` |
+| `get_analytics_resources`<br />`GET /api/analytics/resources` | Project resource usage: overall totals plus a per-service breakdown with live status. | `analytics:read` |
+| `get_analytics_server_by_serverId`<br />`GET /api/analytics/server/:serverId` | Read saved edge request/traffic buckets for query.domain on this server, optionally within an ISO date range. These are HTTP traffic measurements, not k3s workload CPU metrics. | `server:read` |
+| `get_analytics_server_by_serverId_geo`<br />`GET /api/analytics/server/:serverId/geo` | Read this server’s saved visitor geography for query.domain and optional query.day (YYYYMMDD). Missing observations are not zero traffic. | `server:read` |
+| `get_analytics_server_by_serverId_live`<br />`GET /api/analytics/server/:serverId/live` | Read current OpenResty counters for query.domain on this server. This is a point-in-time JSON observation, not a continuous stream. | `server:read` |
+| `get_analytics_usage`<br />`GET /api/analytics/usage` | Read current runtime resource usage for query.projectId. Unsupported runtimes return no observation; this does not imply zero usage. | `analytics:read` |
+| `get_analytics_usage_history`<br />`GET /api/analytics/usage/history` | Resource usage over time for a project (CPU/memory/network), optionally scoped to one service. | `analytics:read` |
+| `post_analytics_paths_collection_by_projectId`<br />`POST /api/analytics/paths-collection/:projectId` | Turn per-path request aggregation (Top Paths) on or off for a project. | `project:write` |
+
+### apps
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_apps_custom_by_appId`<br />`DELETE /api/apps/custom/:appId` | Remove a custom app from this org's catalog. | `project:write` |
+| `get_apps_catalog`<br />`GET /api/apps/catalog` | List the one-click app catalog (Convex, WordPress, mail, …). | `project:list` |
+| `get_apps_catalog_by_id`<br />`GET /api/apps/catalog/:id` | Get one app's full template (services, config, endpoints) by id. | `project:list` |
+| `get_apps_catalog_by_id_host_fit`<br />`GET /api/apps/catalog/:id/host-fit` | Preview app capacity before installing. Self-hosted minimums are advisory; Cloud checks the shared workspace allocation against the plan. Pass projectId to include an existing draft's saved resource settings. Query: deployTarget, serverId, projectId. | `project:list` |
+| `get_apps_custom`<br />`GET /api/apps/custom` | List this org's custom (user-uploaded, unverified) apps. | `project:list` |
+| `get_projects_by_id_app_connection`<br />`GET /api/projects/:id/app-connection` | Get an installed app's resolved connection details (URLs + generated keys). | `project:write` |
+| `get_projects_by_id_app_settings`<br />`GET /api/projects/:id/app-settings` | Get an installed app's curated settings schema + current values. | `project:read` |
+| `patch_projects_by_id_app_settings`<br />`PATCH /api/projects/:id/app-settings` | Update an installed app's curated settings (safe env merge). | `project:write` |
+| `post_apps`<br />`POST /api/apps` | Install an app from the catalog as a project (or return a flow route for wizard apps). Public hostnames come ONLY from `routes` — omit it and the app installs port-only (no domain is invented). | `project:write` |
+| `post_apps_custom`<br />`POST /api/apps/custom` | Add a custom app from an uploaded JSON definition (stored per-org, unverified). | `project:write` |
+
+### audit
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_audit`<br />`GET /api/audit` | List workspace audit events with actor, resource and source filters. Use page/perPage or cursor/limit for pagination; inspect sourceClientId to identify MCP activity. | `audit:read` |
+| `get_audit_facets`<br />`GET /api/audit/facets` | Read available audit filters, event counts, actors and client names for this workspace. | `audit:read` |
+| `get_audit_settings`<br />`GET /api/audit/settings` | Read whether audit logging is enabled, its retention period and whether the caller can manage it. | `audit:read` |
+| `patch_audit_settings`<br />`PATCH /api/audit/settings` | Change workspace audit logging and retention. Reducing retention can remove older audit history. | `audit:write` |
+
+### backup-destinations
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_backup_destinations_by_id`<br />`DELETE /api/backup-destinations/:id` | Remove an unused backup destination from Openship. Check usage first; dependencies can block removal. This does not erase backup objects from external storage. | `backup_destination:admin` |
+| `get_backup_destinations`<br />`GET /api/backup-destinations` | List accessible backup destinations with stored-byte/run statistics and availability. Destination secrets are masked. | `backup_destination:list` |
+| `get_backup_destinations_by_id`<br />`GET /api/backup-destinations/:id` | Read one backup destination’s configuration and statistics with credentials masked. | `backup_destination:read` |
+| `get_backup_destinations_by_id_runs`<br />`GET /api/backup-destinations/:id/runs` | List backups stored at this destination, newest first. Use query.limit and query.before to continue history. | `backup_destination:read` |
+| `get_backup_destinations_by_id_usage`<br />`GET /api/backup-destinations/:id/usage` | List projects, services and policies using this backup destination so changes or deletion can be reviewed. | `backup_destination:read` |
+| `get_backup_destinations_history`<br />`GET /api/backup-destinations/history` | Read backup history across accessible destinations, newest first. Use query.limit and the returned next cursor as query.before for further pages. | `backup_destination:list` |
+| `patch_backup_destinations_by_id`<br />`PATCH /api/backup-destinations/:id` | Update a backup destination’s settings. Omitted credentials are preserved. Destination address changes are refused while dependent backups or cluster databases require the original location. | `backup_destination:write` |
+| `post_backup_destinations`<br />`POST /api/backup-destinations` | Create an S3, SFTP or local backup destination using the existing destination contract. Preflight it before attaching a policy; creating a destination does not create a backup. | `backup_destination:write` |
+| `post_backup_destinations_by_id_preflight`<br />`POST /api/backup-destinations/:id/preflight` | Test this saved backup destination’s connectivity and required access, returning the actual checks and errors. | `backup_destination:write` |
+| `post_backup_destinations_preflight`<br />`POST /api/backup-destinations/preflight` | Test draft backup-destination connectivity and permissions without saving the destination. Returns checks and errors to resolve before policy setup. | `backup_destination:write` |
+
+### backups
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_backup_policies_by_policyId`<br />`DELETE /api/backup-policies/:policyId` | Disable and remove this backup policy. Existing backup history remains available according to its retention and destination state. | `backup_destination:backup_policy:write` |
+| `get_backup_restores_by_restoreId`<br />`GET /api/backup-restores/:restoreId` | Get one backup restore's status. | `backup_destination:backup_restore:read` |
+| `get_backup_runs_by_runId`<br />`GET /api/backup-runs/:runId` | Get one backup run's details/status. | `backup_destination:backup_run:read` |
+| `get_projects_by_projectId_backup_policies`<br />`GET /api/projects/:projectId/backup-policies` | List a project's backup policies (schedules/retention). | `project:write` |
+| `get_projects_by_projectId_backup_runs`<br />`GET /api/projects/:projectId/backup-runs` | List a project's backup runs (history, status). | `project:write` |
+| `patch_backup_policies_by_policyId`<br />`PATCH /api/backup-policies/:policyId` | Update a backup policy’s schedule, retention, payload or destination. Omitted fields are preserved. Changing retention can prune old unprotected backups. | `backup_destination:backup_policy:write` |
+| `post_backup_policies_by_policyId_run`<br />`POST /api/backup-policies/:policyId/run` | Start an on-demand backup under this policy. Returns runId and possibly runIds for a multi-service batch; poll each run until succeeded or failed. Accepted work is not a completed backup. | `backup_destination:backup_policy:write` |
+| `post_backup_restores_by_restoreId_apply`<br />`POST /api/backup-restores/:restoreId/apply` | Apply a prepared restore using its returned confirmationToken. In-place restoration overwrites target data and can stop the service. Poll restore status until it finishes before reporting success. | `backup_destination:backup_restore:admin` |
+| `post_backup_restores_by_restoreId_cancel`<br />`POST /api/backup-restores/:restoreId/cancel` | Request cancellation of this backup restore. Poll the restore’s returned status; accepted cancellation does not undo data already written during apply. | `backup_destination:backup_restore:admin` |
+| `post_backup_runs_by_runId_protect`<br />`POST /api/backup-runs/:runId/protect` | Protect or unprotect this backup from retention cleanup, optionally until a specified time. Read the returned retention lock and backup status. | `backup_destination:backup_run:write` |
+| `post_backup_runs_by_runId_restore_prepare`<br />`POST /api/backup-runs/:runId/restore/prepare` | Prepare restoration from this backup without applying it. Returns restoreId and confirmationToken. Poll the restore until prepared, review its target and mode, then explicitly apply the returned token. | `backup_destination:backup_run:admin` |
+| `post_projects_by_projectId_backup_policies`<br />`POST /api/projects/:projectId/backup-policies` | Create a project or service backup policy with destination, schedule and retention. For one-click volume/data backup, use the existing policy payload defaults; source code remains in its repository. Run the policy separately to test it. | `project:write` |
+
+### billing
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_billing_actions`<br />`GET /api/billing/actions` | Read the organization's separate prepaid Cloud Actions balance, live VM usage rates, estimated minutes and recent deposits. Amounts use the returned unitsPerDollar. Does not create a checkout or expose payment URLs. Purchases may be unavailable. | `billing:read` |
+| `get_billing_checkouts`<br />`GET /api/billing/checkouts` | List unfinished payments for the organization's managed servers, optionally scoped to one server. Saved offers and verified payment state only; no checkout is created or resumed and no payment URL is exposed. Recover payments in Billing. | `billing:read` |
+| `get_billing_manage`<br />`GET /api/billing/manage` | Read hosted management pricing, verified subscription and connected-server allowance for this organization. | `billing:read` |
+| `get_billing_subscription_change`<br />`GET /api/billing/subscription/change` | Read a provider-confirmed subscription change for the selected managed server. Queued, payment_pending and scheduled do not activate new capacity; applied confirms the new terms. Server resizing uses its existing operation status. | `billing:read` |
+| `post_billing_subscription_change_preview`<br />`POST /api/billing/subscription/change/preview` | Preview an existing managed server's plan change using the provider's prorated price and next renewal date. Saves an expiring quote without charging. Uses trusted preset or Custom resources, preserves the billing interval, and lists projects that would restart. Complete confirmation in Billing. | `billing:write` |
+
+### billing-local
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_billing_allowances`<br />`GET /api/billing/allowances` | List resources consuming workspace allowances, including the projects holding managed domains. | `billing:read` |
+| `get_billing_credit_alerts`<br />`GET /api/billing/credit-alerts` | Read monthly compute coverage and metered credit alerts across this organization's managed servers. Each result identifies its server; unavailable billing state remains unknown. | `billing:read` |
+| `get_billing_resources`<br />`GET /api/billing/resources` | List Cloud resources contributing to this workspace’s bill and usage. | `billing:read` |
+| `get_billing_state`<br />`GET /api/billing/state` | Read the selected Cloud server's saved plan, paid compute coverage, usage and resource limits. Older metered plans also include their credit balance. Self-hosted instances need a connected Cloud account. | `billing:read` |
+| `get_billing_subscription`<br />`GET /api/billing/subscription` | Read the selected Cloud server's saved subscription, billing mode, paid period and pending plan change. | `billing:read` |
+| `get_billing_subscription_quote`<br />`GET /api/billing/subscription/quote` | Quote a Custom Cloud server's retail price for the selected monthly or annual interval for its CPU, memory in MiB, and disk in GiB. Compute and storage are covered for the paid period, without a compute-credit allowance. This read does not create a server or start a purchase. Complete checkout in Billing. | `billing:read` |
+| `get_billing_topup_packs`<br />`GET /api/billing/topup-packs` | List metered Cloud credit packs and prices. Monthly servers need no compute-credit top-ups. Reading this does not buy credits. | `billing:read` |
+| `get_billing_usage`<br />`GET /api/billing/usage` | Read metered Cloud usage over the requested date range, grouped by hour or day. This is billing data, not live workload metrics. | `billing:read` |
+
+### cloud-local
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_cloud_status`<br />`GET /api/cloud/status` | Openship Cloud connection status for this instance. | `cloud:read`<br />Self-hosted |
+
+### credentials
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_credentials_by_id`<br />`DELETE /api/credentials/:id` | Delete a stored credential. | `settings:admin` |
+| `get_credentials`<br />`GET /api/credentials` | List the organization's stored credentials. Secrets are masked. | `settings:read` |
+| `get_credentials_by_id`<br />`GET /api/credentials/:id` | Get one stored credential. The secret is masked. | `settings:read` |
+| `get_credentials_providers`<br />`GET /api/credentials/providers` | List the credential providers this instance supports, with the fields each needs. | `settings:read` |
+| `patch_credentials_by_id`<br />`PATCH /api/credentials/:id` | Rename, re-scope or rotate a stored credential. | `settings:admin` |
+| `post_credentials`<br />`POST /api/credentials` | Store a credential for a third-party provider (registry login, DNS token). | `settings:admin` |
+| `post_credentials_by_id_verify`<br />`POST /api/credentials/:id/verify` | Re-check a stored credential with its provider and record the result. | `settings:admin` |
+
+### deployments
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_deployments_by_id`<br />`DELETE /api/deployments/:id` | Delete an inactive deployment record and its releasable resources. The active deployment is protected; inspect status before deletion. | `deployment:admin` |
+| `get_deployments`<br />`GET /api/deployments` | List deployments in the org (optionally filter with query.projectId). | `deployment:list` |
+| `get_deployments_by_id`<br />`GET /api/deployments/:id` | Get a deployment by id — status, urls, timing, error summary. | `deployment:read` |
+| `get_deployments_by_id_build`<br />`GET /api/deployments/:id/build` | Live build/deploy status: progress, current step, per-service state, and — when the deploy is HELD waiting on a decision — `pendingPrompt` (its `actions[].id` is what the build-respond tool takes, and `expiresAt` is when the deploy gives up). Also carries `deploymentStatus` (the real persisted status, e.g. action_required), `errorCode`/`errorDetails` for a classified failure, `decisionPending` for a partial-failure release, and advisory `portCheck` results. Prefer the pending-actions tool when you want the resolution spelled out as a call. | `deployment:read` |
+| `get_deployments_by_id_info`<br />`GET /api/deployments/:id/info` | Get container info for this deployment. | `deployment:read` |
+| `get_deployments_by_id_logs`<br />`GET /api/deployments/:id/logs` | Fetch a deployment's build/runtime logs. | `deployment:read` |
+| `get_deployments_by_id_pending`<br />`GET /api/deployments/:id/pending` | What this deploy is waiting on, each item carrying the concrete call that resolves it in `resolveWith` (&#123;method, path, body&#125;). Poll this when a deploy appears stuck: a blocking prompt (e.g. a port already in use) shows up here with its action ids and `expiresAt`, so you never have to guess how to answer it. | `deployment:read` |
+| `get_deployments_by_id_restore_plan`<br />`GET /api/deployments/:id/restore-plan` | How a rollback to this deployment would run: instant from its retained image, or a rebuild from its commit. | `deployment:read` |
+| `get_deployments_by_id_usage`<br />`GET /api/deployments/:id/usage` | Get container CPU/memory usage for this deployment. | `deployment:read` |
+| `post_deployments`<br />`POST /api/deployments` | Git-based deploy — redeploy an already-linked project from its git source. To deploy a LOCAL FOLDER instead, use the folder-upload flow: projects folder/session → (upload) → folder/scan → projects/ensure → deployments/build/access. | `deployment:write` |
+| `post_deployments_build_access`<br />`POST /api/deployments/build/access` | Start the build and deployment for projectId. For uploaded source also pass uploadSessionId. The project's selected serverId determines where it runs; deployTarget alone does not select a managed server or transfer project records. Managed servers require buildStrategy:'server'. A desktop project imported from localPath can build on its connected Cloud server without a folder upload or transfer_to_cloud. Returns &#123; success, deployment_id, project_id &#125;. | `deployment:write` |
+| `post_deployments_by_id_build_respond`<br />`POST /api/deployments/:id/build/respond` | Answer a decision the deploy is HELD on, unblocking the pipeline. `action` must be one of the ids the prompt itself offers (e.g. free_port / abort for a port conflict) — read them from the pending-actions or build-status tool rather than guessing; do not invent an id. The deploy aborts on its own if nobody answers before the prompt's `expiresAt`. | `deployment:write` |
+| `post_deployments_by_id_cancel`<br />`POST /api/deployments/:id/cancel` | Cancel an in-progress deployment. | `deployment:admin` |
+| `post_deployments_by_id_keep`<br />`POST /api/deployments/:id/keep` | Keep a partial-failure deployment awaiting a decision (accept the succeeded services). | `deployment:write` |
+| `post_deployments_by_id_pin`<br />`POST /api/deployments/:id/pin` | Pin or unpin a retained deployment image for rollback using body.pinned. Read restore-plan to confirm whether that image is still available. | `deployment:write` |
+| `post_deployments_by_id_redeploy`<br />`POST /api/deployments/:id/redeploy` | Redeploy the project. useExistingCommit rebuilds the selected commit; reuseBuild retries a failed attempt's retained completed Docker images with no rebuild or substitute pull. | `deployment:write` |
+| `post_deployments_by_id_reject`<br />`POST /api/deployments/:id/reject` | Reject a partial-failure deployment awaiting a decision (roll back the changed services). | `deployment:write` |
+| `post_deployments_by_id_restart`<br />`POST /api/deployments/:id/restart` | Restart the running container(s) for this deployment. | `deployment:write` |
+| `post_deployments_by_id_rollback`<br />`POST /api/deployments/:id/rollback` | Roll back to this deployment's artifact/commit. | `deployment:admin` |
+| `post_deployments_by_id_skip_port_check`<br />`POST /api/deployments/:id/skip-port-check` | Dismiss the advisory 'nothing is listening on this port' warning for a target (service id, or the port as a string). Advisory-only — it never changes the deployment's status. Use when the app legitimately listens elsewhere. | `deployment:write` |
+| `post_deployments_prepare`<br />`POST /api/deployments/prepare` | Detect stack/build config for a git repo or local path before deploying. | `deployment:write` |
+
+### dns
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_dns_credentials_by_id`<br />`DELETE /api/dns/credentials/:id` | Disconnect a DNS provider credential. | `settings:admin` |
+| `delete_dns_ingress_by_id`<br />`DELETE /api/dns/ingress/:id` | Disconnect a public ingress binding, removing only its owned hostnames and connector. | `settings:admin` |
+| `get_dns_credentials`<br />`GET /api/dns/credentials` | List connected DNS provider credentials for the org. | `settings:read` |
+| `get_dns_credentials_by_id`<br />`GET /api/dns/credentials/:id` | Get one connected DNS provider credential. | `settings:read` |
+| `get_dns_ingress`<br />`GET /api/dns/ingress` | List public ingress connections on connected self-hosted servers. | `settings:read` |
+| `get_dns_ingress_domains_by_id`<br />`GET /api/dns/ingress/domains/:id` | Get a domain's persisted tunnel, DNS and Access setup status. | `settings:read` |
+| `get_dns_providers`<br />`GET /api/dns/providers` | List supported DNS providers and the token scopes they need. | `settings:read` |
+| `post_dns_credentials`<br />`POST /api/dns/credentials` | Connect a DNS provider credential (Cloudflare API token). | `settings:admin` |
+| `post_dns_ingress`<br />`POST /api/dns/ingress` | Connect or create a named Cloudflare Tunnel for a deployment server. Optionally install its connector and enroll new custom domains. | `settings:admin` |
+| `post_dns_ingress_by_id_retry`<br />`POST /api/dns/ingress/:id/retry` | Retry persisted public ingress setup or cleanup. | `settings:admin` |
+| `post_dns_ingress_discover`<br />`POST /api/dns/ingress/discover` | List Cloudflare accounts, named tunnels and reusable Access policies using a saved credential. | `settings:admin` |
+| `post_dns_verify_zone`<br />`POST /api/dns/verify-zone` | Check whether a connected DNS provider manages a hostname's zone. | `settings:read` |
+| `put_dns_ingress_by_id`<br />`PUT /api/dns/ingress/:id` | Change tunnel defaults for future custom domains without changing existing hostname policies. | `settings:admin` |
+| `put_dns_ingress_domains_by_id`<br />`PUT /api/dns/ingress/domains/:id` | Connect a custom domain to its server's tunnel, change its Access policy, or disconnect it. | `settings:admin` |
+
+### domains
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_domains_by_id`<br />`DELETE /api/domains/:id` | Delete a domain by id. | `domain:admin` |
+| `get_domains`<br />`GET /api/domains` | List domains for the project named by the projectId query parameter. | `domain:list` |
+| `get_domains_by_id`<br />`GET /api/domains/:id` | Read one domain's verify + SSL state. | `domain:read` |
+| `get_domains_by_id_dns_challenge`<br />`GET /api/domains/:id/dns/challenge` | Read the current DNS-01 HTTPS setup, including the actual ACME TXT record, deadline, logs, and result. Safe to poll or reopen after reconnecting; contains no certificate keys. | `domain:read` |
+| `get_domains_by_id_dns_plan`<br />`GET /api/domains/:id/dns/plan` | Preview what auto-configuring this domain's DNS through a connected provider would change. | `domain:read` |
+| `get_domains_by_id_records`<br />`GET /api/domains/:id/records` | Get the DNS records for a domain. | `domain:read` |
+| `post_domains`<br />`POST /api/domains` | Add a domain (free subdomain or custom). | `domain:write` |
+| `post_domains_by_id_certificate`<br />`POST /api/domains/:id/certificate` | Install an operator-supplied TLS certificate (bring-your-own / Cloudflare Origin CA). | `domain:write` |
+| `post_domains_by_id_dns_apply`<br />`POST /api/domains/:id/dns/apply` | Auto-configure this domain's DNS through a connected provider. | `domain:write` |
+| `post_domains_by_id_dns_challenge`<br />`POST /api/domains/:id/dns/challenge` | Start wildcard or DNS-01 HTTPS on a self-hosted deployment. Automatic uses a connected DNS provider; manual prepares a real ACME TXT record to publish. Returns the current attempt immediately; repeated starts reuse an active attempt. Read DNS challenge status, then check the manual attempt after adding its TXT value. Manual renewals need this flow again. | `domain:write` |
+| `post_domains_by_id_dns_challenge_cancel`<br />`POST /api/domains/:id/dns/challenge/cancel` | Cancel the named manual DNS certificate attempt. Preserves existing certificates and routes. An installation already in progress must finish. Remove only this attempt's TXT value from DNS afterward. | `domain:write` |
+| `post_domains_by_id_dns_challenge_check`<br />`POST /api/domains/:id/dns/challenge/check` | Check the exact TXT record for a manual DNS certificate attempt, then validate with the CA and install HTTPS on the current deployment server. Pass the attemptId returned by DNS challenge status. Read status for the result; a missing TXT keeps the same order available for retry. | `domain:write` |
+| `post_domains_by_id_primary`<br />`POST /api/domains/:id/primary` | Set this domain as the project's primary domain. | `domain:write` |
+| `post_domains_by_id_renew`<br />`POST /api/domains/:id/renew` | Renew the domain's SSL certificate. | `domain:write` |
+| `post_domains_by_id_verify`<br />`POST /api/domains/:id/verify` | Verify a domain's ownership / DNS. | `domain:write` |
+| `post_domains_by_id_verify_ssl`<br />`POST /api/domains/:id/verify-ssl` | Check/verify the domain's SSL certificate. | `domain:write` |
+| `post_domains_preview`<br />`POST /api/domains/preview` | Preview the DNS records a domain will need, before adding it. | `domain:read` |
+| `post_domains_renew_all`<br />`POST /api/domains/renew-all` | Attempt certificate renewal for eligible domains in this workspace. Inspect individual domain SSL state afterward; one domain’s failure does not prove all renewals failed. | `domain:write` |
+| `post_domains_verify_pending`<br />`POST /api/domains/verify-pending` | Recheck pending domains in this workspace and record current DNS/verification results. Read individual domain status for remaining blockers. | `domain:write` |
+
+### github
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_github_repos_by_owner_by_repo_webhooks`<br />`DELETE /api/github/repos/:owner/:repo/webhooks` | Delete a repository webhook identified by body.hookId. Read the repository webhook list first; removing it can stop automatic deployments. | `github:admin` |
+| `get_github_connect_poll`<br />`GET /api/github/connect/poll` | Read a GitHub connection attempt using its returned state, or self-hosted device authorization without a state. Completion means the requested connection committed; polling never grants access. | `github:read` |
+| `get_github_home`<br />`GET /api/github/home` | GitHub home: connection state, accounts, and repos in one call. | `github:read` |
+| `get_github_local_status`<br />`GET /api/github/local-status` | Read this self-hosted controller’s GitHub identity status and any connection problem. Local here means the Openship controller, not the MCP client. | `github:read`<br />Self-hosted |
+| `get_github_orgs_by_org_repos`<br />`GET /api/github/orgs/:org/repos` | List repositories in a GitHub org/account. | `github:list` |
+| `get_github_repos`<br />`GET /api/github/repos` | List the connected account's GitHub repositories. | `github:list` |
+| `get_github_repos_by_owner_by_repo`<br />`GET /api/github/repos/:owner/:repo` | Get a GitHub repository's metadata. | `github:read` |
+| `get_github_repos_by_owner_by_repo_branches`<br />`GET /api/github/repos/:owner/:repo/branches` | List a repository's branches. | `github:list` |
+| `get_github_repos_by_owner_by_repo_detect`<br />`GET /api/github/repos/:owner/:repo/detect` | Detect a repo's build config without reading its files — framework, package manager, install/build/start commands, output directory, port, and compose services. Use this to configure a deploy; it needs no content access. | `github:read` |
+| `get_github_repos_by_owner_by_repo_file`<br />`GET /api/github/repos/:owner/:repo/file` | Read a single file's contents from a repo. Requires repo content access; prefer /detect for build config. | `github:read` |
+| `get_github_repos_by_owner_by_repo_files`<br />`GET /api/github/repos/:owner/:repo/files` | List files and directories at query.path and optional query.branch. Requires repository content access; results remain confined to the granted paths. | `github:list` |
+| `get_github_repos_by_owner_by_repo_webhooks`<br />`GET /api/github/repos/:owner/:repo/webhooks` | List a repo's webhooks (to check push auto-deploy wiring). | `github:list` |
+| `get_github_sources`<br />`GET /api/github/sources` | List configured self-hosted GitHub App sources and their connection status without private keys. Requires workspace-owner access. | `github:admin`<br />Self-hosted |
+| `get_github_status`<br />`GET /api/github/status` | GitHub connection status for the org. | `github:read` |
+| `post_github_connect`<br />`POST /api/github/connect` | Start GitHub connection and return a redirect, installation selection, device code, or token instructions. Let the user complete approval in Openship or GitHub. For redirects with completion=attempt, poll using the returned state; existing connection status does not confirm a new installation. | `github:write` |
+| `post_github_repos_by_owner_by_repo_webhooks`<br />`POST /api/github/repos/:owner/:repo/webhooks` | Register Openship’s deployment webhook for this repository. Prefer the project auto-deploy tool when configuring an existing project; it chooses the correct delivery strategy. | `github:write` |
+| `post_github_sources_by_id_verify`<br />`POST /api/github/sources/:id/verify` | Verify a configured self-hosted GitHub App source and refresh its health status. Does not create an installation or return its credentials. | `github:admin`<br />Self-hosted |
+
+### issues
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_issues_history`<br />`DELETE /api/issues/history` | Clear resolved monitoring incident history in the caller's organization. Requires an organization owner/admin with unrestricted access. Preserves open incidents, other organizations and incidents resolving after the server-side cutoff. Does not clear audit logs, notifications or workloads. | `project:admin`<br />Self-hosted |
+| `get_issues`<br />`GET /api/issues` | THE place to answer "what is broken right now?" across the whole installation — start here before per-project tools. One org-wide feed that merges every check Openship already runs: container health incidents (unhealthy / crash_loop / down, plus a server-level `server_unreachable` row when a whole box is offline), managed edge/mail container state, deploy blockers and held prompts, partial-release decisions, unsynced routing, port advisories, unverified domains, certificate errors, and available updates. Each item carries `severity` (`outage` = not being served right now, `action_required`, `advisory`), a `target` with a dashboard href, and `resolveWith` — concrete &#123;method, path&#125; calls that fix it, callable as-is. Items whose fix is a managed container carry `infraFix` instead (a UI flow, not an API call). `?status=resolved` returns incident HISTORY (the only source with a lifecycle; up to 30 days), so a resolved-tab absence never means "nothing else ever broke". Infrastructure rows require server read access and are absent in cloud mode. | `project:list` |
+| `get_issues_health`<br />`GET /api/issues/health` | Latest health-watch snapshot for every expected workload in the organization. Cached only: this read performs no Docker polling. Includes healthy, unhealthy, crash-looping, down and unknown states plus watcher enabled status. | `project:list` |
+| `get_issues_rescan_status`<br />`GET /api/issues/rescan/status` | Read the current or most recent issue-rescan session, including stage status, errors and completion. Start once with the rescan tool, then poll this tool instead of launching repeated scans. | `job:read`<br />Self-hosted |
+| `get_issues_summary`<br />`GET /api/issues/summary` | Counts only from the same feed as GET /issues: &#123;outage, actionRequired, advisory, total&#125;. Use for a quick health verdict; read GET /issues for the rows and their fixes. | `project:list` |
+| `post_issues_health_scan`<br />`POST /api/issues/health/scan` | Check the current container state of every deployed workload in the caller's organization, including managed Cloud servers. Reuses the health watch scanner and refreshes only its in-memory snapshots: it does not enable a job, update incident history, send alerts, or start Docker event subscriptions. | `project:list` |
+| `post_issues_rescan`<br />`POST /api/issues/rescan` | Run the checkers behind GET /issues immediately instead of waiting for their schedules, then re-read GET /issues. Send &#123;healthOnly:true&#125; to recheck container/server health without running component updates or domain reconciliation. Returns a scan session with stages; GET /issues/rescan/status follows its completion. These are the existing scheduled jobs, recorded in job history as manual runs. Self-hosted only and requires an instance administrator. | `job:write`<br />Self-hosted |
+
+### jobs
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_jobs_by_key`<br />`DELETE /api/jobs/:key` | Delete a custom job (system jobs can't be deleted). | `job:write` |
+| `get_jobs`<br />`GET /api/jobs` | List your authorized command jobs with schedule, next run, and recent history. Self-hosted installations also show their built-in maintenance jobs; Cloud keeps platform maintenance private. | `job:read` |
+| `get_jobs_backup_schedules`<br />`GET /api/jobs/backup-schedules` | List scheduled backup policies (read-only), surfaced alongside jobs. | `job:read` |
+| `get_jobs_by_key`<br />`GET /api/jobs/:key` | Get one job's config, schedule, and recent runs. | `job:read` |
+| `get_jobs_by_key_runs`<br />`GET /api/jobs/:key/runs` | List a job's run history. | `job:read` |
+| `get_jobs_runs_by_runId`<br />`GET /api/jobs/runs/:runId` | Get one job run incl. captured output. | `job:read` |
+| `get_jobs_trigger_events`<br />`GET /api/jobs/trigger-events` | List the events a job can be triggered on. | `job:read` |
+| `patch_jobs_by_key`<br />`PATCH /api/jobs/:key` | Update a job's schedule/enabled (any job) or full config (custom jobs). | `job:write` |
+| `post_jobs`<br />`POST /api/jobs` | Create a command job on one or more servers you administer, using cron, one-time or manual scheduling, retries, env, secrets, dependencies, triggers and notifications. Cloud jobs reuse a subscribed managed server selected by serverId; they share its resources and metered allowance. | `job:write` |
+| `post_jobs_by_key_run`<br />`POST /api/jobs/:key/run` | Run a job immediately (custom jobs stream live; returns a runId). | `job:write` |
+
+### mail
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_mail_admin_by_serverId_aliases_by_id`<br />`DELETE /api/mail/admin/:serverId/aliases/:id` | Delete a mail alias or forward. Messages addressed through it will no longer use that mapping. | `mail_server:admin`<br />Self-hosted |
+| `delete_mail_admin_by_serverId_domains_by_domain`<br />`DELETE /api/mail/admin/:serverId/domains/:domain` | Delete a mail domain. Inspect dependents first; query.cascade=true also removes dependent mailboxes and aliases. | `mail_server:admin`<br />Self-hosted |
+| `delete_mail_admin_by_serverId_inbound_rules_by_ruleId`<br />`DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId` | Delete an inbound-mail notification rule and release capture that no remaining rule needs. | `mail_server:write`<br />Self-hosted |
+| `delete_mail_admin_by_serverId_mailboxes_by_email`<br />`DELETE /api/mail/admin/:serverId/mailboxes/:email` | Remove a mailbox account. query.hard=true also deletes its stored mail; read its details before requesting permanent removal. | `mail_server:admin`<br />Self-hosted |
+| `delete_mail_servers_by_serverId`<br />`DELETE /api/mail/servers/:serverId` | Forget Openship’s mail-server registration without uninstalling daemons or deleting mail data. Scan and adopt can restore the registration. | `mail_server:admin`<br />Self-hosted |
+| `get_mail_admin_by_serverId_aliases`<br />`GET /api/mail/admin/:serverId/aliases` | List mail aliases and forwards, optionally filtered by query.domain. | `mail_server:list`<br />Self-hosted |
+| `get_mail_admin_by_serverId_backup_policy`<br />`GET /api/mail/admin/:serverId/backup-policy` | Read this mail server’s saved backup policy, or null when no policy exists. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_backup_runs`<br />`GET /api/mail/admin/:serverId/backup-runs` | Read this mail server’s recent backup runs. Follow run IDs with the general backup status and restore tools. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_certificate`<br />`GET /api/mail/admin/:serverId/certificate` | Read the mail certificate, SMTP/IMAP TLS checks and automatic renewal settings. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_components_by_key_logs`<br />`GET /api/mail/admin/:serverId/components/:key/logs` | Read recent logs for one managed mail component, with optional query.lines. Logs can contain recipient addresses; redact before sharing. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_dns_scan`<br />`GET /api/mail/admin/:serverId/dns-scan` | Check current mail DNS records, optionally for query.domain. Does not apply changes. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_domains`<br />`GET /api/mail/admin/:serverId/domains` | List mail domains configured on this mail server. | `mail_server:list`<br />Self-hosted |
+| `get_mail_admin_by_serverId_domains_by_domain`<br />`GET /api/mail/admin/:serverId/domains/:domain` | Read a mail domain’s configuration and status. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_domains_by_domain_dependents`<br />`GET /api/mail/admin/:serverId/domains/:domain/dependents` | Inspect mailboxes and aliases affected by deleting this mail domain. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_domains_by_domain_dns`<br />`GET /api/mail/admin/:serverId/domains/:domain/dns` | Read required DNS records and the current DNS acknowledgment state for this mail domain. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_domains_by_domain_dns_plan`<br />`GET /api/mail/admin/:serverId/domains/:domain/dns/plan` | Preview DNS changes for this mail domain through a connected DNS provider. Does not apply records. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_domains_dns_pending`<br />`GET /api/mail/admin/:serverId/domains-dns/pending` | List mail domains still requiring DNS configuration or acknowledgment. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_inbound_rules`<br />`GET /api/mail/admin/:serverId/inbound-rules` | List inbound-mail notification rules and their enabled or paused state. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_mailboxes`<br />`GET /api/mail/admin/:serverId/mailboxes` | List mailboxes, optionally filtered by query.domain. Passwords are not returned. | `mail_server:list`<br />Self-hosted |
+| `get_mail_admin_by_serverId_mailboxes_by_email`<br />`GET /api/mail/admin/:serverId/mailboxes/:email` | Read a mailbox’s profile, quota and enabled state without its password. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_relay`<br />`GET /api/mail/admin/:serverId/relay` | Read outbound relay configuration with its password hidden. Relay credentials are managed in the mail server’s settings. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_stats`<br />`GET /api/mail/admin/:serverId/stats` | Read mail-server domain, mailbox, alias and storage totals. | `mail_server:read`<br />Self-hosted |
+| `get_mail_health_by_serverId`<br />`GET /api/mail/health/:serverId` | Check live mail components, delivery and network reachability. Set query.refreshReachability to bypass the reachability cache. | `mail_server:read`<br />Self-hosted |
+| `get_mail_servers`<br />`GET /api/mail/servers` | List mail servers managed by this workspace, their installation state and linked webmail projects. | `mail_server:list`<br />Self-hosted |
+| `get_mail_status`<br />`GET /api/mail/status` | Read saved setup progress for query.serverId. A missing state after an SSH failure is not proof that mail is uninstalled; check the mail health tool for live reachability. | `mail_server:read`<br />Self-hosted |
+| `get_mail_steps`<br />`GET /api/mail/steps` | Read the ordered mail installation steps. Installing a new mail stack uses the dashboard’s streaming setup wizard. | `mail_server:read`<br />Self-hosted |
+| `get_mail_webmail_targets`<br />`GET /api/mail/webmail/targets` | List permitted deployment targets for the mail server named by query.serverId. | `mail_server:read`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_aliases_by_id`<br />`PATCH /api/mail/admin/:serverId/aliases/:id` | Enable or disable this mail alias using body.active. | `mail_server:write`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_certificate`<br />`PATCH /api/mail/admin/:serverId/certificate` | Enable or disable automatic mail certificate renewal. Monitoring continues when renewal is disabled. | `mail_server:admin`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_domains_by_domain`<br />`PATCH /api/mail/admin/:serverId/domains/:domain` | Update a mail domain’s description, capacity limits, default quota or enabled state. | `mail_server:write`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_inbound_rules_by_ruleId`<br />`PATCH /api/mail/admin/:serverId/inbound-rules/:ruleId` | Update an inbound-mail notification rule and reconcile capture on affected domains. pausedReason=null clears the saved pause reason. | `mail_server:write`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_mailboxes_by_email`<br />`PATCH /api/mail/admin/:serverId/mailboxes/:email` | Update a mailbox’s name, quota, password or enabled state. Omit password to preserve it. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_aliases`<br />`POST /api/mail/admin/:serverId/aliases` | Create a mail alias, forward or catch-all and its destination. A catch-all applies to unmatched recipients in the domain. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_backup_policy`<br />`POST /api/mail/admin/:serverId/backup-policy` | Create or update the mail-server backup policy. Set messageData=true to include stored messages; keys default to included. Omitted retention preserves an existing policy or uses creation defaults; null removes that retention limit. Use the general backup policy run tool for an immediate backup. | `mail_server:admin`<br />Self-hosted |
+| `post_mail_admin_by_serverId_certificate_check`<br />`POST /api/mail/admin/:serverId/certificate/check` | Recheck the mail certificate on disk and served by SMTP/IMAP. Does not issue a certificate or send email. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_certificate_renew`<br />`POST /api/mail/admin/:serverId/certificate/renew` | Renew a due mail certificate through the Openship edge and reload Postfix/Dovecot. A still-valid certificate is reused and its service configuration repaired. | `mail_server:admin`<br />Self-hosted |
+| `post_mail_admin_by_serverId_components_by_key_by_action`<br />`POST /api/mail/admin/:serverId/components/:key/:action` | Run a supported action on a managed mail component. Read health for component keys and supported actions; inspect health again to confirm recovery. | `mail_server:admin`<br />Self-hosted |
+| `post_mail_admin_by_serverId_components_restart_all`<br />`POST /api/mail/admin/:serverId/components/restart-all` | Restart managed mail components on this server. Mail delivery can be briefly interrupted; inspect health afterward. | `mail_server:admin`<br />Self-hosted |
+| `post_mail_admin_by_serverId_domains`<br />`POST /api/mail/admin/:serverId/domains` | Create a mail domain with mailbox, alias and quota limits. Then inspect its DNS plan and apply or configure the required records. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_domains_by_domain_dns_acknowledge`<br />`POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge` | Recheck and acknowledge a mail domain’s DNS configuration. Only use after the required records have been configured. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_domains_by_domain_dns_apply`<br />`POST /api/mail/admin/:serverId/domains/:domain/dns/apply` | Apply this mail domain’s required DNS records through a connected provider. Inspect the DNS plan first. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_inbound_rules`<br />`POST /api/mail/admin/:serverId/inbound-rules` | Create an inbound-mail notification rule for a mailbox, domain or all domains, targeting existing notification channels. Inspect its resulting enabled/paused state if engine capture cannot be armed. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_inbound_rules_test`<br />`POST /api/mail/admin/:serverId/inbound-rules/test` | Preview matches for this server’s inbound notification rules without sending notifications or deleting captured messages. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_mailboxes`<br />`POST /api/mail/admin/:serverId/mailboxes` | Create a mailbox with a supplied password and optional quota. This changes the mail server’s account database. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_test_email`<br />`POST /api/mail/admin/:serverId/test-email` | Send a mail-delivery test to body.to, optionally from body.fromDomain. This sends a real email; use the recipient requested by the user. | `mail_server:write`<br />Self-hosted |
+| `post_mail_adopt`<br />`POST /api/mail/adopt` | Register an existing Openship mail installation found by scan. Restores control-plane ownership without reinstalling the stack. | `mail_server:write`<br />Self-hosted |
+| `post_mail_scan`<br />`POST /api/mail/scan` | Inspect an existing mail installation on body.serverId without reinstalling it. Returns adoptable state; use adopt to register an existing stack. | `mail_server:write`<br />Self-hosted |
+| `post_mail_webmail_deploy_project`<br />`POST /api/mail/webmail/deploy-project` | Deploy webmail for an existing mail server to a permitted target. Both self and cloud targets need target.serverId; use the local ID of a connected managed server for Cloud. Returns projectId and deploymentId for normal deployment monitoring. reconnectProjectId explicitly reuses an unlinked webmail on its existing mail server and hostname. replaceLegacy=true explicitly replaces an older unmanaged webmail installation. | `mail_server:write`<br />Self-hosted |
+
+### migration
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_migration_migrations_by_id`<br />`DELETE /api/migration/migrations/:id` | Delete a terminal migration’s history record. Does not delete the migrated project or its data; active runs must first finish or be cancelled. | `server:write` |
+| `delete_migration_sources_by_serverId`<br />`DELETE /api/migration/sources/:serverId` | Remove a migration-only connection and its stored credentials after its runs finish. Does not delete the external server, source containers, data or imported projects. | `server:write` |
+| `get_migration_active`<br />`GET /api/migration/active` | Find an existing active migration involving query.serverId before starting or reattaching to work. Returns its ID and cutover state; source environment values remain masked. | `server:read` |
+| `get_migration_migrations_by_id`<br />`GET /api/migration/migrations/:id` | Read migration state, saved progress, logs and pendingPrompt. When awaiting_cutover, review target health/routing before confirmation. A partial run can be resumed; polling never starts another migration. | `server:read` |
+| `get_migration_runs`<br />`GET /api/migration/runs` | List up to 50 recent migration summaries for query.serverId or query.projectId. Read a specific run for logs, prompts and cutover details. | `server:read` |
+| `get_migration_sources`<br />`GET /api/migration/sources` | List reusable migration-only SSH sources in the active organization. These connections cannot host Openship deployments or run general server commands. | `server:read` |
+| `post_migration_adopt`<br />`POST /api/migration/adopt` | Register selected discovered Docker services as an Openship project while preserving running containers and volumes. Rediscovers values on the server; do not send masked secrets as replacements. Deployment and cutover are separate. | `server:write`<br />Self-hosted |
+| `post_migration_migrate`<br />`POST /api/migration/migrate` | Start adoption, data transfer, deployment and routing verification for the reviewed Docker services. Returns migrationId and confirmationToken; poll the run and answer its offered pending prompts. Leave killOriginals false to review explicit cutover. True authorizes automatic retirement of original containers after verification. | `server:write` |
+| `post_migration_migrations_by_id_cancel`<br />`POST /api/migration/migrations/:id/cancel` | Cancel an in-flight migration and request rollback of target changes. Poll until rollback finishes. Not available after awaiting_cutover or terminal completion; use explicit cutover at that point. | `server:write` |
+| `post_migration_migrations_by_id_cleanup_target`<br />`POST /api/migration/migrations/:id/cleanup-target` | Remove target volumes copied by a failed migration, so a later retry can start cleanly. Source data is retained; succeeded migrations are refused. Review the failed run before cleanup. | `server:write` |
+| `post_migration_migrations_by_id_cutover`<br />`POST /api/migration/migrations/:id/cutover` | Confirm migration cutover using the returned confirmationToken. kill:true destroys original containers. False retains them: external cross-server imports restart previously running sources; existing project moves and same-server imports leave them stopped. Source volumes remain. Failed destructive cutover can only resume that same choice. | `server:write` |
+| `post_migration_migrations_by_id_respond`<br />`POST /api/migration/migrations/:id/respond` | Answer the migration’s current pendingPrompt with its promptId and an offered action ID. Use the run’s actual options and expiry; do not invent takeover decisions. | `server:write` |
+| `post_migration_migrations_by_id_resume`<br />`POST /api/migration/migrations/:id/resume` | Resume a partial migration’s remaining paths, optionally with reviewed source-path overrides or skips. Skipping excludes data from the move. Poll the run through verification and cutover. | `server:write` |
+| `post_migration_preview`<br />`POST /api/migration/preview` | Preview a Docker migration’s images, volumes, destination conflicts and downtime warnings without moving workloads. Use the same server and service selection for the subsequent migrate call. | `server:write` |
+| `post_migration_project`<br />`POST /api/migration/project` | Move or copy an existing Docker project to a registered server through the migration pipeline. Requires access to the project and both servers. Returns migrationId; poll and explicitly confirm cutover. Does not move k3s projects or convert database replication. | `server:write` |
+| `post_migration_reimport`<br />`POST /api/migration/reimport` | Re-register an orphaned Openship project found on this server, preserving its scanned project ID and configuration. Use scan to identify the project; this is recovery of existing workloads. | `server:write`<br />Self-hosted |
+| `post_migration_repo_compose`<br />`POST /api/migration/repo-compose` | Read derived Compose service configuration from an accessible GitHub repository for migration mapping. Environment values are masked; absence of Compose returns an empty services list. | `server:read` |
+| `post_migration_scan`<br />`POST /api/migration/scan` | Inspect Docker workloads on body.serverId, returning groups, container IDs, volumes and detected routes with secrets masked. Does not adopt or stop workloads. Use container IDs when selecting services shared across Compose projects. | `server:write` |
+| `post_migration_sources`<br />`POST /api/migration/sources` | Connect a public SSH server for migration only. Verifies the connection, pins its host key and encrypts credentials. Scan it, preview a move to a managed server, then start the existing migration flow. | `server:write` |
+| `post_migration_sources_test`<br />`POST /api/migration/sources/test` | Verify a public SSH migration source using a password or uploaded private key. Returns its host fingerprint; does not save credentials or modify workloads. | `server:write` |
+
+### notifications
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_notifications_channels_by_id`<br />`DELETE /api/notifications/channels/:id` | Delete a notification channel. | `notifications:write` |
+| `delete_notifications_subscriptions_by_id`<br />`DELETE /api/notifications/subscriptions/:id` | Delete a notification subscription. | `notifications:write` |
+| `get_notifications_categories`<br />`GET /api/notifications/categories` | List notification categories (the registry of event types). | `notifications:read` |
+| `get_notifications_channels`<br />`GET /api/notifications/channels` | List the caller's notification channels (email, webhook, etc.). | `notifications:read` |
+| `get_notifications_defaults`<br />`GET /api/notifications/defaults` | List org default notification settings. | `notifications:read` |
+| `get_notifications_deliveries`<br />`GET /api/notifications/deliveries` | List notification deliveries (the in-app alert feed). | `notifications:read` |
+| `get_notifications_deliveries_unseen_count`<br />`GET /api/notifications/deliveries/unseen-count` | Count unseen notifications. | `notifications:read` |
+| `get_notifications_subscriptions`<br />`GET /api/notifications/subscriptions` | List the caller's notification subscriptions. | `notifications:read` |
+| `patch_notifications_channels_by_id`<br />`PATCH /api/notifications/channels/:id` | Update a notification channel. | `notifications:write` |
+| `post_notifications_channels`<br />`POST /api/notifications/channels` | Create a notification channel. | `notifications:write` |
+| `post_notifications_channels_by_id_test`<br />`POST /api/notifications/channels/:id/test` | Send a test delivery to a channel; marks it verified on success. | `notifications:write` |
+| `post_notifications_deliveries_by_id_seen`<br />`POST /api/notifications/deliveries/:id/seen` | Mark a notification delivery as seen. | `notifications:write` |
+| `put_notifications_defaults`<br />`PUT /api/notifications/defaults` | Set a workspace default notification destination and enabled state for an event category. Existing subscriptions and delivery policy still apply. | `notifications:admin` |
+| `put_notifications_subscriptions`<br />`PUT /api/notifications/subscriptions` | Create or update a notification subscription. | `notifications:write` |
+
+### permissions
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_permissions_grants`<br />`GET /api/permissions/grants` | Read workspace resource grants for query.userId. Requires permission to inspect that member; does not widen this credential’s access. | `permissions:read` |
+| `get_permissions_invitations`<br />`GET /api/permissions/invitations` | List pending workspace invitations and their proposed grants. Accepting or sending invitations remains an account-owner workflow. | `permissions:read` |
+| `get_permissions_members`<br />`GET /api/permissions/members` | List workspace members and their current roles. | `permissions:read` |
+| `get_permissions_org_meta`<br />`GET /api/permissions/org-meta` | Read this workspace’s identity, team status and member count. | `permissions:read` |
+| `get_permissions_resources`<br />`GET /api/permissions/resources` | List grantable resources of query.type visible to this credential. This reads resources; it does not grant access. | `permissions:read` |
+| `get_permissions_workspaces`<br />`GET /api/permissions/workspaces` | List the Openship workspaces (organizations/workgroups) available to this credential, including empty workspaces. Returns each name, organizationId, slug and role, plus currentOrganizationId, boundOrganizationId, canSwitchOrganization and readOnly. Call before creating an app or Compose project; pass the chosen organizationId as a top-level tool argument on every call. Bound credentials can only list and target their own workspace. | `permissions:read` |
+
+### projects
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_projects_by_id`<br />`DELETE /api/projects/:id` | Delete this project and its owned deployment resources. Inspect deletion-preview first. Volumes are preserved unless query.wipeVolumes is explicitly true; force-orphan and record-only options can leave remote resources behind. | `project:admin` |
+| `delete_projects_by_id_cluster_databases`<br />`DELETE /api/projects/:id/cluster/databases` | Stop a managed database and retain its volumes when deleteData:false, or permanently delete owned database data when true. Requires its exact name and latest expectedSequence. Retained data continues to block project/runtime cleanup; poll inspection until the operation finishes. | `project:write`<br />Self-hosted |
+| `delete_projects_by_id_cluster_volumes`<br />`DELETE /api/projects/:id/cluster/volumes` | Permanently delete an unmounted project volume with its resourceVersion, matching confirmName and deleteData:true. Disconnect and redeploy first. External backups are preserved. | `project:write`<br />Self-hosted |
+| `delete_projects_by_id_cluster_volumes_backups`<br />`DELETE /api/projects/:id/cluster/volumes/backups` | Permanently delete a project file backup archive. Confirm the exact backupName using confirmName; the source volume is preserved. | `project:write`<br />Self-hosted |
+| `delete_projects_by_id_connections_by_linkId`<br />`DELETE /api/projects/:id/connections/:linkId` | Remove a database/app connection and its injected env var. | `project:admin` |
+| `delete_projects_by_id_incoming_webhooks_by_hookId`<br />`DELETE /api/projects/:id/incoming-webhooks/:hookId` | Delete an incoming webhook. | `project:write` |
+| `delete_projects_by_id_route_rules_by_ruleId`<br />`DELETE /api/projects/:id/route-rules/:ruleId` | Delete this project’s edge traffic rule and synchronize routing. Removing a restriction changes which traffic is allowed. | `project:write` |
+| `delete_projects_by_id_storage`<br />`DELETE /api/projects/:id/storage` | Remove the object-storage binding and the env vars it injected. | `project:admin` |
+| `get_projects`<br />`GET /api/projects` | List projects in the org. | `project:list` |
+| `get_projects_by_id`<br />`GET /api/projects/:id` | Get a project by id — config, source, routes, status. | `project:read` |
+| `get_projects_by_id_branches`<br />`GET /api/projects/:id/branches` | List the linked repository's branches. | `project:read` |
+| `get_projects_by_id_cluster`<br />`GET /api/projects/:id/cluster` | Read the project’s selected cluster, desired replicas, activeDeploymentId, updatedAt and observed pod readiness. Use those exact IDs/timestamps as scaling preconditions. error means runtime observation failed; saved desired replicas are not proof of running replicas. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_cluster_databases`<br />`GET /api/projects/:id/cluster/databases` | List this project’s managed cluster databases with saved lifecycle progress and connections. Database replication has a separate lifecycle from stateless application replicas. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_cluster_databases_imports`<br />`GET /api/projects/:id/cluster/databases/imports` | List completed PostgreSQL and Redis backups eligible for import into a new database on a server cluster. Requires source-project administrator access; returns reviewed backup identities, never archive paths or credentials. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_cluster_volumes`<br />`GET /api/projects/:id/cluster/volumes` | List the project's shared volumes, current attachment health and backups. Observe this status after a mutation. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_cluster_volumes_backups`<br />`GET /api/projects/:id/cluster/volumes/backups` | List project file backups, including archives whose source volume was deleted. Restore a completed archive into a new volume. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_commit_status`<br />`GET /api/projects/:id/commit-status` | Compare the deployed commit against the remote HEAD. | `project:read` |
+| `get_projects_by_id_connections`<br />`GET /api/projects/:id/connections` | List the database/app connections wired into this project. | `project:read` |
+| `get_projects_by_id_connections_candidates`<br />`GET /api/projects/:id/connections/candidates` | List projects and apps available for a service connection, filtered by access. | `project:write` |
+| `get_projects_by_id_connections_consumers`<br />`GET /api/projects/:id/connections/consumers` | List the projects that consume THIS app's connection (a shared database has many). | `project:read` |
+| `get_projects_by_id_deletion_preview`<br />`GET /api/projects/:id/deletion-preview` | Preview what deleting this project would remove (read-only). | `project:read` |
+| `get_projects_by_id_deployments`<br />`GET /api/projects/:id/deployments` | List a project's deployments (history, statuses). | `project:deployment:list` |
+| `get_projects_by_id_edge_config`<br />`GET /api/projects/:id/edge-config` | Compare saved project routes with the configuration currently served by the self-hosted edge. Use this to investigate routing drift before retrying. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_env`<br />`GET /api/projects/:id/env` | List a project's environment variables (secret values masked). | `project:read` |
+| `get_projects_by_id_environments`<br />`GET /api/projects/:id/environments` | List a project's environments (production / previews). | `project:read` |
+| `get_projects_by_id_git`<br />`GET /api/projects/:id/git` | Get the project's linked git repository info. | `project:read` |
+| `get_projects_by_id_incidents`<br />`GET /api/projects/:id/incidents` | Container runtime health for this project: OPEN incidents (a workload the health watch found `unhealthy`, `crash_loop`, or `down`, each with its reason, exit code, restart count, OOM flag and a log excerpt) plus recently-resolved ones. Two fields decide whether an empty list means anything, so always read them: `watching` is false when health monitoring is turned OFF — with it off, the absence of incidents is NOT evidence of health; `serverUnreachable` is non-null when the box itself is unreachable, in which case this project's rows are frozen and stale (nothing is being observed). Read this whenever a project looks unhealthy, or a deploy that reported success still isn't serving — it reports the RUNTIME state and complements the pending-actions tool (which covers deploy/domain/routing items that each carry a concrete fix). Incidents auto-resolve when the workload recovers; the usual move for an open one is to redeploy or inspect its `logExcerpt`. For customer-owned servers, including hosted Manage. | `project:read` |
+| `get_projects_by_id_incoming_webhooks`<br />`GET /api/projects/:id/incoming-webhooks` | List a project's incoming webhooks (dynamic trigger URLs). | `project:read` |
+| `get_projects_by_id_incoming_webhooks_by_hookId_deliveries`<br />`GET /api/projects/:id/incoming-webhooks/:hookId/deliveries` | List one incoming webhook's recent deliveries (paginated). | `project:read` |
+| `get_projects_by_id_info`<br />`GET /api/projects/:id/info` | Get a project's detailed info (runtime, build, source). | `project:read` |
+| `get_projects_by_id_logs`<br />`GET /api/projects/:id/logs` | Fetch the project's runtime logs (non-streaming). | `project:read` |
+| `get_projects_by_id_pending_actions`<br />`GET /api/projects/:id/pending-actions` | What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete &#123;method, path, body&#125; calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required. This covers deploy/domain/routing items only — for container-runtime health (crash loops, unhealthy or down containers) read the project's incidents instead. Scoped to ONE project: to ask what is broken across the whole installation (these items for every project, plus runtime incidents, unreachable servers and edge/mail state, ranked by severity), read the issues feed instead. | `project:read` |
+| `get_projects_by_id_previews`<br />`GET /api/projects/:id/previews` | List managed pull request previews, URLs, lifecycle state, and configuration. | `project:read` |
+| `get_projects_by_id_resources`<br />`GET /api/projects/:id/resources` | Get the project's CPU/RAM/disk resource config. | `project:read` |
+| `get_projects_by_id_roles`<br />`GET /api/projects/:id/roles` | Read the active deployment's runtime roles, replicas, live status, and restart counts. | `project:read` |
+| `get_projects_by_id_roles_configuration`<br />`GET /api/projects/:id/roles/configuration` | Read editable runtime role settings from the active Docker release. | `project:read` |
+| `get_projects_by_id_rollback_capacity`<br />`GET /api/projects/:id/rollback-capacity` | Get the rollback retention window in force (explicit or disk-sized), the measured per-release size, and the deploy host's free disk. | `project:read` |
+| `get_projects_by_id_route_protection`<br />`GET /api/projects/:id/route-protection` | List saved hostname password protection and whether the self-hosted edge acknowledged it. Never returns passwords or signing keys. | `project:read`<br />Self-hosted |
+| `get_projects_by_id_route_rules`<br />`GET /api/projects/:id/route-rules` | List project edge rules for rate limits, access restrictions and traffic filtering. | `project:read` |
+| `get_projects_by_id_routing_edge_status`<br />`GET /api/projects/:id/routing/edge-status` | Check whether the project's server edge (OpenResty on 80/443) is already set up. | `project:read` |
+| `get_projects_by_id_server_logs_recent`<br />`GET /api/projects/:id/server-logs/recent` | Fetch recent HTTP request logs for the project. | `project:read` |
+| `get_projects_by_id_storage`<br />`GET /api/projects/:id/storage` | Read this project's object-storage binding (S3 bucket wired into its filesystem config) and what could be bound. | `project:read` |
+| `get_projects_by_id_webhook_deliveries`<br />`GET /api/projects/:id/webhook-deliveries` | List a project's webhook delivery feed — GitHub pushes + custom hooks (paginated). | `project:read` |
+| `get_projects_home`<br />`GET /api/projects/home` | Read the combined local and connected-Cloud project overview, including project groups and hosting location. Individual operations still enforce each project’s scope. | `project:list` |
+| `get_projects_local`<br />`GET /api/projects/local` | List projects registered from directories on this Openship controller. These paths are not on the MCP client machine. | `project:list`<br />Self-hosted |
+| `patch_projects_by_id`<br />`PATCH /api/projects/:id` | Update a project's configuration (build config, source, options). | `project:write` |
+| `patch_projects_by_id_cluster`<br />`PATCH /api/projects/:id/cluster` | Select a ready k3s compute cluster for one stateless application or worker, or clear its selection with clusterId:null. Requires expectedUpdatedAt from the latest cluster read and stateless:true. Source builds need a reachable imageRepository. Saves the target only; deploy separately. Compose projects, persistent app mounts and live worker changes are unsupported. | `project:write`<br />Self-hosted |
+| `patch_projects_by_id_cluster_databases`<br />`PATCH /api/projects/:id/cluster/databases` | Update database resources and replica count using its latest expectedSequence. Redis partition changes require a previously configured backup destination and confirmRedisRebalance:true; a backup is verified before moving data. Major PostgreSQL upgrades use a separate copy, not an in-place edit. Inspect progress for completion. | `project:write`<br />Self-hosted |
+| `patch_projects_by_id_cluster_volumes`<br />`PATCH /api/projects/:id/cluster/volumes` | Grow a project shared volume using its current resourceVersion. Volumes cannot shrink; inspect status until expansion finishes. | `project:write`<br />Self-hosted |
+| `patch_projects_by_id_cluster_volumes_backups`<br />`PATCH /api/projects/:id/cluster/volumes/backups` | Schedule hourly or daily file backups with a retained archive count, or select manual to stop the schedule. The native storage controller runs accepted schedules independently. | `project:write`<br />Self-hosted |
+| `patch_projects_by_id_env`<br />`PATCH /api/projects/:id/env` | Merge env var changes (upserts + deletes); untouched vars are preserved. | `project:write` |
+| `patch_projects_by_id_incoming_webhooks_by_hookId`<br />`PATCH /api/projects/:id/incoming-webhooks/:hookId` | Update an incoming webhook (name/enabled/action/auth). | `project:write` |
+| `patch_projects_by_id_resources`<br />`PATCH /api/projects/:id/resources` | Update the project's CPU/RAM/disk, sleep mode, or port. | `project:write` |
+| `patch_projects_by_id_route_rules_by_ruleId`<br />`PATCH /api/projects/:id/route-rules/:ruleId` | Update this project’s edge traffic rule. Supply the complete replacement rule spec when changing it; omitted top-level fields are preserved. | `project:write` |
+| `post_projects`<br />`POST /api/projects` | Create a project from a git or local source (build config baked into the project). For a folder-upload deploy use projects/ensure instead (it accepts the folder/scan config and gitProvider:'upload'). | `project:write` |
+| `post_projects_by_id_auto_deploy`<br />`POST /api/projects/:id/auto-deploy` | Enable/disable auto-deploy on push. | `project:write` |
+| `post_projects_by_id_branch`<br />`POST /api/projects/:id/branch` | Set the project's deploy branch. | `project:write` |
+| `post_projects_by_id_build_cache_migration`<br />`POST /api/projects/:id/build-cache/migration` | Inspect manual build cache mounts and migrate selected mounts after a successful managed-cache deployment. Cached volume data is retained. | `project:write` |
+| `post_projects_by_id_clear_build`<br />`POST /api/projects/:id/clear-build` | Clear all unused Docker build cache on the project's self-hosted Docker server. Build cache is host-wide, so other projects on that server may rebuild dependencies on their next deployment. Returns reclaimed bytes. | `project:admin`<br />Self-hosted |
+| `post_projects_by_id_cluster_databases`<br />`POST /api/projects/:id/cluster/databases` | Create PostgreSQL or Redis on a ready cluster using a stable requestId. Optional clusterId prepares data before moving a Docker application. Choose only one source: restoreFrom a managed backup, importFrom a listed project backup, or copyFrom a ready PostgreSQL database for a reviewed copy or major upgrade. The original is preserved; switching application connections and deployment are separate actions. Redis cluster mode requires clusterAwareClient:true. Inspect saved progress until ready. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_cluster_databases_backup`<br />`POST /api/projects/:id/cluster/databases/backup` | Save a PostgreSQL or Redis backup using the latest expectedSequence and configured destination. Inspect until the backup completes. Redis snapshots are consistent per partition, with no cross-partition transaction guarantee. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_cluster_databases_connect`<br />`POST /api/projects/:id/cluster/databases/connect` | Save this database’s application connection under envKey, or remove its managed connection with envKey:null. Requires latest expectedSequence and refuses overwriting an unrelated variable. Redeploy the application separately to apply environment changes. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_cluster_databases_inspect`<br />`POST /api/projects/:id/cluster/databases/inspect` | Read a managed database by databaseId. Set observe:true for fresh native-operator, instance, volume and backup observations; inspect timestamps and errors before claiming readiness. | `project:read`<br />Self-hosted |
+| `post_projects_by_id_cluster_databases_retry`<br />`POST /api/projects/:id/cluster/databases/retry` | Resume a failed or interrupted database operation using its latest expectedSequence. Retains the saved intent, including deletion; inspect its error and progress before retrying. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_cluster_scale`<br />`POST /api/projects/:id/cluster/scale` | Scale an already deployed k3s application to 1–100 replicas using expectedDeploymentId and expectedUpdatedAt from a fresh cluster read. Starts a configuration deployment with the active immutable image, without rebuilding. Poll the returned deploymentId, then verify observed ready/available replicas. This is manual replica scaling, not a metrics-driven autoscaling policy. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_cluster_volumes`<br />`POST /api/projects/:id/cluster/volumes` | Create a replicated shared volume, optionally restored into a new volume from a completed project backup. Reuse a stable requestId after a lost response. Attach it using the project's cluster config mounts and deploy. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_cluster_volumes_backup`<br />`POST /api/projects/:id/cluster/volumes/backup` | Create a file-volume backup at the cluster's configured external destination. Use a stable requestId and inspect progress; application-consistent snapshots may require pausing writes. | `project:write`<br />Self-hosted |
+| `post_projects_by_id_connect`<br />`POST /api/projects/:id/connect` | Attach a custom domain to this project, with optional www alias or external ingress. Inspect the returned routing status and pending actions; attaching a hostname does not prove DNS or HTTPS readiness. | `project:write` |
+| `post_projects_by_id_connections`<br />`POST /api/projects/:id/connections` | Connect a database app into this project (inject its connection URL as a secret env). | `project:write` |
+| `post_projects_by_id_connections_bundle`<br />`POST /api/projects/:id/connections/bundle` | Wire several outputs from one source app into this project atomically (all-or-nothing). | `project:write` |
+| `post_projects_by_id_disable`<br />`POST /api/projects/:id/disable` | Disable a project (pause deploys / take offline). | `project:write` |
+| `post_projects_by_id_enable`<br />`POST /api/projects/:id/enable` | Enable a project (allow deploys / bring online). | `project:write` |
+| `post_projects_by_id_env_migrate_commands`<br />`POST /api/projects/:id/env/migrate-commands` | Atomically move literal command variables into encrypted project or service Environment. Refuses changed commands, shell expressions, and conflicting values. | `project:write` |
+| `post_projects_by_id_environments`<br />`POST /api/projects/:id/environments` | Create a project environment (e.g. a preview). | `project:write` |
+| `post_projects_by_id_git_link`<br />`POST /api/projects/:id/git/link` | Link a git repository to the project. | `project:write` |
+| `post_projects_by_id_incoming_webhooks`<br />`POST /api/projects/:id/incoming-webhooks` | Create an incoming webhook that fires a deploy or job when its URL is called. | `project:write` |
+| `post_projects_by_id_incoming_webhooks_by_hookId_invoke`<br />`POST /api/projects/:id/incoming-webhooks/:hookId/invoke` | Invoke an enabled incoming webhook with the current and saved actor's permissions. | `project:write` |
+| `post_projects_by_id_incoming_webhooks_by_hookId_rotate`<br />`POST /api/projects/:id/incoming-webhooks/:hookId/rotate` | Rotate an incoming webhook's token / HMAC secret. | `project:write` |
+| `post_projects_by_id_options`<br />`POST /api/projects/:id/options` | Set build/deploy options for a project. | `project:write` |
+| `post_projects_by_id_output_check`<br />`POST /api/projects/:id/output-check` | Live static-output check for the project's active deployment (advisory; static apps). | `project:read` |
+| `post_projects_by_id_port_check`<br />`POST /api/projects/:id/port-check` | Live port-reachability check for the project's active deployment (advisory). | `project:read` |
+| `post_projects_by_id_previews`<br />`POST /api/projects/:id/previews` | Enable or disable isolated same-repository pull request previews. Preview Environment values are used; disabling cleans up managed previews. | `project:write` |
+| `post_projects_by_id_roles_configuration`<br />`POST /api/projects/:id/roles/configuration` | Apply runtime role settings using the active image without rebuilding or restarting web. Expected release and project revision prevent stale edits. | `project:write` |
+| `post_projects_by_id_route_rules`<br />`POST /api/projects/:id/route-rules` | Create an edge traffic rule for this project, optionally scoped to a domain or path. A rule can block live traffic; read the existing rules before changing access. | `project:write` |
+| `post_projects_by_id_routing_retry`<br />`POST /api/projects/:id/routing/retry` | Repair project routes and verify pending domains and HTTPS without rebuilding; clears the routing warning only when all checks succeed. | `project:write` |
+| `post_projects_by_id_sleep_mode`<br />`POST /api/projects/:id/sleep-mode` | Set the project's sleep mode (auto_sleep / always_on). | `project:write` |
+| `post_projects_by_id_storage`<br />`POST /api/projects/:id/storage` | Bind an S3 bucket to this project — either an installed MinIO app or an external provider. Verifies the bucket, then injects the framework's storage env vars. | `project:write` |
+| `post_projects_by_id_transfer_to_cloud`<br />`POST /api/projects/:id/transfer/to-cloud` | Transfer this project’s control-plane records to the connected Openship Cloud. Inspect the returned deployment guidance: record transfer is not workload or volume migration. k3s projects cannot use this Docker/Cloud transfer path. | `project:admin`<br />Self-hosted |
+| `post_projects_by_id_transfer_to_self_hosted`<br />`POST /api/projects/:id/transfer/to-self-hosted` | Transfer this Cloud project’s control-plane records to this self-hosted instance. Inspect returned guidance and deploy separately; this does not move database volumes. k3s workloads use their cluster lifecycle. | `project:admin`<br />Self-hosted |
+| `post_projects_by_id_webhook_domain`<br />`POST /api/projects/:id/webhook-domain` | Choose or clear a verified public webhook domain for the project’s GitHub auto-deploy endpoint. This configures webhook delivery; it does not add a site route. | `project:write` |
+| `post_projects_ensure`<br />`POST /api/projects/ensure` | Folder-upload deploy — STEP 3/4. Create or update the project that carries the build config — deployments/build/access reads config from the PROJECT ROW, not the upload session, so this must run first. Map the folder/scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. For a docker-compose folder, pass the scan's `services` array through too — that persists the project's service set — AND pass `uploadSessionId` with it, since the scan masks env values (`••••••••`) and that is what restores them. Pass projectId to update an existing project. Returns the project id for STEP 4. | `project:write` |
+| `post_projects_folder_scan_by_sessionId`<br />`POST /api/projects/folder/scan/:sessionId` | Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty (&#123;&#125;). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present. | `project:write` |
+| `post_projects_folder_session`<br />`POST /api/projects/folder/session` | Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = &#123; url, absoluteUrl, method, headers, requiresAuth &#125;. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access. | `project:write` |
+| `post_projects_import`<br />`POST /api/projects/import` | Register a project from a source directory accessible to the Openship controller. On desktop, use localPath and an accessible managed serverId to deploy that folder to Cloud without an out-of-band upload. This creates project configuration; deploy the returned projectId separately with buildStrategy:'server' for a managed server. Source location does not choose build location. | `project:write`<br />Self-hosted |
+| `post_projects_scan`<br />`POST /api/projects/scan` | Inspect a source directory accessible to the Openship controller and detect build or Compose configuration. For a folder on the MCP client machine, use the folder-upload workflow. | `project:write`<br />Self-hosted |
+| `put_projects_by_id_release_image_source`<br />`PUT /api/projects/:id/release-image-source` | Atomically configure this single-app project to track and deploy a prebuilt container image from GitHub releases or a version URL. | `project:write` |
+| `put_projects_by_id_route_protection`<br />`PUT /api/projects/:id/route-protection` | Protect a self-hosted HTTPS hostname with a shared password, unlock it, revoke browser sessions, or retry a pending edge update. Cloud is unsupported. Public routes and direct origin ports are separate. | `project:write`<br />Self-hosted |
+
+### services
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_projects_by_id_services_by_serviceId`<br />`DELETE /api/projects/:id/services/:serviceId` | Delete this service from its project and clean up its owned runtime. Review persistent volumes and dependent services before removing it. | `project:service:admin` |
+| `get_projects_by_id_services`<br />`GET /api/projects/:id/services` | List a project's services (compose services / monorepo sub-apps). | `project:service:list` |
+| `get_projects_by_id_services_by_serviceId`<br />`GET /api/projects/:id/services/:serviceId` | Get one service by id. | `project:service:read` |
+| `get_projects_by_id_services_by_serviceId_env`<br />`GET /api/projects/:id/services/:serviceId/env` | List a service's environment variables. | `project:service:read` |
+| `get_projects_by_id_services_by_serviceId_environment`<br />`GET /api/projects/:id/services/:serviceId/environment` | Read the effective saved environment for a service, including Compose and shared project values. Optionally compare it with its deployed container. Secrets are masked. | `project:service:read` |
+| `get_projects_by_id_services_by_serviceId_logs`<br />`GET /api/projects/:id/services/:serviceId/logs` | Fetch a service's runtime logs (non-streaming). | `project:service:read` |
+| `get_projects_by_id_services_by_serviceId_volume_sizes`<br />`GET /api/projects/:id/services/:serviceId/volume-sizes` | Measure the on-disk size (du) of each of a service's volumes. | `project:service:read` |
+| `get_projects_by_id_services_containers`<br />`GET /api/projects/:id/services/containers` | List the running containers for a project's services. | `project:read` |
+| `patch_projects_by_id_services_by_serviceId`<br />`PATCH /api/projects/:id/services/:serviceId` | Update a service's configuration. Partial: an omitted field is left alone. `environment` and `advanced` are MERGED onto the stored values rather than replacing them — omit a key to keep it, set a key to null to remove it, send null for the whole field to clear it. Env values read back masked as `••••••••`; echo the sentinel to keep one unchanged. Every other field (`ports`, `volumes`, `dependsOn`, `publicEndpoints`, …) REPLACES its stored value wholesale, so send the complete list. | `project:service:write` |
+| `patch_projects_by_id_services_by_serviceId_env`<br />`PATCH /api/projects/:id/services/:serviceId/env` | Save named service environment changes. By default edits are service overrides. To update inherited project values, review with env/review and supply its shared keys and revision. Project write access is required. Saving does not restart containers or edit repository files. | `project:service:write` |
+| `post_projects_by_id_services`<br />`POST /api/projects/:id/services` | Add a service to a project. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_apply_env`<br />`POST /api/projects/:id/services/:serviceId/apply-env` | Apply saved runtime environment to this service using its current image and runtime configuration. Gracefully replaces its container without a build or deployment session. Returns after the replacement starts; preserves the previous configuration on failure. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_drift_accept`<br />`POST /api/projects/:id/services/:serviceId/drift/accept` | Accept upstream docker-compose changes for this service. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_drift_keep`<br />`POST /api/projects/:id/services/:serviceId/drift/keep` | Keep local edits over upstream docker-compose changes for this service. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_env_review`<br />`POST /api/projects/:id/services/:serviceId/env/review` | Review shared project values affected by service environment edits. Returns variable names, affected services and a revision for confirmation; no values are exposed or saved. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_exec`<br />`POST /api/projects/:id/services/:serviceId/exec` | Run a shell command inside this service's running container and return its exit code and combined output. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_restart`<br />`POST /api/projects/:id/services/:serviceId/restart` | Restart (bounce) this service's container. Answers 409 SERVICE_CONFIG_STALE when saved env is pending. Use POST /api/projects/:id/services/:serviceId/apply-env to apply it, or ?force=true to bounce with the old env. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_start`<br />`POST /api/projects/:id/services/:serviceId/start` | Start this service's container. | `project:service:write` |
+| `post_projects_by_id_services_by_serviceId_stop`<br />`POST /api/projects/:id/services/:serviceId/stop` | Stop this service's container. | `project:service:write` |
+| `post_projects_by_id_services_sync`<br />`POST /api/projects/:id/services/sync` | Sync services from the project's docker-compose file into the service table. | `project:service:write` |
+| `put_projects_by_id_services_by_serviceId_env`<br />`PUT /api/projects/:id/services/:serviceId/env` | Replace a service's environment variables. | `project:service:write` |
+
+### settings
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_settings`<br />`GET /api/settings` | Get the org's workspace settings (build mode, deploy defaults, preferences). | `settings:read` |
+| `get_settings_appearance`<br />`GET /api/settings/appearance` | Get the authenticated user's personal theme library and active appearance. Does not read other users' themes. | `settings:read` |
+| `get_settings_webhook_deliveries`<br />`GET /api/settings/webhook-deliveries` | List the org's webhook delivery feed, including pushes forwarded to Cloud or from unmanaged repos (paginated). | `settings:read` |
+| `patch_settings_build_mode`<br />`PATCH /api/settings/build-mode` | Set the default build mode (server / local). | `settings:write` |
+| `patch_settings_clone_strategy_preference`<br />`PATCH /api/settings/clone-strategy-preference` | Set the default clone strategy preference (prompt / local / remote-with-token). | `settings:write` |
+| `patch_settings_deploy_defaults`<br />`PATCH /api/settings/deploy-defaults` | Set/clear the default deploy target (local/server/cloud) and server. | `settings:write` |
+| `patch_settings_forward_git`<br />`PATCH /api/settings/forward-git` | Enable/disable forwarding your local git identity (gh CLI) to remote build servers during a server clone. | `settings:write` |
+| `patch_settings_route_strategy`<br />`PATCH /api/settings/route-strategy` | Set the default edge→app route strategy (auto / loopback-port / container-ip). | `settings:write` |
+| `patch_settings_transfer`<br />`PATCH /api/settings/transfer` | Set the default volume-transfer mode (auto/stream/direct/rsync) and compression (auto/zstd/gzip/none) for migrations. | `settings:write` |
+| `put_settings_appearance`<br />`PUT /api/settings/appearance` | Save the authenticated user's versioned appearance JSON, including validated theme tokens and embedded WOFF2 fonts. Null resets saved appearance. | `settings:write` |
+
+### system
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_system_compute_clusters_by_id`<br />`DELETE /api/system/compute-clusters/:id` | Delete an empty compute-cluster record using its current revision. Remove dependent projects, databases and the owned runtime first. Private networks and registered servers are retained. | `server:admin`<br />Self-hosted |
+| `delete_system_compute_clusters_by_id_runtime`<br />`DELETE /api/system/compute-clusters/:id/runtime` | Start removal of the owned k3s installation using the latest runtime sequence. Refuses attached projects, database data or foreign resources. Poll runtime until removed; failures are resumable. Retains Docker workloads and private networking. | `server:admin`<br />Self-hosted |
+| `delete_system_compute_clusters_by_id_storage`<br />`DELETE /api/system/compute-clusters/:id/storage` | Remove an empty shared-storage installation using its latest sequence. Refuses persistent or retained volumes and preserves external backup archives. | `server:admin`<br />Self-hosted |
+| `delete_system_networks_by_id`<br />`DELETE /api/system/networks/:id` | Remove a native private-network record using its current revision. Dependencies block removal. For an Openship-managed WireGuard network, prepare and apply a removal plan first; this call does not force-delete host networking. | `server:admin`<br />Self-hosted |
+| `delete_system_networks_operations_by_operationId`<br />`DELETE /api/system/networks/operations/:operationId` | Discard an unapplied managed-network plan using its current planHash. Refuses active or partially applied plans; inspect the operation and use its rollback action when host cleanup is required. | `server:admin`<br />Self-hosted |
+| `delete_system_networks_operations_by_operationId_members_by_serv`<br />`DELETE /api/system/networks/operations/:operationId/members/:serverId` | Remove a server from an unfinished managed-network operation using its planHash and sequence. Reconciles owned partial changes and returns a replacement preparation/plan; inspect it before applying. | `server:admin`<br />Self-hosted |
+| `delete_system_networks_preparations_by_preparationId`<br />`DELETE /api/system/networks/preparations/:preparationId` | Cancel or discard an unfinished managed-network preparation using its latest sequence. Follow any returned cleanupOperationId until owned host changes have been cleaned up; a cancellation request alone does not prove cleanup finished. | `server:admin`<br />Self-hosted |
+| `delete_system_networks_preparations_by_preparationId_members_by_`<br />`DELETE /api/system/networks/preparations/:preparationId/members/:serverId` | Remove a server from an unfinished managed-network preparation using the latest sequence and a new requestId. Returns replacement setup state and any required cleanup; this is not live k3s worker removal. | `server:admin`<br />Self-hosted |
+| `delete_system_servers_by_id`<br />`DELETE /api/system/servers/:id` | Remove this registered server and its managed records. Read deletion-preview first. query.destroyOnSource explicitly selects remote workload destruction; without it, workloads are left on the source. | `server:admin` |
+| `delete_system_servers_by_id_managed`<br />`DELETE /api/system/servers/:id/managed` | Delete an empty managed server after its subscription has ended. Requires billing admin, explicit confirmation and an idempotency key. Refuses servers with projects; confirms provider removal before removing ownership. Project deletion never deletes this server. | `server:admin` |
+| `delete_system_servers_by_id_tunnels_by_tunnelId`<br />`DELETE /api/system/servers/:id/tunnels/:tunnelId` | Stop and delete this saved SSH tunnel. Connections using its local port will close. | `server:write`<br />Self-hosted |
+| `get_system_browse`<br />`GET /api/system/browse` | Browse source directories on this Openship controller, not the MCP client. Requires instance administrator authority; use folder upload for a client-side directory. | `settings:read`<br />Self-hosted |
+| `get_system_compute_clusters`<br />`GET /api/system/compute-clusters` | List compute clusters, their server membership, selected private network and saved k3s readiness. A compute cluster does not become ready for deployments until runtime setup succeeds. | `server:read`<br />Self-hosted |
+| `get_system_compute_clusters_by_id`<br />`GET /api/system/compute-clusters/:id` | Read a compute cluster and its current revision, server IDs, private network and saved runtime readiness. Use this revision when setting up k3s or changing the cluster. | `server:read`<br />Self-hosted |
+| `get_system_compute_clusters_by_id_runtime`<br />`GET /api/system/compute-clusters/:id/runtime` | Read saved k3s setup or removal progress, including status, sequence, per-host steps, logs and errors; returns null before setup. Poll this endpoint after starting work. Reading never starts or retries an operation. | `server:read`<br />Self-hosted |
+| `get_system_compute_clusters_by_id_storage`<br />`GET /api/system/compute-clusters/:id/storage` | Read shared-storage setup, capacity and saved progress. Use observe=true for current disk and volume health. | `server:read`<br />Self-hosted |
+| `get_system_containers`<br />`GET /api/system/containers` | List the cached managed-container inventory across registered servers. Scan the fleet or one server for fresh observations. | `server:read` |
+| `get_system_containers_applying`<br />`GET /api/system/containers/applying` | Read queued, running and recently completed managed-container update or repair operations. Poll after starting a fleet apply. | `server:read` |
+| `get_system_containers_behind`<br />`GET /api/system/containers/behind` | Read the fleet-wide count of managed containers with available updates. This reads cached inventory; scan to refresh it. | `server:read` |
+| `get_system_containers_issues`<br />`GET /api/system/containers/issues` | List managed-container problems across the server fleet, including stale or unreachable observations. | `server:read` |
+| `get_system_diagnostics`<br />`GET /api/system/diagnostics` | Read instance health, database/migration status and resource counts. Requires instance administrator authority. This does not inspect every remote workload. | `settings:read`<br />Self-hosted |
+| `get_system_edge_untracked`<br />`GET /api/system/edge/untracked` | Inspect edge hostnames that are not owned by any project in this instance. Requires instance administrator authority; compare ownership before removing anything. | `settings:read`<br />Self-hosted |
+| `get_system_install_session`<br />`GET /api/system/install/session` | Read the current or named server installation session, including progress and pending decisions. query.serverId selects the server; query.sessionId reattaches to a specific session. | `server:read` |
+| `get_system_networks`<br />`GET /api/system/networks` | List private networks with members, saved verification and any managed setup operation. Private networks provide connectivity; compute clusters and their k3s runtime are separate resources. | `server:read`<br />Self-hosted |
+| `get_system_networks_by_id`<br />`GET /api/system/networks/:id` | Read a private network, its current revision, member addresses, verification report and managed operation. Poll after verification; a saved report is dated evidence, not continuous monitoring. | `server:read`<br />Self-hosted |
+| `get_system_networks_capabilities`<br />`GET /api/system/networks/capabilities` | Check whether private networking is available, whether this credential may manage the server fleet, supported providers and network modes, and member limits. Start network or cluster setup here. | `server:read`<br />Self-hosted |
+| `get_system_networks_operations_by_operationId`<br />`GET /api/system/networks/operations/:operationId` | Read a managed-network operation, its planHash, sequence, per-host steps/logs, verification report and errors. Poll while applying, verifying, committing or rolling_back. A saved plan is not an applied network. | `server:read`<br />Self-hosted |
+| `get_system_networks_preparations`<br />`GET /api/system/networks/preparations` | List saved managed-network preparations so interrupted setup can be found without starting another operation. | `server:read`<br />Self-hosted |
+| `get_system_networks_preparations_by_preparationId`<br />`GET /api/system/networks/preparations/:preparationId` | Read a managed-network preparation’s status, sequence, per-host steps/logs and errors. When ready, follow operationId to inspect the generated plan. replacementPreparationId and cleanupOperationId identify any follow-up work. | `server:read`<br />Self-hosted |
+| `get_system_servers`<br />`GET /api/system/servers` | List registered deployment servers accessible to this credential, with server IDs and connection summaries. Use these IDs for infrastructure operations; private-network and compute-cluster IDs are different. | `server:list` |
+| `get_system_servers_by_id`<br />`GET /api/system/servers/:id` | Read this registered server’s configuration, supported capabilities, managed plan and lifecycle progress. Stored SSH secrets are not returned. Use reachability for a fresh connection check. | `server:read` |
+| `get_system_servers_by_id_containers`<br />`GET /api/system/servers/:id/containers` | Read managed containers and their cached health/version information on this server. | `server:read` |
+| `get_system_servers_by_id_containers_by_component_apply_session`<br />`GET /api/system/servers/:id/containers/:component/apply/session` | Read the active managed-container update or repair session for this server component. This only observes an existing operation. | `server:read` |
+| `get_system_servers_by_id_deletion_preview`<br />`GET /api/system/servers/:id/deletion-preview` | Preview which projects, apps and server-scoped records would be affected by deleting this server. Review this before removal; no resources are changed. | `server:read` |
+| `get_system_servers_by_id_github`<br />`GET /api/system/servers/:id/github` | Read GitHub authentication status on this deployment server. This is the server’s clone identity, distinct from the controller’s GitHub connection. | `server:read`<br />Self-hosted |
+| `get_system_servers_by_id_github_connect_poll`<br />`GET /api/system/servers/:id/github/connect/poll` | Poll GitHub device authorization already started on this server. The user must complete the returned browser approval. | `server:read`<br />Self-hosted |
+| `get_system_servers_by_id_infrastructure`<br />`GET /api/system/servers/:id/infrastructure` | Read this server’s attached private networks and compute cluster, subject to fleet visibility. Use these resource IDs to inspect network or k3s readiness. | `server:read` |
+| `get_system_servers_by_id_managed_info`<br />`GET /api/system/servers/:id/managed/info` | Read the selected managed server image, operating system, lifecycle and actual allocation. Does not start the VM or return its raw configuration. | `server:read` |
+| `get_system_servers_by_id_managed_outbound`<br />`GET /api/system/servers/:id/managed/outbound` | Read this managed server's outbound connection and revision. Returns only public IP/proxy metadata, never credentials. Does not start the server. | `server:read` |
+| `get_system_servers_by_id_managed_outbound_options`<br />`GET /api/system/servers/:id/managed/outbound/options` | List available managed outbound IPs and countries for this owned Cloud server. No proxy credentials or internal pool identifiers are exposed. | `server:read` |
+| `get_system_servers_by_id_managed_runtime_api`<br />`GET /api/system/servers/:id/managed/runtime-api` | Read the managed server Runtime API status without enabling it or returning a token. | `server:read` |
+| `get_system_servers_by_id_managed_ssh`<br />`GET /api/system/servers/:id/managed/ssh` | Read SSH enablement and public connection instructions for this managed server. Never returns passwords. | `server:read` |
+| `get_system_servers_by_id_managed_workloads`<br />`GET /api/system/servers/:id/managed/workloads` | List native managed processes with live status, capped at 100 entries. Distinguishes manual, project and system workloads; does not return environments or commands. | `server:read` |
+| `get_system_servers_by_id_modules`<br />`GET /api/system/servers/:id/modules` | List installed native modules, available updates and migrations requiring consent on this server. | `server:read` |
+| `get_system_servers_by_id_network_settings`<br />`GET /api/system/servers/:id/network-settings` | Read a managed Docker server's provider network settings. Add details=true for outbound rules, IP diagnostics and the revision required to edit rules. Null internetAccess means unavailable. Ports are managed by project routing; this read never starts the server. | `server:read` |
+| `get_system_servers_by_id_rate_limit`<br />`GET /api/system/servers/:id/rate-limit` | Read this server’s OpenResty request-rate limit, burst allowance and whitelist. | `server:read` |
+| `get_system_servers_by_id_reachability`<br />`GET /api/system/servers/:id/reachability` | Probe whether the Openship controller can reach this server now. A controller connection failure is not evidence that deployed applications are down. | `server:read` |
+| `get_system_servers_by_id_resize`<br />`GET /api/system/servers/:id/resize` | Preview applying a managed server's purchased capacity. Returns a revision and the projects that may restart; no billing or runtime changes. Review before resize. Disk shrinking requires migration. | `server:read` |
+| `get_system_servers_by_id_swarm`<br />`GET /api/system/servers/:id/swarm` | Inspect Docker Swarm membership on a self-hosted server. Set details=true to read stacks, service replica counts, ports, mounts and nodes from a manager. Requires server administration because inventory spans the cluster. Read-only: does not join nodes, adopt stacks or change services. Workers require a manager connection for inventory. No environment values, join tokens or credentials are returned. | `server:admin`<br />Self-hosted |
+| `get_system_servers_by_id_tunnels`<br />`GET /api/system/servers/:id/tunnels` | List saved SSH port-forwarding tunnels for this server and their current state. Tunnels run from this Openship controller, not from the MCP client. | `server:read`<br />Self-hosted |
+| `get_system_servers_by_id_usage`<br />`GET /api/system/servers/:id/usage` | Read measured CPU, memory and disk usage plus accessible projects on this server. Purchased disk is capacity, not bytes used. Unavailable measurements are null. This never provisions or resumes a server. | `server:read` |
+| `get_system_servers_destinations`<br />`GET /api/system/servers/destinations` | Read accessible deployment servers and their capabilities. Use serverId to place a project on a connected or managed Cloud server. | `server:list` |
+| `get_system_servers_managed_available`<br />`GET /api/system/servers/managed/available` | List managed servers available through this installation's connected Cloud account. Does not create a server or copy projects. Use connectManaged to add a selected server to this organization. | `server:admin` |
+| `get_system_settings`<br />`GET /api/system/settings` | Read public instance settings and setup state, with secrets masked. | `settings:read`<br />Self-hosted |
+| `get_system_settings_email`<br />`GET /api/system/settings/email` | Read instance email-delivery configuration with credentials masked. | `settings:read`<br />Self-hosted |
+| `patch_system_compute_clusters_by_id`<br />`PATCH /api/system/compute-clusters/:id` | Update compute-cluster membership and network using the current revision. A runtime must be removed before changing its members; this is not live worker joining or draining. | `server:admin`<br />Self-hosted |
+| `patch_system_compute_clusters_by_id_storage_backup`<br />`PATCH /api/system/compute-clusters/:id/storage/backup` | Configure an existing external backup destination for shared files. Uses the current storage sequence and preserves an already configured destination so archives stay recoverable. | `server:admin`<br />Self-hosted |
+| `patch_system_networks_by_id`<br />`PATCH /api/system/networks/:id` | Replace a native private network configuration using its current revision. Existing runtime dependencies block membership changes. Verify again after changing the configuration. | `server:admin`<br />Self-hosted |
+| `patch_system_networks_preparations_by_preparationId_connections`<br />`PATCH /api/system/networks/preparations/:preparationId/connections` | Revise permitted server-to-server connections for an unfinished managed-network preparation using its latest sequence and a new requestId. Returns replacement preparation; inspect and apply its new plan. k3s requires bidirectional access among all selected members. | `server:admin`<br />Self-hosted |
+| `patch_system_servers_by_id`<br />`PATCH /api/system/servers/:id` | Update this registered server’s name or SSH connection settings. Omitted fields are preserved. Check reachability after changing connection settings. | `server:write` |
+| `patch_system_servers_by_id_managed_outbound`<br />`PATCH /api/system/servers/:id/managed/outbound` | Change this managed server's outbound connection after explicit review. Send expectedRevision from managed/outbound and confirm:true. Choose a listed managed IP, or a custom public IPv4 HTTP/HTTPS proxy with both credentials or neither. Affects outgoing connections for every project; preserves internet policy, ingress and routes. Credentials are never returned or audited. | `server:admin` |
+| `patch_system_servers_by_id_managed_ssh`<br />`PATCH /api/system/servers/:id/managed/ssh` | Enable or disable SSH with explicit confirmation and expected enablement. Changes all SSH users on this server. | `server:admin` |
+| `patch_system_servers_by_id_network_settings`<br />`PATCH /api/system/servers/:id/network-settings` | Change outbound internet access and optional egress host allowlist on a managed Docker server after reviewing current settings. Egress changes also require expectedRevision from the network read. Disabling it affects downloads, external APIs and builds for every project. Send expectedInternetAccess and confirm:true. Ingress, private links and edge routing remain managed by Openship and Oblien. | `server:admin` |
+| `patch_system_servers_by_id_rate_limit`<br />`PATCH /api/system/servers/:id/rate-limit` | Update the server-wide OpenResty rate limit and whitelist. This affects traffic to all routes on the server. | `server:admin` |
+| `post_system_check`<br />`POST /api/system/check` | Inspect required software and component readiness on body.serverId. Returns missing components and health messages; does not install them. | `server:admin` |
+| `post_system_compute_clusters`<br />`POST /api/system/compute-clusters` | Create a compute cluster from registered servers on one private network. Reuse requestId for the same intent after a lost response. This saves membership; start its runtime setup next. | `server:admin`<br />Self-hosted |
+| `post_system_compute_clusters_by_id_runtime`<br />`POST /api/system/compute-clusters/:id/runtime` | Start durable k3s setup on this compute cluster with its current revision and a stable requestId. Checks private connectivity and host prerequisites before installation. Returns accepted progress, not completion; poll runtime until ready, failed or interrupted. Requires fleet administration. | `server:admin`<br />Self-hosted |
+| `post_system_compute_clusters_by_id_runtime_retry`<br />`POST /api/system/compute-clusters/:id/runtime/retry` | Resume a failed or interrupted k3s setup or removal using the latest runtime sequence. Reuses the saved version, ownership and operation intent. Inspect errors first and poll runtime for completion; do not retry merely because a response was lost. | `server:admin`<br />Self-hosted |
+| `post_system_compute_clusters_by_id_storage`<br />`POST /api/system/compute-clusters/:id/storage` | Enable persistent and shared storage on reviewed cluster servers and dedicated empty directories. Installs prerequisites without formatting disks. Reuse requestId after a lost response and follow saved progress. | `server:admin`<br />Self-hosted |
+| `post_system_compute_clusters_by_id_storage_retry`<br />`POST /api/system/compute-clusters/:id/storage/retry` | Resume failed or interrupted storage setup/removal using its latest sequence. Inspect the error before retrying. | `server:admin`<br />Self-hosted |
+| `post_system_containers_apply_all`<br />`POST /api/system/containers/apply-all` | Start the selected update or repair intents for managed containers across the fleet. Targets come from current inventory. Poll containers/applying for progress and failures. | `server:write` |
+| `post_system_containers_scan`<br />`POST /api/system/containers/scan` | Refresh managed-container versions and health across the server fleet without applying updates. | `server:write` |
+| `post_system_edge_untracked_remove`<br />`POST /api/system/edge/untracked/remove` | Remove one untracked hostname from the edge after rechecking that no project owns it. Requires instance administrator authority. Never use this to repair a domain still owned by a project. | `settings:admin`<br />Self-hosted |
+| `post_system_install`<br />`POST /api/system/install` | Install one named component on body.serverId using the shared server installer. Read check first. For k3s cluster setup use the compute-cluster runtime tool, which verifies the whole cluster. | `server:admin` |
+| `post_system_install_respond`<br />`POST /api/system/install/respond` | Answer a server installation’s current pending prompt using its sessionId and an offered action ID. Read install/session first; never invent a takeover decision. | `server:admin` |
+| `post_system_networks`<br />`POST /api/system/networks` | Register an existing native private network using discovered private interfaces and distinct IPv4 addresses. This does not provision a provider network. Reuse requestId after a lost response, then verify the saved network. | `server:admin`<br />Self-hosted |
+| `post_system_networks_by_id_verify`<br />`POST /api/system/networks/:id/verify` | Start bidirectional private-network verification for the current revision. Poll the network detail until verification finishes and inspect its peer report. Provider firewall rules must already permit the probe traffic. | `server:admin`<br />Self-hosted |
+| `post_system_networks_operations_by_operationId_apply`<br />`POST /api/system/networks/operations/:operationId/apply` | Apply, resume or roll back the exact managed-network plan identified by planHash. Review host changes and provider firewall requirements first. Returns accepted progress; poll the operation until it settles and inspect failures before retrying. | `server:admin`<br />Self-hosted |
+| `post_system_networks_plans`<br />`POST /api/system/networks/plans` | Plan an Openship-managed WireGuard network change without applying it. Returns an expiring planHash, host changes and firewall requirements. Reuse requestId for the same intent; inspect the plan before calling operations/apply. | `server:admin`<br />Self-hosted |
+| `post_system_networks_preparations`<br />`POST /api/system/networks/preparations` | Start durable preparation for managed WireGuard networking: check hosts and install missing prerequisites, then produce a reviewed plan. Reuse requestId after a lost response. Poll the preparation; when ready, inspect its operationId and plan before applying networking. | `server:admin`<br />Self-hosted |
+| `post_system_remove`<br />`POST /api/system/remove` | Remove one managed component from body.serverId. This may interrupt workloads using it; read component readiness and removal restrictions first. | `server:admin` |
+| `post_system_servers`<br />`POST /api/system/servers` | Register a deployment server with SSH connection settings. Credentials are encrypted by the existing server operation. This does not create a cloud machine; test its connection and inspect prerequisites next. | `server:write` |
+| `post_system_servers_by_id_containers_scan`<br />`POST /api/system/servers/:id/containers/scan` | Refresh managed-container versions and health on this server without applying changes. | `server:write` |
+| `post_system_servers_by_id_ensure`<br />`POST /api/system/servers/:id/ensure` | Queue idempotent provisioning or resume of a subscribed managed Cloud server. Checks provider entitlement and preserves existing data. Docker and bare projects reuse this server. Poll server get for operation progress. | `server:write` |
+| `post_system_servers_by_id_exec`<br />`POST /api/system/servers/:id/exec` | Run a shell command on this server's host and return its exit code and combined output. Interpreted by `sh -c`, so pipes and redirects work; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Use this to inspect or repair a server; prefer the read-only endpoints when they answer the question. | `server:admin` |
+| `post_system_servers_by_id_github_connect`<br />`POST /api/system/servers/:id/github/connect` | Start GitHub device authorization on this deployment server. Present the returned user code and URL to the user, then poll the server GitHub connection. | `server:write`<br />Self-hosted |
+| `post_system_servers_by_id_managed_boot_logs`<br />`POST /api/system/servers/:id/managed/boot-logs` | Read a bounded tail of managed server boot logs. Requires server admin; logs may contain application output. | `server:admin` |
+| `post_system_servers_by_id_managed_runtime_api_credential`<br />`POST /api/system/servers/:id/managed/runtime-api/credential` | Reveal the current workspace-only Runtime API credential. Requires server admin and confirmation. Does not enable the service or issue an account/namespace token. | `server:admin` |
+| `post_system_servers_by_id_managed_runtime_api_enable`<br />`POST /api/system/servers/:id/managed/runtime-api/enable` | Enable the Runtime API used by Openship for deployments and server management. Requires server admin and active server entitlement. | `server:admin` |
+| `post_system_servers_by_id_managed_runtime_api_rotate`<br />`POST /api/system/servers/:id/managed/runtime-api/rotate` | Rotate the Runtime API credential after reviewing the current revision. Invalidates prior tokens and sessions. A stale revision cannot repeat a successful rotation. | `server:admin` |
+| `post_system_servers_by_id_managed_ssh_connection`<br />`POST /api/system/servers/:id/managed/ssh/connection` | Issue a short-lived SSH connection for this managed server. Requires server admin and confirmation. Treat its password as a secret. | `server:admin` |
+| `post_system_servers_by_id_managed_workloads`<br />`POST /api/system/servers/:id/managed/workloads` | Create a stopped manual native process on this server. Reuse the same idempotency key after an uncertain response. Commands and environment are admin-only and not audited. Start it explicitly after creation. | `server:admin` |
+| `post_system_servers_by_id_managed_workloads_control`<br />`POST /api/system/servers/:id/managed/workloads/control` | Start, stop or delete a manual process created by the server controls. Requires confirmation. Project and platform processes must use their own lifecycle controls. | `server:admin` |
+| `post_system_servers_by_id_managed_workloads_logs`<br />`POST /api/system/servers/:id/managed/workloads/logs` | Read bounded logs for a process on this managed server. Requires server admin. Process ID is scoped to the server. | `server:admin` |
+| `post_system_servers_by_id_modules_by_module_apply`<br />`POST /api/system/servers/:id/modules/:module/apply` | Apply available updates to this native server module through its owned migration workflow. Read modules first and inspect pendingConsent in the result; a returned consent request is not a completed update. | `server:write` |
+| `post_system_servers_by_id_modules_scan`<br />`POST /api/system/servers/:id/modules/scan` | Refresh native-module versions and available migration information on this server. Does not apply updates. | `server:write` |
+| `post_system_servers_by_id_network_inspect`<br />`POST /api/system/servers/:id/network/inspect` | Inspect this server’s actual network interfaces, private IPv4 addresses, MTUs and machine identity over SSH. Does not change networking. Use the observation to register a native private network. | `server:admin`<br />Self-hosted |
+| `post_system_servers_by_id_ports_scan`<br />`POST /api/system/servers/:id/ports/scan` | Inspect listening ports through this server's execution connection. Returns protocol, bound address and process without changing listeners. Managed Cloud listeners are inside the server; public access is controlled by provider networking and project routes. | `server:read` |
+| `post_system_servers_by_id_resize`<br />`POST /api/system/servers/:id/resize` | Apply a reviewed managed server resize with its preview revision, idempotency key and restart confirmation. Preserves container recovery checkpoints and waits for deployments. Poll server get for completion. | `server:admin` |
+| `post_system_servers_by_id_retry`<br />`POST /api/system/servers/:id/retry` | Retry this managed server's failed lifecycle operation. Reuses its provider identity and saved recovery checkpoint. Inspect the error first, then poll server get for progress. | `server:admin` |
+| `post_system_servers_by_id_swarm_connect`<br />`POST /api/system/servers/:id/swarm/connect` | Connect an existing Swarm manager as a project deployment target. Verifies cluster identity without creating, joining, upgrading or adopting nodes or stacks. Requires fleet administration. | `server:admin`<br />Self-hosted |
+| `post_system_servers_by_id_tunnels`<br />`POST /api/system/servers/:id/tunnels` | Save an SSH port-forwarding tunnel configuration. Start it separately; its local bind address belongs to the Openship controller. | `server:write`<br />Self-hosted |
+| `post_system_servers_by_id_tunnels_by_tunnelId_start`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/start` | Start this saved tunnel on the Openship controller and return its local address. Read the tunnel list to inspect state. | `server:write`<br />Self-hosted |
+| `post_system_servers_by_id_tunnels_by_tunnelId_stop`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/stop` | Stop this controller-side SSH tunnel while retaining its saved configuration. | `server:write`<br />Self-hosted |
+| `post_system_servers_managed`<br />`POST /api/system/servers/managed` | Create a managed Cloud server identity. Projects share its purchased capacity and use the Docker or bare runtime. This does not charge or provision. Subscribe to this server in Billing, then ensure it. Use the returned serverId for management and deployment. | `server:admin` |
+| `post_system_servers_managed_connect`<br />`POST /api/system/servers/managed/connect` | Connect an existing managed Cloud server to this self-hosted organization. Verifies Cloud server administration and pins its account identity. Returns the local serverId to use for deployments; no projects or subscriptions are copied. | `server:admin` |
+| `post_system_test_connection`<br />`POST /api/system/test-connection` | Test draft SSH connection settings before registering a server. Does not save a server or install components. | `server:write` |
+| `put_system_servers_by_id_managed_ssh_key`<br />`PUT /api/system/servers/:id/managed/ssh/key` | Replace the root authorized public key on this server. Accepts one OpenSSH public key; never a private key. Requires confirmation. | `server:admin` |
+| `put_system_servers_by_id_managed_ssh_password`<br />`PUT /api/system/servers/:id/managed/ssh/password` | Set the root SSH password on this managed server. Requires confirmation. The password is never returned or audited. | `server:admin` |
+
+### updates
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_updates`<br />`GET /api/updates` | List update statuses for the org (apps, projects, self-app, webmail). ?behind=1 filters to those with an update available. | `updates:read` |
+| `get_updates_advisories`<br />`GET /api/updates/advisories` | Read the shared release/security feeds and authorized workspace findings from current cached observations. Does not execute container commands; respects feed polling and backoff. | `updates:read` |
+| `get_updates_by_projectId_security`<br />`GET /api/updates/:projectId/security` | Match verified security notices against deployed image receipts and bounded, isolated runtime version checks. Does not deploy. | `project:read` |
+| `post_updates_by_projectId_apply`<br />`POST /api/updates/:projectId/apply` | Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup). | `project:write` |
+| `post_updates_by_projectId_runtime`<br />`POST /api/updates/:projectId/runtime` | Refresh published runtime images and rebuild selected services at the active commit, without upgrading application code. Omit serviceIds to update the project. | `project:write` |
+| `post_updates_by_projectId_runtime_check`<br />`POST /api/updates/:projectId/runtime/check` | Check configured image tags and recorded build bases against their current registry digests. Does not deploy. | `project:read` |
+| `post_updates_by_projectId_security_apply`<br />`POST /api/updates/:projectId/security/apply` | Refresh an affected runtime through the existing deployment pipeline. Rechecks the advisory and active deployment before admission. | `project:write` |
+| `post_updates_by_projectId_security_check`<br />`POST /api/updates/:projectId/security/check` | Refresh this project's isolated runtime observations and compare them with verified advisories. Does not deploy or bypass GitHub feed backoff. | `project:read` |
+| `post_updates_scan`<br />`POST /api/updates/scan` | Trigger a fresh update scan across the org's projects/apps. | `updates:write` |
+| `put_updates_by_projectId_security_policy`<br />`PUT /api/updates/:projectId/security/policy` | Opt in or out of automatic, signed, verified image security refreshes for this project. Off by default. | `project:write` |
+
+## HTTP-only routes
+
+Every remaining route has an explicit boundary: browser authorization, streaming/binary transport, internal relay, compatibility alias, or an operator workflow. These exclusions do not remove HTTP functionality. The documentation check fails if a new authenticated route has neither MCP metadata nor an exclusion reason.
+
+| HTTP route | Why it is not an MCP tool |
+| --- | --- |
+| `GET /` | Browser landing pages for API-only instances. |
+| `GET /.well-known/oauth-authorization-server` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /.well-known/oauth-authorization-server/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /.well-known/oauth-authorization-server/api/proxy/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /.well-known/oauth-protected-resource` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /.well-known/oauth-protected-resource/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /.well-known/oauth-protected-resource/api/proxy/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /accept-invite/:id` | Browser landing pages for API-only instances. |
+| `GET /api/actions/oidc/.well-known/openid-configuration` | Public OIDC discovery and RSA verification keys contain no credentials or tenant data. |
+| `GET /api/actions/oidc/jwks` | Public OIDC discovery and RSA verification keys contain no credentials or tenant data. |
+| `GET /api/actions/oidc/token` | Requires a purpose-bound job capability and rechecks running job, actor, approval, destination and id-token permission before issuing a five-minute identity. |
+| `GET /api/actions/runtime/_apis/artifactcache/cache` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/_apis/artifactcache/caches` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `PATCH /api/actions/runtime/_apis/artifactcache/caches/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/_apis/artifactcache/caches/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `GET /api/actions/runtime/objects/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `PUT /api/actions/runtime/objects/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `GET /api/affiliates` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/enroll` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/offers` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/offers` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/offers/revoke` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/payout-destination` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/payouts` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/payouts` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `POST /api/affiliates/payouts/cancel` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/referrals` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates/referrals/payments` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/callback/github` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/cloud-callback` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/desktop-auth-poll` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/desktop-auth-start` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/desktop-claim` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/desktop-login` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/get-session` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/invitation-preview/:id` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/mcp/jwks` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/mcp/userinfo` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/accept-invitation` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/cancel-invitation` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/invite-member` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/leave` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/reject-invitation` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/remove-member` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/organization/update-member-role` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/auth/sign-up/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/backup-restores/:restoreId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/backup-runs/:runId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/billing/actions/checkout` | Starts a prepaid browser payment. Complete payment in Actions → Budget when purchases are available. |
+| `POST /api/billing/actions/checkout/resume` | Resumes the original prepaid browser checkout. Complete payment in Actions → Budget. |
+| `GET /api/billing/actions/purchase` | Reconciles a browser payment with its verified provider receipt. Use Actions → Budget for payment recovery. |
+| `POST /api/billing/cancel` | Paid subscription renewal is managed by the account owner in Settings → Billing; MCP exposes the resulting subscription state. |
+| `GET /api/billing/checkout` | Browser checkout configuration; use the billing reads to inspect a plan and complete purchases in Settings → Billing. |
+| `POST /api/billing/checkout/cancel` | Cancels an unfinished hosted payment and releases its capacity reservation. Financial actions are completed in Billing. |
+| `POST /api/billing/checkout/resume` | Resumes a paid browser checkout using its original offer and identity. Complete payment in Billing. |
+| `POST /api/billing/manage/cancel` | Paid management subscriptions are authorized in Billing → Your infrastructure. |
+| `POST /api/billing/manage/change` | Paid management subscriptions are authorized in Billing → Your infrastructure. |
+| `POST /api/billing/manage/change/cancel` | Management billing changes require user confirmation. |
+| `POST /api/billing/manage/checkout` | Paid management subscriptions are authorized in Billing → Your infrastructure. |
+| `POST /api/billing/manage/checkout/cancel` | Paid management subscriptions are authorized in Billing → Your infrastructure. |
+| `POST /api/billing/manage/checkout/resume` | Management billing changes require user confirmation. |
+| `POST /api/billing/manage/portal` | Paid management subscriptions are authorized in Billing → Your infrastructure. |
+| `POST /api/billing/manage/resume` | Paid management subscriptions are authorized in Billing → Your infrastructure. |
+| `POST /api/billing/oblien-webhook` | Oblien webhook — verified via X-Webhook-Signature, not user session |
+| `GET /api/billing/plans` | Public pricing endpoint — read by marketing site + signup flow before auth |
+| `POST /api/billing/portal` | Creates an account billing-portal session. Open Settings → Billing to manage payment details. |
+| `POST /api/billing/resume` | Paid subscription renewal is managed by the account owner in Settings → Billing; MCP exposes the resulting subscription state. |
+| `POST /api/billing/subscription` | Starts a paid browser checkout. Purchases and payment authorization are completed in Settings → Billing. |
+| `POST /api/billing/subscription/change` | Confirms a paid subscription change and server restart. Payment authorization and restart consent are completed in Billing. |
+| `POST /api/billing/subscription/change/cancel` | Cancel a pending financial change in Billing; MCP exposes its resulting status. |
+| `POST /api/billing/topup` | Starts a paid browser checkout. Buy credits in Settings → Billing; MCP can list pack prices and current balance. |
+| `POST /api/billing/webhook/stripe` | Retired Stripe endpoint — always 410, no billing mutations |
+| `GET /api/cloud/account` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/analytics` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/connect-authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/connect-finalize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/connect-handoff` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/connect-poll` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/desktop-handoff` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/disconnect` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/edge-proxy` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/edge-proxy/delete` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/edge-proxy/verify` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/edge-proxy/verify-check` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/exchange-code` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/export-subgraph` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/github/install-callback` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/github/install-url` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/github/installation-token` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/github/installations` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/github/oauth-bridge` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/github/oauth-handoff` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/github/oauth-success` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/github/user-status` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/ingest-subgraph` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/pages` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/pages/delete` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/pages/disable` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/pages/enable` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/preflight` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/promote-project` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/resource-proxy` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/route-registry` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/send-invitation` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/server-deletions/:id` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/activity` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/activity/release` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/connection` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/support` | Public Cloud support intake, including customers who cannot sign in. Only returns a receipt; no ticket data can be read anonymously. |
+| `GET /api/cloud/support/mine` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
+| `POST /api/cloud/support/mine` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
+| `GET /api/cloud/support/mine/:id` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
+| `PATCH /api/cloud/support/mine/:id` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
+| `POST /api/cloud/support/mine/:id/replies` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
+| `GET /api/cloud/support/session` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
+| `GET /api/cloud/support/tickets` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `GET /api/cloud/support/tickets/:id` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `PATCH /api/cloud/support/tickets/:id` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/support/tickets/:id/replies` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/support/tickets/:id/retry` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/teardown-project` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/telemetry` | Optional hosted dashboard product telemetry; validates the exact Origin and associates only verified cookie sessions. Not an SDK/MCP operation. |
+| `POST /api/cloud/token` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/deployments/:id/build` | Legacy start-by-deployment-ID adapter. Start or redeploy through /api/deployments or /api/deployments/build/access. |
+| `GET /api/deployments/:id/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/deployments/ssl/renew` | Legacy hostname renewal; use POST /api/domains/:id/renew for managed domain identity and ownership. |
+| `POST /api/deployments/ssl/status` | Legacy hostname probe; use the managed domain detail/status tools for scoped routing and certificate evidence. |
+| `POST /api/diagnostics/client-errors` | Browser error intake; no user operation or data access. |
+| `POST /api/domains/:id/verify/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/github/connect/redirect` | GitHub OAuth callback - no session yet during redirect |
+| `POST /api/github/disconnect` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/installations/claim` | The browser completes GitHub authorization and selects an installation. Use connect/status to start and inspect the connection. |
+| `POST /api/github/instance-token` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/repos` | GitHub repository creation is outside deployment management. Create repositories through GitHub, then deploy with Openship. |
+| `DELETE /api/github/repos/:owner/:repo` | Deleting the upstream GitHub repository is outside deployment management. Openship project removal does not delete source repositories. |
+| `GET /api/github/repos/:owner/:repo/clone-token` | Returns a bearer credential. MCP deploys and browses through permission-scoped GitHub tools without exporting installation tokens. |
+| `GET /api/github/repos/:owner/:repo/tree` | Recursive dashboard access picker; MCP uses the path-scoped files tool for bounded repository browsing. |
+| `DELETE /api/github/sources/:id` | GitHub App credentials and source ownership are managed by the workspace owner in Settings → GitHub. |
+| `PATCH /api/github/sources/:id` | GitHub App credentials and source ownership are managed by the workspace owner in Settings → GitHub. |
+| `POST /api/github/sources/:id/default` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/sources/:id/install` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/sources/manifest` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/sources/manifest/convert` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/sources/manual` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `GET /api/health` | Public discovery or callback with its own HTTP authentication/transport. |
+| `GET /api/health/env` | Public discovery or callback with its own HTTP authentication/transport. |
+| `GET /api/images` | Image upload/download uses binary HTTP transport. |
+| `GET /api/jobs/runs/:runId/stream` | Live SSE output can remain open. Poll GET /api/jobs/runs/:runId for captured output and completion over MCP. |
+| `POST /api/mail/admin/:serverId/platform-mailbox/rotate` | Rotates the platform’s private mail-delivery credential. Use the mail-server settings; this is not a user mailbox. |
+| `DELETE /api/mail/admin/:serverId/relay` | Changes server-wide delivery from relay to direct SMTP. Manage relay identity and removal together in the mail-server settings. |
+| `POST /api/mail/admin/:serverId/relay` | Configures outbound delivery credentials and provider identity in the mail-server settings; MCP can inspect the resulting relay state. |
+| `POST /api/mail/credentials/postmaster` | Privileged mail administrator credentials are changed in the authenticated mail settings. |
+| `POST /api/mail/setup` | Mail installation is an interactive SSE wizard with DNS/PTR checkpoints. Open Emails → Set up mail; MCP can inspect status and administer or adopt existing installations. |
+| `POST /api/mail/setup/cancel` | Controls the active browser mail-installation SSE session. Finish or cancel that setup in the Emails wizard. |
+| `POST /api/mail/setup/dns-ack` | Acknowledges a checkpoint in the active mail-installation wizard. Use the Emails wizard; existing domain DNS has dedicated MCP tools. |
+| `POST /api/mail/setup/ptr-ack` | Acknowledges provider PTR setup in the active mail-installation wizard. Use the Emails wizard to review the required reverse DNS. |
+| `POST /api/mail/setup/reset` | Resets the mail-installation wizard’s on-host state. Use the Emails recovery flow; forgetting registration is available separately. |
+| `POST /api/mail/webmail/deploy-external` | External mail-provider setup is a catalog/browser configuration flow. Use the catalog webmail app with its template inputs; managed mail-server webmail has a dedicated deploy tool. |
+| `GET /api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/migration/migrations/:id/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/migration/reveal-env` | Explicit dashboard secret reveal. Migration rediscovers real source environment server-side; MCP passes selected container IDs. |
+| `GET /api/migration/scan/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/notices` | Platform status notices — non-sensitive operator announcements shown in the app banner |
+| `POST /api/notices` | Operator status-notice push — internalAuth shared token |
+| `DELETE /api/notices/:id` | Operator status-notice deactivate — internalAuth shared token |
+| `GET /api/notices/all` | Operator notice listing (incl. inactive) — internalAuth shared token |
+| `POST /api/permissions/create-team-org` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/grants` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `PUT /api/permissions/grants` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `DELETE /api/permissions/grants/:id` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/invitations/:id/accept` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/invitations/:id/cancel` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/invitations/:id/materialize` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/invitations/:id/reject` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/invitations/:id/resend` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `POST /api/permissions/invite-with-grants` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `DELETE /api/permissions/members/:id` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `PATCH /api/permissions/members/:id` | Membership, invitations and grants change account authority. Manage these in Settings → Team; MCP may inspect access but cannot mint or widen its own permissions. |
+| `GET /api/projects/:id/clone-token` | Git credential management is kept in the authenticated dashboard; MCP deploys through the configured credentials. |
+| `PATCH /api/projects/:id/clone-token` | Git credential management is kept in the authenticated dashboard; MCP deploys through the configured credentials. |
+| `GET /api/projects/:id/cluster/databases/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/projects/:id/cluster/volumes/stream` | SSE transport for live volume status. Use the JSON list tool over MCP. |
+| `POST /api/projects/:id/deployment-session` | Browser deployment-session handoff. MCP starts deployments through /api/deployments/build/access. |
+| `GET /api/projects/:id/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/projects/:id/resources` | Compatibility alias; use PATCH /api/projects/:id/resources. |
+| `POST /api/projects/:id/routing/ensure-edge/respond` | Response to the browser’s ensure-edge SSE session. Use routing/retry and the project pending-actions tool for routing repair; interactive edge setup and proxy takeover remain in the dashboard. |
+| `POST /api/projects/:id/routing/ensure-edge/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/projects/:id/routing/retry/stream` | Read-only SSE replay of an existing routing repair session. |
+| `POST /api/projects/:id/routing/retry/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/projects/:id/server-logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/projects/:id/server-logs/stream-token` | Browser streaming credential. MCP reads the bounded server-logs endpoint with its own bearer. |
+| `POST /api/projects/:id/services/:serviceId/env-reveal` | Explicit dashboard secret reveal. MCP reads masked effective environment and saves named overrides without retrieving plaintext. |
+| `GET /api/projects/:id/services/:serviceId/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/projects/folder/scan/:sessionId/env-reveal` | Explicit dashboard secret reveal. MCP passes uploadSessionId to project ensure so real values stay server-side. |
+| `POST /api/projects/folder/upload/:sessionId` | Binary tarball upload; use the authenticated upload URL from folder/session outside JSON-RPC. |
+| `GET /api/referrals/:code` | Public commercial referral terms for signup and checkout; contains no account or earnings data. |
+| `POST /api/services/terminal/ticket` | Single-use browser WebSocket terminal ticket. Use the service exec tool for bounded commands over MCP. |
+| `GET /api/services/terminal/ws/:serviceId` | WebSocket upgrade — auth happens inside upgradeWebSocket via ticket subprotocol or session-cookie fallback (HTTP middleware blocks the handshake) |
+| `PUT /api/settings` | Compatibility settings update; use the dedicated build-mode tool for this preference. |
+| `PATCH /api/settings/clone-credentials` | User-global Git clone credentials are configured in the authenticated dashboard; MCP deploys using those saved credentials. |
+| `POST /api/system/bootstrap-admin` | CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup) |
+| `POST /api/system/cli-session` | CLI on the installation host — requires the private internal token, refuses Cloud and browser callers, and creates a temporary session for the existing instance administrator |
+| `POST /api/system/cloud-connect` | CLI setup — finalize Openship Cloud PKCE handshake for a free domain; internal-token gated |
+| `GET /api/system/cloud-status` | CLI setup — read Openship Cloud connection state; internal-token gated |
+| `GET /api/system/clusters` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `POST /api/system/clusters` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `DELETE /api/system/clusters/:id` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `GET /api/system/clusters/:id` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `PATCH /api/system/clusters/:id` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `POST /api/system/clusters/:id/verify` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `GET /api/system/clusters/capabilities` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
+| `DELETE /api/system/clusters/network-operations/:operationId` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `GET /api/system/clusters/network-operations/:operationId` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `POST /api/system/clusters/network-operations/:operationId/apply` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `DELETE /api/system/clusters/network-operations/:operationId/members/:serverId` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `GET /api/system/clusters/network-operations/:operationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/system/clusters/network-plans` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `GET /api/system/clusters/network-preparations` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `POST /api/system/clusters/network-preparations` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `DELETE /api/system/clusters/network-preparations/:preparationId` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `GET /api/system/clusters/network-preparations/:preparationId` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `PATCH /api/system/clusters/network-preparations/:preparationId/connections` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `DELETE /api/system/clusters/network-preparations/:preparationId/members/:serverId` | Compatibility alias for /api/system/networks; use the canonical network tools. |
+| `GET /api/system/clusters/network-preparations/:preparationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/clusters/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/compute-clusters/:id/runtime/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/compute-clusters/:id/storage/stream` | SSE progress transport; read the JSON storage status through MCP. |
+| `PUT /api/system/data-transfer/direct/chunk/:sessionId/:index` | Accepts one bounded, encrypted, signed direct-transfer chunk. |
+| `POST /api/system/data-transfer/direct/chunk/:sessionId/finalize/stream` | Keeps an authenticated direct-transfer restore alive through proxy timeouts. |
+| `POST /api/system/data-transfer/direct/chunk/:sessionId/heartbeat` | Extends an authenticated in-progress direct-transfer lease. |
+| `POST /api/system/data-transfer/direct/chunk/init` | Initializes an encrypted upload using the one-time receive capability. |
+| `POST /api/system/data-transfer/direct/receive` | One-time instance receive capability — payload is ECDH-encrypted and authorized by the expiring token inside it. |
+| `POST /api/system/data-transfer/direct/send` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/data-transfer/direct/send/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/system/data-transfer/direct/session` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/data-transfer/export` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/data-transfer/import` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/data-transfer/import/session` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `PUT /api/system/data-transfer/import/session/:sessionId/chunk/:index` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/data-transfer/import/session/:sessionId/finalize/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/system/data-transfer/import/session/:sessionId/preview` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `GET /api/system/data-transfer/preview` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/data-transfer/preview` | Instance archive import/export transfers binary data and credentials as an operator recovery workflow. Use Settings → Data transfer; application migration and volume backups have dedicated MCP tools. |
+| `POST /api/system/edge/import-sites` | CLI `openship up` (compose) — register sites migrated from a foreign proxy into the container edge (host stops the proxy pre-up; api re-serves via DockerEdgeExecutor); internal-token gated |
+| `GET /api/system/health` | CLI `openship doctor` — internal-token gated deep health rollup (DB liveness/migrations + project/service counts); the public /api/health is only a liveness stub |
+| `GET /api/system/install/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/system/install/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/instance` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/bootstrap` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/cancel` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/connect` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/connect-address` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/disconnect` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `GET /api/system/instance/identity` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/move` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/move-previous` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/offer` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/pair` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/pair/claim` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/peer/:id/:action` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `GET /api/system/instance/peer/:id/chunks/:index` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `PUT /api/system/instance/peer/:id/chunks/:index` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/preflight` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/provision` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/resume` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/return` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/invite-signup` | Self-host invited signup — authorized by the unguessable invitation id (token) in the emailed link, NOT a session; creates the account for the invitation's own email. |
+| `POST /api/system/migration/preflight` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start-cloud` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start-tunnel` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/switch-back` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `GET /api/system/monitor/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/networks/operations/:operationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/networks/preparations/:preparationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/networks/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/onboarding` | First-run onboarding status check - no user exists yet |
+| `POST /api/system/onboarding` | First-run onboarding setup - creates initial admin user |
+| `POST /api/system/onboarding/test-connection` | First-run SSH reachability test - no user exists yet; gated to no-servers instance |
+| `POST /api/system/reset-admin-password` | CLI password recovery — internal-token gated; resets the local admin login for a locked-out operator (openship reset-admin-password) |
+| `POST /api/system/self-edge/preflight` | CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated |
+| `POST /api/system/self-register` | CLI setup — register the control plane as an app + attach its domain; internal-token gated |
+| `GET /api/system/self-register/stream` | CLI setup — SSE progress for custom-domain edge provisioning; internal-token gated |
+| `GET /api/system/servers/:id/containers/:component/apply/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/system/servers/:id/containers/:component/apply/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `DELETE /api/system/servers/:id/github` | Disconnects the server-wide clone identity. Manage credential ownership in the server’s GitHub settings. |
+| `PUT /api/system/servers/:id/github/deploy-key-mode` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
+| `POST /api/system/servers/:id/github/ssh-key` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
+| `PUT /api/system/servers/:id/github/token` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
+| `DELETE /api/system/settings` | Instance reset/recovery is an operator workflow in Settings, not a tenant automation operation. |
+| `PATCH /api/system/settings` | Instance identity and authentication settings are operator-controlled through Settings; workspace deployment preferences have dedicated MCP tools. |
+| `PUT /api/system/settings/email` | Instance-wide email identity and credentials are configured by the instance administrator in Settings. |
+| `POST /api/system/settings/email/test` | Instance email setup test sends to an arbitrary recipient; use the instance administrator’s Settings workflow. |
+| `GET /api/system/setup` | Electron desktop client setup read - protected by internalAuth shared token |
+| `POST /api/system/setup` | Electron desktop client setup - protected by internalAuth shared token |
+| `POST /api/system/upgrade-to-auth` | Zero-auth upgrade flow — no session cookie exists for the synthetic local user. Handler enforces authMode === 'none' before mutating. |
+| `POST /api/terminal/ticket` | Single-use browser WebSocket terminal ticket. Use the exec tool for bounded commands over MCP. |
+| `GET /api/terminal/ws/:serverId` | WebSocket upgrade - auth happens inside upgradeWebSocket factory via single-use ticket (issued by POST /ticket under terminal:write) or session-cookie fallback; HTTP middleware would block the upgrade handshake |
+| `GET /api/tokens` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/tokens` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `DELETE /api/tokens/:id` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/tokens/mcp-authorize` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/tokens/mcp-clients` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `DELETE /api/tokens/mcp-clients/:clientId` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/tokens/mcp-clients/:clientId` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `POST /api/webhooks/:provider` | Provider webhook (GitHub) - HMAC/signature verified in handler |
+| `POST /api/webhooks/backup` | Backup webhook - bearer token in Authorization header is the credential |
+| `POST /api/webhooks/incoming/:id` | Incoming webhook - per-hook token/HMAC/none credential verified in handler |
+| `GET /auth/callback/close` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /auth/callback/install` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /login` | Browser landing pages for API-only instances. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/DeleteArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
+| `POST /twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |

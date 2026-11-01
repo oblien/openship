@@ -1,417 +1,7 @@
-/*
- * ─────────────────────────────────────────────────────────────────
- *  OPENSHIP THEME TOKENS
- *  Single source of truth for all colors across the dashboard.
- *
- *  System:
- *    data-theme="light"|"dark" on <html>  (set by ThemeProvider)
- *
- *  Scale primitives:
- *    --th-on-{N}    Foreground at N% opacity (text, icons, borders)
- *    --th-sf-{N}    Surface fill at N% opacity (backgrounds)
- *
- *  Semantic aliases:
- *    --th-text-*    Text colors
- *    --th-bg-*      Background fills
- *    --th-bd-*      Border colors
- *    Component-level: input, button, card, dropdown…
- *
- *  Usage:
- *    className="th-text-body"
- *    className="th-card"
- *    style={{ color: "var(--th-text-muted)" }}
- *
- *  Semantic colors (status, accent) stay as Tailwind utilities -
- *  they are not gray-scale and need per-context tuning.
- * ─────────────────────────────────────────────────────────────────
- */
+@import "./theme-tokens.css";
 
-/* ── Light (default) ──────────────────────────────────────────── */
-:root,
-[data-theme="light"] {
-
-  /* Foreground scale - black on white */
-  --th-on-04: rgba(0,0,0,.04);
-  --th-on-05: rgba(0,0,0,.05);
-  --th-on-06: rgba(0,0,0,.06);
-  --th-on-08: rgba(0,0,0,.08);
-  --th-on-10: rgba(0,0,0,.10);
-  --th-on-12: rgba(0,0,0,.12);
-  --th-on-14: rgba(0,0,0,.14);
-  --th-on-15: rgba(0,0,0,.15);
-  --th-on-16: rgba(0,0,0,.16);
-  --th-on-20: rgba(0,0,0,.20);
-  --th-on-25: rgba(0,0,0,.25);
-  --th-on-30: rgba(0,0,0,.30);
-  --th-on-40: rgba(0,0,0,.40);
-  --th-on-50: rgba(0,0,0,.50);
-  --th-on-60: rgba(0,0,0,.60);
-  --th-on-70: rgba(0,0,0,.70);
-  --th-on-80: rgba(0,0,0,.80);
-  --th-on-90: rgba(0,0,0,.90);
-  --th-on-95: rgba(0,0,0,.95);
-
-  /* Surface fill scale - tinted backgrounds */
-  --th-sf-01: rgba(0,0,0,.01);
-  --th-sf-02: rgba(0,0,0,.02);
-  --th-sf-03: rgba(0,0,0,.03);
-  --th-sf-04: rgba(0,0,0,.04);
-  --th-sf-05: rgba(0,0,0,.05);
-  --th-sf-06: rgba(0,0,0,.06);
-  --th-sf-08: rgba(0,0,0,.08);
-
-  /* ─ Text ─ (gentle legibility bump; keeps the light/airy feel) */
-  --th-text-heading:   rgba(0,0,0,1);
-  --th-text-title:     rgba(0,0,0,.92);
-  --th-text-strong:    rgba(0,0,0,.82);
-  --th-text-body:      rgba(0,0,0,.66);
-  --th-text-secondary: rgba(0,0,0,.58);
-  --th-text-muted:     rgba(0,0,0,.52);
-  --th-text-label:     rgba(0,0,0,.52);
-  --th-text-hint:      rgba(0,0,0,.46);
-  --th-text-ghost:     rgba(0,0,0,.22);
-
-  /* ─ Page / layout ─ The page is deliberately NOT #ffffff. Cards are white, so
-   * a white page left them with nothing to lift off and they needed a drawn
-   * border to exist at all. A few steps of grey here is what lets light use the
-   * same borderless lifted-surface language as dark and dim.
-   *
-   * This is the floor, not a free knob: 6 steps of lift off #ffffff, against 8
-   * for dim. Push it much closer to white and borderless cards stop reading —
-   * there is no border left to fall back on. */
-  --th-bg-page:        #f9f9f9;
-  --th-bg-card:        #fafafa;
-  --th-bg-subtle:      rgba(0,0,0,.02);
-  --th-bg-hover:       rgba(0,0,0,.025);
-  --th-bg-inset:       rgba(0,0,0,.015);
-
-  /* ─ Borders ─ */
-  --th-bd-default:     #e8e8e8;
-  --th-bd-subtle:      #f0f0f0;
-  --th-bd-strong:      #d0d0d0;
-  --th-bd-card:        #f0f0f0;
-
-  /* ─ Input ─ */
-  --th-input-bg:           #ffffff;
-  --th-input-bd:           #e0e0e0;
-  --th-input-text:         rgba(0,0,0,.80);
-  --th-input-placeholder:  rgba(0,0,0,.28);
-  --th-input-bg-focus:     #ffffff;
-  --th-input-bd-focus:     #b0b0b0;
-
-  /* ─ Button - primary (filled) ─ */
-  --th-btn-bg:       rgba(0,0,0,.92);
-  --th-btn-text:     #ffffff;
-  --th-btn-bg-hover: rgba(0,0,0,.80);
-
-  /* ─ Button - ghost / outline ─ */
-  --th-btn-ghost-bd:         #e0e0e0;
-  --th-btn-ghost-text:       rgba(0,0,0,.52);
-  --th-btn-ghost-bd-hover:   #c8c8c8;
-  --th-btn-ghost-text-hover: rgba(0,0,0,.72);
-  --th-btn-ghost-bg-hover:   rgba(0,0,0,.025);
-
-  /* ─ Card ─ White on the grey page above, so no resting border — same language
-   * as dark and dim. The lift comes from bg vs --th-bg-page; if you ever move
-   * the page back toward #ffffff these go invisible. */
-  --th-card-bg:       #ffffff;
-  /* The OPAQUE equivalent of a card sitting on the page — card is already opaque here, so the composite IS the card colour.
-     Use this for a fade/scrim that has to blend INTO a card (e.g. the
-     sidebar's bottom scroll fade). NOT --th-card-bg-solid: that one is the
-     MODAL surface, tuned to read correctly over a dimmed backdrop, and in
-     dark it is darker than the real card (#ffffff vs #060606) — which
-     showed up as a black band under the sidebar list. */
-  --th-card-on-page:  #ffffff;
-  --th-card-bg-solid: #ffffff;
-  --th-card-bd:       transparent;
-  --th-card-bd-hover: #e0e0e0;
-  --th-card-shadow:   none;
-
-  /* ─ Divider ─ */
-  --th-divider:       #f0f0f0;
-
-  /* ─ Overlay ─ */
-  --th-overlay:       rgba(0,0,0,.45);
-
-  /* ─ Dropdown ─ */
-  --th-dropdown-bg:     #ffffff;
-  --th-dropdown-bd:     #e8e8e8;
-  --th-dropdown-shadow: 0 16px 40px rgba(0,0,0,.10), 0 4px 8px rgba(0,0,0,.06);
-
-  /* ─ Spinner ─ */
-  --th-spinner-track:   rgba(0,0,0,.08);
-  --th-spinner-fill:    rgba(0,0,0,.92);
-
-  /* ─ Semantic status (light: solid pastel -100 bg + -700 text + -200 border —
-       the standard readable/colorful badge recipe. Solid hues, not low-opacity
-       RGBA, which grays out over white and looks flat.) ─ */
-  /* Pre-token hardcoded recipe restored: bg-X-500/10 + border-X-500/20 (shared
-     with dark), text-X-600 on light. */
-  --st-success-fg: #059669;  --st-success-bg: rgba(16,185,129,.10);  --st-success-bd: rgba(16,185,129,.20);
-  --st-danger-fg:  #dc2626;  --st-danger-bg:  rgba(239,68,68,.10);   --st-danger-bd:  rgba(239,68,68,.20);
-  --st-warning-fg: #d97706;  --st-warning-bg: rgba(245,158,11,.10);  --st-warning-bd: rgba(245,158,11,.20);
-  --st-info-fg:    #2563eb;  --st-info-bg:    rgba(59,130,246,.10);  --st-info-bd:    rgba(59,130,246,.20);
-  --st-neutral-fg: #52525b;  --st-neutral-bg: #f4f4f5;  --st-neutral-bd: #e4e4e7;
-
-  /* Solid fills (bars/dots/solid buttons) — vivid mid-tones that read on white. */
-  --st-success-solid: #10b981;  --st-danger-solid: #ef4444;  --st-warning-solid: #f59e0b;  --st-info-solid: #3b82f6;  --st-neutral-solid: #9ca3af;
-}
-
-
-/* ── Dark ─────────────────────────────────────────────────────── */
-[data-theme="dark"] {
-
-  /* Foreground scale - white on black */
-  --th-on-04: rgba(255,255,255,.04);
-  --th-on-05: rgba(255,255,255,.05);
-  --th-on-06: rgba(255,255,255,.06);
-  --th-on-08: rgba(255,255,255,.08);
-  --th-on-10: rgba(255,255,255,.10);
-  --th-on-12: rgba(255,255,255,.12);
-  --th-on-14: rgba(255,255,255,.14);
-  --th-on-15: rgba(255,255,255,.15);
-  --th-on-16: rgba(255,255,255,.16);
-  --th-on-20: rgba(255,255,255,.20);
-  --th-on-25: rgba(255,255,255,.25);
-  --th-on-30: rgba(255,255,255,.30);
-  --th-on-40: rgba(255,255,255,.40);
-  --th-on-50: rgba(255,255,255,.50);
-  --th-on-60: rgba(255,255,255,.60);
-  --th-on-70: rgba(255,255,255,.70);
-  --th-on-80: rgba(255,255,255,.80);
-  --th-on-90: rgba(255,255,255,.90);
-  --th-on-95: rgba(255,255,255,.95);
-
-  /* Surface fill scale */
-  --th-sf-01: rgba(255,255,255,.01);
-  --th-sf-02: rgba(255,255,255,.02);
-  --th-sf-03: rgba(255,255,255,.03);
-  --th-sf-04: rgba(255,255,255,.04);
-  --th-sf-05: rgba(255,255,255,.05);
-  --th-sf-06: rgba(255,255,255,.06);
-  --th-sf-08: rgba(255,255,255,.08);
-
-  /* ─ Text ─ (gentle legibility bump; keeps the light/airy feel) */
-  --th-text-heading:   #ffffff;
-  --th-text-title:     rgba(255,255,255,.95);
-  --th-text-strong:    rgba(255,255,255,.85);
-  --th-text-body:      rgba(255,255,255,.66);
-  --th-text-secondary: rgba(255,255,255,.58);
-  --th-text-muted:     rgba(255,255,255,.50);
-  --th-text-label:     rgba(255,255,255,.50);
-  --th-text-hint:      rgba(255,255,255,.36);
-  --th-text-ghost:     rgba(255,255,255,.22);
-
-  /* ─ Page / layout ─ */
-  --th-bg-page:        #000000;
-  --th-bg-card:        #0a0a0a;
-  --th-bg-subtle:      rgba(255,255,255,.025);
-  --th-bg-hover:       rgba(255,255,255,.04);
-  --th-bg-inset:       rgba(255,255,255,.015);
-
-  /* ─ Borders ─ */
-  --th-bd-default:     rgba(255,255,255,.08);
-  --th-bd-subtle:      rgba(255,255,255,.05);
-  --th-bd-strong:      rgba(255,255,255,.14);
-  --th-bd-card:        rgba(255,255,255,.07);
-
-  /* ─ Input ─ */
-  --th-input-bg:           rgba(255,255,255,.03);
-  --th-input-bd:           rgba(255,255,255,.08);
-  --th-input-text:         rgba(255,255,255,.80);
-  --th-input-placeholder:  rgba(255,255,255,.22);
-  --th-input-bg-focus:     rgba(255,255,255,.05);
-  --th-input-bd-focus:     rgba(255,255,255,.18);
-
-  /* ─ Button - primary ─ */
-  --th-btn-bg:       #ffffff;
-  --th-btn-text:     #000000;
-  --th-btn-bg-hover: rgba(255,255,255,.90);
-
-  /* ─ Button - ghost / outline ─ */
-  --th-btn-ghost-bd:         rgba(255,255,255,.10);
-  --th-btn-ghost-text:       rgba(255,255,255,.48);
-  --th-btn-ghost-bd-hover:   rgba(255,255,255,.18);
-  --th-btn-ghost-text-hover: rgba(255,255,255,.72);
-  --th-btn-ghost-bg-hover:   rgba(255,255,255,.04);
-
-  /* ─ Card ─ The page here is pure #000, so a .025 fill landed on #060606 and
-   * the container was effectively invisible — all you saw was its hairline.
-   * With the fill lifted clear of the page the surface carries its own edge, so
-   * there is no resting border, same as dim. If you ever lower this fill, the
-   * container will start disappearing into the black before it looks borderless. */
-  --th-card-bg:       rgba(255,255,255,.05);
-  /* The OPAQUE equivalent of a card sitting on the page — #000000 page + 5% white.
-     Use this for a fade/scrim that has to blend INTO a card (e.g. the
-     sidebar's bottom scroll fade). NOT --th-card-bg-solid: that one is the
-     MODAL surface, tuned to read correctly over a dimmed backdrop, and in
-     dark it is darker than the real card (#0d0d0d vs #060606) — which
-     showed up as a black band under the sidebar list. */
-  --th-card-on-page:  #0d0d0d;
-  --th-card-bg-solid: #060606;
-  --th-card-bd:       transparent;
-  --th-card-bd-hover: rgba(255,255,255,.12);
-  --th-card-shadow:   none;
-
-  /* ─ Divider ─ */
-  --th-divider:       rgba(255,255,255,.06);
-
-  /* ─ Overlay ─ Lifted off pure black on purpose: the page here is #000000, so
-   * a black scrim (it was rgba(0,0,0,.6)) composites back to #000 and the
-   * backdrop is invisible — no dimming, and the modal has nothing to sit on.
-   * Darkening is not available in hard dark; the scrim has to lighten. */
-  --th-overlay:       rgb(20 20 20 / 60%);
-
-  /* ─ Dropdown ─ */
-  --th-dropdown-bg:     #161616;
-  --th-dropdown-bd:     rgba(255,255,255,.08);
-  --th-dropdown-shadow: 0 20px 48px rgba(0,0,0,.5), 0 4px 12px rgba(0,0,0,.32);
-
-  /* ─ Spinner ─ */
-  --th-spinner-track:   rgba(255,255,255,.06);
-  --th-spinner-fill:    #ffffff;
-
-  /* ─ Semantic status (dark: brighter fg on near-black, lifted bg) ─ */
-  /* Pre-token hardcoded recipe restored: bg-X-500/10 + border-X-500/20 (shared
-     with light), text-X-400 on hard-black. */
-  --st-success-fg: #34d399;  --st-success-bg: rgba(16,185,129,.10);  --st-success-bd: rgba(16,185,129,.20);
-  --st-danger-fg:  #f04848;  --st-danger-bg:  rgba(239,68,68,.10);   --st-danger-bd:  rgba(239,68,68,.20);
-  --st-warning-fg: #fbbf24;  --st-warning-bg: rgba(245,158,11,.10);  --st-warning-bd: rgba(245,158,11,.20);
-  --st-info-fg:    #60a5fa;  --st-info-bg:    rgba(59,130,246,.10);  --st-info-bd:    rgba(59,130,246,.20);
-  --st-neutral-fg: rgba(255,255,255,.50);  --st-neutral-bg: rgba(255,255,255,.05);  --st-neutral-bd: rgba(255,255,255,.10);
-
-  /* Solid fills (bars/dots/solid buttons) — desaturated so they read as color, not neon glow. */
-  --st-success-solid: hsl(154 44% 47%);  --st-danger-solid: hsl(0 74% 60%);  --st-warning-solid: hsl(38 66% 52%);  --st-info-solid: hsl(214 58% 56%);  --st-neutral-solid: #8b8f98;
-}
-
-
-/* ── Dim ──────────────────────────────────────────────────────────
-   A neutral dark that sits between light and the extreme pure-black
-   dark: a true-gray page lifted just off #000 (no color tint) with
-   better text contrast and a clear page → card → dropdown ladder. */
-[data-theme="dim"] {
-
-  /* Foreground scale - white on slate */
-  --th-on-04: rgba(255,255,255,.04);
-  --th-on-05: rgba(255,255,255,.05);
-  --th-on-06: rgba(255,255,255,.06);
-  --th-on-08: rgba(255,255,255,.08);
-  --th-on-10: rgba(255,255,255,.10);
-  --th-on-12: rgba(255,255,255,.12);
-  --th-on-14: rgba(255,255,255,.14);
-  --th-on-15: rgba(255,255,255,.15);
-  --th-on-16: rgba(255,255,255,.16);
-  --th-on-20: rgba(255,255,255,.20);
-  --th-on-25: rgba(255,255,255,.25);
-  --th-on-30: rgba(255,255,255,.30);
-  --th-on-40: rgba(255,255,255,.40);
-  --th-on-50: rgba(255,255,255,.50);
-  --th-on-60: rgba(255,255,255,.60);
-  --th-on-70: rgba(255,255,255,.70);
-  --th-on-80: rgba(255,255,255,.80);
-  --th-on-90: rgba(255,255,255,.90);
-  --th-on-95: rgba(255,255,255,.95);
-
-  /* Surface fill scale */
-  --th-sf-01: rgba(255,255,255,.01);
-  --th-sf-02: rgba(255,255,255,.02);
-  --th-sf-03: rgba(255,255,255,.03);
-  --th-sf-04: rgba(255,255,255,.04);
-  --th-sf-05: rgba(255,255,255,.05);
-  --th-sf-06: rgba(255,255,255,.06);
-  --th-sf-08: rgba(255,255,255,.08);
-
-  /* ─ Text ─ Comfortable contrast on a lifted background. */
-  --th-text-heading:   #ffffff;
-  --th-text-title:     rgba(255,255,255,.95);
-  --th-text-strong:    rgba(255,255,255,.86);
-  --th-text-body:      rgba(255,255,255,.72);
-  --th-text-secondary: rgba(255,255,255,.66);
-  --th-text-muted:     rgba(255,255,255,.58);
-  --th-text-label:     rgba(255,255,255,.58);
-  --th-text-hint:      rgba(255,255,255,.46);
-  --th-text-ghost:     rgba(255,255,255,.30);
-
-  /* ─ Page / layout ─ Neutral gray lifted off black (no tint). */
-  --th-bg-page:        #141414;
-  --th-bg-card:        #1e1e1e;
-  --th-bg-subtle:      rgba(255,255,255,.03);
-  --th-bg-hover:       rgba(255,255,255,.05);
-  --th-bg-inset:       rgba(255,255,255,.02);
-
-  /* ─ Borders ─ Eased down after the bg darkened (higher bg→border
-     contrast made these read too heavy). */
-  --th-bd-default:     rgba(255,255,255,.08);
-  --th-bd-subtle:      rgba(255,255,255,.06);
-  --th-bd-strong:      rgba(255,255,255,.14);
-  --th-bd-card:        rgba(255,255,255,.08);
-
-  /* ─ Input ─ */
-  --th-input-bg:           rgba(255,255,255,.04);
-  --th-input-bd:           rgba(255,255,255,.10);
-  --th-input-text:         rgba(255,255,255,.85);
-  --th-input-placeholder:  rgba(255,255,255,.38);
-  --th-input-bg-focus:     rgba(255,255,255,.06);
-  --th-input-bd-focus:     rgba(255,255,255,.22);
-
-  /* ─ Button - primary ─ */
-  --th-btn-bg:       #ffffff;
-  --th-btn-text:     #000000;
-  --th-btn-bg-hover: rgba(255,255,255,.90);
-
-  /* ─ Button - ghost / outline ─ */
-  --th-btn-ghost-bd:         rgba(255,255,255,.14);
-  --th-btn-ghost-text:       rgba(255,255,255,.62);
-  --th-btn-ghost-bd-hover:   rgba(255,255,255,.24);
-  --th-btn-ghost-text-hover: rgba(255,255,255,.88);
-  --th-btn-ghost-bg-hover:   rgba(255,255,255,.05);
-
-  /* ─ Card ─ Elevated above the page. The #141414 page against a .03 fill
-   * already separates on its own, so there is no resting border: the hairline
-   * was the only thing making these read as boxed-in. Fill deliberately
-   * unchanged — this shade is the one we want. */
-  --th-card-bg:       rgba(255,255,255,.03);
-  /* The OPAQUE equivalent of a card sitting on the page — #141414 page + 3% white.
-     Use this for a fade/scrim that has to blend INTO a card (e.g. the
-     sidebar's bottom scroll fade). NOT --th-card-bg-solid: that one is the
-     MODAL surface, tuned to read correctly over a dimmed backdrop, and in
-     dark it is darker than the real card (#1b1b1b vs #060606) — which
-     showed up as a black band under the sidebar list. */
-  --th-card-on-page:  #1b1b1b;
-  --th-card-bg-solid: #1e1e1e;
-  --th-card-bd:       transparent;
-  --th-card-bd-hover: rgba(255,255,255,.14);
-  --th-card-shadow:   none;
-
-  /* ─ Divider ─ */
-  --th-divider:       rgba(255,255,255,.07);
-
-  /* ─ Overlay ─ */
-  --th-overlay:       rgba(0,0,0,.55);
-
-  /* ─ Dropdown ─ Highest surface in the ladder. */
-  --th-dropdown-bg:     #282828;
-  --th-dropdown-bd:     rgba(255,255,255,.10);
-  --th-dropdown-shadow: 0 20px 48px rgba(0,0,0,.45), 0 4px 12px rgba(0,0,0,.28);
-
-  /* ─ Spinner ─ */
-  --th-spinner-track:   rgba(255,255,255,.08);
-  --th-spinner-fill:    #ffffff;
-
-  /* ─ Semantic status (dim: warm, softer, lower-contrast for the lifted gray) ─ */
-  /* Success = the SOFT/LIGHT end of the brand-lime CTA gradient (its top,
-     hsl(86 84% 74%)) — light and white-ish, not the bold dark tail — so
-     RUNNING/healthy matches the "New Project" accent without reading harsh. */
-  --st-success-fg: hsl(86 82% 74%);  --st-success-bg: hsl(86 60% 54% / .15);  --st-success-bd: hsl(86 56% 62% / .28);
-  --st-danger-fg:  hsl(4 82% 67%);  --st-danger-bg:  hsl(4 72% 54% / .20);   --st-danger-bd:  hsl(4 68% 58% / .34);
-  --st-warning-fg: hsl(40 78% 63%);  --st-warning-bg: hsl(40 72% 50% / .16);  --st-warning-bd: hsl(40 68% 54% / .30);
-  --st-info-fg:    hsl(214 72% 72%);  --st-info-bg:    hsl(214 64% 54% / .16);  --st-info-bd:    hsl(214 60% 58% / .30);
-  --st-neutral-fg: rgba(255,255,255,.70);  --st-neutral-bg: rgba(255,255,255,.09);  --st-neutral-bd: rgba(255,255,255,.18);
-
-  /* Solid fills (bars/dots/solid buttons) — softened to sit on the lifted gray without glare. */
-  --st-success-solid: hsl(85 68% 62%);  --st-danger-solid: hsl(4 72% 57%);  --st-warning-solid: hsl(38 68% 53%);  --st-info-solid: hsl(214 60% 57%);  --st-neutral-solid: rgba(255,255,255,.42);
-}
-
+/* Built-in palettes are generated from packages/core/src/appearance-defaults.json.
+ * Keep semantic utilities and aliases here; personal themes override the same tokens. */
 
 /* ══════════════════════════════════════════════════════════════
    UTILITY CLASSES  -  .th-*
@@ -428,6 +18,19 @@
 .th-text-label     { color: var(--th-text-label); }
 .th-text-hint      { color: var(--th-text-hint); }
 .th-text-ghost     { color: var(--th-text-ghost); }
+
+/* Shared navigation retains the original muted text until selected or hovered. */
+.th-nav-item {
+  color: var(--th-text-muted);
+}
+.th-nav-item:hover {
+  color: var(--th-text-title);
+  background-color: color-mix(in oklab, var(--th-text-title) 4%, transparent);
+}
+.th-nav-item[aria-current="page"] {
+  color: var(--th-text-title);
+  background-color: color-mix(in oklab, var(--th-text-title) 7%, transparent);
+}
 
 /* Page / layout */
 .th-page     { background-color: var(--th-bg-page); min-height: 100dvh; }
@@ -472,6 +75,18 @@
 .th-btn:hover            { background-color: var(--th-btn-bg-hover); }
 .th-btn:disabled         { opacity: .42; cursor: not-allowed; }
 
+/* Accent button — palette and shadows follow the theme without component overrides. */
+.th-btn-accent {
+  color: var(--th-btn-accent-text);
+  background-image:
+    radial-gradient(circle at 30% 50%, var(--th-btn-accent-highlight), transparent 70%),
+    linear-gradient(to right in oklab, var(--th-btn-accent-from), var(--th-btn-accent-via), var(--th-btn-accent-to));
+  box-shadow: 0 1px 3px 0 var(--th-btn-accent-shadow), 0 1px 2px -1px var(--th-btn-accent-shadow);
+}
+.th-btn-accent:hover {
+  box-shadow: 0 4px 6px -1px var(--th-btn-accent-shadow-hover), 0 2px 4px -2px var(--th-btn-accent-shadow-hover);
+}
+
 /* Button - ghost/outline */
 .th-btn-ghost {
   border: 1px solid var(--th-btn-ghost-bd);
@@ -506,7 +121,8 @@
    Values auto-switch between light/dark because --th-* already does.
    ══════════════════════════════════════════════════════════════ */
 
-:root {
+:root,
+[data-appearance-preview] {
   --background: var(--th-bg-page);
   --foreground: var(--th-text-title);
   --card: var(--th-card-bg);
@@ -526,7 +142,6 @@
   --border: var(--th-bd-default);
   --input: var(--th-input-bd);
   --ring: var(--th-on-20);
-  --radius: 0.75rem;
 
   /* Semantic status → stable names (auto-switch via the --st-* per theme). */
   --success: var(--st-success-fg);  --success-bg: var(--st-success-bg);  --success-border: var(--st-success-bd);

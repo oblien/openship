@@ -62,7 +62,7 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { RestoreOrchestrator } from "../../../src/modules/backups/restore.orchestrator";
+import { RestoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 
 const orchestrator = new RestoreOrchestrator();
 const ctx = { organizationId: "org_1", userId: "usr_1" } as never;

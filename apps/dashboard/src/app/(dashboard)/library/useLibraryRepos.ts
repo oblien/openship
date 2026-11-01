@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { githubApi } from "@/lib/api";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { GITHUB_SOURCES_CHANGED_EVENT, githubApi, getApiErrorMessage } from "@/lib/api";
 import type { GitHubRepo } from "@/context/GitHubContext";
 import type { VisibilityFilter, SortBy } from "./types";
 
@@ -33,6 +34,8 @@ export interface LibraryReposState {
   repos: GitHubRepo[];
   meta: RepoPageMeta;
   loading: boolean;
+  error: string | null;
+  refresh: () => void;
   search: string;
   setSearch: (s: string) => void;
   visibility: VisibilityFilter;
@@ -60,6 +63,9 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [meta, setMeta] = useState<RepoPageMeta>(EMPTY_META);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
 
   // Reset to page 1 and drop the previous owner's data the instant `owner`
   // changes — done during render (React's "adjust state on a prop change"
@@ -73,6 +79,7 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
     setQuery((q) => (q.page === 1 ? q : { ...q, page: 1 }));
     setRepos([]);
     setMeta(EMPTY_META);
+    setError(null);
   }
 
   // Debounce the search term; land the page-1 reset in the same tick as the
@@ -91,44 +98,66 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
       reqId.current++; // invalidate any in-flight response so it can't repopulate
       setRepos([]);
       setMeta(EMPTY_META);
+      setLoading(false);
+      setError(null);
       return;
     }
-    const id = ++reqId.current;
-    setLoading(true);
-    githubApi
-      .getUserRepos(owner, {
-        page: query.page,
-        perPage: REPOS_PER_PAGE,
-        search: debouncedSearch || undefined,
-        visibility: query.visibility,
-        sort: query.sort,
-      })
-      .then((res) => {
-        if (id !== reqId.current) return; // superseded by a newer request
-        setRepos((res.data ?? []) as GitHubRepo[]);
-        setMeta({
-          count: res.count ?? 0,
-          total: res.total ?? 0,
-          publicCount: res.publicCount ?? 0,
-          privateCount: res.privateCount ?? 0,
-          page: res.page ?? 1,
-          totalPages: res.totalPages ?? 1,
+    const load = (force = false) => {
+      const id = ++reqId.current;
+      setLoading(true);
+      githubApi
+        .getUserRepos(
+          owner,
+          {
+            page: query.page,
+            perPage: REPOS_PER_PAGE,
+            search: debouncedSearch || undefined,
+            visibility: query.visibility,
+            sort: query.sort,
+          },
+          force,
+        )
+        .then((res) => {
+          if (id !== reqId.current) return; // superseded by a newer request
+          setError(null);
+          setRepos((res.data ?? []) as GitHubRepo[]);
+          setMeta({
+            count: res.count ?? 0,
+            total: res.total ?? 0,
+            publicCount: res.publicCount ?? 0,
+            privateCount: res.privateCount ?? 0,
+            page: res.page ?? 1,
+            totalPages: res.totalPages ?? 1,
+          });
+        })
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/library/useLibraryRepos");
+          if (id !== reqId.current) return;
+          setError(getApiErrorMessage(diagnosticFailure));
+          setRepos([]);
+          setMeta(EMPTY_META);
+        })
+        .finally(() => {
+          if (id === reqId.current) setLoading(false);
         });
-      })
-      .catch(() => {
-        if (id !== reqId.current) return;
-        setRepos([]);
-        setMeta(EMPTY_META);
-      })
-      .finally(() => {
-        if (id === reqId.current) setLoading(false);
-      });
-  }, [owner, enabled, query.page, query.visibility, query.sort, debouncedSearch]);
+    };
+    load();
+    // Installing the App can grant repos without changing the OAuth user or
+    // `enabled`. Re-read after completion, bypassing any pre-install request.
+    const onSourcesChanged = () => load(true);
+    window.addEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
+    return () => {
+      reqId.current++;
+      window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
+    };
+  }, [owner, enabled, query.page, query.visibility, query.sort, debouncedSearch, revision]);
 
   return {
     repos,
     meta,
     loading,
+    error,
+    refresh,
     search: query.search,
     setSearch: (search) => setQuery((q) => ({ ...q, search })),
     visibility: query.visibility,

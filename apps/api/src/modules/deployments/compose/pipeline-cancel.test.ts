@@ -1,5 +1,6 @@
 import { BuildLogger, DEFAULT_RESOURCE_CONFIG } from "@repo/adapters";
 import { repos } from "@repo/db";
+import { ServiceCutoverRecoveryError } from "@repo/platform/engine/modules/deployments/compose/cutover-recovery";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The pipeline is only wired here, not exercised: every collaborator is a side
@@ -9,17 +10,20 @@ const mocks = vi.hoisted(() => ({
   buildComposeImages: vi.fn(),
   deployComposeServices: vi.fn(),
   cleanupBuildArtifact: vi.fn(async () => {}),
+  finishServiceDeploymentTimings: vi.fn(async () => {}),
   onCancelled: vi.fn(async () => {}),
   onFailure: vi.fn(async () => {}),
   onReconciling: vi.fn(async () => {}),
   onSuccess: vi.fn(async () => {}),
-  setDeploymentStatus: vi.fn(async () => {}),
+  setDeploymentStatus: vi.fn(async (): Promise<boolean | void> => {}),
   promptUser: vi.fn(async () => "migrate"),
   keepProvisioned: false,
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
+    project: { findById: vi.fn(async () => ({ id: "p1", activeDeploymentId: "d1" })) },
+    deployment: { findById: vi.fn(async () => ({ id: "dep-live", projectId: "p1", organizationId: "org1", status: "ready" })) },
     service: {
       listByProject: vi.fn(async () => [
         { id: "svc-api", name: "api", enabled: true, advanced: null },
@@ -30,9 +34,17 @@ vi.mock("@repo/db", () => ({
     },
   },
 }));
-vi.mock("./build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
-vi.mock("./deploy.service", () => ({ deployComposeServices: mocks.deployComposeServices }));
-vi.mock("../deployment-lifecycle", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
+vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
+  assertRequiredServiceEnvironment: async () => {},
+}));
+vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () => ({
+  deployComposeServices: mocks.deployComposeServices, composeDeployMadeNoChanges: () => false,
+}));
+vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
+  beginBuildTiming: vi.fn(),
+  completeBuildTiming: vi.fn(),
+  finishServiceDeploymentTimings: mocks.finishServiceDeploymentTimings,
   cleanupBuildArtifact: mocks.cleanupBuildArtifact,
   onCancelled: mocks.onCancelled,
   onFailure: mocks.onFailure,
@@ -41,12 +53,12 @@ vi.mock("../deployment-lifecycle", () => ({
   setDeploymentStatus: mocks.setDeploymentStatus,
   routeIssuesWarning: (issues: string[]) => issues.join(", "),
 }));
-vi.mock("../session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
   promptUser: mocks.promptUser,
 }));
-vi.mock("../deployment-cancellation", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/deployment-cancellation", () => ({
   deploymentCancellationKeepsProvisioned: () => mocks.keepProvisioned,
   raceDeploymentCancellation: <T>(task: Promise<T>) => task,
   throwIfDeploymentCancelled: (signal?: AbortSignal) => {
@@ -54,7 +66,7 @@ vi.mock("../deployment-cancellation", () => ({
   },
 }));
 
-import { executeComposePipeline } from "./pipeline";
+import { executeComposePipeline } from "@repo/platform/engine/modules/deployments/compose/pipeline";
 
 /**
  * `setDeploymentStatus` has NO terminal-state guard, so the cancel branch is the
@@ -88,7 +100,7 @@ const REACHED_DEPLOY = new Error("reached the deploy step");
 async function run(
   composeBuild: Record<string, unknown>,
   snapshot = SNAPSHOT,
-  options: { runtimeName?: string; activeDeploymentId?: string } = {},
+  options: { runtimeName?: string; activeDeploymentId?: string; onBuildFinished?: () => Promise<void>; signal?: AbortSignal } = {},
 ) {
   mocks.buildComposeImages.mockResolvedValue(composeBuild);
   // Deploying for real would drag in every collaborator past this point (and pin
@@ -99,13 +111,17 @@ async function run(
   await executeComposePipeline({
     project: {
       id: "p1",
+      organizationId: "org1",
       slug: "app",
       name: "app",
       webhookDomain: null,
       activeDeploymentId: options.activeDeploymentId ?? null,
     } as never,
     dep: { id: "d1", branch: "main", commitSha: null, trigger: "deploy", meta: null } as never,
-    runtime: { name: options.runtimeName ?? "docker" } as never,
+    runtime: {
+      name: options.runtimeName ?? "docker",
+      supports: () => false,
+    } as never,
     routing: {} as never,
     ssl: {} as never,
     system: null,
@@ -119,6 +135,8 @@ async function run(
     buildEnvVars: {},
     buildResources: DEFAULT_RESOURCE_CONFIG,
     runtimeResources: DEFAULT_RESOURCE_CONFIG,
+    onBuildFinished: options.onBuildFinished,
+    signal: options.signal,
   });
 }
 
@@ -126,8 +144,120 @@ describe("executeComposePipeline — cancellation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.keepProvisioned = false;
+    mocks.onSuccess.mockReset().mockResolvedValue(undefined);
+    vi.mocked(repos.project.findById).mockResolvedValue({ id: "p1", activeDeploymentId: "d1" } as never);
+    vi.mocked(repos.deployment.findById).mockResolvedValue({ id: "dep-live", projectId: "p1", organizationId: "org1", status: "ready" } as never);
     vi.mocked(repos.service.listByDeployment).mockResolvedValue([]);
     mocks.cleanupBuildArtifact.mockResolvedValue(undefined);
+  });
+
+  function completedCutover() {
+    const commit = vi.fn(async () => undefined);
+    const rollback = vi.fn(async () => true);
+    mocks.deployComposeServices.mockResolvedValueOnce({
+      status: "ready", primaryContainerId: "new-api", cutover: { containerId: "new-api", commit, rollback },
+      summary: { total: 1, successful: 1, deployed: 1, failed: 0, indeterminate: 0, mutated: false, failedServices: [] },
+      services: [{ serviceId: "svc-api", serviceName: "api", containerId: "new-api", status: "running" }],
+    });
+    const built = { cancelled: false, buildFailures: new Map(), imageRefs: new Map([["svc-api", "image:v2"]]),
+      builtImageRefs: new Map([["svc-api", "image:v2"]]), staticArtifactRefs: new Map(),
+      staticServiceIds: new Set(), durationMs: 5 };
+    return { commit, rollback, built };
+  }
+
+  it("cleans built artifacts without cutover when cancellation wins the release transition", async () => {
+    const f = completedCutover();
+    mocks.deployComposeServices.mockReset();
+    mocks.setDeploymentStatus.mockResolvedValueOnce(false);
+    await run(f.built);
+    expect(mocks.deployComposeServices).not.toHaveBeenCalled();
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "image:v2");
+    expect(mocks.onCancelled).toHaveBeenCalledOnce();
+    expect(f.commit).not.toHaveBeenCalled();
+  });
+
+  it("retires the predecessor only after the new outcome and active pointer are confirmed", async () => {
+    const f = completedCutover();
+    mocks.onSuccess.mockImplementation(async (...args: unknown[]) => {
+      expect(f.commit).not.toHaveBeenCalled();
+      (args[0] as { settled?: string }).settled = "ready";
+    });
+    await run(f.built);
+    expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.commit.mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(repos.project.findById).mock.invocationCallOrder.at(-1)!,
+    );
+    expect(f.rollback).not.toHaveBeenCalled();
+  });
+
+  it("rolls routing back if the ready-outcome CAS loses to cancellation", async () => {
+    const f = completedCutover();
+    mocks.onSuccess.mockImplementation(async (...args: unknown[]) => {
+      (args[0] as { settled?: string }).settled = "cancelled";
+    });
+    await run(f.built);
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.rollback).toHaveBeenCalledOnce();
+    expect(mocks.onCancelled).toHaveBeenCalledWith(expect.anything(), 5, { keepProvisioned: false });
+    expect(f.rollback.mock.invocationCallOrder[0]).toBeLessThan(mocks.onCancelled.mock.invocationCallOrder[0]!);
+  });
+
+  it("preserves both workloads if routing cannot be rolled back after a refused CAS", async () => {
+    const f = completedCutover();
+    f.rollback.mockResolvedValue(false);
+    mocks.onSuccess.mockImplementation(async (...args: unknown[]) => {
+      (args[0] as { settled?: string }).settled = "cancelled";
+    });
+    await run(f.built);
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(mocks.onCancelled).toHaveBeenCalledWith(expect.anything(), 5, { keepProvisioned: true });
+    expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
+  });
+
+  it("keeps the predecessor when the active deployment pointer was not saved", async () => {
+    const f = completedCutover();
+    mocks.onSuccess.mockImplementation(async (...args: unknown[]) => {
+      (args[0] as { settled?: string }).settled = "ready";
+    });
+    vi.mocked(repos.project.findById).mockResolvedValue({ id: "p1", activeDeploymentId: "d-old" } as never);
+    await run(f.built);
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.rollback).not.toHaveBeenCalled();
+  });
+
+  it("does not retire the predecessor when onSuccess could not record the ready outcome", async () => {
+    const f = completedCutover();
+    mocks.onSuccess.mockImplementation(async (...args: unknown[]) => {
+      (args[0] as { settled?: string }).settled = "ready";
+    });
+    vi.mocked(repos.deployment.findById).mockResolvedValue({
+      id: "d1", projectId: "p1", organizationId: "org1", status: "deploying",
+    } as never);
+    await run(f.built);
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.rollback).not.toHaveBeenCalled();
+  });
+
+  it("records a terminal failure and preserves both workloads when route recovery is uncertain", async () => {
+    const f = completedCutover();
+    mocks.deployComposeServices.mockReset().mockRejectedValueOnce(new ServiceCutoverRecoveryError("new-api"));
+    await run(f.built);
+    expect(mocks.onFailure).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Both containers were preserved"), 5,
+      { errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED" }, { keepProvisioned: true });
+    expect(mocks.onReconciling).not.toHaveBeenCalled();
+    expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
+  });
+
+  it("does not let cancellation cleanup remove a candidate whose routes could not be restored", async () => {
+    const f = completedCutover();
+    const controller = new AbortController();
+    mocks.deployComposeServices.mockReset().mockImplementationOnce(async () => {
+      controller.abort();
+      throw new ServiceCutoverRecoveryError("new-api");
+    });
+    await run(f.built, SNAPSHOT, { signal: controller.signal });
+    expect(mocks.onCancelled).toHaveBeenCalledWith(expect.anything(), 5, { keepProvisioned: true });
+    expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
   });
 
   it("stops before the deploy phase and never re-flips the status", async () => {
@@ -147,6 +277,10 @@ describe("executeComposePipeline — cancellation", () => {
     // Whatever finished building before the cancel landed is garbage — nothing
     // references it and no deploy will.
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "img/svc-0");
+    expect(mocks.finishServiceDeploymentTimings).toHaveBeenCalledOnce();
+    expect(mocks.finishServiceDeploymentTimings.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.cleanupBuildArtifact.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("still cleans up when a built image refuses to delete", async () => {
@@ -228,6 +362,9 @@ describe("executeComposePipeline — cancellation", () => {
     ).rejects.toBe(REACHED_DEPLOY);
 
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledTimes(2);
+    expect(mocks.finishServiceDeploymentTimings.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.cleanupBuildArtifact.mock.invocationCallOrder[0]!,
+    );
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(
       expect.anything(),
       "openship/api:bld_x",
@@ -495,6 +632,7 @@ describe("executeComposePipeline — cancellation", () => {
       expect.anything(),
       expect.stringMatching(/aborted before cutover.*worker image did not compile/i),
       17,
+      undefined,
     );
   });
 
@@ -514,7 +652,7 @@ describe("executeComposePipeline — cancellation", () => {
     expect(mocks.onFailure).not.toHaveBeenCalled();
   });
 
-  it("fails a cloud mutable-image cohort before any workspace is touched", async () => {
+  it("uses the shared Docker refresh flow for mutable images on a managed server", async () => {
     vi.mocked(repos.service.listByDeployment).mockResolvedValueOnce([
       {
         serviceId: "svc-api",
@@ -522,7 +660,7 @@ describe("executeComposePipeline — cancellation", () => {
       } as never,
     ]);
 
-    await run(
+    await expect(run(
       {
         cancelled: false,
         buildFailures: new Map(),
@@ -541,18 +679,40 @@ describe("executeComposePipeline — cancellation", () => {
         strictServiceScope: true,
         forcePullImages: true,
       } as typeof SNAPSHOT,
-      { runtimeName: "cloud", activeDeploymentId: "dep-live" },
-    );
+      { runtimeName: "docker", activeDeploymentId: "dep-live" },
+    )).rejects.toBe(REACHED_DEPLOY);
 
-    expect(mocks.deployComposeServices).not.toHaveBeenCalled();
-    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(
-      expect.anything(),
-      "openship/worker:bld_x",
-    );
-    expect(mocks.onFailure).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringMatching(/cannot refresh mutable image.*cloud service api/i),
-      23,
-    );
+    expect(mocks.deployComposeServices).toHaveBeenCalledOnce();
+    expect(mocks.onFailure).not.toHaveBeenCalled();
+  });
+
+});
+
+
+describe("Compose Cloud build release hook smoke", () => {
+  beforeEach(() => { vi.clearAllMocks(); mocks.keepProvisioned = false; mocks.cleanupBuildArtifact.mockResolvedValue(undefined); });
+  const cancelledBuild = () => ({ cancelled: true, buildFailures: new Map(), imageRefs: new Map(),
+    builtImageRefs: new Map([["svc-api", "built-image"]]), durationMs: 5 });
+
+  it("waits for slot release before moving past the completed image-build phase", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const onBuildFinished = vi.fn(() => pending);
+    const running = run(cancelledBuild(), SNAPSHOT, { onBuildFinished });
+    try {
+      await vi.waitFor(() => expect(onBuildFinished).toHaveBeenCalledOnce());
+      expect(mocks.buildComposeImages).toHaveBeenCalledOnce();
+      expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
+      expect(mocks.deployComposeServices).not.toHaveBeenCalled();
+    } finally { release(); await running; }
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "built-image");
+  });
+
+  it("a release-hook failure must not bypass cancellation artifact cleanup", async () => {
+    const failure = new Error("slot release unavailable");
+    await expect(run(cancelledBuild(), SNAPSHOT, {
+      onBuildFinished: async () => { throw failure; },
+    })).rejects.toBe(failure);
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "built-image");
   });
 });

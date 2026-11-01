@@ -3,6 +3,7 @@
  * Uses base64url encoding (URL-safe base64) for owner/repo format
  */
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 const LOCAL_PREFIX = "local:";
 const UPLOAD_PREFIX = "upload:";
 const REPO_V2_PREFIX = "repo:v2:";
@@ -142,7 +143,7 @@ export function extractOwnerRepoFromUrl(url: string): { owner: string; repo: str
     
     return null;
   } catch (error) {
-    console.error('Failed to extract owner/repo from URL:', error);
+    errorDiagnostics.error("dashboard/utils/repoSlug", 'Failed to extract owner/repo from URL:', error);
     return null;
   }
 }

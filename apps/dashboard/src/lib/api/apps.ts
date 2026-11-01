@@ -1,12 +1,12 @@
 import { api } from "./client";
+import type { AppHostFit } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type {
   AppManagement,
   AppMinResources,
   AppSettingGroup,
   AppTemplate,
-  HostCapacity,
-  ResourceFit,
+  InstallAppRoute,
 } from "@repo/core";
 
 /** One catalog entry as returned by GET /apps/catalog. */
@@ -47,19 +47,17 @@ export interface AppCatalogEntry {
   updateAvailable?: boolean;
   /** What the app declares it needs from the machine. Absent for almost every
    *  app; when present the wizard shows it against the chosen destination and
-   *  deploy preflight enforces it. */
+   *  self-hosted deployments treat it as a recommendation. */
   minResources?: AppMinResources;
+  gpu?: AppTemplate["gpu"];
+  supportsCloud?: boolean;
   configFields: AppCatalogField[];
 }
 
 /** GET /apps/catalog/:id/host-fit — an app's declared minimum vs. a destination.
  *  Advisory; `capacity.source === "unknown"` means we couldn't measure, which is
  *  never a shortfall. */
-export interface AppHostFitView {
-  minResources: AppMinResources | null;
-  capacity: HostCapacity;
-  fit: ResourceFit;
-}
+export type AppHostFitView = AppHostFit;
 
 export type InstallAppResult =
   | { kind: "flow"; flowHref: string }
@@ -78,16 +76,7 @@ export interface AppOpenDraft {
  * are created with the routing the operator picked. An endpoint the caller omits
  * gets no public route — the server never invents a hostname.
  */
-export interface InstallAppRoute {
-  service: string;
-  port: number;
-  /** port = no public route (published host port only). */
-  mode: "port" | "free" | "custom";
-  /** free: subdomain slug. Omit to take the template's default label. */
-  domain?: string;
-  /** custom: the hostname you own (required for mode "custom"). */
-  customDomain?: string;
-}
+export type { InstallAppRoute } from "@repo/core";
 
 /** Effective value for one setting field (secrets are never sent back). */
 export interface AppSettingValue {
@@ -118,6 +107,9 @@ export type LocalizedString = string | { [locale: string]: string };
 /** One resolved connection value (URL or generated key) for the app Overview. */
 export interface AppConnectionOutput {
   id: string;
+  sourceServiceId?: string;
+  sourceDatabaseId?: string;
+  clusterId?: string;
   label: string;
   help?: string;
   secret: boolean;
@@ -172,22 +164,17 @@ export const appsApi = {
   template: (id: string) =>
     api.get<{ data: AppTemplate; draft?: AppOpenDraft | null }>(endpoints.apps.catalogEntry(id)),
 
-  /** Does a chosen destination meet the app's declared minimum? Advisory — the
-   *  wizard shows the shortfall before anything is created; deploy preflight is
-   *  the gate that refuses. Only worth calling for an app with `minResources`. */
-  hostFit: (id: string, target: { deployTarget?: string; serverId?: string }) =>
-    api.get<{ data: AppHostFitView }>(endpoints.apps.catalogHostFit(id), {
-      params: {
-        ...(target.deployTarget ? { deployTarget: target.deployTarget } : {}),
-        ...(target.serverId ? { serverId: target.serverId } : {}),
-      },
-    }),
+  /** Preview self-hosted recommendations or the Cloud plan, without writes. */
+  hostFit: (id: string, target: { deployTarget?: string; serverId?: string; projectId?: string }) =>
+    api.get<{ data: AppHostFitView }>(endpoints.apps.catalogHostFit(id), { params: target }),
 
   /** Install an app from the catalog. Template apps return the new project;
    *  flow apps return the wizard route to hand off to. `routes` carries the
    *  install wizard's per-endpoint routing choice — it is the ONLY way an app
    *  install gets a public hostname. */
   install: (body: {
+    useGpu?: boolean;
+    serverId?: string;
     templateId: string;
     name?: string;
     config?: Record<string, string>;

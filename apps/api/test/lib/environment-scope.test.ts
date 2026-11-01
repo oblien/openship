@@ -4,7 +4,7 @@ import { ENVIRONMENTS } from "@repo/core";
 import {
   EnvironmentScopeSchema,
   parseOptionalEnvironmentScope,
-} from "../../src/lib/environment-scope";
+} from "@repo/contracts";
 
 describe("environment scope", () => {
   it.each(ENVIRONMENTS)("accepts %s everywhere", (environment) => {

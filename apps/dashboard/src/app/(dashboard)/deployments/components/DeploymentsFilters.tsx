@@ -1,17 +1,20 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import type { DeploymentHistoryFilter } from "@repo/core";
 import React, { useState, useEffect, useRef } from "react";
-import { Search } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
+import { Input } from "@/components/ui/input";
 import { ProjectFilter } from "./ProjectFilter";
 import type { Project } from "../types";
 
 interface DeploymentsFiltersProps {
-  filter: "all" | "success" | "failed" | "building" | "pending" | "canceled";
+  filter: "all" | DeploymentHistoryFilter;
   searchQuery: string;
   selectedProjectId: string | "all";
   projects: Project[];
-  onFilterChange: (filter: "all" | "success" | "failed" | "building" | "pending" | "canceled") => void;
+  onFilterChange: (filter: "all" | DeploymentHistoryFilter) => void;
   onSearchChange: (query: string) => void;
   onProjectChange: (projectId: string | "all") => void;
   isProject: boolean;
@@ -22,6 +25,7 @@ const FILTERS = [
   { value: "success" },
   { value: "failed" },
   { value: "building" },
+  { value: "active" },
   { value: "canceled" },
 ] as const;
 
@@ -40,7 +44,17 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     setLocalSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const cancelSearch = () => {
+      if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
+      setLocalSearchQuery(searchQuery);
+    };
+    window.addEventListener("popstate", cancelSearch);
+    return () => window.removeEventListener("popstate", cancelSearch);
   }, [searchQuery]);
 
   const handleSearchChange = (value: string) => {
@@ -61,13 +75,16 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
     // and the viewport is tight; stacks on mobile.
     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="relative w-full sm:flex-1 sm:min-w-[220px]">
-        <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-        <input
+        <UiIcon name="search" className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+        <Input
+          variant="filled"
           type="text"
           placeholder={t.deployments.filters.searchPlaceholder}
+          aria-label={t.deployments.filters.searchPlaceholder}
           value={localSearchQuery}
+          maxLength={200}
           onChange={(e) => handleSearchChange(e.target.value)}
-          className="h-10 w-full rounded-xl border border-border/50 bg-card ps-10 pe-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all"
+          className="h-10 bg-muted/60 ps-10 pe-4"
         />
       </div>
       {!isProject && (
@@ -78,21 +95,28 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
         />
       )}
 
-      {/* Status switch — same line as the search (shrink-0 so the input yields). */}
-      <div className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1 rounded-xl bg-muted/35 p-1">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => onFilterChange(f.value)}
-            className={`inline-flex h-8 items-center rounded-lg px-3.5 text-[12px] font-medium transition-colors ${
-              filter === f.value
-                ? "border border-border/60 bg-card text-foreground"
-                : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
-            }`}
-          >
-            {t.deployments.filters[f.value]}
-          </button>
-        ))}
+      {/* Status switch — same line as the search (shrink-0 so the input yields).
+          Chips scroll horizontally instead of wrapping - on a narrow screen
+          wrapping made the pill row jump to two ragged lines; a single
+          scrollable row keeps the control's height constant. */}
+      <div className="max-w-full shrink-0 overflow-x-auto scrollbar-hide">
+        <div className="inline-flex items-center gap-1">
+          {FILTERS.filter(f => !isProject || f.value !== "active").map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={filter === f.value}
+              onClick={() => onFilterChange(f.value)}
+              className={`inline-flex h-10 shrink-0 items-center rounded-lg px-4 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                filter === f.value
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {f.value === "active" ? t.deployments.stats.inProgress : t.deployments.filters[f.value]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

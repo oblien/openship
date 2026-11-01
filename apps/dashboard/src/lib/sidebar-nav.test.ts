@@ -55,41 +55,42 @@ const mailAt = (input: Partial<MailNavInput> = {}): NavSection[] =>
 const ALL_TABS: readonly string[] = MAIL_TAB_KEYS;
 
 describe("getNavSections (the platform rail)", () => {
-  it("is unchanged by mail mode: main + infrastructure + settings", () => {
+  it("orders self-hosted navigation as main, infrastructure, then settings", () => {
     const s = getNavSections(false, true);
     expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings"]);
     expect(keysOf(find(s, "main"))).toEqual([
       "home",
       "projects",
       "apps",
-      "deployments",
+      "actions",
       "issues",
     ]);
-    expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "emails", "jobs"]);
-    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "audit"]);
+    expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "emails", "jobs", "backups"]);
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "audit"]);
   });
 
-  it("adds Billing on the SaaS and drops the infrastructure section there", () => {
+  it("includes Billing before Cloud infrastructure and links the generic email client", () => {
     const s = getNavSections(true, false);
-    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
-    // Empty sections are filtered out, not rendered as a bare heading.
-    expect(find(s, "infrastructure")).toBeUndefined();
+    expect(sectionsOf(s)).toEqual(["main", "settings", "infrastructure", "help"]);
+    expect(find(s, "main")?.items.find((item) => item.key === "actions")).toMatchObject({
+      href: "/actions",
+    });
+    expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
+    expect(find(s, "settings")?.items.find((item) => item.key === "affiliates")).toMatchObject({ href: "/affiliates" });
+    expect(keysOf(find(s, "infrastructure"))).toEqual(["resources", "servers", "emails", "jobs", "backups"]);
+    expect(find(s, "infrastructure")?.items[0]).toMatchObject({ href: "/resources" });
   });
 
-  it("keeps Billing at the very bottom, below Servers, on a cloud-linked self-hosted box", () => {
-    // isSaaS goes true the moment a self-hosted install links a cloud account, which
-    // is the case that put Billing above Servers. The invariant is that Billing does not
-    // OUTRANK the infrastructure — every host row must precede it.
+  it("keeps Infrastructure before Settings on a cloud-linked self-hosted box", () => {
     const s = getNavSections(true, true);
+    expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings", "help"]);
     const keys = s.flatMap((x) => keysOf(x));
-    for (const host of ["servers", "emails", "jobs"]) {
+    expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
+    for (const host of ["servers", "emails", "jobs", "backups"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
-    // Only the audit log follows it. That is a read-only review surface, consulted after
-    // the fact and never on the way to a task, so it is deliberately the last row — it
-    // cannot outrank anything by sitting there.
-    expect(keys.at(-1)).toBe("audit");
-    expect(keys.indexOf("billing")).toBe(keys.length - 2);
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
   });
 
   it("keeps /emails in the platform rail", () => {
@@ -100,6 +101,13 @@ describe("getNavSections (the platform rail)", () => {
 });
 
 describe("getMailNavSections (the Openship Mail rail)", () => {
+  it("ends with Support when connected to Cloud, including during mail setup", () => {
+    for (const loaded of [false, true]) {
+      const connected = mailAt({ supportAvailable: true, loaded });
+      expect(connected.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
+      expect(mailAt({ supportAvailable: false, loaded }).flatMap((s) => keysOf(s))).not.toContain("support");
+    }
+  });
   it("shows one entry pointing at the real route before the list loads", () => {
     const mail = find(mailAt({ loaded: false }), "mail");
     expect(keysOf(mail)).toEqual(["emails"]);

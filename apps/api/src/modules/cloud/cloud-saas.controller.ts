@@ -17,10 +17,12 @@
  *   POST /api/cloud/exchange-code     - exchange code for user + session (no auth)
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
+import { AppError, validateGitHubInstallationScope } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
-import { auth } from "../../lib/auth";
-import { issueNamespaceToken } from "../../lib/openship-cloud";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { issueNamespaceToken } from "@repo/platform/engine/lib/openship-cloud";
 import {
   exchangeHandoffCode,
   validateDesktopRedirect,
@@ -30,15 +32,15 @@ import {
   findHandoffCodeByState,
   mintSession,
 } from "../../lib/cloud-auth-proxy";
-import { runCloudPreflight } from "../../lib/cloud-preflight";
-import { cloudRuntimeTarget } from "../../config/env";
-import * as githubAuth from "../github/github.auth";
-import { canMintInstallationToken } from "../github/github-access";
+import { runCloudPreflight } from "@repo/platform/engine/lib/cloud-preflight";
+import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
+import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
+import { canMintInstallationToken } from "@repo/platform/engine/modules/github/github-access";
 import {
   proxyCloudAnalytics,
   CloudAnalyticsForbiddenError,
   type CloudAnalyticsOperation,
-} from "./cloud-analytics.service";
+} from "@repo/platform/engine/modules/cloud/cloud-analytics.service";
 import { revokeCloudSession } from "./cloud-session.service";
 import {
   syncCloudEdgeProxy,
@@ -61,6 +63,7 @@ import {
   TeardownProjectNotFoundError,
 } from "./cloud-ingest.service";
 import {
+  repos,
   DUMP_FORMAT_VERSION,
   PkCollisionError,
   type DatabaseDump,
@@ -69,15 +72,20 @@ import {
 import {
   startGithubLinkFromBridgeToken,
   buildOrgScopedInstallUrl,
+  getGithubInstallSelection,
+  type GithubInstallSelectionResult,
   attributeGithubInstall,
   listOrgInstallations,
   mintOrgInstallationToken,
   oauthBridgeStore,
   OAUTH_BRIDGE_TTL_MS,
-} from "./cloud-github.service";
+} from "@repo/platform/engine/modules/cloud/cloud-github.service";
 
 /** Coerce a thrown Oblien SDK error into an HTTP response shape. */
 function oblienErrorResponse(c: Context, err: unknown, fallback: string) {
+  // Application permission/validation failures retain their status and safe
+  // response through the shared handler; they are not provider server faults.
+  if (err instanceof AppError) throw err;
   const message = err instanceof Error ? err.message : fallback;
   const status =
     typeof err === "object" && err !== null && "status" in err && typeof (err as { status?: unknown }).status === "number"
@@ -91,7 +99,7 @@ function oblienErrorResponse(c: Context, err: unknown, fallback: string) {
   // is not enough for a DB error (we need the pg code + stack). 4xx are expected
   // control-flow (validation, conflicts) and stay quiet.
   if (status >= 500) {
-    console.error(`[cloud] ${fallback}:`, err);
+    errorDiagnostics.error("api/modules/cloud/cloud-saas.controller", `[cloud] ${fallback}:`, err);
   }
   c.status(status as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500);
   return c.json({ error: message, code });
@@ -125,6 +133,7 @@ export async function analyticsProxy(c: Context) {
     const result = await proxyCloudAnalytics(ctx.organizationId, { operation, domain, params });
     return c.json({ data: result });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     if (err instanceof CloudAnalyticsForbiddenError) {
       return c.json({ error: err.message }, 403);
     }
@@ -136,16 +145,23 @@ export async function analyticsProxy(c: Context) {
 
 export async function getToken(c: Context) {
   const ctx = getRequestContext(c);
-  const result = await issueNamespaceToken(ctx.organizationId);
+  const { authorizeCloudRelayWorkspace } = await import("./cloud-relay-access");
+  const workspaceId = await authorizeCloudRelayWorkspace(ctx);
+  const result = await issueNamespaceToken(ctx.organizationId, workspaceId);
+  c.header("Cache-Control", "no-store");
   return c.json({ data: result });
 }
 
 export async function preflight(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{ slug?: string; customDomain?: string }>();
+  const { authorizeCloudRelayWorkspace } = await import("./cloud-relay-access");
+  const workspaceId = await authorizeCloudRelayWorkspace(ctx, c.req.query("serverId"), "write");
   const result = await runCloudPreflight(ctx.organizationId, {
     slug: body.slug,
     customDomain: body.customDomain,
+    // This relay serves linked instances, whose provider token has this scope.
+    workspaceId,
   });
   return c.json({ data: result });
 }
@@ -192,6 +208,8 @@ export async function account(c: Context) {
 
   return c.json({
     user: {
+      id: getRequestContext(c).userId,
+      organizationId: getRequestContext(c).organizationId,
       name: user.name ?? user.email,
       email: user.email,
       image: user.image ?? null,
@@ -303,7 +321,8 @@ export async function connectAuthorize(c: Context) {
   let body: { redirect?: string; state?: string; codeChallenge?: string; mode?: string };
   try {
     body = await c.req.json<{ redirect?: string; state?: string; codeChallenge?: string; mode?: string }>();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/cloud/cloud-saas.controller");
     return c.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, 400);
   }
 
@@ -381,7 +400,7 @@ export async function connectAuthorize(c: Context) {
     callbackUrl.searchParams.set("state", state);
     return c.json({ callbackUrl: callbackUrl.toString() });
   } catch (err) {
-    console.error("[connect-authorize] mint failed:", err);
+    errorDiagnostics.error("api/modules/cloud/cloud-saas.controller", "[connect-authorize] mint failed:", err);
     return c.json(
       { error: "Failed to mint handoff code", code: "MINT_FAILED" },
       500,
@@ -456,6 +475,7 @@ export async function syncEdgeProxy(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true, hostname: result.hostname });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to sync edge proxy");
   }
 }
@@ -478,6 +498,7 @@ export async function deleteEdgeProxy(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true, removed: result.removed });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to delete edge proxy");
   }
 }
@@ -500,6 +521,7 @@ export async function requestEdgeVerification(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true, verification: result.verification });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to request edge target verification");
   }
 }
@@ -524,6 +546,7 @@ export async function checkEdgeVerification(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true, verification: result.verification });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to check edge target verification");
   }
 }
@@ -538,7 +561,7 @@ export async function checkEdgeVerification(c: Context) {
  *   - `workspace_id` must belong to the caller's namespace (or 404)
  *   - `slug` must be free on the shared zone (or 409 SLUG_TAKEN)
  *
- * Returns the raw Oblien SDK shape so the caller's CloudRuntime code
+ * Returns the raw Oblien SDK shape so the caller's infrastructure adapter
  * path stays unchanged.
  */
 export async function pagesProxy(c: Context) {
@@ -563,6 +586,7 @@ export async function pagesProxy(c: Context) {
     });
     return c.json(result);
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to create page");
   }
 }
@@ -584,6 +608,7 @@ export async function pagesDisable(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to disable page");
   }
 }
@@ -605,6 +630,7 @@ export async function pagesEnable(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to enable page");
   }
 }
@@ -626,6 +652,7 @@ export async function pagesDelete(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to delete page");
   }
 }
@@ -669,6 +696,7 @@ export async function sendInvitation(c: Context) {
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true, messageId: result.messageId });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Failed to send invitation");
   }
 }
@@ -683,14 +711,25 @@ export async function sendInvitation(c: Context) {
  * ingestSubgraph.
  */
 export async function ingestSubgraphHandler(c: Context) {
+  return handleSubgraphIngest(c, false);
+}
+
+export async function promoteProjectHandler(c: Context) {
+  return handleSubgraphIngest(c, true);
+}
+
+async function handleSubgraphIngest(c: Context, promotion: boolean) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{
     dump?: DatabaseDump;
     allowNonEmptyTarget?: boolean;
+    promotionId?: string;
   }>();
   if (!body.dump) {
     return c.json({ error: "dump is required" }, 400);
   }
+  if (promotion && (typeof body.promotionId !== "string" || !body.promotionId))
+    return c.json({ error: "promotionId is required", code: "INGEST_VALIDATION_FAILED" }, 400);
   if (body.dump.formatVersion !== DUMP_FORMAT_VERSION) {
     return c.json(
       {
@@ -705,9 +744,11 @@ export async function ingestSubgraphHandler(c: Context) {
       organizationId: ctx.organizationId,
       dump: body.dump,
       allowNonEmptyTarget: body.allowNonEmptyTarget,
+      ...(promotion && { promotion: { id: body.promotionId!, userId: ctx.userId } }),
     });
     return c.json({ ok: true, ...result });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     if (err instanceof IngestTargetNotEmptyError) {
       return c.json(
         { error: err.message, code: err.code, projectCount: err.projectCount },
@@ -760,7 +801,7 @@ export async function teardownProjectHandler(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req
     .json<{ projectId?: string }>()
-    .catch(() => ({} as { projectId?: string }));
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/cloud/cloud-saas.controller"); return ({} as { projectId?: string }); });
   if (!body.projectId) {
     return c.json({ error: "projectId is required" }, 400);
   }
@@ -771,6 +812,7 @@ export async function teardownProjectHandler(c: Context) {
     });
     return c.json({ ok: true });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     if (err instanceof TeardownProjectNotFoundError) {
       return c.json({ error: err.message, code: err.code }, 404);
     }
@@ -788,7 +830,7 @@ export async function exportSubgraphHandler(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req
     .json<{ scope?: SubgraphScope }>()
-    .catch(() => ({} as { scope?: SubgraphScope }));
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/cloud/cloud-saas.controller"); return ({} as { scope?: SubgraphScope }); });
   const scope: SubgraphScope = body.scope ?? { kind: "organization", organizationId: ctx.organizationId };
 
   if (scope.kind === "instance") {
@@ -816,6 +858,7 @@ export async function exportSubgraphHandler(c: Context) {
     const dump = await exportSubgraph(scope);
     return c.json({ ok: true, dump });
   } catch (err) {
+    observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");
     return oblienErrorResponse(c, err, "Subgraph export failed");
   }
 }
@@ -833,81 +876,15 @@ export async function exportSubgraphHandler(c: Context) {
 // already managed by the existing local github code paths, so we just reuse
 // them — this controller is a thin policy/translation layer.
 
-// ─── OAuth bridge (browser-session handoff for linkSocialAccount) ───────────
-//
-// SaaS-only OAuth flow. Self-hosted instances never hold GitHub OAuth
-// credentials — they redirect the user's browser to api.openship.io
-// where the real OAuth round-trip happens against the SaaS's Better
-// Auth instance. The browser starts with no SaaS session cookie (it
-// only has a local session), so we need a 2-hop handoff:
-//
-//   1. Local POSTs /oauth-handoff with its cloud_session_token Bearer.
-//      SaaS resolves the bearer to a Better-Auth session, mints a
-//      one-time bridge token storing (userId, sessionToken), returns
-//      a URL pointing at /oauth-bridge?token=<bridge>.
-//
-//   2. Browser opens /oauth-bridge?token=<>. SaaS consumes the bridge
-//      (single-use), constructs Better-Auth session headers from the
-//      stashed sessionToken, calls auth.api.linkSocialAccount which
-//      returns the GitHub OAuth redirect URL + state cookies. SaaS
-//      forwards the redirect AND sets the user's Better-Auth session
-//      cookie on the browser so when GitHub redirects back to Better
-//      Auth's callback URL, it resolves to the right user and creates
-//      the `account` row with providerId='github'.
-//
-// After this, the SaaS has authoritative knowledge of the user's
-// GitHub identity. findUserByGitHubId in the install webhook will
-// succeed, getUserToken will return the user's OAuth token, and
-// getUserInstallations will work end-to-end.
+// ─── Repository OAuth bridge ───────────────────────────────────────────────
+// Self-hosted clients authenticate to Cloud with their existing session and
+// receive a one-time browser handoff. The shared engine binds repository OAuth
+// to that session and workspace, with PKCE and a browser nonce. No Cloud session
+// cookie is installed in the system browser, and no sign-in identity is linked
+// or transferred. The GitHub App Setup callback separately claims the verified
+// installation into the initiating workspace.
 
-// ─── GitHub Connect flow: architecture overview ─────────────────────────────
-//
-// SaaS-only OAuth + install flow. Local self-hosted instances NEVER hold
-// GitHub OAuth credentials, GitHub App private keys, or the gitInstallation
-// table for the App. Everything flows through api.openship.io.
-//
-// Three independent identity envelopes chain together:
-//
-//   ┌─ Local DB ────────────────┐   ┌─ SaaS process memory ─────┐   ┌─ Browser ─────────────┐
-//   │ user_settings.cloud_      │   │ oauthBridges Map          │   │ Better Auth oauth_     │
-//   │ session_token (AES at     │ → │ {userId, sessionToken}    │ → │ state cookie           │
-//   │ rest with BETTER_AUTH_    │   │ 16 random bytes, 5min TTL │   │ AES-encrypted {link:  │
-//   │ SECRET-derived key)       │   │ single-use                │   │ {email, userId}}      │
-//   └───────────────────────────┘   └───────────────────────────┘   └───────────────────────┘
-//          Step 1: Local→SaaS              Step 2: SaaS→Browser           Step 3: Browser→GitHub→SaaS
-//          Authorization: Bearer            ?token=<bridge> in URL         redirect chain
-//
-// Security invariants:
-//   - The popup browser NEVER receives the SaaS Better Auth session
-//     cookie. Only the oauth_state cookies are forwarded (see the
-//     allowedCookieNames filter in filterForwardableStateCookies). The
-//     state cookie itself carries the {link: {email, userId}} binding all
-//     the way to GitHub's callback, and Better Auth's callback handler
-//     (callback.mjs:102-128) reads userId from the decrypted state — it
-//     never consults c.context.session for link flows.
-//   - The bridge token in /oauth-bridge?token=<> is single-use AND
-//     time-bound. Leaking it via access logs / browser history is bounded
-//     by both: the consumer races first (consumeOauthBridge deletes
-//     before returning), and the 5-min TTL.
-//   - The link binding (userId) lives ONLY inside the encrypted state
-//     cookie. The bridge token itself is opaque randomness — leaking
-//     it from a URL reveals no PII or userId.
-//
-// Do NOT add a session-cookie set on the popup browser response from
-// /oauth-bridge — that would silently log the popup into the SaaS
-// dashboard, conflating identities across the local and SaaS tiers.
-
-/**
- * POST /api/cloud/github/oauth-handoff   (bearer-authed via cloudSessionAuth)
- *
- * Returns a one-time URL the browser opens to start GitHub OAuth on the
- * SaaS. The URL points at the public /oauth-bridge endpoint with a
- * single-use bridge token. The bridge then calls Better Auth's
- * linkSocialAccount via the bearer plugin (Authorization: Bearer
- * sessionToken) to obtain the GitHub OAuth redirect URL + state
- * cookies, forwards both to the browser, and the browser proceeds to
- * GitHub.
- */
+/** Return a one-time browser URL for repository authorization on Cloud. */
 export async function githubOauthHandoff(c: Context) {
   // cloudSessionAuth middleware (mounted on /github/*) already resolved
   // the Bearer token into a session row + user. We read them straight
@@ -919,8 +896,27 @@ export async function githubOauthHandoff(c: Context) {
   if (!user || !session) {
     return c.json({ error: "No active session" }, 401);
   }
+  const raw = await c.req.text();
+  let body: { state?: unknown } = {};
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return c.json({ error: "Invalid GitHub connection request" }, 400);
+      body = parsed;
+    } catch {
+      return c.json({ error: "Invalid GitHub connection request" }, 400);
+    }
+  }
+  const organizationId = getRequestContext(c).organizationId;
+  if (body.state !== undefined) {
+    if (typeof body.state !== "string" || body.state.length > 256) return c.json({ error: "Invalid GitHub connection attempt" }, 400);
+    const binding = await repos.githubInstallState.find(body.state);
+    if (!binding || binding.userId !== user.id || binding.organizationId !== organizationId || binding.flow !== "install" || binding.sourceId)
+      return c.json({ error: "This GitHub connection attempt expired or belongs to another workspace. Start again.", code: "GITHUB_ATTEMPT_EXPIRED" }, 403);
+  }
   const token = await oauthBridgeStore.issue(
-    { userId: user.id, sessionToken: session.token },
+    { userId: user.id, sessionToken: session.token, organizationId, ...(typeof body.state === "string" && body.state ? { state: body.state } : {}) },
     { ttlMs: OAUTH_BRIDGE_TTL_MS },
   );
   return c.json({
@@ -930,18 +926,10 @@ export async function githubOauthHandoff(c: Context) {
   });
 }
 
-/**
- * GET /api/cloud/github/oauth-bridge?token=<>   (PUBLIC)
- *
- * Browser opens this from a popup. We consume the bridge token, set the
- * user's Better-Auth session cookie on the browser, call
- * auth.api.linkSocialAccount to get GitHub's OAuth start URL + Better
- * Auth's own state cookies, and redirect to that URL with all cookies
- * attached. When GitHub redirects back to Better Auth's callback, the
- * session cookie identifies the user and Better Auth creates the
- * `account` row scoped to them.
- */
+/** Consume the handoff and issue only the repository OAuth browser cookie. */
 export async function githubOauthBridge(c: Context) {
+  c.header("Cache-Control", "no-store");
+  c.header("Referrer-Policy", "no-referrer");
   const result = await startGithubLinkFromBridgeToken(c.req.query("token"));
   switch (result.kind) {
     case "missing-token":
@@ -968,19 +956,8 @@ export async function githubOauthBridge(c: Context) {
       );
       return response;
     }
-    case "no-url":
-      console.error(
-        `[github oauth-bridge] linkSocialAccount returned no URL — status=${result.status} body=${result.bodySnippet}`,
-      );
-      return c.html(
-        renderCallbackHtml(
-          "OAuth start failed",
-          "Could not start GitHub OAuth. Try again or check the server logs.",
-        ),
-        500,
-      );
     case "failed":
-      console.error("[github oauth-bridge] failed:", result.error);
+      errorDiagnostics.error("api/modules/cloud/cloud-saas.controller", "[github oauth-bridge] failed:", result.error);
       return c.html(
         renderCallbackHtml("OAuth start failed", result.error),
         500,
@@ -988,19 +965,12 @@ export async function githubOauthBridge(c: Context) {
   }
 }
 
-/**
- * GET /api/cloud/github/oauth-success   (PUBLIC)
- *
- * Better Auth redirects here after the GitHub OAuth callback completes
- * and the `account` row has been written. We just render a friendly
- * close-window page; the dashboard picks up the new state on its next
- * /user-status refresh.
- */
+/** Close the bridge window after the repository grant has been saved. */
 export async function githubOauthSuccess(c: Context) {
   return c.html(
     renderCallbackHtml(
       "GitHub connected",
-      "Your GitHub account is now linked. You can close this window — the dashboard will refresh automatically.",
+      "GitHub repository access is authorized. You can close this window — continue App installation from Openship.",
       { closeAfterMs: 2000 },
     ),
   );
@@ -1009,9 +979,9 @@ export async function githubOauthSuccess(c: Context) {
 /**
  * POST /api/cloud/github/install-url
  *
- * Returns the central App's installation URL with a one-time state token
- * embedded as a query parameter. GitHub Apps preserve the `state` query
- * param through the install flow and append it to the Setup URL alongside
+ * Returns Openship's account-selection URL with a one-time state token. It
+ * offers existing installations, or forwards a new install to GitHub with the
+ * same state. GitHub preserves that state and appends it to the Setup URL alongside
  * `installation_id` and `setup_action` — that's what lets us attribute
  * the install back to the userId that started the flow without requiring
  * a SaaS session cookie on the popup browser (the App's Setup URL on
@@ -1036,6 +1006,10 @@ export async function githubInstallUrl(c: Context) {
  * committed atomically. No browser session is trusted on this callback.
  */
 export async function githubInstallCallback(c: Context) {
+  c.header("Cache-Control", "no-store");
+  c.header("Referrer-Policy", "no-referrer");
+  if (c.req.query("flow") === "select") return githubInstallSelection(c);
+
   const result = await attributeGithubInstall({
     installationIdRaw: c.req.query("installation_id"),
     setupAction: c.req.query("setup_action"),
@@ -1092,13 +1066,48 @@ export async function githubInstallCallback(c: Context) {
         ),
       );
     case "failed":
-      console.error("[github install-callback] failed:", result.error);
+      errorDiagnostics.error("api/modules/cloud/cloud-saas.controller", "[github install-callback] failed:", result.error);
       return c.html(
         renderCallbackHtml(
           "Install attribution failed",
-          `Could not finalize installation ${result.installationId}. Refresh the dashboard or try installing again. (${result.error})`,
+          `Could not finalize this GitHub connection. Refresh the dashboard or try installing again. (${result.error})`,
         ),
         500,
+      );
+  }
+}
+
+async function githubInstallSelection(c: Context) {
+  const result = await getGithubInstallSelection(c.req.query("state"));
+  switch (result.kind) {
+    case "ready":
+      if (result.installations.length === 0) return c.redirect(result.installUrl);
+      return c.html(
+        renderCallbackHtml(
+          "Connect GitHub",
+          `Choose the GitHub account to connect to ${result.workspaceName}.`,
+          { selection: result },
+        ),
+      );
+    case "missing-params":
+    case "state-expired":
+      return c.html(
+        renderCallbackHtml(
+          "Install link expired",
+          "This installation link expired or was already used. Start a new connection from Openship.",
+        ),
+        400,
+      );
+    case "forbidden":
+      return c.html(renderCallbackHtml("Installation not authorized", result.message), 403);
+    case "failed":
+      errorDiagnostics.error("api/modules/cloud/cloud-saas.controller", "[github install-selection] failed:", result.error);
+      return c.html(
+        renderCallbackHtml(
+          "Could not load GitHub accounts",
+          "Your GitHub accounts could not be loaded. Refresh this page to try again.",
+        ),
+        502,
       );
   }
 }
@@ -1106,10 +1115,31 @@ export async function githubInstallCallback(c: Context) {
 function renderCallbackHtml(
   title: string,
   message: string,
-  opts?: { closeAfterMs?: number },
+  opts?: {
+    closeAfterMs?: number;
+    selection?: Extract<GithubInstallSelectionResult, { kind: "ready" }>;
+  },
 ): string {
   const closeScript = opts?.closeAfterMs
     ? `<script>setTimeout(() => window.close(), ${opts.closeAfterMs});</script>`
+    : "";
+  const selection = opts?.selection;
+  const accounts = selection
+    ? `<div class="installations">${selection.installations
+        .map(
+          (installation) => `
+      <form method="get" action="/api/cloud/github/install-callback">
+        <input type="hidden" name="state" value="${escapeHtml(selection.state)}" />
+        <input type="hidden" name="installation_id" value="${escapeHtml(String(installation.id))}" />
+        <input type="hidden" name="setup_action" value="update" />
+        <button type="submit">
+          <strong>${escapeHtml(installation.login)}</strong>
+          <span>${installation.type === "Organization" ? "Organization" : "Personal account"}</span>
+        </button>
+      </form>`,
+        )
+        .join("")}</div>
+      <a class="install-another" href="${escapeHtml(selection.installUrl)}">Install on another GitHub account</a>`
     : "";
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1122,12 +1152,20 @@ function renderCallbackHtml(
     .card { background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06); }
     h1 { font-size: 18px; font-weight: 600; margin: 0 0 12px; }
     p { font-size: 14px; line-height: 1.55; color: #555; margin: 0; }
+    .installations { display: grid; gap: 12px; margin-top: 24px; }
+    .installations button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .installations button:hover { background: #f6f6f6; }
+    .installations button:focus-visible, .install-another:focus-visible { outline: 2px solid #171717; outline-offset: 3px; }
+    .installations strong { overflow-wrap: anywhere; }
+    .installations span { font-size: 12px; color: #666; }
+    .install-another { display: inline-block; margin-top: 20px; font-size: 14px; color: #333; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(message)}</p>
+    ${accounts}
   </div>
   ${closeScript}
 </body>
@@ -1174,7 +1212,7 @@ export async function githubInstallations(c: Context) {
  */
 export async function githubInstallationToken(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<{ owner?: string; repos?: string[] }>();
+  const body = await c.req.json<{ owner?: string; repos?: string[]; permissions?: Record<string, "read" | "write"> }>();
   if (!body.owner) return c.json({ error: "owner is required" }, 400);
 
   // The repo-grant gate. Without it the route's `cloud:write` tag was the only check,
@@ -1183,8 +1221,10 @@ export async function githubInstallationToken(c: Context) {
   // live GitHub App installation token, and the grant system that decides WHICH repos
   // a member may touch was never consulted. The repos-vs-no-repos distinction is the
   // security-relevant part; it lives in canMintInstallationToken.
+  const scope = body.permissions ? validateGitHubInstallationScope(body.repos, body.permissions) : null;
+  const access = scope && Object.values(scope.permissions).includes("write") ? "write" : "read";
   const requested = (body.repos ?? []).map((r) => r.trim()).filter(Boolean);
-  if (!(await canMintInstallationToken(ctx, body.owner, body.repos))) {
+  if (!(await canMintInstallationToken(ctx, body.owner, body.repos, access))) {
     return c.json(
       {
         error: requested.length
@@ -1196,11 +1236,11 @@ export async function githubInstallationToken(c: Context) {
     );
   }
 
-  const result = await mintOrgInstallationToken(ctx.organizationId, body.owner, body.repos);
+  const result = await mintOrgInstallationToken(ctx.organizationId, body.owner, body.repos, scope?.permissions);
   if (result.kind === "not-found") {
     return c.json({ error: `No GitHub App installation found for ${result.owner}` }, 404);
   }
-  return c.json({ data: { token: result.token, expiresAt: result.expiresAt } });
+  return c.json({ data: { token: result.token, expiresAt: result.expiresAt, ...(scope ? { scope } : {}) } });
 }
 
 /**

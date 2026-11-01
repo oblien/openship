@@ -18,6 +18,7 @@
  * on the next boot, and vice versa.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../../types";
 import type { EdgeStatus, EdgeStopTarget, SystemLog, SystemLogCallback } from "../types";
 import {
@@ -29,6 +30,7 @@ import {
 } from "./detect";
 import { rootOrDegrade } from "../privilege";
 import { tryExec } from "../probe-exec";
+import { assertNoSwarmEdge } from "./swarm";
 
 const JOURNAL_DIR = "/var/lib/openship";
 export const JOURNAL_PATH = `${JOURNAL_DIR}/edge-takeover.json`;
@@ -130,7 +132,8 @@ export async function writeJournal(
     const privileged = await journalFileExecutor(executor);
     await privileged.mkdir(JOURNAL_DIR);
     await privileged.writeFile(JOURNAL_PATH, JSON.stringify(journal, null, 2));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/proxy/takeover-journal");
     // Non-fatal: an in-process rollback still works; only crash-recovery is lost.
   }
 }
@@ -349,7 +352,7 @@ export async function beginEdgeTakeover(
   onLog: SystemLogCallback,
   targets?: EdgeStopTarget[],
 ): Promise<EdgeTakeoverBegun> {
-  await writeJournal(executor, await buildJournal(executor, status, onLog));
+  assertNoSwarmEdge(status);
   // Freeing the ports is host MUTATION — `systemctl disable --now`, `docker update
   // --restart=no`, `kill` — and freeEdgeTargets swallows every one of them (`|| true`).
   // Unelevated on a non-root login they are all refused, so nothing stops, the ports
@@ -370,6 +373,7 @@ export async function beginEdgeTakeover(
     stopExecutor,
     targets?.length ? targets : stopTargetsForStatus(status),
     (m, l) => onLog(log(m, l)),
+    { beforeStop: async () => writeJournal(executor, await buildJournal(executor, status, onLog)) },
   );
   return { ...freed, privilegeDegraded };
 }

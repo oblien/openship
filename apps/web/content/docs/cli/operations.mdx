@@ -1,0 +1,68 @@
+---
+title: Monitoring and automation
+description: Inspect health, configure notifications, manage webhooks and read audit events.
+---
+
+These commands use the same SDK operations, validation and permissions as the control plane.
+Pass global `--json` before the command for structured output.
+
+## Health and issues
+
+```bash
+openship monitoring issues
+openship monitoring summary
+openship monitoring health
+openship monitoring scan
+```
+
+Issue results include counts and the engine's recovery actions. Health results include workload state,
+scan freshness and watcher capabilities. Scanning requests a current observation; it does not silently
+enable recurring work. Authorized instance administrators can use `monitoring watch enable` or
+`monitoring watch disable` to configure the existing health job. The CLI uses the watcher ID and
+capabilities returned by the engine, including Cloud and native restrictions.
+
+`project pending <id>` and `project incidents <id>` inspect a specific project. Instance-wide
+`monitoring rescan` and `monitoring rescan status` require self-hosted administration;
+`--health-only` avoids running infrastructure and update jobs.
+
+## Notifications
+
+```bash
+openship notification categories
+openship notification channel create channel.json
+openship notification channel test channel_123
+openship notification subscription set deploy.failed --channel channel_123
+openship notification deliveries list --limit 50
+```
+
+A channel file contains its `kind`, `label` and provider `config`, as defined by the notification API.
+The `channel test` command sends a real test notification and exits nonzero if delivery fails.
+`notification defaults` manages organization defaults; `subscription` manages personal delivery choices.
+
+## Incoming webhooks
+
+```bash
+openship webhook list --project proj_123
+openship webhook create webhook.json --project proj_123
+openship webhook deliveries --project proj_123 --limit 50
+```
+
+The JSON definition selects the name, action and authentication using the shared webhook contract.
+Keep returned credential-bearing URLs and secrets private. Use `update` to change configuration,
+`rotate --yes` to rotate credentials and `invoke` to execute an action with the caller's permissions.
+Delivery pages return `nextCursor`; pass it as `--cursor` for the next page.
+
+## Audit
+
+```bash
+openship audit list
+openship audit list --query filters.json
+openship audit facets
+openship audit settings get
+```
+
+Audit queries accept the shared filters, dates and pagination fields, for example
+`{"resourceType":"project","resourceId":"proj_123","limit":50}`. Administrators can update logging
+and retention with `audit settings set <file>`.
+
+See the [command reference](/docs/cli/reference) for every argument and option.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isConnectionLoss } from "./remote-state";
+import { isConnectionLoss } from "@repo/platform/engine/lib/remote-state";
 
 describe("isConnectionLoss", () => {
   it("recognizes a serialized ssh2 exec-request rejection", () => {

@@ -2,7 +2,7 @@
   "available": true,
   "id": "vaultwarden",
   "name": "Vaultwarden",
-  "description": "Lightweight self-hosted password manager (Bitwarden-compatible). Open the admin panel with the token below to invite your first account.",
+  "description": "A lightweight, self-hosted password manager compatible with Bitwarden clients.",
   "kind": "template",
   "logo": "vaultwarden",
   "category": "other",
@@ -78,5 +78,21 @@
       "note": "Invitations work without SMTP: after inviting your address in /admin, register that same address from the vault URL to set your master password."
     }
   },
-  "verified": true
+  "verified": true,
+  "marketplace": {
+    "features": [
+      {
+        "title": "Password vault",
+        "description": "Host a lightweight password-management server."
+      },
+      {
+        "title": "Client compatibility",
+        "description": "Use compatible Bitwarden clients."
+      },
+      {
+        "title": "Admin controls",
+        "description": "Manage access through the administration panel."
+      }
+    ]
+  }
 }

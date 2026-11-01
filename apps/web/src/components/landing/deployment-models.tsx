@@ -1,31 +1,19 @@
-import { CLOUD_FROM_LIST, UI } from "@/lib/pricing";
+import { cloudFrom, getCloudPricing, UI } from "@/lib/pricing";
 
-/**
- * Deployment models - three big numbered panels. Middle (Hybrid) is the
- * inverted dark panel for visual rhythm. Big "01/02/03" as type-as-design.
- *
- * The "from" figure is the LIST price on purpose. This panel renders on the home
- * page, which is statically prerendered, so anything time-dependent would freeze
- * at build: a campaign price baked in here would keep advertising a discount
- * after the offer closed. The list price can only go stale on a catalog edit,
- * and that is a deploy. `/pricing` — which is rendered per request — is where
- * the live campaign price is shown.
- */
-
-const MODELS = [
+function models(from: string | null) { return [
   {
     n: "01",
     tag: "Managed",
     title: "Openship Cloud",
     lead:
-      "Sign up, point at a repository, ship. Zero infrastructure decisions. Multi-region by default. Auto-scaling per service.",
+      "Build and deploy web apps from your repository. Manage deployments, domains, and logs in one place.",
     points: [
-      "Multi-region edge - us, eu, apac, more",
-      "Auto-scaling, zero-downtime rolling deploys",
-      "Backups, monitoring, alerts included",
+      "Managed builds and application runtimes",
+      "HTTPS domains and static site hosting",
+      "Track credit usage in your dashboard",
     ],
-    price: CLOUD_FROM_LIST ? `From ${CLOUD_FROM_LIST}${UI.perMonth}` : UI.free,
-    priceNote: `Free tier to start — ${UI.billedMonthly}`,
+    price: from ? `From ${from}${UI.perMonth}` : "See Cloud plans",
+    priceNote: "Monthly or annual billing",
   },
   {
     n: "02",
@@ -56,9 +44,11 @@ const MODELS = [
     price: "Cloud plan + your servers",
     priceNote: "One Cloud subscription, unlimited self-hosted boxes",
   },
-];
+]; }
 
-export function DeploymentModels() {
+export async function DeploymentModels() {
+  const pricing = await getCloudPricing();
+  const MODELS = models(cloudFrom(pricing));
   return (
     <section className="dm-section">
       <div className="dm-container">

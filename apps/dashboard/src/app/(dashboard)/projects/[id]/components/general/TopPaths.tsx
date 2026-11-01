@@ -1,6 +1,8 @@
 "use client";
+
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React, { useState } from "react";
-import { MoreVertical, EyeOff, TrendingUp } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { formatCount } from "@/components/monitoring/format";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
@@ -33,11 +35,8 @@ export const TopPaths: React.FC<Props> = ({ paths, onDisable, isBusy = false }) 
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
-          {/* lucide, not the raster mask via utils/icons: every other component in this
-              feature uses lucide, and `utils/icons.js` carries JSX in a .js file, which the
-              test transform cannot parse — so importing it pulls any test that renders this
-              card down with it. Same glyph either way. */}
-          <TrendingUp className="size-5 text-primary" />
+
+          <UiIcon name="trending-up" className="size-5 text-primary" />
           <h3 className="text-base font-semibold text-foreground">{t.projectDetail.general.topPaths.title}</h3>
         </div>
         <div className="flex items-center gap-1">
@@ -57,13 +56,13 @@ export const TopPaths: React.FC<Props> = ({ paths, onDisable, isBusy = false }) 
               align="right"
               disabled={isBusy}
               triggerClassName="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              trigger={<MoreVertical className="size-4" />}
+              trigger={<UiIcon name="more-vertical" className="size-4" />}
               actions={
                 [
                   {
                     id: "disable",
                     label: t.projects.monitoring.pathsOff.disable,
-                    icon: <EyeOff className="size-4" />,
+                    icon: <UiIcon name="eye-off" className="size-4" />,
                     onClick: onDisable,
                     variant: "danger",
                   },

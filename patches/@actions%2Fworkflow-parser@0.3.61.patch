@@ -1,0 +1,24 @@
+diff --git a/dist/actions/action-schema.js b/dist/actions/action-schema.js
+index 977200351c0170f9afc759e5ef7b0a36a6bc3f2f..9f3d03e340a2e7021d06d9997b51c5dc0006917c 100644
+--- a/dist/actions/action-schema.js
++++ b/dist/actions/action-schema.js
+@@ -1,6 +1,6 @@
+ import { JSONObjectReader } from "../templates/json-object-reader.js";
+ import { TemplateSchema } from "../templates/schema/index.js";
+-import ActionSchema from "../action-v1.0.min.json";
++import ActionSchema from "../action-v1.0.min.json" with { type: "json" };
+ let schema;
+ /**
+  * Returns the action.yml schema, lazily loading and caching it on first access.
+diff --git a/dist/workflows/workflow-schema.js b/dist/workflows/workflow-schema.js
+index e19ba101087c3e4ca53bf199a8d09256c11735d0..a4d2fb86bf921ba1c53d063b5e47168dc1a42a57 100644
+--- a/dist/workflows/workflow-schema.js
++++ b/dist/workflows/workflow-schema.js
+@@ -1,6 +1,6 @@
+ import { JSONObjectReader } from "../templates/json-object-reader.js";
+ import { TemplateSchema } from "../templates/schema/index.js";
+-import WorkflowSchema from "../workflow-v1.0.min.json";
++import WorkflowSchema from "../workflow-v1.0.min.json" with { type: "json" };
+ let schema;
+ export function getWorkflowSchema() {
+     if (schema === undefined) {

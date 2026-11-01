@@ -11,11 +11,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseComposeFile } from "../../../src/lib/compose-parser";
+import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 import {
   mergeServiceDeployEnv,
   type ServiceEnvLayers,
-} from "../../../src/modules/deployments/compose/service-env-layers";
+} from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
 
 const layers = (over: Partial<ServiceEnvLayers> = {}): ServiceEnvLayers => ({
   project: {},
@@ -93,6 +93,7 @@ services:
 
     // Names only, never values: this goes to the deploy log.
     expect(merged.deferredEmpty.sort()).toEqual(["API_SECRET", "DATABASE_URL"]);
+    expect(merged.overriddenProjectKeys).toEqual(["PORT"]);
   });
 
   it("defers to the frozen capture too — the layer every real non-rollback deploy has", () => {
@@ -124,6 +125,7 @@ services:
 
     // frozenWins: the snapshot is layered last and still wins outright.
     expect(merged.env.CONFIG_PARAM).toBe("release");
+    expect(merged.overriddenProjectKeys).toEqual([]);
     // The deferral didn't pick this value, so naming it in the log would point
     // the operator at the wrong layer.
     expect(merged.deferredEmpty).toEqual([]);
@@ -140,6 +142,7 @@ services:
     );
 
     expect(merged.env.HTTP_PROXY).toBe("");
+    expect(merged.overriddenProjectKeys).toEqual(["HTTP_PROXY"]);
     expect(merged.deferredEmpty).toEqual([]);
   });
 
@@ -243,6 +246,7 @@ services:
     );
 
     expect(merged.env.HTTP_PROXY).toBe("");
+    expect(merged.overriddenProjectKeys).toEqual(["HTTP_PROXY"]);
     expect(merged.deferredEmpty).toEqual([]);
   });
 

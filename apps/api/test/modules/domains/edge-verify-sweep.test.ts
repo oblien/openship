@@ -15,26 +15,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * calls Cloud only for a proof that has already expired.
  */
 
-const { listAll, servableTokens, recordServeError, ensureTargetVerified, probeOwnToken, resolveRoutingFor } =
+const { listAll, servableTokens, recordServeError, ensureTargetVerified, probeOwnToken, resolveRoutingPlatform, disposePlatform } =
   vi.hoisted(() => ({
     listAll: vi.fn(),
     servableTokens: vi.fn(),
     recordServeError: vi.fn(),
     ensureTargetVerified: vi.fn(),
     probeOwnToken: vi.fn(),
-    resolveRoutingFor: vi.fn(),
+    resolveRoutingPlatform: vi.fn(),
+    disposePlatform: vi.fn(),
   }));
 
 vi.mock("@repo/db", () => ({
   repos: { edgeTargetVerification: { listAll, servableTokens, recordServeError } },
 }));
-vi.mock("../../../src/lib/edge-target-verify", () => ({
+vi.mock("@repo/platform/engine/lib/edge-target-verify", () => ({
   ensureTargetVerified,
   probeOwnToken,
-  resolveRoutingFor,
+  resolveRoutingPlatform,
 }));
 
-import { runEdgeVerifySweep } from "../../../src/modules/domains/edge-verify-schedule";
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({ disposePlatform }));
+
+import { runEdgeVerifySweep } from "@repo/platform/engine/modules/domains/edge-verify-schedule";
 import { servableTokens as realServableTokens } from "../../../../../packages/db/src/repos/edge-target-verification.repo";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -61,7 +64,7 @@ let serveEdgeChallenge: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.clearAllMocks();
   serveEdgeChallenge = vi.fn(async () => ({ served: true, via: "challenge-vhost" }));
-  resolveRoutingFor.mockResolvedValue({ serveEdgeChallenge });
+  resolveRoutingPlatform.mockResolvedValue({ routing: { serveEdgeChallenge } });
   servableTokens.mockImplementation(realServableTokens);
   recordServeError.mockResolvedValue(undefined);
   probeOwnToken.mockResolvedValue({ ok: true });
@@ -166,9 +169,9 @@ describe("runEdgeVerifySweep", () => {
         row({ id: "etv_1", serverId: "srv-dead" }),
         row({ id: "etv_2", serverId: "srv-ok", target: "http://198.51.100.7", host: "198.51.100.7" }),
       ]);
-      resolveRoutingFor.mockImplementation(async (_org: string, serverId?: string) => {
+      resolveRoutingPlatform.mockImplementation(async (_org: string, serverId?: string) => {
         if (serverId === "srv-dead") throw new Error("ssh: connect timed out");
-        return { serveEdgeChallenge };
+        return { routing: { serveEdgeChallenge } };
       });
 
       const r = await runEdgeVerifySweep();
@@ -187,11 +190,12 @@ describe("runEdgeVerifySweep", () => {
 
       await runEdgeVerifySweep();
 
-      expect(resolveRoutingFor).toHaveBeenCalledTimes(1);
+      expect(resolveRoutingPlatform).toHaveBeenCalledTimes(1);
+      expect(disposePlatform).toHaveBeenCalledExactlyOnceWith({ routing: { serveEdgeChallenge } });
     });
 
     it("records a reason when the box that serves a target can't be reached at all", async () => {
-      resolveRoutingFor.mockResolvedValue(null);
+      resolveRoutingPlatform.mockResolvedValue(null);
 
       const r = await runEdgeVerifySweep();
 
@@ -202,7 +206,7 @@ describe("runEdgeVerifySweep", () => {
 
     it("records a reason when the edge refuses to serve the token", async () => {
       serveEdgeChallenge = vi.fn(async () => ({ served: false, reason: "already served by legacy.conf" }));
-      resolveRoutingFor.mockResolvedValue({ serveEdgeChallenge });
+      resolveRoutingPlatform.mockResolvedValue({ routing: { serveEdgeChallenge } });
 
       const r = await runEdgeVerifySweep();
 
@@ -224,7 +228,7 @@ describe("runEdgeVerifySweep", () => {
       listAll.mockResolvedValue([]);
 
       expect(await runEdgeVerifySweep()).toMatchObject({ targets: 0 });
-      expect(resolveRoutingFor).not.toHaveBeenCalled();
+      expect(resolveRoutingPlatform).not.toHaveBeenCalled();
     });
   });
 });

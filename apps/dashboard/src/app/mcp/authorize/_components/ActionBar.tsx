@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Deny / Authorize. One component, two mount points: inside the sticky rail on
  * large screens, and as a fixed bottom bar below `lg`.
@@ -10,7 +12,6 @@
  * the decision has to stay on screen.
  */
 
-import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -35,10 +36,10 @@ export function ActionBar({
   const buttons = (
     <div className="flex items-center gap-2">
       <Button variant="outline" className="flex-1" disabled={busy} onClick={onDeny}>
-        {submitting === "deny" ? <Loader2 className="size-4 animate-spin" /> : m.deny}
+        {submitting === "deny" ? <UiIcon name="spinner" className="size-4 animate-spin" /> : m.deny}
       </Button>
       <Button className="flex-1" disabled={busy || !canAuthorize} onClick={onAuthorize}>
-        {submitting === "accept" ? <Loader2 className="size-4 animate-spin" /> : m.authorize}
+        {submitting === "accept" ? <UiIcon name="spinner" className="size-4 animate-spin" /> : m.authorize}
       </Button>
     </div>
   );

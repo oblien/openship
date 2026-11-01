@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { execFile } from "node:child_process";
 import { shellQuote } from "@repo/core";
 import { basename } from "node:path";
@@ -81,7 +82,8 @@ export async function hasLocalCommand(command: string): Promise<boolean> {
   try {
     await execFileText("sh", ["-c", `command -v ${command} >/dev/null 2>&1 && echo ok`], 4_000);
     return true;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "adapters/system/local-shell");
     return false;
   }
 }

@@ -1,14 +1,7 @@
 "use client";
 
-/**
- * Project Routing/Domains tab card: view + edit the vercel.json-derived routing
- * (rewrites/redirects/headers). Saving PATCHes the project; the backend re-applies
- * it to the live deployment's OpenResty WITHOUT a rebuild (self-hosted). Wraps the
- * shared RoutingConfigEditor (same editor the wizard uses).
- */
-
-import React, { useCallback, useEffect, useState } from "react";
-import { Route, ChevronDown } from "lucide-react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { RoutingConfig } from "@repo/core";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import type { EdgeConfigReport } from "@/lib/api/projects";
@@ -16,132 +9,128 @@ import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { RoutingConfigEditor } from "@/components/routing/RoutingConfigEditor";
+import { Button } from "@/components/ui/button";
 
-/** Any actual routing rules configured? Governs whether the card opens by
- *  default — an empty vercel.json routing block stays collapsed so it doesn't
- *  dominate the tab; a project that uses routing shows its rules up front. */
-function hasRoutingRules(cfg: RoutingConfig | null | undefined): boolean {
-  if (!cfg) return false;
-  return Boolean(
-    cfg.rewrites?.length ||
-      cfg.redirects?.length ||
-      cfg.headers?.length ||
-      cfg.cleanUrls ||
-      cfg.trailingSlash ||
-      // A project whose only routing config is a raised upload limit still has
-      // something to show — otherwise the setting hides behind two collapses.
-      (cfg.proxy && Object.keys(cfg.proxy).length > 0),
-  );
-}
-
-export function RoutingConfigCard({
-  id,
-  initial,
-  onSaved,
-}: {
+type Props = {
   id: string;
   initial: RoutingConfig | null | undefined;
+  /** Project deployment target, independent of the dashboard hosting mode. */
+  isCloudProject?: boolean;
   onSaved?: (cfg: RoutingConfig | null) => void;
-}) {
+};
+
+/** A project switch remounts drafts and observations before any new fields render. */
+export function RoutingConfigCard(props: Props) {
+  return <ProjectRoutingEditor key={props.id} {...props} />;
+}
+
+function ProjectRoutingEditor({ id, initial, onSaved, isCloudProject = false }: Props) {
   const { showToast } = useToast();
   const { t } = useI18n();
+  const w = t.widgets.routing.configEditor;
   const [draft, setDraft] = useState<RoutingConfig | null>(initial ?? null);
   const [saving, setSaving] = useState(false);
-  // Collapsed by default; auto-open when the project actually has rules.
-  const [open, setOpen] = useState(() => hasRoutingRules(initial));
   const [edge, setEdge] = useState<EdgeConfigReport | null>(null);
   const [edgeLoading, setEdgeLoading] = useState(false);
+  const mounted = useRef(true);
+  const dirty = useRef(false);
+  const readGeneration = useRef(0);
 
-  /** Read what the edge is actually serving. On-demand (not part of the project
-   *  read) because it SSHes to the box and parses its vhosts. */
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      readGeneration.current++;
+    };
+  }, []);
+  useEffect(() => {
+    if (!dirty.current) setDraft(initial ?? null);
+  }, [initial]);
+
+  // Explicit readback only: merely viewing these settings must not open SSH.
   const loadEdge = useCallback(async () => {
+    if (isCloudProject) return;
+    const generation = ++readGeneration.current;
     setEdgeLoading(true);
     try {
-      setEdge(await projectsApi.getEdgeConfig(id));
-    } catch {
-      // A box we can't read is not an error worth a toast — the panel says so.
-      setEdge({ reachable: false, saved: {}, hosts: [] });
+      const next = await projectsApi.getEdgeConfig(id);
+      if (mounted.current && generation === readGeneration.current) setEdge(next);
+    } catch (error) {
+      observeCaughtError(
+        error,
+        "dashboard/app/(dashboard)/projects/[id]/components/RoutingConfigCard",
+      );
+      if (mounted.current && generation === readGeneration.current)
+        setEdge({ reachable: false, saved: {}, hosts: [] });
     } finally {
-      setEdgeLoading(false);
+      if (mounted.current && generation === readGeneration.current) setEdgeLoading(false);
     }
-  }, [id]);
-
-  // Only once the card is open: nobody needs an SSH round-trip for a collapsed card.
-  useEffect(() => {
-    if (open && !edge && !edgeLoading) void loadEdge();
-  }, [open, edge, edgeLoading, loadEdge]);
+  }, [id, isCloudProject]);
 
   const save = async () => {
+    const submitted = draft;
     setSaving(true);
+    // A read started before saving cannot describe the configuration after it.
+    readGeneration.current++;
+    setEdgeLoading(false);
     try {
-      await projectsApi.update(id, { routingConfig: draft });
-      onSaved?.(draft);
+      await projectsApi.update(id, { routingConfig: submitted });
       invalidateProjectCaches(id);
-      // Re-read: the save re-applies the vhosts, so the live column and any drift
-      // badge must reflect the write that just happened, not the state before it.
-      void loadEdge();
-      showToast(t.projectSettings.routing.toast.updated, "success", t.projectSettings.routing.toast.title);
-    } catch (err) {
-      showToast(getApiErrorMessage(err) || t.projectSettings.routing.toast.failed, "error", t.projectSettings.routing.toast.title);
+      if (!mounted.current) return;
+      dirty.current = false;
+      setEdge(null);
+      onSaved?.(submitted);
+      showToast(
+        t.projectSettings.routing.toast.updated,
+        "success",
+        t.projectSettings.routing.toast.title,
+      );
+    } catch (error) {
+      if (mounted.current)
+        showToast(
+          getApiErrorMessage(error) || t.projectSettings.routing.toast.failed,
+          "error",
+          t.projectSettings.routing.toast.title,
+        );
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   };
 
-  const active = hasRoutingRules(draft);
-
   return (
-    <div className="rounded-2xl border border-border/50 bg-card">
-      {/* Header doubles as the collapse toggle — the editor is advanced/optional
-          so it stays tucked away until opened (or auto-opened when rules exist). */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-start transition-colors hover:bg-muted/20"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
-            <Route className="size-[18px]" />
-          </div>
-          <div>
-            <h3 className="text-[14px] font-semibold text-foreground">{t.projectSettings.routing.title}</h3>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
-              {t.projectSettings.routing.description}
-            </p>
-          </div>
+    <section className="space-y-4" aria-label={w.title}>
+      <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl bg-card p-5">
+        <div className="min-w-0">
+          <h3 className="text-base font-medium text-foreground">{w.title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{w.description}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-[12px] text-muted-foreground">
-            {active ? t.projectSettings.routing.summaryActive : t.projectSettings.routing.summaryNone}
-          </span>
-          <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
-        </div>
-      </button>
-      {open && (
-        <div className="border-t border-border/40 px-5 py-4">
-          <RoutingConfigEditor
-            value={draft}
-            onChange={setDraft}
-            disabled={saving}
-            showProxySettings
-            edgeConfig={edge}
-            onRefreshEdgeConfig={loadEdge}
-            edgeConfigLoading={edgeLoading}
-          />
-          <div className="mt-4 flex justify-end">
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving}
-              className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            >
-              {saving ? t.projectSettings.routing.saving : t.projectSettings.routing.save}
-            </button>
-          </div>
-        </div>
+        <Button type="button" onClick={save} disabled={saving}>
+          {saving ? t.projectSettings.routing.saving : t.projectSettings.routing.save}
+        </Button>
+      </div>
+      <RoutingConfigEditor
+        value={draft}
+        onChange={(next) => {
+          dirty.current = true;
+          setDraft(next);
+        }}
+        disabled={saving}
+        showProxySettings={!isCloudProject}
+        edgeConfig={isCloudProject ? null : edge}
+        onRefreshEdgeConfig={isCloudProject ? undefined : loadEdge}
+        edgeConfigLoading={edgeLoading || saving}
+      />
+      {isCloudProject && (
+        <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground">
+          {w.proxyCloudUnavailable}
+        </p>
       )}
-    </div>
+      <div className="flex justify-end">
+        <Button type="button" onClick={save} disabled={saving}>
+          {saving ? t.projectSettings.routing.saving : t.projectSettings.routing.save}
+        </Button>
+      </div>
+    </section>
   );
 }
 

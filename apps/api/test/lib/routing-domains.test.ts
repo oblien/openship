@@ -5,6 +5,7 @@ vi.mock("@repo/db", () => ({
     domain: {
       update: vi.fn(),
       updateSsl: vi.fn(),
+      recordSslFailure: vi.fn(),
       markVerifiedActive: vi.fn(),
       findOrCreate: vi.fn(),
       findOrCreateWithStatus: vi.fn(),
@@ -13,16 +14,17 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../src/lib/domain-claims", () => ({
+vi.mock("@repo/platform/engine/lib/domain-claims", () => ({
   routableWithoutOwnership: vi.fn().mockResolvedValue(false),
 }));
 
 // The per-host ACME lock talks to Postgres in prod; make it a pass-through here.
-vi.mock("../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: (fn: () => unknown) => fn() }),
 }));
 
 import { repos } from "@repo/db";
+import type { SslProvider, SslResult } from "@repo/adapters";
 import {
   buildProjectRouteDomains,
   buildServiceRouteDomain,
@@ -36,7 +38,72 @@ import {
   resolveRouteDestination,
   resolveServiceEndpointHostname,
   withEnsuredDomainRecord,
-} from "../../src/lib/routing-domains";
+} from "@repo/platform/engine/lib/routing-domains";
+
+describe("tracked SSL provisioning progress", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const missing: SslResult = {
+    domain: "app.example.com", verified: false, expiresAt: "", issuer: "", reason: "missing",
+  };
+  const active: SslResult = {
+    domain: missing.domain, verified: true,
+    expiresAt: new Date(Date.now() + 90 * 86_400_000).toISOString(), issuer: "Let's Encrypt",
+  };
+  const create = (onDisk: SslResult = missing, issueError?: Error) => {
+    const lines: string[] = [];
+    const ssl: SslProvider = {
+      verifyCert: vi.fn().mockResolvedValue(onDisk),
+      provisionCert: vi.fn(async () => {
+        lines.push("issuing");
+        if (issueError) throw issueError;
+        return active;
+      }),
+      renewCert: vi.fn(), installCert: vi.fn(),
+    };
+    const rows = new Map([[missing.domain, { id: "dom_1", verified: true, sslStatus: "active" }]]) as Parameters<typeof createTrackedSslProvider>[1];
+    return { ssl, rows, lines, tracked: createTrackedSslProvider(ssl, rows, line => lines.push(line)) };
+  };
+
+  it("explains the HTTP certificate window before issuing, without promising a completion time", async () => {
+    const { tracked, lines } = create();
+    await tracked.provisionCert(missing.domain);
+    expect(lines[0]).toBe(`No HTTPS certificate found for ${missing.domain}; the HTTP route is configured while certificate issuance is in progress.`);
+    expect(lines[1]).toBe("issuing");
+    expect(lines.at(-1)).toBe(`SSL certificate issued for ${missing.domain}.`);
+    expect(lines.join(" ")).not.toMatch(/~1 min|is live on|is now live/);
+  });
+
+  it.each([active, { ...missing, reason: "read_error" as const }, { ...missing, reason: "invalid" as const }, { ...missing, reason: "not_local" as const }])(
+    "does not claim a missing certificate for $reason / verified=$verified", async onDisk => {
+      const { tracked, lines } = create(onDisk);
+      await tracked.provisionCert(missing.domain);
+      expect(lines[0]).toBe(`Requesting SSL certificate for ${missing.domain}…`);
+      expect(lines.join(" ")).not.toContain("HTTP route is configured");
+    },
+  );
+
+  it("does not let a failed read-only progress probe block issuance", async () => {
+    const { ssl, tracked, lines } = create();
+    vi.mocked(ssl.verifyCert).mockRejectedValue(new Error("temporary transport failure"));
+    await expect(tracked.provisionCert(missing.domain)).resolves.toEqual(active);
+    expect(ssl.provisionCert).toHaveBeenCalledOnce();
+    expect(lines.join(" ")).not.toContain("No HTTPS certificate found");
+  });
+
+  it("keeps the current failure reason and does not report HTTPS success after an issuance failure", async () => {
+    const { tracked, lines } = create(missing, new Error("DNS problem: NXDOMAIN"));
+    await tracked.provisionCert(missing.domain);
+    expect(lines.some(line => line.includes("DNS problem: NXDOMAIN"))).toBe(true);
+    expect(lines.join(" ")).not.toContain("SSL certificate issued");
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith("dom_1", "DNS problem: NXDOMAIN", "invalid");
+  });
+
+  it("does not add a progress read when no logger is attached", async () => {
+    const { ssl, rows } = create();
+    await createTrackedSslProvider(ssl, rows).provisionCert(missing.domain);
+    expect(ssl.verifyCert).not.toHaveBeenCalled();
+  });
+});
 
 describe("ensureRouteDomainRecord", () => {
   const route = {
@@ -98,6 +165,138 @@ const customSvc = {
 } as any;
 
 describe("buildProjectRouteDomains", () => {
+  it.each([
+    { publicEndpoints: [] },
+    { publicEndpoints: [{ port: 3000, domainType: "custom", customDomain: "other.example.com" }] },
+  ])(
+    "routes a verified Domains-tab hostname through the single app when endpoints are %j (#1281)",
+    ({ publicEndpoints }) => {
+      const planned = buildProjectRouteDomains({
+        project: { slug: "laravel" } as any,
+        projectDomains: [{
+          hostname: "app.example.com", domainType: "custom", verified: true,
+          targetPort: null, targetPath: null, sslStatus: "active",
+        }] as any,
+        publicEndpoints: publicEndpoints as any,
+        defaultTargetPort: 8080,
+        runtimeName: "docker",
+        usesManagedRouting: false,
+      });
+      expect(planned).toContainEqual(expect.objectContaining({
+        hostname: "app.example.com", targetPort: 8080, tls: true, verified: true,
+      }));
+    },
+  );
+
+  it.each([
+    { verified: false },
+    { verified: true, serviceId: "database" },
+    { verified: true, targetPath: "/docs" },
+  ])("does not infer a single-app destination for %j", (extra) => {
+    expect(buildProjectRouteDomains({
+      project: { slug: "laravel" } as any,
+      projectDomains: [{
+        hostname: "app.example.com", domainType: "custom", targetPort: null,
+        targetPath: null, ...extra,
+      }] as any,
+      defaultTargetPort: 8080,
+      runtimeName: "docker",
+      usesManagedRouting: false,
+    })).toEqual([]);
+  });
+
+  it("preserves an explicitly mapped port instead of the single-app default", () => {
+    expect(buildProjectRouteDomains({
+      project: { slug: "laravel" } as any,
+      projectDomains: [{
+        hostname: "app.example.com", domainType: "custom", verified: true,
+        targetPort: 9000, sslStatus: "active",
+      }] as any,
+      defaultTargetPort: 8080,
+      runtimeName: "docker",
+      usesManagedRouting: false,
+    })).toEqual([expect.objectContaining({ targetPort: 9000 })]);
+  });
+
+  it("routes a CLI custom domain only after its public endpoint is attached", () => {
+    const input = {
+      project: { slug: "cli-app" } as any,
+      projectDomains: [{ hostname: "app.example.com", domainType: "custom", targetPort: null, targetPath: null }] as any,
+      runtimeName: "bare",
+      usesManagedRouting: false,
+      isStatic: false,
+    };
+    expect(buildProjectRouteDomains(input)).toEqual([]);
+    expect(buildProjectRouteDomains({
+      ...input,
+      publicEndpoints: [{ domainType: "custom", customDomain: "app.example.com", port: 3000 }],
+    })).toEqual([expect.objectContaining({ hostname: "app.example.com", targetPort: 3000 })]);
+  });
+
+  it("keeps a Cloud web endpoint when local managed routing is disabled", () => {
+    const input = {
+      project: { slug: "cloud-app" } as any,
+      projectDomains: [],
+      publicEndpoints: [{ domain: "cloud-app", domainType: "free" as const, port: 3000 }],
+      runtimeName: "docker",
+      usesManagedRouting: false,
+      isStatic: false,
+    };
+    const planned = buildProjectRouteDomains({ ...input, certificateManagement: "provider" });
+    expect(planned).toHaveLength(1);
+    expect(planned[0]).toMatchObject({
+      hostname: `cloud-app.${getRoutingBaseDomain()}`,
+      targetPort: 3000,
+      requiresSslTooling: false,
+      provisionSsl: false,
+    });
+    expect(buildProjectRouteDomains(input)).toEqual([]);
+  });
+
+  it.each([true, false])(
+    "routes container-served static roots during deploy and retry (endpoints=%s)",
+    (withEndpoints) => {
+      const planned = buildProjectRouteDomains({
+        project: { slug: "static-site" } as any,
+        projectDomains: [
+          {
+            hostname: "static-site.opsh.io",
+            targetPath: "/",
+            targetPort: null,
+            domainType: "free",
+            verified: true,
+            isPrimary: true,
+          } as any,
+        ],
+        managedSlug: "static-site",
+        ...(withEndpoints
+          ? {
+              publicEndpoints: [
+                { domain: "static-site", domainType: "free" as const, targetPath: "/" },
+              ],
+            }
+          : {}),
+        runtimeName: "docker",
+        certificateManagement: "provider",
+        usesManagedRouting: true,
+        isStatic: false,
+        staticContainerPort: 3000,
+      });
+      expect(planned).toHaveLength(1);
+      expect(planned[0]).toMatchObject({ hostname: "static-site.opsh.io", targetPort: 3000 });
+      expect(planned[0].targetPath).toBeUndefined();
+    },
+  );
+
+  it("does not turn stale paths on ordinary web apps into public ports", () => {
+    expect(resolveRouteDestination({ targetPath: "/", targetPort: null }, false)).toBeUndefined();
+    expect(resolveRouteDestination({ targetPath: "/docs" }, true, 3000)).toEqual({
+      targetPath: "/docs",
+    });
+    expect(() => resolveRouteDestination({ targetPath: "/docs" }, false, 3000)).toThrow("root (/)");
+    expect(resolveRouteDestination({}, false, 3000)).toBeUndefined();
+  });
+
   it("uses public endpoints as the only app routing source when they are provided", () => {
     const planned = buildProjectRouteDomains({
       project: { slug: "my-app" } as any,
@@ -571,7 +770,15 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
         return result;
       }),
       renewCert: vi.fn(),
-      verifyCert: vi.fn(),
+      verifyCert: vi.fn().mockResolvedValue(
+        result ?? {
+          domain: "app.example.com",
+          verified: false,
+          expiresAt: "",
+          issuer: "",
+          reason: "missing",
+        },
+      ),
       installCert: vi.fn(),
     }) as any;
 
@@ -581,7 +788,7 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     const ssl = sslWith({
       domain: "app.example.com",
       verified: true,
-      expiresAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: new Date(Date.now() + 90 * 86_400_000).toISOString(),
       issuer: "Let's Encrypt",
     });
     const tracked = createTrackedSslProvider(
@@ -607,17 +814,15 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     );
     const r = await tracked.provisionCert("app.example.com");
     expect(r.verified).toBe(false);
-    expect(repos.domain.updateSsl).toHaveBeenCalledWith(
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith(
       "dom_1",
-      expect.objectContaining({
-        sslStatus: "error",
-        lastVerifyError: expect.stringContaining("DNS is not pointing here"),
-      }),
+      expect.stringContaining("DNS is not pointing here"),
+      "invalid",
     );
     expect(repos.domain.markVerifiedActive).not.toHaveBeenCalled();
   });
 
-  it("keeps a VERIFIED domain's failed renewal at provisioning (auto-heal sweep), never error", async () => {
+  it("records a verified domain's failed issuance instead of leaving it provisioning", async () => {
     const ssl = sslWith({
       domain: "app.example.com",
       verified: false,
@@ -630,15 +835,12 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
       mapWith({ id: "dom_1", verified: true, sslStatus: "active" }),
     );
     await tracked.provisionCert("app.example.com");
-    expect(repos.domain.updateSsl).toHaveBeenCalledWith(
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith(
       "dom_1",
-      expect.objectContaining({ sslStatus: "provisioning" }),
+      expect.stringContaining("No usable HTTPS certificate"),
+      "invalid",
     );
-    // Must NOT drop a verified row out of the findPendingSsl sweep by writing error.
-    const wroteError = (repos.domain.updateSsl as any).mock.calls.some(
-      ([, patch]: [string, any]) => patch.sslStatus === "error",
-    );
-    expect(wroteError).toBe(false);
+    expect(repos.domain.updateSsl).not.toHaveBeenCalled();
   });
 
   it("writes nothing when TLS is handled elsewhere (not_local)", async () => {
@@ -656,6 +858,16 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     await tracked.provisionCert("app.example.com");
     expect(repos.domain.updateSsl).not.toHaveBeenCalled();
     expect(repos.domain.markVerifiedActive).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a failed issuance with provisioning during a later read-only probe", async () => {
+    const tracked = createTrackedSslProvider(
+      sslWith({ verified: false, expiresAt: "", reason: "missing" }),
+      mapWith({ id: "dom_1", verified: true, sslStatus: "error" }),
+    );
+    await tracked.verifyCert("app.example.com");
+    expect(repos.domain.updateSsl).not.toHaveBeenCalled();
+    expect(repos.domain.recordSslFailure).not.toHaveBeenCalled();
   });
 });
 
@@ -772,7 +984,8 @@ describe("collectUncertifiedRouteWarnings", () => {
     );
     expect(out).toHaveLength(1);
     expect(out[0]).toContain("api.example.com");
-    expect(out[0]).toContain("DNS");
+    expect(out[0]).toContain("no usable HTTPS certificate was found");
+    expect(out[0]).not.toContain("DNS");
   });
 
   it("prefers the row's recorded failure reason when there is one", () => {

@@ -63,11 +63,16 @@ describe("backup/restore creation vs. project deletion", () => {
   });
 
   it("does not apply a project barrier to mail-server-only work", async () => {
+    await repos.db.insert(schema.servers).values({
+      id: "mail-server", organizationId: "org1", sshHost: "mail.test",
+    });
+    await repos.db.insert(schema.mailServers).values({ serverId: "mail-server", domain: "mail.test" });
     const run = await repos.run.create({
       id: "run-mail",
       projectId: null,
       organizationId: "org1",
       sourceKind: "mail_server",
+      mailServerId: "mail-server",
       status: "queued",
       triggeredBy: "manual",
     });

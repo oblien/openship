@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { promisify } from "node:util";
@@ -17,6 +17,40 @@ import {
 const exec = promisify(execFile);
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("keeps generated session files and concurrent ignore-write temporaries out of application copies", async () => {
+  const repo = await makeRepo("node_modules\n!public\n");
+  await rm(join(repo, "Dockerfile"));
+  const temporary = ".openship-dockerignore-00000000-0000-0000-0000-000000000000";
+  await writeFile(join(repo, temporary), "concurrent writer");
+  const resolved = await Promise.all(["first", "second"].map(session => resolveServiceDockerfile(repo,
+    { ...config(repo), buildCache: true }, { generatedName: `Dockerfile.openship.${session}` })));
+  expect(await readFile(join(repo, ".dockerignore"), "utf8")).toContain("node_modules\n!public\n");
+  expect(await readFile(join(repo, ".dockerignore"), "utf8")).toContain("Dockerfile.openship*\n");
+  for (const context of resolved) {
+    expect(context.requiresBuildKit).toBe(true);
+    expect(context.contextEntries).not.toContain(temporary);
+  }
+});
+
+it("never follows a repository ignore symlink when preparing cache metadata", async () => {
+  const repo = await makeRepo("");
+  await rm(join(repo, "Dockerfile"));
+  const external = join(repo, "original-ignore");
+  await writeFile(external, "unchanged");
+  await rm(join(repo, ".dockerignore"));
+  await symlink(external, join(repo, ".dockerignore"));
+  await resolveServiceDockerfile(repo, { ...config(repo), buildCache: true });
+  expect(await readFile(external, "utf8")).toBe("unchanged");
+});
+
+it("refuses explicit PHP selection on a user Dockerfile without rewriting it", async () => {
+  const repo = await makeRepo("");
+  const original = await readFile(join(repo, "Dockerfile"), "utf8");
+  await expect(resolveServiceDockerfile(repo, { ...config(repo), runtimeVersion: "8.3", stack: "laravel" })).rejects.toThrow(/cannot change a repository Dockerfile/);
+  expect(await readFile(join(repo, "Dockerfile"), "utf8")).toBe(original);
+  expect((await resolveServiceDockerfile(repo, config(repo))).dockerfileName).toBe("Dockerfile");
+});
 
 /** A git repo with `build/` and `node_modules/` at the root AND nested, a
  *  `Dockerfile`, and the given `.dockerignore`. Everything is tracked. */
@@ -129,6 +163,17 @@ describe("prepareSourceTree — .dockerignore pruning", () => {
     const files = await contextFor("*\n!package.json\n");
 
     expect(files).toEqual([".dockerignore", "Dockerfile", "package.json"]);
+  });
+
+  it("keeps directories re-included by dir-only negations (#974)", async () => {
+    // Regression: the pruner tested directories with their bare path, so the
+    // dir-only re-include `!app/` never re-matched and `app/` was rm -rf'd.
+    const files = await contextFor("*\n!package.json\n!app/\n!app/**\n");
+
+    expect(files).toContain("app/build/page.tsx");
+    expect(files).toContain("package.json");
+    expect(files).not.toContain("build/artifact.txt");
+    expect(files).not.toContain("node_modules/left-pad/index.js");
   });
 });
 

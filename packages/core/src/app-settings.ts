@@ -10,6 +10,7 @@
  */
 
 /** How an installed app surfaces its management UI. */
+import { reportCaughtError as observeCaughtError } from "./diagnostics/reporter";
 export type AppManagement =
   | { kind: "schema" }
   | { kind: "custom"; href: string };
@@ -45,6 +46,8 @@ export interface AppSettingField {
   /** Effective value when the env key is unset. */
   default?: string;
   placeholder?: string;
+  /** Span the whole row when the form uses two columns. */
+  fullWidth?: boolean;
   /** Stored encrypted; masked on read; blank on save means "leave unchanged". */
   secret?: boolean;
   /** Env strings a boolean maps to (default "true"/"false"). */
@@ -79,7 +82,18 @@ export interface AppSettingGroup {
   id: string;
   label: string;
   description?: string;
+  /** Columns when space allows; narrow containers always stack fields. */
+  columns?: 1 | 2;
   fields: readonly AppSettingField[];
+}
+
+/** Optional presentation for the install form; field definitions stay in settings. */
+export interface AppInstallLayout {
+  /** Single combines name and settings; split puts them in adjacent cards;
+   *  grouped preserves settings group headings. Narrow containers stack cards. */
+  settings: "single" | "split" | "grouped";
+  /** Default field columns. A group's columns take precedence in grouped mode. */
+  columns?: 1 | 2;
 }
 
 export const settingTrueValue = (f: AppSettingField): string => f.trueValue ?? "true";
@@ -149,7 +163,8 @@ export function validateSetting(field: AppSettingField, raw: string): string | n
     let re: RegExp | null = null;
     try {
       re = new RegExp(field.pattern);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "core/app-settings");
       re = null; // a malformed author pattern never blocks the user
     }
     if (re && !re.test(raw)) return field.patternError ?? `${field.label} has an invalid format`;

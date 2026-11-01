@@ -29,15 +29,29 @@ Services you don't name carry forward on their existing containers, untouched. S
 
 ## Back up before every deploy (rollback safety net)
 
-Create a **backup policy** for the stateful service and enable its **“trigger on pre-deploy”** option. On
-every deploy, Openship runs that backup **after the new build succeeds but before the destructive cutover**,
-so the snapshot captures the *old* container's data — exactly the state you'd want to restore if the new
-version misbehaves.
+Create a **backup policy** for the stateful service and enable its **“trigger on pre-deploy”** option.
+By default, Openship **waits for every backup run to succeed before building or starting the new
+release**, including when a previous build is reused. This keeps startup migrations from overlapping
+the dump's database locks. The existing deployment remains in place while the backup runs.
 
 - Set it up in **Backups** (see [Backups & restore](/docs/guides/backups-restore)); pick an S3/volume
   destination and turn on the pre-deploy trigger.
-- Pre-deploy backups are best-effort by design: a slow or failing backup **does not block** the deploy, and
-  they're grouped as `pre_deploy` runs in the backup history so you can find the exact pre-cutover snapshot.
+- Deployment logs show each backup's status, elapsed time and uploaded bytes, with progress updates
+  every 30 seconds. Long backups continue automatically; **Stop deployment** remains available.
+- Once all backup workers have finished cleanup, a failed backup opens the deployment decision dialog:
+  **Retry backup** retries the failed sources; **Continue without backup** explicitly bypasses them
+  for this deployment; **Stop deployment** ends the attempt. A policy that could not start uses the
+  same dialog. The decision and backup progress remain in the deployment logs. Skipping does not
+  disable the policies or turn a failed run into a restore point.
+- Without a response, the dialog times out and stops deployment (five minutes by default, configurable
+  with `OPENSHIP_PROMPT_TIMEOUT_MS`). A missing/unreadable backup or a worker still running at the
+  six-hour ceiling **stops the deploy without offering a bypass**: its database locks may still be held.
+- Runs are grouped as `pre_deploy` in backup history. Project policies wait for every service's run.
+- PostgreSQL dumps must exit successfully. A dump smaller than **1% of the median of up to three recent
+  comparable successful backups** is rejected before it becomes a restore point. Comparisons use the
+  same policy, destination, service, database and compression format. If a reduction of more than 99%
+  is intentional, verify the database and create a new policy to establish a fresh baseline. This
+  size check complements regular restore testing; it does not replace it.
 
 ## Run a migration after the deploy
 

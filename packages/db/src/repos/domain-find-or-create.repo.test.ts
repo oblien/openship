@@ -53,6 +53,28 @@ describe("domain.findOrCreateWithStatus", () => {
     expect(row).toMatchObject({ hostname: "other.example.com", projectId: "proj_a" });
   });
 
+  it("does not change another project's primary when its hostname is requested", async () => {
+    const primary = await repo.create({
+      projectId: "owner",
+      hostname: "owner-primary.example.com",
+      isPrimary: true,
+    });
+    const secondary = await repo.create({
+      projectId: "owner",
+      hostname: "owner-secondary.example.com",
+    });
+    const result = await repo.findOrCreateWithStatus({
+      projectId: "requester",
+      hostname: secondary.hostname,
+      isPrimary: true,
+    });
+    expect(result).toMatchObject({
+      created: false,
+      domain: { id: secondary.id, projectId: "owner", isPrimary: false },
+    });
+    expect(await repo.findById(primary.id)).toMatchObject({ isPrimary: true });
+  });
+
   it("reserves a hostname until deferred route cleanup has completed", async () => {
     await db.insert(schema.orphanedResource).values({
       id: "orph_route",
@@ -79,6 +101,55 @@ describe("domain.findOrCreateWithStatus", () => {
       }),
     ).resolves.toMatchObject({ hostname: "reserved.example.com" });
   });
+
+  it.each(["create", "findOrCreateWithStatus"] as const)(
+    "%s restores a live project's own domain despite a retained teardown checkpoint",
+    async (method) => {
+      const projectId = `live-project-${method}`;
+      const hostname = `restored-${method.toLowerCase()}.example.com`;
+      await db.insert(schema.project).values({
+        id: projectId,
+        organizationId: "org_a",
+        groupId: `group-${method}`,
+        name: "Live project",
+        slug: projectId,
+      });
+      await db.insert(schema.orphanedResource).values({
+        id: `checkpoint-${method}`,
+        organizationId: "org_a",
+        projectId,
+        resourceType: "route",
+        ref: hostname,
+        runtimeMode: "docker",
+      });
+
+      await repo[method]({ projectId, hostname, domainType: "custom" });
+      const restored = await repo.findByHostname(hostname);
+      expect(restored).toMatchObject({ projectId, hostname, verified: false });
+      // Retain historical cleanup intent. Restoring this domain must neither
+      // erase other target checkpoints nor make the hostname free for reuse.
+      expect(
+        await db.query.orphanedResource.findFirst({
+          where: eq(schema.orphanedResource.id, `checkpoint-${method}`),
+        }),
+      ).toBeDefined();
+      await repo.remove(restored!.id);
+      await expect(repo.create({ projectId: "another-project", hostname })).rejects.toMatchObject({
+        statusCode: 409,
+      });
+      await db
+        .update(schema.project)
+        .set({ deletionInProgress: true })
+        .where(eq(schema.project.id, projectId));
+      await expect(repo.create({ projectId, hostname })).rejects.toMatchObject({ statusCode: 409 });
+      await db
+        .update(schema.project)
+        .set({ deletionInProgress: false, deletedAt: new Date() })
+        .where(eq(schema.project.id, projectId));
+      await expect(repo.create({ projectId, hostname })).rejects.toMatchObject({ statusCode: 409 });
+      expect(await repo.findByHostname(hostname)).toBeUndefined();
+    },
+  );
 
   it("atomically demotes other project domains when domain.update promotes one", async () => {
     const first = await repo.create({

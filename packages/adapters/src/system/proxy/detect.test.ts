@@ -15,6 +15,7 @@ function makeExecutor(rules: Array<[string, string]>): CommandExecutor {
     for (const [needle, out] of rules) {
       if (cmd.includes(needle)) return out;
     }
+    if (cmd.includes("{{json .Swarm}}")) return "null";
     return "";
   };
   return { exec } as unknown as CommandExecutor;
@@ -217,7 +218,7 @@ describe("probeEdge classification", () => {
     expect(status.classification).toBe("known");
     expect(status.occupants[0]?.isDocker).toBe(true);
     expect(status.occupants[0]?.proxy).toBe("traefik");
-    expect(stopTargetsForStatus(status).some((x) => x.container === "traefik-1")).toBe(true);
+    expect(stopTargetsForStatus(status).some((x) => x.container === "deadbeef".repeat(8))).toBe(true);
   });
 
   test("REGRESSION: a worker PID on the edge ports resolves to the nginx MASTER", async () => {
@@ -314,6 +315,7 @@ describe("freeEdgeTargets", () => {
     const executor = {
       exec: async (cmd: string) => {
         cmds.push(cmd);
+        if (cmd.includes("{{json .Swarm}}")) return "null";
         return cmd.includes("/proc/net/tcp") ? procTable([80, 443]) : "";
       },
     } as unknown as CommandExecutor;
@@ -330,6 +332,7 @@ describe("freeEdgeTargets", () => {
     let bound = true;
     const executor = {
       exec: async (cmd: string) => {
+        if (cmd.includes("{{json .Swarm}}")) return "null";
         if (cmd.includes("disable --now")) {
           bound = false;
           return "";
@@ -349,6 +352,7 @@ describe("freeEdgeTargets", () => {
     // takeover that in fact worked, on any box where reading procfs failed.
     const executor = {
       exec: async (cmd: string) => {
+        if (cmd.includes("{{json .Swarm}}")) return "null";
         if (cmd.includes("/proc/net/tcp")) throw new Error("ssh channel closed");
         return "";
       },
@@ -362,7 +366,11 @@ describe("freeEdgeTargets", () => {
 
   test("verifies only the port a target names", async () => {
     const executor = {
-      exec: async (cmd: string) => (cmd.includes("/proc/net/tcp") ? procTable([443]) : ""),
+      exec: async (cmd: string) => {
+        if (cmd.includes("{{json .Swarm}}")) return "null";
+        if (cmd.includes("{{json .Id}} {{json .Config.Labels}}")) return `"${"a".repeat(64)}" {}`;
+        return cmd.includes("/proc/net/tcp") ? procTable([443]) : "";
+      },
     } as unknown as CommandExecutor;
 
     const res = await freeEdgeTargets(

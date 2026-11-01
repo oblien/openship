@@ -11,6 +11,8 @@
  *                                         # 0.1.1-rc.2 → 0.1.1     (promote: rc → stable)
  *   bun scripts/release.ts <explicit>     # set to literal "0.2.0-beta.3"
  *   bun scripts/release.ts --dry-run patch
+ *   bun scripts/release.ts continue       # resume an unpublished release with
+ *                                         # current code and verified reuse
  *
  *   bun run release                       # NO args in a terminal → interactive
  *                                         # wizard over every option below. It
@@ -42,6 +44,9 @@
  * The tag-push triggers .github/workflows/release.yml which builds both
  * dist tarballs + SHA-256 sidecars and publishes a GitHub Release.
  * Tags containing `-` (rc.N, beta.N) become prereleases automatically.
+ * The release DESCRIPTION is this version's CHANGELOG.md section (see
+ * scripts/changelog-notes.ts) — write it before you cut the tag; a version with
+ * no section still releases, it just links to the changelog instead.
  */
 
 import { spawnSync } from "node:child_process";
@@ -49,6 +54,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildWizardArgs, type WizardAnswers } from "./release-args";
+import { extractChangelogSection } from "./changelog-notes";
+import { RESUME_TRAILER, resumeRuns, unpublishedReleaseRuns } from "./release-resume";
+import { buildReleaseAdvisory } from "./release-advisory";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ROOT_PKG = join(ROOT, "package.json");
@@ -67,6 +75,8 @@ const SYNCED_PKGS = [
   join(ROOT, "apps/web/package.json"),
   join(ROOT, "apps/email/package.json"),
   join(ROOT, "apps/cli/package.json"),
+  join(ROOT, "packages/openship/package.json"),
+  join(ROOT, "packages/platform/package.json"),
 ];
 
 /* ─── CLI parsing ──────────────────────────────────────────────────── */
@@ -160,6 +170,15 @@ if (cmd === "docker") {
   releaseDocker();
   process.exit(0);
 }
+if (cmd === "continue") {
+  try {
+    await continueRelease();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  process.exit(0);
+}
 
 type BumpKind = "patch" | "minor" | "major" | "rc" | "current" | "literal";
 // No arg (or "current") → release the version already in package.json as-is,
@@ -195,6 +214,9 @@ if (currentApi !== currentRoot) {
 
 const next = computeNext(currentApi, bump);
 const tag = `v${next}`;
+const announcement = publish
+  ? buildReleaseAdvisory(next, { critical, message, modes }, JSON.parse(readFileSync(ADVISORIES, "utf8")))
+  : null;
 
 if (publish && tag.includes("-")) {
   console.error(
@@ -210,10 +232,11 @@ log(`Current version (apps/api): ${currentApi}`);
 log(`Next version:               ${next}`);
 log(`Tag:                        ${tag}`);
 log(`Prerelease:                 ${tag.includes("-") ? "yes" : "no"}`);
-log(`Announcement:               ${publish ? `yes (${critical ? "critical" : "recommended"} advisory)` : "no — silent release"}`);
-if (publish) {
-  log(`Audience:                   ${modes ? modes.join(", ") : "all installs (desktop, selfhosted, cloud)"}`);
+log(`Announcement:               ${announcement ? `yes (${announcement.severity} advisory)` : "no — silent release"}`);
+if (announcement) {
+  log(`Audience:                   ${announcement.modes?.join(", ") ?? "all installs (desktop, selfhosted, cloud)"}`);
 }
+log(`Release notes:              ${changelogNotesStatus(next)}`);
 log(``);
 
 if (dryRun) {
@@ -226,7 +249,7 @@ if (dryRun) {
   }
   if (publish) {
     log(`[dry-run] would write an announcement advisory to release-advisories.json:`);
-    log(JSON.stringify(buildAdvisory(next, { critical, message, modes }), null, 2));
+    log(JSON.stringify(announcement, null, 2));
   }
   if (force && tagExists(tag)) {
     log(`[dry-run] --force: tag ${tag} exists → would DELETE it (local + origin) and re-push`);
@@ -266,8 +289,8 @@ if (bump.kind !== "current") {
   staged.push(...SYNCED_PKGS);
 }
 
-if (publish) {
-  const { entry, replaced } = writeAdvisory(next, { critical, message, modes });
+if (announcement) {
+  const { entry, replaced } = writeAdvisory(announcement);
   log(`✓ wrote announcement advisory "${entry.id}" (${entry.severity})`);
   if (replaced.length) {
     log(`  replaced previous advisory(ies): ${replaced.join(", ")}`);
@@ -345,6 +368,8 @@ function usageAndExit(code = 1): never {
       "                 never moves :latest. Omit [tag] → images tagged short SHA.",
       "                 `--ref=<branch>` builds that branch (default: current).",
       "                 e.g.  bun run release docker 0.0.0-rc.1",
+      "  continue       resume the current unpublished release with HEAD; reuse",
+      "                 successful checks/builds only when their inputs match.",
       "",
       "  publish        ANNOUNCE this release: write a release advisory so the in-app",
       "                 update banner prompts users below this version. WITHOUT it the",
@@ -379,6 +404,24 @@ function usageAndExit(code = 1): never {
   process.exit(code);
 }
 
+/** What the GitHub release body will say, so a missing CHANGELOG.md section is
+ *  visible BEFORE the tag is pushed. Purely informational — a version with no
+ *  section still releases (the workflow falls back to a changelog link). */
+function changelogNotesStatus(version: string): string {
+  try {
+    const md = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
+    const section = extractChangelogSection(md, version);
+    if (section) return `CHANGELOG.md § ${version} (${section.split("\n").length} lines)`;
+    const base = version.match(/^(\d+\.\d+\.\d+)-/)?.[1];
+    if (base && extractChangelogSection(md, base)) {
+      return `CHANGELOG.md § ${base} (base version — this is a prerelease)`;
+    }
+  } catch {
+    // fall through
+  }
+  return `⚠ no CHANGELOG.md section for ${version} — the release will link to the changelog instead`;
+}
+
 /** True if the tag already exists locally or on origin. */
 function tagExists(t: string): boolean {
   const local = git("tag", "--list", t, { capture: true }).trim();
@@ -407,7 +450,7 @@ function retireExistingTag(t: string): void {
  * pass/fail and exits when the run finishes. Degrades gracefully (prints the
  * Actions URL) if `gh` is missing, not authed, or the run isn't found yet.
  */
-function watchCi(t: string, fallbackUrl: string): void {
+function watchCi(t: string, fallbackUrl: string, notBefore = Date.now() - 30_000): void {
   const have = spawnSync("gh", ["--version"], { encoding: "utf8" });
   if (have.status !== 0) {
     if (fallbackUrl) log(`Watch the build:  ${fallbackUrl}`);
@@ -429,9 +472,12 @@ function watchCi(t: string, fallbackUrl: string): void {
         databaseId: number;
         headBranch: string;
         event: string;
+        createdAt: string;
       }>;
       // Tag-triggered runs show headBranch === the tag name.
-      const match = runs.find((r) => r.headBranch === t || r.headBranch === `refs/tags/${t}`);
+      const match = runs.find((r) =>
+        (r.headBranch === t || r.headBranch === `refs/tags/${t}`) && Date.parse(r.createdAt) >= notBefore,
+      );
       if (match) runId = String(match.databaseId);
     } catch {
       // keep polling
@@ -454,6 +500,61 @@ function watchCi(t: string, fallbackUrl: string): void {
 }
 
 /* ─── Docker image release (GHCR-only, via workflow_dispatch) ────────── */
+
+/** Continue an unpublished tag. Compare-and-swap protects against another
+ * maintainer moving it between inspection and push. Published bytes are never
+ * retagged by this path; they require a new version instead. */
+async function continueRelease(): Promise<void> {
+  if (!dryRun) preflight();
+  const targetTag = `v${readVersion(API_PKG)}`;
+  const repository = ghOwnerRepo();
+  if (!repository) throw new Error("Cannot determine the GitHub repository from origin.");
+  const repo = `${repository.owner}/${repository.repo}`;
+  const remoteRef = git("ls-remote", "--refs", "origin", `refs/tags/${targetTag}`, { capture: true }).trim();
+  const remoteOid = remoteRef.split(/\s+/)[0];
+  if (!remoteOid || !/^[a-f0-9]{40}$/.test(remoteOid))
+    throw new Error(`No existing ${targetTag} to continue. Use release current for a new release.`);
+  const releaseResult = spawnSync("gh", ["api", `repos/${repo}/releases/tags/${targetTag}`], { encoding: "utf8", cwd: ROOT });
+  if (releaseResult.status === 0 && !JSON.parse(releaseResult.stdout).draft)
+    throw new Error(`${targetTag} is already published. Release a new version instead of changing its bytes.`);
+  if (releaseResult.status !== 0 && !releaseResult.stderr.includes("HTTP 404"))
+    throw new Error("Could not verify whether this GitHub release is already published.");
+  const version = targetTag.slice(1);
+  const npm = spawnSync("npm", ["view", `openship@${version}`, "version", "--json"], { encoding: "utf8", cwd: ROOT });
+  if (npm.status === 0)
+    throw new Error(`openship@${version} is already on npm. Release a new version instead.`);
+  if (!npm.stderr.includes("E404")) throw new Error("Could not verify whether this version is already on npm.");
+
+  const previous = await unpublishedReleaseRuns(repo, targetTag);
+  if (!previous.some((run) => run.conclusion !== "success"))
+    throw new Error(`No failed release run found for ${targetTag}.`);
+  // Read the inspected remote object, not a potentially stale local tag.
+  git("fetch", "--no-tags", "origin", `refs/tags/${targetTag}`);
+  if (git("rev-parse", "FETCH_HEAD", { capture: true }).trim() !== remoteOid)
+    throw new Error("The release tag changed during inspection. Retry continuation.");
+  git("merge-base", "--is-ancestor", "FETCH_HEAD^{commit}", "HEAD");
+  const annotation = git("cat-file", "-p", "FETCH_HEAD", { capture: true });
+  const runIds = [...new Set([...previous.map((run) => String(run.id)), ...resumeRuns(annotation)])].slice(0, 12);
+  log(`Continue ${targetTag} with ${git("rev-parse", "--short", "HEAD", { capture: true }).trim()}`);
+  log(`Previous runs: ${runIds.join(", ")}`);
+  log("Successful checks and build artifacts are reused only when their source and workflow inputs match.");
+  log("Failed or affected jobs run normally; publishing still requires every gate to pass.");
+  if (dryRun) {
+    log("[dry-run] would push the current branch and update the unpublished tag with this resume record.");
+    return;
+  }
+  git("push", "origin", `HEAD:refs/heads/${currentBranch()}`);
+  const localRef = spawnSync("git", ["rev-parse", "--verify", `refs/tags/${targetTag}`], { encoding: "utf8", cwd: ROOT });
+  git("tag", "-f", "-a", targetTag, "HEAD", "-m", `${targetTag}\n\n${RESUME_TRAILER} ${runIds.join(",")}`);
+  const started = Date.now() - 5_000;
+  const push = spawnSync("git", ["push", `--force-with-lease=refs/tags/${targetTag}:${remoteOid}`, "origin", `refs/tags/${targetTag}`], { stdio: "inherit", cwd: ROOT });
+  if (push.status !== 0) {
+    if (localRef.status === 0) git("update-ref", `refs/tags/${targetTag}`, localRef.stdout.trim());
+    else git("update-ref", "-d", `refs/tags/${targetTag}`);
+    throw new Error("The release tag could not be updated; the local tag was restored.");
+  }
+  watchCi(targetTag, `https://github.com/${repo}/actions`, started);
+}
 
 /** owner/repo parsed from origin, or null when origin isn't a GitHub remote. */
 function ghOwnerRepo(): { owner: string; repo: string } | null {
@@ -702,56 +803,17 @@ function log(msg: string): void {
   console.log(msg);
 }
 
-interface AdvisoryEntry {
-  id: string;
-  severity: "critical" | "recommended";
-  /** The interrupt gate clients read — always true for a published release. */
-  announce: boolean;
-  affects: string;
-  title: string;
-  message: string;
-  action: { label: string; kind: "update" };
-  /** Install kinds the announcement targets. Omitted = all (see --modes). */
-  modes?: string[];
-}
-
-/** The advisory entry for a published release. `affects: "<version"` means
- *  everyone BELOW this version sees the banner; users on it (or newer) don't. */
-function buildAdvisory(
-  version: string,
-  opts: { critical?: boolean; message?: string; modes?: readonly string[] },
-): AdvisoryEntry {
-  return {
-    id: `update-${version}`,
-    severity: opts.critical ? "critical" : "recommended",
-    // `publish` MEANS "interrupt people about this one", so it's written as an
-    // explicit key rather than left for clients to infer from severity.
-    announce: true,
-    affects: `<${version}`,
-    title: `Update to Openship ${version}`,
-    message:
-      opts.message ??
-      `Openship ${version} is available. See the release notes for what's new — updating is recommended.`,
-    action: { label: "Update now", kind: "update" },
-    // Omitted entirely when targeting everyone, so the manifest stays identical
-    // to what older clients (which ignore `modes`) already understand.
-    ...(opts.modes && opts.modes.length > 0 ? { modes: [...opts.modes] } : {}),
-  };
-}
-
 /** Write the single announcement advisory into release-advisories.json,
  *  preserving the file's $comment gate. One active announcement at a time (the
  *  newest published version); returns any prior advisory ids it replaced. */
 function writeAdvisory(
-  version: string,
-  opts: { critical?: boolean; message?: string; modes?: readonly string[] },
-): { entry: AdvisoryEntry; replaced: string[] } {
+  entry: ReturnType<typeof buildReleaseAdvisory>,
+) {
   const raw = JSON.parse(readFileSync(ADVISORIES, "utf8")) as {
     $comment?: string;
     advisories?: Array<{ id?: string }>;
   };
-  const replaced = (raw.advisories ?? []).map((a) => a.id ?? "").filter(Boolean);
-  const entry = buildAdvisory(version, opts);
+  const replaced = (raw.advisories ?? []).map((a) => a.id ?? "").filter(id => id && id !== entry.id);
   const nextDoc = { ...raw, advisories: [entry] };
   writeFileSync(ADVISORIES, JSON.stringify(nextDoc, null, 2) + "\n");
   return { entry, replaced };
@@ -813,6 +875,7 @@ async function runWizard(): Promise<string[] | null> {
     const mode = await pick("What do you want to release?", [
       { value: "version" as const, label: "A version", hint: "bump + tag + GitHub release + installers" },
       { value: "docker" as const, label: "Docker images only", hint: "GHCR; no tag, no release, :latest untouched" },
+      { value: "continue" as const, label: "Continue a failed release", hint: "current code; reuse successful, unchanged jobs" },
     ]);
     if (mode === CANCEL) return null;
 
@@ -821,7 +884,7 @@ async function runWizard(): Promise<string[] | null> {
     if (mode === "docker") {
       answers.dockerTag = await ask("image tag (empty = short SHA):");
       answers.dockerRef = await ask("branch to build:", branch);
-    } else {
+    } else if (mode === "version") {
       // Preview each bump's real target so the choice is concrete.
       const preview = (k: BumpKind) => computeNext(current, { kind: k });
       const bump = await pick(

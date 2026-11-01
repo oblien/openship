@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * Audit log — a readable history of who did what in this organization.
  *
@@ -25,33 +28,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
-  Activity,
-  Bell,
-  Bot,
-  Check,
-  ChevronDown,
-  Copy,
-  CreditCard,
-  Globe,
-  Loader2,
-  Package,
-  Rocket,
-  Search,
-  Server,
-  Shield,
-  Terminal,
-  User as UserIcon,
-  Users,
-  Webhook,
-  Wrench,
-} from "lucide-react";
-import {
   auditApi,
   getApiErrorMessage,
   type AuditEventRow,
   type AuditFacets,
   type AuditSource,
 } from "@/lib/api";
+import { resolveAuditEventCopy } from "@/lib/i18n/localize-audit";
 import {
   AUDIT_CATEGORIES,
   auditResourceLabel,
@@ -62,6 +45,7 @@ import {
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import type { Dictionary } from "@/i18n";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { Switch } from "@/components/ui/Switch";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -80,25 +64,25 @@ type PeriodKey = "all" | "today" | "7d" | "30d" | "90d";
  *  `periodStart` and silently produce an undefined lower bound. */
 const PERIOD_KEYS: readonly PeriodKey[] = ["all", "today", "7d", "30d", "90d"];
 
-const CATEGORY_ICONS: Record<AuditCategoryId, React.ComponentType<{ className?: string }>> = {
-  deployments: Rocket,
-  apps: Package,
-  domains: Globe,
-  servers: Server,
-  members: Users,
-  agent: Bot,
-  security: Shield,
-  billing: CreditCard,
-  system: Wrench,
+const CATEGORY_ICONS: Record<AuditCategoryId, IconName> = {
+  deployments: "rocket",
+  apps: "window",
+  domains: "globe",
+  servers: "server",
+  members: "users",
+  agent: "bot",
+  security: "shield",
+  billing: "credit-card",
+  system: "wrench",
 };
 
-const SOURCE_ICONS: Record<AuditSource, typeof Bot> = {
-  dashboard: Activity,
-  mcp: Bot,
-  cli: Terminal,
-  api: Webhook,
-  webhook: Bell,
-  system: Wrench,
+const SOURCE_ICONS: Record<AuditSource, IconName> = {
+  dashboard: "activity",
+  mcp: "bot",
+  cli: "terminal",
+  api: "webhook",
+  webhook: "bell",
+  system: "wrench",
 };
 
 /** Theme status tokens — never a literal colour, so a theme swap stays coherent. */
@@ -123,25 +107,25 @@ function periodStart(period: PeriodKey): string | undefined {
   return start.toISOString();
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: Dictionary): string {
   const date = new Date(iso);
   const diff = Date.now() - date.getTime();
   const min = Math.floor(diff / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t.projects.time.justNow;
+  if (min < 60) return interpolate(t.projects.time.minutesAgo, { count: String(min) });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return interpolate(t.projects.time.hoursAgo, { count: String(hr) });
   const days = Math.floor(hr / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return interpolate(t.projects.time.daysAgo, { count: String(days) });
   return date.toLocaleDateString();
 }
 
-function absoluteTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+function absoluteTime(iso: string, locale?: string): string {
+  return new Date(iso).toLocaleString(locale || undefined);
 }
 
-function clockTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function clockTime(iso: string, locale?: string): string {
+  return new Date(iso).toLocaleTimeString(locale || undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Local `YYYY-MM-DD` — the day-group key. `toISOString` would group by UTC. */
@@ -168,18 +152,19 @@ function actorDisplay(e: AuditEventRow, labels: { system: string; actorPrefix: s
  * membership id and keep the human identity in the payload — so those fall back
  * to the email/name recorded at the time, and only then to a generic noun.
  */
-function resourceDisplay(e: AuditEventRow): string {
-  if (e.resourceName) return e.resourceName;
+function resourceDisplay(e: AuditEventRow, labels?: Record<string, string>): { label: string; isSpecific: boolean } {
+  if (e.resourceName) return { label: e.resourceName, isSpecific: true };
   const payload = (e.after ?? e.before) as Record<string, unknown> | null | undefined;
   if (payload && typeof payload === "object") {
     // `tool` is what a tool-call row is about — "ran the MCP tool get_projects"
     // beats "ran the MCP tool a connected AI agent".
     for (const field of ["email", "hostname", "name", "slug", "tool"]) {
       const value = payload[field];
-      if (typeof value === "string" && value.trim()) return value;
+      if (typeof value === "string" && value.trim()) return { label: value, isSpecific: true };
     }
   }
-  return auditResourceLabel(e.resourceType);
+  const fallback = (e.resourceType && labels?.[e.resourceType]) || auditResourceLabel(e.resourceType);
+  return { label: fallback, isSpecific: false };
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
@@ -204,7 +189,7 @@ function CopyButton({ value }: { value: string }) {
       aria-label={copied ? t.settings.common.copied : t.settings.common.copy}
       title={copied ? t.settings.common.copied : t.settings.common.copy}
     >
-      {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      {copied ? <UiIcon name="check" className="size-3" /> : <UiIcon name="copy" className="size-3" />}
     </button>
   );
 }
@@ -213,7 +198,8 @@ function JsonBlock({ value, label }: { value: unknown; label: string }) {
   const text = useMemo(() => {
     try {
       return JSON.stringify(value, null, 2) ?? "null";
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/audit/_components/AuditLog");
       return String(value);
     }
   }, [value]);
@@ -265,9 +251,13 @@ function AuditDetailsBody({
   onClose: () => void;
   sourceLabel: (source: AuditSource | null) => string;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [showTechnical, setShowTechnical] = useState(false);
   const info = describeAuditEvent(event.eventType);
+  const localized = resolveAuditEventCopy(event.eventType, info, t.settings.audit, locale);
+  const rawAction = localized.action;
+  const label = localized.label;
+  const description = localized.description;
   const tone = info.tone ?? "neutral";
   const hasBefore = event.before !== null && event.before !== undefined;
   const hasAfter = event.after !== null && event.after !== undefined;
@@ -275,7 +265,10 @@ function AuditDetailsBody({
     system: t.settings.audit.system,
     actorPrefix: t.settings.audit.actorPrefix,
   });
-  const resource = resourceDisplay(event);
+  const resource = resourceDisplay(event, (t.settings.audit as any)?.resourceLabels);
+  const action = !resource.isSpecific
+    ? (localized?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
+    : rawAction;
 
   return (
     <div className="flex flex-col gap-5 p-6">
@@ -283,17 +276,17 @@ function AuditDetailsBody({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`size-2 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
-            <h2 className="text-lg font-semibold text-foreground">{info.label}</h2>
+            <h2 className="text-lg font-semibold text-foreground">{label}</h2>
           </div>
           <p className="mt-1.5 text-sm text-foreground/80">
-            <span className="font-medium">{actor}</span> {info.action}
-            {resource && <span className="font-medium"> {resource}</span>}
+            <span className="font-medium">{actor}</span> {action}
+            {resource.isSpecific && <span className="font-medium"> {resource.label}</span>}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground" title={absoluteTime(event.createdAt)}>
-            {relativeTime(event.createdAt)} · {absoluteTime(event.createdAt)}
+          <p className="mt-0.5 text-xs text-muted-foreground" title={absoluteTime(event.createdAt, locale)}>
+            {relativeTime(event.createdAt, t)} · {absoluteTime(event.createdAt, locale)}
           </p>
-          {info.description && (
-            <p className="mt-2 text-sm text-muted-foreground">{info.description}</p>
+          {description && (
+            <p className="mt-2 text-sm text-muted-foreground">{description}</p>
           )}
         </div>
         <button
@@ -322,10 +315,10 @@ function AuditDetailsBody({
             value={event.sourceClientName || event.sourceClientId}
           />
         )}
-        <DetailRow label={t.settings.audit.details.when} value={absoluteTime(event.createdAt)} />
+        <DetailRow label={t.settings.audit.details.when} value={absoluteTime(event.createdAt, locale)} />
         <DetailRow label={t.settings.audit.ip} value={event.ipAddress || "—"} copyable={!!event.ipAddress} mono />
         {(event.resourceType || event.resourceId) && (
-          <DetailRow label={t.settings.audit.resource} value={resource || "—"} />
+          <DetailRow label={t.settings.audit.resource} value={resource.label || "—"} />
         )}
       </section>
 
@@ -339,7 +332,7 @@ function AuditDetailsBody({
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t.settings.audit.details.technical}
           </span>
-          <ChevronDown
+          <UiIcon name="chevron-down"
             className={`size-4 text-muted-foreground transition-transform ${showTechnical ? "rotate-180" : ""}`}
           />
         </button>
@@ -418,7 +411,7 @@ function RecordingCard({
           {!canManage && <p className="mt-1 text-xs text-muted-foreground/70">{a.adminOnly}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {saving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {saving && <UiIcon name="spinner" className="size-3.5 animate-spin text-muted-foreground" />}
           <Switch
             checked={enabled}
             onChange={onToggle}
@@ -471,7 +464,7 @@ function FeedSkeleton() {
 /* ──────────────────────────────────────────────────────────────────── */
 
 export function AuditLog() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
@@ -588,7 +581,7 @@ export function AuditLog() {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error("Failed to load audit events", err);
+        errorDiagnostics.error("dashboard/app/(dashboard)/audit/_components/AuditLog", "Failed to load audit events", err);
         setEvents([]);
         setTotal(0);
       })
@@ -610,7 +603,7 @@ export function AuditLog() {
         if (!cancelled) setFacets(res);
       })
       .catch((err) => {
-        if (!cancelled) console.error("Failed to load audit facets", err);
+        if (!cancelled) errorDiagnostics.error("dashboard/app/(dashboard)/audit/_components/AuditLog", "Failed to load audit facets", err);
       });
     return () => {
       cancelled = true;
@@ -656,7 +649,7 @@ export function AuditLog() {
           "error",
           t.settings.common.toast.settings,
         );
-        const fresh = await auditApi.facets(query).catch(() => null);
+        const fresh = await auditApi.facets(query).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/audit/_components/AuditLog"); return null; });
         if (fresh) setFacets(fresh);
       } finally {
         setSavingSettings(false);
@@ -730,7 +723,7 @@ export function AuditLog() {
       },
       ...AUDIT_CATEGORIES.map((cat) => ({
         key: cat.id as CategoryKey,
-        label: cat.label,
+        label: ((t.settings.audit as any)?.categories as Record<string, string>)?.[cat.id] ?? cat.label,
         icon: CATEGORY_ICONS[cat.id],
         count: counts.get(cat.id),
         href: hrefWith({ category: cat.id }),
@@ -841,7 +834,7 @@ export function AuditLog() {
           ? t.settings.audit.day.today
           : key === yesterdayKey
             ? t.settings.audit.day.yesterday
-            : new Date(row.createdAt).toLocaleDateString(undefined, {
+            : new Date(row.createdAt).toLocaleDateString(locale || undefined, {
                 weekday: "short",
                 month: "short",
                 day: "numeric",
@@ -906,7 +899,7 @@ export function AuditLog() {
           <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[220px] flex-1">
-            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <UiIcon name="search" className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="search"
               value={search}
@@ -976,12 +969,17 @@ export function AuditLog() {
               <div className="divide-y divide-border/40">
                 {day.rows.map((e) => {
                   const info = describeAuditEvent(e.eventType);
+                  const localized = resolveAuditEventCopy(e.eventType, info, t.settings.audit, locale);
+                  const rawAction = localized.action;
                   const tone = info.tone ?? "neutral";
                   const actor = actorDisplay(e, {
                     system: t.settings.audit.system,
                     actorPrefix: t.settings.audit.actorPrefix,
                   });
-                  const resource = resourceDisplay(e);
+                  const resource = resourceDisplay(e, (t.settings.audit as any)?.resourceLabels);
+                  const action = !resource.isSpecific
+                    ? (localized?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
+                    : rawAction;
                   return (
                     <button
                       key={e.id}
@@ -990,25 +988,25 @@ export function AuditLog() {
                       className="flex w-full items-center gap-4 px-5 py-3.5 text-start transition-colors hover:bg-muted/30 focus:bg-muted/40 focus:outline-none"
                     >
                       <span className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/60">
-                        <UserIcon className="size-3.5 text-muted-foreground" />
+                        <UiIcon name="user" className="size-3.5 text-muted-foreground" />
                         <span
                           className={`absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full ring-2 ring-card ${TONE_DOT[tone]}`}
                         />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-foreground">
-                          <span className="font-medium">{actor}</span> {info.action}
-                          {resource && <span className="font-medium"> {resource}</span>}
+                          <span className="font-medium">{actor}</span> {action}
+                          {resource.isSpecific && <span className="font-medium"> {resource.label}</span>}
                         </p>
                         <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span>{clockTime(e.createdAt)}</span>
+                          <span>{clockTime(e.createdAt, locale)}</span>
                           {e.source === "mcp" && (
                             // The client's own name when we have it: at a glance
                             // "Claude Desktop" tells the reader which of their
                             // connected agents this was, which the generic
                             // "AI assistant" chip never could.
                             <span className="inline-flex max-w-[14rem] items-center gap-1 rounded-md bg-info-bg px-1.5 py-0.5 text-[10px] font-medium text-info">
-                              <Bot className="size-2.5 shrink-0" />
+                              <UiIcon name="bot" className="size-2.5 shrink-0" />
                               <span className="truncate">
                                 {e.sourceClientName || t.settings.audit.sources.mcp}
                               </span>
@@ -1023,9 +1021,9 @@ export function AuditLog() {
                       </div>
                       <time
                         className="shrink-0 text-xs text-muted-foreground"
-                        title={absoluteTime(e.createdAt)}
+                        title={absoluteTime(e.createdAt, locale)}
                       >
-                        {relativeTime(e.createdAt)}
+                        {relativeTime(e.createdAt, t)}
                       </time>
                     </button>
                   );

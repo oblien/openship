@@ -42,14 +42,14 @@ export interface WebhookDelivery {
   id: string;
   source: "github" | "incoming" | "backup" | string;
   event: string;
-  outcome: "received" | "dispatched" | "skipped" | "forwarded" | "ignored" | "failed" | string;
+  outcome: "received" | "dispatched" | "skipped" | "queued" | "forwarded" | "ignored" | "failed" | string;
   hookId: string | null;
   projectId: string | null;
   actionRef: string | null;
   authResult: string | null;
   statusCode: number | null;
   error: string | null;
-  summary: { repo?: string; branch?: string; commit?: string; name?: string } | null;
+  summary: { repo?: string; branch?: string; commit?: string; name?: string; reason?: string } | null;
   receivedAt: string;
   processedAt: string | null;
 }

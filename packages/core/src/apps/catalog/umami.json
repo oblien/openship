@@ -134,5 +134,22 @@
       "label": "Database",
       "kind": "tcp"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "Website analytics",
+        "description": "Understand traffic, referrers, and visitor activity."
+      },
+      {
+        "title": "Cookie-free tracking",
+        "description": "Collect analytics without cookie-based tracking."
+      },
+      {
+        "title": "Your data",
+        "description": "Keep the service and database on your infrastructure."
+      }
+    ],
+    "articleFile": "articles/umami.md"
+  }
 }

@@ -9,7 +9,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createServer } from "node:net";
 import { BuildLogger, DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { repos } from "@repo/db";
-import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
+import { LOCAL_HOST_PORT_TARGET } from "@repo/platform/engine/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {
   seedDeployment,
@@ -200,7 +200,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
       };
     });
     const { deployComposeServices } =
-      await import("../../src/modules/deployments/compose/deploy.service");
+      await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
     const next = await seedDeployment(project, {
       imageRef: "compose",
       containerId: "compose",

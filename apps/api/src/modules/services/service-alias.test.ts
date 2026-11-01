@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aliasConflictsWithSiblings } from "./service.service";
+import { aliasConflictsWithSiblings } from "@repo/platform/engine/modules/services/service.service";
 
 describe("aliasConflictsWithSiblings — reject an alias that shadows a sibling on the same network", () => {
   it("collides with a sibling's SERVICE NAME (normalized)", () => {

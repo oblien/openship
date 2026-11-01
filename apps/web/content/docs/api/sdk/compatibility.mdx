@@ -1,0 +1,67 @@
+---
+title: Compatibility and availability
+description: Check package availability, API protocol support, provider requirements, and current limits.
+---
+
+## Package availability
+
+Ship SDK is published in **`openship` 0.8.0 and later**. Install it with `npm install openship`;
+upgrade an older CLI-only dependency with `npm install openship@latest`. Node.js 22 or later is
+required. See [installation](/docs/api/sdk/installation) for the public import paths and local builds.
+
+## Fixed organization scopes
+
+A remote client with `organizationId` checks `/api/health` for this capability before sending a scoped
+application request:
+
+```json
+{ "sdk": { "protocol": 1, "fixedOrganizationScope": true } }
+```
+
+The client sends `X-Organization-Id` and `X-Openship-Scope: fixed`. The API authenticates the caller,
+checks current membership and grants, and keeps access inside that organization. Request headers cannot
+override the client's configured scope.
+
+An incompatible server causes `SDK_SCOPE_UNSUPPORTED`. Upgrade it. Removing `organizationId` changes
+the scope guarantee. A malformed scope header or `fixed` without an organization is rejected with
+`400 VALIDATION_ERROR`.
+
+## Cloud
+
+Use the canonical Cloud API, a Cloud credential, and its organization ID. The deployed API must pass
+the same capability check; SDK support in a checkout does not establish support on a deployed server.
+
+A self-hosted owner's Cloud account link does not authorize a local credential to manage Cloud-stored
+project records. Fixed requests and organization-bound or scoped credentials refuse that forwarding
+with `CLOUD_SCOPE_UNAVAILABLE`, including when the caller omits `organizationId`.
+
+Desktop and self-hosted clients can deploy their local projects on a connected managed server: select
+its local `serverId` when creating the project and use `buildStrategy: "server"`. Project and server
+permissions are checked locally against the verified Cloud server binding. This does not transfer
+project records; see the [desktop Cloud workflow](/docs/api/mcp#deploy-a-desktop-folder-on-cloud).
+Cloud operations also require the relevant provider and account capabilities.
+
+## Current limits
+
+| Area | Status |
+| --- | --- |
+| Named operations | The [reference](/docs/api) covers all current native and remote groups. Provider and permission checks still apply. |
+| Clusters and scaling | Named operations cover private networks, compute-cluster setup, application replicas, PostgreSQL/Redis databases, shared files, and their backup/recovery flows. Infrastructure management is self-hosted only; a ready runtime and the relevant storage/backup configuration are required. See [servers](/docs/api/servers#compute-clusters) and [projects](/docs/api/projects#scale-a-stateless-application-on-a-cluster). |
+| Mail, workload migration and archives | Named remote groups `mail`, `migrations` and `instance` use the existing controllers. They are not native groups. Mail and whole-instance administration require a self-hosted controller. |
+| Terminals | Remote `terminal.openServer` and `terminal.openService` use one-use tickets and the server's WebSocket protocol. Node callers supply the trusted dashboard `origin`; scripts can use `servers.exec` or `services.exec`. |
+| Account and installation protocols | Browser login/2FA, private support, signed provider callbacks and internal installation bootstrap retain their dedicated credentials. PATs do not bypass session or instance authority. |
+| Legacy controller migration | `instance.preflightMigration` and `migrateToServer` preserve the existing API's readiness/unavailable results. Workload `migrations` is a separate, supported workflow. |
+| Native CLI | Resource commands support native mode; some commands and system actions require HTTP. See [native CLI support](/docs/cli/native#supported-commands). |
+| Background work | Native scheduling is disabled by default. Constrained saved principals for all jobs/backups/scans and distributed scheduler ownership remain incomplete. |
+| Dispatch and replay | Durable multi-worker dispatch, idempotent replay, and event replay across restarts remain incomplete. |
+| Billing | Account/payment features need configured hosted billing. Full webhook replay and accounting transaction guarantees remain under migration. |
+| Cloud record transfers | Require an unscoped local session with transfer permission. Fixed SDK scopes and bound/scoped credentials use a direct Cloud connection for Cloud-stored records, or a connected managed server for locally controlled projects. |
+
+Browser login redirects, session cookies, webhook signatures, and terminal handshakes remain their
+respective transport protocols. Native imports do not replace those protocols.
+
+## What has been checked
+
+The public tarball has installed-package checks on Node 22 and 24, including native deployment,
+persistence, resource teardown, ESM/CommonJS, declarations, and CLI invocation. See the
+[runnable example](/docs/api/sdk/examples). Live provider verification remains a separate release gate.

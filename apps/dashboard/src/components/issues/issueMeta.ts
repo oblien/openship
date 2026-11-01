@@ -1,25 +1,4 @@
-import {
-  AlertTriangle,
-  ArrowUpCircle,
-  Container,
-  Download,
-  Globe,
-  HeartPulse,
-  HelpCircle,
-  Layers,
-  Lock,
-  Mail,
-  Package,
-  Plug,
-  Route,
-  RotateCcw,
-  Server,
-  ServerOff,
-  Split,
-  XCircle,
-  FolderKanban,
-} from "lucide-react";
-import type { ComponentType } from "react";
+import type { IconName } from "@repo/ui/icons";
 
 import type { IssueKind, IssueScope, IssueSeverity } from "@/lib/api/issues";
 import type { AlertTone } from "@/components/overview/AlertPanel";
@@ -50,30 +29,33 @@ export function panelTone(severity: IssueSeverity, standAlone: boolean): AlertTo
   return tone === "neutral" && standAlone ? "warning" : tone;
 }
 
-export const KIND_ICON: Record<IssueKind, ComponentType<{ className?: string }>> = {
-  deploy_blocked: XCircle,
-  prompt: HelpCircle,
-  partial_decision: Split,
-  routing_unsynced: Route,
-  domain_unverified: Globe,
-  ssl_error: Lock,
-  port_advisory: Plug,
-  workload_unhealthy: HeartPulse,
-  workload_crash_loop: RotateCcw,
-  workload_down: Container,
-  server_unreachable: ServerOff,
-  edge_down: Globe,
-  edge_absent: Download,
-  mail_down: Mail,
-  update_available: Package,
-  component_behind: ArrowUpCircle,
+export const KIND_ICON: Record<IssueKind, IconName> = {
+  deploy_blocked: "x-circle",
+  prompt: "help-circle",
+  partial_decision: "split",
+  routing_unsynced: "route",
+  runtime_health: "activity",
+  domain_unverified: "globe",
+  ssl_error: "lock",
+  port_advisory: "plug",
+  workload_unhealthy: "activity",
+  workload_crash_loop: "rotate-left",
+  workload_down: "power",
+  server_unreachable: "server-off",
+  monitoring_offline: "plug",
+  edge_down: "globe",
+  edge_absent: "download",
+  mail_down: "mail",
+  mail_certificate: "lock",
+  update_available: "arrow-up-circle",
+  component_behind: "arrow-up-circle",
 };
 
-export const SCOPE_ICON: Record<IssueScope, ComponentType<{ className?: string }>> = {
-  platform: Layers,
-  server: Server,
-  project: FolderKanban,
-  domain: Globe,
+export const SCOPE_ICON: Record<IssueScope, IconName> = {
+  platform: "layers",
+  server: "server",
+  project: "project",
+  domain: "globe",
 };
 
 /**
@@ -84,4 +66,4 @@ export const SCOPE_ICON: Record<IssueScope, ComponentType<{ className?: string }
 export const SCOPE_ORDER: IssueScope[] = ["platform", "server", "project", "domain"];
 
 /** Fallback icon for a kind a newer API added and this build doesn't know. */
-export const UNKNOWN_KIND_ICON = AlertTriangle;
+export const UNKNOWN_KIND_ICON = "warning";

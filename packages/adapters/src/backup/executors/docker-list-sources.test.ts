@@ -72,6 +72,7 @@ function executorForDeclaredBinds(
   const pullImage = vi.fn(async () => undefined);
   return {
     executor: new DockerBackupExecutor({
+      assertBackupAccess: async () => {},
       docker: { createContainer },
       pullImage,
     } as never),
@@ -82,6 +83,7 @@ function executorForDeclaredBinds(
 }
 
 const executor = new DockerBackupExecutor({
+      assertBackupAccess: async () => {},
   docker: {
     getContainer() {
       throw new Error("listSources must not touch the daemon when containerId is null");
@@ -146,6 +148,7 @@ describe("DockerBackupExecutor.listSources", () => {
     };
     const infoArchive = vi.fn(async ({ path }: { path: string }) => archiveInfo(modes[path]!));
     const inspectExecutor = new DockerBackupExecutor({
+      assertBackupAccess: async () => {},
       docker: {
         getContainer() {
           return {
@@ -255,6 +258,7 @@ describe("DockerBackupExecutor.listSources", () => {
 
   it("does not hide a daemon-side path inspection failure behind the DB fallback", async () => {
     const inspectExecutor = new DockerBackupExecutor({
+      assertBackupAccess: async () => {},
       docker: {
         getContainer() {
           return {

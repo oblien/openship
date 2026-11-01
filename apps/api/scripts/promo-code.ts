@@ -20,7 +20,7 @@
 
 import type Stripe from "stripe";
 import { PLAN_IDS, PRICING, resolveStripePriceId, type PlanTierId } from "@repo/core";
-import { stripe } from "../src/lib/stripe-client";
+import { stripe } from "@repo/platform/engine/lib/stripe-client";
 
 const INVOCATION = "bun --cwd apps/api scripts/promo-code.ts";
 /** Stamped on everything this CLI creates, so hand-made codes stay tellable. */

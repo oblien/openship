@@ -32,12 +32,18 @@
  * delegate through the API's import endpoint rather than writing vhosts by hand.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Command } from "commander";
 import chalk from "chalk";
-import ora, { type Ora } from "ora";
 import { intro, outro, select, isCancel, note, text, password, confirm, log } from "@clack/prompts";
 
-import { apiRaw, apiRequest, ApiError, paginate } from "../lib/api-client";
+import { getRemoteClient, ApiError } from "../lib/ship-client";
+import { iteratePages } from "@repo/sdk/client";
+import { CreateDomainInputSchema, parseInput, isRecord, type Domain, type DomainRecords, type RouteRule } from "@repo/contracts";
+import { attachCustomDomainEndpoint } from "../lib/custom-domain-endpoint";
+import { positiveInteger } from "../lib/command-input";
+import { printEvents } from "../lib/event-output";
+import { spin, fail } from "../lib/cmd-helpers";
 import { getApiUrl } from "../lib/config";
 import { printJson, printTable, isJsonMode, ok, err, info } from "../lib/output";
 import { storedApiPort } from "../lib/ports";
@@ -58,21 +64,6 @@ type RepairMode = "migrate" | "stop";
 type LogLevel = "info" | "warn" | "error";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Suppress the spinner in JSON mode so stdout stays a clean data stream. */
-function spin(text: string): Ora | null {
-  return isJsonMode() ? null : ora(text).start();
-}
-
-/** Print an ApiError (or any error) and exit non-zero. */
-function fail(e: unknown): never {
-  if (e instanceof ApiError) {
-    err(`  ${e.message}${e.status ? chalk.dim(` (${e.status})`) : ""}`);
-  } else {
-    err(`  ${e instanceof Error ? e.message : String(e)}`);
-  }
-  process.exit(1);
-}
 
 const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
@@ -156,15 +147,6 @@ function reportRepair(res: RepairResult): never {
   process.exit(res.ok ? 0 : 1);
 }
 
-/** Build a `?a=b&c=d` query string, dropping empty/undefined params. */
-function query(params: Record<string, string | number | undefined>): string {
-  const q = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null && String(v) !== "")
-    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
-    .join("&");
-  return q ? `?${q}` : "";
-}
-
 /** Grouped integer, e.g. 12,345. */
 function fmtInt(n?: number | null): string {
   const v = Number(n ?? 0);
@@ -197,6 +179,7 @@ async function runRepair(mode: RepairMode): Promise<never> {
     const res = await repairEdgeConflict(mode, apiPort(), onLog);
     reportRepair(res);
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     sp?.fail("Edge repair failed");
     fail(e);
   }
@@ -275,6 +258,7 @@ async function scanSites(): Promise<void> {
       info("\n  Import them with `openship edge migrate` (takes over :80/:443, keeps them serving).");
     }
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     sp?.fail("Scan failed");
     fail(e);
   }
@@ -307,13 +291,6 @@ const IS_LINUX = process.platform === "linux";
 /** Cached id of the local ("This Server") row — analytics are keyed on it. */
 let localServerId: string | null = null;
 
-/** Server row as the API sends it (the CLI's own ServerRow omits `isLocal`). */
-interface ServerRow {
-  id: string;
-  name: string;
-  isLocal?: boolean;
-}
-
 /** A domain the edge serves, flattened out of its owning project. */
 interface DomainEntry {
   id: string;
@@ -323,25 +300,6 @@ interface DomainEntry {
   verified: boolean;
   sslStatus: string | null;
   status: string | null;
-}
-
-/** One minute-bucket row from GET /analytics/server/:serverId. */
-interface ServerBucket {
-  minute: number;
-  requests: number;
-  uniqueRequests: number;
-  bandwidthIn: number;
-  bandwidthOut: number;
-  responseTime: number;
-  countries?: Record<string, number> | null;
-}
-
-/** The daily geo rollup row from GET /analytics/server/:serverId/geo. */
-interface ServerGeoRow {
-  countries?: Record<string, number> | null;
-  visitors?: number;
-  paths?: Record<string, number> | null;
-  statuses?: Record<string, number> | null;
 }
 
 /** Prompt for a required non-empty string; returns null on cancel/blank. */
@@ -379,9 +337,10 @@ function renderPanelError(e: unknown): void {
  */
 async function apiLivePing(): Promise<boolean> {
   try {
-    const res = await apiRaw("/health", { signal: AbortSignal.timeout(1500) });
+    const res = await getRemoteClient().http.raw("/health", { signal: AbortSignal.timeout(1500) });
     return res.ok;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/edge");
     return false;
   }
 }
@@ -389,8 +348,8 @@ async function apiLivePing(): Promise<boolean> {
 /** Resolve (and cache) the local server id — GET /system/servers → the isLocal row. */
 async function resolveLocalServerId(): Promise<string | null> {
   if (localServerId) return localServerId;
-  const rows = await apiRequest<ServerRow[]>("/system/servers");
-  const local = rows.find((r) => r.isLocal === true) ?? rows.find((r) => r.name === "This Server");
+  const rows = await getRemoteClient().servers.list();
+  const local = rows.find((r) => r.isLocal === true);
   localServerId = local?.id ?? null;
   return localServerId;
 }
@@ -403,13 +362,12 @@ async function resolveLocalServerId(): Promise<string | null> {
  */
 async function loadDomains(): Promise<DomainEntry[]> {
   const entries: DomainEntry[] = [];
-  for await (const p of paginate<Record<string, unknown>>("/projects")) {
-    const projectId = String(p.id);
+  const ship = getRemoteClient();
+  for await (const p of iteratePages(page => ship.projects.list(page))) {
+    const projectId = p.id;
     const projectPort = typeof p.port === "number" ? p.port : null;
-    const res = await apiRequest<{ data: DomainRow[] }>(
-      `/domains?projectId=${encodeURIComponent(projectId)}`,
-    ).catch(() => ({ data: [] as DomainRow[] }));
-    for (const d of res.data ?? []) {
+    const domains = await ship.domains.list(projectId);
+    for (const d of domains) {
       entries.push({
         id: d.id,
         hostname: d.hostname,
@@ -522,11 +480,8 @@ async function panelTraffic(entry: DomainEntry): Promise<void> {
   }
   const sp = spin(`Loading traffic for ${entry.hostname}…`);
   try {
-    const res = await apiRequest<{ data: ServerBucket[] }>(
-      `/analytics/server/${encodeURIComponent(serverId)}${query({ domain: entry.hostname })}`,
-    );
+    const buckets = await getRemoteClient().analytics.serverBuckets(serverId, { domain: entry.hostname });
     sp?.stop();
-    const buckets = res.data ?? [];
     if (!buckets.length) {
       info(`  No traffic recorded for ${entry.hostname} in the last hour.`);
       return;
@@ -535,22 +490,19 @@ async function panelTraffic(entry: DomainEntry): Promise<void> {
     let bwIn = 0;
     let bwOut = 0;
     let rtSum = 0;
-    let rtN = 0;
     const countries: Record<string, number> = {};
     for (const b of buckets) {
       requests += b.requests || 0;
       bwIn += b.bandwidthIn || 0;
       bwOut += b.bandwidthOut || 0;
-      if (b.responseTime) {
-        rtSum += b.responseTime;
-        rtN++;
-      }
+      // responseTime is the minute's total (seconds), not its average.
+      rtSum += b.responseTime || 0;
       for (const [cc, n] of Object.entries(b.countries ?? {})) countries[cc] = (countries[cc] || 0) + Number(n);
     }
     info(`  Traffic — ${entry.hostname}  ${chalk.dim("(last hour · server-scoped)")}`);
     info(`  Requests:   ${fmtInt(requests)}`);
     info(`  Bandwidth:  ↓ ${fmtBytes(bwIn)}   ↑ ${fmtBytes(bwOut)}`);
-    info(`  Avg resp:   ${Math.round((rtN ? rtSum / rtN : 0) * 1000)} ms`);
+    info(`  Avg resp:   ${Math.round((requests ? rtSum / requests : 0) * 1000)} ms`);
     const top = Object.entries(countries).sort((a, b) => b[1] - a[1]).slice(0, 5);
     if (top.length) info(`  Top countries: ${top.map(([c, n]) => `${c}=${fmtInt(n)}`).join("   ")}`);
   } catch (e) {
@@ -567,11 +519,8 @@ async function panelAnalytics(entry: DomainEntry): Promise<void> {
   }
   const sp = spin(`Loading analytics for ${entry.hostname}…`);
   try {
-    const res = await apiRequest<{ data: ServerGeoRow }>(
-      `/analytics/server/${encodeURIComponent(serverId)}/geo${query({ domain: entry.hostname })}`,
-    );
+    const g = await getRemoteClient().analytics.serverGeo(serverId, { domain: entry.hostname });
     sp?.stop();
-    const g = res.data ?? {};
     info(`  Analytics — ${entry.hostname}  ${chalk.dim("(today)")}`);
     info(`  Visitors:  ${fmtInt(g.visitors)}`);
     const countries = Object.entries(g.countries ?? {}).sort((a, b) => Number(b[1]) - Number(a[1]));
@@ -619,15 +568,15 @@ async function panelTrafficOverview(): Promise<void> {
     let requests = 0;
     let bwOut = 0;
     try {
-      const res = await apiRequest<{ data: ServerBucket[] }>(
-        `/analytics/server/${encodeURIComponent(serverId)}${query({ domain: d.hostname })}`,
-      );
-      for (const b of res.data ?? []) {
+      const buckets = await getRemoteClient().analytics.serverBuckets(serverId, { domain: d.hostname });
+      for (const b of buckets) {
         requests += b.requests || 0;
         bwOut += b.bandwidthOut || 0;
       }
-    } catch {
-      // a single domain's analytics failing shouldn't drop the whole table
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "cli/commands/edge");
+      rows.push({ domain: d.hostname, port: d.port != null ? `:${d.port}` : "—", requests: "Unavailable", out: "Unavailable" });
+      continue;
     }
     rows.push({
       domain: d.hostname,
@@ -681,18 +630,15 @@ async function panelAddRule(entry: DomainEntry): Promise<void> {
 
   const sp = spin("Adding rule…");
   try {
-    const res = await apiRequest<{ rule: RouteRuleRow }>(
-      `/projects/${encodeURIComponent(entry.projectId)}/route-rules`,
-      { method: "POST", body: JSON.stringify({ domainId: entry.id, pathPrefix: null, spec, enabled: true }) },
-    );
-    sp?.succeed(`Added rule ${res.rule.id}`);
+    const rule = await getRemoteClient().projects.createRouteRule(entry.projectId, { domainId: entry.id, pathPrefix: null, spec, enabled: true });
+    sp?.succeed(`Added rule ${rule.id}`);
   } catch (e) {
     sp?.fail("Add failed");
     throw e;
   }
 }
 
-async function panelRemoveRule(entry: DomainEntry, rules: RouteRuleRow[]): Promise<void> {
+async function panelRemoveRule(entry: DomainEntry, rules: RouteRule[]): Promise<void> {
   const options: Array<{ value: string; label: string }> = rules.map((r) => ({
     value: r.id,
     label: `${r.id}  ${Object.keys(r.spec ?? {}).join(",") || "(none)"}`,
@@ -702,10 +648,7 @@ async function panelRemoveRule(entry: DomainEntry, rules: RouteRuleRow[]): Promi
   if (isCancel(pick) || pick === "__cancel") return;
   const sp = spin("Deleting rule…");
   try {
-    await apiRequest(
-      `/projects/${encodeURIComponent(entry.projectId)}/route-rules/${encodeURIComponent(String(pick))}`,
-      { method: "DELETE" },
-    );
+    await getRemoteClient().projects.removeRouteRule(entry.projectId, String(pick));
     sp?.succeed("Deleted.");
   } catch (e) {
     sp?.fail("Delete failed");
@@ -716,12 +659,9 @@ async function panelRemoveRule(entry: DomainEntry, rules: RouteRuleRow[]): Promi
 async function panelRules(entry: DomainEntry): Promise<void> {
   for (;;) {
     const sp = spin("Loading route rules…");
-    let rules: RouteRuleRow[];
+    let rules: RouteRule[];
     try {
-      const res = await apiRequest<{ rules: RouteRuleRow[] }>(
-        `/projects/${encodeURIComponent(entry.projectId)}/route-rules`,
-      );
-      rules = res.rules ?? [];
+      rules = await getRemoteClient().projects.listRouteRules(entry.projectId);
       sp?.stop();
     } catch (e) {
       sp?.fail("Load failed");
@@ -753,6 +693,7 @@ async function panelRules(entry: DomainEntry): Promise<void> {
       if (act === "add") await panelAddRule(entry);
       else if (act === "rm") await panelRemoveRule(entry, relevant);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       renderPanelError(e);
     }
   }
@@ -787,7 +728,8 @@ async function panelRegisterDomain(): Promise<void> {
   const sp = spin(`Registering ${hostname}…`);
   try {
     const res = await registerDomainCore(hostname, opts);
-    sp?.succeed(res.verified ? `${hostname} verified & serving` : `Registered ${hostname}`);
+    sp?.succeed(res.verified ? `DNS verified for ${hostname}` : `Registered ${hostname}`);
+    if (!isJsonMode() && res.routed) info(`  ${res.domain.hostname} is configured to be routed on the next deploy.`);
     if (res.verified) {
       if (res.sslStatus) info(`  SSL: ${res.sslStatus}`);
     } else if (res.records) {
@@ -806,7 +748,7 @@ async function panelRemoveDomain(entry: DomainEntry): Promise<boolean> {
   if (isCancel(go) || !go) return false;
   const sp = spin(`Removing ${entry.hostname}…`);
   try {
-    await apiRequest(`/domains/${encodeURIComponent(entry.id)}`, { method: "DELETE" });
+    await getRemoteClient().domains.remove(entry.id);
     sp?.succeed(`Removed ${entry.hostname}`);
     return true;
   } catch (e) {
@@ -835,6 +777,7 @@ async function panelDomainActions(entry: DomainEntry): Promise<void> {
       else if (act === "rules") await panelRules(entry);
       else if (act === "rm" && (await panelRemoveDomain(entry))) return;
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       renderPanelError(e);
     }
   }
@@ -869,6 +812,7 @@ async function panelDomains(): Promise<void> {
       try {
         await panelRegisterDomain();
       } catch (e) {
+        observeCaughtError(e, "cli/commands/edge");
         renderPanelError(e);
       }
       continue;
@@ -883,7 +827,7 @@ async function panelDomains(): Promise<void> {
 function edgeHeader(diag: EdgeDiagnosis | null, apiLive: boolean, domainsLabel: string): string {
   return [
     `Edge:      ${diag ? describeDiagnosis(diag) : chalk.dim("host ops unavailable (not Linux)")}`,
-    `API:       ${apiLive ? chalk.green(`reachable · ${getApiUrl()}`) : chalk.dim(`unreachable · ${getApiUrl()}`)}`,
+    `API:       ${apiLive ? chalk.green(`reachable · ${getRemoteClient().http.apiUrl}`) : chalk.dim(`unreachable · ${getRemoteClient().http.apiUrl}`)}`,
     `Domains:   ${domainsLabel}`,
   ].join("\n");
 }
@@ -891,7 +835,7 @@ function edgeHeader(diag: EdgeDiagnosis | null, apiLive: boolean, domainsLabel: 
 async function edgePanel(): Promise<void> {
   intro(`${chalk.bgCyan(chalk.black(" Openship "))}${chalk.dim(" edge")}`);
   for (;;) {
-    const diag = IS_LINUX ? await diagnoseEdge().catch(() => null) : null;
+    const diag = IS_LINUX ? await diagnoseEdge().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/commands/edge"); return null; }) : null;
     const apiLive = await apiLivePing();
 
     // The edge CLI is a trusted local tool: on a desktop / loopback box the API is
@@ -905,6 +849,7 @@ async function edgePanel(): Promise<void> {
       try {
         domainsLabel = String((await loadDomains()).length);
       } catch (e) {
+        observeCaughtError(e, "cli/commands/edge");
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           needsAuth = true;
           domainsLabel = chalk.yellow("auth required");
@@ -935,7 +880,7 @@ async function edgePanel(): Promise<void> {
     // absent (API down) or restricted (real auth needed).
     if (!apiLive) {
       note(
-        `The Openship API isn't answering at ${getApiUrl()}.\n` +
+        `The Openship API isn't answering at ${getRemoteClient().http.apiUrl}.\n` +
           "Domains, traffic & analytics need it — start the stack with `openship up`.",
         "API offline",
       );
@@ -964,20 +909,13 @@ async function edgePanel(): Promise<void> {
       else if (action === "sites") await panelSites();
       else if (action === "monitoring") await panelMonitoring();
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       renderPanelError(e);
     }
   }
 }
 
 // ─── Control-plane: route rules ──────────────────────────────────────────────
-
-interface RouteRuleRow {
-  id: string;
-  domainId?: string | null;
-  pathPrefix?: string | null;
-  enabled?: boolean;
-  spec?: Record<string, unknown>;
-}
 
 /** Commander collector for repeatable/comma-separated list flags. */
 const collect = (v: string, acc: string[] = []): string[] => acc.concat(v.split(",").map((s) => s.trim()).filter(Boolean));
@@ -987,10 +925,7 @@ const rulesList = new Command("list")
   .requiredOption("-p, --project <id>", "Project ID")
   .action(async (opts) => {
     try {
-      const res = await apiRequest<{ rules: RouteRuleRow[] }>(
-        `/projects/${encodeURIComponent(opts.project)}/route-rules`,
-      );
-      const rules = res.rules ?? [];
+      const rules = await getRemoteClient().projects.listRouteRules(opts.project);
       if (isJsonMode()) {
         printJson(rules);
         return;
@@ -1006,6 +941,7 @@ const rulesList = new Command("list")
         ["id", "path", "domain", "enabled", "rules"],
       );
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       fail(e);
     }
   });
@@ -1015,14 +951,14 @@ const rulesAdd = new Command("add")
   .requiredOption("-p, --project <id>", "Project ID")
   .option("--path <prefix>", "Scope the rule to a path prefix (default: whole project)")
   .option("--domain <id>", "Scope the rule to one domain of the project")
-  .option("--rate-limit <rps>", "Requests/second per client IP before throttling", (v) => parseInt(v, 10))
-  .option("--burst <n>", "Burst allowance for --rate-limit", (v) => parseInt(v, 10))
+  .option("--rate-limit <rps>", "Requests/second per client IP before throttling", positiveInteger)
+  .option("--burst <n>", "Burst allowance for --rate-limit", positiveInteger)
   .option("--ban-country <cc>", "Block ISO-2 country code(s) (repeatable/comma-separated)", collect)
   .option("--ban-ip <ip>", "Block IP address(es) (repeatable/comma-separated)", collect)
   .option("--deny-cidr <cidr>", "Deny CIDR range(s) (repeatable/comma-separated)", collect)
   .option("--allow-cidr <cidr>", "Allow-list CIDR range(s) — everything else is denied", collect)
   .option("--allow-country <cc>", "Allow-list ISO-2 country code(s) — everything else denied", collect)
-  .option("--block-status <code>", "HTTP status returned on block (401/403/404/429/444/451/503)", (v) => parseInt(v, 10))
+  .option("--block-status <code>", "HTTP status returned on block (401/403/404/429/444/451/503)", positiveInteger)
   .option("--disabled", "Create the rule disabled", false)
   .action(async (opts) => {
     const spec: Record<string, unknown> = {};
@@ -1047,21 +983,13 @@ const rulesAdd = new Command("add")
 
     const sp = spin("Adding route rule…");
     try {
-      const res = await apiRequest<{ rule: RouteRuleRow }>(
-        `/projects/${encodeURIComponent(opts.project)}/route-rules`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            domainId: opts.domain ?? null,
-            pathPrefix: opts.path ?? null,
-            spec,
-            enabled: !opts.disabled,
-          }),
-        },
-      );
-      sp?.succeed(`Added rule ${res.rule.id}`);
-      if (isJsonMode()) printJson(res.rule);
+      const rule = await getRemoteClient().projects.createRouteRule(opts.project, {
+        domainId: opts.domain ?? null, pathPrefix: opts.path ?? null, spec, enabled: !opts.disabled,
+      });
+      sp?.succeed(`Added rule ${rule.id}`);
+      if (isJsonMode()) printJson(rule);
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       sp?.fail("Add failed");
       fail(e);
     }
@@ -1074,12 +1002,11 @@ const rulesRm = new Command("rm")
   .action(async (ruleId: string, opts) => {
     const sp = spin("Deleting route rule…");
     try {
-      await apiRequest(`/projects/${encodeURIComponent(opts.project)}/route-rules/${encodeURIComponent(ruleId)}`, {
-        method: "DELETE",
-      });
+      await getRemoteClient().projects.removeRouteRule(opts.project, ruleId);
       sp?.succeed(`Deleted rule ${ruleId}`);
       if (isJsonMode()) printJson({ success: true });
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       sp?.fail("Delete failed");
       fail(e);
     }
@@ -1093,29 +1020,8 @@ const rulesCommand = new Command("rules")
 
 // ─── Control-plane: domains (register a host on a port, verify SSL, remove) ──
 
-interface DomainRow {
-  id: string;
-  hostname: string;
-  domainType?: string;
-  isPrimary?: boolean;
-  verified?: boolean;
-  sslStatus?: string | null;
-  targetPort?: number | null;
-  status?: string | null;
-}
-
-interface DnsRecord {
-  type: string;
-  host: string;
-  value: string;
-}
-interface RecordsResult {
-  mode: "cloud" | "selfhosted";
-  records: DnsRecord[];
-}
-
 /** Render a DNS-records result: mode line + type/host/value table (mirrors `openship domain`). */
-function printRecords(result: RecordsResult): void {
+function printRecords(result: DomainRecords): void {
   if (isJsonMode()) {
     printJson(result);
     return;
@@ -1132,10 +1038,7 @@ const domainsList = new Command("list")
   .requiredOption("-p, --project <id>", "Project ID")
   .action(async (opts) => {
     try {
-      const res = await apiRequest<{ data: DomainRow[] }>(
-        `/domains?projectId=${encodeURIComponent(opts.project)}`,
-      );
-      const rows = res.data ?? [];
+      const rows = await getRemoteClient().domains.list(opts.project);
       if (isJsonMode()) {
         printJson(rows);
         return;
@@ -1152,6 +1055,7 @@ const domainsList = new Command("list")
         ["id", "hostname", "type", "primary", "verified", "ssl"],
       );
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       fail(e);
     }
   });
@@ -1172,8 +1076,9 @@ interface DomainAddOpts {
  * (per-domain analytics need domain→project→server).
  */
 interface RegisterResult {
-  domain: DomainRow;
-  records?: RecordsResult;
+  routed: boolean;
+  domain: Domain;
+  records?: DomainRecords;
   verified: boolean;
   sslStatus?: string;
   projectId?: string;
@@ -1199,38 +1104,27 @@ async function registerDomainCore(hostname: string, opts: DomainAddOpts): Promis
   }
 
   let projectId = opts.project;
+  // Validate the hostname before creating the optional tracking project.
+  const input = parseInput(CreateDomainInputSchema, { hostname: host, isPrimary: !!opts.primary });
+  const ship = getRemoteClient();
   if (hasPort) {
-    const created = await apiRequest<{ data: { id: string; name: string } }>("/projects", {
-      method: "POST",
-      body: JSON.stringify({ name: host, port: opts.port }),
-    });
-    projectId = created.data.id;
+    const created = await ship.projects.create({ name: host, port: opts.port });
+    projectId = created.id;
   }
 
-  const added = await apiRequest<{ data: DomainRow; records: RecordsResult }>("/domains", {
-    method: "POST",
-    body: JSON.stringify({ projectId, hostname: host, isPrimary: !!opts.primary }),
-  });
-  const domain = added.data;
+  const added = await ship.domains.create(projectId!, input);
+  const domain = added.domain;
+  const routed = await attachCustomDomainEndpoint(ship, projectId!, domain.hostname);
 
   let verified = false;
   let sslStatus: string | undefined;
   if (opts.verify !== false) {
-    const vr = await apiRaw(`/domains/${encodeURIComponent(domain.id)}/verify`, { method: "POST" });
-    const vbody = (await vr.json().catch(() => ({}))) as {
-      verified?: boolean;
-      sslStatus?: string;
-      message?: string;
-      error?: string;
-    };
-    if (!vr.ok && vr.status !== 422) {
-      throw new ApiError(vbody.error || vbody.message || `API error: ${vr.status}`, vr.status, vbody);
-    }
+    const vbody = await ship.domains.verify(domain.id);
     verified = !!vbody.verified;
     sslStatus = vbody.sslStatus;
   }
 
-  return { domain, records: added.records, verified, sslStatus, projectId };
+  return { domain, records: added.records, verified, sslStatus, projectId, routed };
 }
 
 async function runDomainAdd(hostname: string, opts: DomainAddOpts): Promise<void> {
@@ -1238,7 +1132,8 @@ async function runDomainAdd(hostname: string, opts: DomainAddOpts): Promise<void
   const sp = spin(`Registering ${host}…`);
   try {
     const res = await registerDomainCore(hostname, opts);
-    sp?.succeed(res.verified ? `${host} verified & serving` : `Registered ${host}`);
+    sp?.succeed(res.verified ? `DNS verified for ${host}` : `Registered ${host}`);
+    if (!isJsonMode() && res.routed) info(`  ${res.domain.hostname} is configured to be routed on the next deploy.`);
     if (isJsonMode()) {
       printJson({ domain: res.domain, records: res.records, verified: res.verified, sslStatus: res.sslStatus, projectId: res.projectId });
       return;
@@ -1250,6 +1145,7 @@ async function runDomainAdd(hostname: string, opts: DomainAddOpts): Promise<void
       if (res.records) printRecords(res.records);
     }
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     sp?.fail("Register failed");
     fail(e);
   }
@@ -1260,29 +1156,30 @@ async function runDomainRm(hostname: string, opts: { project: string }): Promise
   const host = hostname.trim().toLowerCase();
   const sp = spin(`Removing ${host}…`);
   try {
-    const res = await apiRequest<{ data: DomainRow[] }>(`/domains?projectId=${encodeURIComponent(opts.project)}`);
-    const match = (res.data ?? []).find((d) => d.hostname.toLowerCase() === host);
+    const domains = await getRemoteClient().domains.list(opts.project);
+    const match = domains.find((d) => d.hostname.toLowerCase() === host);
     if (!match) {
       sp?.fail("Not found");
       err(`  No domain ${host} on project ${opts.project}.`);
       process.exit(1);
     }
-    await apiRequest(`/domains/${encodeURIComponent(match.id)}`, { method: "DELETE" });
+    await getRemoteClient().domains.remove(match.id);
     sp?.succeed(`Removed ${host}`);
     if (isJsonMode()) printJson({ success: true, id: match.id, hostname: host });
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     sp?.fail("Remove failed");
     fail(e);
   }
 }
 
 const domainsAdd = new Command("add")
-  .description("Register a hostname on the edge, bound to a port (auto-verifies SSL)")
+  .description("Register a hostname for routing on the next deploy (auto-verifies SSL)")
   .argument("<hostname>", "Domain hostname (e.g. app.example.com)")
   .option("-p, --project <id>", "Attach to an existing project (uses its target port)")
-  .option("--port <n>", "Bind a new tracked project to 127.0.0.1:<n>", (v) => parseInt(v, 10))
+  .option("--port <n>", "Bind a new tracked project to 127.0.0.1:<n>", positiveInteger)
   .option("--primary", "Mark this domain as the project's primary", false)
-  .option("--no-verify", "Skip DNS verification + SSL issuance (just claim the hostname)")
+  .option("--no-verify", "Skip DNS verification + SSL issuance (still configure routing)")
   .action((hostname: string, opts) => runDomainAdd(hostname, opts));
 
 const domainsRm = new Command("rm")
@@ -1300,32 +1197,15 @@ const domainsCommand = new Command("domains")
 
 // ─── Control-plane: request logs ─────────────────────────────────────────────
 
-interface ServerLogRow {
-  id?: string;
-  ts?: number | string;
-  timestamp?: number | string;
-  host?: string;
-  ip?: string;
-  method?: string;
-  path?: string;
-  status?: number;
-  statusCode?: number;
-}
-
-/** Stable identity for a log row across polls (server ids are deterministic host:seq). */
-function logKey(r: ServerLogRow): string {
-  return r.id ?? `${r.ts ?? r.timestamp ?? ""}|${r.ip ?? ""}|${r.method ?? ""}|${r.path ?? ""}`;
-}
-
-function printLogRows(rows: ServerLogRow[]): void {
+function printLogRows(rows: unknown[]): void {
   printTable(
-    rows.map((r) => ({
+    rows.filter(isRecord).map((r) => ({
       time: String(r.ts ?? r.timestamp ?? ""),
-      host: r.host ?? "",
-      ip: r.ip ?? "",
-      method: r.method ?? "",
-      status: r.status ?? r.statusCode ?? "",
-      path: r.path ?? "",
+      host: String(r.host ?? ""),
+      ip: String(r.ip ?? ""),
+      method: String(r.method ?? ""),
+      status: String(r.status ?? r.statusCode ?? ""),
+      path: String(r.path ?? ""),
     })),
     ["time", "host", "ip", "method", "status", "path"],
   );
@@ -1334,13 +1214,15 @@ function printLogRows(rows: ServerLogRow[]): void {
 const logsCommand = new Command("logs")
   .description("Recent HTTP request logs the edge captured for a project")
   .requiredOption("-p, --project <id>", "Project ID")
-  .option("--limit <n>", "How many recent entries to fetch (max 200)", (v) => parseInt(v, 10), 50)
-  .option("--follow", "Poll for new entries and print them as they arrive", false)
+  .option("--limit <n>", "How many recent entries to fetch (max 200)", positiveInteger, 50)
+  .option("--follow", "Stream new entries through the SDK's authorized Cloud or self-hosted connection", false)
   .action(async (opts) => {
-    const path = `/projects/${encodeURIComponent(opts.project)}/server-logs/recent?limit=${encodeURIComponent(String(opts.limit))}`;
     try {
-      const res = await apiRequest<{ logs: ServerLogRow[] }>(path);
-      const rows = res.logs ?? [];
+      if (opts.follow) {
+        await printEvents(getRemoteClient().projects.streamServerLogs(opts.project));
+        return;
+      }
+      const { logs: rows } = await getRemoteClient().projects.recentServerLogs(opts.project, { limit: opts.limit });
       if (isJsonMode()) {
         printJson(rows);
         return;
@@ -1348,43 +1230,14 @@ const logsCommand = new Command("logs")
       if (rows.length === 0) info("  No request logs yet.");
       else printLogRows(rows);
 
-      if (!opts.follow) return;
-      // Poll: reuse the same /recent endpoint (no SSE-token dance) and print only
-      // rows we haven't seen, keyed on the edge's deterministic id.
-      const seen = new Set(rows.map(logKey));
-      info(chalk.dim("\n  Following — Ctrl-C to stop.\n"));
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const next = await apiRequest<{ logs: ServerLogRow[] }>(path).catch(() => ({ logs: [] as ServerLogRow[] }));
-        const fresh = (next.logs ?? []).filter((r) => !seen.has(logKey(r)));
-        for (const r of fresh) seen.add(logKey(r));
-        if (fresh.length) printLogRows(fresh);
-      }
     } catch (e) {
+      observeCaughtError(e, "cli/commands/edge");
       fail(e);
     }
   });
 
 // ─── Control-plane: traffic overview (GET /analytics/overview) ───────────────
 
-interface TrafficSummary {
-  totalRequests: number;
-  pageRequests: number;
-  uniqueVisitors: number | null;
-  bandwidthIn: number;
-  bandwidthOut: number;
-  avgResponseTimeMs: number;
-  lastUpdated: string | null;
-}
-interface TrafficPeriod {
-  from: string;
-  to: string;
-  requests: number;
-  uniqueVisitors: number;
-  bandwidthIn: number;
-  bandwidthOut: number;
-  avgResponseTimeMs: number;
-}
 interface TrafficOpts {
   project: string;
   domain?: string;
@@ -1394,14 +1247,12 @@ interface TrafficOpts {
 
 async function runTraffic(opts: TrafficOpts): Promise<void> {
   try {
-    const res = await apiRequest<{ data: { summary: TrafficSummary; periods: TrafficPeriod[] } }>(
-      `/analytics/overview${query({ projectId: opts.project, domain: opts.domain, from: opts.from, to: opts.to })}`,
-    );
+    const result = await getRemoteClient().analytics.overview(opts.project, { domain: opts.domain, from: opts.from, to: opts.to });
     if (isJsonMode()) {
-      printJson(res.data);
+      printJson(result);
       return;
     }
-    const s = res.data.summary;
+    const s = result.summary;
     info(`  Traffic — ${opts.project}${opts.domain ? ` · ${opts.domain}` : ""}`);
     info(`  Requests:        ${fmtInt(s.totalRequests)}  ${chalk.dim(`(page ${fmtInt(s.pageRequests)})`)}`);
     info(
@@ -1410,7 +1261,7 @@ async function runTraffic(opts: TrafficOpts): Promise<void> {
     info(`  Bandwidth:       ↓ ${fmtBytes(s.bandwidthIn)}   ↑ ${fmtBytes(s.bandwidthOut)}`);
     info(`  Avg response:    ${Math.round(s.avgResponseTimeMs || 0)} ms`);
     info(`  Last updated:    ${s.lastUpdated ?? "—"}`);
-    const periods = res.data.periods ?? [];
+    const periods = result.periods;
     if (periods.length) {
       info("");
       printTable(
@@ -1424,6 +1275,7 @@ async function runTraffic(opts: TrafficOpts): Promise<void> {
       );
     }
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     fail(e);
   }
 }
@@ -1432,33 +1284,12 @@ const trafficCommand = new Command("traffic")
   .description("Traffic overview for a project (requests, bandwidth, hourly periods)")
   .requiredOption("-p, --project <id>", "Project ID")
   .option("--domain <host>", "Scope to a single tracked domain")
-  .option("--from <ts>", "Window start (ISO 8601 or epoch minutes)")
-  .option("--to <ts>", "Window end (ISO 8601 or epoch minutes)")
+  .option("--from <ts>", "Window start (ISO 8601)")
+  .option("--to <ts>", "Window end (ISO 8601)")
   .action((opts) => runTraffic(opts));
 
 // ─── Control-plane: per-domain analytics (GET /analytics/geo) ────────────────
 
-interface GeoCountry {
-  code: string;
-  count: number;
-  pct: number;
-}
-interface PathCount {
-  path: string;
-  count: number;
-}
-interface GeoResult {
-  total: number;
-  countries: GeoCountry[];
-  visitorDays: number;
-  peakDayVisitors: number;
-  topPaths: PathCount[];
-  statuses: Record<string, number>;
-  geoAvailable: boolean;
-  approximate: boolean;
-  pathsEnabled: boolean;
-  source: string;
-}
 interface GeoOpts {
   project: string;
   domain?: string;
@@ -1468,10 +1299,7 @@ interface GeoOpts {
 
 async function runGeo(opts: GeoOpts): Promise<void> {
   try {
-    const res = await apiRequest<{ data: GeoResult }>(
-      `/analytics/geo${query({ projectId: opts.project, domain: opts.domain, from: opts.from, to: opts.to })}`,
-    );
-    const g = res.data;
+    const g = await getRemoteClient().analytics.geo(opts.project, { domain: opts.domain, from: opts.from, to: opts.to });
     if (isJsonMode()) {
       printJson(g);
       return;
@@ -1505,6 +1333,7 @@ async function runGeo(opts: GeoOpts): Promise<void> {
     const statuses = Object.entries(g.statuses ?? {});
     if (statuses.length) info(`\n  Statuses:  ${statuses.map(([k, v]) => `${k}=${fmtInt(v)}`).join("   ")}`);
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     fail(e);
   }
 }
@@ -1548,7 +1377,8 @@ async function detectExistingInstall(): Promise<{
       signal: AbortSignal.timeout(2000),
     });
     apiLive = res.ok;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/edge");
     // not live — leave apiLive false
   }
   return { present: svc.installed || method !== null || apiLive, method, running: svc.running, apiLive };
@@ -1565,7 +1395,8 @@ async function ensureEdgeBestEffort(): Promise<void> {
     } else if (!diag.healthy) {
       info(chalk.dim("        Edge isn't serving — `openship edge up` repairs it."));
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/edge");
     // best-effort only
   }
 }
@@ -1662,6 +1493,7 @@ async function provisionMonitoring(opts: InstallOpts): Promise<never> {
   try {
     await runMonitoringInstall(opts);
   } catch (e) {
+    observeCaughtError(e, "cli/commands/edge");
     fail(e);
   }
   process.exit(0);

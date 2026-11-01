@@ -139,6 +139,7 @@ describe("createDockerSshBridge — a failed request is answered, not reset", ()
     expect(uncaught).toEqual([]);
     expect(reply).toContain("HTTP/1.1 502 Bad Gateway");
     expect(reply).toContain("SSH key authentication failed for root@test-host");
+    expect(reply).not.toContain("Check that Docker is installed");
     // Named host: a multi-server dashboard has to say WHICH box failed.
     expect(reply).toContain("test-host");
   });
@@ -154,6 +155,15 @@ describe("createDockerSshBridge — a failed request is answered, not reset", ()
     expect(uncaught).toEqual([]);
     expect(replies).toHaveLength(2);
     for (const reply of replies) expect(reply).toContain("HTTP/1.1 502 Bad Gateway");
+  });
+
+  it("reports a network timeout without diagnosing a broken Docker installation", async () => {
+    const bridge = bridgeWith(() => Promise.reject(new Error("Timed out while waiting for handshake")));
+    const reply = await request(bridge);
+    expect(reply).toContain("HTTP/1.1 502 Bad Gateway");
+    expect(reply).toContain("Timed out while waiting for handshake");
+    expect(reply).not.toContain("docker info");
+    expect(reply).not.toContain("Check that Docker is installed");
   });
 
   it("reports the daemon's own words when dial-stdio dies — the socket-hang-up bug", async () => {
@@ -176,6 +186,7 @@ describe("createDockerSshBridge — a failed request is answered, not reset", ()
 
     expect(reply).toContain("HTTP/1.1 502 Bad Gateway");
     expect(reply).toContain("Cannot connect to the Docker daemon");
+    expect(reply).toContain("Check that Docker is installed");
     expect(reply).toContain("exit code 1");
   });
 

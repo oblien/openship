@@ -12,6 +12,7 @@
  * stream-verify with node:crypto (fail-closed if the sidecar is missing, unless
  * --no-verify) → install per-OS and launch.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Command } from "commander";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
@@ -49,7 +50,8 @@ function installDmg(dmg: string): string {
   let dest = homeApps;
   try {
     mkdirSync(homeApps, { recursive: true });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/install");
     dest = "/Applications";
   }
 
@@ -110,7 +112,8 @@ function launch(kind: AssetKind, target: string): void {
   if (kind === "appimage") {
     // Try native launch; fall back to the FUSE-free extractor if it exits fast.
     const child = spawn(target, [], { detached: true, stdio: "ignore" });
-    child.on("error", () => {
+    child.on("error", (diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "cli/commands/install");
       spawn(target, ["--appimage-extract-and-run"], { detached: true, stdio: "ignore" }).unref();
     });
     child.unref();
@@ -245,7 +248,8 @@ export const installCommand = new Command("install")
     if (willLaunch) {
       try {
         launch(asset.kind, target);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "cli/commands/install");
         // Launch is best-effort; the install already succeeded.
       }
     }

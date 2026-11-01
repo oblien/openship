@@ -87,7 +87,7 @@ export function AttentionPreview() {
         {broken.length > 0 && !hidden.includes("broken") && (
           <IssuesCard
             issues={broken}
-            busyId={null}
+            busyIds={new Set()}
             onResolve={() => {}}
             onInfraFix={() => {}}
             onHide={() => setHidden((h) => [...h, "broken"])}
@@ -96,7 +96,7 @@ export function AttentionPreview() {
         {behind.length > 0 && !hidden.includes("behind") && (
           <UpdatesCard
             issues={behind}
-            busyId={null}
+            busyIds={new Set()}
             onResolve={() => {}}
             onInfraFix={() => {}}
             onHide={() => setHidden((h) => [...h, "behind"])}

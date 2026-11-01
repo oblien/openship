@@ -1,50 +1,17 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useProjectTabNavigation } from "@/hooks/useProjectTabNavigation";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AppLogo } from "@/components/AppLogo";
 import { DomainSwitcher } from "@/components/routing/DomainSwitcher";
 import { formatDate } from "@/utils/date";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
-import {
-  LayoutDashboard,
-  Activity,
-  Globe,
-  Rocket,
-  GitBranch,
-  Wrench,
-  ScrollText,
-  AlertTriangle,
-  Layers,
-  ExternalLink,
-  DatabaseBackup,
-  Webhook,
-  Plus,
-  HeartPulse,
-  MonitorSmartphone,
-} from "lucide-react";
-
-const TAB_ICONS: Record<
-  string,
-  React.ComponentType<{ className?: string; strokeWidth?: number }>
-> = {
-  overview: LayoutDashboard,
-  monitoring: Activity,
-  services: Layers,
-  domains: Globe,
-  deployments: Rocket,
-  health: HeartPulse,
-  source: GitBranch,
-  webhooks: Webhook,
-  runtime: Wrench,
-  settings: Wrench,
-  logs: ScrollText,
-  backup: DatabaseBackup,
-  advanced: AlertTriangle,
-};
 
 /**
  * Domains tab needs attention when routing failed but the deploy still
@@ -68,15 +35,16 @@ export const ProjectSidebar = () => {
   const {
     projectData,
     projectNotFound,
-    activeTab,
+    activeTabGroup,
     tabs,
-    setActiveTab,
     access,
     domainsData,
+    availableUpdate,
     selectedDomain,
     setSelectedDomain,
     setPendingDomainAction,
   } = useProjectSettings();
+  const handleTabChange = useProjectTabNavigation();
   const { t } = useI18n();
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
 
@@ -84,9 +52,10 @@ export const ProjectSidebar = () => {
   // context so switching here also refetches the overview analytics).
   const domains = useMemo(
     () =>
-      (domainsData?.domains ?? [])
+      [...(domainsData?.domains ?? [])]
+        .sort((a: any, b: any) => Number(!!b.primary) - Number(!!a.primary))
         .map((d: any) => d?.domain)
-        .filter((d: unknown): d is string => typeof d === "string" && d.length > 0),
+        .filter((d: unknown): d is string => typeof d === "string" && d.length > 0 && !d.startsWith("*.")),
     [domainsData?.domains],
   );
 
@@ -94,8 +63,11 @@ export const ProjectSidebar = () => {
   // whether there's a public host, whether it's localhost, and the href — so the
   // sidebar no longer re-derives localhost or keys off an instance-wide flag.
   const isLocal = access.isLocal;
-  const hasDomain = !isLocal && !!access.host;
-  const activeDomain = hasDomain ? selectedDomain || access.host || "" : "";
+  const configuredDomain = domains[0] ?? "";
+  const hasDomain = !isLocal && !!(access.host || configuredDomain);
+  const activeDomain = hasDomain ? selectedDomain || access.host || configuredDomain : "";
+  const activeDomainRow = domainsData?.domains?.find((row: any) => row.domain === activeDomain);
+  const domainPending = hasDomain && activeDomain !== access.host && !activeDomainRow?.verified && activeDomainRow?.status !== "active";
   const canOpen = hasDomain ? !!activeDomain : !!access.url;
   const displayUrl = hasDomain ? activeDomain : (access.host ?? "");
   const siteHref = hasDomain ? `https://${activeDomain}` : (access.url ?? "#");
@@ -118,13 +90,6 @@ export const ProjectSidebar = () => {
     } finally {
       setOpeningLocal(false);
     }
-  };
-
-  const handleTabChange = (tabId: string) => {
-    const scrollY = window.scrollY;
-    setActiveTab(tabId);
-    window.history.replaceState({}, "", `/projects/${projectData.id}/${tabId}`);
-    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   };
 
   if (!projectData.id || projectNotFound) {
@@ -159,7 +124,7 @@ export const ProjectSidebar = () => {
                     })}
                     className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
                   >
-                    <ExternalLink className="size-3.5" />
+                    <UiIcon name="arrow-up-right" className="size-3.5" />
                   </a>
                 )}
               </div>
@@ -187,6 +152,9 @@ export const ProjectSidebar = () => {
                 ) : (
                   <span className="truncate text-sm font-medium text-foreground">{displayUrl}</span>
                 )}
+                {domainPending && (
+                  <span className="text-xs text-warning">{t.projectSettings.domains.status.pending}</span>
+                )}
                 <a
                   href={siteHref}
                   target="_blank"
@@ -194,7 +162,7 @@ export const ProjectSidebar = () => {
                   aria-label={t.projects.sidebar.open}
                   className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
                 >
-                  <ExternalLink className="size-3 shrink-0" />
+                  <UiIcon name="arrow-up-right" className="size-3 shrink-0" />
                 </a>
               </div>
             ) : (
@@ -212,7 +180,7 @@ export const ProjectSidebar = () => {
                     aria-label={t.projects.connections.openLocalhost}
                     className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-opacity hover:opacity-80 disabled:opacity-50"
                   >
-                    <MonitorSmartphone className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
+                    <UiIcon name="devices" className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
                     {t.projects.connections.openShort}
                   </button>
                 ) : (
@@ -220,17 +188,19 @@ export const ProjectSidebar = () => {
                     {t.projects.sidebar.noDomain}
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
+                <Link
+                  href={`/projects/${projectData.id}/domains`}
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
                     setPendingDomainAction("add");
                     handleTabChange("domains");
                   }}
                   className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-opacity hover:opacity-80"
                 >
-                  <Plus className="size-3.5" />
+                  <UiIcon name="plus" className="size-3.5" />
                   {t.projects.sidebar.addDomain}
-                </button>
+                </Link>
               </div>
             )}
           </div>
@@ -248,12 +218,13 @@ export const ProjectSidebar = () => {
       <div className="bg-card rounded-2xl border border-border/50 p-3">
         <div className="space-y-1">
           {tabs.map((tab) => {
-            const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            const isActive = activeTabGroup === tab.id;
             return (
               <Link
                 key={tab.id}
                 href={`/projects/${projectData.id}/${tab.id}`}
+                aria-current={isActive ? "page" : undefined}
                 onClick={(e) => {
                   // Let modified/middle clicks open the tab in a new browser tab;
                   // a plain click switches client-side (snappy, keeps scroll).
@@ -261,14 +232,18 @@ export const ProjectSidebar = () => {
                   e.preventDefault();
                   handleTabChange(tab.id);
                 }}
-                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors ${
-                  isActive
-                    ? "bg-foreground/[0.07] text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                }`}
+                className="th-nav-item w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors"
               >
-                <Icon className="size-[17px] shrink-0" strokeWidth={1.7} />
+                <UiIcon name={Icon} className="size-5 shrink-0" />
                 {tab.label}
+                {tab.id === "deployments" && availableUpdate && (
+                  <span
+                    role="img"
+                    className="ms-auto size-1.5 shrink-0 rounded-full bg-warning-solid"
+                    aria-label={t.projectSettings.appSource.updateAvailable}
+                    title={t.projectSettings.appSource.updateAvailable}
+                  />
+                )}
                 {tab.id === "domains" && domainsAttention && (
                   <span
                     className="ms-auto size-1.5 rounded-full bg-warning-solid"
@@ -286,15 +261,10 @@ export const ProjectSidebar = () => {
 
 /** Mobile horizontal scroll tabs - rendered above content in left column */
 export const ProjectMobileTabs = () => {
-  const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domainsData } = useProjectSettings();
+  const { projectData, projectNotFound, activeTabGroup, tabs, domainsData, availableUpdate } = useProjectSettings();
+  const handleTabChange = useProjectTabNavigation();
+  const { t } = useI18n();
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
-
-  const handleTabChange = (tabId: string) => {
-    const scrollY = window.scrollY;
-    setActiveTab(tabId);
-    window.history.replaceState({}, "", `/projects/${projectData.id}/${tabId}`);
-    requestAnimationFrame(() => window.scrollTo(0, scrollY));
-  };
 
   if (!projectData.id || projectNotFound) {
     return null;
@@ -304,25 +274,30 @@ export const ProjectMobileTabs = () => {
     <div className="lg:hidden sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/40 -mx-4 px-4 sm:-mx-6 sm:px-6">
       <div className="flex items-center gap-1 overflow-x-auto py-2.5 scrollbar-hide">
         {tabs.map((tab) => {
-          const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-          const isActive = activeTab === tab.id;
+          const Icon = tab.icon;
+          const isActive = activeTabGroup === tab.id;
           return (
             <Link
               key={tab.id}
               href={`/projects/${projectData.id}/${tab.id}`}
+              aria-current={isActive ? "page" : undefined}
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                 e.preventDefault();
                 handleTabChange(tab.id);
               }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${
-                isActive
-                  ? "bg-foreground/[0.07] text-foreground"
-                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-              }`}
+              className="th-nav-item flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors"
             >
-              <Icon className="size-4 shrink-0" strokeWidth={1.7} />
+              <UiIcon name={Icon} className="size-4 shrink-0" />
               {tab.label}
+              {tab.id === "deployments" && availableUpdate && (
+                <span
+                  role="img"
+                  className="size-1.5 shrink-0 rounded-full bg-warning-solid"
+                  aria-label={t.projectSettings.appSource.updateAvailable}
+                  title={t.projectSettings.appSource.updateAvailable}
+                />
+              )}
               {tab.id === "domains" && domainsAttention && (
                 <span
                   className="size-1.5 rounded-full bg-warning-solid"

@@ -18,30 +18,30 @@ vi.mock("../../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "desktop" }),
 }));
 
-vi.mock("../../../src/lib/cloud/client", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({
   cloudClient,
 }));
 
-vi.mock("../../../src/lib/cloud/session", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/session", () => ({
   // De-conflation reads this when a cloud preflight comes back null; stub
   // it so the mock surface is complete even on that branch.
   isCloudConnectedForOrg: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock("../../../src/lib/cloud-preflight", () => ({
+vi.mock("@repo/platform/engine/lib/cloud-preflight", () => ({
   runCloudPreflight,
 }));
 
 // Keep the custom-domain DNS branch (checkCustomDomainSelfHosted) off the network
 // and deterministic — a custom host resolves to "no records yet" (a warn on the
 // `domain` check), never a cloud requirement. Isolates the cloud-gating assertions.
-vi.mock("../../../src/lib/dns-resolver", () => ({
+vi.mock("@repo/platform/engine/lib/dns-resolver", () => ({
   resolveRecords: vi.fn().mockResolvedValue([]),
   lookupAddresses: vi.fn().mockResolvedValue([]),
 }));
 
-import { runPreflightChecks } from "../../../src/modules/deployments/preflight";
-import { isCloudConnectedForOrg } from "../../../src/lib/cloud/session";
+import { runPreflightChecks } from "@repo/platform/engine/modules/deployments/preflight";
+import { isCloudConnectedForOrg } from "@repo/platform/engine/lib/cloud/session";
 
 describe("runPreflightChecks", () => {
   beforeEach(() => {
@@ -64,6 +64,26 @@ describe("runPreflightChecks", () => {
     runCloudPreflight.mockImplementation(async (_userId: string, input: { slug?: string }) =>
       preflightFn(input),
     );
+  });
+
+  it.each(["services", "single"] as const)("uses shared Docker volume support for %s managed-server projects", async mode => {
+    const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
+      buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,
+    { multiService: true, composeServices: [{ name: "db", image: "postgres:17", ports: ["5432"], exposed: false,
+      enabled: true, volumes: ["data:/var/lib/postgresql/data"], dependsOn: [] }] as any });
+    expect(result.checks.some(check => check.id === "cloud-storage")).toBe(false);
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({ status: "pass" });
+  });
+
+  it("recognizes duplicate cache mounts across app-relative and explicit volume syntax", async () => {
+    const result = await runPreflightChecks({
+      deployTarget: "cloud", organizationId: "org-1", framework: "nextjs", packageManager: "bun",
+      buildImage: "node:22", hasServer: true, port: 3000,
+      volumes: [".next/cache", "cache:/app/.next/cache/:ro", "data:/app/data"],
+    } as any, { multiService: true });
+    expect(result.checks.find(check => check.id === "duplicate-mount-0")).toMatchObject({
+      status: "warn", message: expect.stringContaining("/app/.next/cache"),
+    });
   });
 
   it("checks free-domain availability for every public endpoint", async () => {
@@ -197,7 +217,7 @@ describe("runPreflightChecks", () => {
       {
         repoUrl: "",
         branch: "",
-        sourceStaged: true,
+        localPath: "/tmp/openship-upload/source",
         framework: "docker",
         buildImage: "ubuntu:22.04",
         installCommand: "",
@@ -221,6 +241,40 @@ describe("runPreflightChecks", () => {
     );
     expect(result.checks.some((check) => check.message?.includes("install command"))).toBe(false);
     expect(result.checks.some((check) => check.message?.includes("start command"))).toBe(false);
+  });
+
+  it.each(["cloud", "server", "local"])("does not require a Docker image for an explicit bare build on %s", async deployTarget => {
+    const result = await runPreflightChecks({
+      repoUrl: "", branch: "", localPath: "/tmp/openship-source", framework: "python",
+      runtimeMode: "bare", buildImage: "", installCommand: "", buildCommand: "",
+      startCommand: "python3 app.py", port: 8080, hasBuild: false, hasServer: true,
+      deployTarget, organizationId: "org-1",
+    } as any, { buildStrategy: "local" });
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({ status: "pass" });
+  });
+
+  it("still requires the build image when a static bare release is built in Docker", async () => {
+    const result = await runPreflightChecks({
+      repoUrl: "", branch: "", localPath: "/tmp/openship-source", framework: "vite",
+      runtimeMode: "bare", buildImage: "", installCommand: "npm ci", buildCommand: "npm run build",
+      startCommand: "", hasBuild: true, hasServer: false, workload: "static", outputDirectory: "dist",
+      serverId: "server-a", deployTarget: "server", organizationId: "org-1",
+    } as any, { buildStrategy: "local" });
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({
+      status: "fail", message: expect.stringContaining("build image"),
+    });
+  });
+
+  it("still requires a Docker image for a container build", async () => {
+    const result = await runPreflightChecks({
+      repoUrl: "", branch: "", localPath: "/tmp/openship-source", framework: "python",
+      runtimeMode: "docker", buildImage: "", installCommand: "", buildCommand: "",
+      startCommand: "python3 app.py", port: 8080, hasBuild: false, hasServer: true,
+      deployTarget: "cloud", organizationId: "org-1",
+    } as any, { buildStrategy: "local" });
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({
+      status: "fail", message: expect.stringContaining("build image"),
+    });
   });
 
   it("accepts a source-less single-app release image and its image-owned command", async () => {
@@ -294,7 +348,7 @@ describe("runPreflightChecks", () => {
       {
         repoUrl: "",
         branch: "",
-        sourceStaged: true,
+        localPath: "/tmp/openship-upload/source",
         framework: "docker",
         installCommand: "",
         buildCommand: "",
@@ -724,3 +778,12 @@ describe("runPreflightChecks", () => {
     });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "desktop" }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "desktop" }),
+}));

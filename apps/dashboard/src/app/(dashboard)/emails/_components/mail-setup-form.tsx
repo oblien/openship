@@ -1,19 +1,9 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/Checkbox";
-import {
-  Mail,
-  Play,
-  Server,
-  Shield,
-  Globe,
-  Key,
-  AlertTriangle,
-  Eye,
-  EyeOff,
-  Sparkles,
-} from "lucide-react";
 import { relayProvider } from "@repo/core";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import { AdoptMailModal } from "./adopt-mail-modal";
@@ -132,7 +122,7 @@ export function MailSetupForm({
       <div className="bg-card rounded-2xl border border-border/50 p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-            <Mail className="size-5 text-violet-500" />
+            <UiIcon name="mail" className="size-5 text-violet-500" />
           </div>
           <div>
             <h2 className="text-lg font-medium text-foreground">{t.emails.setup.title}</h2>
@@ -264,7 +254,7 @@ export function MailSetupForm({
             disabled={!domain || !passwordOk || !selectedServerId || !relayReady || running}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Play className="size-4" />
+            <UiIcon name="play" className="size-4" />
             {t.emails.setup.startSetup}
           </button>
           {/* Disaster recovery: re-adopt a mail server already installed on a
@@ -294,14 +284,14 @@ export function MailSetupForm({
           </p>
           <div className="space-y-3">
             {[
-              { icon: Server, label: t.emails.setup.features.stackLabel, desc: t.emails.setup.features.stackDesc },
-              { icon: Shield, label: t.emails.setup.features.sslLabel, desc: t.emails.setup.features.sslDesc },
-              { icon: Globe, label: t.emails.setup.features.dnsLabel, desc: t.emails.setup.features.dnsDesc },
-              { icon: Key, label: t.emails.setup.features.adminLabel, desc: t.emails.setup.features.adminDesc },
+              { icon: "server" as const, label: t.emails.setup.features.stackLabel, desc: t.emails.setup.features.stackDesc },
+              { icon: "shield" as const, label: t.emails.setup.features.sslLabel, desc: t.emails.setup.features.sslDesc },
+              { icon: "globe" as const, label: t.emails.setup.features.dnsLabel, desc: t.emails.setup.features.dnsDesc },
+              { icon: "key" as const, label: t.emails.setup.features.adminLabel, desc: t.emails.setup.features.adminDesc },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                  <item.icon className="size-4 text-muted-foreground" />
+                  <UiIcon name={item.icon} className="size-4 text-muted-foreground" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">{item.label}</p>
@@ -314,7 +304,7 @@ export function MailSetupForm({
 
         <div className="bg-warning-bg border border-warning-border rounded-2xl p-5">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="size-4 text-warning mt-0.5 shrink-0" />
+            <UiIcon name="warning" className="size-4 text-warning mt-0.5 shrink-0" />
             <div>
               <p className="text-sm font-medium text-foreground">{t.emails.setup.prerequisites}</p>
               <ul className="text-xs text-muted-foreground mt-1.5 space-y-1 list-disc list-inside">
@@ -375,7 +365,7 @@ function RelayField({
             className="absolute end-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground/70 transition-colors hover:text-foreground"
             aria-label={revealed ? t.auth.hidePassword : t.auth.showPassword}
           >
-            {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            {revealed ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
           </button>
         )}
       </div>
@@ -425,7 +415,7 @@ function PasswordField({
           className="absolute end-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/70 hover:text-foreground transition-colors"
           title={revealed ? t.emails.setup.hide : t.emails.setup.reveal}
         >
-          {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          {revealed ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
         </button>
       </div>
       <button
@@ -434,7 +424,7 @@ function PasswordField({
         className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-medium text-foreground hover:bg-muted/40 transition-colors"
         title={t.emails.setup.generateTitle}
       >
-        <Sparkles className="size-3.5" />
+        <UiIcon name="sparkles" className="size-3.5" />
         {t.emails.setup.generate}
       </button>
     </div>

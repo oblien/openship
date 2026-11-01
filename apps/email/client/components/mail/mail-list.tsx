@@ -260,6 +260,11 @@ const Thread = memo(
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={
+                      displayStarred
+                        ? m['common.threadDisplay.unstar']()
+                        : m['common.threadDisplay.star']()
+                    }
                     className="h-6 w-6 overflow-visible [&_svg]:size-3.5"
                     onClick={handleToggleStar}
                   >
@@ -287,6 +292,7 @@ const Thread = memo(
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={m['common.mail.toggleImportant']()}
                     className={cn(
                       'h-6 w-6 [&_svg]:size-3.5',
                       displayImportant ? 'hover:bg-orange-200/70 dark:hover:bg-orange-800/40' : '',
@@ -310,6 +316,7 @@ const Thread = memo(
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={m['common.threadDisplay.archive']()}
                     className="h-6 w-6 [&_svg]:size-3.5"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -332,6 +339,7 @@ const Thread = memo(
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={m['common.actions.Bin']()}
                       className="h-6 w-6 hover:bg-[#FDE4E9] dark:hover:bg-[#411D23] [&_svg]:size-3.5"
                       onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
@@ -475,8 +483,7 @@ const Thread = memo(
                     {latestMessage.receivedOn ? (
                       <p
                         className={cn(
-                          'text-muted-foreground text-nowrap text-xs font-normal opacity-70 transition-opacity group-hover:opacity-100 dark:text-[#8C8C8C]',
-                          isMailSelected && 'opacity-100',
+                          'text-muted-foreground text-nowrap text-xs font-normal dark:text-[#8C8C8C]',
                         )}
                       >
                         {formatDate(latestMessage.receivedOn.split('.')[0] || '')}
@@ -492,7 +499,7 @@ const Thread = memo(
                     {isFolderSent ? (
                       <p
                         className={cn(
-                          'mt-1 line-clamp-1 max-w-[50ch] overflow-hidden text-sm text-[#8C8C8C] md:max-w-[25ch]',
+                          'mt-1 line-clamp-1 max-w-[50ch] overflow-hidden text-sm text-muted-foreground dark:text-[#8C8C8C] md:max-w-[25ch]',
                         )}
                       >
                         {latestMessage.to.map((e) => e.email).join(', ')}
@@ -500,7 +507,7 @@ const Thread = memo(
                     ) : (
                       <p
                         className={cn(
-                          'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-[#8C8C8C]',
+                          'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-muted-foreground dark:text-[#8C8C8C]',
                         )}
                       >
                         {latestMessage.snippet
@@ -687,7 +694,7 @@ const Draft = memo(({ message, index }: { message: DraftListRow; index: number }
                 {dateMs != null && (
                   <p
                     className={cn(
-                      'text-muted-foreground text-nowrap text-xs font-normal opacity-70 transition-opacity group-hover:opacity-100 dark:text-[#8C8C8C]',
+                      'text-muted-foreground text-nowrap text-xs font-normal dark:text-[#8C8C8C]',
                     )}
                   >
                     {formatDate(dateMs)}
@@ -697,7 +704,7 @@ const Draft = memo(({ message, index }: { message: DraftListRow; index: number }
               <div className="flex justify-between">
                 <p
                   className={cn(
-                    'mt-1 line-clamp-1 max-w-[50ch] text-sm text-[#8C8C8C] md:max-w-[30ch]',
+                    'mt-1 line-clamp-1 max-w-[50ch] text-sm text-muted-foreground dark:text-[#8C8C8C] md:max-w-[30ch]',
                   )}
                 >
                   {message.subject}

@@ -29,7 +29,7 @@ import {
   sanitizeStorableStrings,
   sanitizeStorableStringsExceptKeys,
   storableTextPreservingSecrets,
-} from "../../../src/modules/deployments/build-log-sanitize";
+} from "@repo/platform/engine/modules/deployments/build-log-sanitize";
 
 const MONGO_URI = "mongodb://root:s3cr3t@db:27017/?authSource=admin";
 const MONGO_RESTORE = `mongorestore --uri "${MONGO_URI}" --archive`;

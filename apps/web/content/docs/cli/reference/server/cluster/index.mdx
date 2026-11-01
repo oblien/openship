@@ -1,0 +1,95 @@
+---
+title: server cluster
+description: Commands, arguments, and options for openship server cluster.
+cliGroup: openship server cluster
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server cluster
+
+Manage compute clusters, scaling runtimes and replicated storage
+
+```text
+openship server cluster [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/server/cluster#openship-server-cluster-list) | List compute clusters |
+| [`get <id>`](/docs/cli/reference/server/cluster#openship-server-cluster-get) | Read cluster members and scaling readiness |
+| [`create [options] [file]`](/docs/cli/reference/server/cluster#openship-server-cluster-create) | Create a compute cluster on an existing private network |
+| [`update [options] [file]`](/docs/cli/reference/server/cluster#openship-server-cluster-update) | Change cluster members at the reviewed revision |
+| [`remove [options] <id>`](/docs/cli/reference/server/cluster#openship-server-cluster-remove) | Remove an unused compute cluster at its current revision |
+| [`runtime`](/docs/cli/reference/server/cluster/runtime#openship-server-cluster-runtime) | Install or recover the shared scaling runtime |
+| [`storage`](/docs/cli/reference/server/cluster/storage#openship-server-cluster-storage) | Manage replicated cluster storage and its backup destination |
+
+## openship server cluster create
+
+Create a compute cluster on an existing private network
+
+```text
+openship server cluster create [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship server cluster get
+
+Read cluster members and scaling readiness
+
+```text
+openship server cluster get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+## openship server cluster list
+
+List compute clusters
+
+```text
+openship server cluster list [options]
+```
+
+## openship server cluster remove
+
+Remove an unused compute cluster at its current revision
+
+```text
+openship server cluster remove [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Compute cluster ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--revision <number>` | Revision from cluster get |
+| `-y, --yes` | Confirm cluster removal |
+
+## openship server cluster update
+
+Change cluster members at the reviewed revision
+
+```text
+openship server cluster update [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |

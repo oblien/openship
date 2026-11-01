@@ -4,6 +4,7 @@
  * don't need try/catch noise at every call site.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export interface WSLike {
   send(data: string | ArrayBufferLike | Uint8Array): void;
   close(code?: number, reason?: string): void;
@@ -18,7 +19,8 @@ export interface ShellLike {
 export function safeWsSend(ws: WSLike, data: string | ArrayBufferLike | Uint8Array): void {
   try {
     ws.send(data);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-helpers");
     /* peer gone */
   }
 }
@@ -27,7 +29,8 @@ export function safeWsSend(ws: WSLike, data: string | ArrayBufferLike | Uint8Arr
 export function safeWsClose(ws: WSLike, code: number, reason?: string): void {
   try {
     ws.close(code, reason);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-helpers");
     /* already closing */
   }
 }
@@ -36,7 +39,8 @@ export function safeWsClose(ws: WSLike, code: number, reason?: string): void {
 export function safeShellWrite(shell: ShellLike, buf: Buffer): void {
   try {
     shell.stdin.write(buf);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-helpers");
     /* shell gone */
   }
 }
@@ -45,7 +49,8 @@ export function safeShellWrite(shell: ShellLike, buf: Buffer): void {
 export function safeShellClose(shell: ShellLike): void {
   try {
     shell.close();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-helpers");
     /* best-effort */
   }
 }

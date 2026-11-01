@@ -1,8 +1,52 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { AppError } from "@repo/core";
 import type { Database } from "../client";
 import { project } from "../schema";
 
 type RepoTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** Configuration writes and promotion's deletion claim lock the same project
+ * rows. Call inside the write transaction: a write that wins is included in the
+ * final source check; a claim that wins rejects the write before it changes data.
+ * Ordinary teardown keeps its existing worker/cancellation semantics. */
+export async function assertProjectConfigurationWritable(
+  tx: RepoTransaction,
+  predicate: SQL,
+): Promise<void> {
+  const owners = await tx
+    .select({
+      deletionInProgress: project.deletionInProgress,
+      lifecycleOperation: project.lifecycleOperation,
+      cloudPromotion: project.cloudPromotion,
+    })
+    .from(project)
+    .where(predicate)
+    .orderBy(asc(project.id))
+    .for("update");
+  if (owners.some((owner) => owner.deletionInProgress && owner.cloudPromotion?.cleanupInProgress))
+    throw new AppError(
+      "This project is being transferred to Cloud. Configuration changes are temporarily blocked until cleanup finishes.",
+      409,
+      "PROJECT_TRANSFER_IN_PROGRESS",
+    );
+  if (owners.some((owner) => owner.deletionInProgress && owner.lifecycleOperation?.kind === "delete"))
+    throw new AppError(
+      "Project cleanup is pending. Finish deletion before changing its configuration.",
+      409,
+      "PROJECT_DELETION_PENDING",
+    );
+}
+
+export function withProjectConfigurationWrite<T>(
+  db: Database,
+  predicate: SQL,
+  write: (tx: RepoTransaction) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await assertProjectConfigurationWritable(tx, predicate);
+    return write(tx);
+  });
+}
 
 /**
  * Serialize creation of project-scoped background work with project deletion.

@@ -1,10 +1,12 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import Dockerode from "dockerode";
 import net from "node:net";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import {
   daemonConnectionFrom,
   installDockerodeBuildKitSessionWorkaround,
+  setDockerodeRawStreamFactory,
+  startAttachStream,
   startBuildKitSessionStream,
   startExecStream,
 } from "./docker-exec-stream";
@@ -36,6 +38,27 @@ afterEach(() => {
 });
 
 describe("startExecStream", () => {
+  it("does not fall back to a local daemon when the scoped stream fails", async () => {
+    await expect(startExecStream({ host: "127.0.0.1", port: 1,
+      openStream: async () => { throw new Error("Scoped provider connection failed"); },
+    }, "exec_abc", { tty: false, stdin: true })).rejects.toThrow("Scoped provider connection failed");
+  });
+
+  it("closes a scoped connection that arrives after the handshake deadline", async () => {
+    vi.useFakeTimers();
+    const stream = new PassThrough();
+    let opened!: (stream: PassThrough) => void;
+    try {
+      const opening = startAttachStream({ openStream: () => new Promise(resolve => { opened = resolve; }) },
+        "restore", { stdin: true, stdout: true, stderr: true });
+      const failure = expect(opening).rejects.toThrow("upgrade timed out");
+      await vi.advanceTimersByTimeAsync(20_001);
+      await failure;
+      opened(stream);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stream.destroyed).toBe(true);
+    } finally { stream.destroy(); vi.useRealTimers(); }
+  });
   it("sends a well-formed upgrade request and resolves the raw socket on 101", async () => {
     const daemon = fakeDaemon(
       "HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n",
@@ -226,6 +249,17 @@ describe("BuildKit session upgrade (#745)", () => {
 });
 
 describe("daemonConnectionFrom", () => {
+  it("keeps stream factories isolated per Docker client", () => {
+    const first = { modem: {} };
+    const second = { modem: {} };
+    const openFirst = async () => new PassThrough();
+    const openSecond = async () => new PassThrough();
+    setDockerodeRawStreamFactory(first, openFirst);
+    setDockerodeRawStreamFactory(second, openSecond);
+    expect(daemonConnectionFrom(first).openStream).toBe(openFirst);
+    expect(daemonConnectionFrom(second).openStream).toBe(openSecond);
+    expect(daemonConnectionFrom({ modem: {} }).openStream).toBeUndefined();
+  });
   it("carries a unix socket path through", () => {
     expect(daemonConnectionFrom({ modem: { socketPath: "/var/run/docker.sock" } })).toMatchObject({
       socketPath: "/var/run/docker.sock",

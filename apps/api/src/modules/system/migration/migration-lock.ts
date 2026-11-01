@@ -27,8 +27,9 @@
  * over before any worker would actually do anything.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { db, sql, type DatabaseTransaction } from "@repo/db";
-import { getJobRunner } from "../../../lib/job-runner";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 
 export class MigrationAlreadyInProgressError extends Error {
   readonly code = "MIGRATION_IN_PROGRESS" as const;
@@ -136,6 +137,7 @@ export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
   try {
     acquired = await tryAcquireLock();
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/migration/migration-lock");
     // The compare-and-swap UPDATE never committed, so no lock leak.
     // Wrap the raw drizzle/pg error in a typed error so the controller
     // surfaces a clean 503 instead of a raw 500 with a stack trace.
@@ -161,7 +163,7 @@ export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
       // Don't fail the migration just because pause didn't take — the
       // mutation-guard already keeps user-driven writes out, and
       // BullMQ jobs writing during migration are rare (no deploys mid-flight).
-      console.warn("[migration-lock] job-runner pause failed:", err);
+      errorDiagnostics.warn("api/modules/system/migration/migration-lock", "[migration-lock] job-runner pause failed:", err);
     }
 
     return await fn();
@@ -176,7 +178,7 @@ export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
           await (pausedRunner as unknown as { resume: () => Promise<void> }).resume();
         }
       } catch (err) {
-        console.warn("[migration-lock] job-runner resume failed:", err);
+        errorDiagnostics.warn("api/modules/system/migration/migration-lock", "[migration-lock] job-runner resume failed:", err);
       }
     }
     try {
@@ -185,7 +187,7 @@ export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
       // Stale-lock recovery on the NEXT acquire saves us here, so
       // we don't crash the migration response just because the
       // release UPDATE failed.
-      console.warn("[migration-lock] release failed; relying on stale-lock recovery:", err);
+      errorDiagnostics.warn("api/modules/system/migration/migration-lock", "[migration-lock] release failed; relying on stale-lock recovery:", err);
     }
   }
 }

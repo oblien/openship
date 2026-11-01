@@ -1,5 +1,10 @@
-import { api } from "./client";
+import { api, getActiveOrganizationId } from "./client";
 import { endpoints } from "./endpoints";
+
+/** Connection failures describe unavailable observations, not confirmed outages. */
+export function isMonitoringConnectionIssue(issue: Pick<SystemIssue, "kind">): boolean {
+  return issue.kind === "monitoring_offline" || issue.kind === "server_unreachable";
+}
 
 /**
  * The org-wide issue feed — the client half of `apps/api/src/modules/issues`.
@@ -20,6 +25,7 @@ export type IssueKind =
   | "prompt"
   | "partial_decision"
   | "routing_unsynced"
+  | "runtime_health"
   | "domain_unverified"
   | "ssl_error"
   | "port_advisory"
@@ -28,10 +34,12 @@ export type IssueKind =
   | "workload_crash_loop"
   | "workload_down"
   | "server_unreachable"
+  | "monitoring_offline"
   // Managed components
   | "edge_down"
   | "edge_absent"
   | "mail_down"
+  | "mail_certificate"
   // Version drift
   | "update_available"
   | "component_behind";
@@ -70,6 +78,17 @@ export interface SystemIssue {
   infraFix?: IssueInfraFix;
 }
 
+/** The saved deployment owns progress across navigation and page refreshes. */
+export function issueDeploymentId(issue: SystemIssue): string | null {
+  const id = issue.details?.inProgressDeploymentId;
+  return issue.kind === "update_available" && typeof id === "string" && id ? id : null;
+}
+
+export function issueUpdateInProgress(issue: SystemIssue): boolean {
+  return !!issueDeploymentId(issue) ||
+    (issue.kind === "update_available" && issue.details?.latestInProgress === true);
+}
+
 export interface IssueCounts {
   outage: number;
   actionRequired: number;
@@ -81,6 +100,18 @@ export interface IssueFeed {
   data: SystemIssue[];
   counts: IssueCounts;
   status: "open" | "resolved";
+  canClearHistory?: boolean;
+}
+
+type IssueCountsListener = (counts: IssueCounts, organizationId: string | null) => void;
+const countsListeners = new Set<IssueCountsListener>();
+
+/** Share Home/Monitoring refreshes with the sidebar, including after a fix. */
+export function subscribeOpenIssueCounts(listener: IssueCountsListener): () => void {
+  countsListeners.add(listener);
+  return () => {
+    countsListeners.delete(listener);
+  };
 }
 
 export interface RescanResult {
@@ -127,6 +158,8 @@ export interface HealthCheckSummary {
   resolved: number;
   stale: number;
   unreachable: number;
+  /** Missing on APIs predating desktop connectivity detection. */
+  offline?: number;
   unresolved: number;
   skipped: number;
   indeterminate: number;
@@ -138,6 +171,21 @@ export interface HealthCheckSummary {
 export interface CurrentHealthScanResult {
   completedAt: string;
   summary: HealthCheckSummary;
+}
+
+export interface MonitoringHealthSnapshot {
+  data: WorkloadHealthRow[];
+  watching: boolean;
+  capabilities: { current: boolean; continuous: boolean };
+  currentScan: CurrentHealthScanResult | null;
+  watcher: {
+    key: string;
+    schedule: string | null;
+    available: boolean;
+    eventsEnabled: boolean;
+    canManage: boolean;
+    runsWhileAppOpen: boolean;
+  };
 }
 
 /**
@@ -154,19 +202,25 @@ export function runResolution(r: IssueResolution) {
 }
 
 export const issuesApi = {
+  clearHistory: () => api.delete<{ data: { deleted: number } }>(endpoints.issues.clearHistory),
   /** Open issues (default) or resolved incident history. */
-  list: (status: "open" | "resolved" = "open") =>
-    api.get<IssueFeed>(status === "resolved" ? endpoints.issues.resolved : endpoints.issues.open),
+  list: async (status: "open" | "resolved" = "open") => {
+    const organizationId = getActiveOrganizationId();
+    const feed = await api.get<IssueFeed>(
+      status === "resolved" ? endpoints.issues.resolved : endpoints.issues.open,
+    );
+    if (status === "open" && feed.counts && organizationId === getActiveOrganizationId()) {
+      countsListeners.forEach((listener) => listener(feed.counts, organizationId));
+    }
+    return feed;
+  },
+
+  /** The same open-feed counts, without transferring every issue row. */
+  summary: () => api.get<{ data: IssueCounts }>(endpoints.issues.summary, { dedupe: false }),
 
   /** Cached output of the grouped Docker watcher; does not probe containers. */
   health: () =>
-    api.get<{
-      data: WorkloadHealthRow[];
-      watching: boolean;
-      capabilities: { current: boolean; continuous: boolean };
-      currentScan: CurrentHealthScanResult | null;
-      watcher: { key: string; schedule: string | null; available: boolean; eventsEnabled: boolean };
-    }>(endpoints.issues.health),
+    api.get<MonitoringHealthSnapshot>(endpoints.issues.health, { dedupe: false }),
 
   /** One current-state pass. Shares the watcher scanner but no watcher side effects. */
   scanHealth: () =>
@@ -174,11 +228,7 @@ export const issuesApi = {
       timeout: 300_000,
     }),
 
-  // `GET /issues/summary` (counts without rows) has no client wrapper on purpose: the
-  // page reads its counts off the feed it already fetched, and the nav entry carries no
-  // badge. It stays a server endpoint for MCP clients asking "is anything broken".
-
   /** Run the scheduled checkers behind the feed now. Self-hosted only (404s on cloud). */
-  rescan: () => api.post<{ data: MonitoringScanSession }>(endpoints.issues.rescan),
-  rescanStatus: () => api.get<{ data: MonitoringScanSession | null }>(endpoints.issues.rescanStatus),
+  rescan: (options?: { healthOnly?: boolean }) => api.post<{ data: MonitoringScanSession }>(endpoints.issues.rescan, options),
+  rescanStatus: () => api.get<{ data: MonitoringScanSession | null }>(endpoints.issues.rescanStatus, { dedupe: false }),
 };

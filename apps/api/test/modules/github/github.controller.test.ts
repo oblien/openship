@@ -5,7 +5,7 @@ const { linkSocialAccount, getGitHubAuthMode } = vi.hoisted(() => ({
   getGitHubAuthMode: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/auth", () => ({
+vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: {
     api: {
       linkSocialAccount,
@@ -13,12 +13,12 @@ vi.mock("../../../src/lib/auth", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   getGitHubAuthMode,
 }));
 
-vi.mock("../../../src/modules/github/github.local-auth", () => ({}));
-vi.mock("../../../src/modules/github/github.service", () => ({}));
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({}));
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({}));
 
 import { connectRedirect } from "../../../src/modules/github/github.controller";
 

@@ -3,7 +3,7 @@
   "verified": true,
   "id": "grafana",
   "name": "Grafana",
-  "description": "Dashboards and visualization for your metrics and logs. First login is admin / admin.",
+  "description": "Dashboards and visualization for your metrics and logs, on your own infrastructure.",
   "kind": "template",
   "logo": "grafana",
   "category": "analytics",
@@ -46,5 +46,21 @@
       "password": "admin",
       "note": "Change the admin password right after your first login."
     }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Operational dashboards",
+        "description": "Visualize metrics and logs."
+      },
+      {
+        "title": "Data sources",
+        "description": "Connect services that hold your telemetry."
+      },
+      {
+        "title": "Your own instance",
+        "description": "Keep dashboard configuration on your server."
+      }
+    ]
   }
 }

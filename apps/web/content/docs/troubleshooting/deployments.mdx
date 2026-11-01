@@ -64,9 +64,39 @@ Deploy again. Openship remembers these values for future deploys and redeploys.
 </Steps>
 
 <Callout type="info" title="Static sites don't run a start command">
-If your project is a static site, a leftover start command is harmless — it's ignored, the deploy
-continues, and the files are served from the edge.
+If your project is a static site, its application start command is ignored. A file-based release
+is served by the edge; a managed Docker deployment serves the built files from its generated web container.
 </Callout>
+
+## A Dockerfile image reports `bun`, `npm`, or another command not found
+
+When the selected project root contains a `Dockerfile`, detection selects the Dockerfile build.
+Its build instructions and image `ENTRYPOINT`/`CMD` are the defaults, even if the repository also
+contains framework configuration, package scripts, or lockfiles. The default port comes from
+`EXPOSE`; a package script that the image does not run does not determine the port.
+
+Leave **Start command** empty to use the image's default command. An explicit start command in
+project settings or `openship.json` overrides `CMD` and must exist in the final runtime image.
+This also applies to Dockerfile apps inside monorepos. An empty override does not make an image
+static: the image still runs its own process.
+
+Existing saved commands and previous deployment snapshots are preserved. If an older import saved
+an inferred package-manager command, clear that override or set the intended command, then deploy
+again. Updating Openship does not recreate existing containers.
+
+## The static build succeeds, but the output directory is missing
+
+**Output Directory** is relative to **Root Directory**, where the build command runs.
+For a site in `apps/site` that builds into `apps/site/out`, set:
+
+| Setting | Value |
+|---|---|
+| Root Directory | `apps/site` |
+| Output Directory | `out` |
+
+Do not repeat `apps/site` in Output Directory. Check that the build actually creates the folder
+and its intended public files. The release saves this resolved path for routing and rollback;
+the repository root is not published in place of a missing build output.
 
 ## A required command (or the port) is missing
 
@@ -104,16 +134,20 @@ Deploy again.
 ## The app isn't listening on the right port
 
 <Callout type="error">
-The build finishes, then the deploy fails at the end with:
-`Health check failed: the app never accepted a connection on port 3000 within 45s — it likely crashed on
-startup (check the runtime logs).`
+The build finishes, then an enabled readiness check reports that the app never answered at its
+published address within the configured timeout.
 </Callout>
 
-**What it means** — after starting your app, Openship waits up to 45 seconds for it to accept a
-connection on the configured port (the default is `3000`). If nothing ever answers, either the app
-crashed on startup or it's listening on a *different* port than the one Openship expects. This readiness
-gate runs for **Local** deploys; on a remote **Server** or **Cloud** the symptom instead is that the app
-builds and starts but the URL never responds.
+**What it means** — when `readiness.enabled` is `true`, Openship waits for your app to accept a TCP
+connection, or return an HTTP status below 500 at the configured `path`. The default timeout is 45
+seconds. If nothing answers, the app may have crashed, still be starting, or be listening on a
+different port. For single-app deployments, checks run on **Local** and **Server** targets using the
+deployment host's own connection. With the default `onFailure: "warn"`, the deployment stays live
+with a warning. Only `onFailure: "fail"` rejects the deployment through the existing rollback handling.
+
+If SSH fails or the probe cannot run, the log explicitly reports a **skipped** check and leaves the
+deployment unverified. This is not evidence that the app is unhealthy: check the deployment host's
+SSH connection and retry. This single-app probe is skipped on **Cloud** and **cluster** targets.
 
 **How to fix it**
 
@@ -139,12 +173,38 @@ on. Correct it in the [deploy wizard](/docs/dashboard/deploy-wizard) if it doesn
 </Steps>
 
 <Callout type="warn" title="A different “port” problem: the port is already taken">
-On a Local or Server deploy, if another process already holds the port, the deploy pauses and asks what
-to do — a **Port In Use** prompt saying *"Port 3000 is occupied by … This may not be a previous
-deployment."* with **Free Port & Continue** or **Cancel Deploy**. Choose *Free Port* only if you
-recognize the occupant as a stale deployment; otherwise cancel and change the port. If it can't be freed
-you'll see *"Deploy aborted: port 3000 is in use by …"*.
+On a Local or Server deploy, if another workload already holds the port, the deploy pauses with a
+**Port In Use** dialog. For a single-app Docker deployment using a loopback host port, it also offers
+**Use port 20002** (the number varies) when another port can be verified as available. This leaves the
+existing workload running and continues with the built image. The app's internal port stays the same;
+the selected host port is saved after a successful deployment for future redeploys.
+
+Openship checks both live listeners and saved port reservations, then checks the exact suggestion again
+when you choose it. If it is no longer available, the dialog asks again. It never substitutes another
+port without your choice. If availability cannot be verified, the alternative is not offered.
+
+The existing **Stop … & Continue**, **I Freed It — Re-check**, and **Cancel Deploy** actions remain
+available where appropriate. Choose a stop action only if you recognize the occupant and intend to
+stop it. Direct (Bare) apps still use their configured application ports; change those in configuration
+if needed. Cancelling preserves the current port.
 </Callout>
+
+## The deployment is running, but the app only listens inside its container
+
+An exposed Docker app listening only on `127.0.0.1` or `::1` cannot receive traffic through
+its published port. Openship shows **Action required** in the deployment's existing port review
+and in Monitoring. This applies to Docker deployments on your servers and Openship Cloud.
+The deployment keeps running; this warning does not hold the release or trigger a rollback.
+
+Use **Open settings** to review the app's start command or configuration. If it should receive
+routed traffic, configure it to listen on `0.0.0.0` and redeploy. If it deliberately binds to
+loopback behind a proxy, route to that proxy instead. Changing only the port number or retrying
+routing does not change the app's bind address. **Skip** dismisses this deployment's warning;
+it does not repair or expose the app.
+
+The warning requires a confirmed loopback-only listener. An incomplete socket-table read or
+unavailable probe does not establish that. Bare apps can legitimately use host loopback and do
+not receive this Docker warning. Open **Domains** for a fresh port check after fixing the app.
 
 ## The app needs a bigger machine than this one
 
@@ -292,7 +352,7 @@ there's nothing pending.
 <Callout type="warn" title="“A deployment is already in progress”">
 `A deployment is already in progress (dep_…). Cancel it first or wait for it to complete.` — Openship runs
 one deploy per project at a time. Wait for the current one to finish, or cancel it from the build screen,
-then try again.
+then try again. A GitHub push that arrives meanwhile is queued and deploys afterwards.
 </Callout>
 
 <Callout type="warn" title="“Docker build failed…” / a non-zero exit code">

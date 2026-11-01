@@ -77,6 +77,17 @@ function reachability(overrides: Partial<MailPortReachability> = {}): MailPortRe
 
 const NINE_UP = Array.from({ length: 9 }, (_, i) => daemon({ key: `d${i}` }));
 
+describe("mail certificate health in the summary", () => {
+  it.each(["fail", "warn", "unknown"] as const)("does not show all-good for a %s certificate reading", (status) => {
+    const summary = summarizeHealth(NINE_UP, [dns("pass")], delivery(), h, reachability(), {
+      hostname: "mail.example.com", status, checkedAt: new Date().toISOString(), certificate: null, endpoints: [],
+    });
+    expect(summary?.banner).toContain(status === "fail" ? "danger" : "warning");
+    expect(summary?.sub).toContain(h.summary.partCertificate);
+    expect(summary?.label).not.toBe(h.summary.allGoodLabel);
+  });
+});
+
 describe("summarizeHealth", () => {
   it("reports nothing before any reading lands", () => {
     expect(summarizeHealth(null, null, null, h)).toBeNull();

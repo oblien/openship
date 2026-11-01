@@ -22,8 +22,8 @@ const CLOUD_WEBMAIL = {
   slug: "webmail-example-com",
   appTemplateId: "webmail",
   framework: "docker-compose",
-  serverId: null,
-  cloudWorkspaceId: "ws1",
+  serverId: "cloud-server",
+  workspaceId: "ws1",
   activeDeploymentId: "dep1",
 };
 
@@ -31,7 +31,7 @@ const SELF_WEBMAIL = {
   ...CLOUD_WEBMAIL,
   id: "wm-self",
   serverId: "srv1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
 };
 
 const MAIL_SERVER = {
@@ -46,6 +46,11 @@ const h = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>> | null,
   /** Service rows, consulted only when the project has no domain row at all. */
   services: [] as Array<Record<string, unknown>>,
+  resolveTargetPlatform: vi.fn(),
+  disposePlatform: vi.fn(),
+  registerRoute: vi.fn(),
+  provisionCert: vi.fn(),
+  removeRoute: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -54,13 +59,16 @@ vi.mock("@repo/db", () => ({
       findById: vi.fn(async (id: string) => (h.project?.id === id ? h.project : null)),
       findFirstBySlug: vi.fn(async () => null),
     },
-    mailServer: { setWebmailProject: vi.fn(async () => {}) },
+    mailServer: {
+      setWebmailProject: vi.fn(async () => {}),
+      findByWebmailProject: vi.fn(async () => MAIL_SERVER),
+    },
     service: { listByProject: vi.fn(async () => h.services) },
-    deployment: { findById: vi.fn(async () => ({ status: "ready" })) },
+    deployment: { findById: vi.fn(async () => ({ id: h.project?.activeDeploymentId, projectId: h.project?.id, organizationId: "org1", status: "ready" })) },
   },
 }));
 
-vi.mock("../../domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   listProjectRouteRows: vi.fn(async () => {
     if (h.rows === null) throw new Error("db unreachable");
     return h.rows;
@@ -70,25 +78,67 @@ vi.mock("../../domains/project-route.service", () => ({
 // Module-scope imports of the service under test, stubbed because nothing here runs
 // an install. `pickCanonicalDomainRow` is deliberately NOT mocked — the verified/primary
 // precedence is half of what's being asserted.
-vi.mock("../../../lib/ssh-manager", () => ({ sshManager: { withExecutor: vi.fn() } }));
-vi.mock("../../projects/project-teardown", () => ({ teardownProject: vi.fn() }));
-vi.mock("../../apps/catalog-source", () => ({ getTemplateForOrg: vi.fn(async () => null) }));
-vi.mock("../../apps/app-install.service", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { withExecutor: vi.fn() } }));
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  resolveTargetPlatform: h.resolveTargetPlatform,
+  disposePlatform: h.disposePlatform,
+}));
+vi.mock("@repo/platform/engine/modules/projects/project-teardown", () => ({ teardownProject: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({ getTemplateForOrg: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/modules/apps/app-install.service", () => ({
   installApp: vi.fn(),
   planInstallRouting: vi.fn(() => new Map()),
   ensureGeneratedAppSecrets: vi.fn(async () => []),
 }));
-vi.mock("../../apps/app-settings.service", () => ({ updateAppProjectSettings: vi.fn() }));
-vi.mock("../../deployments/build.service", () => ({ requestBuildAccess: vi.fn() }));
-vi.mock("../../services/service.service", () => ({ updateService: vi.fn() }));
-vi.mock("../mail-state", () => ({ readState: vi.fn(), mutateState: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/apps/app-settings.service", () => ({ updateAppProjectSettings: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({ requestBuildAccess: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/services/service.service", () => ({ updateService: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({ readState: vi.fn(), mutateState: vi.fn() }));
 
-import { resolveWebmailSummary } from "./webmail-install.service";
+import {
+  cleanupWebmailInstall,
+  onWebmailDeployed,
+  resolveWebmailSummary,
+} from "@repo/platform/engine/modules/mail/webmail/webmail-install.service";
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.project = CLOUD_WEBMAIL;
   h.rows = [];
+  h.registerRoute.mockReset().mockResolvedValue(undefined);
+  h.provisionCert.mockReset().mockResolvedValue(undefined);
+  h.removeRoute.mockReset().mockResolvedValue(undefined);
+  h.resolveTargetPlatform.mockResolvedValue({
+    routing: { registerRoute: h.registerRoute, removeRoute: h.removeRoute },
+    ssl: { provisionCert: h.provisionCert },
+  });
+});
+
+describe("webmail proxy platform lifetime", () => {
+  it.each([
+    ["registerRoute", false], ["provisionCert", false], ["removeRoute", false],
+    ["registerRoute", true], ["provisionCert", true], ["removeRoute", true],
+  ] as const)("keeps %s connected until it settles (failure: %s)", async (operation, fail) => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    h[operation].mockImplementationOnce(async () => {
+      await gate;
+      if (fail) throw new Error("proxy operation failed");
+    });
+    const pending = operation === "removeRoute"
+      ? cleanupWebmailInstall(CLOUD_WEBMAIL as never)
+      : onWebmailDeployed(CLOUD_WEBMAIL, "https://webmail.opsh.io");
+    await vi.waitFor(() => expect(h[operation]).toHaveBeenCalledOnce());
+    expect(h.disposePlatform).not.toHaveBeenCalled();
+    finish();
+    if (fail && operation === "removeRoute") {
+      await expect(pending).rejects.toThrow("proxy operation failed");
+    } else {
+      await pending;
+    }
+    expect(h.resolveTargetPlatform).toHaveBeenCalledWith("server", "bare", "srv1", "org1");
+    expect(h.disposePlatform).toHaveBeenCalledOnce();
+  });
 });
 
 describe("webmail summary routing", () => {
@@ -99,6 +149,8 @@ describe("webmail summary routing", () => {
       url: "https://mail.example.com",
       routingUnknown: false,
       projectId: CLOUD_WEBMAIL.id,
+      serverId: CLOUD_WEBMAIL.serverId,
+      workspaceId: CLOUD_WEBMAIL.workspaceId,
       legacy: false,
     });
   });
@@ -126,6 +178,8 @@ describe("webmail summary routing", () => {
       url: "",
       routingUnknown: true,
       projectId: CLOUD_WEBMAIL.id,
+      serverId: CLOUD_WEBMAIL.serverId,
+      workspaceId: CLOUD_WEBMAIL.workspaceId,
       legacy: false,
     });
   });

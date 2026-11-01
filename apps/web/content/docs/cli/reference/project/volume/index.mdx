@@ -1,0 +1,171 @@
+---
+title: project volume
+description: Commands, arguments, and options for openship project volume.
+cliGroup: openship project volume
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship project volume
+
+Manage replicated project volumes and recoverable backups
+
+```text
+openship project volume [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <project>`](/docs/cli/reference/project/volume#openship-project-volume-list) | List volumes, resource versions and replica health |
+| [`backups <project>`](/docs/cli/reference/project/volume#openship-project-volume-backups) | List volume backups available for recovery |
+| [`create [options] <id> [file]`](/docs/cli/reference/project/volume#openship-project-volume-create) | Create a volume, optionally restored from a named backup |
+| [`resize [options] <id> [file]`](/docs/cli/reference/project/volume#openship-project-volume-resize) | Grow a volume using its exact resource version |
+| [`backup [options] <project> <volume>`](/docs/cli/reference/project/volume#openship-project-volume-backup) | Create a volume backup with an idempotent request ID |
+| [`schedule [options] <id> [file]`](/docs/cli/reference/project/volume#openship-project-volume-schedule) | Set backup frequency and retention at a volume's current resource version |
+| [`remove-backup [options] <id> [file]`](/docs/cli/reference/project/volume#openship-project-volume-remove-backup) | Delete a volume backup with explicit name confirmation |
+| [`remove [options] <id> [file]`](/docs/cli/reference/project/volume#openship-project-volume-remove) | Delete an unused volume and its data, checking its name and resource version |
+| [`events [options] <project>`](/docs/cli/reference/project/volume#openship-project-volume-events) | Stream health and operation progress |
+
+## openship project volume backup
+
+Create a volume backup with an idempotent request ID
+
+```text
+openship project volume backup [options] <project> <volume>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+| `volume` | Volume name |
+
+| Option | Meaning |
+| --- | --- |
+| `--request-id <id>` | Stable request ID for this backup (16–64 characters) |
+
+## openship project volume backups
+
+List volume backups available for recovery
+
+```text
+openship project volume backups [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship project volume create
+
+Create a volume, optionally restored from a named backup
+
+```text
+openship project volume create [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship project volume events
+
+Stream health and operation progress
+
+```text
+openship project volume events [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |
+
+## openship project volume list
+
+List volumes, resource versions and replica health
+
+```text
+openship project volume list [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship project volume remove
+
+Delete an unused volume and its data, checking its name and resource version
+
+```text
+openship project volume remove [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship project volume remove-backup
+
+Delete a volume backup with explicit name confirmation
+
+```text
+openship project volume remove-backup [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship project volume resize
+
+Grow a volume using its exact resource version
+
+```text
+openship project volume resize [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship project volume schedule
+
+Set backup frequency and retention at a volume's current resource version
+
+```text
+openship project volume schedule [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

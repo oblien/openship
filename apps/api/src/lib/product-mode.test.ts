@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
   settings: null as unknown,
 }));
 
-vi.mock("../config/env", () => ({ env: h.env }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env }));
 vi.mock("@repo/db", () => ({
   repos: {
     instanceSettings: {
@@ -31,7 +31,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { clearProductModeCache, isProductMode, resolveProductMode } from "./product-mode";
+import { clearProductModeCache, isProductMode, resolveProductMode } from "@repo/platform/engine/lib/product-mode";
 
 beforeEach(() => {
   h.env.CLOUD_MODE = false;

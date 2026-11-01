@@ -12,7 +12,7 @@
  * client session." Good enough for a dashboard; not a real-time number.
  */
 
-import { queryOne } from "./psql-runner";
+import { queryOne } from "@repo/platform/engine/modules/mail/admin/psql-runner";
 
 export interface MailServerStats {
   domains: { total: number; active: number };

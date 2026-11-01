@@ -1,27 +1,68 @@
 "use client";
 
-import { useEffect } from "react";
-import { setNetworkErrorHandler } from "@/lib/api/client";
-import { useToast } from "@/components/toast";
+import { useEffect, useRef, useState } from "react";
+import { api, setNetworkErrorHandler, setNetworkRecoveryHandler } from "@/lib/api/client";
+import { useBrowserOnline } from "@/hooks/useBrowserOnline";
+import { useI18n } from "@/components/i18n-provider";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 
 /**
  * Mounts once in the root layout and registers a global handler so that any
- * API call that fails at the network level (server down, ECONNREFUSED, timeout)
- * automatically shows a toast - without needing per-call error handling.
+ * Sustained transport failures show one compact notice. A short interruption
+ * followed by a response never flashes a global warning. Retry checks liveness
+ * only; it never replays the operation that failed.
  */
 export function NetworkErrorHandler() {
-  const { toast } = useToast();
+  const { t } = useI18n();
+  const online = useBrowserOnline();
+  const [unavailable, setUnavailable] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const retryInFlight = useRef(false);
 
   useEffect(() => {
-    setNetworkErrorHandler((msg) => {
-      toast("error", msg);
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    setNetworkErrorHandler(() => {
+      // Do not postpone indefinitely when several polling requests fail.
+      pending ??= setTimeout(() => setUnavailable(true), 1_500);
+    });
+    setNetworkRecoveryHandler(() => {
+      clearTimeout(pending);
+      pending = undefined;
+      setUnavailable(false);
     });
 
     return () => {
       // Clear the handler when this component unmounts
       setNetworkErrorHandler(null);
+      setNetworkRecoveryHandler(null);
+      clearTimeout(pending);
     };
-  }, [toast]);
+  }, []);
 
-  return null;
+  if (online && !unavailable) return null;
+  const c = t.issues.connectivity;
+  const retry = async () => {
+    if (retryInFlight.current) return;
+    retryInFlight.current = true;
+    setRetrying(true);
+    try {
+      await api.get("/health", { timeout: 5_000, dedupe: false, cache: "no-store" });
+    } catch {
+      // diagnostics-ignore: The API client observes failed liveness reads; retry never replays the original operation.
+      // Reachability is updated by the client hooks. A failed probe keeps the
+      // current notice; there is no second toast or retry of customer work.
+    } finally {
+      retryInFlight.current = false;
+      setRetrying(false);
+    }
+  };
+  return <div className="fixed bottom-4 start-4 end-4 z-50 ms-auto max-w-sm rounded-xl ring-1 ring-border/50">
+    <ConnectionNotice
+      compact
+      title={online ? c.apiTitle : c.offlineTitle}
+      message={online ? c.apiHint : c.offlineHint}
+      onRetry={online ? retry : undefined}
+      retrying={retrying}
+    />
+  </div>;
 }

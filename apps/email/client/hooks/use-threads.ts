@@ -30,14 +30,13 @@ export const useThreads = () => {
       {
         initialCursor: '',
         getNextPageParam: (lastPage) => lastPage?.nextPageToken ?? null,
-        // No background revalidation. The list refreshes only when a
-        // user action invalidates it (mark-as-read, star, move, delete,
-        // explicit refresh button). Without this, stale-while-revalidate
-        // refetches were overwriting a just-marked row with the older
-        // server snapshot and visibly "reverting" the action.
+        // MailLayout owns automatic refresh so row observers don't each
+        // start a timer. It pauses/cancels polling during optimistic actions
+        // to keep older server snapshots from overwriting local changes.
         staleTime: Infinity,
         refetchOnMount: false,
         refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
       },
     ),
   );

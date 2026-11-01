@@ -1,17 +1,24 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { Terminal, Server } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
+import React, { useState, useCallback, useEffect, useId, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { TerminalLogs } from "./logs/TerminalLogs";
 import { ServerLogs } from "./logs/ServerLogs";
 import { LogsActions } from "./logs/LogsActions";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Tabs } from "@/components/ui/Tabs";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { endpoints } from "@/lib/api/endpoints";
 import { sortServicesByPublicFirst } from "@/lib/api/services";
+import { hasSeparateApplication } from "@/lib/project-application";
+import { useRuntimeRoles } from "@/hooks/useRuntimeRoles";
+import { roleLogTargetKey, runtimeRoleLogTargets } from "@/lib/runtime-roles";
+import { Button } from "@/components/ui/button";
 
 type LogsTab = "terminal" | "server";
 
@@ -27,6 +34,7 @@ export const LogsSettings = () => {
     servicesData,
   } = useProjectSettings();
   const { t } = useI18n();
+  const tabsId = useId();
   const hasProjectId = Boolean(id && id !== "undefined");
   const hasResolvedServerMode =
     typeof projectData?.options?.hasServer === "boolean" ||
@@ -45,6 +53,11 @@ export const LogsSettings = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
   const serviceIdFromUrl = searchParams.get("service");
+  const roleFromUrl = searchParams.get("role");
+  const roleReplicaFromUrl = Number(searchParams.get("replica") ?? 1);
+  const roleDeploymentFromUrl = searchParams.get("deploymentId");
+  const rolesRuntime = useRuntimeRoles(id, projectData?.activeDeploymentId);
+  const roleTargets = useMemo(() => runtimeRoleLogTargets(rolesRuntime.data), [rolesRuntime.data]);
   const [activeTab, setActiveTab] = useState<LogsTab>("server");
   const hasSelectedTabRef = useRef(false);
   const [copied, setCopied] = useState(false);
@@ -52,8 +65,31 @@ export const LogsSettings = () => {
   // Seed from URL so the "View logs" shortcut on a service detail can deep-link
   // straight to that service's logs. Falls back to the auto-pick logic below
   // if the URL param is missing or stale.
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(serviceIdFromUrl);
+  const [selectedTarget, setSelectedTarget] = useState<string | null>(
+    roleFromUrl
+      ? roleLogTargetKey(
+          roleDeploymentFromUrl ?? projectData?.activeDeploymentId ?? "",
+          roleFromUrl,
+          roleReplicaFromUrl,
+        )
+      : serviceIdFromUrl,
+  );
   const urlDeepLinkAppliedRef = useRef(false);
+  const requestedTarget = roleFromUrl
+    ? roleLogTargetKey(
+        roleDeploymentFromUrl ?? projectData?.activeDeploymentId ?? "",
+        roleFromUrl,
+        roleReplicaFromUrl,
+      )
+    : serviceIdFromUrl;
+  const previousUrlTarget = useRef(requestedTarget);
+  const urlSelectionChanged = previousUrlTarget.current !== requestedTarget;
+  useEffect(() => {
+    if (!urlSelectionChanged) return;
+    previousUrlTarget.current = requestedTarget;
+    urlDeepLinkAppliedRef.current = false;
+    setSelectedTarget(requestedTarget);
+  }, [requestedTarget, urlSelectionChanged]);
   // Public (exposed) services lead the target picker — the ones users browse to.
   const services = useMemo(
     () => sortServicesByPublicFirst(servicesData.services),
@@ -62,12 +98,9 @@ export const LogsSettings = () => {
   const servicesLoading = servicesData.isLoading;
   const servicesLoaded = !servicesData.isLoading;
   const hasServices = services.length > 0;
-  // A project has a standalone "project runtime" log source ONLY when it has no
-  // services. A services/compose project's runtime IS its services — there's no
-  // project-level container, so `projects/:id/logs` 404s for it. Treating
-  // `effectiveHasServer` as a project-runtime log target was the bug: it offered
-  // + defaulted "Project runtime" for services projects, which 404'd.
-  const hasProjectRuntime = effectiveHasServer && !hasServices;
+  // The shared application model distinguishes companion services from a
+  // Compose/monorepo app whose primary runtime already has a service row.
+  const hasProjectRuntime = effectiveHasServer && hasSeparateApplication(projectData, services);
   // Request logs come from the EDGE, not from a runtime process — so anything
   // served through an edge has them, whether or not it has a container to stream
   // stdout from. That's every project with a domain: cloud (Oblien's edge proxy)
@@ -89,17 +122,13 @@ export const LogsSettings = () => {
   const canShowTerminal = canShowRuntimeLogs;
   const hasResolvedLogTargets =
     hasResolvedServerMode && (effectiveHasServer || servicesLoaded || canShowRequestLogs);
-  // True when the only signal available is edge access logs — used to
-  // relabel the Server tab as "Requests" so the operator knows what
-  // they're looking at.
-  const isRequestLogsOnly = canShowRequestLogs && !canShowRuntimeLogs;
   // True when there's more than one runtime to stream from - used to gate
   // the switcher UI. A "target" is the project's own runtime OR a service.
   // Previously this was `hasMultipleServices` (services count > 1) which
   // missed the common case of "single app + 1 service" where the user
   // still needs to pick which one to look at.
-  const logTargetCount = (hasProjectRuntime ? 1 : 0) + services.length;
-  const hasMultipleLogTargets = logTargetCount > 1;
+  const logTargetCount = (hasProjectRuntime ? 1 : 0) + services.length + roleTargets.length;
+  const hasMultipleLogTargets = logTargetCount > 1 || Boolean(selectedTarget?.startsWith("role:"));
 
   useEffect(() => {
     if (!hasResolvedLogTargets) return;
@@ -109,8 +138,7 @@ export const LogsSettings = () => {
     }
 
     if (!hasSelectedTabRef.current) {
-      // Static-only projects have no Terminal tab — land directly on
-      // Server (which renders as "Requests"). Otherwise default to
+      // Static projects only have request logs. Otherwise default to
       // Terminal as before.
       setActiveTab(canShowTerminal ? "terminal" : "server");
     }
@@ -122,6 +150,20 @@ export const LogsSettings = () => {
   // stripped the moment it's applied.
   useEffect(() => {
     if (urlDeepLinkAppliedRef.current) return;
+    if (roleFromUrl) {
+      if (rolesRuntime.loading || servicesLoading) return;
+      urlDeepLinkAppliedRef.current = true;
+      hasSelectedTabRef.current = true;
+      setActiveTab("terminal");
+      setSelectedTarget(
+        roleLogTargetKey(
+          roleDeploymentFromUrl ?? rolesRuntime.deploymentId ?? "",
+          roleFromUrl,
+          roleReplicaFromUrl,
+        ),
+      );
+      return;
+    }
     if (!serviceIdFromUrl || servicesLoading) return;
     urlDeepLinkAppliedRef.current = true;
     const match = services.find((s) => s.id === serviceIdFromUrl);
@@ -130,19 +172,45 @@ export const LogsSettings = () => {
     if (!match) return;
     hasSelectedTabRef.current = true;
     setActiveTab("terminal");
-    setSelectedServiceId(match.id);
-  }, [serviceIdFromUrl, services, servicesLoading]);
+    setSelectedTarget(match.id);
+  }, [
+    serviceIdFromUrl,
+    services,
+    servicesLoading,
+    roleFromUrl,
+    roleReplicaFromUrl,
+    roleDeploymentFromUrl,
+    rolesRuntime.loading,
+    rolesRuntime.deploymentId,
+  ]);
 
   // Keep the URL's `?service=` param in sync with the selected service so the
   // filter is a real, shareable, refresh-safe query param (null = project
   // runtime → no param). Guarded so we only replace when it actually changed.
   useEffect(() => {
-    if (servicesLoading) return;
-    const current = searchParams.get("service");
-    if ((selectedServiceId ?? null) === (current ?? null)) return;
-    const qs = selectedServiceId ? `?service=${encodeURIComponent(selectedServiceId)}` : "";
-    router.replace(`/projects/${id}/logs${qs}`, { scroll: false });
-  }, [selectedServiceId, servicesLoading, searchParams, id, router]);
+    if (servicesLoading || urlSelectionChanged) return;
+    if (roleFromUrl && !urlDeepLinkAppliedRef.current) return;
+    const role = roleTargets.find((target) => target.value === selectedTarget);
+    if (selectedTarget?.startsWith("role:") && !role) return;
+    const query = new URLSearchParams(searchParams.toString());
+    for (const key of ["service", "role", "replica", "deploymentId"]) query.delete(key);
+    if (role) {
+      query.set("role", role.role);
+      query.set("replica", String(role.replica));
+      query.set("deploymentId", role.deploymentId);
+    } else if (selectedTarget) query.set("service", selectedTarget);
+    if (query.toString() === searchParams.toString()) return;
+    router.replace(`/projects/${id}/logs${query.size ? `?${query}` : ""}`, { scroll: false });
+  }, [
+    selectedTarget,
+    servicesLoading,
+    searchParams,
+    id,
+    router,
+    roleTargets,
+    roleFromUrl,
+    urlSelectionChanged,
+  ]);
 
   const switchTab = useCallback(
     (tab: LogsTab) => {
@@ -157,7 +225,11 @@ export const LogsSettings = () => {
   useEffect(() => {
     if (!hasProjectId || servicesLoading) return;
 
-    setSelectedServiceId((current) => {
+    setSelectedTarget((current) => {
+      if (roleFromUrl && !urlDeepLinkAppliedRef.current) return current;
+      // A role belongs to one release. A stale selection must not fall back
+      // to the web application or a same-named role in a newer deployment.
+      if (current?.startsWith("role:")) return current;
       if (hasMultipleLogTargets && current && services.some((service) => service.id === current)) {
         return current;
       }
@@ -170,12 +242,24 @@ export const LogsSettings = () => {
 
       return !hasProjectRuntime && services.length === 1 ? services[0].id : null;
     });
-  }, [hasProjectRuntime, hasMultipleLogTargets, hasProjectId, services, servicesLoading]);
+  }, [
+    hasProjectRuntime,
+    hasMultipleLogTargets,
+    hasProjectId,
+    services,
+    servicesLoading,
+    roleFromUrl,
+  ]);
 
-  const selectedService = services.find((service) => service.id === selectedServiceId) ?? null;
+  const selectedService = services.find((service) => service.id === selectedTarget) ?? null;
   const implicitSingleService =
     !hasMultipleLogTargets && !hasProjectRuntime ? (services[0] ?? null) : null;
   const terminalService = hasMultipleLogTargets ? selectedService : implicitSingleService;
+  const selectedRole = roleTargets.find((target) => target.value === selectedTarget);
+  const roleSelected = Boolean(selectedTarget?.startsWith("role:"));
+  const roleQuery = selectedRole
+    ? `?${new URLSearchParams({ role: selectedRole.role, replica: String(selectedRole.replica), deploymentId: selectedRole.deploymentId })}`
+    : "";
   const isServiceLogTarget = Boolean(terminalService);
   const terminalStreamTarget = !hasProjectId
     ? ""
@@ -183,14 +267,52 @@ export const LogsSettings = () => {
       ? terminalService
         ? endpoints.services.logsStream(id, terminalService.id)
         : ""
-      : endpoints.projects.logsStream(id);
+      : roleSelected && !selectedRole
+        ? ""
+        : endpoints.projects.logsStream(id) + roleQuery;
   const terminalHistoryTarget = !hasProjectId
     ? ""
     : isServiceLogTarget
       ? terminalService
         ? endpoints.services.logs(id, terminalService.id)
         : ""
-      : endpoints.projects.logs(id);
+      : roleSelected && !selectedRole
+        ? ""
+        : endpoints.projects.logs(id) + roleQuery;
+
+  const targetPicker = (
+    <CustomSelect
+      aria-label={t.projectSettings.logs.target}
+      variant="filled"
+      triggerClassName="h-9 font-medium"
+      value={selectedTarget ?? ""}
+      onChange={(value) => setSelectedTarget(value || null)}
+      options={[
+        ...(hasProjectRuntime
+          ? [
+              {
+                value: "",
+                label: t.projectSettings.logs.projectRuntime,
+                icon: <UiIcon name="server" className="size-4" />,
+              },
+            ]
+          : []),
+        ...services.map((service) => ({
+          value: service.id,
+          label: service.name,
+          icon: <ServiceIcon service={service} className="size-4 shrink-0" />,
+        })),
+        ...roleTargets.map((target) => ({
+          value: target.value,
+          label: `${target.role} · ${interpolate(t.projectDetail.runtimeRoles.replica, { replica: String(target.replica) })}`,
+          icon: (
+            <UiIcon name={target.kind === "scheduler" ? "clock" : "terminal"} className="size-4" />
+          ),
+        })),
+      ]}
+      placeholder={t.projectSettings.logs.selectService}
+    />
+  );
 
   const handleLogsChange = useCallback((logs: string[]) => {
     setCurrentLogs(logs);
@@ -260,7 +382,7 @@ export const LogsSettings = () => {
     return (
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Terminal className="size-5" />
+          <UiIcon name="terminal" className="size-5" />
         </div>
         <h3 className="text-sm font-semibold text-foreground">{t.projectSettings.logs.noRuntime}</h3>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
@@ -271,112 +393,101 @@ export const LogsSettings = () => {
   }
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex min-w-0 flex-col h-full gap-4">
       {/* Tabs + Actions */}
-      <div className="flex items-center justify-between border-b border-border/50">
-        <div className="flex items-center gap-1">
-          {canShowTerminal && (
-            <button
-              onClick={() => switchTab("terminal")}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                activeTab === "terminal"
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground/70"
-              }`}
-            >
-              <Terminal className="size-4" />
-              {t.projectSettings.logs.terminal}
-              {activeTab === "terminal" && (
-                <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
-              )}
-            </button>
-          )}
-          <button
-            onClick={() => switchTab("server")}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "server"
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground/70"
-            }`}
-          >
-            <Server className="size-4" />
-            {/* Rename to "Requests" when there's no runtime — the
-                same endpoint backs both, but for static apps it's
-                purely edge access logs, not server logs. */}
-            {isRequestLogsOnly ? t.projectSettings.logs.requests : t.projectSettings.logs.server}
-            {activeTab === "server" && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-            )}
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        {canShowTerminal && (
+          <Tabs<LogsTab>
+            idPrefix={tabsId}
+            ariaLabel={t.projectDetail.services.detail.tabs.logs}
+            variant="pills"
+            tabs={[
+              { key: "terminal", label: t.projectSettings.logs.terminal, icon: "terminal" },
+              { key: "server", label: t.projectSettings.logs.server, icon: "server" },
+            ]}
+            value={activeTab}
+            onChange={switchTab}
+          />
+        )}
 
-        <LogsActions
-          onCopy={copyLogs}
-          onDownload={downloadLogs}
-          onClear={clearLogs}
-          copied={copied}
-          logsCount={currentLogs.length}
-        />
+        <div className="ms-auto">
+          <LogsActions
+            onCopy={copyLogs}
+            onDownload={downloadLogs}
+            onClear={clearLogs}
+            copied={copied}
+            logsCount={currentLogs.length}
+          />
+        </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-[460px]">
-        {activeTab === "terminal" && canShowTerminal && (
-          <div className="space-y-4">
-            {hasMultipleLogTargets && (
-              <div className="rounded-2xl border border-border/60 bg-card/70 p-4">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{t.projectSettings.logs.target}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {hasProjectRuntime
-                        ? t.projectSettings.logs.targetDescProject
-                        : t.projectSettings.logs.targetDescService}
-                    </p>
-                  </div>
-                  <div className="min-w-[220px]">
-                    <CustomSelect
-                      value={selectedServiceId ?? ""}
-                      onChange={(value) => setSelectedServiceId(value || null)}
-                      options={[
-                        ...(hasProjectRuntime
-                          ? [{ value: "", label: t.projectSettings.logs.projectRuntime, icon: <Server className="size-4" /> }]
-                          : []),
-                        ...services.map((service) => ({
-                          value: service.id,
-                          label: service.name,
-                          icon: <Server className="size-4" />,
-                        })),
-                      ]}
-                      placeholder={t.projectSettings.logs.selectService}
-                    />
-                  </div>
-                </div>
+      <div className="min-w-0 flex-1 min-h-[460px]">
+        <div
+          id={`${tabsId}-panel-terminal`}
+          role={canShowTerminal ? "tabpanel" : undefined}
+          aria-labelledby={canShowTerminal ? `${tabsId}-tab-terminal` : undefined}
+          hidden={activeTab !== "terminal" || !canShowTerminal}
+        >
+          {activeTab === "terminal" &&
+            canShowTerminal &&
+            (roleSelected && !selectedRole ? (
+              <div
+                role="alert"
+                className="space-y-3 rounded-2xl bg-card p-5 text-sm text-muted-foreground"
+              >
+                {targetPicker}
+                <p>
+                  {rolesRuntime.loading
+                    ? t.projectDetail.runtimeRoles.checking
+                    : (rolesRuntime.error ?? t.projectDetail.runtimeRoles.staleTarget)}
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={rolesRuntime.loading}
+                  onClick={() => void rolesRuntime.refresh()}
+                >
+                  {t.projectDetail.runtimeRoles.retry}
+                </Button>
               </div>
-            )}
-
-            {hasMultipleLogTargets && !hasProjectRuntime && !selectedService ? (
-              <div className="flex min-h-[420px] items-center justify-center rounded-3xl border border-border/50 bg-card text-sm text-muted-foreground">
+            ) : hasMultipleLogTargets && !hasProjectRuntime && !selectedService && !selectedRole ? (
+              <div className="flex min-h-[420px] items-center justify-center rounded-2xl bg-card text-sm text-muted-foreground">
                 {t.projectSettings.logs.selectService}
               </div>
             ) : (
               <TerminalLogs
                 projectId={id}
-                projectName={terminalService?.name || projectData?.name || t.projectSettings.logs.projectFallback}
+                projectName={
+                  selectedRole
+                    ? `${selectedRole.role} · ${interpolate(t.projectDetail.runtimeRoles.replica, { replica: String(selectedRole.replica) })}`
+                    : terminalService?.name ||
+                      projectData?.name ||
+                      t.projectSettings.logs.projectFallback
+                }
+                title={hasMultipleLogTargets ? targetPicker : undefined}
                 streamTarget={terminalStreamTarget}
                 historyTarget={terminalHistoryTarget}
                 onLogsChange={handleLogsChange}
               />
-            )}
-          </div>
-        )}
-        {activeTab === "server" && canShowLogs && hasProjectId && (
-          <ServerLogs
-            projectId={id}
-            projectName={projectData?.name || t.projectSettings.logs.projectFallback}
-            onLogsChange={handleLogsChange}
-          />
-        )}
+            )
+          )}
+        </div>
+        <div
+          id={`${tabsId}-panel-server`}
+          role={canShowTerminal ? "tabpanel" : "region"}
+          aria-labelledby={canShowTerminal ? `${tabsId}-tab-server` : undefined}
+          aria-label={!canShowTerminal ? t.projectSettings.logs.requests : undefined}
+          hidden={activeTab !== "server"}
+        >
+          {activeTab === "server" && canShowLogs && hasProjectId && (
+            <ServerLogs
+              projectId={id}
+              projectName={projectData?.name || t.projectSettings.logs.projectFallback}
+              onLogsChange={handleLogsChange}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
  * stranger's stack; empty for a project we own, whose domains are in our own `domain` table and
  * whose containers publish on loopback ports.
  */
-const src = readFileSync(new URL("./migration.orchestrator.ts", import.meta.url), "utf8");
+const src = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/migration/migration.orchestrator.ts", import.meta.url), "utf8");
 const carry = (() => {
   const from = src.indexOf("  private async carrySourceCerts(");
   return src.slice(from, src.indexOf("\n  private async ", from + 10));
@@ -47,7 +47,7 @@ describe("cert carry reads the project's own domains", () => {
   });
 
   it("survives a project whose domains can't be read", () => {
-    expect(carry).toContain("listByProject(projectId).catch(() => [])");
+    expect(carry).toMatch(/listByProject\(projectId\)\.catch\([^]*?observeCaughtError\([^]*?return \[\];/);
   });
 });
 

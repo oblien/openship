@@ -16,7 +16,7 @@ import { describe, it, expect, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ cloudMode: false }));
 
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     get CLOUD_MODE() {
       return h.cloudMode;
@@ -29,15 +29,15 @@ vi.mock("../../../src/config/env", () => ({
 vi.mock("@repo/db", () => ({ repos: {} }));
 vi.mock("../../../src/lib/request-context", () => ({ getRequestContext: () => ({}) }));
 vi.mock("../../../src/lib/audit", () => ({ audit: {}, auditContextFrom: () => ({}) }));
-vi.mock("../../../src/lib/encryption", () => ({ encrypt: (v: string) => v }));
-vi.mock("../../../src/lib/ssrf-guard", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ encrypt: (v: string) => v }));
+vi.mock("@repo/platform/engine/lib/ssrf-guard", () => ({
   assertPublicUrlLiteral: () => {},
   SsrfError: class extends Error {},
 }));
-vi.mock("../../../src/lib/notification-workers", () => ({ sendTestToChannel: async () => {} }));
+vi.mock("@repo/platform/engine/lib/notification-workers", () => ({ sendTestToChannel: async () => {} }));
 
-import { listCategories } from "../../../src/modules/notifications/notifications.controller";
-import { findCategory } from "../../../src/lib/notification-categories";
+import { listCategories } from "@repo/platform/engine/modules/notifications/notifications.service";
+import { findCategory } from "@repo/platform/engine/lib/notification-categories";
 
 interface Payload {
   categories: { id: string; group: string; label: string }[];
@@ -46,14 +46,7 @@ interface Payload {
 
 async function fetchCategories(cloudMode: boolean): Promise<Payload> {
   h.cloudMode = cloudMode;
-  const captured: { body?: Payload } = {};
-  await listCategories({
-    json: (body: Payload) => {
-      captured.body = body;
-      return new Response(null);
-    },
-  } as never);
-  return captured.body!;
+  return listCategories({} as never);
 }
 
 describe("GET /categories billing gate", () => {
@@ -122,3 +115,7 @@ describe("GET /categories billing gate", () => {
     expect(findCategory("mail.inbound_received")?.defaultEnabled).toBe(false);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: {}, auditContextFrom: () => ({}) }));
+vi.mock("@repo/platform/engine/lib/notification-access", () => ({ canReadNotification: async () => true }));

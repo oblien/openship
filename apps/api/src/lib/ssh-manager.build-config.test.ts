@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 /**
  * buildSshConfig is the single choke point every SSH connection funnels
@@ -21,12 +21,13 @@ vi.mock("@repo/adapters", async () => ({
   createHostExecutor: vi.fn(),
   hostChannelHealth: vi.fn(),
   probeTcp: vi.fn(),
+  resolveSshAuthSock: () => process.env.SSH_AUTH_SOCK,
 }));
-vi.mock("./box-org", () => ({ isLocalHostRow: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/box-org", () => ({ isLocalHostRow: vi.fn(), boxOwningOrgId: async () => "operator-org" }));
 
 // The path allowlist is tested on its own (ssh-key-path); here we only need to
 // know WHETHER the path branch runs, so make it an identity + assert on the read.
-vi.mock("./ssh-key-path", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-key-path", () => ({
   resolveSafeSshKeyPath: vi.fn((p: string) => p),
   operatorSshKeyRoots: vi.fn(() => []),
 }));
@@ -39,17 +40,56 @@ vi.mock("node:fs", async (importOriginal) => ({
   readFileSync: (...args: unknown[]) => readFileSync(...args),
 }));
 
-import { buildSshConfig } from "./ssh-manager";
+import { buildSshConfig } from "@repo/platform/engine/lib/ssh-manager";
 // REAL encryption — the whole point is that a stored enc1: value round-trips.
-import { encryptSecretField } from "./credential-encryption";
+import { encryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 
-const base = { sshHost: "10.0.0.1", sshAuthMethod: "key" as const };
+const base = { organizationId: "operator-org", sshHost: "10.0.0.1", sshAuthMethod: "key" as const };
 
 beforeEach(() => {
   readFileSync.mockClear();
 });
+afterEach(() => vi.unstubAllEnvs());
+
+describe("native SSH host policy", () => {
+  it("refuses ambient agent/config and host key files before reading any credentials", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "false");
+    for (const settings of [
+      { ...base, sshKeyPath: "/root/.ssh/id_ed25519" },
+      { ...base, sshAuthMethod: "agent" },
+    ]) await expect(buildSshConfig(settings)).rejects.toMatchObject({ code: "HOST_EXECUTION_DISABLED" });
+    expect(readFileSync).not.toHaveBeenCalled();
+  });
+  it("allows explicit remote passwords and pasted keys without host access", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "false");
+    expect(await buildSshConfig({ ...base, sshPrivateKey: "EXPLICIT-KEY", sshKeyPath: "/root/.ssh/id_ed25519" }))
+      .toMatchObject({ privateKey: "EXPLICIT-KEY" });
+    expect(await buildSshConfig({ ...base, sshAuthMethod: "password", sshPassword: "EXPLICIT-PASSWORD" }))
+      .toMatchObject({ password: "EXPLICIT-PASSWORD" });
+    expect(readFileSync).not.toHaveBeenCalled();
+  });
+  it("retains host-key access when the owning application explicitly enables it", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    vi.stubEnv("OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION", "true");
+    expect(await buildSshConfig({ ...base, sshKeyPath: "/root/.ssh/id_ed25519" })).toMatchObject({ privateKey: "FILE-ON-HOST-KEY" });
+    expect(readFileSync).toHaveBeenCalledOnce();
+  });
+});
 
 describe("buildSshConfig — pasted/uploaded key material", () => {
+  it("carries Cloudflare through password, encrypted-key and agent authentication", async () => {
+    const settings = { organizationId: "operator-org", sshHost: "ssh.example.test", sshTransport: "cloudflare" };
+    expect(await buildSshConfig({ ...settings, sshAuthMethod: "password", sshPassword: encryptSecretField("password") }))
+      .toMatchObject({ sshTransport: "cloudflare", password: "password" });
+    expect(await buildSshConfig({ ...settings, sshAuthMethod: "key", sshPrivateKey: encryptSecretField("key"), sshKeyPassphrase: encryptSecretField("passphrase") }))
+      .toMatchObject({ sshTransport: "cloudflare", privateKey: "key", privateKeyPassphrase: "passphrase" });
+    vi.stubEnv("SSH_AUTH_SOCK", "/tmp/test-agent.sock");
+    expect(await buildSshConfig({ ...settings, sshAuthMethod: "agent" }))
+      .toMatchObject({ sshTransport: "cloudflare", useSystemSsh: true, sshAgent: "/tmp/test-agent.sock" });
+  });
+
   it("decrypts stored material into privateKey and never reads a file", async () => {
     const config = await buildSshConfig({
       ...base,

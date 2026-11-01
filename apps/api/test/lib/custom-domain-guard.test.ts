@@ -3,7 +3,7 @@ import { ValidationError } from "@repo/core";
 import {
   assertValidCustomDomain,
   assertValidCustomDomains,
-} from "../../src/lib/custom-domain-guard";
+} from "@repo/platform/engine/lib/custom-domain-guard";
 
 /**
  * #342: the project write paths stored `publicEndpoints[].customDomain` verbatim.

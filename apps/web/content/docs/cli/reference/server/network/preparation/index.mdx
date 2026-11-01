@@ -1,0 +1,128 @@
+---
+title: server network preparation
+description: Commands, arguments, and options for openship server network preparation.
+cliGroup: openship server network preparation
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server network preparation
+
+Prepare managed networking and recover interrupted preparation
+
+```text
+openship server network preparation [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-list) | List in-progress and recoverable preparations |
+| [`get <id>`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-get) | Read preparation steps, access policy and sequence |
+| [`create [options] [file]`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-create) | Start an idempotent managed-network preparation |
+| [`access [options] [file]`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-access) | Revise a preparation's reviewed access policy |
+| [`remove-member [options] [file]`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-remove-member) | Remove a host from a preparation using its exact sequence |
+| [`discard [options] [file]`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-discard) | Discard the selected preparation at its current sequence |
+| [`events [options] <id>`](/docs/cli/reference/server/network/preparation#openship-server-network-preparation-events) | Stream preparation progress |
+
+## openship server network preparation access
+
+Revise a preparation's reviewed access policy
+
+```text
+openship server network preparation access [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship server network preparation create
+
+Start an idempotent managed-network preparation
+
+```text
+openship server network preparation create [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship server network preparation discard
+
+Discard the selected preparation at its current sequence
+
+```text
+openship server network preparation discard [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship server network preparation events
+
+Stream preparation progress
+
+```text
+openship server network preparation events [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Preparation ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--timeout <ms>` | Stop after this deadline |
+
+## openship server network preparation get
+
+Read preparation steps, access policy and sequence
+
+```text
+openship server network preparation get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Preparation ID |
+
+## openship server network preparation list
+
+List in-progress and recoverable preparations
+
+```text
+openship server network preparation list [options]
+```
+
+## openship server network preparation remove-member
+
+Remove a host from a preparation using its exact sequence
+
+```text
+openship server network preparation remove-member [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |

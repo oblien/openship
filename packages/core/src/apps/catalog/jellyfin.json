@@ -1,0 +1,157 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "jellyfin",
+  "name": "Jellyfin",
+  "description": "Stream your own media with persistent libraries and a preconfigured administrator. Software playback works without privileged hardware access.",
+  "kind": "template",
+  "logo": "jellyfin",
+  "category": "other",
+  "framework": "docker-compose",
+  "repository": "https://github.com/jellyfin/jellyfin",
+  "services": [
+    {
+      "name": "jellyfin",
+      "image": "jellyfin/jellyfin:12.2",
+      "restart": "unless-stopped",
+      "volumes": ["jellyfin_config:/config", "jellyfin_cache:/cache", "jellyfin_media:/media"],
+      "secretEnv": ["OPENSHIP_ADMIN_PASSWORD"],
+      "entrypointArgv": ["sh", "/etc/openship/jellyfin-start.sh"],
+      "commandArgv": [],
+      "stopGracePeriod": "60s",
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "test -f /tmp/openship-ready && curl -fsS http://127.0.0.1:8096/health | grep -qx Healthy"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 30,
+        "startPeriod": "180s"
+      },
+      "exposed": true,
+      "exposedPort": 8096,
+      "routes": [
+        {
+          "port": 8096
+        }
+      ],
+      "resources": {
+        "cpuCores": 2,
+        "memoryMb": 2048,
+        "diskMb": 16384
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "jellyfin",
+      "port": 8096,
+      "label": "Media server",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    }
+  ],
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 2048
+  },
+  "tags": ["media", "video", "music"],
+  "management": {
+    "kind": "schema"
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Persistent storage",
+        "description": "Application data stays on project-scoped volumes across deployments."
+      },
+      {
+        "title": "Published images",
+        "description": "Install pinned upstream containers without building images on your server."
+      }
+    ],
+    "articleFile": "articles/jellyfin.md"
+  },
+  "configFields": [
+    {
+      "service": "jellyfin",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Initial administrator password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "jellyfin",
+      "key": "OPENSHIP_ADMIN_USER",
+      "label": "Admin username",
+      "default": "admin",
+      "required": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "jellyfin",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Admin username",
+          "type": "text",
+          "default": "admin",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[a-zA-Z0-9_. -]+$",
+          "help": "Used only for the initial account. Manage existing accounts in the app."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "connection": {
+    "title": "Open Jellyfin",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Jellyfin",
+        "source": "publicUrl:jellyfin",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:jellyfin:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Initial password",
+        "source": "env:jellyfin:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Account changes made in the app are preserved on redeployment. These are the initial credentials."
+    }
+  },
+  "files": [
+    {
+      "service": "jellyfin",
+      "path": "/etc/openship/jellyfin-start.sh",
+      "content": "#!/bin/sh\nset -eu\nif grep -q '<IsStartupWizardCompleted>true</IsStartupWizardCompleted>' /config/config/system.xml 2>/dev/null; then\n  touch /tmp/openship-ready\n  exec /jellyfin/jellyfin \"$@\"\nfi\n# Keep setup bound to loopback. The real data directory stays on its persistent volume.\nmkdir -p /config/config /tmp/openship-jellyfin\nif [ -f /config/config/system.xml ]; then cp /config/config/system.xml /tmp/openship-jellyfin/system.xml; fi\ncat > /tmp/openship-jellyfin/network.xml <<'XML'\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<NetworkConfiguration>\n  <LocalNetworkAddresses><string>127.0.0.1</string></LocalNetworkAddresses>\n  <EnableIPv6>false</EnableIPv6>\n</NetworkConfiguration>\nXML\n/jellyfin/jellyfin --configdir /tmp/openship-jellyfin &\nchild=$!\ntrap 'kill -TERM \"$child\" 2>/dev/null || true; wait \"$child\" || true' EXIT\ntrap 'exit 143' TERM INT\nattempt=0\nuntil curl -fsS http://127.0.0.1:8096/health 2>/dev/null | grep -qx Healthy; do\n  kill -0 \"$child\"\n  attempt=$((attempt + 1))\n  [ \"$attempt\" -lt 180 ] || { echo 'Jellyfin private setup timed out.' >&2; exit 1; }\n  sleep 2\ndone\njson_string() {\n  printf '%s' \"$1\" | od -An -v -tu1 | awk 'BEGIN { printf \"\\\"\" } { for (i = 1; i <= NF; i++) { if ($i == 34 || $i == 92) printf \"\\\\%c\", $i; else if ($i < 32) printf \"\\\\u%04x\", $i; else printf \"%c\", $i } } END { printf \"\\\"\" }'\n}\n[ -n \"$OPENSHIP_ADMIN_USER\" ] && [ -n \"$OPENSHIP_ADMIN_PASSWORD\" ]\ncurl -fsS http://127.0.0.1:8096/Startup/User >/dev/null\npayload=$(printf '{\"Name\":%s,\"Password\":%s}' \"$(json_string \"$OPENSHIP_ADMIN_USER\")\" \"$(json_string \"$OPENSHIP_ADMIN_PASSWORD\")\")\n# On an interrupted previous bootstrap, the password may already exist. Verify it before continuing.\nif ! printf '%s' \"$payload\" | curl -fsS -X POST -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:8096/Startup/User >/dev/null; then\n  payload=$(printf '{\"Username\":%s,\"Pw\":%s}' \"$(json_string \"$OPENSHIP_ADMIN_USER\")\" \"$(json_string \"$OPENSHIP_ADMIN_PASSWORD\")\")\n  printf '%s' \"$payload\" | curl -fsS -X POST -H 'Content-Type: application/json' -H 'Authorization: MediaBrowser Client=\"Openship\", Device=\"Setup\", DeviceId=\"openship-setup\", Version=\"1\"' --data-binary @- http://127.0.0.1:8096/Users/AuthenticateByName >/dev/null\nfi\ncurl -fsS -X POST http://127.0.0.1:8096/Startup/Complete >/dev/null\ngrep -q '<IsStartupWizardCompleted>true</IsStartupWizardCompleted>' /tmp/openship-jellyfin/system.xml\nkill -TERM \"$child\"\nwait \"$child\" || true\ntrap - EXIT TERM INT\ncp /tmp/openship-jellyfin/system.xml /config/config/system.xml.new\nmv /config/config/system.xml.new /config/config/system.xml\ntouch /tmp/openship-ready\nexec /jellyfin/jellyfin \"$@\"\n"
+    }
+  ]
+}

@@ -1,34 +1,45 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { baseDictionary as en } from "@/i18n";
+import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
 
-/**
- * The routing banner must state the ACTUAL cause.
- *
- * `routingUnsynced` fires for any route/TLS sync failure — `deploymentRoutingUnsynced` reads
- * `edgeUnsynced || deployWarning`, and the compose pipeline sets both for ANY `routeIssuesWarning`,
- * including custom domains merely waiting on a certificate. The banner carried one hardcoded
- * sentence about a free `.opsh.io` URL failing to route through Openship Cloud's edge, and showed
- * it for every cause: a self-hosted project with three CUSTOM domains was told its free domain
- * hadn't routed through a cloud it doesn't use, and pointed at the wrong remedy — while the
- * accurate sentence sat unread in the same deployment meta blob.
- */
-const src = readFileSync(new URL("./RoutingUnsyncedCallout.tsx", import.meta.url), "utf8");
-const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+const settings = vi.hoisted(() => ({
+  projectData: { routingUnsynced: true, awaitingDecision: false, routingWarning: "" },
+}));
+vi.mock("@/context/ProjectSettingsContext", () => ({ useProjectSettings: () => settings }));
+vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: en }) }));
+
+beforeEach(() => {
+  settings.projectData = { routingUnsynced: true, awaitingDecision: false, routingWarning: "" };
+});
+
+const render = () => {
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(
+    createElement(RoutingUnsyncedCallout, { onRetry: vi.fn() }),
+  );
+  return host.textContent;
+};
 
 describe("the banner prefers the server's own reason", () => {
-  it("renders routingWarning when present, generic copy only as fallback", () => {
-    expect(code).toContain("projectData?.routingWarning || t.projects.routingRetry.description");
+  it("renders the actual routing or certificate failure", () => {
+    settings.projectData.routingWarning = "api.example.com: HTTP challenge returned 404";
+    expect(render()).toContain(settings.projectData.routingWarning);
+    expect(render()).not.toContain(en.projects.routingRetry.description);
   });
 
-  it("re-reads the project after a successful repair", () => {
-    // The repair re-applies routes and re-checks what the edge SERVES, so per-domain
-    // verification and SSL can all have moved. Patching one boolean left the cards stale.
-    expect(code).toContain("invalidateProjectCaches");
+  it("uses the generic explanation only when no server reason is available", () => {
+    expect(render()).toContain(en.projects.routingRetry.description);
   });
 
-  it("still surfaces the server's reason on failure", () => {
-    expect(code).toContain("res?.warning || res?.error");
+  it("stays hidden after repair or while a release decision is pending", () => {
+    settings.projectData.routingUnsynced = false;
+    expect(render()).toBe("");
+    settings.projectData.routingUnsynced = true;
+    settings.projectData.awaitingDecision = true;
+    expect(render()).toBe("");
   });
 });
 

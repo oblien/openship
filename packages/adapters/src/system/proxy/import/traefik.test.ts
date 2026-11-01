@@ -6,6 +6,7 @@ const c = (name: string, labels: Record<string, string>, ip = "172.17.0.5"): Tra
   name,
   labels,
   ip,
+  exposedPorts: ["80/tcp"],
 });
 
 describe("parseTraefikLabels", () => {
@@ -46,12 +47,20 @@ describe("parseTraefikLabels", () => {
     expect(res.sites[0]?.serverNames).toEqual(["a.com", "b.com"]);
   });
 
-  test("PathPrefix beyond Host → migrates Host, warns about the path rule (not dropped)", () => {
+  test("a path-only domain is imported without being broadened to a root route", () => {
     const res = parseTraefikLabels([
       c("a", { "traefik.http.routers.r.rule": "Host(`a.com`) && PathPrefix(`/api`)" }),
     ]);
-    expect(res.sites[0]?.serverNames).toEqual(["a.com"]);
-    expect(res.warnings.some((w) => w.includes("PathPrefix"))).toBe(true);
+    expect(res.sites).toEqual([
+      {
+        serverNames: ["a.com"],
+        ssl: false,
+        target: { kind: "proxy", url: "http://172.17.0.5:80" },
+        routes: [{ path: "/api", url: "http://172.17.0.5:80" }],
+        source: "traefik container a",
+      },
+    ]);
+    expect(res.warnings).toEqual([]);
   });
 
   test("middleware → surfaced as a coverage warning", () => {
@@ -97,6 +106,46 @@ describe("parseTraefikLabels", () => {
     ]);
     expect(res.sites).toEqual([]);
     expect(res.warnings.some((w) => w.includes("couldn't resolve") && w.includes("IP"))).toBe(true);
+  });
+
+  test("keeps root/path routers and picks each container's own implicit service", () => {
+    const res = parseTraefikLabels([
+      c("frontend", {
+        "traefik.http.routers.web.rule": "Host(`shop.example.com`) || Host(`www.example.com`)",
+        "traefik.http.services.web.loadbalancer.server.port": "8080",
+      }, "172.20.0.2"),
+      c("backend", {
+        "traefik.http.routers.api.rule": "Host(`shop.example.com`) && PathPrefix(`/api`)",
+        "traefik.http.routers.rpc.rule": "Host(`shop.example.com`) && Path(`/rpc`)",
+        "traefik.http.services.api.loadbalancer.server.port": "9000",
+      }, "172.20.0.3"),
+    ]);
+    expect(res.sites).toEqual([
+      { serverNames: ["shop.example.com"], ssl: false, target: { kind: "proxy", url: "http://172.20.0.2:8080" },
+        routes: [
+          { path: "/", url: "http://172.20.0.2:8080" },
+          { path: "/api", url: "http://172.20.0.3:9000" },
+          { path: "/rpc", url: "http://172.20.0.3:9000", exact: true },
+        ], source: "traefik container frontend" },
+      { serverNames: ["www.example.com"], ssl: false, target: { kind: "proxy", url: "http://172.20.0.2:8080" }, source: "traefik container frontend" },
+    ]);
+    expect(res.warnings).toEqual([]);
+  });
+
+  test("refuses an unsupported matcher instead of publishing a less restricted route", () => {
+    const res = parseTraefikLabels([c("app", {
+      "traefik.http.routers.web.rule": "Host(`shop.example.com`) && Method(`POST`)",
+    })]);
+    expect(res.sites).toEqual([]);
+    expect(res.warnings).toEqual([expect.stringContaining("unsupported rule")]);
+  });
+
+  test("does not treat tls=false as TLS or steal another container's service port", () => {
+    const res = parseTraefikLabels([
+      c("plain", { "traefik.http.routers.plain.rule": "Host(`plain.example.com`)", "traefik.http.routers.plain.tls": "false" }),
+      c("other", { "traefik.http.services.other.loadbalancer.server.port": "9000" }, "172.20.0.3"),
+    ]);
+    expect(res.sites[0]).toMatchObject({ ssl: false, target: { url: "http://172.17.0.5:80" } });
   });
 });
 

@@ -26,6 +26,7 @@ declares no services.
 | Path | What it is |
 |---|---|
 | [`catalog/`](./catalog/) | Catalog source — one JSON per app, `<id>.json`. **Edit these.** |
+| [`catalog/articles/`](./catalog/articles/) | Optional Markdown for the public app pages, embedded by the generator. |
 | [`catalog.json`](./catalog.json) | Merged artifact the bundle imports and the API serves. Generated. |
 | [`schema.ts`](./schema.ts) | The authoritative validator (shape + referential + version gate). |
 | [`../../scripts/gen-catalog.ts`](../../scripts/gen-catalog.ts) | Builds `catalog.json` from `catalog/*.json`. |

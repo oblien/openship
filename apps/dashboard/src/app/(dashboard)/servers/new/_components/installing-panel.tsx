@@ -1,4 +1,4 @@
-import { Download, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import { useState, useRef, useEffect } from "react";
 import type { SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -9,11 +9,11 @@ function ComponentProgressRow({ component }: { component: SetupComponentProgress
     <div className="flex items-center gap-3 py-2 px-3 rounded-lg">
       <div className="shrink-0">
         {component.status === "installing" ? (
-          <Loader2 className="size-4 text-primary animate-spin" />
+          <UiIcon name="spinner" className="size-4 text-primary animate-spin" />
         ) : component.status === "installed" ? (
-          <CheckCircle2 className="size-4 text-success" />
+          <UiIcon name="check-circle" className="size-4 text-success" />
         ) : component.status === "failed" ? (
-          <XCircle className="size-4 text-danger" />
+          <UiIcon name="x-circle" className="size-4 text-danger" />
         ) : (
           <div className="size-4 rounded-full border-2 border-border/50" />
         )}
@@ -116,12 +116,12 @@ export function InstallingPanel({
           >
             {isDone ? (
               finalStatus === "completed" ? (
-                <CheckCircle2 className="size-[18px] text-success" />
+                <UiIcon name="check-circle" className="size-[18px] text-success" />
               ) : (
-                <XCircle className="size-[18px] text-danger" />
+                <UiIcon name="x-circle" className="size-[18px] text-danger" />
               )
             ) : (
-              <Download className="size-[18px] text-primary" />
+              <UiIcon name="download" className="size-[18px] text-primary" />
             )}
           </div>
           <div className="flex-1">
@@ -176,9 +176,9 @@ export function InstallingPanel({
           className="flex items-center gap-2 w-full px-5 py-3 text-start hover:bg-muted/30 transition-colors rounded-t-2xl"
         >
           {logsExpanded ? (
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
           ) : (
-            <ChevronRight className="size-4 text-muted-foreground rtl:rotate-180" />
+            <UiIcon name="chevron-right" className="size-4 text-muted-foreground rtl:rotate-180" />
           )}
           <span className="text-sm font-medium text-foreground">
             {t.servers.setup.installLogs}
@@ -215,7 +215,7 @@ export function InstallingPanel({
             onClick={onDone}
             className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all"
           >
-            <CheckCircle2 className="size-4" />
+            <UiIcon name="check-circle" className="size-4" />
             {finalStatus === "completed" ? t.servers.setup.doneGoToServers : t.servers.setup.goToServers}
           </button>
           {failedCount > 0 && (
@@ -223,7 +223,7 @@ export function InstallingPanel({
               onClick={onRetry}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
             >
-              <XCircle className="size-4" />
+              <UiIcon name="x-circle" className="size-4" />
               {interpolate(t.servers.setup.retryFailed, { count: String(failedCount) })}
             </button>
           )}

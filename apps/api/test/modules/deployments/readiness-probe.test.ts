@@ -2,11 +2,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Duplex } from "node:stream";
 
 const withHostExecutor = vi.fn();
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { withHostExecutor: (fn: unknown) => withHostExecutor(fn) },
 }));
 
-import { probeDeployedReadiness } from "../../../src/modules/deployments/readiness-probe";
+import { probeDeployedReadiness } from "@repo/platform/engine/modules/deployments/readiness-probe";
 import type { CommandExecutor, RuntimeAdapter } from "@repo/adapters";
 
 /**
@@ -125,7 +125,9 @@ describe("probeDeployedReadiness", () => {
       primaryPort: 8080,
       probe: { ...PROBE },
       targetExecutor: executorWith(async () => {
-        throw new Error("ECONNREFUSED");
+        throw Object.assign(new Error("(SSH) Channel open failure: Connection refused"), {
+          reason: 2,
+        });
       }),
       log: () => {},
       subject: '"api"',
@@ -159,7 +161,8 @@ describe("probeDeployedReadiness", () => {
 
     expect(verdict.failure).toBeNull();
     expect(verdict.skipped).toContain("refuses port forwarding");
-    expect(verdict.skipped).toContain("openship up");
+    expect(verdict.skipped).toContain("deployment host's control connection");
+    expect(verdict.skipped).toContain("`curl` installation");
   });
 
   it("treats an unreachable dialing machine as skipped rather than a dead app", async () => {
@@ -176,5 +179,24 @@ describe("probeDeployedReadiness", () => {
 
     expect(verdict.failure).toBeNull();
     expect(verdict.skipped).toContain("not provisioned");
+  });
+
+  it("reports SSH transport failures as skipped with advice for the remote host", async () => {
+    const verdict = await probeDeployedReadiness({
+      runtime: runtimeWith(20_000),
+      containerId: "c1",
+      primaryPort: 8080,
+      probe: { ...PROBE },
+      targetExecutor: executorWith(async () => {
+        throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+      }),
+      log: () => {},
+    });
+
+    expect(verdict.failure).toBeNull();
+    expect(verdict.skipped).toContain("read ECONNRESET");
+    expect(verdict.skipped).toContain("deployment host's connection");
+    expect(verdict.skipped).not.toContain("openship up");
+    expect(withHostExecutor).not.toHaveBeenCalled();
   });
 });

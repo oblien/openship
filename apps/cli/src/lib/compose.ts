@@ -11,6 +11,8 @@
  * Lifecycle (up/stop/update/status) routes here when ~/.openship/install-method
  * is "compose"; otherwise the bare service backend handles it.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { reportCliMessage } from "./output";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
@@ -38,6 +40,7 @@ import {
   resolveLocalEnvironmentSync,
 } from "@repo/adapters";
 import { sanitizeEdgeVhosts } from "@repo/adapters/proxy";
+import { DEFAULT_CONTAINER_LOG_CONFIG } from "@repo/adapters/container-logging";
 import {
   DEFAULT_IMAGE_REGISTRY,
   explainHostChannelCause,
@@ -92,7 +95,11 @@ export function canonicalComposeHostPath(
       parent = dirname(parent);
       try {
         return join(resolvePath(parent), relative(parent, target));
-      } catch {
+      } catch (diagnosticFailure) {
+      // Missing mount roots are expected before the first installation.
+    if ((diagnosticFailure as NodeJS.ErrnoException)?.code !== "ENOENT")
+      observeCaughtError(diagnosticFailure, "cli/lib/compose");
+
         // Keep walking to the closest existing ancestor.
       }
     }
@@ -144,7 +151,8 @@ function dockerConfigMountYaml(indent: string): string {
   const path = resolve(process.env.DOCKER_CONFIG || join(homedir(), ".docker"), "config.json");
   try {
     if (!statSync(path).isFile()) return "";
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     return ""; // no config on this host — mount nothing
   }
   return [
@@ -163,7 +171,7 @@ function dockerConfigMountYaml(indent: string): string {
  * would freeze it at import, which both hides a config created since startup and makes
  * the generator untestable (a test setting DOCKER_CONFIG would never be observed).
  */
-function renderComposeYaml(): string {
+export function renderComposeYaml(): string {
   const mount = dockerConfigMountYaml("      ");
   return COMPOSE_YAML.split(`${DOCKER_CONFIG_MOUNT_MARKER}\n`).join(mount ? `${mount}\n` : "");
 }
@@ -199,7 +207,8 @@ export function readInstallMethod(): InstallMethod | null {
   try {
     const v = readFileSync(INSTALL_METHOD_FILE, "utf8").trim();
     return v === "compose" || v === "bare" ? v : null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     return null;
   }
 }
@@ -420,7 +429,7 @@ export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean
         clearInterval(tick);
         resolve(code);
       };
-      child.on("error", () => done(1));
+      child.on("error", (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/lib/compose"); return done(1); });
       child.on("close", (code) => done(code ?? 1));
     });
 
@@ -481,6 +490,8 @@ export interface ComposeUpOpts {
    * why `composeUp` cannot work it out for itself once the prefetch has written `.env`.
    */
   envChanged?: boolean;
+  /** Force-recreate the env-consuming services even if .env was already written or unchanged. */
+  forceRecreate?: boolean;
   /**
    * Proceed even though this run would regenerate secrets an existing data volume was
    * created with (see secretRotationRisk). The DB keeps its old password until
@@ -498,10 +509,17 @@ export interface ComposeUpOpts {
 
 /** Pinned compose stack. Vars come from the generated .env (env_file + interpolation). */
 const COMPOSE_YAML = `# Managed by \`openship up\` — do not edit; re-run \`openship up\` to regenerate.
+x-logging: &default-logging
+  driver: "${DEFAULT_CONTAINER_LOG_CONFIG.Type}"
+  options:
+    max-size: "${DEFAULT_CONTAINER_LOG_CONFIG.Config["max-size"]}"
+    max-file: "${DEFAULT_CONTAINER_LOG_CONFIG.Config["max-file"]}"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # Keep the data dir in a subdirectory of the volume so a fresh install never
       # runs initdb against a bare mount root (which fails on quirky host
@@ -523,6 +541,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     expose: ["6379"]
     volumes: [redis_data:/data]
@@ -535,6 +554,7 @@ services:
   api:
     image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:\${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
+    logging: *default-logging
     # Loopback by default — the host-net edge reaches it over loopback, so nothing
     # sits on a public interface. OPENSHIP_BIND_ADDR opts into a public/LAN interface
     # (set by \`openship up\` when a public URL is configured for off-box access).
@@ -585,7 +605,7 @@ ${edgeVolumeYaml("      ")}
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \\"fetch('http://127.0.0.1:\${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\\""]
+      test: ["CMD-SHELL", "node -e \\"fetch('http://127.0.0.1:\${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\\""]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -594,15 +614,23 @@ ${edgeVolumeYaml("      ")}
   dashboard:
     image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:\${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
+    logging: *default-logging
     # Loopback by default (see api note); OPENSHIP_BIND_ADDR opts into a public interface.
     ports: ["\${OPENSHIP_BIND_ADDR:-127.0.0.1}:\${DASHBOARD_PORT:-3001}:\${DASHBOARD_PORT:-3001}"]
     env_file: [.env]
     environment:
       NODE_ENV: production
       PORT: "\${DASHBOARD_PORT:-3001}"
+      HOSTNAME: "0.0.0.0"
       INTERNAL_API_URL: http://api:\${API_PORT:-4000}
     depends_on:
       api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
 
   edge:
     image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-edge:\${OPENSHIP_VERSION:-latest}
@@ -615,7 +643,11 @@ ${edgeVolumeYaml("      ")}
     # Safe here: the edge is a singleton (host networking, one per box).
     container_name: openship-edge
     restart: unless-stopped
+    logging: *default-logging
     network_mode: host
+    depends_on:
+      api: { condition: service_healthy }
+      dashboard: { condition: service_healthy }
     volumes:
 ${edgeVolumeYaml("      ")}
 
@@ -1081,7 +1113,8 @@ export function chooseHostChannelUser(input: {
 function hasPasswordlessSudo(): boolean {
   try {
     return spawnSync("sudo", ["-n", "-k", "true"], { stdio: "ignore" }).status === 0;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     return false;
   }
 }
@@ -1129,7 +1162,8 @@ function plannedHostChannel(
   try {
     const info = userInfo();
     invoker = { uid: info.uid, username: info.username, home: info.homedir };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     invoker = { uid: -1, username: process.env.USER || process.env.LOGNAME || "root", home: homedir() };
   }
   const pin = cfg.hostSshUser?.trim();
@@ -1154,7 +1188,8 @@ function passwdHome(user: string): string | null {
     const r = spawnSync("getent", ["passwd", user], { encoding: "utf8" });
     if (r.status !== 0) return null;
     return (r.stdout ?? "").split("\n")[0]?.split(":")[5]?.trim() || null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     return null;
   }
 }
@@ -1220,7 +1255,8 @@ function revokeKeyAt(authKeysPath: string): boolean {
     writeFileSync(authKeysPath, stripHostAuthorizedKeys(existing), { mode: 0o600 });
     chmodSync(authKeysPath, 0o600);
     return true;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     return false;
   }
 }
@@ -1293,7 +1329,8 @@ function retireHostSshChannel(prev: Record<string, string>): void {
 
   try {
     rmSync(keyDir, { recursive: true, force: true });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     /* the key is unusable the moment the channel is off; a leftover file is not a grant */
   }
 
@@ -1500,7 +1537,7 @@ function provisionHostSshChannel(
         // doesn't work: host ops on root-owned paths (mail state under /root/.openship, the
         // edge, the recovery manifest) WILL fail. Keep the channel — non-root host ops
         // still work — but say so loudly.
-        console.warn(
+        reportCliMessage("warn",
           "  ⚠ Host control needs root, and this channel has no route to it: it logs in as\n" +
             `    \`${candidate.user}\`, and \`sudo -n\` was refused over that session. Mail and edge\n` +
             "    host operations will fail. Grant that account passwordless sudo, or re-run\n" +
@@ -1545,6 +1582,7 @@ function provisionHostSshChannel(
       },
     };
   } catch (err) {
+    observeCaughtError(err, "cli/lib/compose");
     return { channel: null, issue: { code: "error", detail: (err as Error)?.message } };
   }
 }
@@ -1575,7 +1613,8 @@ function permitRootLoginSetting(port: number): string | null {
     );
     if (r.status !== 0) return null;
     return /^permitrootlogin\s+(\S+)/m.exec(r.stdout ?? "")?.[1] ?? null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     return null;
   }
 }
@@ -2009,23 +2048,37 @@ const PGDATA_ROOT = "/var/lib/postgresql/data";
  *   unknown — docker/daemon unavailable — never guess
  */
 type PgProbe = "root" | "sub" | "empty" | "foreign" | "unknown";
-function probePgDataDir(volume: string): PgProbe {
+type PgDataRisk = { volume: string; reason?: "unavailable"; detail?: string };
+type PgDataResolution =
+  | { path: string; risk: null }
+  | { path: null; risk: PgDataRisk };
+
+function probePgDataDir(volume: string): { layout: PgProbe; detail?: string } {
   const r = spawnSync(
     "docker",
     [
       "run", "--rm",
       "-v", `${volume}:/from:ro`,
       "alpine:3", "sh", "-c",
-      "if [ -f /from/PG_VERSION ]; then echo root; " +
+      "entries=$(ls -A /from) || exit 1; " +
+        "if [ -f /from/PG_VERSION ]; then echo root; " +
         "elif [ -f /from/pgdata/PG_VERSION ]; then echo sub; " +
-        "elif [ -z \"$(ls -A /from 2>/dev/null | grep -v '^lost+found$')\" ]; then echo empty; " +
+        "elif [ -z \"$(printf '%s\\n' \"$entries\" | grep -v '^lost+found$')\" ]; then echo empty; " +
         "else echo foreign; fi",
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", timeout: 60_000 },
   );
-  if (r.status !== 0) return "unknown";
+  if (r.status !== 0) {
+    return {
+      layout: "unknown",
+      detail:
+        r.error?.message || r.stderr?.trim() || "The volume probe failed without an error message.",
+    };
+  }
   const out = `${r.stdout ?? ""}`.trim();
-  return out === "root" || out === "sub" || out === "empty" || out === "foreign" ? out : "unknown";
+  return out === "root" || out === "sub" || out === "empty" || out === "foreign"
+    ? { layout: out }
+    : { layout: "unknown", detail: "The volume probe returned no recognized layout." };
 }
 
 /**
@@ -2044,30 +2097,31 @@ function probePgDataDir(volume: string): PgProbe {
  * must READ the volume, not guess from its mere existence. The old heuristic
  * ("volume exists → root") wrote the root while the cluster was really in the
  * subdir, so Postgres ran initdb over a non-empty dir and the whole stack died
- * (#487). Take the root ONLY when PG_VERSION is actually there; anything else
- * resolves to the subdir (the compose default and how every install since #350
- * was created), and the `foreign` case is stopped by the gate before it matters.
+ * (#487). Unknown or unrecognized layouts have no resolved path. The preview
+ * reports that refusal, and the writer must stop before changing configuration.
  */
-function resolvePgData(prev: Record<string, string>): string {
+function resolvePgData(prev: Record<string, string>): PgDataResolution {
   const SUB = `${PGDATA_ROOT}/pgdata`;
-  if (prev.OPENSHIP_PGDATA) return prev.OPENSHIP_PGDATA; // decided already — never move it
+  if (prev.OPENSHIP_PGDATA) return { path: prev.OPENSHIP_PGDATA, risk: null };
   const volume = survivingDbVolume(prev);
-  if (!volume) return SUB; // fresh install → compose default
-  return probePgDataDir(volume) === "root" ? PGDATA_ROOT : SUB;
+  if (!volume) return { path: SUB, risk: null };
+  const probe = probePgDataDir(volume);
+  if (probe.layout === "unknown") {
+    return { path: null, risk: { volume, reason: "unavailable", detail: probe.detail } };
+  }
+  if (probe.layout === "foreign") return { path: null, risk: { volume } };
+  return { path: probe.layout === "root" ? PGDATA_ROOT : SUB, risk: null };
 }
 
 /**
  * #487: a data volume this run didn't create holds data we don't recognize — no
  * cluster at the root or the pgdata/ subdir, but not empty either. Writing a
  * guessed OPENSHIP_PGDATA here is how #487 destroyed installs, so callers stop and
- * make the operator pin the path themselves. Non-null ONLY for the `foreign` probe
- * result; `root`/`sub`/`empty`/`unknown` are all handled safely by resolvePgData.
+ * make the operator pin the path themselves. A failed probe is also unresolved;
+ * it cannot establish that either path is safe.
  */
-function pgDataDetectionRisk(prev: Record<string, string>): { volume: string } | null {
-  if (prev.OPENSHIP_PGDATA) return null; // already pinned — resolvePgData won't probe
-  const volume = survivingDbVolume(prev);
-  if (!volume) return null;
-  return probePgDataDir(volume) === "foreign" ? { volume } : null;
+function pgDataDetectionRisk(prev: Record<string, string>): PgDataRisk | null {
+  return resolvePgData(prev).risk;
 }
 
 /**
@@ -2077,7 +2131,7 @@ function pgDataDetectionRisk(prev: Record<string, string>): { volume: string } |
  * written every future run short-circuits in resolvePgData/pgDataDetectionRisk, so
  * paying for one extra `docker run` on that single run needs no memoization.
  */
-export function composePgDataRisk(_opts: ComposeUpOpts = {}): { volume: string } | null {
+export function composePgDataRisk(_opts: ComposeUpOpts = {}): PgDataRisk | null {
   // No opt waives this — unlike --reset-secrets for the rotation gate, "reset the secrets"
   // is not consent to guess where the cluster lives. The escape hatch is pinning the path.
   return pgDataDetectionRisk(readEnvFile());
@@ -2090,10 +2144,20 @@ export function composePgDataRisk(_opts: ComposeUpOpts = {}): { volume: string }
  * candidate paths, and the one-line escape hatch — pinning the key by hand.
  */
 export function renderPgDataRefusal(
-  risk: { volume: string },
+  risk: PgDataRisk,
   opts: { dryRun?: boolean } = {},
 ): string {
   const SUB = `${PGDATA_ROOT}/pgdata`;
+  if (risk.reason === "unavailable") {
+    return (
+      `\n  ${opts.dryRun ? "A real run would REFUSE here" : "Refusing to continue"}:` +
+      ` the Postgres data directory could not be inspected.\n\n` +
+      `    volume: ${risk.volume}\n` +
+      (risk.detail ? `    reason: ${risk.detail}\n` : "") +
+      `\n  No configuration has been written. Resolve the probe error above, then retry.\n` +
+      `  OPENSHIP_PGDATA must not be guessed from a failed probe.\n`
+    );
+  }
   return (
     `\n  ${opts.dryRun ? "A real run would REFUSE here" : "Refusing to continue"}:` +
     ` this install's data volume holds data, but not a Postgres cluster we recognize.\n\n` +
@@ -2501,7 +2565,8 @@ function rootlessSocketCandidates(): string[] {
   let uid: number | undefined;
   try {
     uid = userInfo().uid;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     /* no passwd entry — the two env-derived candidates are all we have */
   }
   return [
@@ -2570,7 +2635,7 @@ function dockerSocketEnv(prev: Record<string, string>): string[] {
  * not become unrunnable over it.
  */
 function warnMissingDockerSocket(path: string): void {
-  console.warn(
+  reportCliMessage("warn",
     `\n  ! The Docker socket this install mounts into the api isn't there:\n` +
       `      ${path}\n` +
       `    Docker will create that path as an empty DIRECTORY, so the stack will come up\n` +
@@ -2893,6 +2958,7 @@ function managedEnvLines(
   host: { user: string; keyPath: string } | null,
   cfg: ReturnType<typeof resolveEnvConfig>,
   prev: Record<string, string>,
+  pgData: string,
 ): string[] {
   const lines: string[] = [
     "# Managed by `openship up`. Secrets are generated once and preserved.",
@@ -2916,8 +2982,8 @@ function managedEnvLines(
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
     `OPENSHIP_VERSION=${resolveImageVersion(opts)}`,
     `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
-    // Pinned once (see resolvePgData): fresh install → subdir, existing volume → root.
-    `OPENSHIP_PGDATA=${resolvePgData(prev)}`,
+    // Pin the path established by resolvePgData; existing clusters may use either layout.
+    `OPENSHIP_PGDATA=${pgData}`,
     `BETTER_AUTH_SECRET=${keepSecret(prev, "BETTER_AUTH_SECRET")}`,
     `INTERNAL_TOKEN=${keepSecret(prev, "INTERNAL_TOKEN")}`,
     `API_PORT=${cfg.apiPort}`,
@@ -2976,8 +3042,9 @@ function renderEnvAndCarried(
   host: { user: string; keyPath: string } | null,
   cfg: ReturnType<typeof resolveEnvConfig>,
   prev: Record<string, string>,
+  pgData: string,
 ): { text: string; carried: string[] } {
-  const lines = managedEnvLines(opts, host, cfg, prev);
+  const lines = managedEnvLines(opts, host, cfg, prev, pgData);
   const managed = new Set(lines.map(envKeyOf).filter((k): k is string => !!k));
   const preserved = operatorEnvPassthrough(managed, prev);
   const body = preserved.length ? [...lines, "", PRESERVED_ENV_HEADER, ...preserved] : lines;
@@ -2985,14 +3052,6 @@ function renderEnvAndCarried(
     text: body.join("\n") + "\n",
     carried: preserved.map((line) => line.slice(0, line.indexOf("="))),
   };
-}
-
-function renderEnv(
-  opts: ComposeUpOpts,
-  host: { user: string; keyPath: string } | null,
-  cfg: ReturnType<typeof resolveEnvConfig>,
-): string {
-  return renderEnvAndCarried(opts, host, cfg, readEnvFile()).text;
 }
 
 /**
@@ -3039,8 +3098,14 @@ function materialize(opts: ComposeUpOpts): {
    */
   envChanged: boolean;
 } {
-  mkdirSync(COMPOSE_DIR, { recursive: true, mode: 0o700 });
   const prev = readEnvFile();
+  // Revalidate the exact input that will be written, before host provisioning or
+  // file mutation. Earlier UI/preflight checks cannot authorize a later guess.
+  const rotation = opts.resetSecrets ? null : secretRotationRisk(prev);
+  if (rotation) throw new Error(renderSecretRotationRefusal(rotation));
+  const pgData = resolvePgData(prev);
+  if (pgData.risk) throw new Error(renderPgDataRefusal(pgData.risk));
+  mkdirSync(COMPOSE_DIR, { recursive: true, mode: 0o700 });
   const cfg = resolveEnvConfig(prev, opts);
   // --no-host-control: never generate/authorize a host key in the first place, and on a
   // box that already had one, take it back rather than only stopping short of using it —
@@ -3065,7 +3130,7 @@ function materialize(opts: ComposeUpOpts): {
   // ComposePrefetchResult) and `alreadyFetched` is exactly "the prefetch already did one",
   // so keying on it says this once rather than printing a dozen lines twice over.
   if (provision.issue && !opts.alreadyFetched) {
-    console.warn(
+    reportCliMessage("warn",
       renderHostChannelIssue(provision.issue, {
         target: `${cfg.hostSshHost}:${cfg.hostSshPort}`,
         kept,
@@ -3078,10 +3143,11 @@ function materialize(opts: ComposeUpOpts): {
   let before = "";
   try {
     before = readFileSync(ENV_FILE, "utf8");
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
     /* first install — no previous env, so everything is "changed" */
   }
-  const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev);
+  const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev, pgData.path);
   writeFileSync(COMPOSE_FILE, renderComposeYaml());
   writeEnvFile(rendered, before);
   // #485: the old rewrite silently DROPPED operator-set keys. Now they survive — say so,
@@ -3129,7 +3195,7 @@ const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/;
  * `materialize` WITHOUT the writes — everything a `--dry-run` needs to describe
  * the stack this run would install.
  *
- * The `.env` is rendered by `renderEnv` itself (masked), not re-listed here: a
+ * The `.env` uses the same renderer as the writer (masked), not a separate key list: a
  * hand-kept copy of the interesting keys is exactly how a preview starts lying —
  * a key added to the writer would silently go missing from the plan.
  */
@@ -3156,7 +3222,7 @@ export interface ComposePlan {
    * Set when a surviving data volume holds data we can't place (#487) — a real run
    * REFUSES rather than write a guessed OPENSHIP_PGDATA, so the preview names it too.
    */
-  pgDataRisk: { volume: string } | null;
+  pgDataRisk: PgDataRisk | null;
   /** True when a `.env` is already there — this would be a re-run, not a fresh install. */
   existing: boolean;
   /** Host directories the edge's bind mounts need (created on a real run). */
@@ -3174,7 +3240,11 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
   const hostChannel = previewHostChannel(cfg);
   const settings: Array<{ key: string; value: string }> = [];
   const newSecrets: string[] = [];
-  for (const line of renderEnv(opts, hostChannel, cfg).split("\n")) {
+  const pgData = resolvePgData(prev);
+  const rendered = renderEnvAndCarried(
+    opts, hostChannel, cfg, prev, pgData.path ?? "<unresolved>",
+  ).text;
+  for (const line of rendered.split("\n")) {
     const at = line.indexOf("=");
     if (at < 1 || line.startsWith("#")) continue;
     const key = line.slice(0, at);
@@ -3201,7 +3271,7 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
     settings,
     newSecrets,
     secretRotation: opts.resetSecrets ? null : secretRotationRisk(prev),
-    pgDataRisk: pgDataDetectionRisk(prev),
+    pgDataRisk: pgData.risk,
     existing: Object.keys(prev).length > 0,
     mountDirs: composeEdgeMounts().map((m) => m.host),
     buildDir,
@@ -3212,9 +3282,15 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
 /** Does this project's postgres data volume already exist (i.e. predate this run)? */
 function dbVolumeExists(project: string): boolean {
   const r = spawnSync("docker", ["volume", "inspect", `${project}_postgres_data`], {
-    stdio: "ignore",
+    encoding: "utf8",
+    timeout: 30_000,
   });
-  return r.status === 0;
+  if (r.status === 0) return true;
+  if (!r.error && /no such volume\b/i.test(r.stderr ?? "")) return false;
+  const reason = r.error?.message || r.stderr?.trim() || `docker exited ${r.status ?? "without a status"}`;
+  throw new Error(
+    `Cannot inspect database volume ${project}_postgres_data: ${reason}. Check Docker access and retry.`,
+  );
 }
 
 /** Run `docker compose <args>` in the compose dir, inheriting stdio. */
@@ -3289,7 +3365,7 @@ export function pinnedImagesReady(opts: ComposeUpOpts): boolean {
     out.push(`    • Your current install runs \`${prevVersion}\`, a tag known good on this box.`);
   }
   out.push("");
-  console.error(out.join("\n"));
+  reportCliMessage("error", out.join("\n"));
   return false;
 }
 
@@ -3331,7 +3407,12 @@ export function composePrefetch(opts: ComposeUpOpts): ComposePrefetchResult {
   // forgets. See composeSecretRotationRisk.
   const rotation = composeSecretRotationRisk(opts);
   if (rotation) {
-    console.error(renderSecretRotationRefusal(rotation));
+    reportCliMessage("error", renderSecretRotationRefusal(rotation));
+    return { ok: false, envChanged: false };
+  }
+  const pgData = composePgDataRisk(opts);
+  if (pgData) {
+    reportCliMessage("error", renderPgDataRefusal(pgData));
     return { ok: false, envChanged: false };
   }
   const { buildDir, envChanged } = materialize(opts);
@@ -3405,19 +3486,17 @@ export async function composeUp(
   const rotation = composeSecretRotationRisk(opts);
   if (rotation) {
     const pre = resolveEnvConfig(readEnvFile(), opts);
-    console.error(renderSecretRotationRefusal(rotation));
+    reportCliMessage("error", renderSecretRotationRefusal(rotation));
     // `refused` separates "this can't work" from "this didn't work": callers must not
     // offer a retry, because nothing about re-running changes the answer.
     return { ok: false, refused: true, apiPort: pre.apiPort, dashPort: pre.dashPort };
   }
-  // #487: an existing data volume holds data we can't place. resolvePgData would fall back
-  // to the subdir, but if the cluster is elsewhere that still orphans it — so refuse and let
-  // the operator pin OPENSHIP_PGDATA rather than write a guess. Same "stop before materialize"
-  // reasoning as the rotation gate: once `.env` is rewritten the safe recovery is harder.
+  // #487: an existing data volume could not be inspected or holds data we can't place.
+  // Refuse before materialize: rewriting `.env` with a guess makes recovery harder.
   const pgData = composePgDataRisk(opts);
   if (pgData) {
     const pre = resolveEnvConfig(readEnvFile(), opts);
-    console.error(renderPgDataRefusal(pgData));
+    reportCliMessage("error", renderPgDataRefusal(pgData));
     return { ok: false, refused: true, apiPort: pre.apiPort, dashPort: pre.dashPort };
   }
   const { buildDir, cfg, envChanged: rendered } = materialize(opts);
@@ -3433,6 +3512,7 @@ export async function composeUp(
   // own `rendered` compared `.env` against the prefetch's write and so always said
   // "unchanged". See ComposePrefetchResult.envChanged.
   const envChanged = opts.envChanged ?? rendered;
+  const shouldRecreate = opts.forceRecreate || envChanged;
   // The edge container mounts EDGE_SITES_HOST_DIR. A conf left there by an older or
   // failed attempt (a carried catch-all claiming `default_server`) crash-loops it with
   // `[emerg] a duplicate default server` — every time, forever, because the file is on
@@ -3441,8 +3521,15 @@ export async function composeUp(
   // `openship up` after it. Sanitize what we're about to mount, every start.
   const up = (extra: { withBuildOverride?: boolean } = {}) =>
     compose(
-      envChanged
-        ? ["up", "-d", "--force-recreate", ...ENV_CONSUMING_SERVICES]
+      shouldRecreate
+        ? [
+            "up",
+            "-d",
+            "--force-recreate",
+            // An explicit update is not applied until the replacements are ready.
+            ...(opts.forceRecreate ? ["--wait", "--wait-timeout", "180"] : []),
+            ...ENV_CONSUMING_SERVICES,
+          ]
         : ["up", "-d"],
       extra,
     );
@@ -3471,7 +3558,7 @@ export async function composeUp(
   const unmakeableMounts = ensureEdgeMountDirs();
   if (unmakeableMounts.length && isRootlessDocker()) {
     const dirs = unmakeableMounts.join(" ");
-    console.error(
+    reportCliMessage("error",
       `\n  Rootless Docker can't create the edge's host directories under root-owned paths:\n` +
         `    ${unmakeableMounts.join("\n    ")}\n\n` +
         `  Create them once (owned by your user), then re-run \`openship up --compose\`:\n` +
@@ -3497,7 +3584,9 @@ export async function composeUp(
 
   await sanitizeEdgeVhosts(new LocalExecutor(), EDGE_SITES_HOST_DIR, (l) =>
     console.log(`  ${l.message}`),
-  ).catch(() => {});
+  ).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
+  });
 
   if (buildDir) {
     // Only the upstream images can be pulled; ours don't exist in a registry for
@@ -3604,7 +3693,7 @@ export async function composeUpdate(
   version?: string,
 ): Promise<{ applied: boolean; refused: boolean }> {
   if (!existsSync(COMPOSE_FILE)) return { applied: false, refused: false };
-  const r = await composeUp(version ? { version } : {});
+  const r = await composeUp({ forceRecreate: true, ...(version ? { version } : {}) });
   return { applied: r.ok, refused: !!r.refused };
 }
 

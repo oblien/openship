@@ -5,7 +5,7 @@ import {
   subscribe,
   updateStatus,
   type SseWriter,
-} from "./session-manager";
+} from "@repo/platform/engine/modules/deployments/session-manager";
 
 /**
  * A partial-failure compose deploy is HELD for an explicit keep/reject decision.

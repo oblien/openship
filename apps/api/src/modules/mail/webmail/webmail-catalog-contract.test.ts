@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { flattenSettingFields, getAppEndpoints, getAppSettings, getAppTemplate } from "@repo/core";
-import { WEBMAIL_SETTING_KEYS, WEBMAIL_TEMPLATE_ID } from "./webmail-install.service";
+import { WEBMAIL_SETTING_KEYS, WEBMAIL_TEMPLATE_ID } from "@repo/platform/engine/modules/mail/webmail/webmail-install.service";
 
 const template = getAppTemplate(WEBMAIL_TEMPLATE_ID);
 

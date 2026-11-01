@@ -15,8 +15,11 @@ const h = vi.hoisted(() => ({
   starts: [] as Array<Record<string, unknown>>,
 }));
 
-vi.mock("./webmail-install.service", () => ({
-  startWebmailDeploy: async () => ({ deploymentId: "dep-1", projectId: "prj-1" }),
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
+  startWebmailDeploy: async (_ctx: unknown, input: Record<string, unknown>) => {
+    h.starts.push(input);
+    return { deploymentId: "dep-1", projectId: "prj-1" };
+  },
   startExternalWebmailDeploy: async (_ctx: unknown, input: Record<string, unknown>) => {
     h.starts.push(input);
     return { deploymentId: "dep-1", projectId: "prj-1" };
@@ -29,7 +32,7 @@ vi.mock("../../../lib/request-context", () => ({
   getRequestContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
 }));
 
-const { startExternalDeployAsProjectHandler } = await import("./webmail.controller");
+const { startDeployAsProjectHandler, startExternalDeployAsProjectHandler } = await import("./webmail.controller");
 
 /** Enough of a Hono context for this handler: a JSON body in, a JSON reply out. */
 function context(body: unknown) {
@@ -62,6 +65,16 @@ beforeEach(() => {
   h.starts = [];
 });
 
+it("preserves the selected managed server in the mail-backed deploy request", async () => {
+  const { c, sent } = context({
+    mailServerId: "mail-server", hostname: "webmail.example.com",
+    target: { kind: "cloud", serverId: "managed-server" },
+  });
+  await startDeployAsProjectHandler(c);
+  expect(sent.status).toBe(200);
+  expect(h.starts[0]?.target).toEqual({ kind: "cloud", serverId: "managed-server" });
+});
+
 describe("deploy-external target validation", () => {
   it("rejects 'local' with a 400 naming the two destinations", async () => {
     const { c, sent } = context(withTarget({ deployTarget: "local" }));
@@ -81,11 +94,11 @@ describe("deploy-external target validation", () => {
     expect(h.starts).toEqual([]);
   });
 
-  it("accepts cloud, and a server WITH the row it binds to", async () => {
-    const cloud = context(withTarget({ deployTarget: "cloud" }));
+  it("passes the selected server identity for both Cloud and self-hosted targets", async () => {
+    const cloud = context(withTarget({ deployTarget: "cloud", serverId: "srv-managed" }));
     await startExternalDeployAsProjectHandler(cloud.c);
     expect(cloud.sent.status).toBe(200);
-    expect(h.starts[0]?.target).toEqual({ deployTarget: "cloud", serverId: undefined });
+    expect(h.starts[0]?.target).toEqual({ deployTarget: "cloud", serverId: "srv-managed" });
 
     const server = context(withTarget({ deployTarget: "server", serverId: "srv-1" }));
     await startExternalDeployAsProjectHandler(server.c);

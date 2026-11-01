@@ -1,9 +1,16 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { useServiceEnvironmentApply } from "@/hooks/useServiceEnvironmentApply";
+import { getServiceStatus, ServiceStatusBadge } from "@/components/services/ServiceStatusBadge";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import {
   serviceKind,
   serviceUsesDeployPipeline,
@@ -11,107 +18,62 @@ import {
   servicesApi,
   type Service,
   type ServiceContainer,
-  type ServiceEnvVar,
   type ServiceInput,
-  type ServiceVolumeSizes,
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
-import { formatBytes } from "@/lib/formatBytes";
-import {
-  internalServiceAddress,
-  effectiveServiceAlias,
-  looksLikeSecretKey,
-  type ComposeAdvanced,
-} from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
-import {
-  Play,
-  Square,
-  Terminal,
-  Variable,
-  Loader2,
-  Network,
-  ExternalLink,
-  Power,
-  RotateCw,
-  Rocket,
-  ChevronDown,
-  Copy,
-  Check,
-  HardDrive,
-  Settings,
-  Trash2,
-  DatabaseBackup,
-  PlayCircle,
-  Plus,
-  LayoutDashboard,
-  ScrollText,
-  Save,
-  Pencil,
-  MonitorSmartphone,
-} from "lucide-react";
-import { backupsApi, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
+import { backupsApi, getApiErrorCode, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
-import { ServiceTerminal } from "@/components/terminal/ServiceTerminal";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
-import DropdownMenu from "@/components/ui/DropdownMenu";
+import { Button } from "@/components/ui/button";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
+import { ServiceEnvironmentPanel } from "./ServiceEnvironmentPanel";
 import { TerminalLogs } from "../logs/TerminalLogs";
-import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useLocalhostForward } from "@/hooks/useLocalhostForward";
+import { UseInProjectModal } from "../UseInProjectModal";
+import { ServiceOverview } from "./ServiceOverview";
+import { ServiceTerminalPanel } from "./ServiceTerminalPanel";
+import { ServiceVolumesPanel } from "./ServiceVolumesPanel";
+import { ServiceDomainsPanel } from "./ServiceDomainsPanel";
+import { ServiceLocalhostAction } from "./ServiceLocalhostAction";
+import type { ServiceDomainIntent } from "./ServicePortsCard";
+import { configuredServiceEndpoints } from "@/lib/service-endpoints";
+import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
+import { useRuntimeRedeployActions } from "@/components/project-settings/RuntimeRedeployMenu";
+import { RuntimeImageUpdateNotice } from "@/components/project-settings/RuntimeImageUpdateNotice";
 
-type ServiceTab = "overview" | "terminal" | "logs" | "env" | "settings" | "backup";
+type ServiceTab = "overview" | "terminal" | "logs" | "env" | "domains" | "volumes" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "terminal", label: "Terminal", icon: Terminal },
-  { key: "logs", label: "Logs", icon: ScrollText },
-  { key: "env", label: "Environment", icon: Variable },
-  { key: "settings", label: "Settings", icon: Settings },
-  { key: "backup", label: "Backup", icon: DatabaseBackup },
+  { key: "overview", label: "Overview" },
+  { key: "terminal", label: "Terminal" },
+  { key: "logs", label: "Logs" },
+  { key: "env", label: "Environment" },
+  { key: "domains", label: "Domains" },
+  { key: "volumes", label: "Volumes" },
+  { key: "backup", label: "Backup" },
+  { key: "settings", label: "Settings" },
 ];
 const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
-const SERVICE_ENVIRONMENT = "production" as const;
-
-type EnvRow = {
-  sourceId?: string;
-  key: string;
-  value: string;
-  visible: boolean;
-  isSecret?: boolean;
-};
-const envRowsFromVars = (vars: ServiceEnvVar[]): EnvRow[] =>
-  vars.map((v) => ({
-    sourceId: v.id,
-    key: v.key,
-    value: v.value,
-    visible: !v.isSecret,
-    isSecret: v.isSecret,
-  }));
-const comparableEnvRows = (rows: EnvRow[]) =>
-  rows
-    .map((row) => ({
-      sourceId: row.sourceId,
-      key: row.key.trim(),
-      value: row.value,
-      isSecret: row.isSecret ?? looksLikeSecretKey(row.key),
-    }))
-    .filter((row) => row.key)
-    .sort((a, b) => a.key.localeCompare(b.key));
-
 /* ── Props ──────────────────────────────────────────────────────────── */
 
 interface ServiceDetailPanelProps {
   service: Service;
   container?: ServiceContainer;
+  /** An outstanding runtime read, distinct from a confirmed stopped service. */
+  containerChecking?: boolean;
+  containerError?: string | null;
   projectId: string;
+  workspaceId?: string | null;
   projectSlugBase: string;
   /** Tab to open on mount (from the URL: /services/[id]/[tab]). */
   initialTab?: string;
   onRefresh: () => void | Promise<void>;
+  onBack?: () => void;
   onDeleted?: () => void;
   /** Project context — supplied by the caller instead of read from
    *  ProjectSettingsContext, so the panel renders outside the projects route
@@ -136,10 +98,14 @@ interface ServiceDetailPanelProps {
 export function ServiceDetailPanel({
   service,
   container,
+  containerChecking,
+  containerError,
   projectId,
+  workspaceId,
   projectSlugBase,
   initialTab,
   onRefresh,
+  onBack,
   onDeleted,
   projectType,
   activeDeploymentId,
@@ -151,44 +117,26 @@ export function ServiceDetailPanel({
 }: ServiceDetailPanelProps) {
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing(workspaceId);
+  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh, workspaceId);
+  const runtimeUpdate = useRuntimeUpdate(projectId, service.id, workspaceId,
+    JSON.stringify([activeDeploymentId, service.image, service.build, service.buildImage]));
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const router = useRouter();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
-  const status = container?.status ?? (service.enabled ? "stopped" : "disabled");
-
-  // Desktop-only "Open": SSH-forward this service's published host port onto
-  // localhost and open it — the same affordance the project card offers. Hidden
-  // unless we're a desktop dashboard managing a remote server (backend 404s
-  // otherwise). Port comes from the live container, else the compose mapping.
-  const { canForward, forward } = useLocalhostForward({ serverId, deployTarget });
-  const [openingLocal, setOpeningLocal] = useState(false);
-  const forwardPort =
-    container?.hostPort ||
-    (() => {
-      for (const p of service.ports ?? []) {
-        const parts = String(p).split(":");
-        const host = parts.length >= 2 ? Number(parts[parts.length - 2]) : NaN;
-        if (Number.isFinite(host)) return host;
-      }
-      return service.exposedPort ? Number(service.exposedPort) : 0;
-    })();
-  const canOpenLocal = canForward && Number.isFinite(forwardPort) && forwardPort > 0;
-  const openOnLocalhost = async () => {
-    if (!forwardPort || openingLocal) return;
-    setOpeningLocal(true);
-    try {
-      await forward(forwardPort, "open");
-    } finally {
-      setOpeningLocal(false);
-    }
-  };
+  const [resettingStorage, setResettingStorage] = useState(false);
+  const storageResetPending = useRef(false);
+  const applyingEnvironment = environmentApply.applyingServiceId !== null;
+  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment || resettingStorage || runtimeUpdate.updating;
+  const runtimeActions = useRuntimeRedeployActions(runtimeUpdate, serviceOperationBusy);
+  const status = getServiceStatus(service, container, containerChecking);
 
   // Backup only applies to compose services (stateful containers) — never
   // monorepo sub-apps (source-built frontends).
@@ -203,6 +151,12 @@ export function ServiceDetailPanel({
   const [activeTab, setActiveTab] = useState<ServiceTab>(() =>
     SERVICE_TABS.includes(initialTab as ServiceTab) ? (initialTab as ServiceTab) : "overview",
   );
+  const [environmentVisited, setEnvironmentVisited] = useState(initialTab === "env");
+  const [envDirty, setEnvDirty] = useState(false);
+  useEffect(() => {
+    if (activeTab === "env") setEnvironmentVisited(true);
+  }, [activeTab]);
+  const [domainIntent, setDomainIntent] = useState<ServiceDomainIntent>({});
   const changeTab = (tab: ServiceTab) => {
     setActiveTab(tab);
     // Deep-link the tab without a route push (scroll-preserving), matching
@@ -214,37 +168,6 @@ export function ServiceDetailPanel({
       requestAnimationFrame(() => window.scrollTo(0, scrollY));
     }
   };
-
-  // ── Volume sizes (lazy) ──────────────────────────────────────────────
-  // `du` on the host is slow, so we measure only when the Overview tab is open
-  // (not on every render/poll), cache the result for the mounted service, and
-  // skip cloud workloads (no host to du on).
-  const hasVolumes = !!service.volumes && service.volumes.length > 0;
-  const [volSizes, setVolSizes] = useState<ServiceVolumeSizes | null>(null);
-  const [volSizesLoading, setVolSizesLoading] = useState(false);
-  useEffect(() => {
-    setVolSizes(null); // drop the previous service's measurement on switch
-  }, [service.id]);
-  useEffect(() => {
-    if (activeTab !== "overview" || !hasVolumes || deployTarget === "cloud") return;
-    if (volSizes || volSizesLoading) return;
-    let cancelled = false;
-    setVolSizesLoading(true);
-    servicesApi
-      .volumeSizes(projectId, service.id)
-      .then((res) => {
-        if (!cancelled) setVolSizes(res);
-      })
-      .catch(() => {
-        if (!cancelled) setVolSizes(null);
-      })
-      .finally(() => {
-        if (!cancelled) setVolSizesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, hasVolumes, deployTarget, projectId, service.id, volSizes, volSizesLoading]);
 
   // ── Service switcher ─────────────────────────────────────────────────
   // Jump to another service WITHOUT leaving the current tab (Terminal stays
@@ -265,68 +188,6 @@ export function ServiceDetailPanel({
     else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
   };
 
-  // Compose inline env is the imported/default layer. This editor owns only
-  // service-scoped env_var rows, which deploy after compose and survive reparse.
-  const [envRows, setEnvRows] = useState<EnvRow[]>([]);
-  const [savedEnvRows, setSavedEnvRows] = useState<EnvRow[]>([]);
-  const [envLoading, setEnvLoading] = useState(true);
-  const [envSaving, setEnvSaving] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    setEnvLoading(true);
-    servicesApi
-      .getEnv(projectId, service.id, SERVICE_ENVIRONMENT)
-      .then((result) => {
-        if (cancelled) return;
-        const rows = envRowsFromVars(result.vars ?? []);
-        setEnvRows(rows);
-        setSavedEnvRows(rows);
-      })
-      .catch((err) => {
-        if (!cancelled)
-          showToast(
-            err instanceof Error
-              ? err.message
-              : t.projectDetail.services.detail.toast.envSaveFailed,
-            "error",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setEnvLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, service.id, showToast, t.projectDetail.services.detail.toast.envSaveFailed]);
-  const envDirty = useMemo(
-    () =>
-      JSON.stringify(comparableEnvRows(envRows)) !==
-      JSON.stringify(comparableEnvRows(savedEnvRows)),
-    [envRows, savedEnvRows],
-  );
-  const handleSaveEnv = async () => {
-    setEnvSaving(true);
-    try {
-      const result = await servicesApi.setEnv(projectId, service.id, {
-        environment: SERVICE_ENVIRONMENT,
-        vars: comparableEnvRows(envRows),
-      });
-      if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
-      const refreshed = await servicesApi.getEnv(projectId, service.id, SERVICE_ENVIRONMENT);
-      const rows = envRowsFromVars(refreshed.vars ?? []);
-      setEnvRows(rows);
-      setSavedEnvRows(rows);
-      showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed,
-        "error",
-      );
-    } finally {
-      setEnvSaving(false);
-    }
-  };
-
   // ── Terminal section state ──────────────────────────────────────────
   // Lazy-mount: the WS only opens once the user opens the Terminal tab, so
   // service pages don't burn a session slot per page view. A resume token
@@ -334,59 +195,143 @@ export function ServiceDetailPanel({
   // the parked session rather than spawning a fresh shell.
   const [terminalResumeToken, setTerminalResumeToken] = useState<string | null>(null);
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = `openship.serviceterm.resume.${service.id}`;
-    setTerminalResumeToken(window.localStorage.getItem(key));
+    try {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      const key = `openship.serviceterm.resume.${service.id}`;
+      setTerminalResumeToken(window.localStorage.getItem(key));
+    } catch {
+      // diagnostics-ignore: localStorage access may fail in restricted/private browsing mode.
+    }
   }, [service.id]);
   const persistResumeToken = (token: string | null) => {
     setTerminalResumeToken(token);
-    if (typeof window === "undefined") return;
-    const key = `openship.serviceterm.resume.${service.id}`;
-    if (token) window.localStorage.setItem(key, token);
-    else window.localStorage.removeItem(key);
+    try {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      const key = `openship.serviceterm.resume.${service.id}`;
+      if (token) window.localStorage.setItem(key, token);
+      else window.localStorage.removeItem(key);
+    } catch {
+      // diagnostics-ignore: localStorage write may fail in restricted/private browsing mode.
+    }
   };
 
   // ── Backup section state ────────────────────────────────────────────
   const [backupPolicy, setBackupPolicy] = useState<BackupPolicy | null>(null);
   const [backupEditorOpen, setBackupEditorOpen] = useState(false);
+  const [backupAfterSave, setBackupAfterSave] = useState(false);
   const [activeBackupRunId, setActiveBackupRunId] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupRevision, setBackupRevision] = useState(0);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const backupScope = `${projectId}:${service.id}`;
+  const backupScopeRef = useRef<string | null>(backupScope);
+  const backupRequestRef = useRef<object | null>(null);
+  const backupVisible = (activeTab === "backup" || activeTab === "volumes") && supportsBackup;
 
   useEffect(() => {
+    backupScopeRef.current = backupScope;
+    setBackupPolicy(null);
+    setActiveBackupRunId(null);
+    setBackupEditorOpen(false);
+    setBackupAfterSave(false);
+    setBackupError(null);
+    setBackupRunning(false);
+    backupRequestRef.current = null;
+    return () => {
+      backupScopeRef.current = null;
+      backupRequestRef.current = null;
+    };
+  }, [backupScope]);
+
+  useEffect(() => {
+    if (!backupVisible) return;
     let alive = true;
+    setBackupLoading(true);
+    setBackupError(null);
     void backupsApi
       .listPolicies(projectId)
       .then((res) => {
         if (!alive) return;
-        const policy = res.data.find((p) => p.serviceId === service.id) ?? null;
+        const policy = res.data.find((p) => p.serviceId === service.id) ?? res.data.find((p) => p.serviceId === null) ?? null;
         setBackupPolicy(policy);
       })
-      .catch(() => {
-        if (alive) setBackupPolicy(null);
-      });
+      .catch((error) => {
+        if (alive) setBackupError(getApiErrorMessage(error, t.projectDetail.services.detail.storage.backupLoadFailed));
+      })
+      .finally(() => { if (alive) setBackupLoading(false); });
     return () => {
       alive = false;
     };
-  }, [projectId, service.id]);
+  }, [projectId, service.id, backupVisible, backupRevision, t.projectDetail.services.detail.storage.backupLoadFailed]);
 
   const reloadBackupPolicy = async (): Promise<void> => {
+    setBackupRevision((value) => value + 1);
+  };
+
+  const handleBackupNow = async (policy = backupPolicy): Promise<void> => {
+    if (
+      !policy ||
+      (policy.serviceId !== null && policy.serviceId !== service.id) ||
+      backupScopeRef.current !== backupScope ||
+      backupRequestRef.current
+    )
+      return;
+    const request = {};
+    backupRequestRef.current = request;
+    setBackupRunning(true);
     try {
-      const res = await backupsApi.listPolicies(projectId);
-      const policy = res.data.find((p) => p.serviceId === service.id) ?? null;
-      setBackupPolicy(policy);
-    } catch {
-      // tolerated
+      const res = policy.serviceId === null
+        ? await backupsApi.runNow(policy.id, { serviceId: service.id })
+        : await backupsApi.runNow(policy.id);
+      if (backupRequestRef.current === request) setActiveBackupRunId(res.data.runId);
+    } catch (err) {
+      if (backupRequestRef.current === request)
+        showToast(
+          getApiErrorMessage(err, t.projectDetail.services.detail.toast.backupRunFailed),
+          "error",
+        );
+    } finally {
+      if (backupRequestRef.current === request) {
+        backupRequestRef.current = null;
+        setBackupRunning(false);
+      }
     }
   };
 
-  const handleBackupNow = async (): Promise<void> => {
-    if (!backupPolicy) return;
-    try {
-      const res = await backupsApi.runNow(backupPolicy.id);
-      setActiveBackupRunId(res.data.runId);
-    } catch (err) {
-      window.alert(getApiErrorMessage(err, t.projectDetail.services.detail.toast.backupRunFailed));
+  const handleVolumeBackup = () => {
+    if (backupLoading || backupError) return;
+    if (backupPolicy) void handleBackupNow();
+    else {
+      setBackupAfterSave(true);
+      setBackupEditorOpen(true);
     }
   };
+
+  const handleBackupPolicySaved = async (policy: BackupPolicy, startBackup: boolean) => {
+    if (backupScopeRef.current !== backupScope) return;
+    setBackupEditorOpen(false);
+    setBackupPolicy(policy);
+    await reloadBackupPolicy();
+    if (startBackup) await handleBackupNow(policy);
+  };
+
+  const backupFeedback =
+    activeBackupRunId || backupError ? (
+      <>
+        {activeBackupRunId && <BackupRunCard runId={activeBackupRunId} />}
+        {backupError && (
+          <div className="space-y-3">
+            <p role="alert" className="text-sm text-danger">
+              {backupError}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void reloadBackupPolicy()}>
+              {t.projectDetail.services.detail.storage.retry}
+            </Button>
+          </div>
+        )}
+      </>
+    ) : null;
 
   // Null when the service has no route: it is reachable on its port, and the
   // derived `<project>-<service>` host this used to print never existed.
@@ -396,34 +341,10 @@ export function ServiceDetailPanel({
     kind: serviceKind(service),
   });
 
-  // Hero subtitle: the image, or the build context — but not a bare "." (the
-  // default compose build context), which reads as a stray dot.
-  const sourceLabel =
-    service.image?.trim() ||
-    (service.build && service.build.trim() && service.build.trim() !== "."
-      ? service.build.trim()
-      : "");
-
-  // The stable east-west address a sibling service uses (docker alias : port) —
-  // computed once for the Network card. Null when the service exposes no port.
-  // The custom alias (`advanced.alias`), when set, IS the primary hostname it
-  // answers to, so it must be what's shown — otherwise the card would print the
-  // service name while DNS resolves the custom one.
-  const aliasLabel = effectiveServiceAlias(
-    service.name,
-    (service.advanced as ComposeAdvanced | null)?.alias,
-  );
-  const internalAddr = internalServiceAddress(aliasLabel, service.ports as string[]);
-
-  const copy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 1500);
-  };
-
   /* ── Handlers ───────────────────────────────────────────────── */
 
   const handleContainerAction = async (action: "start" | "stop" | "restart") => {
+    if (serviceOperationBusy) return;
     setActionLoading(action);
     try {
       if (action === "start") await servicesApi.start(projectId, service.id);
@@ -431,6 +352,21 @@ export function ServiceDetailPanel({
       else await servicesApi.restart(projectId, service.id);
       onRefresh();
     } catch (err) {
+      if (action === "restart" && getApiErrorCode(err) === "SERVICE_CONFIG_STALE") {
+        showToast(
+          envDirty
+            ? t.projectDetail.services.detail.environmentApply.saveFirst
+            : interpolate(t.projectDetail.services.detail.environmentApply.restartBlocked, { name: service.name }),
+          "info",
+          service.name,
+        );
+        changeTab("env");
+        return;
+      }
+      if (action !== "stop" && showCloudPricing(err, async () => {
+        await servicesApi[action](projectId, service.id);
+        onRefresh();
+      })) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -461,10 +397,8 @@ export function ServiceDetailPanel({
   const handleDeployStart = async () => {
     setDeploying(true);
     try {
-      // Start = provision + launch THIS service on its own (its own container /
-      // Oblien workspace), DECOUPLED from the project deploy — no build page, no
-      // one-deploy lock, never touches the main app. servicesApi.start
-      // provisions-if-missing server-side (and enables the service first).
+      // Start provisions this image service on the project's selected server
+      // through the shared Docker deployer. No source build is needed.
       const res = await servicesApi.start(projectId, service.id);
       if ((res as any)?.success === false) {
         setDeploying(false);
@@ -484,6 +418,7 @@ export function ServiceDetailPanel({
       onRefresh();
     } catch (err) {
       setDeploying(false);
+      if (showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -495,16 +430,16 @@ export function ServiceDetailPanel({
   /**
    * PIPELINE services only (compose stack / monorepo sub-app / source-built):
    * rebuild + redeploy ONLY this service and land on the build screen. Image
-   * apps don't get this — they Start/Stop.
+   * apps use the shared image refresh operation when redeploying.
    */
   const handleRedeployService = async () => {
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
-      return;
+      return false;
     }
     if (!service.enabled) {
       showToast(t.projectDetail.services.detail.toast.enableBeforeRedeploy, "error", service.name);
-      return;
+      return false;
     }
     setRedeploying(true);
     try {
@@ -516,17 +451,20 @@ export function ServiceDetailPanel({
           "error",
           service.name,
         );
-        return;
+        return false;
       }
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
+      return true;
     } catch (err) {
       setRedeploying(false);
+      if (showCloudPricing(err)) return false;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",
         service.name,
       );
+      return false;
     }
   };
 
@@ -587,6 +525,7 @@ export function ServiceDetailPanel({
       onDeleted?.();
       await onRefresh();
     } catch (error) {
+      observeCaughtError(error, "dashboard/app/(dashboard)/projects/[id]/components/services/ServiceDetailPanel");
       showToast(
         error instanceof Error ? error.message : t.projectDetail.services.detail.toast.deleteFailed,
         "error",
@@ -596,77 +535,130 @@ export function ServiceDetailPanel({
     }
   };
 
+  const serviceActions: MenuAction[] = [
+    ...(resolvedUrl ? [{
+      id: "open",
+      label: t.projects.connections.openShort,
+      icon: <UiIcon name="arrow-up-right" className="size-4" />,
+      onClick: () => { window.open(resolvedUrl, "_blank", "noopener,noreferrer"); },
+    }] : []),
+    ...(service.enabled && activeDeploymentId ? [{
+      id: "redeploy",
+      label: redeploying || runtimeUpdate.updating
+        ? t.projectDetail.services.detail.redeploying
+        : t.projectDetail.services.detail.redeploy,
+      icon: <UiIcon name="rocket" className="size-4" />,
+      disabled: serviceOperationBusy,
+      onClick: () => void (usesDeployPipeline ? handleRedeployService() : runtimeUpdate.update()),
+    }, ...runtimeActions] : []),
+  ];
+
   /* ── Render ─────────────────────────────────────────────────── */
 
+  const serviceIdentity = (
+    <>
+      <ServiceIcon service={service} className="size-5 shrink-0" />
+      <span className="truncate" title={service.name}>{service.name}</span>
+    </>
+  );
+
   return (
-    <div className="space-y-5">
-      {/* ── Heading (simple, no card) ──────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-center gap-2.5">
-          {canSwitchService ? (
-            <DropdownMenu
-              align="left"
-              triggerClassName="group inline-flex items-center gap-1.5 rounded-lg -ms-1.5 px-1.5 py-0.5 transition-colors hover:bg-muted/50"
-              trigger={
-                <>
-                  <span className="text-xl font-semibold tracking-tight text-foreground">
-                    {service.name}
-                  </span>
-                  <ChevronDown className="size-4 text-muted-foreground transition-colors group-hover:text-foreground" />
-                </>
-              }
-              actions={switchableServices.map((s) => ({
-                id: s.id,
-                label: s.name,
-                icon:
-                  s.id === service.id ? (
-                    <Check className="size-4 text-primary" />
-                  ) : (
-                    <span
-                      className={`size-1.5 rounded-full ${s.enabled ? "bg-success-solid" : "bg-muted-foreground/40"}`}
-                    />
-                  ),
-                disabled: s.id === service.id,
-                onClick: () => switchService(s.id),
-              }))}
-            />
-          ) : (
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">{service.name}</h2>
-          )}
-          <StatusBadge status={status} />
-        </div>
-        <div className="flex min-w-0 items-center gap-3">
-          {canOpenLocal && (
-            <button
+    <div className="min-w-0 space-y-5">
+      <UseInProjectModal open={shareOpen} onClose={() => setShareOpen(false)} sourceProjectId={projectId} sourceServiceId={service.id} />
+      {/* ── Service identity and actions ──────────────────────── */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-2">
+          {onBack && (
+            <Button
               type="button"
-              onClick={openOnLocalhost}
-              disabled={openingLocal}
-              title={t.projects.connections.openLocalhost}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-60"
+              variant="ghost"
+              size="icon"
+              onClick={onBack}
+              title={t.projectDetail.services.addModal.allServices}
+              className="shrink-0"
             >
-              <MonitorSmartphone className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
-              {t.projects.connections.openShort}
-            </button>
+              <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
+              <span className="sr-only">{t.projectDetail.services.addModal.allServices}</span>
+            </Button>
           )}
-          {resolvedUrl ? (
-            <a
-              href={resolvedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-foreground/70"
+          <div className="@container min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2.5">
+              {canSwitchService ? (
+                <>
+                  <h2 className="sr-only">{service.name}</h2>
+                  <DropdownMenu
+                    align="left"
+                    className="min-w-0"
+                    menuClassName="w-[min(18rem,100cqw)] min-w-0"
+                    triggerClassName="group flex h-9 w-full items-center gap-2 rounded-lg text-base font-medium text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    trigger={
+                      <>
+                        {serviceIdentity}
+                        <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                      </>
+                    }
+                    actions={switchableServices.map((s) => ({
+                      id: s.id,
+                      label: s.name,
+                      icon: <ServiceIcon service={s} className="size-4" />,
+                      disabled: s.id === service.id,
+                      onClick: () => switchService(s.id),
+                    }))}
+                  />
+                </>
+              ) : (
+                <h2 className="flex h-9 min-w-0 items-center gap-2 text-base font-medium text-foreground">
+                  {serviceIdentity}
+                </h2>
+              )}
+              <div className="shrink-0"><ServiceStatusBadge status={status} /></div>
+            </div>
+          </div>
+        </div>
+        <div className="ms-auto flex max-w-full flex-wrap items-center gap-2">
+          {service.enabled && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+              className="h-9"
             >
-              <span className="truncate">{resolvedUrl.replace("https://", "")}</span>
-              <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
-            </a>
-          ) : sourceLabel ? (
-            <span className="truncate text-sm text-muted-foreground">{sourceLabel}</span>
-          ) : null}
+              <UiIcon name="plug" className="size-3.5" />{t.projects.connections.useInProject}
+            </Button>
+          )}
+          <ServiceLocalhostAction
+            service={service}
+            container={container}
+            serverId={serverId}
+            deployTarget={deployTarget}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onRefresh}
+            disabled={containerChecking}
+            title={t.projects.services.refresh}
+            className="shrink-0"
+          >
+            <UiIcon name="refresh" className={`size-4 ${containerChecking ? "animate-spin" : ""}`} />
+            <span className="sr-only">{t.projects.services.refresh}</span>
+          </Button>
+          {serviceActions.length > 0 && (
+            <DropdownMenu
+              triggerLabel={t.projects.card.more}
+              triggerClassName="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              menuClassName="w-[min(24rem,calc(100vw-2rem))] min-w-0 [&_button>span]:whitespace-normal"
+              actions={serviceActions}
+            />
+          )}
         </div>
         {/* Another container on the host also answers to this service — a
             leftover from an adopt/redeploy. It isn't the one we manage, and it
             may still be holding a port or a volume. */}
         {container?.duplicates && container.duplicates.length > 0 && (
-          <p className="mt-1 text-xs text-warning">
+          <p className="w-full text-xs text-warning">
             {interpolate(t.projectDetail.services.detail.duplicateContainers, {
               names: container.duplicates.join(", "),
             })}
@@ -675,208 +667,96 @@ export function ServiceDetailPanel({
       </div>
 
       {/* ── Tab strip ──────────────────────────────────────────── */}
+      <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult} busy={serviceOperationBusy} onRefresh={runtimeUpdate.update} />
       <Tabs
         className="border-b-0"
+        size="md"
+        fullWidth
         tabs={SERVICE_TAB_DEFS.map((def) => ({
           ...def,
           label: t.projectDetail.services.detail.tabs[def.key],
+          href: deepLink ? `/projects/${projectId}/services/${service.id}/${def.key}` : undefined,
+          ...(def.key === "volumes" && service.volumes?.length ? { count: service.volumes.length } : {}),
+          ...(def.key === "domains" && configuredServiceEndpoints(service).length ? { count: configuredServiceEndpoints(service).length } : {}),
           ...(def.key === "backup" ? { hidden: !supportsBackup } : {}),
         }))}
         value={activeTab}
         onChange={changeTab}
       />
 
+      {status === "unknown" && activeTab !== "terminal" && (
+        <ConnectionNotice
+          title={t.projectDetail.services.connection.statusTitle}
+          message={t.projectDetail.services.connection.statusHint}
+          detail={containerError || undefined}
+          onRetry={onRefresh}
+          retrying={containerChecking}
+        />
+      )}
+
       {/* ── Overview ───────────────────────────────────────────── */}
       {activeTab === "overview" && (
-        <div className="space-y-5">
-          {/* Network */}
-          {(container?.containerId || (service.ports && service.ports.length > 0)) && (
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader
-                title={t.projectDetail.services.detail.network}
-                icon={Network}
-                right={
-                  <button
-                    type="button"
-                    onClick={() => changeTab("settings")}
-                    className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-                  >
-                    <Pencil className="size-3.5" />
-                    {t.projectDetail.services.detail.editInSettings}
-                  </button>
-                }
-              />
-              <div className="space-y-4">
-                {/* The stable address sibling services use — service name is the
-                    hostname (docker alias / cloud /etc/hosts), NOT the public
-                    subdomain. This is what goes in another service's DATABASE_URL. */}
-                {internalAddr && (
-                  <FieldChip
-                    label={t.projectDetail.services.detail.internalAddress}
-                    value={internalAddr}
-                    onCopy={() => copy(internalAddr, "internal")}
-                    copied={copied === "internal"}
-                    hint={t.projectDetail.services.detail.internalAddressHint}
-                  />
-                )}
-                {service.ports && service.ports.length > 0 && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.ports}
-                    value={service.ports.join(", ")}
-                    mono
-                    onCopy={() => copy(service.ports!.join(", "), "ports")}
-                    copied={copied === "ports"}
-                  />
-                )}
-                {container?.hostPort && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.hostPort}
-                    value={String(container.hostPort)}
-                    mono
-                    onCopy={() => copy(String(container.hostPort), "hostPort")}
-                    copied={copied === "hostPort"}
-                  />
-                )}
-                {container?.ip && (
-                  <div>
-                    <InfoCard
-                      label={t.projectDetail.services.detail.currentIp}
-                      value={container.ip}
-                      mono
-                      onCopy={() => copy(container.ip!, "ip")}
-                      copied={copied === "ip"}
-                    />
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">
-                      {t.projectDetail.services.detail.currentIpHint}
-                    </p>
-                  </div>
-                )}
-                {container?.containerId && (
-                  <InfoCard
-                    label={
-                      deployTarget === "cloud"
-                        ? t.projectDetail.services.detail.workspaceId
-                        : t.projectDetail.services.detail.containerId
-                    }
-                    // Docker ids are 64 chars — the 12-char short id is enough
-                    // to `docker exec`. Cloud workspace ids are short/opaque, so
-                    // show them in full (you need the whole thing to find it).
-                    value={
-                      deployTarget === "cloud"
-                        ? container.containerId
-                        : container.containerId.slice(0, 12)
-                    }
-                    mono
-                    onCopy={() => copy(container.containerId!, "cid")}
-                    copied={copied === "cid"}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+        <ServiceOverview
+          service={service}
+          container={container}
+          projectId={projectId}
+          deployTarget={deployTarget}
+          onSettings={() => changeTab("settings")}
+          onDomains={(intent) => { setDomainIntent(intent); changeTab("domains"); }}
+        />
+      )}
 
-          {/* Configuration */}
-          {(service.restart ||
-            service.command ||
-            (service.dependsOn && service.dependsOn.length > 0)) && (
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader
-                title={t.projectDetail.services.detail.configuration}
-                icon={Settings}
-              />
-              <div className="space-y-3">
-                {service.restart && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.restartPolicy}
-                    value={service.restart}
-                  />
-                )}
-                {service.command && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.command}
-                    value={service.command}
-                    mono
-                    onCopy={() => copy(service.command!, "cmd")}
-                    copied={copied === "cmd"}
-                  />
-                )}
-                {service.dependsOn && service.dependsOn.length > 0 && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.dependsOn}
-                    value={service.dependsOn.join(", ")}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+      {activeTab === "domains" && (
+        <ServiceDomainsPanel
+          key={`${service.id}:${domainIntent.port ?? "all"}:${domainIntent.add ?? false}`}
+          projectId={projectId}
+          serviceId={service.id}
+          intent={domainIntent}
+          onChanged={onRefresh}
+        />
+      )}
 
-          {/* Volumes */}
-          {service.volumes && service.volumes.length > 0 && (
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader
-                title={t.projectDetail.services.detail.volumes}
-                icon={HardDrive}
-                right={
-                  volSizesLoading ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      Measuring…
-                    </span>
-                  ) : volSizes?.measurable && volSizes.totalBytes != null ? (
-                    <span className="text-xs font-semibold tabular-nums text-foreground">
-                      {volSizes.partial ? "≥ " : ""}
-                      {formatBytes(volSizes.totalBytes)}
-                    </span>
-                  ) : undefined
-                }
-              />
-              <div className="space-y-2">
-                {service.volumes.map((vol, i) => {
-                  const vs = volSizes?.measurable ? volSizes.volumes[i] : undefined;
-                  return (
-                    <div key={vol} className="flex items-center justify-between gap-3">
-                      <span className="truncate text-xs font-mono text-foreground">{vol}</span>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {volSizesLoading && !vs ? (
-                          <Loader2 className="size-3 animate-spin text-muted-foreground/60" />
-                        ) : vs && vs.bytes != null ? (
-                          <span className="text-[11px] tabular-nums text-muted-foreground">
-                            {formatBytes(vs.bytes)}
-                          </span>
-                        ) : null}
-                        <CopyBtn
-                          onCopy={() => copy(vol, `vol-${vol}`)}
-                          copied={copied === `vol-${vol}`}
-                          size="sm"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+      {activeTab === "volumes" && (
+        <ServiceVolumesPanel
+          key={service.id}
+          service={service}
+          projectId={projectId}
+          deployTarget={deployTarget}
+          onSave={(volumes) => handleUpdateService({ volumes })}
+          operationBusy={serviceOperationBusy}
+          onResetVolumes={activeDeploymentId && service.enabled ? async (volumes, configured) => {
+            if (storageResetPending.current) return { configured, started: false };
+            storageResetPending.current = true;
+            setResettingStorage(true);
+            try {
+              if (!configured) await handleUpdateService({ volumes });
+              return { configured: true, started: await handleRedeployService() };
+            } finally {
+              storageResetPending.current = false;
+              setResettingStorage(false);
+            }
+          } : undefined}
+          onBackup={supportsBackup ? handleVolumeBackup : undefined}
+          backupBusy={backupLoading || backupRunning || !!backupError}
+          backupFeedback={supportsBackup ? backupFeedback : undefined}
+        />
       )}
 
       {/* ── Terminal ───────────────────────────────────────────── */}
-      {activeTab === "terminal" &&
-        (status === "running" ? (
-          <div className="min-h-[460px]">
-            <ServiceTerminal
-              serviceId={service.id}
-              enabled={true}
-              name={service.name}
-              theme={resolvedTheme === "light" ? "light" : "dark"}
-              resumeToken={terminalResumeToken}
-              onResumeTokenChange={persistResumeToken}
-            />
-          </div>
-        ) : (
-          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/10 text-[12px] text-muted-foreground">
-            {t.projectDetail.services.detail.startShellHint}
-          </div>
-        ))}
+      {activeTab === "terminal" && (
+        <ServiceTerminalPanel
+          serviceId={service.id}
+          name={service.name}
+          status={status}
+          checking={containerChecking}
+          error={containerError}
+          onRefresh={onRefresh}
+          onSettings={() => changeTab("settings")}
+          theme={resolvedTheme === "light" ? "light" : "dark"}
+          resumeToken={terminalResumeToken}
+          onResumeTokenChange={persistResumeToken}
+        />
+      )}
 
       {/* ── Logs ───────────────────────────────────────────────── */}
       {activeTab === "logs" && (
@@ -893,46 +773,23 @@ export function ServiceDetailPanel({
         </div>
       )}
 
-      {/* ── Environment (editable) ─────────────────────────────── */}
-      {activeTab === "env" && (
-        <div className="space-y-5">
-          {/* No extra padding here — EnvironmentVariables (borderless) brings its
-              own px-5/py-4, so a wrapper p-6 would double it. */}
-          <div className="bg-card rounded-2xl border border-border/50">
-            <EnvironmentVariables
-              mode="settings"
-              envVars={envRows}
-              onEnvVarsChange={setEnvRows}
-              isEditingMode={true}
-              setIsEditingMode={() => {
-                /* always editing in the Env tab */
-              }}
-              showSettingsActions={false}
-              showSecretToggle={true}
-              // #336: env values arrive masked; reveal only the keys the operator
-              // actually opens (the endpoint is write-gated, so read-only members
-              // can't reveal at all).
-              onReveal={async (keys) =>
-                (await servicesApi.revealEnv(projectId, service.id, keys, SERVICE_ENVIRONMENT))
-                  .environment
-              }
-              borderless
-            />
-          </div>
-          <div className="flex justify-end">
-            <button
-              onClick={handleSaveEnv}
-              disabled={envLoading || envSaving || !envDirty}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {envSaving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              {t.projectDetail.services.detail.saveEnvironment}
-            </button>
-          </div>
+      {(activeTab === "env" || environmentVisited) && (
+        <div hidden={activeTab !== "env"}>
+          <ServiceEnvironmentPanel
+            key={`${projectId}:${service.id}`}
+            projectId={projectId}
+            service={service}
+            applying={applyingEnvironment}
+            operationBusy={serviceOperationBusy}
+            onDirtyChange={setEnvDirty}
+            onApply={() => environmentApply.apply(service)}
+            onDeploy={usesDeployPipeline ? (activeDeploymentId ? handleRedeployService : undefined) : handleDeployStart}
+            deployLabel={
+              usesDeployPipeline
+                ? t.projectDetail.services.detail.redeploy
+                : t.projectDetail.services.detail.start
+            }
+          />
         </div>
       )}
 
@@ -952,16 +809,18 @@ export function ServiceDetailPanel({
                     {status !== "stopped" && status !== "failed" && (
                       <>
                         <ActionButton
-                          icon={Square}
+                          icon={"square"}
                           label={t.projectDetail.services.detail.stop}
                           loading={actionLoading === "stop"}
+                          disabled={serviceOperationBusy}
                           onClick={() => handleContainerAction("stop")}
                           variant="danger"
                         />
                         <ActionButton
-                          icon={RotateCw}
+                          icon={"refresh"}
                           label={t.projectDetail.services.detail.restart}
                           loading={actionLoading === "restart"}
+                          disabled={serviceOperationBusy}
                           onClick={() => handleContainerAction("restart")}
                           variant="warning"
                         />
@@ -969,9 +828,10 @@ export function ServiceDetailPanel({
                     )}
                     {(status === "stopped" || status === "failed") && (
                       <ActionButton
-                        icon={Play}
+                        icon={"play"}
                         label={t.projectDetail.services.detail.start}
                         loading={actionLoading === "start"}
+                        disabled={serviceOperationBusy}
                         onClick={() => handleContainerAction("start")}
                         variant="success"
                       />
@@ -982,34 +842,21 @@ export function ServiceDetailPanel({
                   // inline (its own container / Oblien workspace). No build page,
                   // no redeploy. A source-built service (no image) can't launch
                   // this way — it shows Redeploy (below) instead of Start.
-                  canStartWithoutBuild && (
+                  canStartWithoutBuild &&
+                  ["stopped", "failed", "disabled"].includes(status) && (
                     <ActionButton
-                      icon={Play}
+                      icon={"play"}
                       label={
                         deploying
                           ? t.projectDetail.services.detail.starting
                           : t.projectDetail.services.detail.start
                       }
                       loading={deploying}
+                      disabled={serviceOperationBusy}
                       onClick={handleDeployStart}
                       variant="success"
                     />
                   )
-                )}
-                {/* Pipeline services (compose / monorepo / source-built) keep the
-                    per-service Redeploy → build page. Image apps never show it. */}
-                {usesDeployPipeline && service.enabled && activeDeploymentId && (
-                  <ActionButton
-                    icon={Rocket}
-                    label={
-                      redeploying
-                        ? t.projectDetail.services.detail.redeploying
-                        : t.projectDetail.services.detail.redeploy
-                    }
-                    loading={redeploying}
-                    onClick={handleRedeployService}
-                    variant="primary"
-                  />
                 )}
               </div>
 
@@ -1017,16 +864,16 @@ export function ServiceDetailPanel({
                 <button
                   onClick={handleToggleEnabled}
                   disabled={saving}
-                  className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${
+                  className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-medium transition-colors disabled:opacity-50 ${
                     service.enabled
                       ? "bg-danger-bg text-danger hover:bg-danger-solid/20"
                       : "bg-success-bg text-success hover:bg-success-solid/20"
                   }`}
                 >
                   {saving ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
                   ) : (
-                    <Power className="size-4" />
+                    <UiIcon name="power" className="size-4" />
                   )}
                   {service.enabled
                     ? t.projectDetail.services.detail.disableService
@@ -1034,9 +881,9 @@ export function ServiceDetailPanel({
                 </button>
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium bg-danger-bg text-danger hover:bg-danger-solid/20 transition-colors"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-medium bg-danger-bg text-danger hover:bg-danger-solid/20 transition-colors"
                 >
-                  <Trash2 className="size-4" />
+                  <UiIcon name="trash" className="size-4" />
                   {t.projectDetail.services.detail.delete}
                 </button>
               </div>
@@ -1045,6 +892,8 @@ export function ServiceDetailPanel({
 
           <ServiceSettingsForm
             service={service}
+            includeVolumes={false}
+            enableAutomationActions
             siblingServiceNames={switchableServices
               .filter((s) => s.id !== service.id)
               .map((s) => s.name)
@@ -1060,43 +909,63 @@ export function ServiceDetailPanel({
           <SectionHeader
             title={t.projectDetail.services.detail.backup}
             subtitle={
-              backupPolicy
+              !backupLoading && !backupError && backupPolicy
                 ? `${backupPolicy.payloadKind} · ${backupPolicy.cronExpression ? interpolate(t.projectDetail.services.detail.backupSubtitle.cron, { expr: backupPolicy.cronExpression }) : t.projectDetail.services.detail.backupSubtitle.manualOnly}${backupPolicy.triggerOnPreDeploy ? ` · ${t.projectDetail.services.detail.backupSubtitle.preDeploy}` : ""}${backupPolicy.webhookToken ? ` · ${t.projectDetail.services.detail.backupSubtitle.webhook}` : ""}`
-                : t.projectDetail.services.detail.backupSubtitle.none
+                : !backupLoading && !backupError ? t.projectDetail.services.detail.backupSubtitle.none : undefined
             }
-            icon={DatabaseBackup}
+            icon={"database-backup"}
           />
           <div className="space-y-3">
-            {activeBackupRunId && <BackupRunCard runId={activeBackupRunId} />}
+            {backupFeedback}
 
-            <div className="flex items-center gap-2">
-              {backupPolicy ? (
-                <>
-                  <button
-                    onClick={() => void handleBackupNow()}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                  >
-                    <PlayCircle className="size-4" />
-                    {t.projectDetail.services.detail.backupNow}
-                  </button>
-                  <button
-                    onClick={() => setBackupEditorOpen(true)}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-                  >
-                    <Settings className="size-4" />
-                    {t.projectDetail.services.detail.editPolicy}
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => setBackupEditorOpen(true)}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-                >
-                  <Plus className="size-4" />
-                  {t.projectDetail.services.detail.createPolicy}
-                </button>
-              )}
-            </div>
+            {backupLoading ? (
+              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <UiIcon name="spinner" className="size-4 animate-spin" />
+                {t.projectDetail.services.detail.storage.loadingBackups}
+              </div>
+            ) : (
+              !backupError && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {backupPolicy ? (
+                    <>
+                      <button
+                        onClick={() => void handleBackupNow()}
+                        disabled={backupRunning}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                      >
+                        {backupRunning ? (
+                          <UiIcon name="spinner" className="size-4 animate-spin" />
+                        ) : (
+                          <UiIcon name="play-circle" className="size-4" />
+                        )}
+                        {t.projectDetail.services.detail.backupNow}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setBackupAfterSave(false);
+                          setBackupEditorOpen(true);
+                        }}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                      >
+                        <UiIcon name="settings" className="size-4" />
+                        {backupPolicy.serviceId === null ? t.projectDetail.services.detail.createPolicy : t.projectDetail.services.detail.editPolicy}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setBackupAfterSave(false);
+                        setBackupEditorOpen(true);
+                      }}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                    >
+                      <UiIcon name="plus" className="size-4" />
+                      {t.projectDetail.services.detail.createPolicy}
+                    </button>
+                  )}
+                </div>
+              )
+            )}
           </div>
         </div>
       )}
@@ -1106,12 +975,18 @@ export function ServiceDetailPanel({
           projectId={projectId}
           serviceId={service.id}
           serviceName={service.name}
-          existing={backupPolicy}
+          serviceImage={service.image}
+          existing={backupPolicy?.serviceId === service.id ? backupPolicy : null}
+          submitLabel={
+            backupAfterSave ? t.projectDetail.services.detail.storage.saveAndBackup : undefined
+          }
           onClose={() => setBackupEditorOpen(false)}
-          onSaved={async () => {
-            setBackupEditorOpen(false);
-            await reloadBackupPolicy();
-          }}
+          onSaved={(policy) => handleBackupPolicySaved(policy, backupAfterSave)}
+          onSavedAndRun={
+            backupPolicy || backupAfterSave
+              ? undefined
+              : (policy) => handleBackupPolicySaved(policy, true)
+          }
         />
       )}
 
@@ -1143,7 +1018,7 @@ export function ServiceDetailPanel({
                 disabled={deleting}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-danger-solid px-4 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
               >
-                {deleting && <Loader2 className="size-4 animate-spin" />}
+                {deleting && <UiIcon name="spinner" className="size-4 animate-spin" />}
                 {t.projectDetail.services.detail.deleteConfirm}
               </button>
             </div>
@@ -1164,14 +1039,14 @@ function SectionHeader({
 }: {
   title: string;
   subtitle?: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   right?: React.ReactNode;
 }) {
   return (
     <div className="mb-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Icon className="size-4 text-primary" />
+          <UiIcon name={Icon} className="size-4 text-primary" />
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         </div>
         {right}
@@ -1183,59 +1058,18 @@ function SectionHeader({
   );
 }
 
-// Hollow status ring + colored label, reusing the Servers view's calmer
-// treatment (border-*-solid dot + text-*) instead of a loud filled pill.
-function StatusBadge({ status }: { status: string }) {
-  const { t } = useI18n();
-  const labels = t.projectDetail.services.detail.status;
-  const map: Record<string, { ring: string; text: string; label: string }> = {
-    running: { ring: "border-success-solid", text: "text-success", label: labels.running },
-    starting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
-      label: labels.starting,
-    },
-    restarting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
-      label: labels.restarting,
-    },
-    failed: { ring: "border-danger-solid", text: "text-danger", label: labels.failed },
-    stopped: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
-      label: labels.stopped,
-    },
-    disabled: {
-      ring: "border-muted-foreground/30",
-      text: "text-muted-foreground/60",
-      label: labels.disabled,
-    },
-    unknown: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
-      label: labels.unknown,
-    },
-  };
-  const s = map[status] ?? map.stopped;
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
-      <span className={`size-2.5 rounded-full border-2 ${s.ring}`} />
-      {s.label}
-    </span>
-  );
-}
-
 function ActionButton({
   icon: Icon,
   label,
   loading,
+  disabled,
   onClick,
   variant,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   label: string;
   loading: boolean;
+  disabled?: boolean;
   onClick: () => void;
   variant: "success" | "danger" | "warning" | "primary";
 }) {
@@ -1251,98 +1085,11 @@ function ActionButton({
         e.stopPropagation();
         onClick();
       }}
-      disabled={loading}
-      className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}
+      disabled={loading || disabled}
+      className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4" />}
+      {loading ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name={Icon} className="size-4" />}
       {label}
     </button>
-  );
-}
-
-/** Persistent icon-only copy affordance (Copy → Check on success). */
-function CopyBtn({
-  onCopy,
-  copied,
-  size = "sm",
-}: {
-  onCopy: () => void;
-  copied: boolean;
-  size?: "sm" | "md";
-}) {
-  const dim = size === "md" ? "h-9 w-9" : "h-8 w-8";
-  const glyph = size === "md" ? "size-4" : "size-3.5";
-  return (
-    <button
-      type="button"
-      onClick={onCopy}
-      className={`flex ${dim} shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.1] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40`}
-    >
-      {copied ? <Check className={`${glyph} text-success`} /> : <Copy className={glyph} />}
-    </button>
-  );
-}
-
-/** Prominent labelled value field — mono value in a filled chip with a copy action. */
-function FieldChip({
-  label,
-  value,
-  mono = true,
-  onCopy,
-  copied,
-  hint,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  onCopy?: () => void;
-  copied?: boolean;
-  hint?: string;
-}) {
-  return (
-    <div>
-      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </label>
-      <div className="mt-2 flex min-h-11 items-center gap-0.5 rounded-xl bg-muted py-1 pe-1 ps-3.5">
-        <code
-          className={`min-w-0 flex-1 truncate text-[13px] text-foreground ${mono ? "font-mono" : ""}`}
-        >
-          {value}
-        </code>
-        {onCopy && <CopyBtn onCopy={onCopy} copied={!!copied} size="md" />}
-      </div>
-      {hint && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
-    </div>
-  );
-}
-
-/** Compact label → value fact row, with an optional copy action on the value. */
-function InfoCard({
-  label,
-  value,
-  mono,
-  onCopy,
-  copied,
-}: {
-  icon?: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  mono?: boolean;
-  onCopy?: () => void;
-  copied?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <p className="shrink-0 text-[13px] text-muted-foreground">{label}</p>
-      <div className="flex min-w-0 items-center gap-1">
-        <p
-          className={`max-w-[200px] truncate text-[13px] font-medium text-foreground ${mono ? "font-mono" : ""}`}
-        >
-          {value}
-        </p>
-        {onCopy && <CopyBtn onCopy={onCopy} copied={!!copied} size="sm" />}
-      </div>
-    </div>
   );
 }

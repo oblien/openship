@@ -4,3 +4,7 @@ export * from "./semver";
 export * from "./identity";
 export * from "./advisories";
 export * from "./resolve";
+export * from "./security";
+export * from "./poll-policy";
+export * from "./release-documents";
+export { default as updateSigningKey } from "./signing-public-key.json";

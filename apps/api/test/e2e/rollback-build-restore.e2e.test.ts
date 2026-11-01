@@ -29,9 +29,9 @@ import { getBuildImage } from "@repo/core";
 import { repos, type Deployment, type Project } from "@repo/db";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
-import { pinnedAppImage, snapshotNeedsGitSource } from "../../src/modules/deployments/pinned-artifacts";
-import { buildConfigSnapshot } from "../../src/modules/deployments/build.service";
-import { createBuildConfig } from "../../src/modules/deployments/build-config";
+import { pinnedAppImage, snapshotNeedsGitSource } from "@repo/platform/engine/modules/deployments/pinned-artifacts";
+import { buildConfigSnapshot } from "@repo/platform/engine/modules/deployments/build.service";
+import { createBuildConfig } from "@repo/platform/engine/modules/deployments/build-config";
 
 const FIXTURE = join(import.meta.dirname, "../../../../fixtures/deploy/node");
 const APP_PORT = 3000;

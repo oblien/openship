@@ -17,6 +17,7 @@
  * padlock is not.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { X509Certificate, createPrivateKey } from "node:crypto";
 import { safeErrorMessage } from "@repo/core";
 import type { CommandExecutor, ManualCert } from "../../types";
@@ -141,6 +142,7 @@ export function validateCertFor(host: string, pems: ManualCert, source: string):
   try {
     x509 = new X509Certificate(certPem);
   } catch (err) {
+    observeCaughtError(err, "adapters/system/proxy/cert-material");
     return { cert: null, reason: `${source}: unreadable certificate (${safeErrorMessage(err)})` };
   }
 
@@ -149,6 +151,7 @@ export function validateCertFor(host: string, pems: ManualCert, source: string):
       return { cert: null, reason: `${source}: private key does not match the certificate` };
     }
   } catch (err) {
+    observeCaughtError(err, "adapters/system/proxy/cert-material");
     return { cert: null, reason: `${source}: unreadable private key (${safeErrorMessage(err)})` };
   }
 

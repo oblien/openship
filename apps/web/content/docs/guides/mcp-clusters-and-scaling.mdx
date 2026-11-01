@@ -1,0 +1,374 @@
+---
+title: Clusters and scaling through MCP
+description: Connect servers, scale applications and databases, share files, and recover data through the existing engine workflows.
+---
+
+Openship's MCP tools use the same HTTP routes, authorization and engine operations as the dashboard and SDK. Fetch the `cluster-and-scale` prompt for an ordered workflow, and use `tools/list` for the exact input schemas available on your instance. The [generated catalog](/docs/api/mcp-tools) lists every tool and explains the HTTP-only routes.
+
+## What is supported
+
+| Capability                  | Current behavior                                                                                                                                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Private networking          | Register and verify an existing provider/private network, or prepare and apply an Openship-managed WireGuard network.                                                                                                            |
+| Compute clusters            | Group registered servers on a private network, with revision-checked configuration.                                                                                                                                              |
+| Server setup                | Durable prerequisite checks, installation, joining the selected hosts, networking verification, retry and owned-runtime removal.                                                                                                 |
+| Application scaling         | Set 1–100 replicas for a single application or worker, without rebuilding its image. Project-owned shared files are supported.                                                                                                   |
+| Shared files                | Keep two or three independent copies, mount across servers, expand, schedule external backups and restore into a new volume.                                                                                                     |
+| Recovery                    | Inspect logs and observed pods, retry failed setup, redeploy or roll back retained application images, and remove resources in dependency order.                                                                                 |
+| Managed databases           | PostgreSQL primary/read replicas, Redis replication with Sentinel or sharded Redis Cluster, backups, recovery and imports into new databases, plus PostgreSQL 17-to-18 upgraded copies and explicit connection replacement.      |
+| Policy-driven autoscaling   | **Not implemented.** CPU/traffic thresholds, automatic node provisioning and a continuous autoscaling controller are not available.                                                                                              |
+| Live worker changes         | **Not implemented.** Changing cluster membership requires removing its runtime first.                                                                                                                                            |
+| Compose application scaling | Supported on connected Docker Swarm managers; **not supported by the Kubernetes application path.** Node-local bind mounts and Docker private links also require separate migration. Managed databases have their own lifecycle. |
+
+Kubernetes can replace failed application pods inside the prepared cluster. That recovery behavior does not provision new servers or implement an Openship autoscaling policy.
+
+## Quick scaling from topology
+
+In **Project → Topology**, select an application node and choose **Scale**. Change
+the instance count, review the current and requested counts, and apply. The normal
+deployment progress opens and the existing image is reused. A changed active
+release or configuration requires a fresh review. The count of ready instances
+comes from runtime observations, not from the requested count.
+
+For an existing compute cluster that needs runtime setup, **Prepare scaling**
+opens the shared setup panel inline. Closing preserves the operation; reopening
+reads saved progress. **Continue with this cluster** rechecks readiness and returns
+to the workload draft without deploying it. New networks and compute-cluster
+creation still use their Infrastructure setup flows.
+
+Managed database nodes have a **Scale** view. PostgreSQL exposes the number of
+read replicas: two means one primary and two replicas. An operator-managed
+standalone PostgreSQL database can gain replicas in place, retaining its identity,
+writer address, credentials and primary data. Each replica has its own disk and
+runs on another selected server. This does not convert an arbitrary Docker,
+Compose or externally managed database into a native cluster. Those databases
+need an explicit data import and connection cutover.
+
+Redis **Replication** uses a single primary, replicas and three Sentinel voters;
+**Redis Cluster** partitions data across shards and requires a compatible client.
+Changing between these modes creates a separate database from a verified backup.
+Changing shard count requires a backup and a reviewed rebalance. Adding Redis
+replicas is supported; reducing their count is blocked because an elected
+primary can occupy an instance that a count-only reduction would remove.
+
+PostgreSQL clusters keep the existing required synchronous-replica policy. With
+only one read replica, losing it can pause writes; two readers provide more
+headroom. Replica endpoints may lag, and the application chooses which queries
+use its reader connection. Scaling does not automatically split SQL queries.
+
+These controls currently target registered Linux servers managed by a
+self-hosted/Desktop controller. Hosted Cloud clustering, per-service Compose
+replication and automatic server purchases are not enabled by this feature.
+
+## Prerequisites and workspace
+
+Use a self-hosted or desktop Openship controller with registered SSH-accessible Linux servers. Network and runtime changes require fleet administration and access to every selected server. A grant to only one server does not authorize a cluster-wide operation. These tools are unavailable on the hosted Cloud controller; a desktop controller may still manage remote servers.
+
+Call `get_permissions_workspaces` first. Pass the chosen `organizationId` at the top level of **every** tool call. An organization-bound credential cannot select another workspace. A private network ID, compute cluster ID, runtime ID, project ID and deployment ID identify different resources.
+
+For source builds, configure an image repository and [registry credentials](/docs/api/credentials) that all cluster nodes can use. The build server must be able to publish images, and every node must be able to pull them.
+
+## Existing Docker Swarm
+
+A self-hosted or desktop controller can connect an existing Linux Swarm manager without installing Kubernetes or changing its existing stacks. In **Servers**, open the manager's **Docker Swarm** card and choose **Use for deployments**. The API and CLI use the same operation:
+
+```bash
+openship server swarm SERVER_ID --details
+openship server connect-swarm SERVER_ID --name "Production Swarm"
+```
+
+MCP exposes `post_system_servers_by_id_swarm_connect`; provide the server `id`, a display `name` and UUID `requestId` in the body. Reuse that request ID after a lost response. Registration verifies the manager, machine and cluster identities and saves them together. It does not initialize Swarm, join nodes, import stacks or change foreign services.
+
+Save a new project as a draft and choose this cluster under **Topology → Scale**, then use the ordinary deployment review. Source builds need an image repository; prebuilt images use their registry digest. For the project cluster API, send `acknowledgePlacement: true` when selecting Swarm (`stateless: true` remains the Kubernetes acknowledgement).
+
+Swarm uses the shared environment resolution, builds, deployment records, routing, logs, replica changes and rollback workflow. Services with named or image-declared volumes keep one instance pinned to the connected manager. Stateless services use the selected instance count across eligible Linux nodes of the image's architecture. Config files are mounted as release-specific Swarm secrets. The existing Edge reaches tasks through a private manager gateway, with no automatic cluster-wide ingress publication.
+
+Replacements stop the previous service before starting the new one, so expect a short interruption. A failed readiness check restores the previous service only after the candidate is confirmed stopped. If the manager does not confirm candidate creation, automatic recovery leaves the previous service stopped; inspect the failed deployment and manager before retrying. Rollback restores the earlier **image and configuration**, not earlier database contents. Project deletion keeps volumes unless you explicitly choose to erase them. Disconnecting the cluster requires removing its Openship projects and retained deployments first; it never runs `swarm leave`.
+
+This version does not provide cluster/node administration, migration of existing stacks, global/job scheduling modes, native rolling-update policies, shared/distributed storage, GPU scheduling, per-service swap controls, host bind mounts, shared process/network namespaces, task terminals or aggregate task resource measurements. Static-file deployments must use a serving container. Stateful data does not fail over to another node. Use Docker's own cluster tools for membership and backups for data recovery. Openship's existing Kubernetes database operators and storage tools remain Kubernetes-only.
+
+## 1. Inspect or prepare private networking
+
+Start with `get_system_networks_capabilities`, `get_system_servers`, `get_system_networks`, and `get_system_compute_clusters`. Reuse suitable resources already present.
+
+For **existing private networking**, call `post_system_servers_by_id_network_inspect` for each server. Use the actual private IPs, interface names and MTU in `post_system_networks`; registering a network does not create it at the cloud provider or open provider firewalls. Verify the returned network using its current revision:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "post_system_networks_by_id_verify",
+    "arguments": {
+      "organizationId": "org_example",
+      "id": "network_from_create",
+      "body": { "revision": 1 }
+    }
+  }
+}
+```
+
+Poll `get_system_networks_by_id` until verification settles. Check its timestamp and per-host/peer report; a previous successful report is not continuous monitoring.
+
+For **managed WireGuard**, call `post_system_networks_preparations` with a new UUID `requestId`, a name and selected members. Poll `get_system_networks_preparations_by_preparationId`. Once it is ready, follow its `operationId` to `get_system_networks_operations_by_operationId` and inspect the generated plan, host changes, firewall requirements and `planHash`.
+
+Call `post_system_networks_operations_by_operationId_apply` with that operation ID and the exact `planHash`. Its schema exposes the supported apply/resume/rollback action. Poll the operation until it settles; an accepted response is not a finished network. For k3s, the connection policy must allow bidirectional access between every selected member.
+
+If preparation needs different members or permissions, use its member-removal/connection-edit tools with the current `sequence`. Follow any replacement preparation or cleanup operation returned. Reusing the same `requestId` after a lost response recovers the same intent; changing the intent requires a new request ID.
+
+The `/api/system/clusters` routes are compatibility aliases for private networking. MCP exposes the canonical `/api/system/networks` tools once.
+
+## 2. Create the compute cluster and install k3s
+
+Create a compute cluster on the prepared network:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "post_system_compute_clusters",
+    "arguments": {
+      "organizationId": "org_example",
+      "body": {
+        "requestId": "123e4567-e89b-42d3-a456-426614174000",
+        "name": "Production apps",
+        "networkId": "network_from_create",
+        "serverIds": ["server_a", "server_b"]
+      }
+    }
+  }
+}
+```
+
+Use the returned cluster's ID and revision to start setup:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "post_system_compute_clusters_by_id_runtime",
+    "arguments": {
+      "organizationId": "org_example",
+      "id": "cluster_from_create",
+      "body": {
+        "revision": 1,
+        "requestId": "123e4567-e89b-42d3-a456-426614174001"
+      }
+    }
+  }
+}
+```
+
+Poll `get_system_compute_clusters_by_id_runtime`. The response includes `status`, `sequence`, `generation`, per-host steps/logs, `error` and `verifiedAt`. Continue to deployment only after `ready`. Setup verifies host identities and prerequisites before installing, then verifies node readiness, pod traffic, service routing and internal DNS.
+
+If setup becomes `failed` or `interrupted`, inspect the saved error, fix the prerequisite, and call `post_system_compute_clusters_by_id_runtime_retry` with the **latest** `sequence`. Retry preserves the saved version and operation intent. Poll before retrying a lost response; do not start a second setup merely because the first HTTP response was interrupted.
+
+## 3. Select the target, then deploy
+
+Create or select a single application through the normal [deployment flow](/docs/guides/deploy-from-github). Its instances must be safe to replace on another server. Read `get_projects_by_id_cluster` for its current `updatedAt`, then select the target:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "patch_projects_by_id_cluster",
+    "arguments": {
+      "organizationId": "org_example",
+      "id": "project_id",
+      "body": {
+        "clusterId": "cluster_from_create",
+        "stateless": true,
+        "expectedUpdatedAt": "2026-09-26T12:00:00.000Z",
+        "config": {
+          "replicas": 1,
+          "imageRepository": "registry.example.com/apps/web"
+        }
+      }
+    }
+  }
+}
+```
+
+Replace the example timestamp with the value just returned. Saving the target does not deploy or migrate persistent data. Start `post_deployments_build_access` with `body.projectId`. Poll `get_deployments_by_id` and read `get_deployments_by_id_logs`. If work is waiting, inspect `get_deployments_by_id_pending` and answer only a decision actually offered by the run.
+
+After deployment, inspect `get_projects_by_id_cluster`. Confirm observed ready/available pods, not only the configured replica count. `status:null` with an `error` means the controller could not observe the workload. Check `get_projects_by_id_pending_actions` and the domain tools for separate routing or TLS blockers. A controller SSH failure does not by itself prove the public application is down.
+
+## 4. Scale up and down
+
+Read cluster workload state immediately before each change. Pass its `activeDeploymentId` and `updatedAt` back as preconditions:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "post_projects_by_id_cluster_scale",
+    "arguments": {
+      "organizationId": "org_example",
+      "id": "project_id",
+      "body": {
+        "replicas": 3,
+        "expectedDeploymentId": "active_deployment_id",
+        "expectedUpdatedAt": "2026-09-26T12:05:00.000Z"
+      }
+    }
+  }
+}
+```
+
+The response contains a new `deploymentId`. Scaling runs a configuration deployment using the active immutable image, without a source rebuild. Poll that deployment, then verify observed replicas and application routing. To scale down, repeat the same process with a lower count; zero replicas are not accepted.
+
+A `409` means the saved project, active deployment or another operation changed. Read the latest state and review the intended change again. Do not discard concurrency guards or continuously resend stale arguments.
+
+## 5. Recover and clean up
+
+| Situation                        | Next action                                                                                                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Network preparation/apply failed | Read saved host errors and the operation's allowed resume/rollback choice. Use its current sequence/plan hash.                                                                         |
+| k3s setup/removal failed         | Read runtime progress, fix the reported condition and retry with its latest sequence.                                                                                                  |
+| App deploy/scale failed          | Read deployment logs and pending decisions; confirm the previous active release. Redeploy or use retained-image rollback as appropriate.                                               |
+| Runtime observation failed       | Fix controller-to-server connectivity and read again. Do not reset working infrastructure to clear an observation error.                                                               |
+| Rollback requested               | Read `get_deployments_by_id_restore_plan` first. Call `post_deployments_by_id_rollback` on the retained release, then follow the newly created rollback deployment in project history. |
+| Shared-storage setup failed      | Inspect the saved step and error, fix the reported condition, then retry with the current sequence. Reconnecting does not retry a mutation.                                            |
+| Remove everything                | Disconnect and remove dependent applications, databases and shared volumes; remove empty shared storage, then the owned runtime, empty compute cluster and unused network.             |
+
+Runtime removal uses `delete_system_compute_clusters_by_id_runtime` with `body.sequence`; **DELETE tools can require a JSON body**. Poll until `removed`. Cluster/network deletion uses their current `revision`. Managed networking must be removed through a reviewed removal plan. Dependency checks refuse deletion when owned workloads, retained database data or foreign resources still need the runtime.
+
+## Share files and recover archives
+
+After server setup, use `post_system_compute_clusters_by_id_storage` with a stable
+request ID, at least two independent servers and reviewed empty directories. Poll
+`get_system_compute_clusters_by_id_storage` until ready. Use its current sequence
+with the retry tool if setup is interrupted. Configure an external backup destination
+to retain recovery points outside the cluster.
+
+Once the project selects this cluster, create a volume through
+`post_projects_by_id_cluster_volumes`. Add its name and mount path to the project's
+`config.mounts` and deploy. Use `get_projects_by_id_cluster_volumes` for observed
+copy and attachment health. Growing a volume uses its current `resourceVersion`;
+shrinking is unsupported.
+
+Create an external backup with `post_projects_by_id_cluster_volumes_backup`, or
+schedule hourly/daily backups through `patch_projects_by_id_cluster_volumes_backups`.
+Read `get_projects_by_id_cluster_volumes_backups` for completion. These archives
+remain discoverable after deleting the source volume. Restore into a new volume,
+check the recovered files and explicitly attach it to a new app deployment.
+
+Disconnect and redeploy before removing a volume. Removing empty shared storage
+preserves external archives. Archive deletion is a separate action requiring its
+exact name. Pause application writes when a consistent file backup requires it.
+
+## Database and backup workflows
+
+Fetch `cluster-database` for managed PostgreSQL/Redis operations. Database replicas are independent of application replicas. Database mutations use `expectedSequence`; creation uses a stable UUID `requestId`. Connection changes save environment values, and applying them requires a separate app redeploy.
+
+To share a ready native PostgreSQL or Redis database, open its panel and select
+**Use in a project**. Choose a consumer in the same organization and native
+cluster. You need write access to both projects. OpenShip saves an encrypted
+connection URL and an explicit database reference, then grants the consumer's
+application namespace private access to the database port. The source project
+keeps ownership of the database, backups and storage.
+
+The existing SDK, HTTP and CLI connection operations use the same flow. Read the
+source's `projects.getAppConnection(sourceProjectId)` and select an output with
+`sourceDatabaseId`. Pass its `id` to `projects.createConnection(targetProjectId, input)`
+or `projects.connectBundle(targetProjectId, input)` with `mode: "internal"`.
+The [CLI connection commands](/docs/cli/reference/project/connections) accept
+the same input as JSON. Credentials stay in secret environment values; copying a
+private URL without creating a connection does not grant another native project access.
+
+If a network-policy update fails, the operation reports failure. Retry with the
+same inputs to reconcile the saved grant without duplicating it. Disconnect
+revokes private access before removing the reference and its environment value.
+Redeploy consumers to remove old connection values from their running releases.
+Kubernetes network policies do not guarantee termination of established database
+sessions. Database removal is blocked while a connection or a running managed
+application still references it; moving a consumer to another destination requires
+disconnecting its native database links first.
+
+PostgreSQL and Redis backups use an eligible S3 destination. Observe native backup
+completion before creating a **new** database with `restoreFrom.databaseId` and
+`restoreFrom.backupName`. Redis snapshots are consistent per shard, rather than a
+transaction across the whole cluster. Changing Redis shard count requires a
+verified recent backup and `confirmRedisRebalance: true` after reviewing the change.
+
+`get_projects_by_id_cluster_databases_imports` lists this project's eligible existing
+Docker PostgreSQL and Redis backups. Create the new database with `importFrom.runId`,
+`importFrom.artifactName` and a ready `clusterId`. You can stage it while the application
+still runs on Docker; later select the same cluster for the app.
+
+For a PostgreSQL 17-to-18 upgrade, create a separate database with `copyFrom.databaseId`
+and its latest `expectedSequence`. The original remains available. Verify data in
+the new database before replacing the application's connection. Replacing a managed
+binding needs the source ID and sequence in `replace`, as well as the destination's
+current sequence. Redeploy explicitly to apply the new environment.
+
+Pause source writes and take a fresh recovery point before the final cutover.
+Writes after a backup or upgraded-copy snapshot are not copied automatically.
+
+For ordinary project/service volume backups, fetch `backup-and-restore` and follow the [backup guide](/docs/guides/backups-restore). The complete MCP flow covers destination preflight, policies, manual runs, retention protection, restore preparation, explicit apply and status. A batch can return multiple `runIds`; every run must finish. Preparing a restore never means data has been applied.
+
+## Validation boundaries
+
+The scaling release gate has separate application, shared-storage and database
+journeys on disposable infrastructure. The application journey drives MCP requests
+through auth, the engine, an image registry, Kubernetes and OpenShip Edge. The
+storage journey uses Linux/systemd/SSH hosts for installation, shared writes,
+backup/restore and disk-copy rebuilding. Database tests exercise real operators,
+data, replica/shard changes, recovery, Docker imports and upgraded copies.
+
+The latest native storage and database journeys have not completed local acceptance.
+Focused checks and an earlier application pass do not establish production readiness.
+The fixtures also do not prove provider firewalls, every Linux distribution, real
+WireGuard provisioning, ACME or production failure domains. Run the native release
+jobs and infrastructure acceptance before shipping.
+
+## Writer and reader database connections
+
+A PostgreSQL database with replicas offers a writer endpoint and a reader endpoint.
+The primary can serve reads and writes; the reader endpoint selects replicas.
+Connect both in one operation with different production environment variables:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "post_projects_by_id_cluster_databases_connect",
+    "arguments": {
+      "organizationId": "org_example",
+      "id": "project_id",
+      "body": {
+        "databaseId": "database_id",
+        "expectedSequence": 7,
+        "envKey": "DATABASE_URL",
+        "readEnvKey": "DATABASE_READ_URL"
+      }
+    }
+  }
+}
+```
+
+Use the current database sequence and the existing `connectClusterDatabase` SDK
+operation or its generated MCP tool. Omit `readEnvKey` to preserve an existing
+reader binding; pass `null` to disconnect it. The default connection remains the
+writer. Values are encrypted, and the update rejects collisions with variables
+that are not owned by this database connection. Apply the usual deployment review
+to deliver changed environment variables to a running application.
+
+**Use in project** exposes reader and writer outputs separately for another
+project on the same native cluster and in the same organization. The connection
+grant is revalidated when deploying and restoring. Removing the final PostgreSQL
+replica is blocked while a local or shared reader connection remains; disconnect
+or change those consumers and deploy their updated connections before scaling
+back to one instance. The runtime also checks live application references before
+removing the final reader.

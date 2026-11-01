@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useEffect, useRef, useState } from "react";
-import { Search } from "lucide-react";
 
 import { useI18n } from "@/components/i18n-provider";
 import type { InfraSegment } from "@/hooks/useInfraFleet";
@@ -51,7 +52,7 @@ export function InfraFilters({
   return (
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="relative w-full sm:flex-1 sm:min-w-[200px]">
-        <Search className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <UiIcon name="search" className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           value={local}

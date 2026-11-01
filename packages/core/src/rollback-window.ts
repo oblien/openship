@@ -9,19 +9,16 @@
  * Two ways a project gets its window:
  *
  *   explicit — the operator typed a number. Honored as-is (clamped).
- *   auto     — nothing typed (`project.rollbackWindow IS NULL`). Sized from the
- *              deploy host's FREE DISK and the project's own measured snapshot
- *              size, so a small VPS keeps a couple of releases and a roomy box
- *              keeps many, without anyone having to reason about image sizes.
+ *   default  — no override (`project.rollbackWindow IS NULL`): inherit the
+ *              instance default, which starts at five past releases.
  */
 
 export const DEFAULT_ROLLBACK_WINDOW = 5;
 export const MAX_ROLLBACK_WINDOW = 20;
 
 /**
- * Auto-sizing policy. Retained releases are dead weight most of the time, so
- * they get a MINORITY of the free space: a build needs transient room, volumes
- * grow, and a full disk breaks deploys rather than merely rollback.
+ * Legacy disk estimate, retained for API compatibility. These constants do
+ * not control retention; the configured number of past releases does.
  */
 export const ROLLBACK_DISK_BUDGET_FRACTION = 0.25;
 /** Never dedicate more than this to rollback history, however big the disk. */
@@ -61,12 +58,8 @@ export interface AutoRollbackWindowInput {
 }
 
 /**
- * The auto window, or `fallback` when we can't measure (host unreachable, never
- * deployed, zero-size images). Never returns 0 from a real measurement: a host
- * too full for even one snapshot still reports MIN_AUTO_ROLLBACK_WINDOW, because
- * the window is a retention TARGET — the images that already exist are kept
- * until they age out, and refusing to keep any would make rollback impossible
- * exactly when a bad deploy needs it most.
+ * @deprecated Informational estimate only. Retention never uses disk sizing to
+ * override the configured window. Kept for compatibility with existing imports.
  */
 export function computeAutoRollbackWindow(input: AutoRollbackWindowInput): number {
   const fallback = normalizeRollbackWindow(input.fallback ?? DEFAULT_ROLLBACK_WINDOW);

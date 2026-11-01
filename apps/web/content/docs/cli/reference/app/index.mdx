@@ -1,0 +1,176 @@
+---
+title: app
+description: Commands, arguments, and options for openship app.
+cliGroup: openship app
+---
+
+See the [workflow guide](/docs/cli/projects) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship app
+
+Browse, install, and configure catalog apps
+
+```text
+openship app [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list\|ls`](/docs/cli/reference/app#openship-app-list) | List available catalog apps |
+| [`get <id>`](/docs/cli/reference/app#openship-app-get) | Show an app template and an accessible installation draft |
+| [`host-fit [options] <id>`](/docs/cli/reference/app#openship-app-host-fit) | Check an app's requirements against a deployment destination |
+| [`install [options] <id>`](/docs/cli/reference/app#openship-app-install) | Create or update an app installation draft; deploy its returned project ID with openship deploy |
+| [`custom`](/docs/cli/reference/app#openship-app-custom) | Manage this organization's custom app definitions |
+| [`settings`](/docs/cli/reference/app#openship-app-settings) | Read and update an installed app's curated settings |
+| [`connection <project>`](/docs/cli/reference/app#openship-app-connection) | Show resolved app connection details, including credentials; requires project write access |
+
+## openship app connection
+
+Show resolved app connection details, including credentials; requires project write access
+
+```text
+openship app connection [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Installed app project ID |
+
+## openship app custom
+
+Manage this organization's custom app definitions
+
+```text
+openship app custom [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list\|ls`](/docs/cli/reference/app#openship-app-custom-list) |  |
+| [`add <file>`](/docs/cli/reference/app#openship-app-custom-add) | Validate and save a custom app definition |
+| [`remove\|rm <id>`](/docs/cli/reference/app#openship-app-custom-remove) | Remove a custom catalog definition |
+
+## openship app custom add
+
+Validate and save a custom app definition
+
+```text
+openship app custom add [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | AppTemplate JSON file |
+
+## openship app custom list
+
+Use this command with the arguments below.
+
+```text
+openship app custom list|ls [options]
+```
+
+## openship app custom remove
+
+Remove a custom catalog definition
+
+```text
+openship app custom remove|rm [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Custom app ID |
+
+## openship app get
+
+Show an app template and an accessible installation draft
+
+```text
+openship app get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Catalog app ID |
+
+## openship app host-fit
+
+Check an app's requirements against a deployment destination
+
+```text
+openship app host-fit [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Catalog app ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--server <id>` | Registered server ID |
+| `--target <target>` | Deployment target, such as cloud |
+
+## openship app install
+
+Create or update an app installation draft; deploy its returned project ID with openship deploy
+
+```text
+openship app install [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Catalog app ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Project name |
+| `--config <file>` | JSON object of app configuration values |
+| `--routes <file>` | JSON array of endpoint routing choices |
+
+## openship app list
+
+List available catalog apps
+
+```text
+openship app list|ls [options]
+```
+
+## openship app settings
+
+Read and update an installed app's curated settings
+
+```text
+openship app settings [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <project>`](/docs/cli/reference/app#openship-app-settings-get) |  |
+| [`update <project> <file>`](/docs/cli/reference/app#openship-app-settings-update) |  |
+
+## openship app settings get
+
+Use this command with the arguments below.
+
+```text
+openship app settings get [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Installed app project ID |
+
+## openship app settings update
+
+Use this command with the arguments below.
+
+```text
+openship app settings update [options] <project> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Installed app project ID |
+| `file` | JSON object containing a changes array of &#123;service, key, value&#125; |

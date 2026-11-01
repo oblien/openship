@@ -1,0 +1,136 @@
+---
+title: github source
+description: Commands, arguments, and options for openship github source.
+cliGroup: openship github source
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship github source
+
+Configure self-hosted GitHub Apps and their installations
+
+```text
+openship github source [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/github/source#openship-github-source-list) | List configured GitHub Apps and callback readiness |
+| [`manifest <name>`](/docs/cli/reference/github/source#openship-github-source-manifest) | Generate a GitHub App registration manifest |
+| [`convert <file>`](/docs/cli/reference/github/source#openship-github-source-convert) | Complete manifest registration with its matching state and code |
+| [`create <file>`](/docs/cli/reference/github/source#openship-github-source-create) | Register an existing GitHub App |
+| [`update <id> <file>`](/docs/cli/reference/github/source#openship-github-source-update) | Update a configured GitHub App |
+| [`verify <id>`](/docs/cli/reference/github/source#openship-github-source-verify) | Verify this App's configuration |
+| [`default <id>`](/docs/cli/reference/github/source#openship-github-source-default) | Use this App by default |
+| [`install <id>`](/docs/cli/reference/github/source#openship-github-source-install) | Create a URL to install this App on a GitHub account |
+| [`remove [options] <id>`](/docs/cli/reference/github/source#openship-github-source-remove) | Disconnect a configured GitHub App |
+
+## openship github source convert
+
+Complete manifest registration with its matching state and code
+
+```text
+openship github source convert [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON state and code from GitHub registration, or - for stdin |
+
+## openship github source create
+
+Register an existing GitHub App
+
+```text
+openship github source create [options] <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON GitHub App credentials, or - for stdin |
+
+## openship github source default
+
+Use this App by default
+
+```text
+openship github source default [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Source ID |
+
+## openship github source install
+
+Create a URL to install this App on a GitHub account
+
+```text
+openship github source install [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Source ID |
+
+## openship github source list
+
+List configured GitHub Apps and callback readiness
+
+```text
+openship github source list [options]
+```
+
+## openship github source manifest
+
+Generate a GitHub App registration manifest
+
+```text
+openship github source manifest [options] <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | App name |
+
+## openship github source remove
+
+Disconnect a configured GitHub App
+
+```text
+openship github source remove [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Source ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm source removal |
+
+## openship github source update
+
+Update a configured GitHub App
+
+```text
+openship github source update [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Source ID |
+| `file` | JSON changes, or - for stdin |
+
+## openship github source verify
+
+Verify this App's configuration
+
+```text
+openship github source verify [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Source ID |

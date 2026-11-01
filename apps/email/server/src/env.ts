@@ -129,9 +129,9 @@ export const env: Env = {
   SESSION_COOKIE_NAME: optional('SESSION_COOKIE_NAME', 'zero_session'),
   SESSION_TTL_SECONDS: int('SESSION_TTL_SECONDS', 60 * 60 * 24 * 30),
 
-  DEFAULT_IMAP_HOST: process.env.DEFAULT_IMAP_HOST,
+  DEFAULT_IMAP_HOST: process.env.DEFAULT_IMAP_HOST?.trim() || undefined,
   DEFAULT_IMAP_PORT: int('DEFAULT_IMAP_PORT', 993),
-  DEFAULT_SMTP_HOST: process.env.DEFAULT_SMTP_HOST,
+  DEFAULT_SMTP_HOST: process.env.DEFAULT_SMTP_HOST?.trim() || undefined,
   DEFAULT_SMTP_PORT: int('DEFAULT_SMTP_PORT', 587),
 
   SQLITE_PATH: optional('SQLITE_PATH', './data/zero.db'),

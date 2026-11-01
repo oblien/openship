@@ -1,8 +1,10 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, KeyRound, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { normalizeCredentialSelector, type CredentialProvider } from "@repo/core";
+import type { CredentialProvider } from "@repo/core";
+import { CredentialForm } from "@/components/credentials/CredentialForm";
 
 import { credentialsApi, type Credential } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -32,7 +34,7 @@ function ProviderLogo({ slug, className }: { slug: string; className?: string })
   const [failed, setFailed] = useState(false);
   // Falls back to a key glyph rather than a broken image: devicon does not carry every
   // brand, and a provider without a logo must still be usable.
-  if (failed || !slug) return <KeyRound className={className} />;
+  if (failed || !slug) return <UiIcon name="key" className={className} />;
   return (
     <img
       src={`${DEVICON}/${slug}/${slug}-original.svg`}
@@ -118,10 +120,10 @@ export function Credentials() {
   };
 
   return (
-    <SettingsSection icon={KeyRound} title={copy.title} description={copy.description}>
+    <SettingsSection icon={"key"} title={copy.title} description={copy.description}>
       {loading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> {t.settings.common.loading}
+          <UiIcon name="spinner" className="size-4 animate-spin" /> {t.settings.common.loading}
         </div>
       ) : providers.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">{copy.noProviders}</p>
@@ -129,13 +131,16 @@ export function Credentials() {
         <div className="space-y-6">
           {providers.map((provider) => {
             const held = byProvider.get(provider.id) ?? [];
+            const pLoc = (copy as any)?.providers?.[provider.id];
+            const pLabel = pLoc?.label ?? provider.label;
+            const pSummary = pLoc?.summary ?? provider.summary;
             return (
               <div key={provider.id} className="rounded-xl border border-border/50 p-4">
                 <div className="mb-3 flex items-start gap-3">
                   <ProviderLogo slug={provider.icon} className="mt-0.5 size-5 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">{provider.label}</p>
-                    <p className="text-xs text-muted-foreground">{provider.summary}</p>
+                    <p className="text-sm font-medium text-foreground">{pLabel}</p>
+                    <p className="text-xs text-muted-foreground">{pSummary}</p>
                   </div>
                   <button
                     onClick={() => {
@@ -144,20 +149,22 @@ export function Credentials() {
                     }}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                   >
-                    <Plus className="size-3.5" />
+                    <UiIcon name="plus" className="size-3.5" />
                     {copy.add}
                   </button>
                 </div>
 
                 {adding === provider.id && (
-                  <CredentialForm
-                    provider={provider}
-                    onCancel={() => setAdding(null)}
-                    onSaved={async () => {
-                      setAdding(null);
-                      await load();
-                    }}
-                  />
+                  <div className="mb-4 rounded-xl bg-card p-4">
+                    <CredentialForm
+                      provider={provider}
+                      onCancel={() => setAdding(null)}
+                      onSaved={async () => {
+                        setAdding(null);
+                        await load();
+                      }}
+                    />
+                  </div>
                 )}
 
                 {held.length === 0 ? (
@@ -172,11 +179,11 @@ export function Credentials() {
                               <p className="truncate text-sm font-medium text-foreground">{row.name}</p>
                               {row.status === "invalid" ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">
-                                  <AlertTriangle className="size-3" /> {copy.badgeInvalid}
+                                  <UiIcon name="warning" className="size-3" /> {copy.badgeInvalid}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                  <CheckCircle2 className="size-3" /> {copy.badgeActive}
+                                  <UiIcon name="check-circle" className="size-3" /> {copy.badgeActive}
                                 </span>
                               )}
                             </div>
@@ -197,9 +204,9 @@ export function Credentials() {
                               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                             >
                               {busy === row.id ? (
-                                <Loader2 className="size-4 animate-spin" />
+                                <UiIcon name="spinner" className="size-4 animate-spin" />
                               ) : (
-                                <RefreshCw className="size-4" />
+                                <UiIcon name="refresh" className="size-4" />
                               )}
                             </button>
                             <button
@@ -217,7 +224,7 @@ export function Credentials() {
                               title={copy.delete}
                               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                             >
-                              <Trash2 className="size-4" />
+                              <UiIcon name="trash" className="size-4" />
                             </button>
                           </div>
                         </div>
@@ -245,170 +252,5 @@ export function Credentials() {
         </div>
       )}
     </SettingsSection>
-  );
-}
-
-/**
- * The add/edit form for ONE provider, rendered from its declared fields.
- *
- * On edit a secret input starts EMPTY. A blank secret keeps the stored value only while
- * the selector is unchanged; moving a credential to another destination requires the
- * operator to enter the secret again. The stored value is never sent to the browser.
- */
-function CredentialForm({
-  provider,
-  existing,
-  onCancel,
-  onSaved,
-}: {
-  provider: CredentialProvider;
-  existing?: Credential;
-  onCancel: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const copy = t.settings.credentials;
-  const { showToast } = useToast();
-
-  const [name, setName] = useState(existing?.name ?? "");
-  const [selector, setSelector] = useState(existing?.selector ?? "");
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const seed: Record<string, string> = {};
-    for (const field of provider.fields) {
-      // Readable fields are seeded from what is stored; secrets never are.
-      if (field.type !== "secret") seed[field.key] = existing?.publicFields[field.key] ?? "";
-    }
-    return seed;
-  });
-  const [saving, setSaving] = useState(false);
-  const selectorChanged = Boolean(
-    existing &&
-    provider.selector &&
-    normalizeCredentialSelector(provider, selector) !== existing.selector,
-  );
-
-  const submit = async () => {
-    setSaving(true);
-    try {
-      // Drop blanks. For a secret on edit the server keeps the stored value only when the
-      // selector is unchanged; readable blanks mean "unchanged" in either case.
-      const payload: Record<string, string> = {};
-      for (const [k, v] of Object.entries(values)) if (v !== "") payload[k] = v;
-
-      if (existing) {
-        await credentialsApi.update(existing.id, {
-          name,
-          selector: provider.selector ? selector : null,
-          values: payload,
-        });
-        showToast(copy.toast.updated, "success");
-      } else {
-        await credentialsApi.create({
-          provider: provider.id,
-          name,
-          selector: provider.selector ? selector : null,
-          values: payload,
-        });
-        showToast(copy.toast.created, "success");
-      }
-      await onSaved();
-    } catch (err) {
-      // Carries the provider's own redacted reason ("ghcr.io rejected these credentials"),
-      // which is the actionable part — the server verifies before it stores.
-      showToast(getApiErrorMessage(err, copy.toast.saveFailed), "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const inputClass =
-    "w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
-
-  return (
-    <div className="mb-4 space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4">
-      <div>
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">{copy.fieldName}</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={copy.namePlaceholder}
-          className={inputClass}
-        />
-      </div>
-
-      {provider.selector && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            {provider.selector.label}
-          </label>
-          <input
-            type="text"
-            value={selector}
-            onChange={(e) => setSelector(e.target.value)}
-            placeholder={provider.selector.placeholder ?? ""}
-            className={`${inputClass} font-mono`}
-          />
-          {provider.selector.help && (
-            <p className="mt-1 text-xs text-muted-foreground">{provider.selector.help}</p>
-          )}
-        </div>
-      )}
-
-      {provider.fields.map((field) => (
-        <div key={field.key}>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">{field.label}</label>
-          {field.type === "select" ? (
-            <select
-              value={values[field.key] ?? ""}
-              onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
-              className={inputClass}
-            >
-              <option value="">{copy.selectPlaceholder}</option>
-              {field.options?.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type={field.type === "secret" ? "password" : "text"}
-              value={values[field.key] ?? ""}
-              onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
-              // The stored secret never reaches the browser. While the destination is
-              // unchanged, the placeholder says it is set; changing the destination removes
-              // that promise because the secret must be entered again.
-              placeholder={
-                field.type === "secret" && existing && !selectorChanged
-                  ? copy.secretKeptPlaceholder
-                  : (field.placeholder ?? "")
-              }
-              autoComplete={field.type === "secret" ? "new-password" : "off"}
-              className={`${inputClass}${field.type === "secret" ? " font-mono" : ""}`}
-            />
-          )}
-          {field.help && <p className="mt-1 text-xs text-muted-foreground">{field.help}</p>}
-        </div>
-      ))}
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => void submit()}
-          disabled={saving}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-          {existing ? copy.save : copy.connect}
-        </button>
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {t.settings.common.cancel}
-        </button>
-      </div>
-      <p className="text-xs text-muted-foreground">{copy.verifyNote}</p>
-    </div>
   );
 }

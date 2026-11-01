@@ -2,6 +2,7 @@
  * Image catalog controller - proxies the Oblien image catalog to the dashboard.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { getRequestContext } from "../../lib/request-context";
 import * as imagesService from "./images.service";
@@ -15,6 +16,7 @@ export async function list(c: Context) {
     const images = await imagesService.listImages(organizationId, { search, category });
     return c.json({ success: true, images });
   } catch (err) {
+    observeCaughtError(err, "api/modules/images/images.controller");
     const message = err instanceof Error ? err.message : "Failed to list images";
     if (message === "cloud-not-connected") {
       // Not an error from the user's perspective - they just don't have

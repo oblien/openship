@@ -5,6 +5,7 @@ import { useI18n } from "@/components/i18n-provider";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
 import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { domainsApi } from "@/lib/api";
+import { dnsApi } from "@/lib/api/dns";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -20,11 +21,14 @@ interface DnsConfigurationProps {
   mode?: "cloud" | "selfhosted";
   /** Hide the internal header when the container already titles the section. */
   showHeader?: boolean;
-  /** A persisted domain's id. When set, the on-demand auto-configure panel is
-   *  shown above the manual records — pre-add previews (no id) stay manual. */
+  /** A persisted domain's id. Pre-add previews can connect a provider, but
+   * record writes remain scoped to persisted domains. */
   domainId?: string;
   /** Explicit pre-deploy server; it wins over any previous project deployment. */
   serverId?: string;
+  connectionRevision?: number;
+  onConnected?: () => void;
+  onApplyingChange?: (hostname: string, applying: boolean) => void;
 }
 
 const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
@@ -34,6 +38,9 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
   showHeader = true,
   domainId,
   serverId,
+  connectionRevision = 0,
+  onConnected,
+  onApplyingChange,
 }) => {
   const { t } = useI18n();
   const d = t.deploy.dns;
@@ -42,14 +49,10 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
   if (!displayRecords.length && !domainId) return null;
 
   const manual = displayRecords.length > 0 && (
-    <div className="rounded-xl bg-muted/30">
-      {showHeader && (
-        <div className="px-4 pt-4">
-          <p className="text-xs text-muted-foreground">
-            {d.addRecordsFor} <span className="font-medium text-foreground">{domain}</span>
-          </p>
-        </div>
-      )}
+    <details className="rounded-xl bg-muted/30" open={!domainId}>
+      <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-primary">
+        {t.autoDns.manualSetup}
+      </summary>
 
       <div className="space-y-2.5 p-4">
         {displayRecords.map((record, i) => (
@@ -57,7 +60,9 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
         ))}
 
         <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
-          {mode === "selfhosted" ? (
+          {mode === "selfhosted" && domain.startsWith("*.") ? (
+            t.projectSettings.domains.wildcard.notice
+          ) : mode === "selfhosted" ? (
             <>
               {d.selfInfoPre}
               <span className="font-medium text-foreground">{d.recordA}</span>
@@ -74,18 +79,34 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
           )}
         </p>
       </div>
-    </div>
+    </details>
   );
 
   return (
     <div className="space-y-3">
-      {domainId && (
-        <AutoDnsPanel
-          plan={() => domainsApi.dnsPlan(domainId, serverId).then((r) => r.data)}
-          apply={() => domainsApi.dnsApply(domainId, serverId).then((r) => r.data)}
-          reloadKey={`${domainId}:${serverId ?? "project"}`}
-        />
-      )}
+      {showHeader && <h3 className="break-all text-sm font-medium text-foreground">{domain}</h3>}
+      <AutoDnsPanel
+        plan={
+          domainId
+            ? () => domainsApi.dnsPlan(domainId, serverId).then((r) => r.data)
+            : () =>
+                dnsApi.verifyZone(domain).then((result) => ({
+                  status: result.status,
+                  provider: result.provider,
+                  zoneName: result.zoneName,
+                  reason: result.message,
+                  records: [],
+                }))
+        }
+        apply={
+          domainId ? () => domainsApi.dnsApply(domainId, serverId).then((r) => r.data) : undefined
+        }
+        reloadKey={`${domainId ?? domain}:${serverId ?? "project"}`}
+        refreshKey={connectionRevision}
+        hostname={domain}
+        onConnected={onConnected}
+        onApplyingChange={onApplyingChange}
+      />
       {manual}
     </div>
   );

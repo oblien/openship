@@ -1,0 +1,291 @@
+{
+  "backups": {
+    "section": "Расписания резервного копирования",
+    "sectionDesc": "Автоматическое резервное копирование по расписанию для каждого проекта или сервиса. Настраивается на вкладке «Резервные копии» проекта.",
+    "projectDefault": "По умолчанию для проекта",
+    "mailServer": "Почтовый сервер",
+    "manage": "Управление в бэкапах",
+    "badge": "Бэкап",
+    "never": "Никогда не запускалось",
+    "status": {
+      "succeeded": "Успешно",
+      "failed": "Ошибка",
+      "cancelled": "Отменено",
+      "running": "Выполняется"
+    }
+  },
+  "title": "Задачи",
+  "subtitle": "Встроенное обслуживание и пользовательские команды, выполняемые на ваших серверах.",
+  "cloudSubtitle": "Запуск команд по расписанию и по требованию на ваших управляемых серверах.",
+  "empty": "Запланированных задач пока нет.",
+  "searchPlaceholder": "Поиск задач…",
+  "noResults": "Нет задач, соответствующих фильтрам.",
+  "overview": {
+    "title": "Обзор",
+    "subtitle": "Задачи на этом инстансе",
+    "all": "Все задачи",
+    "running": "Выполняются",
+    "failed": "С ошибкой",
+    "scheduled": "Запланированы",
+    "disabled": "Отключены"
+  },
+  "loadFailed": "Не удалось загрузить задачи.",
+  "kind": {
+    "system": "Системные",
+    "custom": "Пользовательские"
+  },
+  "fields": {
+    "schedule": "Расписание",
+    "nextRun": "Следующий запуск",
+    "lastRun": "Последний запуск",
+    "never": "Никогда не запускалось",
+    "notScheduled": "Не запланировано"
+  },
+  "status": {
+    "success": "Успешно",
+    "failed": "Ошибка",
+    "running": "Выполняется"
+  },
+  "actions": {
+    "run": "Запустить сейчас",
+    "running": "Выполняется…",
+    "edit": "Изменить расписание",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "enable": "Включить",
+    "disable": "Отключить",
+    "viewLogs": "Логи"
+  },
+  "cronHint": "Стандартный cron из 5 полей (минута час день месяц день_недели), UTC.",
+  "toast": {
+    "ran": "Задача {label} запущена.",
+    "ranFailed": "Не удалось запустить {label}.",
+    "saved": "Расписание обновлено для {label}.",
+    "saved2": "Задача обновлена.",
+    "saveFailed": "Не удалось обновить {label}.",
+    "enabled": "{label} включена.",
+    "disabled": "{label} отключена.",
+    "toggleFailed": "Не удалось обновить {label}.",
+    "title": "Задачи",
+    "created": "Задача создана.",
+    "createFailed": "Не удалось создать задачу.",
+    "deleted": "Задача удалена.",
+    "deleteFailed": "Не удалось удалить задачу."
+  },
+  "newJob": "Новая задача",
+  "sections": {
+    "system": "Системные задачи",
+    "systemDesc": "Встроенное обслуживание на этом инстансе.",
+    "custom": "Пользовательские задачи",
+    "customDesc": "Команды, запускаемые на ваших серверах по расписанию."
+  },
+  "customEmpty": {
+    "title": "Пользовательских задач пока нет",
+    "desc": "Запускайте команды на ваших серверах — по расписанию, разово или по событию — с повторами, секретами, логами в реальном времени и уведомлениями.",
+    "cta": "Создать задачу",
+    "docs": "Документация"
+  },
+  "create": {
+    "title": "Новая задача",
+    "name": "Название",
+    "namePlaceholder": "Еженощный vacuum базы данных",
+    "server": "Сервер",
+    "servers": "Серверы",
+    "noServers": "Серверы пока не подключены — сначала добавьте сервер.",
+    "command": "Команда",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "commandHint": "Выполняется на каждом выбранном сервере. Используйте docker run --rm для задач в контейнерах.",
+    "cloudServersHint": "Используйте существующий сервер или добавьте выделенный сервер с отдельной подпиской.",
+    "cloudUsageHint": "Задачи используют ресурсы и квоты выбранного сервера. Для запуска его тариф должен быть активен.",
+    "addDedicatedServer": "Добавить выделенный сервер",
+    "scheduleType": "Когда запускать",
+    "scheduleTypes": {
+      "recurring": "По расписанию",
+      "once": "Разово",
+      "manual": "Вручную"
+    },
+    "sections": {
+      "basics": "Основное",
+      "schedule": "Расписание",
+      "servers": "Целевые серверы",
+      "reliability": "Надёжность",
+      "environment": "Окружение",
+      "triggers": "Зависимости и триггеры",
+      "notifications": "Уведомления"
+    },
+    "schedule": "Расписание (cron)",
+    "runAt": "Запустить в",
+    "manualHint": "Запускается только по триггеру — кнопкой «Запустить сейчас», по зависимости или по событию.",
+    "timeout": "Таймаут (сек)",
+    "retryAttempts": "Макс. попыток",
+    "retryBackoff": "Задержка между попытками (сек)",
+    "advanced": "Дополнительно",
+    "env": "Переменные окружения",
+    "addVar": "Добавить переменную",
+    "secrets": "Секреты",
+    "addSecret": "Добавить секрет",
+    "replaceSecrets": "Заменить секреты",
+    "secretsSet": "секретов задано",
+    "noSecrets": "Секреты не заданы.",
+    "dependencies": "Запускать после",
+    "dependenciesHint": "Эта задача запускается после успешного завершения выбранных задач.",
+    "triggers": "Триггеры событий",
+    "notifications": "Уведомления",
+    "noChannels": "Каналы уведомлений не настроены — добавьте их в Мониторинг → Уведомления.",
+    "notificationsHint": "Переопределяет глобальные настройки уведомлений для этой задачи.",
+    "submit": "Создать задачу",
+    "creating": "Сохранение…",
+    "cancel": "Отмена",
+    "needServer": "Сначала подключите сервер",
+    "pasteEnv": "Вставить .env",
+    "uploadEnv": "Загрузить .env",
+    "envPasteEmpty": "Переменные не найдены",
+    "comingSoon": "Скоро",
+    "setupChannel": "Настроить канал",
+    "customTriggerSoon": "Собственный триггер",
+    "docsLink": "Подробнее о задачах",
+    "docsBody": "Расписания, повторы, секреты и уведомления",
+    "summary": {
+      "title": "Сводка",
+      "command": "Команда",
+      "schedule": "Расписание",
+      "targets": "Цели",
+      "retry": "Повторы",
+      "timeout": "Таймаут",
+      "notify": "Уведомления",
+      "none": "—",
+      "retryOff": "Отключены"
+    }
+  },
+  "edit": {
+    "title": "Редактировать задачу",
+    "action": "Редактировать",
+    "save": "Сохранить изменения"
+  },
+  "detail": {
+    "back": "Назад к задачам",
+    "tabs": {
+      "overview": "Обзор",
+      "runs": "Запуски"
+    },
+    "servers": "Серверы",
+    "retry": "Повтор",
+    "retryValue": "{n} попыток, задержка {s}с",
+    "notifyValue": "{c} каналов на {s}",
+    "onceAt": "Разово в",
+    "noRuns": "Запусков пока нет."
+  },
+  "delete": {
+    "action": "Удалить",
+    "confirm": "Удалить эту задачу?",
+    "deleting": "Удаление…"
+  },
+  "logs": {
+    "title": "Логи запуска",
+    "streaming": "Трансляция…",
+    "empty": "Вывода пока нет.",
+    "close": "Закрыть",
+    "exit": "Код выхода {code}"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "Проверки деплоев GitHub",
+    "cloud:workspace-recovery": "Операции облачных воркспейсов",
+    "ssl:renew": "Продление SSL-сертификатов",
+    "projects:orphan-gc": "Очистка потерянных ресурсов",
+    "images:gc": "Очистка артефактов деплоя",
+    "domains:verify-pending": "Проверка пользовательских доменов",
+    "updates:scan": "Поиск обновлений",
+    "backups:retention-prune": "Удаление устаревших резервных копий",
+    "backups:stale-sweep": "Сверка зависших резервных копий",
+    "prune:audit": "Очистка журнала аудита",
+    "prune:incidents": "Очистка истории инцидентов",
+    "sampler:resources": "Сбор метрик ресурсов",
+    "system:analytics-scraper": "Сбор аналитики",
+    "build-cache:gc": "Очистка кэша сборки",
+    "cloud:https-health": "Проверка HTTPS в облаке",
+    "system:server-modules": "Сканирование модулей сервера",
+    "system:server-containers": "Сканирование контейнеров сервера",
+    "system:health-watch": "Проверка состояния сервисов",
+    "jobs:due-once": "Выполнение запланированных разовых задач",
+    "edge:verify": "Проверка граничного прокси",
+    "audit:retention-prune": "Очистка журнала аудита",
+    "retention-prune-daily": "Удаление устаревших резервных копий",
+    "backups:stale-run-sweep": "Сверка зависших резервных копий",
+    "domains:check-https": "Проверка HTTPS в облаке",
+    "analytics:scrape": "Сбор аналитики трафика",
+    "resources:sample": "Сбор метрик ресурсов",
+    "analytics:retention-prune": "Очистка аналитики трафика",
+    "resources:retention-prune": "Очистка метрик ресурсов",
+    "migrations:recover": "Восстановление миграций",
+    "deployments:cloud-build-queue": "Очередь облачных сборок",
+    "deployments:cloud-build-recovery": "Восстановление облачных сборок",
+    "deployments:reconcile": "Сверка деплоев",
+    "permissions:pending-grant-prune": "Очистка ожидающих приглашений",
+    "github:webhook-event-prune": "Очистка вебхуков GitHub",
+    "edge:target-verify": "Проверка бесплатных доменов",
+    "modules:scan": "Сканирование модулей сервера",
+    "infra:scan": "Сканирование управляемых контейнеров",
+    "mail:inbound-watch": "Правила входящей почты",
+    "mail:inbound-reconcile": "Сверка правил входящей почты",
+    "services:health-watch": "Проверка состояния сервисов",
+    "incidents:prune": "Очистка истории инцидентов",
+    "jobs:oneshot": "Выполнение запланированных разовых задач",
+    "Audit log prune": "Очистка журнала аудита",
+    "Backup in-flight stale reconciliation": "Сверка зависших резервных копий",
+    "Backup retention prune": "Удаление устаревших резервных копий",
+    "Cloud HTTPS health": "Проверка HTTPS в облаке",
+    "Cloud workspace operations": "Операции облачных воркспейсов",
+    "Container health watch": "Проверка состояния сервисов",
+    "Deployment artifact cleanup": "Очистка артефактов деплоя",
+    "Deployment reconcile": "Сверка деплоев",
+    "GitHub deployment Checks": "Проверки деплоев GitHub",
+    "GitHub webhook event prune": "Очистка вебхуков GitHub",
+    "Incident history prune": "Очистка истории инцидентов",
+    "Managed-container update scan": "Сканирование управляемых контейнеров",
+    "Migration recovery": "Восстановление миграций",
+    "Native-module update scan": "Сканирование модулей сервера",
+    "Notification rule capture drift": "Сверка правил входящей почты",
+    "Notification rules": "Правила входящей почты",
+    "One-time job dispatcher": "Выполнение запланированных разовых задач",
+    "Orphaned resource cleanup": "Очистка потерянных ресурсов",
+    "Pending grant prune": "Очистка ожидающих приглашений",
+    "Resource usage prune": "Очистка метрик ресурсов",
+    "Resource usage sampling": "Сбор метрик ресурсов",
+    "SSL certificate renewal": "Продление SSL-сертификатов",
+    "Traffic analytics collection": "Сбор аналитики трафика",
+    "Traffic analytics prune": "Очистка аналитики трафика",
+    "Update scan": "Поиск обновлений",
+    "Free-domain target verification": "Проверка бесплатных доменов",
+    "Domain DNS verification": "Проверка DNS доменов"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Деплой успешен",
+      "description": "Продакшн-деплой завершился успешно."
+    },
+    "deployment.failed": {
+      "label": "Ошибка деплоя",
+      "description": "Сборка или деплой завершились с ошибкой."
+    },
+    "backup_run.succeeded": {
+      "label": "Резервная копия создана",
+      "description": "Плановое или ручное резервное копирование завершено."
+    },
+    "backup_run.failed": {
+      "label": "Ошибка резервного копирования",
+      "description": "Создание резервной копии завершилось с ошибкой."
+    },
+    "backup_restore.completed": {
+      "label": "Восстановление завершено",
+      "description": "Восстановление из резервной копии завершено."
+    },
+    "ssl.renewal_failed": {
+      "label": "Ошибка продления SSL",
+      "description": "Не удалось продлить SSL-сертификат."
+    },
+    "domain.verification_failed": {
+      "label": "Ошибка проверки домена",
+      "description": "Проверка DNS для домена не пройдена."
+    }
+  }
+}

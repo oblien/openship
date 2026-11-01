@@ -12,17 +12,17 @@ vi.mock("nodemailer", () => ({
   default: { createTransport: h.createTransport },
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: async (_serverId: string, run: (executor: unknown) => unknown) => run({}),
   },
 }));
 
-vi.mock("../../../src/modules/mail/mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: vi.fn(async () => ({ domain: "example.com" })),
 }));
 
-vi.mock("../../../src/modules/mail/admin/platform-mailbox.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/platform-mailbox.service", () => ({
   ensureOpenshipPlatformMailbox: vi.fn(async () => ({
     email: "openship@example.com",
     password: "secret",
@@ -36,7 +36,7 @@ vi.mock("../../../src/modules/mail/admin/test-mailbox.service", () => ({
   ensureOpenshipTestMailbox: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/mail/mail-port-reachability.service", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-port-reachability.service", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   resolvePublicMailAddress: vi.fn(async () => "203.0.113.10"),
   checkMailPortReachability: h.checkReachability,

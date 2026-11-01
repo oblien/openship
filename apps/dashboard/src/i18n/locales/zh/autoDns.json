@@ -1,7 +1,7 @@
 {
   "checking": "正在检查您的 DNS 提供商…",
   "noProviderTitle": "自动设置这些记录",
-  "noProviderDesc": "连接 DNS 提供商，Openship 即可为您添加这些记录。",
+  "noProviderDesc": "连接有权访问此域名区域的 DNS 服务商，然后检查并应用记录。",
   "connect": "连接 DNS 提供商",
   "unauthorizedTitle": "DNS 提供商需要重新连接",
   "unauthorizedDesc": "已保存的令牌被拒绝。请重新连接以自动配置 DNS。",
@@ -25,5 +25,20 @@
   "outcomeFailed": "失败",
   "resultDone": "DNS 已更新。",
   "resultPartial": "部分记录需要处理。",
-  "applyFailed": "无法配置 DNS。"
+  "applyFailed": "无法配置 DNS。",
+  "preDeployHint": "服务商已连接。请先部署，然后在项目的域名设置中选择自动配置 DNS。",
+  "currentValue": "当前值",
+  "desiredValue": "新值",
+  "checkAgain": "重新检查",
+  "manualSetup": "手动设置 DNS",
+  "recordsFailed": "无法加载 DNS 记录，请重试。",
+  "connection": {
+    "description": "为此工作区连接一次即可。应用前请检查 DNS 更改。",
+    "provider": "DNS 服务商",
+    "connection": "连接",
+    "newConnection": "添加连接",
+    "createToken": "创建 API 令牌",
+    "adminRequired": "需要所有者或管理员连接 DNS 服务商。你仍可手动添加记录。",
+    "loadFailed": "无法加载 DNS 连接，请重试。"
+  }
 }

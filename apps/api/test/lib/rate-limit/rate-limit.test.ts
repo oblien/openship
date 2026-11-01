@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *                            to force the store to throw (fail-open test).
  */
 
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     REDIS_URL: "redis://localhost:6379",
   },

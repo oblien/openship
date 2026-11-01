@@ -30,7 +30,7 @@ import {
 function withFolder<T extends { folder?: string }>(input: T) {
   return { ...input, folder: normalizeFolderSlug(input.folder) };
 }
-import { sanitizeMailHtml, blockRemoteImages } from '../../lib/sanitize';
+import { sanitizeMailHtml, blockRemoteContent } from '../../lib/sanitize';
 
 // Recipients arrive from the client as `{email, name}` objects (Sender).
 // We accept either that or a bare email string for backward compat.
@@ -201,7 +201,9 @@ export const mailRouter = router({
 
       const outgoingHtml = input.isForward
         ? `${input.message ?? input.html ?? input.body ?? ''}${originalHtml ?? ''}`
-        : input.message ?? input.html ?? input.body ?? undefined;
+        : originalHtml && (input.inReplyTo || inReplyToHeader)
+          ? `${input.message ?? input.html ?? input.body ?? ''}<blockquote>${originalHtml}</blockquote>`
+          : (input.message ?? input.html ?? input.body ?? undefined);
       const attachments =
         forwardedAttachments?.length || input.attachments?.length
           ? [...(forwardedAttachments ?? []), ...(input.attachments ?? [])]
@@ -318,7 +320,7 @@ export const mailRouter = router({
       if (input.shouldLoadImages) {
         return { processedHtml: clean, hasBlockedImages: false };
       }
-      const { html, blocked } = blockRemoteImages(clean);
+      const { html, blocked } = blockRemoteContent(clean);
       return { processedHtml: html, hasBlockedImages: blocked };
     }),
 

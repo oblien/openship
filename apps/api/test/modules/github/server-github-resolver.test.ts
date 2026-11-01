@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GITHUB_KNOWN_HOSTS } from "../../../src/modules/github/github-known-hosts";
+import { GITHUB_KNOWN_HOSTS } from "@repo/platform/engine/modules/github/github-known-hosts";
 
 // Mutable env so a single suite can exercise both self-hosted and CLOUD_MODE.
 const { envMock, getByServer, listByServer } = vi.hoisted(() => ({
@@ -8,25 +8,25 @@ const { envMock, getByServer, listByServer } = vi.hoisted(() => ({
   listByServer: vi.fn(),
 }));
 
-vi.mock("../../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
     serverGithubAuth: { getByServer, deleteByServer: vi.fn() },
     githubDeployKey: { listByServer, deleteByServer: vi.fn() },
   },
 }));
-vi.mock("../../../src/lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   encrypt: (s: string) => `ENC:${s}`,
   decrypt: (s: string) => s.replace(/^ENC:/, ""),
 }));
 // Sibling modules imported at load time — stubbed so the service loads in isolation.
-vi.mock("../../../src/modules/github/github.local-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({
   startServerDeviceFlow: vi.fn(),
   getDeviceFlowStatus: vi.fn(),
   cancelDeviceFlow: vi.fn(),
 }));
-vi.mock("../../../src/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   createDeployKey: vi.fn(),
   revokeDeployKey: vi.fn(),
 }));
@@ -35,7 +35,7 @@ import {
   resolveServerGitCredential,
   canResolveServerGitCredential,
   disconnectServerGithub,
-} from "../../../src/modules/github/server-github.service";
+} from "@repo/platform/engine/modules/github/server-github.service";
 
 const ctx = { userId: "u1", organizationId: "o1" } as any;
 const resolve = (owner: string | null = "acme", repo: string | null = "app") =>
@@ -113,5 +113,19 @@ describe("mutator cloud guard", () => {
     envMock.CLOUD_MODE = true;
     await expect(disconnectServerGithub(ctx, "s1")).rejects.toThrow(/self-hosted/i);
     expect(listByServer).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("repository reads cannot acquire SSH credentials", () => {
+  it.each(["ssh-server-key", "ssh-deploy-key"])("%s is unavailable in token-only mode", async mode => {
+    getByServer.mockResolvedValue({ mode, organizationId: "o1", serverKeyPrivateEncrypted: "ENC:PRIVATE" });
+    expect(await resolveServerGitCredential({ serverId: "s1", ctx, owner: "acme", repo: "app", tokenOnly: true })).toBeNull();
+    expect(await canResolveServerGitCredential("s1", { tokenOnly: true })).toBe(false);
+  });
+  it("uses the unchanged stored token for repository reads", async () => {
+    getByServer.mockResolvedValue({ mode: "token", tokenEncrypted: "ENC:server-pat" });
+    expect(await resolveServerGitCredential({ serverId: "s1", ctx, owner: "acme", repo: "app", tokenOnly: true })).toEqual({ token: "server-pat" });
+    expect(await canResolveServerGitCredential("s1", { tokenOnly: true })).toBe(true);
   });
 });

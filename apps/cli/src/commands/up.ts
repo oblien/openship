@@ -1,3 +1,5 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { reportCliMessage } from "../lib/output";
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
@@ -153,7 +155,7 @@ function effectivePublicUrl(flag?: string): string | undefined {
 function normalizePublicUrl(raw: string): string {
   const url = normalizeUrl(raw);
   if (!url) {
-    console.error(
+    reportCliMessage("error",
       chalk.red(`\n  Invalid --public-url: ${raw}`) +
         chalk.dim("\n  Expected something like https://ops.example.com\n"),
     );
@@ -300,7 +302,7 @@ export const upCommand = new Command("up")
     if (method === "compose" && !dockerUsable) {
       // Explicitly asked for compose (the only way to get here): install Docker or
       // fail loudly. Falling back to bare would quietly ignore the flag.
-      console.error(
+      reportCliMessage("error",
         chalk.red("\n  --compose needs Docker + docker compose, and they couldn't be installed automatically.") +
           chalk.dim(
             "\n  Install Docker (https://docs.docker.com/engine/install/) and re-run, or use --bare.\n",
@@ -315,7 +317,7 @@ export const upCommand = new Command("up")
         // the bare ~/.openship token file) — authenticate the setup calls with it.
         const token = composeInternalToken();
         if (!token) {
-          console.warn(
+          reportCliMessage("warn",
             chalk.yellow(
               "\n  Couldn't read the stack's internal token (compose/.env) — create the admin from the dashboard.\n",
             ),
@@ -360,7 +362,7 @@ export async function runHeadlessProvision(
     });
   } catch (err) {
     if (err instanceof HeadlessInputError) {
-      console.error(chalk.red(`\n  ${err.message}\n`));
+      reportCliMessage("error", chalk.red(`\n  ${err.message}\n`));
       process.exit(1);
     }
     throw err;
@@ -376,9 +378,10 @@ export async function runHeadlessProvision(
       onLog: (m) => console.log(chalk.dim(`  ${m}`)),
     });
     console.log(chalk.green(`\n  ✓ Openship provisioned${result.liveUrl ? `: ${result.liveUrl}` : "."}`));
-    for (const w of result.warnings) console.warn(chalk.yellow(`  ⚠ ${w}`));
+    for (const w of result.warnings) reportCliMessage("warn", chalk.yellow(`  ⚠ ${w}`));
   } catch (err) {
-    console.error(chalk.red(`\n  Headless provisioning failed: ${(err as Error).message}\n`));
+    observeCaughtError(err, "cli/commands/up");
+    reportCliMessage("error", chalk.red(`\n  Headless provisioning failed: ${(err as Error).message}\n`));
     process.exit(1);
   }
 }
@@ -392,7 +395,7 @@ export async function runHeadlessProvision(
 async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: string; dashPort: string }> {
   const headless = !!(opts.nonInteractive || opts.yes);
   if (!hasDockerCompose()) {
-    console.error(
+    reportCliMessage("error",
       chalk.red("\n  Docker + `docker compose` are required for the Compose install.\n") +
         chalk.dim("  Install Docker, or run `openship up --bare` for the process mode.\n"),
     );
@@ -401,7 +404,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
 
   // --edge validation (before any side effects).
   if (opts.edge && !EDGE_ACTIONS.includes(opts.edge as EdgeAction)) {
-    console.error(
+    reportCliMessage("error",
       chalk.red(`\n  Invalid --edge value: ${opts.edge}`) +
         chalk.dim(`\n  Expected one of: ${EDGE_ACTIONS.join(", ")}\n`),
     );
@@ -442,7 +445,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // (an api that can't authenticate to its own database) names nothing useful.
   const rotation = composeSecretRotationRisk({ resetSecrets: opts.resetSecrets });
   if (rotation) {
-    console.error(chalk.yellow(renderSecretRotationRefusal(rotation)));
+    reportCliMessage("error", chalk.yellow(renderSecretRotationRefusal(rotation)));
     process.exit(1);
   }
 
@@ -450,7 +453,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // writes `.env`, so a guessed OPENSHIP_PGDATA has to be refused before that, not after.
   const pgData = composePgDataRisk({ resetSecrets: opts.resetSecrets });
   if (pgData) {
-    console.error(chalk.yellow(renderPgDataRefusal(pgData)));
+    reportCliMessage("error", chalk.yellow(renderPgDataRefusal(pgData)));
     process.exit(1);
   }
 
@@ -480,7 +483,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   });
   if (!fetched.ok) {
     prefetch.fail("Couldn't fetch the stack's images — nothing was changed on this box.");
-    console.error(
+    reportCliMessage("error",
       chalk.dim("\n  Your current proxy is untouched and still serving. Fix the pull/build error above and re-run.\n"),
     );
     process.exit(1);
@@ -491,7 +494,8 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   try {
     edgePlan = await planAndApplyHostEdge({ edge: opts.edge as EdgeAction | undefined });
   } catch (e) {
-    console.error(
+    observeCaughtError(e, "cli/commands/up");
+    reportCliMessage("error",
       chalk.red(`\n  Edge preflight failed: ${(e as Error).message}\n`) +
         chalk.dim("  Re-run, or pass --edge=cancel to skip taking over :80/:443.\n"),
     );
@@ -548,7 +552,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
     // The preflight stopped AND disabled the operator's proxy to free 80/443. The
     // stack isn't coming up, so put it back — never leave the box dark.
     const restored = edgePlan.action ? await rollbackHostEdge() : false;
-    console.error(
+    reportCliMessage("error",
       chalk.dim("\n  Check `docker compose -f ~/.openship/compose/docker-compose.yml logs`.\n") +
         (restored
           ? chalk.yellow("  Restored the previous proxy on :80/:443 — your sites are serving again.\n")
@@ -572,14 +576,14 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // restart, and `completeHostEdge()` below (not reached) is what discards it.
   if (edgePlan.action && (await edgeIsBroken(new LocalExecutor()))) {
     const reason = await edgeCrashReason(new LocalExecutor());
-    console.error(
+    reportCliMessage("error",
       chalk.red(`\n  Openship's edge container is not running${reason ? ` — ${reason}` : "."}`),
     );
     const restored = await rollbackHostEdge();
     // The same "put your proxy back" hint `edge-import` and `uninstall` print, from the
     // same place: an Alpine or OpenRC box was being handed a systemctl command here.
     const back = startUnitHint("nginx");
-    console.error(
+    reportCliMessage("error",
       restored
         ? chalk.yellow(
             `  Your previous proxy has been restarted — the box is serving again, on it.\n` +
@@ -627,7 +631,9 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // to a bad key (#490). Diagnose it here, where the operator is still watching,
   // and offer the rule. Deliberately after the edge work: the takeover uses the
   // HOST executor, not this channel, so a blocked channel must not gate it.
-  await verifyHostChannel({ openFirewall: opts.openHostFirewall }).catch(() => {});
+  await verifyHostChannel({ openFirewall: opts.openHostFirewall }).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "cli/commands/up");
+  });
 
   const dashboardUrl = publicUrl ?? `http://localhost:${res.dashPort}`;
   console.log(
@@ -655,7 +661,8 @@ async function runFromSource(opts: UpOpts): Promise<void> {
   try {
     src = await prepareFromSource({ ref: opts.ref, source: opts.source, repo: opts.repo });
   } catch (e) {
-    console.error(
+    observeCaughtError(e, "cli/commands/up");
+    reportCliMessage("error",
       chalk.red(`\n  Build from source failed: ${(e as Error).message}\n`) +
         chalk.dim("  Small boxes can OOM on the dashboard build — build on a bigger machine and pass --source, or use a published release.\n"),
     );
@@ -727,7 +734,7 @@ export async function startService(
     return { port, dashPort, publicUrl };
   } catch (e) {
     if (runOpts.quiet) throw e; // let the wizard present the failure
-    console.error(
+    reportCliMessage("error",
       chalk.red(`\n  Couldn't install the service: ${(e as Error).message}\n`) +
         chalk.dim("  Run `openship up --foreground` to run it attached instead.\n"),
     );
@@ -751,7 +758,7 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     } else {
       const serverEntry = join(SERVER_DIR, "index.js");
       if (!existsSync(serverEntry)) {
-        console.error(
+        reportCliMessage("error",
           chalk.red("\n  Bundled server not found in this install.") +
             chalk.dim("\n  Reinstall with `openship update` (or `npm i -g openship`).\n"),
         );
@@ -910,7 +917,8 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
           healthy = true;
           break;
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "cli/commands/up");
         // not up yet
       }
     }
@@ -939,13 +947,17 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
       try {
         if (c.pid && process.platform !== "win32") process.kill(-c.pid, sig);
         else c.kill(sig);
-      } catch { /* already gone */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "cli/commands/up");
+ /* already gone */ }
     };
     let stopping = false;
     const stopAll = (exitCode = 0) => {
       if (stopping) return; // re-entrancy guard (signal + child-exit can race)
       stopping = true;
-      try { instanceLog.end(); } catch { /* noop */ }
+      try { instanceLog.end(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "cli/commands/up");
+ /* noop */ }
       for (const c of children) killTree(c, "SIGTERM");
       // Ref'd (NOT unref'd) so the loop stays alive to force-kill, then exit.
       // 1.5s comfortably beats launchd/systemd's own force-kill timeout.
@@ -1024,7 +1036,8 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
               dashUp = true;
               break;
             }
-          } catch {
+          } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "cli/commands/up");
             /* not up yet */
           }
         }
@@ -1040,6 +1053,7 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
           process.stderr.write(dashBuf.slice(-1000));
         }
       } catch (e) {
+        observeCaughtError(e, "cli/commands/up");
         uiSpinner.warn(`Dashboard unavailable: ${(e as Error).message}`);
         console.log(
           chalk.dim(

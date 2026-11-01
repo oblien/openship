@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectComposeRoutePortDemands } from "./route-port-demands";
+import { collectComposeRoutePortDemands } from "@repo/platform/engine/modules/deployments/compose/route-port-demands";
 
 const project = {
   id: "proj-a",
@@ -27,6 +27,19 @@ const service = (overrides: Record<string, unknown> = {}) =>
   }) as never;
 
 describe("collectComposeRoutePortDemands", () => {
+  it("pins every path-only upstream even though no service owns a root endpoint", () => {
+    const demands = collectComposeRoutePortDemands({
+      project: { ...project, compositeRoutes: [{
+        hostname: "api.onvo.me", isCustomDomain: true,
+        locations: [{ pathPrefix: "/v3", serviceId: "svc-web", port: 3000 },
+          { pathPrefix: "/mcp", serviceId: "svc-web", port: 4000, exact: true }],
+      }] } as never,
+      services: [service({ ports: ["3000", "4000"] })],
+      domainRows: [{ projectId: project.id, hostname: "api.onvo.me", serviceId: null } as never],
+      runtimeName: "docker", usesManagedRouting: false,
+    });
+    expect([...demands.get("svc-web")!]).toEqual([3000, 4000]);
+  });
   it("pins an unexposed service reached only by a project-level published-port route", () => {
     const demands = collectComposeRoutePortDemands({
       project: project as never,

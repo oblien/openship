@@ -1,7 +1,7 @@
 {
   "checking": "Vérification de votre fournisseur DNS…",
   "noProviderTitle": "Configurer ces enregistrements automatiquement",
-  "noProviderDesc": "Connectez un fournisseur DNS et Openship ajoutera ces enregistrements pour vous.",
+  "noProviderDesc": "Connectez un fournisseur DNS ayant accès à la zone de ce domaine, puis vérifiez et appliquez les enregistrements.",
   "connect": "Connecter un fournisseur DNS",
   "unauthorizedTitle": "Le fournisseur DNS doit être reconnecté",
   "unauthorizedDesc": "Votre jeton enregistré a été refusé. Reconnectez-le pour configurer le DNS automatiquement.",
@@ -25,5 +25,20 @@
   "outcomeFailed": "Échec",
   "resultDone": "DNS mis à jour.",
   "resultPartial": "Certains enregistrements nécessitent votre attention.",
-  "applyFailed": "Impossible de configurer le DNS."
+  "applyFailed": "Impossible de configurer le DNS.",
+  "preDeployHint": "Fournisseur connecté. Déployez d’abord, puis choisissez Configurer le DNS automatiquement dans les paramètres du domaine du projet.",
+  "currentValue": "Valeur actuelle",
+  "desiredValue": "Nouvelle valeur",
+  "checkAgain": "Vérifier à nouveau",
+  "manualSetup": "Configuration DNS manuelle",
+  "recordsFailed": "Impossible de charger les enregistrements DNS. Réessayez.",
+  "connection": {
+    "description": "Une seule connexion pour cet espace de travail. Vérifiez les modifications DNS avant de les appliquer.",
+    "provider": "Fournisseur DNS",
+    "connection": "Connexion",
+    "newConnection": "Ajouter une connexion",
+    "createToken": "Créer un jeton API",
+    "adminRequired": "Un propriétaire ou administrateur doit connecter le fournisseur DNS. Vous pouvez toujours ajouter les enregistrements manuellement.",
+    "loadFailed": "Impossible de charger les connexions DNS. Réessayez."
+  }
 }

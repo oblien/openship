@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { NextResponse } from "next/server";
 
 // TODO: removed — temporary Cloud-waitlist forwarder for the SaaS deploy gate.
@@ -18,7 +19,8 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as { email?: unknown };
     email = typeof body?.email === "string" ? body.email.trim() : "";
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/app/api/cloud-waitlist/route");
     /* malformed body → falls through to the validation error below */
   }
 
@@ -42,7 +44,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Couldn't reach the waitlist. Try again." }, { status: 502 });
     }
     return NextResponse.json({ ok: true, forwarded: true });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "dashboard/app/api/cloud-waitlist/route");
     return NextResponse.json({ error: "Couldn't reach the waitlist. Try again." }, { status: 502 });
   }
 }

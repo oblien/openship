@@ -110,8 +110,8 @@ describe("a path policy archives each named folder as its own artifact", () => {
   it("yields one artifact per path, named after it", async () => {
     const { artifacts } = await capture(["/data/app", "/srv/uploads"]);
     expect(artifacts.map((a) => a.name)).toEqual([
-      "path-data_app.tar.zst",
-      "path-srv_uploads.tar.zst",
+      expect.stringMatching(/^path-data_app-[a-f0-9]{16}\.tar\.zst$/),
+      expect.stringMatching(/^path-srv_uploads-[a-f0-9]{16}\.tar\.zst$/),
     ]);
     // One artifact per path is the point: three folders give three independently
     // restorable units, not one all-or-nothing archive.
@@ -135,7 +135,7 @@ describe("a path policy archives each named folder as its own artifact", () => {
     // has to state what it is rather than leave an operator to assume a snapshot.
     const { artifacts } = await capture(["/data/app"], "none");
     expect(artifacts[0]!.metadata.consistency).toBe("crash");
-    expect(artifacts[0]!.name).toBe("path-data_app.tar");
+    expect(artifacts[0]!.name).toMatch(/^path-data_app-[a-f0-9]{16}\.tar$/);
   });
 
   it("probes the codec once for the whole run, not once per path", async () => {
@@ -148,7 +148,7 @@ describe("a path policy archives each named folder as its own artifact", () => {
     // `compression` is a declared config key for this kind, so the dialog's control has
     // to actually decide something. The probe would have answered zstd here.
     const { cmds, artifacts } = await capture(["/data/app"], "zstd", { compression: "gzip" });
-    expect(artifacts[0]!.name).toBe("path-data_app.tar.gz");
+    expect(artifacts[0]!.name).toMatch(/^path-data_app-[a-f0-9]{16}\.tar\.gz$/);
     expect(artifacts[0]!.metadata.compression).toBe("gzip");
     // …and no probe was needed at all.
     expect(cmds.some((c) => c.join(" ").includes("command -v zstd"))).toBe(false);
@@ -164,6 +164,13 @@ describe("a path policy archives each named folder as its own artifact", () => {
     // bill the destination twice and give the operator two identical restore points.
     const { artifacts } = await capture(["/data/app", "/data/app/", "/data//app"]);
     expect(artifacts).toHaveLength(1);
+  });
+
+  it("keeps different folders distinct when readable filenames collide", async () => {
+    const paths = ["/data/a_b", "/data/a/b", `/data/${"x".repeat(150)}/first`, `/data/${"x".repeat(150)}/second`];
+    const { artifacts } = await capture(paths);
+    expect(new Set(artifacts.map(artifact => artifact.name)).size).toBe(paths.length);
+    expect(artifacts.map(artifact => artifact.metadata.path)).toEqual(paths);
   });
 
   it("refuses a policy that archives folders but names none", async () => {

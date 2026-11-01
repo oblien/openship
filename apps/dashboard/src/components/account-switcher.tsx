@@ -1,5 +1,8 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Account switcher — popover that lists all organizations the user
  * belongs to, lets them switch active org or create a new one.
@@ -15,7 +18,6 @@
  */
 
 import { useEffect, useState, useRef } from "react";
-import { Check, ChevronsUpDown, Plus, Building2, Loader2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -61,7 +63,7 @@ export function AccountSwitcher() {
     (async () => {
       const [listRes, activeRes] = await Promise.all([
         orgClient.list(),
-        orgClient.getFullOrganization().catch(() => ({ data: null as Org | null })),
+        orgClient.getFullOrganization().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/components/account-switcher"); return ({ data: null as Org | null }); }),
       ]);
       if (cancelled) return;
       setOrgs(listRes.data ?? []);
@@ -148,7 +150,7 @@ export function AccountSwitcher() {
         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted/40 transition-colors text-start"
       >
         <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
-          <Building2 className="size-3.5 text-foreground" />
+          <UiIcon name="building" className="size-3.5 text-foreground" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{activeOrg.name}</p>
@@ -158,7 +160,7 @@ export function AccountSwitcher() {
             </p>
           )}
         </div>
-        <ChevronsUpDown className="size-3.5 text-muted-foreground shrink-0" />
+        <UiIcon name="chevrons-up-down" className="size-3.5 text-muted-foreground shrink-0" />
       </button>
 
       {open && (
@@ -173,12 +175,12 @@ export function AccountSwitcher() {
                 className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/40 transition-colors text-start disabled:opacity-50"
               >
                 <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center shrink-0">
-                  <Building2 className="size-3 text-muted-foreground" />
+                  <UiIcon name="building" className="size-3 text-muted-foreground" />
                 </div>
                 <span className="flex-1 text-sm text-foreground truncate">{o.name}</span>
-                {o.id === activeId && <Check className="size-3.5 text-primary" />}
+                {o.id === activeId && <UiIcon name="check" className="size-3.5 text-primary" />}
                 {switching && o.id !== activeId && (
-                  <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                  <UiIcon name="spinner" className="size-3 animate-spin text-muted-foreground" />
                 )}
               </button>
             ))}
@@ -192,7 +194,7 @@ export function AccountSwitcher() {
               }}
               className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/40 transition-colors text-sm text-foreground"
             >
-              <Plus className="size-3.5 text-muted-foreground" />
+              <UiIcon name="plus" className="size-3.5 text-muted-foreground" />
               {t.chrome.accountSwitcher.newWorkspace}
             </button>
           </div>
@@ -240,7 +242,7 @@ export function AccountSwitcher() {
                 disabled={creating || !newName.trim()}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
               >
-                {creating && <Loader2 className="size-4 animate-spin" />}
+                {creating && <UiIcon name="spinner" className="size-4 animate-spin" />}
                 {t.chrome.accountSwitcher.create}
               </button>
             </div>

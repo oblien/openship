@@ -1,8 +1,9 @@
 'use client';
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from 'react';
 import Link from 'next/link';
-import { Cpu, ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
 import { ApiRequestData, DailyMetric } from './types';
 import { useI18n, interpolate } from '@/components/i18n-provider';
 
@@ -69,7 +70,7 @@ const ApiRequestsCard: React.FC<ApiRequestsCardProps> = ({ data, isLoading = fal
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-            <Cpu className="w-5 h-5 text-blue-600" />
+            <UiIcon name="cpu" className="w-5 h-5 text-blue-600" />
           </div>
           <div>
             <h3 className="font-semibold text-black">{t.overview.apiRequests.title}</h3>
@@ -81,7 +82,7 @@ const ApiRequestsCard: React.FC<ApiRequestsCardProps> = ({ data, isLoading = fal
           href="/settings"
           className="p-2 hover:bg-blue-100 rounded-lg transition-colors group"
         >
-          <ArrowUpRight className="w-4 h-4 text-blue-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          <UiIcon name="arrow-up-right" className="w-4 h-4 text-blue-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
         </Link>
       </div>
 
@@ -93,7 +94,7 @@ const ApiRequestsCard: React.FC<ApiRequestsCardProps> = ({ data, isLoading = fal
             <span className={`flex items-center gap-0.5 text-xs font-medium ${
               data.trend > 0 ? 'text-emerald-600' : 'text-rose-600'
             }`}>
-              {data.trend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {data.trend > 0 ? <UiIcon name="trending-up" className="w-3 h-3" /> : <UiIcon name="trending-down" className="w-3 h-3" />}
               {Math.abs(data.trend)}%
             </span>
           )}

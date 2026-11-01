@@ -32,7 +32,8 @@
       "total": "Toplam",
       "successful": "Başarılı",
       "failed": "Başarısız",
-      "inProgress": "Devam Ediyor"
+      "inProgress": "Devam Ediyor",
+      "pageTitle": "Bu sayfada"
     },
     "autoDeploy": {
       "title": "Otomatik Dağıtım",
@@ -191,5 +192,75 @@
     "untouchedNote": "Bunlar çalışmaya devam eder ve değiştirilmez: {names}",
     "confirm": "Geri dön",
     "cancel": "İptal"
+  },
+  "loadFailed": "Dağıtımlar yüklenemedi.",
+  "retry": "Tekrar dene",
+  "pagination": {
+    "label": "Dağıtım geçmişi sayfaları",
+    "previous": "Önceki sayfa",
+    "next": "Sonraki sayfa",
+    "pageOf": "Sayfa {page} / {total}",
+    "range": "{total} dağıtımdan {from}–{to}"
+  },
+  "resourceGuidance": {
+    "label": "Dağıtım kaynak rehberi",
+    "reviewCapacity": "Kapasiteyi incele",
+    "reviewTitle": "Cloud alanı kapasitesini incele",
+    "reviewHint": "Önce kullanımı ve yapılandırılmış sınırları kontrol edin. Yükseltme isteğe bağlıdır; bu incelemeyi açmak dağıtımı değiştirmez veya yeniden denemez.",
+    "slowTitle": "Bu derleme biraz zaman alıyor",
+    "slowDescription": "İndirmeler, ağ gecikmeleri veya derleme komutları yavaş olabilir. Daha fazla kapasite yoğun derlemelere yardımcı olabilir; önce günlükleri kontrol edin.",
+    "titles": {
+      "container-oom": "Kapsayıcının belleği tükendi",
+      "memory-allocation": "Bellek ayırma başarısız",
+      "process-heap": "Uygulama yığın sınırına ulaşıldı",
+      "storage-full": "Depolama ayırma başarısız",
+      "storage-low": "Derleme için yeterli boş depolama yok",
+      "process-killed": "Derleme işlemi sonlandırıldı"
+    },
+    "causes": {
+      "container-oom": "Docker, bellek yetersizliği nedeniyle sonlandırmayı doğruladı. Yeniden denemeden önce kapsayıcı bellek sınırını ve Cloud alanı kapasitesini inceleyin.",
+      "memory-allocation": "Başarısız işlem bellek ayıramadı. Daha büyük bir plan seçmeden önce yapılandırılmış sınırları ve kullanılabilir kapasiteyi inceleyin.",
+      "process-heap": "İşlem kendi heap sınırına ulaştı. Çalışma zamanı ayarlarını kontrol edin; daha büyük bir plan tek başına çözmeyebilir.",
+      "storage-full": "İşlem disk alanını veya inode’ları tüketti. Uygulama verilerini koruyarak kullanımı ve kullanılmayan çıktıları inceleyin.",
+      "storage-low": "Docker dosya sisteminde çok az boş alan var veya boş inode yok. Kullanımı inceleyin ya da depolamayı artırın.",
+      "process-killed": "İşlem SIGKILL aldı (çıkış kodu 137). Bu tek başına bellek yetersizliğini kanıtlamaz. Günlükleri kontrol edin."
+    }
+  },
+  "cloudBuildQueue": {
+    "label": "Bulut derleme kuyruğu",
+    "title": "Derleme kuyrukta",
+    "position": "Derleme kuyrukta · Sıra {position}",
+    "concurrency": "Eşzamanlı derleme için boş yer bekleniyor.",
+    "resources": "Sunucuda kullanılabilir CPU veya bellek bekleniyor.",
+    "server": "Sunucunun bu derlemeyi kabul etmesi bekleniyor.",
+    "automaticStart": "Otomatik olarak başlayacak.",
+    "allowance": "Planınızın izin verdiği eşzamanlı derleme sayısı: {count}.",
+    "unlimited": "Planınızda eşzamanlı derleme sınırı yok.",
+    "active": "Etkin derleme sayısı: {count}.",
+    "comparePlans": "Planları karşılaştır",
+    "optionalUpgrade": "Yükseltme isteğe bağlıdır. Beklemeye devam edebilirsiniz.",
+    "compareConcurrency": "Daha fazla eşzamanlı derleme için planları karşılaştırın. Derlemeniz kuyrukta kalabilir.",
+    "compareResources": "Daha fazla CPU veya bellek için planları karşılaştırın. Sunucu kaynakları kullanılabilir olana kadar beklemeye devam edebilirsiniz."
+  },
+  "monitoring": {
+    "title": "Dağıtım özeti",
+    "scope": "Seçilen proje ve arama · UTC takvim günleri · saklanan geçmiş",
+    "period": "Zaman aralığı",
+    "days": "{count} gün",
+    "refresh": "Yenile",
+    "attempts": "Dağıtım denemeleri",
+    "window": "Seçilen zaman aralığında",
+    "successRate": "Başarı oranı",
+    "rateHint": "Başarılı / (başarılı + başarısız); iptaller hariç",
+    "failedHint": "Kısmi ve engellenen sürümler dahil",
+    "activeHint": "Bu aralıkta çalışan veya sıradaki denemeler",
+    "unavailable": "Özet kullanılamıyor. Yenilemeyi deneyin.",
+    "trend": "Günlük sonuçlar",
+    "avgBuild": "Ortalama başarılı derleme",
+    "empty": "Bu aralıkta dağıtım yok.",
+    "projects": "Proje dökümü",
+    "projectHint": "Hatalara, sonra etkin denemelere göre ilk 6",
+    "failedShort": "başarısız",
+    "history": "Dağıtım geçmişi"
   }
 }

@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { generateGitHubAppJwt, githubAppFetch } from "./github.app-client";
+import {
+  generateGitHubAppJwt,
+  githubAppFetch,
+  GitHubAppApiError,
+} from "@repo/platform/engine/modules/github/github.app-client";
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -14,6 +18,34 @@ afterEach(() => {
 });
 
 describe("GitHub App client", () => {
+  it.each([
+    [422, {}, false],
+    [403, {}, true],
+    [403, { "x-ratelimit-remaining": "0" }, false],
+  ] as const)(
+    "preserves typed App failures and rate-limit classification (%s)",
+    async (status, headers, rejected) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ message: "Denied" }), {
+              status,
+              headers,
+            }),
+        ),
+      );
+      const error = await githubAppFetch({ appId: 12345, privateKeyPem: privateKey }, "/app").catch(
+        (e) => e,
+      );
+      expect(error).toBeInstanceOf(GitHubAppApiError);
+      expect(error).toMatchObject({
+        status,
+        credentialRejected: rejected,
+        message: `GitHub App API error (${status}): Denied`,
+      });
+    },
+  );
   it("signs a short-lived RS256 JWT for the supplied App", () => {
     const jwt = generateGitHubAppJwt({ appId: 12345, privateKeyPem: privateKey });
     const [encodedHeader, encodedPayload, signature] = jwt.split(".");

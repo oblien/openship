@@ -75,6 +75,9 @@
       "onFailureWarn": "Dağıtımı yayında tut ve incelenmek üzere işaretle",
       "onFailureFail": "Dağıtımı başarısız kıl ve önceki sürümü yayında tut"
     },
+    "runtimeVersionLabel": "Çalışma zamanı sürümü",
+    "runtimeVersionDefault": "Varsayılan",
+    "runtimeVersionDesc": "Seçilen sürüme uygun derleme ve çalışma imajlarını kullanır. Openship tarafından oluşturulan bir Docker derlemesi gerektirir.",
     "buildImageLabel": "Derleme İmajı",
     "buildImageDesc": "Bulut veya sunucu derlemeleri için derleyici konteyner imajı. Tespit edilen taban imajı yanlışsa değiştirin.",
     "productionPathsLabel": "Canlı ortam yolları",
@@ -106,7 +109,23 @@
     "modeStatic": "Statik",
     "workerModeDesc": "Bağlantı noktası veya genel URL olmadan sürekli çalışır — bir kuyruk tüketicisi, cron veya bot.",
     "staticPathHint": "Edge üzerinden statik dosyalar olarak sunulur — hiçbir işlem çalışmaz.",
-    "buildSettingsTitle": "Derleme Ayarları"
+    "buildSettingsTitle": "Derleme Ayarları",
+    "releaseTitle": "Etkinleştirmeden önce",
+    "releaseDescription": "Derleme sonrası isteğe bağlı komutlar. Hata dağıtımı durdurur. Yalnızca Docker ve Bare uygulamaları.",
+    "releaseCommand": "Komut {number}",
+    "addReleaseCommand": "Komut ekle",
+    "removeReleaseCommand": "{number}. komutu kaldır",
+    "runtimeImageLabel": "Çalışma zamanı imajı",
+    "runtimeImageDesc": "Docker için isteğe bağlı üretim temel imajı. Çalışma zamanı ve oluşturulan tarifle uyumlu olmalıdır; varsayılan için boş bırakın.",
+    "runtimeTitle": "Çalışma ortamı",
+    "runtimeDesc": "Uygulamanızı çalıştıran imajı seçin. İmajları yenilemek seçili sürümü ve sabitlenmiş özetleri korur.",
+    "runtimeBareDesc": "Bu uygulama doğrudan sunucuda çalışır. Yüklü çalışma ortamını sunucuda yönetin.",
+    "runtimeStaticDesc": "Derleme imajı statik dosyalarınızı hazırlar. Dağıtımdan sonra uygulama çalışma ortamı çalışmaz.",
+    "runtimeDockerfileDesc": "Çalışma ortamı imajını Dockerfile dosyanız belirler.",
+    "runtimeServicesDesc": "Her hizmetin çalışma ortamı imajını Hizmetler bölümünden seçin.",
+    "runtimePrebuiltDesc": "Seçilen uygulama imajı kendi çalışma ortamını içerir.",
+    "runtimeOverrideUnused": "Bu kayıtlı geçersiz kılmalar bu dağıtım için geçerli değil. Kaydetmeden önce temizleyin.",
+    "clearRuntimeOverrides": "Kayıtlı geçersiz kılmaları temizle"
   },
   "projectSettings": {
     "framework": "Framework",
@@ -124,6 +143,7 @@
     "noneSet": "Hiçbiri ayarlanmadı",
     "pasteEnv": ".env Yapıştır",
     "uploadEnv": ".env Yükle",
+    "downloadEnv": ".env İndir",
     "edit": "Düzenle",
     "cancel": "İptal",
     "saving": "Kaydediliyor...",
@@ -145,6 +165,7 @@
       "interpolated": "Değişkenlerden türetildi"
     },
     "toast": {
+      "downloadFailed": "Ortam değişkenleri indirilemedi.",
       "title": "Ortam Değişkenleri",
       "added": "{count} eklendi",
       "updated": "{count} güncellendi",
@@ -208,9 +229,9 @@
       "volumes": "Disk Birimleri (Volumes)",
       "statefulWarnPart1": "Buluttaki durum bilgisi tutan (stateful) servis: veriler çalışma alanının kalıcı diskinde kalır (yeniden başlatmalarda korunur) ancak yedeklemeler etkinleştirilmediği sürece ",
       "statefulWarnBold": "yeniden derlemelerde korunmaz",
-      "statefulWarnPart2": ". Docker volume bağlamaları geçerli değildir.",
+      "statefulWarnPart2": ". Çalışma alanını değiştirmeden önce verileri açıkça yedekleyin ve geri yükleyin.",
       "volumeHint": "Adlandırılmış disk birimi veya sunucu yolu → konteyner yolu.",
-      "volumeCloudNote": "Bulutta bu bağlamalar geçerli değildir — veriler çalışma alanının diskinde kalır (yedekleme olmadan yeniden derlemelerde korunmaz).",
+      "volumeCloudNote": "Openship Cloud kalıcı birim bağlamalarını desteklemez. Birim gerektiren iş yükleri için bir sunucu seçin.",
       "sourcePlaceholder": "Kaynak",
       "containerPathPlaceholder": "Konteyner yolu",
       "readOnlyMount": "Salt okunur bağlama",
@@ -288,7 +309,51 @@
       "singleDesc": "Bir alt uygulamanın derleme + başlatma komutunu öne çıkarın, her uygulamanın portunu tek bir çalışma zamanından dışa açın."
     },
     "deploymentMode": "Dağıtım modu",
-    "deploymentModeDesc": "{mode} · Uygulama başına çalışma zamanları ile tek uygulama yönetimi arasında geçiş yapın."
+    "deploymentModeDesc": "{mode} · Uygulama başına çalışma zamanları ile tek uygulama yönetimi arasında geçiş yapın.",
+    "selection": {
+      "title": "Dağıtılacak uygulamalar",
+      "chooseApps": "Uygulamaları seç",
+      "changeSelection": "Seçimi değiştir",
+      "selected": "{count} seçildi",
+      "chooseHint": "Çalıştırmak istediğiniz uygulamaları seçin. CLI araçları, mobil uygulamalar ve ortak paketler seçilmeden kalabilir.",
+      "applySelection": "Seçilenleri kullan",
+      "manualReview": "Kurulumu incele",
+      "detectedApp": "Algılanan uygulama",
+      "empty": "Bu depodan uygulama seçin veya klasör ekleyin. Seçim yapmadan hiçbir şey dağıtılmaz.",
+      "addFromRepo": "Depodan uygulama ekle",
+      "addMore": "Daha fazla ekle",
+      "cancel": "İptal",
+      "addApp": "Uygulama ekle",
+      "chooseFolder": "Klasörü değiştir",
+      "useFolder": "Bu klasörü kullan",
+      "folderHint": "Uygulama klasörünü seçin. Derlemeler deponun ortak paketlerine ve kilit dosyalarına erişmeye devam eder.",
+      "appFolder": "Uygulama klasörü",
+      "invalidPath": "apps/web veya . gibi depoya göreli bir klasör girin.",
+      "alreadyAdded": "Bu klasör zaten listede. Eklemek için Seçimi değiştir’i kullanın.",
+      "browseError": "Depo klasörleri yüklenemedi.",
+      "scanError": "Bu klasör incelenemedi.",
+      "composeFolder": "Bu klasör bir Compose yığını tanımlıyor. Compose dosyasını proje olarak içe aktarın.",
+      "scanning": "İnceleniyor…",
+      "inspect": "Klasörü incele",
+      "parentFolder": "Üst klasör",
+      "retry": "Tekrar dene",
+      "loadingFolders": "Klasörler yükleniyor…",
+      "noSubfolders": "Alt klasör yok. Bu klasörü seçebilirsiniz.",
+      "reviewHint": "Dağıtımdan önce çatısını, komutlarını ve ortamını incelemek için uygulamayı ekleyin.",
+      "domains": "Alan adları",
+      "manage": "Yönet",
+      "domainNeeded": "Alan adı gerekli",
+      "viewAll": "{count} alan adının tümünü gör",
+      "domainHint": "Bu alan adları dağıtım sırasında uygulanacak.",
+      "privateHint": "Seçilen uygulamaların herkese açık alan adı yok.",
+      "done": "Bitti",
+      "private": "Özel",
+      "publicAccess": "Herkese açık erişim",
+      "accessHint": "Uygulamanın yalnızca proje içinden erişilebilir olması için kapatın.",
+      "app": "Uygulama",
+      "appLimit": "Bu projede zaten 50 uygulama var. Daha fazlası için başka bir proje oluşturun.",
+      "folderMismatch": "Bu klasör başka bir proje yapılandırmasına yönlendiriyor. O klasörü seçin veya openship.json dosyasını düzenleyin."
+    }
   },
   "deploymentProcessing": {
     "targetOpenshipCloud": "Openship Bulut",
@@ -322,7 +387,14 @@
       "changePort": "Portu değiştir",
       "skip": "Atla",
       "applied": "Yönlendirme port {port} olarak güncellendi.",
-      "changeError": "Port güncellenemedi. Lütfen tekrar deneyin."
+      "changeError": "Port güncellenemedi. Lütfen tekrar deneyin.",
+      "loopbackTitle": "Uygulama yönlendirilen trafiği alamıyor",
+      "loopbackNote": "Dağıtım çalışıyor ancak yönlendirilen bir bağlantı noktası ilgilenmenizi gerektiriyor.",
+      "loopbackBody": "{port} bağlantı noktası yalnızca konteyner içinden gelen bağlantıları dinliyor.",
+      "loopbackBodyService": "\"{service}\" servisi {port} bağlantı noktasında yalnızca konteyner içinden gelen bağlantıları dinliyor.",
+      "loopbackHelp": "Yönlendirilen trafik alan bir uygulama için 0.0.0.0 üzerinde dinleyip yeniden dağıtın veya trafiği amaçlanan proxy’ye yönlendirin.",
+      "openSettings": "Ayarları aç",
+      "skipError": "Bu uyarı kapatılamadı. Lütfen tekrar deneyin."
     },
     "title": {
       "cancelled": "Dağıtım İptal Edildi",
@@ -331,7 +403,7 @@
       "successful": "Dağıtım Başarılı",
       "deploying": "Dağıtılıyor..."
     },
-    "visitSite": "Siteyi Ziyaret Et",
+    "openSite": "Siteyi aç",
     "warningTitle": "Dağıtım tamamlandı ancak bazı servisler hâlâ müdahale gerektiriyor.",
     "productionLogs": "Canlı ortam günlükleri",
     "buildTerminal": "Derleme Terminali",
@@ -341,7 +413,7 @@
     "stopDeployment": "Dağıtımı Durdur",
     "redeploy": "Yeniden Dağıt",
     "goToProject": "Projeye git",
-    "openDashboard": "Paneli Aç",
+    "openProject": "Projeyi aç",
     "edit": "Düzenle",
     "status": {
       "cancelled": "İptal Edildi",
@@ -359,6 +431,17 @@
     "detailBranch": "Dal",
     "detailDomains": "Alan Adları",
     "detailDomain": "Alan Adı"
+  },
+  "deploymentHealth": {
+    "recheck": "Sağlığı yeniden denetle",
+    "checking": "Denetleniyor…",
+    "healthy": "Servisler sağlıklı",
+    "atDeployment": "Dağıtım sırasında kaydedilen uyarı",
+    "currentHealth": "Güncel servis durumu",
+    "startupHint": "Uygulama başlıyorsa bekleyip yeniden denetleyin. Yeniden başlıyorsa veya hata bildiriyorsa nedenini bulmak için günlükleri açın.",
+    "viewLogs": "Günlükleri görüntüle",
+    "unavailable": "Sağlık doğrulanamadı. Sunucuya erişilebildiğinde yeniden deneyin.",
+    "historical": "Bu dağıtım artık etkin değil. Güncel servisler için projeyi açın."
   },
   "composeDeployment": {
     "title": {
@@ -432,12 +515,12 @@
     "rowType": "Tür"
   },
   "configDiagnostics": {
-    "title": "Bu deponun openship.json dosyasının bir kısmı uygulanmadı",
-    "description": "Aşağıda listelenen alanlar atlandı; dosyanın kalanı uygulandı. Dağıtım devam edecek.",
+    "title": "Bazı depo dağıtım ayarları uygulanmadı",
+    "description": "Dağıtımdan önce aşağıdaki atlanan ayarları inceleyin.",
     "titleWholeFile": "Bu deponun openship.json dosyası yok sayıldı",
     "descriptionWholeFile": "Dosyanın hiçbir kısmı uygulanmadı. Dağıtım, Openship'in algıladığı ayarlarla devam edecek.",
     "refused": "Reddedildi",
     "unrecognized": "Tanınmadı",
-    "hint": "Sonraki dağıtımdan önce dosyayı denetlemek için depoda `openship config validate` komutunu çalıştırın."
+    "hint": "Sonraki dağıtımdan önce belirtilen yapılandırma dosyalarını kontrol edin ve desteklenmeyen ayarları güncelleyin."
   }
 }

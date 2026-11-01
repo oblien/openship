@@ -1,0 +1,24 @@
+{
+  "reference": "openship:hobby:v11",
+  "name": "Openship Hobby",
+  "description": "Monthly Cloud capacity",
+  "unitAmount": 500,
+  "currency": "usd",
+  "billingMode": "monthly",
+  "credits": 0,
+  "capacity": {
+    "vcpus": 1,
+    "memoryMb": 2048,
+    "diskGb": 40,
+    "workspaces": 1
+  },
+  "resourceLimits": {
+    "max_workspaces": 1,
+    "max_vcpus": 1,
+    "max_ram_mb": 2048,
+    "max_disk_gb": 40,
+    "max_total_vcpus": 1,
+    "max_total_ram_mb": 2048,
+    "max_total_disk_gb": 40
+  }
+}

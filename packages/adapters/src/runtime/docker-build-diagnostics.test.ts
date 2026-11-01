@@ -17,9 +17,21 @@ import {
   getDockerBuildIdleTimeoutMs,
   startDockerBuildIdleMonitor,
 } from "./docker-build-diagnostics";
+import { stubProtectedBuildWorker } from "../../test/fixtures/remote-build-worker";
 import { DockerRuntime } from "./docker";
 
 describe("Docker build diagnostics", () => {
+  it.each([
+    "ERROR: failed to solve: ResourceExhausted: copying of parent failed: copy_file_range failed: no space left on device",
+    "npm ERR! code ENOSPC",
+  ])("explains disk exhaustion and preserves it over a generic wrapper error: %s", line => {
+    const hint = extractDockerBuildFailureHint(line, { configuredMemoryMb: 1536, memoryLimitApplied: true });
+    expect(hint).toContain("disk space or filesystem inodes");
+    expect(hint).toContain("increase its disk capacity");
+    expect(hint).not.toContain("raise Build Memory");
+    expect(chooseDockerBuildFailureHint(hint, "failed to solve: exit code 1")).toBe(hint);
+    expect(dockerBuildExitMessage(1, hint)).toBe(hint);
+  });
   it("accepts only bounded integer inactivity timeouts", () => {
     expect(getDockerBuildIdleTimeoutMs(undefined)).toBe(DEFAULT_DOCKER_BUILD_IDLE_TIMEOUT_MS);
     expect(getDockerBuildIdleTimeoutMs("60000")).toBe(MIN_DOCKER_BUILD_IDLE_TIMEOUT_MS);
@@ -576,6 +588,7 @@ describe("DockerRuntime build failure paths", () => {
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime &
       Record<string, unknown>;
     Object.assign(runtime, { connectionOptions: { executor } });
+    stubProtectedBuildWorker(runtime);
 
     const result = (runtime as any)
       .buildImageOnRemote(
@@ -612,6 +625,7 @@ describe("DockerRuntime build failure paths", () => {
       } as unknown as CommandExecutor;
       const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
       Object.assign(runtime, { connectionOptions: { executor } });
+    stubProtectedBuildWorker(runtime);
 
       const result = (runtime as any).buildImageOnRemote(
         buildConfig(),
@@ -646,6 +660,7 @@ describe("DockerRuntime build failure paths", () => {
     } as unknown as CommandExecutor;
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
     Object.assign(runtime, { connectionOptions: { executor } });
+    stubProtectedBuildWorker(runtime);
 
     await expect(
       (runtime as any).buildImageOnRemote(
@@ -659,7 +674,7 @@ describe("DockerRuntime build failure paths", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("uses streamed exit-137 evidence for native SSH build failures", async () => {
+  it("uses streamed exit-137 evidence and the enforced remote worker cap", async () => {
     const streamExec = vi.fn(
       async (_command: string, onLog: Parameters<CommandExecutor["streamExec"]>[1]) => {
         onLog({
@@ -677,6 +692,7 @@ describe("DockerRuntime build failure paths", () => {
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime &
       Record<string, unknown>;
     Object.assign(runtime, { connectionOptions: { executor } });
+    stubProtectedBuildWorker(runtime);
 
     const error = await (runtime as any)
       .buildImageOnRemote(
@@ -689,6 +705,6 @@ describe("DockerRuntime build failure paths", () => {
       .catch((caught: Error) => caught);
 
     expect(error.message).toContain("killed by SIGKILL (exit code 137)");
-    expect(error.message).toContain("not under an OpenShip-enforced memory cap");
+    expect(error.message).toContain("capped at 512 MB RAM");
   });
 });

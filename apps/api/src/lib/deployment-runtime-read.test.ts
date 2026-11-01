@@ -50,8 +50,14 @@ vi.mock("./controller-helpers", () => ({
   platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
 }));
 
-vi.mock("./ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", async (original) => ({
+  ...await original<Record<string, unknown>>(),
+  boxOwningOrgId: async () => "org1",
+}));
+
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
+    retainExecutor: () => () => {},
     acquire: async () => ({
       readFile: async (path: string) => {
         if (path === "/etc/machine-id") return "0123456789abcdef0123456789abcdef\n";
@@ -67,13 +73,14 @@ vi.mock("./ssh-manager", () => ({
   }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
 }));
-vi.mock("./cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
-vi.mock("./cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
 vi.mock("@repo/db", () => ({
   repos: {
+    cloudDockerWorkspace: { find: async () => ({ projectId: "p1", workspaceId: "vm1", namespace: "ns1" }) },
     server: {
       getInOrganization: async (id: string) => {
         h.serverGets.push(id);
@@ -95,7 +102,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-const mod = await import("./deployment-runtime");
+const mod = await import("@repo/platform/engine/lib/deployment-runtime");
 
 const read = (meta: Record<string, unknown>) =>
   mod.resolveDeploymentRuntimeForRead({ meta, organizationId: "org1" } as never);
@@ -113,6 +120,18 @@ beforeEach(() => {
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
+  it("never falls back to this host when a Cloud deployment has an incomplete binding", async () => {
+    await expect(read({ deployTarget: "cloud", buildStrategy: "server", managedServer: { projectId: "p1", workspaceId: "vm1" } })).rejects.toThrow("no managed server binding");
+    expect(socketCalls()).toBe(0);
+    expect(sshHosts()).toEqual([]);
+  });
+  it("rejects a deployment that names a different project's Cloud Docker host", async () => {
+    const dep = { projectId: "own-project", organizationId: "org1", meta: { deployTarget: "cloud",
+      managedServer: { projectId: "other-project", workspaceId: "vm1" } } };
+    await expect(mod.resolveDeploymentRuntime(dep as never)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
+    await expect(mod.resolveDeploymentRuntimeForRead(dep as never)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
+    expect(socketCalls()).toBe(0);
+  });
   it("plans the concrete transport and server id for an implicit single-server target", async () => {
     await expect(mod.resolvePlannedTargetTopology("server", undefined, "org1")).resolves.toEqual({
       serverId: "only-server",
@@ -198,3 +217,12 @@ describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without
     expect(h.platformCalls).toBe(0);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
+}));

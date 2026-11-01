@@ -1,0 +1,58 @@
+---
+title: Error reporting
+description: Correlate API failures and understand Cloud-only diagnostic collection.
+---
+
+Openship API responses include an `X-Request-ID`. Include this reference when reporting a failure. The
+Cloud diagnostic event associates it with the error category, operation, stack and authorized
+resource identifiers where available. An incoming request ID is only a parent reference; each API
+request receives a new server-generated ID.
+
+Automatic error collection is enabled only in Openship Cloud. The SaaS API stores redacted events
+in an automatically created diagnostics table in its existing database and keeps its local JSON logs.
+Self-hosted and Desktop installations do not collect or upload diagnostic events, including recovered
+catches. Connecting a local installation to Cloud does not enable uploads. Intentional local warnings
+and fatal error output remain available. Application logs, deployment logs and the security audit log
+keep their existing purposes.
+
+## Browser reports
+
+The Cloud dashboard automatically submits errors to its serving API. The endpoint is available only
+in Cloud and returns 404 on local installations. It is public so sign-in
+and initialization failures can be reported. It cannot read logs or act on resources. Payloads cannot
+assert a user, organization, severity or trusted API result, and every accepted event is marked
+`untrusted` and redacted again by the server.
+
+The body is an object with an `events` array of one to eight entries:
+
+| Field | Limit | Meaning |
+| --- | --- | --- |
+| `name` | 80 characters | Error name; required. |
+| `message` | 2,049 characters | Redacted message; required. |
+| `component` | 1–160 characters | Optional source module label, such as `dashboard/hooks/useBuildConnection`; untrusted. |
+| `stack` | 4,097 characters | Optional redacted stack. |
+| `code` | 100 characters | Optional letters, digits, underscores, periods and hyphens. |
+| `page` | 512 characters | Optional page path. Queries and invitation tokens are removed. |
+| `requestId` | UUID | Optional parent API reference; not an identity. |
+| `eventId` | 100 characters | Optional client reference; the server generates its own event and error IDs. |
+
+Requests are limited to 64 KiB and 20 batches per minute per IP, including loopback requests. Extra
+fields and invalid JSON are rejected with `400`, oversized bodies with `413`, and excess requests
+with `429` and `Retry-After`. Accepted batches return `204` with `Cache-Control: no-store`.
+
+During a Desktop connection to a remote instance, UI collection stays disabled. A remote Cloud API
+can still record failures of requests it handles using its authorized context.
+
+Delivery is best effort with a bounded memory buffer. Reporting does not delay the operation while
+waiting for an exporter. Buffer overflow and failed delivery produce explicit local diagnostic events;
+process termination or loss of the local output can still lose events. This is not a durable audit log.
+
+## HTTP endpoint
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Submit bounded, untrusted dashboard error reports. Public, rate-limited intake with no read access. | `POST /api/diagnostics/client-errors`<br />`Handler authentication` |
+
+{/* api-operations:end */}

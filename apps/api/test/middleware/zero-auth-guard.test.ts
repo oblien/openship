@@ -7,7 +7,7 @@
 
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     DEPLOY_MODE: "docker",
     OPENSHIP_ALLOW_ZERO_AUTH: false,
@@ -15,14 +15,14 @@ vi.mock("@/config/env", () => ({
     OPENSHIP_PUBLIC_URL: undefined as string | undefined,
   },
 }));
-vi.mock("@/lib/auth-mode", () => ({ getAuthMode: vi.fn(async () => "none") }));
+vi.mock("@repo/platform/engine/lib/auth-mode", () => ({ getAuthMode: vi.fn(async () => "none") }));
 vi.mock("@/middleware/loopback-peer", () => ({
   isLoopbackRequest: vi.fn(() => true),
   peerAddress: () => "203.0.113.9",
 }));
 
-import { env } from "@/config/env";
-import { getAuthMode } from "@/lib/auth-mode";
+import { env } from "@repo/platform/engine/config/env";
+import { getAuthMode } from "@repo/platform/engine/lib/auth-mode";
 import { isLoopbackRequest } from "@/middleware/loopback-peer";
 import { zeroAuthAllowed } from "@/middleware/zero-auth-guard";
 

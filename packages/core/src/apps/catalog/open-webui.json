@@ -1,0 +1,153 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "schemaVersion": 2,
+  "supportsCloud": false,
+  "available": true,
+  "verified": true,
+  "kind": "template",
+  "category": "ai",
+  "framework": "docker-compose",
+  "id": "open-webui",
+  "name": "Open WebUI",
+  "logo": "open-webui",
+  "repository": "https://github.com/open-webui/open-webui",
+  "description": "A self-hosted chat interface for Ollama and OpenAI-compatible backends, with a generated administrator login.",
+  "tags": ["ai", "chat", "ollama", "openai", "frontend"],
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 2048
+  },
+  "services": [
+    {
+      "name": "open-webui",
+      "image": "ghcr.io/open-webui/open-webui:v0.12.0-slim",
+      "exposedPort": 8080,
+      "ports": ["8080:8080"],
+      "exposed": true,
+      "environment": {
+        "WEBUI_AUTH": "true",
+        "ENABLE_SIGNUP": "false",
+        "DEFAULT_USER_ROLE": "pending",
+        "RAG_EMBEDDING_ENGINE": "ollama",
+        "ENABLE_VERSION_UPDATE_CHECK": "false",
+        "DO_NOT_TRACK": "true",
+        "SCARF_NO_ANALYTICS": "true",
+        "ANONYMIZED_TELEMETRY": "false"
+      },
+      "secretEnv": ["WEBUI_SECRET_KEY", "WEBUI_ADMIN_PASSWORD"],
+      "volumes": ["open_webui_data:/app/backend/data"],
+      "restart": "unless-stopped",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/health\",timeout=5)"
+        ],
+        "interval": "20s",
+        "timeout": "10s",
+        "retries": 5,
+        "startPeriod": "5m"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "WEBUI_SECRET_KEY",
+      "service": "open-webui",
+      "label": "Session secret",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "WEBUI_ADMIN_PASSWORD",
+      "service": "open-webui",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "WEBUI_ADMIN_EMAIL",
+      "service": "open-webui",
+      "label": "Admin email",
+      "default": "admin@example.com"
+    }
+  ],
+  "settings": [
+    {
+      "id": "access",
+      "label": "Administrator",
+      "description": "Created on first startup only. Manage accounts and model connections in Open WebUI after installation.",
+      "fields": [
+        {
+          "key": "WEBUI_ADMIN_EMAIL",
+          "service": "open-webui",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address."
+        }
+      ]
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "requires": [
+    {
+      "id": "ollama",
+      "label": "Ollama backend",
+      "category": "ai",
+      "envKey": "OLLAMA_BASE_URL",
+      "mode": "internal",
+      "optional": true,
+      "bundleId": "ollama-api"
+    }
+  ],
+  "connection": {
+    "title": "Open WebUI",
+    "description": "Sign in with the generated administrator credentials. Connect Ollama or an OpenAI-compatible API in Admin Settings \u2192 Connections. This template does not deploy a model backend.",
+    "outputs": [
+      {
+        "id": "ui",
+        "label": "Chat interface",
+        "source": "publicUrl:open-webui",
+        "kind": "url"
+      },
+      {
+        "id": "email",
+        "label": "Admin email",
+        "source": "env:open-webui:WEBUI_ADMIN_EMAIL"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:open-webui:WEBUI_ADMIN_PASSWORD",
+        "secret": true
+      }
+    ],
+    "firstLogin": {
+      "note": "The initial administrator is created automatically. Public sign-up is disabled."
+    }
+  },
+  "marketplace": {
+    "articleFile": "articles/open-webui.md",
+    "features": [
+      {
+        "title": "Chat interface",
+        "description": "Use Ollama or an OpenAI-compatible backend."
+      },
+      {
+        "title": "Protected login",
+        "description": "Generated administrator credentials; sign-up disabled."
+      },
+      {
+        "title": "Persistent workspace",
+        "description": "Keep accounts, chats and settings across redeployment."
+      }
+    ]
+  }
+}

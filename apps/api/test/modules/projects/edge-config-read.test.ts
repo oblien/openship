@@ -36,9 +36,9 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   detectOpenRestyPaths,
 }));
 
-vi.mock("../../../src/lib/edge-host-executor", () => ({ withServerHostExecutor }));
+vi.mock("@repo/platform/engine/lib/edge-host-executor", () => ({ withServerHostExecutor }));
 
-import { readProjectEdgeConfig } from "../../../src/modules/projects/edge-config.service";
+import { readProjectEdgeConfig } from "@repo/platform/engine/modules/projects/edge-config.service";
 
 const project = (over: Partial<Project> = {}) =>
   ({ id: "p1", slug: "app", routingConfig: null, ...over }) as Project;
@@ -83,7 +83,7 @@ beforeEach(() => {
 
 describe("readProjectEdgeConfig — when it can't tell", () => {
   it("reports unreachable for a cloud project without touching a box", async () => {
-    const r = await readProjectEdgeConfig(project({ cloudWorkspaceId: "ws1" }));
+    const r = await readProjectEdgeConfig(project({ workspaceId: "ws1" }));
     expect(r).toEqual({ reachable: false, saved: {}, hosts: [] });
     expect(withServerHostExecutor).not.toHaveBeenCalled();
   });

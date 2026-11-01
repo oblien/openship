@@ -67,6 +67,7 @@ describe("the recovery bundle stays loadable on the Node it recovers", () => {
   // precedent) would make recovery unavailable on the runtimes that need it most.
   // Checked on the SOURCE graph so it holds without a build.
   const CHAIN = [
+    "src/node-entry.ts",
     "src/node-bootstrap.ts",
     "src/lib/node-runtime.ts",
     "src/lib/cache.ts",

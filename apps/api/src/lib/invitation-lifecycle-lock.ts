@@ -5,23 +5,11 @@
  * before either writes its terminal state.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
-import { withAdvisoryLock } from "@repo/db";
 import { isValidInvitationId } from "@repo/core";
-import { withKeyedMutex } from "./provision-lock";
-
-function lifecycleLockKey(invitationId: string): string {
-  return `invitation-lifecycle:${invitationId}`;
-}
-
-/** Serialize in-process and across API replicas sharing Postgres. */
-export function withInvitationLifecycleLock<T>(
-  invitationId: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  const key = lifecycleLockKey(invitationId);
-  return withKeyedMutex(key, () => withAdvisoryLock(key, run));
-}
+import { withInvitationLifecycleLock } from "@repo/platform/engine/lib/invitation-lifecycle-lock";
+export { withInvitationLifecycleLock } from "@repo/platform/engine/lib/invitation-lifecycle-lock";
 
 /**
  * Wrap Better Auth's accept/reject/cancel handlers. Invalid request bodies are
@@ -32,7 +20,7 @@ export async function invitationLifecycleMiddleware(c: Context, next: Next) {
   const body = (await c.req.raw
     .clone()
     .json()
-    .catch(() => null)) as { invitationId?: unknown } | null;
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/lib/invitation-lifecycle-lock"); return null; })) as { invitationId?: unknown } | null;
   const invitationId = typeof body?.invitationId === "string" ? body.invitationId.trim() : "";
   if (!isValidInvitationId(invitationId)) return next();
   await withInvitationLifecycleLock(invitationId, next);

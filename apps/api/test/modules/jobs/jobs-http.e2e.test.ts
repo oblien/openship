@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { initPlatform, resetPlatform } from "@repo/adapters";
+import { eq } from "@repo/db";
 import { makeApp, seedOwner, seedServer, resetJobs, installFakeRunner, req, db, schema, repos } from "./_harness";
 
 const app = makeApp();
@@ -23,6 +24,26 @@ beforeEach(async () => {
 });
 
 describe("jobs HTTP — auth + CRUD", () => {
+  it("requires explicit administration of every target in addition to a job-write grant", async () => {
+    const actor = await seedOwner();
+    await db.update(schema.member).set({ role: "restricted" }).where(eq(schema.member.userId, actor.userId));
+    const allowed = await seedServer(actor.orgId, "delegated");
+    const other = await seedServer(actor.orgId, "not-delegated");
+    await repos.resourceGrant.upsert({ organizationId: actor.orgId, userId: actor.userId,
+      resourceType: "job", resourceId: "*", permissions: ["write"], grantedByUserId: null });
+    const create = (serverIds: string[]) => req(app, "POST", "/", { auth: actor.auth,
+      body: { label: "delegated-task", command: "true", scheduleType: "manual", serverIds } });
+    expect((await create([allowed])).status).toBe(404);
+    await repos.resourceGrant.upsert({ organizationId: actor.orgId, userId: actor.userId,
+      resourceType: "server", resourceId: allowed, permissions: ["admin"], grantedByUserId: null });
+    const result = await create([allowed]);
+    expect(result.status).toBe(201);
+    expect((await create([other])).status).toBe(404);
+    expect((await create([allowed, other])).status).toBe(404);
+    expect((await req(app, "PATCH", `/${result.body.data.key}`, { auth: actor.auth, body: { serverIds: [other] } })).status).toBe(404);
+    expect((await repos.job.findByKey(result.body.data.key))?.actionConfig).toMatchObject({ serverIds: [allowed] });
+  });
+
   it("rejects unauthenticated requests", async () => {
     expect((await req(app, "GET", "/")).status).toBe(401);
     expect((await req(app, "POST", "/", { body: { label: "x", command: "true" } })).status).toBe(401);
@@ -373,6 +394,33 @@ describe("jobs HTTP — fix #2: cross-org write isolation", () => {
     expect(denied.body.error).toBe("Requires an instance administrator");
     expect(await repos.job.findByKey("services:health-watch")).toBeNull();
     expect(runner.recurring.has("services:health-watch")).toBe(false);
+  });
+
+  it("enables desktop monitoring by default and preserves disable choices across reconciliation", async () => {
+    await initPlatform({ target: "desktop", runtime: "bare" });
+    try {
+      const { reconcileJobs } = await import("@repo/platform/engine/modules/jobs/job.service");
+      const instanceAdmin = await seedOwner({ instanceAdmin: true });
+      await reconcileJobs();
+      expect((await repos.job.findByKey("services:health-watch"))?.enabled).toBe(true);
+      expect(runner.recurring.has("services:health-watch")).toBe(true);
+
+      expect((await req(app, "PATCH", "/services%3Ahealth-watch", {
+        auth: instanceAdmin.auth, body: { enabled: true },
+      })).status).toBe(200);
+      await reconcileJobs();
+      expect(runner.recurring.has("services:health-watch")).toBe(true);
+      expect((await repos.job.listAll()).filter(row => row.key === "services:health-watch")).toHaveLength(1);
+
+      expect((await req(app, "PATCH", "/services%3Ahealth-watch", {
+        auth: instanceAdmin.auth, body: { enabled: false },
+      })).status).toBe(200);
+      await reconcileJobs();
+      expect((await repos.job.findByKey("services:health-watch"))?.enabled).toBe(false);
+      expect(runner.recurring.has("services:health-watch")).toBe(false);
+    } finally {
+      await initPlatform({ target: "selfhosted", runtime: "docker" });
+    }
   });
 
   it("keeps operator settings when concurrent system-job ensures converge", async () => {

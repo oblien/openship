@@ -1,0 +1,91 @@
+---
+title: mail mailbox
+description: Commands, arguments, and options for openship mail mailbox.
+cliGroup: openship mail mailbox
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship mail mailbox
+
+Manage mailbox accounts and storage limits
+
+```text
+openship mail mailbox [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list [options] <server>`](/docs/cli/reference/mail/mailbox#openship-mail-mailbox-list) | List mailboxes for a domain without passwords |
+| [`get <server> <email>`](/docs/cli/reference/mail/mailbox#openship-mail-mailbox-get) | Read mailbox configuration |
+| [`create [options] <id> [file]`](/docs/cli/reference/mail/mailbox#openship-mail-mailbox-create) | Create an account; read its password from JSON file or stdin |
+| [`update [options] <parent> <id> [file]`](/docs/cli/reference/mail/mailbox#openship-mail-mailbox-update) | Update a mailbox; omit password to preserve it |
+| [`remove [options] <server> <email>`](/docs/cli/reference/mail/mailbox#openship-mail-mailbox-remove) | Remove an account; retain stored mail unless --hard is supplied |
+
+## openship mail mailbox create
+
+Create an account; read its password from JSON file or stdin
+
+```text
+openship mail mailbox create [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship mail mailbox get
+
+Read mailbox configuration
+
+```text
+openship mail mailbox get [options] <server> <email>
+```
+
+## openship mail mailbox list
+
+List mailboxes for a domain without passwords
+
+```text
+openship mail mailbox list [options] <server>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--domain <domain>` | Mail domain |
+
+## openship mail mailbox remove
+
+Remove an account; retain stored mail unless --hard is supplied
+
+```text
+openship mail mailbox remove [options] <server> <email>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--hard` | Permanently delete stored mail too |
+| `-y, --yes` | Confirm removal |
+
+## openship mail mailbox update
+
+Update a mailbox; omit password to preserve it
+
+```text
+openship mail mailbox update [options] <parent> <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `parent` | Parent resource ID |
+| `id` | Resource ID or name |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

@@ -7,7 +7,9 @@
   },
   "topBar": {
     "website": "ウェブサイト",
-    "github": "GitHub"
+    "github": "GitHub",
+    "theme": "テーマ",
+    "language": "言語"
   },
   "choose": {
     "title": "Openship へようこそ",
@@ -29,7 +31,8 @@
       "perk3": "残りは当社にお任せ",
       "cta": "サーバーをセットアップ"
     },
-    "migrateNote": "Cloud とセルフホストはワンクリックでいつでも切り替えられます。ロックインは一切ありません。"
+    "migrateNote": "Cloud とセルフホストはワンクリックでいつでも切り替えられます。ロックインは一切ありません。",
+    "skip": "今はスキップ"
   },
   "selfhost": {
     "title": "Openship をどこで実行しますか？",
@@ -38,7 +41,9 @@
     "local": {
       "title": "このマシン",
       "badge": "ベータ",
-      "desc": "Openship をここに直接インストールします。SSH やリモート設定は不要です"
+      "desc": "Openship をここに直接インストールします。SSH やリモート設定は不要です",
+      "comingSoon": "ローカルインストールは近日公開予定です。",
+      "comingSoonDesc": "現時点では、Docker がインストールされた任意の Linux サーバーでセルフホストできます。"
     },
     "remote": {
       "title": "別のサーバー",
@@ -68,7 +73,12 @@
     "jumpHostLabel": "踏み台ホスト",
     "extraArgsLabel": "追加の SSH 引数",
     "submit": "保存して続ける",
-    "tutorial": "ステップバイステップのセットアップチュートリアル"
+    "tutorial": "ステップバイステップのセットアップチュートリアル",
+    "testConnection": "接続をテスト",
+    "testing": "テスト中...",
+    "connected": "接続完了！",
+    "testFailed": "接続に失敗しました",
+    "testHint": "ホストにアクセス可能で、ポート 22 が開いており、認証情報が有効であることを確認してください。"
   },
   "tunnel": {
     "title": "インターネットアクセス",

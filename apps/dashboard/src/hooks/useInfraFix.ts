@@ -2,7 +2,11 @@
 
 import { useCallback } from "react";
 
-import { useContainerApplyModal, useServerEdgeInstallModal } from "./useSystemPrepareModal";
+import {
+  useContainerApplyModal,
+  useServerEdgeInstallModal,
+  type SystemPreparePresenter,
+} from "./useSystemPrepareModal";
 
 /** What to do with a managed component on one server. */
 export interface InfraFixTarget {
@@ -32,9 +36,9 @@ export interface InfraFixTarget {
  * A `containerMissing` mail engine has no fix here at all — callers must not offer
  * one, since recreating it needs the secrets only the mail-setup wizard holds.
  */
-export function useInfraFix() {
-  const openApply = useContainerApplyModal();
-  const openEdgeInstall = useServerEdgeInstallModal();
+export function useInfraFix(present?: SystemPreparePresenter) {
+  const openApply = useContainerApplyModal(present);
+  const openEdgeInstall = useServerEdgeInstallModal(present);
 
   return useCallback(
     (target: InfraFixTarget, opts?: { onDone?: () => void }): string => {

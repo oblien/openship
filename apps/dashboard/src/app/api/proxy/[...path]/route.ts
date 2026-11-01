@@ -25,6 +25,7 @@
  *   the client.
  */
 
+import { diagnosticId, reportError, type ErrorContext } from "@repo/core/diagnostics";
 import type { NextRequest } from "next/server";
 
 // Hop-by-hop headers — MUST NOT be forwarded by a proxy.
@@ -97,10 +98,15 @@ function buildForwardedHeaders(req: NextRequest, upstream: URL): Headers {
   }
   // Original protocol + host so Better Auth's cookie-domain logic
   // sees the public-facing scheme/host (not loopback).
-  const proto = req.headers.get("x-forwarded-proto") ?? new URL(req.url).protocol.replace(":", "");
-  const host = req.headers.get("x-forwarded-host") ?? new URL(req.url).host;
+  const requestUrl = new URL(req.url);
+  const proto = req.headers.get("x-forwarded-proto") ?? requestUrl.protocol.replace(":", "");
+  const host = req.headers.get("x-forwarded-host") ?? requestUrl.host;
   out.set("x-forwarded-proto", proto);
   out.set("x-forwarded-host", host);
+  // OAuth resource identity includes the public path. Next retains the original
+  // req.url when /api/mcp rewrites here, so it stays distinct from an explicit
+  // /api/proxy/api/mcp request. Overwrite any client-supplied value.
+  out.set("x-forwarded-uri", requestUrl.pathname);
   // Override Host so HTTP/1.1 routing on the upstream points at the
   // upstream's authority, not the original public host.
   out.set("host", upstream.host);
@@ -113,19 +119,32 @@ function buildForwardedHeaders(req: NextRequest, upstream: URL): Headers {
  * verbs would only work for GET (Next router quirk).
  */
 async function proxy(req: NextRequest, pathSegments: string[]): Promise<Response> {
+  const requestId = diagnosticId();
+  const context: ErrorContext = {
+    source: "dashboard", kind: "http", component: "dashboard-proxy",
+    requestId, traceId: requestId, method: req.method, route: "/api/proxy/:path", handled: true,
+  };
   if (process.env.NEXT_PUBLIC_API_PROXY !== "true") {
+    reportError("API proxy is disabled", { ...context, statusCode: 503 });
     // Defensive: the helpers shouldn't be routing here when the flag
     // is off, but a stray dev fetch shouldn't 200-with-loopback-data.
     return new Response(
       JSON.stringify({
         error: "API proxy is disabled. Set NEXT_PUBLIC_API_PROXY=true to enable single-host mode.",
       }),
-      { status: 503, headers: { "content-type": "application/json" } },
+      { status: 503, headers: { "content-type": "application/json", "X-Request-ID": requestId } },
     );
   }
 
   const upstream = buildUpstreamUrl(req, pathSegments);
   const headers = buildForwardedHeaders(req, upstream);
+  headers.set("X-Request-ID", requestId);
+  // Blob clients sign/declare chunk lengths. Keep their validated bound when
+  // forwarding this stream; the Actions endpoint verifies the actual byte count.
+  if (upstream.pathname.startsWith("/api/actions/runtime/") && ["PUT", "PATCH"].includes(req.method)) {
+    const length = req.headers.get("content-length");
+    if (length && /^\d+$/.test(length) && Number(length) <= 64 * 1024 * 1024) headers.set("content-length", length);
+  }
 
   // Body: pass through directly. fetch accepts a ReadableStream and
   // won't double-buffer it.  duplex:'half' lets the body stream upstream
@@ -147,12 +166,13 @@ async function proxy(req: NextRequest, pathSegments: string[]): Promise<Response
   try {
     upstreamRes = await fetch(upstream, init);
   } catch (err) {
+    reportError(err, { ...context, statusCode: 502 });
     const message = err instanceof Error ? err.message : String(err);
     return new Response(
       JSON.stringify({
         error: `Upstream API unreachable at ${upstream.origin}: ${message}`,
       }),
-      { status: 502, headers: { "content-type": "application/json" } },
+      { status: 502, headers: { "content-type": "application/json", "X-Request-ID": requestId } },
     );
   }
 
@@ -173,6 +193,12 @@ async function proxy(req: NextRequest, pathSegments: string[]): Promise<Response
   // only spec-correct way to read multiples off a fetch Response.
   for (const cookie of upstreamRes.headers.getSetCookie()) {
     responseHeaders.append("set-cookie", cookie);
+  }
+
+  if (!responseHeaders.has("X-Request-ID")) {
+    responseHeaders.set("X-Request-ID", requestId);
+    // Older APIs may not supply an authoritative diagnostic reference yet.
+    if (!upstreamRes.ok) reportError(`HTTP ${upstreamRes.status}`, { ...context, statusCode: upstreamRes.status });
   }
 
   // Stream the body straight through — for SSE (text/event-stream)

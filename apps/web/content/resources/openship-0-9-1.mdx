@@ -1,0 +1,35 @@
+---
+title: "Openship 0.9.1: explore apps, control runtimes, recover your workflow"
+description: "A public app catalog, clearer runtime configuration, and fixes for workflow saves, Cloud connections, webmail, and deployment image preparation."
+date: "2026-10-13"
+category: "Product"
+author: "Openship Team"
+---
+
+Openship 0.9.1 improves the steps around a deployment: choosing an app, configuring its runtime, getting back into a saved setup, and preparing the next release.
+
+## Explore before you install
+
+The [public app catalog](/apps) lets you browse backends, databases, publishing tools, and automation without opening the dashboard first. Search or filter by category, then open an app to see its features, included services, and requirements.
+
+Installation continues through the existing setup flow. App and plan links retain their destination through sign-in and verification, and confirmed installation settings can resume after checkout.
+
+## More deliberate runtime configuration
+
+Generated PHP builds support PHP 8.3 and 8.4 through the runtime version setting. Docker source builds also expose an advanced production image override. Recipes check runtime capabilities and compatibility before activation, and retained-image rollbacks preserve the original runtime configuration.
+
+Manual Docker redeploys refresh mutable registry tags while preserving local builds and pinned rollback artifacts. Replacement images are prepared before service activation. A failed preparation leaves the current containers running; the later multi-service cutover remains sequential.
+
+## Recover without recreating everything
+
+Saved Cloud server links have clearer reconnect actions and guidance for account mismatches and temporary failures. An existing webmail application can also be reconnected when its mail registration loses the project link, reusing its project and persistent storage.
+
+Migration now preserves domains that route only selected paths. Exact and prefix routes remain attached to their services, and unmatched requests stay unmatched.
+
+## Workflow and language improvements
+
+Standalone Actions workflows can save valid custom YAML with clearer guidance for missing names, runners, validation, or access settings. Connected desktop and self-hosted instances forward Cloud workflow and runner operations to the owning Cloud instance.
+
+Russian joins the dashboard languages, and webmail receives live inbox updates through its event stream.
+
+Read the [complete changelog](/changelog), explore the [feature directory](/features), or follow the [update guide](/docs/guides/updating) for your installation.

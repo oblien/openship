@@ -12,7 +12,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { BuildLogger, type ContainerStabilitySample, type RuntimeAdapter } from "@repo/adapters";
-import { verifyDeployedContainers } from "../../../src/modules/deployments/stability-audit.service";
+import { verifyDeployedContainers } from "@repo/platform/engine/modules/deployments/stability-audit.service";
 
 /** Real timers, tiny window: the audit's own polling is exercised, instantly. */
 const FAST = { windowMs: 60, pollMs: 5 };
@@ -163,4 +163,39 @@ describe("verifyDeployedContainers — advisory about itself", () => {
     expect(findings.filter((f) => !f.verdict.ok).map((f) => f.target.serviceName)).toEqual(["api"]);
     expect(findings.find((f) => f.target.serviceName === "db")?.verdict.ok).toBe(true);
   });
+});
+
+it("surfaces unavailable startup verification without inventing a failed container", async () => {
+  const onUnverified = vi.fn();
+  const runtime = runtimeStub({
+    sampleStability: async () => {
+      throw new Error("connection lost");
+    },
+  });
+  const findings = await verifyDeployedContainers(runtime, [target], logger(), {
+    ...FAST,
+    onUnverified,
+  });
+  expect(findings).toEqual([]);
+  expect(onUnverified).toHaveBeenCalledWith(expect.stringContaining("connection lost"));
+});
+
+it("does not mistake an older Compose container for a stable Cloud startup", async () => {
+  const runtime = runtimeStub({
+    sampleStability: series(
+      sample(),
+      sample({ state: "restarting", restartCount: 1, exitCode: 127 }),
+      sample({ state: "restarting", restartCount: 2, exitCode: 127 }),
+      sample({ state: "restarting", restartCount: 3, exitCode: 127 }),
+    ),
+  });
+  const findings = await verifyDeployedContainers(
+    runtime,
+    [{ ...target, startedAtMs: Date.now() - 60_000 }],
+    logger(),
+    { ...FAST, creditElapsed: false },
+  );
+  expect(findings).toHaveLength(1);
+  expect(findings[0].verdict.ok).toBe(false);
+  expect(findings[0].detail).toContain("127");
 });

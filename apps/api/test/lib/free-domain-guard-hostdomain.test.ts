@@ -27,9 +27,9 @@ vi.mock("@repo/db", async (importOriginal) => {
   return { ...actual, repos: {} };
 });
 
-vi.mock("../../src/lib/cloud/require-cloud", () => ({ requireCloud }));
+vi.mock("@repo/platform/engine/lib/cloud/require-cloud", () => ({ requireCloud }));
 
-import { assertFreeEndpointsAllowed } from "../../src/lib/free-domain-guard";
+import { assertFreeEndpointsAllowed } from "@repo/platform/engine/lib/free-domain-guard";
 
 // process.env is process-global; a reused worker could carry HOST_DOMAIN into a
 // later file's fresh env parse, so shield subsequent files.
@@ -59,7 +59,7 @@ describe("assertFreeEndpointsAllowed — self-hosted HOST_DOMAIN (#427)", () => 
     await assertFreeEndpointsAllowed(
       "org-1",
       [{ domainType: "custom", customDomain: "legacy.opsh.io" }] as any,
-      "managed-compose-domains",
+      { capability: "managed-compose-domains" },
     );
     expect(requireCloud).toHaveBeenCalledTimes(1);
     expect(requireCloud).toHaveBeenCalledWith("managed-compose-domains", { organizationId: "org-1" });

@@ -16,7 +16,7 @@ const h = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("../../../lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { withHostExecutor: h.withHostExecutor },
 }));
 
@@ -26,7 +26,7 @@ const {
   appConfigHostServiceRoot,
   withAppConfigHost,
   writeAppConfigFile,
-} = await import("./app-config-host");
+} = await import("@repo/platform/engine/modules/deployments/compose/app-config-host");
 
 const LOCAL = { tag: "local-executor" } as unknown as CommandExecutor;
 const REMOTE = { tag: "remote-ssh" } as unknown as CommandExecutor;

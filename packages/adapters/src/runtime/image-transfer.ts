@@ -12,6 +12,7 @@
  * No extra compression: `docker save` layers are already gzip-compressed.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Transform } from "node:stream";
 import type { DockerRuntime } from "./docker";
 
@@ -19,18 +20,37 @@ export interface ImageTransferOptions {
   /** Running total of bytes streamed out of the source (pre-load). */
   onProgress?: (bytesMoved: number) => void;
   log?: (message: string) => void;
+  signal?: AbortSignal;
 }
 
 export interface ImageTransferResult {
   bytesMoved: number;
+  /** Reference that resolves on the target daemon, suitable for artifact handover. */
+  imageRef: string;
+}
+
+/** Digest references cannot be Docker tag targets, and save/load may restore a
+ * different (config) ID. Both transfer transports use the loader's actual ref. */
+export function resolveTransferredImageRef(
+  requested: string,
+  loaded?: string,
+): string {
+  if (!requested.includes("@") && !/^sha256:[a-f0-9]+$/i.test(requested))
+    return requested;
+  if (!loaded?.trim())
+    throw new Error(
+      "Docker load did not report a usable image reference for the transferred digest",
+    );
+  return loaded.trim();
 }
 
 /**
  * Stream an image from `src` daemon to `dst` daemon. Saved BY ID (`image.id`)
  * — reliable even when the tag has drifted — then the original `image.tag` is
  * re-applied on `dst` (a save-by-id load is untagged, and the deploy adopts the
- * tag as its `imageRef`). Throws if the save or load ends non-zero (so a
- * truncated/failed move never looks like success). Returns the byte count.
+ * tag as its `imageRef`). Digest inputs instead return the loaded reference;
+ * Docker cannot recreate a repository digest with `tag`. Throws if the save or
+ * load ends non-zero. Returns the byte count and usable target reference.
  */
 export async function transferImage(
   src: DockerRuntime,
@@ -38,8 +58,12 @@ export async function transferImage(
   image: { id: string; tag: string },
   opts?: ImageTransferOptions,
 ): Promise<ImageTransferResult> {
+  opts?.signal?.throwIfAborted();
   opts?.log?.(`saving ${image.tag} (${image.id.slice(0, 19)})`);
   const { stdout, awaitExit } = await src.saveImage(image.id);
+  void awaitExit.catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "adapters/runtime/image-transfer");
+  });
 
   let bytesMoved = 0;
   const counter = new Transform({
@@ -54,16 +78,23 @@ export async function transferImage(
   // source failure during that window (which triggers counter.destroy(err) via the
   // bridge below) isn't an unhandled 'error' event that crashes the process. The
   // destroy still tears the stream down, so `docker load` aborts non-zero as intended.
-  counter.on("error", () => {});
+  counter.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/runtime/image-transfer"); });
   // pipe() does not forward source errors — bridge them so `docker load` aborts
   // instead of hanging on a stream that will never complete.
-  stdout.on("error", (err) => counter.destroy(err));
+  stdout.on("error", (err) => { observeCaughtError(err, "adapters/runtime/image-transfer"); return counter.destroy(err); });
   stdout.pipe(counter);
+  const abort = () => {
+    counter.destroy(new Error("Image transfer cancelled"));
+    stdout.destroy();
+  };
+  opts?.signal?.addEventListener("abort", abort, { once: true });
+  if (opts?.signal?.aborted) abort();
 
   // load consumes the counted stream; it resolves when the save stream EOFs.
   // It returns the ref the load actually restored under (the config id for a
   // save-by-id tar) — retag from THAT, not `image.id` (often a RepoDigest that
   // doesn't resolve on the target → "No such image").
+  try {
   const loadedRef = await dst.loadImage(counter);
 
   const exit = await awaitExit;
@@ -72,8 +103,14 @@ export async function transferImage(
       `Image transfer failed (${image.tag}): ${exit.stderr || `docker save exit ${exit.code}`}`,
     );
   }
-  // Re-apply the tag on the target (loaded untagged when saved by id).
-  await dst.tagImage(loadedRef ?? image.id, image.tag);
+  const imageRef = resolveTransferredImageRef(image.tag, loadedRef);
+  // Re-apply names, but never try to manufacture a repository digest with tag.
+  if ((loadedRef ?? image.id) !== imageRef) await dst.tagImage(loadedRef ?? image.id, imageRef);
   opts?.log?.(`loaded ${image.tag} — ${bytesMoved} bytes`);
-  return { bytesMoved };
+  return { bytesMoved, imageRef };
+  } finally {
+    opts?.signal?.removeEventListener("abort", abort);
+    counter.destroy();
+    stdout.destroy();
+  }
 }

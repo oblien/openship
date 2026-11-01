@@ -2,8 +2,8 @@ name: Docker images
 
 # Publishes the official pull-based images to GHCR: the control plane
 # (openship-api + openship-dashboard + openship-edge) and the two products that
-# ship as images of their own (openship-mail, the iRedMail engine; and
-# openship-webmail, the Zero client that the app catalog installs). Deliberately
+# ship as images of their own (mail, webmail, cluster tasks and the protected
+# BuildKit worker). Deliberately
 # SEPARATE from release.yml (the bun binary / npm CLI / desktop installers /
 # GitHub release) so image publishing can be iterated + tested on its own.
 #
@@ -16,7 +16,7 @@ name: Docker images
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -29,6 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
   packages: write
 
@@ -48,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail, webmail]
+        image: [api, dashboard, edge, mail, webmail, cluster-tasks, buildkit]
         platform: [amd64, arm64]
         # Two independent axes of `include`, both merged into every matching
         # combination: platform → runner (native builds, no QEMU), and image →
@@ -70,16 +71,32 @@ jobs:
             dockerfile: apps/email/Dockerfile
           - image: webmail
             dockerfile: apps/email/Dockerfile.webmail
+          - image: cluster-tasks
+            dockerfile: packages/adapters/Dockerfile.cluster-tasks
+          - image: buildkit
+            dockerfile: packages/adapters/Dockerfile.buildkit
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - name: Reuse a verified successful job
+        id: resume
+        uses: ./.github/actions/release-resume
+        with:
+          scope: build
+          job-name: Build ${{ matrix.image }} (${{ matrix.platform }})
+          workflow: .github/workflows/docker-images.yml
+          job-id: build-images
+          artifact: digests-${{ matrix.image }}-${{ matrix.platform }}
+
       - name: Set up Docker Buildx
+        if: steps.resume.outputs.reused != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.resume.outputs.reused != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -87,12 +104,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Image labels
+        if: steps.resume.outputs.reused != 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
 
       - name: Build and push by digest
+        if: steps.resume.outputs.reused != 'true'
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -104,7 +123,46 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform }}
 
+      - name: Verify packaged managed-image resolution
+        if: steps.resume.outputs.reused != 'true' && matrix.image == 'api'
+        env:
+          API_IMAGE: ghcr.io/${{ github.repository_owner }}/openship-api@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm --network none --entrypoint node "$API_IMAGE" \
+            --import tsx --input-type=module -e '
+              import assert from "node:assert/strict";
+              import { readFileSync } from "node:fs";
+              import { buildKitBuildSpec, pinnedBuildKitImage } from "/app/packages/platform/src/engine/lib/buildkit-image.ts";
+              import { edgeBuildSpec } from "/app/packages/platform/src/engine/lib/edge-image.ts";
+              import { mailBuildSpec } from "/app/packages/platform/src/engine/lib/mail-image.ts";
+              const version = JSON.parse(readFileSync("/app/apps/api/package.json", "utf8")).version;
+              assert.equal(buildKitBuildSpec(), undefined);
+              assert.equal(edgeBuildSpec(), undefined);
+              assert.equal(mailBuildSpec(), undefined);
+              assert.equal(pinnedBuildKitImage(), `ghcr.io/oblien/openship-buildkit:${version}`);
+              console.log(`Packaged API resolves published managed images for ${version}.`);
+            '
+
+      - name: Verify dashboard loopback readiness
+        if: steps.resume.outputs.reused != 'true' && matrix.image == 'dashboard'
+        env:
+          DASHBOARD_IMAGE: ghcr.io/${{ github.repository_owner }}/openship-dashboard@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          container="dashboard-readiness-${GITHUB_RUN_ID}-${{ matrix.platform }}"
+          trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
+          docker run -d --name "$container" --network none -e PORT=3001 "$DASHBOARD_IMAGE"
+          for attempt in $(seq 1 40); do
+            if docker exec "$container" node -e "fetch('http://127.0.0.1:3001/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'The packaged dashboard is unreachable through its loopback readiness probe.' >&2
+          exit 1
+
       - name: Export digest
+        if: steps.resume.outputs.reused != 'true'
         run: |
           set -euo pipefail
           mkdir -p /tmp/digests
@@ -112,6 +170,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
+        if: steps.resume.outputs.reused != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.image }}-${{ matrix.platform }}
@@ -119,9 +178,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The update path itself: the PREVIOUS release's stack, with rows in its database,
-  # recreated onto the api this run just built — `up -d --force-recreate api`, the same
-  # command `openship update` issues.
+  # Full customer stack: previous release and 0.9.3, populated storage, regenerated
+  # CLI template, API/dashboard/edge replacement, cold restart and fresh install.
   #
   # Positioned between the build and the manifest publish on purpose. `build-images`
   # pushes by digest under no tag, so at this point the new image exists but nothing
@@ -129,10 +187,14 @@ jobs:
   # bytes `merge-images` is about to tag. Testing `:latest` after publishing it would be
   # testing what operators already got.
   update-e2e:
-    name: E2E (update from previous release)
+    name: E2E (full stack update from ${{ matrix.baseline }})
     needs: build-images
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: [previous, '0.9.3']
     steps:
       - name: Checkout
         # Tags, and all of them: the test resolves which release to upgrade FROM by
@@ -144,7 +206,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Cache bun install
         uses: actions/cache@v6
@@ -166,23 +228,25 @@ jobs:
 
       # This runner is amd64, so it needs the amd64 half of the build. The artifact holds
       # one empty file NAMED for the digest (see "Export digest" above).
-      - name: Resolve the new api image digest
+      - name: Resolve the new control-plane image digests
         id: newimage
         uses: actions/download-artifact@v8
         with:
-          name: digests-api-amd64
-          path: /tmp/api-digest
+          pattern: digests-*-amd64
+          path: /tmp/update-digests
 
       - name: Build the image reference
         id: ref
         run: |
           set -euo pipefail
-          digest="$(ls /tmp/api-digest | head -1)"
-          if [ -z "$digest" ]; then
-            echo "No digest artifact — build-images did not export one for api/amd64." >&2
-            exit 1
-          fi
-          echo "image=ghcr.io/${{ github.repository_owner }}/openship-api@sha256:${digest}" >> "$GITHUB_OUTPUT"
+          for component in api dashboard edge; do
+            digest="$(ls /tmp/update-digests/digests-${component}-amd64)"
+            if [[ ! "$digest" =~ ^[a-f0-9]{64}$ ]]; then
+              echo "Missing or ambiguous digest artifact for ${component}/amd64." >&2
+              exit 1
+            fi
+            echo "${component}=ghcr.io/${{ github.repository_owner }}/openship-${component}@sha256:${digest}" >> "$GITHUB_OUTPUT"
+          done
 
       # Fail here rather than inside vitest, so "the runner lost Docker" is
       # distinguishable at a glance from "the update broke".
@@ -195,9 +259,14 @@ jobs:
         env:
           RUN_DOCKER_E2E: "1"
           E2E_SCOPE: update
-          OPENSHIP_E2E_NEW_API_IMAGE: ${{ steps.ref.outputs.image }}
+          OPENSHIP_E2E_OLD_VERSION: ${{ matrix.baseline }}
+          OPENSHIP_E2E_NEW_API_IMAGE: ${{ steps.ref.outputs.api }}
+          OPENSHIP_E2E_NEW_DASHBOARD_IMAGE: ${{ steps.ref.outputs.dashboard }}
+          OPENSHIP_E2E_NEW_EDGE_IMAGE: ${{ steps.ref.outputs.edge }}
           OPENSHIP_E2E_IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
-        run: bun run --cwd apps/api test:e2e
+        run: |
+          bun x tsc --noEmit --project apps/api/tsconfig.update-e2e.json
+          bun run --cwd apps/api test:e2e
 
   # Does the dashboard image actually CONTAIN every page in src/app?
   #
@@ -256,6 +325,19 @@ jobs:
       - name: Every src/app page must be in the image
         run: node apps/dashboard/scripts/check-routes.mjs /tmp/image-routes.json
 
+  # The worker must be publicly usable before any API tag can require it.
+  publish-buildkit:
+    name: Publish buildkit (manifest)
+    needs: [gate, build-images, update-e2e, dashboard-routes]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/publish-image
+        with:
+          image: buildkit
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   merge-images:
     name: Publish ${{ matrix.image }} (manifest)
     # `gate` as well as the builds: this job is where images become PULLABLE (the
@@ -267,58 +349,15 @@ jobs:
     # Gated on the manual path too. That path never moves `:latest`, but it does
     # publish tags a box can be pointed at, and the wiring stays simpler than a
     # conditional that has to be right about which publishes are "only tests".
-    needs: [gate, build-images, update-e2e, dashboard-routes]
+    needs: [gate, build-images, update-e2e, dashboard-routes, publish-buildkit]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail, webmail]
+        image: [api, dashboard, edge, mail, webmail, cluster-tasks]
     steps:
-      - name: Download digests
-        uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/publish-image
         with:
-          pattern: digests-${{ matrix.image }}-*
-          path: /tmp/digests
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Tag push → semver + :latest (auto: RCs like v1.2.3-rc.1 skip :latest).
-      # Manual dispatch → the input tag (or short SHA), and NEVER :latest.
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
-          tags: |
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
-            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' }}
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
-            type=sha,format=short,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag == '' }}
-          flavor: |
-            latest=${{ github.event_name == 'push' && 'auto' || 'false' }}
-
-      - name: Create manifest list + push
-        working-directory: /tmp/digests
-        env:
-          METADATA_JSON: ${{ steps.meta.outputs.json }}
-          SRC: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
-        run: |
-          set -euo pipefail
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
-            $(printf "${SRC}@sha256:%s " *)
-
-      - name: Inspect
-        run: |
-          docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}:${{ steps.meta.outputs.version }}" || true
+          image: ${{ matrix.image }}
+          token: ${{ secrets.GITHUB_TOKEN }}

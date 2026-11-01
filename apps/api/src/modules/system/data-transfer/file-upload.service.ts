@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   assertCompleteChunkSet,
   claimSession,
@@ -11,9 +12,10 @@ import {
   TransferStoreError,
   withSessionClaimLease,
 } from "./chunk-store";
-import { importInstance } from "./import.service";
+import { importInstance, InvalidTransferFileError, previewInstanceImport } from "./import.service";
 import { readStagedJson } from "./staged-payload";
-import type { DataTransferFile, ImportMode, ImportResult } from "./types";
+import type { DataTransferFile, ImportMode, ImportResult, ImportSelection } from "./types";
+import type { ImportContext } from "./project-import";
 
 export async function createFileUpload(input: { ownerUserId: string; size: number }) {
   const session = await createFileSession({
@@ -82,6 +84,8 @@ export async function finalizeFileUpload(input: {
   ownerUserId: string;
   passphrase?: string;
   mode: ImportMode;
+  selection?: ImportSelection;
+  context?: ImportContext;
 }): Promise<ImportResult> {
   const current = ownedFileSession(await getSession(input.uploadId), input.ownerUserId);
   if (current.status === "complete" && current.result) {
@@ -112,6 +116,8 @@ export async function finalizeFileUpload(input: {
         file,
         passphrase: input.passphrase,
         mode: input.mode,
+        selection: input.selection,
+        context: input.context,
         onBeforeCommit: (tx, imported) => completeSessionInTransaction(tx, session, imported),
       });
     });
@@ -120,7 +126,43 @@ export async function finalizeFileUpload(input: {
     // capabilities. Preserve their verified chunks so a wrong passphrase,
     // merge collision, or transient migration lock can be corrected without
     // uploading hundreds of megabytes again.
-    await releaseSessionClaim(session).catch(() => undefined);
+    await releaseSessionClaim(session).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/file-upload.service"); return undefined; });
     throw error;
+  }
+}
+
+/** Inspect the verified upload without consuming it or writing project data. */
+export async function previewFileUpload(input: {
+  uploadId: string;
+  ownerUserId: string;
+  context: ImportContext;
+  selection?: ImportSelection;
+}) {
+  const current = ownedFileSession(await getSession(input.uploadId), input.ownerUserId);
+  if (current.status !== "uploading")
+    throw new TransferStoreError("The import upload is unavailable for review.", "SESSION_BUSY");
+  assertCompleteChunkSet(await listChunkMetadata(current.id), current.expectedChunks ?? 0);
+  const session = await claimSession(current);
+  try {
+    return await withSessionClaimLease(session, async () => {
+      let file: DataTransferFile;
+      try {
+        file = (await readStagedJson(
+          session,
+          {
+            totalChunks: session.expectedChunks ?? 0,
+            totalBytes: session.expectedBytes ?? 0,
+          },
+          (bytes) => bytes,
+        )) as DataTransferFile;
+      } catch (error) {
+        if (error instanceof SyntaxError)
+          throw new InvalidTransferFileError("The file is not valid export JSON.");
+        throw error;
+      }
+      return previewInstanceImport({ file, context: input.context, selection: input.selection });
+    });
+  } finally {
+    await releaseSessionClaim(session);
   }
 }

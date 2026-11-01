@@ -1,0 +1,149 @@
+---
+title: mail domain
+description: Commands, arguments, and options for openship mail domain.
+cliGroup: openship mail domain
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship mail domain
+
+Manage mail domains, their dependencies and DNS
+
+```text
+openship mail domain [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <server>`](/docs/cli/reference/mail/domain#openship-mail-domain-list) | List configured mail domains |
+| [`create [options] <id> [file]`](/docs/cli/reference/mail/domain#openship-mail-domain-create) | Create a domain; inspect any returned DNS warning |
+| [`update [options] <parent> <id> [file]`](/docs/cli/reference/mail/domain#openship-mail-domain-update) | Update domain capacity and enabled state |
+| [`get <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-get) | Read a mail domain |
+| [`dependents <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-dependents) | Count affected mailboxes and aliases before deletion |
+| [`dns <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-dns) | Read required records and their acknowledgment |
+| [`dns-plan <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-dns-plan) | Preview DNS changes without writing records |
+| [`dns-apply [options] <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-dns-apply) | Apply the domain's DNS records using its connected provider |
+| [`dns-ack [options] <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-dns-ack) | Confirm that you have published the required records |
+| [`pending-dns <server>`](/docs/cli/reference/mail/domain#openship-mail-domain-pending-dns) | List domains still needing DNS configuration |
+| [`remove [options] <server> <domain>`](/docs/cli/reference/mail/domain#openship-mail-domain-remove) | Delete a domain; --cascade also deletes dependent accounts |
+
+## openship mail domain create
+
+Create a domain; inspect any returned DNS warning
+
+```text
+openship mail domain create [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship mail domain dependents
+
+Count affected mailboxes and aliases before deletion
+
+```text
+openship mail domain dependents [options] <server> <domain>
+```
+
+## openship mail domain dns
+
+Read required records and their acknowledgment
+
+```text
+openship mail domain dns [options] <server> <domain>
+```
+
+## openship mail domain dns-ack
+
+Confirm that you have published the required records
+
+```text
+openship mail domain dns-ack [options] <server> <domain>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm DNS operation |
+
+## openship mail domain dns-apply
+
+Apply the domain's DNS records using its connected provider
+
+```text
+openship mail domain dns-apply [options] <server> <domain>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm DNS operation |
+
+## openship mail domain dns-plan
+
+Preview DNS changes without writing records
+
+```text
+openship mail domain dns-plan [options] <server> <domain>
+```
+
+## openship mail domain get
+
+Read a mail domain
+
+```text
+openship mail domain get [options] <server> <domain>
+```
+
+## openship mail domain list
+
+List configured mail domains
+
+```text
+openship mail domain list [options] <server>
+```
+
+## openship mail domain pending-dns
+
+List domains still needing DNS configuration
+
+```text
+openship mail domain pending-dns [options] <server>
+```
+
+## openship mail domain remove
+
+Delete a domain; --cascade also deletes dependent accounts
+
+```text
+openship mail domain remove [options] <server> <domain>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--cascade` | Also remove dependent mailboxes and aliases |
+| `-y, --yes` | Confirm deletion |
+
+## openship mail domain update
+
+Update domain capacity and enabled state
+
+```text
+openship mail domain update [options] <parent> <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `parent` | Parent resource ID |
+| `id` | Resource ID or name |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

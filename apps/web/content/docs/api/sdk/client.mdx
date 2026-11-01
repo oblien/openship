@@ -1,0 +1,70 @@
+---
+title: Connect to an API
+description: Configure a remote SDK client for a self-hosted or Cloud Openship API.
+---
+
+Use `OpenshipClient` when the installation already exists. It needs an API URL, a bearer token, and the
+organization your integration should operate in. [Install the SDK](/docs/api/sdk/installation) first.
+
+## Connect
+
+```ts title="client.mts"
+import { OpenshipClient } from "openship/client";
+
+const token = process.env.OPENSHIP_TOKEN;
+const organizationId = process.env.OPENSHIP_ORGANIZATION_ID;
+if (!token || !organizationId)
+  throw new Error("Set OPENSHIP_TOKEN and OPENSHIP_ORGANIZATION_ID");
+
+export const ship = new OpenshipClient({
+  baseUrl: "https://ship.example.com",
+  token,
+  organizationId,
+});
+
+const projects = await ship.projects.list({ page: 1, perPage: 20 });
+console.log(projects.data);
+```
+
+Create a personal access token in **Settings → Tokens** or with the [CLI](/docs/cli/access).
+The remote client requires no `start()` or `close()`.
+
+## Options
+
+| Option | Use |
+| --- | --- |
+| `baseUrl` | HTTP(S) instance URL. `/api` suffixes and reverse-proxy prefixes are supported. |
+| `token` | Bearer token, or a sync/async function returning a token for each request. |
+| `organizationId` | Fix all application requests to this organization. |
+| `timeoutMs` | Request deadline in milliseconds; `0` disables it. Streams have separate abort signals. |
+| `userAgent` | Identify your application, for example `my-product/1.0`. |
+| `fetch` | Supply a fetch implementation for a custom transport or tests. |
+
+Credentials, query strings, and fragments are not allowed in `baseUrl`. Requests do not follow redirects.
+Mutations are submitted once; the client does not automatically retry them.
+
+## Organization scope
+
+`client.scope(organizationId)` creates a new client without changing the original. The token must
+already have access to that organization. A token bound to one organization cannot select another.
+
+An explicit organization requires a compatible server. See [fixed scopes](/docs/api/sdk/compatibility#fixed-organization-scopes).
+Omitting it uses the API's default/resource-derived scope; it does not provide the same tenant pinning.
+
+## Openship Cloud
+
+Use `https://api.openship.io` as `baseUrl`, your Cloud token, and the Cloud organization's ID.
+The deployed Cloud API must support the SDK protocol. A self-hosted Cloud account link does not
+currently map a fixed local scope into a Cloud scope; see [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
+
+## Results and additional HTTP endpoints
+
+Named methods return application data: `projects.get(id)` returns a project; `projects.list()` returns
+a page containing `data`, `total`, `page`, and `perPage`.
+
+For an endpoint without a named SDK method, use `client.http.request()` or `client.http.raw()`.
+These return the HTTP JSON body or `Response`, respectively. They keep the client's URL, credentials,
+and scope restrictions. Native scopes do not expose this HTTP transport.
+
+See [errors and streams](/docs/api/sdk/errors), [HTTP helpers](/docs/api/sdk/utilities), and
+[operator access](/docs/api/sdk/operator).

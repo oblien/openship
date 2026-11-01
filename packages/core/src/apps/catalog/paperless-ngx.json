@@ -1,0 +1,298 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "paperless-ngx",
+  "name": "Paperless-ngx",
+  "description": "Archive and search scanned documents with OCR, a private PostgreSQL database, and persistent original files.",
+  "kind": "template",
+  "logo": "paperless-ngx",
+  "category": "other",
+  "framework": "docker-compose",
+  "repository": "https://github.com/paperless-ngx/paperless-ngx",
+  "services": [
+    {
+      "name": "paperless-db",
+      "image": "postgres:18.3-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "app",
+        "POSTGRES_DB": "app"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "paperless_db_data:/var/lib/postgresql"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 30,
+        "startPeriod": "20s"
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "paperless-broker",
+      "image": "valkey/valkey:9.0.4-alpine",
+      "restart": "unless-stopped",
+      "volumes": [
+        "paperless_broker_data:/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "valkey-cli",
+          "ping"
+        ],
+        "interval": "5s",
+        "timeout": "3s",
+        "retries": 30
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 512
+      }
+    },
+    {
+      "name": "paperless",
+      "image": "ghcr.io/paperless-ngx/paperless-ngx:3.3.1",
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "paperless-db",
+        "paperless-broker"
+      ],
+      "environment": {
+        "PAPERLESS_REDIS": "redis://paperless-broker:6379",
+        "PAPERLESS_DBENGINE": "postgresql",
+        "PAPERLESS_DBHOST": "paperless-db",
+        "PAPERLESS_DBNAME": "app",
+        "PAPERLESS_DBUSER": "app",
+        "PAPERLESS_URL": "{{publicUrl:paperless}}",
+        "PAPERLESS_TIME_ZONE": "UTC",
+        "PAPERLESS_OCR_LANGUAGE": "eng",
+        "PAPERLESS_TASK_WORKERS": "1",
+        "PAPERLESS_THREADS_PER_WORKER": "2",
+        "PAPERLESS_BIND_ADDR": "0.0.0.0"
+      },
+      "secretEnv": [
+        "PAPERLESS_DBPASS",
+        "PAPERLESS_SECRET_KEY",
+        "PAPERLESS_ADMIN_PASSWORD"
+      ],
+      "volumes": [
+        "paperless_data:/usr/src/paperless/data",
+        "paperless_media:/usr/src/paperless/media",
+        "paperless_consume:/usr/src/paperless/consume",
+        "paperless_export:/usr/src/paperless/export"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8000/ >/dev/null"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 30,
+        "startPeriod": "180s"
+      },
+      "stopGracePeriod": "60s",
+      "exposed": true,
+      "exposedPort": 8000,
+      "routes": [
+        {
+          "port": 8000
+        }
+      ],
+      "resources": {
+        "cpuCores": 1,
+        "memoryMb": 1536,
+        "diskMb": 8192
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "paperless",
+      "port": 8000,
+      "label": "Documents",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": [
+        "domain",
+        "publish",
+        "internal"
+      ]
+    },
+    {
+      "service": "paperless-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ],
+      "scope": "internal"
+    },
+    {
+      "service": "paperless-broker",
+      "port": 6379,
+      "label": "Queue",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ],
+      "scope": "internal"
+    }
+  ],
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 2304
+  },
+  "tags": [
+    "documents",
+    "ocr",
+    "archive"
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Persistent storage",
+        "description": "Application data stays on project-scoped volumes across deployments."
+      },
+      {
+        "title": "Published images",
+        "description": "Install pinned upstream containers without building images on your server."
+      }
+    ],
+    "articleFile": "articles/paperless-ngx.md"
+  },
+  "configFields": [
+    {
+      "service": "paperless-db",
+      "key": "POSTGRES_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "paperless-db"
+    },
+    {
+      "service": "paperless",
+      "key": "PAPERLESS_DBPASS",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "paperless-db"
+    },
+    {
+      "service": "paperless",
+      "key": "PAPERLESS_SECRET_KEY",
+      "label": "Signing secret",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "paperless",
+      "key": "PAPERLESS_ADMIN_PASSWORD",
+      "label": "Initial administrator password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "paperless",
+      "key": "PAPERLESS_ADMIN_USER",
+      "label": "Admin username",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "service": "paperless",
+      "key": "PAPERLESS_ADMIN_MAIL",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "paperless",
+          "key": "PAPERLESS_ADMIN_USER",
+          "label": "Admin username",
+          "type": "text",
+          "default": "admin",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[a-zA-Z0-9_. -]+$",
+          "help": "Used only for the initial account. Manage existing accounts in the app."
+        },
+        {
+          "service": "paperless",
+          "key": "PAPERLESS_ADMIN_MAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "help": "Used only for the initial account. Manage existing accounts in the app."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "connection": {
+    "title": "Open Paperless-ngx",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Paperless-ngx",
+        "source": "publicUrl:paperless",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:paperless:PAPERLESS_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Initial password",
+        "source": "env:paperless:PAPERLESS_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Account changes made in the app are preserved on redeployment. These are the initial credentials."
+    }
+  }
+}

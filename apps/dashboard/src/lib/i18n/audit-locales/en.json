@@ -1,0 +1,732 @@
+{
+  "deployment.succeeded": {
+    "label": "Deploy succeeded",
+    "action": "deployed",
+    "description": "A deployment finished successfully and is serving traffic."
+  },
+  "deployment.failed": {
+    "label": "Deploy failed",
+    "action": "failed to deploy",
+    "description": "A deployment errored out before reaching a healthy state."
+  },
+  "deployment.cancelled": {
+    "label": "Deploy cancelled",
+    "action": "cancelled the deploy of",
+    "description": "A deployment was stopped before it finished.",
+    "actionWithoutResource": "cancelled the deploy"
+  },
+  "deployment.no_changes": {
+    "label": "No changes to deploy",
+    "action": "found no changes to deploy for",
+    "description": "A redeploy found every service already up to date, so the current release stayed live.",
+    "actionWithoutResource": "found no changes to deploy"
+  },
+  "deployment:write": {
+    "label": "Deploy action",
+    "action": "started a deploy for",
+    "description": "A deployment endpoint was invoked — start, retry, rollback, or promote.",
+    "actionWithoutResource": "started a deploy"
+  },
+  "deployment:admin": {
+    "label": "Deploy admin action",
+    "action": "ran an admin action on the deploy for",
+    "description": "A destructive deployment endpoint was invoked, such as cancel or destroy.",
+    "actionWithoutResource": "ran an admin action on the deploy"
+  },
+  "project.created": {
+    "label": "App created",
+    "action": "created"
+  },
+  "project.updated": {
+    "label": "App updated",
+    "action": "updated",
+    "description": "Settings, services, environment variables, or routing were changed."
+  },
+  "project.deleted": {
+    "label": "App deleted",
+    "action": "deleted"
+  },
+  "project.deletion.rejected": {
+    "label": "App deletion refused",
+    "action": "tried to delete",
+    "description": "A delete was refused — something still depends on this app."
+  },
+  "project.deletion.failed": {
+    "label": "App deletion failed",
+    "action": "failed to delete",
+    "description": "Cleanup did not complete, so the app record was kept for a safe retry."
+  },
+  "project.build_cache.cleared": {
+    "label": "Build cache cleared",
+    "action": "cleared the Docker build cache for",
+    "description": "Unused build cache was removed from the app's Docker host.",
+    "actionWithoutResource": "cleared the Docker build cache"
+  },
+  "project:write": {
+    "label": "App changed",
+    "action": "changed",
+    "description": "One of the app's write endpoints was invoked."
+  },
+  "project:admin": {
+    "label": "App admin action",
+    "action": "ran an admin action on",
+    "description": "A destructive app endpoint was invoked, such as delete or transfer.",
+    "actionWithoutResource": "ran an admin action"
+  },
+  "project:service:write": {
+    "label": "Service changed",
+    "action": "changed a service in",
+    "description": "A service was created, updated, started, stopped, or restarted.",
+    "actionWithoutResource": "changed a service"
+  },
+  "project:service:admin": {
+    "label": "Service admin action",
+    "action": "ran an admin action on a service in",
+    "actionWithoutResource": "ran an admin action on a service"
+  },
+  "job:write": {
+    "label": "Job changed",
+    "action": "changed the job",
+    "description": "A scheduled or custom job was created, edited, run, or removed."
+  },
+  "job_run.started": {
+    "label": "Job started",
+    "action": "started the job"
+  },
+  "job_run.succeeded": {
+    "label": "Job succeeded",
+    "action": "ran the job"
+  },
+  "job_run.failed": {
+    "label": "Job failed",
+    "action": "ran the failing job"
+  },
+  "service.down": {
+    "label": "App went down",
+    "action": "reported down",
+    "description": "A container that should be running isn't — exited, dead, or OOM-killed."
+  },
+  "service.crash_loop": {
+    "label": "App is crash looping",
+    "action": "reported crash looping",
+    "description": "A container keeps restarting instead of staying up."
+  },
+  "service.unhealthy": {
+    "label": "App is unhealthy",
+    "action": "reported unhealthy",
+    "description": "A container is running but its own healthcheck is failing."
+  },
+  "service.recovered": {
+    "label": "App recovered",
+    "action": "reported recovered",
+    "description": "An outage ended and the container is healthy again."
+  },
+  "service.exec": {
+    "label": "Command executed in container",
+    "action": "ran a command in",
+    "description": "A shell command was run inside a service's container. The command is recorded; its output is not, because output is unbounded and may contain secrets the command read.",
+    "actionWithoutResource": "ran a command"
+  },
+  "domain.added": {
+    "label": "Domain added",
+    "action": "added the domain"
+  },
+  "domain.removed": {
+    "label": "Domain removed",
+    "action": "removed the domain"
+  },
+  "domain.verified": {
+    "label": "Domain verified",
+    "action": "verified the domain",
+    "description": "DNS verification succeeded, so the domain can be issued a certificate."
+  },
+  "domain.verification_failed": {
+    "label": "Domain verification failed",
+    "action": "failed to verify the domain",
+    "description": "DNS records for this domain don't point here yet."
+  },
+  "domain.verify_failed": {
+    "label": "Domain verification failed",
+    "action": "failed to verify the domain",
+    "description": "DNS records for this domain don't point here yet."
+  },
+  "domain.set_primary": {
+    "label": "Primary domain changed",
+    "action": "made primary the domain",
+    "description": "The domain other addresses now redirect to."
+  },
+  "domain.dns_provisioned": {
+    "label": "DNS records provisioned",
+    "action": "provisioned DNS for",
+    "description": "Openship wrote this domain's records at the connected DNS provider. The counts of applied and failed records are in the details.",
+    "actionWithoutResource": "provisioned DNS"
+  },
+  "domain.cert_uploaded": {
+    "label": "Certificate uploaded",
+    "action": "uploaded a certificate for",
+    "description": "A certificate and key were supplied by hand instead of issued automatically.",
+    "actionWithoutResource": "uploaded a certificate"
+  },
+  "ssl.renewal_failed": {
+    "label": "SSL renewal failed",
+    "action": "failed to renew SSL for",
+    "description": "Automatic renewal failed — the certificate will expire unless this is fixed.",
+    "actionWithoutResource": "failed to renew SSL"
+  },
+  "credential.created": {
+    "label": "Credential added",
+    "action": "added a credential for",
+    "description": "A credential for a third-party service (a registry login, a DNS token) was stored. The secret itself is never recorded.",
+    "actionWithoutResource": "added a credential"
+  },
+  "credential.updated": {
+    "label": "Credential updated",
+    "action": "updated the credential for",
+    "description": "A stored credential's label, scope or secret was changed. Neither the old nor the new secret is recorded.",
+    "actionWithoutResource": "updated the credential"
+  },
+  "credential.deleted": {
+    "label": "Credential deleted",
+    "action": "deleted the credential for",
+    "description": "A stored credential was removed. Anything relying on it — a private image pull, a DNS record write — stops working until another is added.",
+    "actionWithoutResource": "deleted the credential"
+  },
+  "credential.verified": {
+    "label": "Credential verified",
+    "action": "verified the credential for",
+    "description": "Openship asked the provider whether a stored credential still works.",
+    "actionWithoutResource": "verified the credential"
+  },
+  "dns_credential.connected": {
+    "label": "DNS provider connected",
+    "action": "connected the DNS provider",
+    "description": "An API token that lets Openship write this organization's DNS records was stored. The token itself is never recorded."
+  },
+  "dns_credential.disconnected": {
+    "label": "DNS provider disconnected",
+    "action": "disconnected the DNS provider",
+    "description": "Openship can no longer write DNS records for domains in that provider's zones; records already written are left in place."
+  },
+  "domain:write": {
+    "label": "Domain action",
+    "action": "changed the domain",
+    "description": "A domain endpoint was invoked — add, verify, or renew."
+  },
+  "domain:admin": {
+    "label": "Domain admin action",
+    "action": "ran an admin action on the domain"
+  },
+  "server.added": {
+    "label": "Server added",
+    "action": "added the server"
+  },
+  "server.updated": {
+    "label": "Server updated",
+    "action": "updated the server"
+  },
+  "server.removed": {
+    "label": "Server removed",
+    "action": "removed the server"
+  },
+  "server.removal.rejected": {
+    "label": "Server removal refused",
+    "action": "tried to remove the server",
+    "description": "A removal was refused because a workload could not be torn down, or was destroyed but left a resource behind for cleanup. The server row was kept so those resources can still be reclaimed."
+  },
+  "server.exec": {
+    "label": "Command executed",
+    "action": "ran a command on the server",
+    "description": "A shell command was run on the host. The command is recorded; its output is not, because output is unbounded and may contain secrets the command read."
+  },
+  "server.unreachable": {
+    "label": "Server unreachable",
+    "action": "reported unreachable",
+    "description": "Openship could not open an SSH connection to this server."
+  },
+  "server.reachable": {
+    "label": "Server reachable again",
+    "action": "reported reachable"
+  },
+  "migration.source_connected": {
+    "label": "Migration source connected",
+    "action": "connected the migration source",
+    "description": "An external SSH server was connected for importing projects. It cannot be used as a deployment destination."
+  },
+  "migration.source_disconnected": {
+    "label": "Migration source disconnected",
+    "action": "disconnected the migration source",
+    "description": "The stored migration connection was removed. The source server and its data are unchanged."
+  },
+  "server:write": {
+    "label": "Server changed",
+    "action": "changed the server"
+  },
+  "server:admin": {
+    "label": "Server admin action",
+    "action": "ran an admin action on the server",
+    "description": "A destructive server endpoint was invoked, such as delete or component install."
+  },
+  "terminal:write": {
+    "label": "Terminal session opened",
+    "action": "opened a terminal on",
+    "description": "An interactive shell session was issued against a server.",
+    "actionWithoutResource": "opened a terminal"
+  },
+  "mail_server:write": {
+    "label": "Mail server changed",
+    "action": "changed the mail server",
+    "description": "A mail server endpoint was invoked — setup, domain, DNS acknowledgement."
+  },
+  "mail_server:admin": {
+    "label": "Mail server admin action",
+    "action": "ran an admin action on the mail server"
+  },
+  "mail.inbound_received": {
+    "label": "Mail arrived at a watched address",
+    "action": "received mail matching a notification rule on",
+    "actionWithoutResource": "received mail matching a notification rule"
+  },
+  "identity.provisioned": {
+    "label": "Identity provisioned",
+    "action": "provisioned the identity",
+    "description": "A trusted host mapped an external identity to an Openship user."
+  },
+  "organization.created": {
+    "label": "Organization created",
+    "action": "created the organization"
+  },
+  "organization.deleted": {
+    "label": "Organization deleted",
+    "action": "deleted the organization"
+  },
+  "organization.deletion.blocked": {
+    "label": "Organization deletion blocked",
+    "action": "tried to delete the organization",
+    "description": "Deletion was refused — active resources or billing still attached."
+  },
+  "member.added": {
+    "label": "Member added",
+    "action": "added"
+  },
+  "member.removed": {
+    "label": "Member removed",
+    "action": "removed"
+  },
+  "member.role_changed": {
+    "label": "Member role changed",
+    "action": "changed the role of",
+    "actionWithoutResource": "changed the role"
+  },
+  "member.updated": {
+    "label": "Membership updated by the host",
+    "action": "changed the membership of",
+    "description": "A trusted host added, changed or removed an organization membership.",
+    "actionWithoutResource": "changed the membership"
+  },
+  "member.joined": {
+    "label": "Member joined",
+    "action": "joined",
+    "description": "An invitee accepted and now has access."
+  },
+  "member.invited": {
+    "label": "Member invited",
+    "action": "invited"
+  },
+  "member.removal.grant_cleanup_failed": {
+    "label": "Removed member's permissions not cleaned up",
+    "action": "removed, with leftover permissions,",
+    "description": "The member is gone but their permission grants remained — review by hand."
+  },
+  "member.removal.subscription_cleanup_failed": {
+    "label": "Removed member's billing not cleaned up",
+    "action": "removed, with leftover billing,",
+    "description": "The member is gone but a linked subscription remained — review billing."
+  },
+  "invitation.created": {
+    "label": "Invitation sent",
+    "action": "invited"
+  },
+  "invitation.sent": {
+    "label": "Invitation sent with pending permissions",
+    "action": "invited, with pending permissions,",
+    "description": "Grants were queued and will apply the moment the invitee joins."
+  },
+  "invitation.resent": {
+    "label": "Invitation renewed",
+    "action": "renewed the invitation for",
+    "description": "The invitation's authority and expiry were renewed; delivery may use email or a link.",
+    "actionWithoutResource": "renewed the invitation"
+  },
+  "invitation.accepted": {
+    "label": "Invitation accepted",
+    "action": "accepted the invitation of",
+    "actionWithoutResource": "accepted the invitation"
+  },
+  "invitation.rejected": {
+    "label": "Invitation declined",
+    "action": "declined the invitation of",
+    "actionWithoutResource": "declined the invitation"
+  },
+  "invitation.cancelled": {
+    "label": "Invitation cancelled",
+    "action": "cancelled the invitation for",
+    "actionWithoutResource": "cancelled the invitation"
+  },
+  "team.created": {
+    "label": "Team created",
+    "action": "created the team"
+  },
+  "grant.granted": {
+    "label": "Permission granted",
+    "action": "granted permissions to",
+    "actionWithoutResource": "granted permissions"
+  },
+  "grant.revoked": {
+    "label": "Permission revoked",
+    "action": "revoked permissions from",
+    "actionWithoutResource": "revoked permissions"
+  },
+  "grant.replaced": {
+    "label": "Permission replaced",
+    "action": "replaced the permissions of",
+    "description": "An existing grant was overwritten with a different scope.",
+    "actionWithoutResource": "replaced the permissions"
+  },
+  "mcp.authorized": {
+    "label": "MCP client authorized",
+    "action": "authorized the MCP client",
+    "description": "An AI agent was connected and given a scope to act within."
+  },
+  "mcp.scope_changed": {
+    "label": "MCP access changed",
+    "action": "changed the access of the MCP client",
+    "description": "A connected agent's scope was edited. It takes effect on the agent's next request — no reconnect."
+  },
+  "mcp.disconnected": {
+    "label": "MCP client disconnected",
+    "action": "disconnected the MCP client",
+    "description": "A connected agent's tokens, consent and scope were torn down. It stops working immediately and must re-consent to return."
+  },
+  "mcp.tool_called": {
+    "label": "Agent tool call",
+    "action": "ran the MCP tool",
+    "description": "A tool call that left no other trace: a read, or an attempt that was refused or errored. A tool call that successfully changed something is recorded as the change itself, so it is not duplicated here."
+  },
+  "grant.materialized": {
+    "label": "Pending permission applied",
+    "action": "received their pending permissions,",
+    "description": "A grant attached to an invitation was applied once the invitee joined."
+  },
+  "permissions:write": {
+    "label": "Permissions changed",
+    "action": "changed permissions for",
+    "actionWithoutResource": "changed permissions"
+  },
+  "permissions:admin": {
+    "label": "Permissions admin action",
+    "action": "ran an admin action on permissions for",
+    "actionWithoutResource": "ran an admin action on permissions"
+  },
+  "admin.bootstrapped": {
+    "label": "First admin account created",
+    "action": "bootstrapped the first admin account",
+    "description": "The instance's initial owner was created — this can only happen once."
+  },
+  "admin.password_reset": {
+    "label": "Admin password reset",
+    "action": "reset an admin password"
+  },
+  "auth-mode-changed": {
+    "label": "Sign-in mode changed",
+    "action": "changed the sign-in mode",
+    "description": "The instance switched between single-user and full authentication."
+  },
+  "instance.data.exported": {
+    "label": "Instance data exported",
+    "action": "exported all instance data",
+    "description": "A full database dump left this instance."
+  },
+  "instance.data.receive_code_created": {
+    "label": "Data-transfer receive code created",
+    "action": "created a direct data-transfer receive code",
+    "description": "A short-lived code was created to receive instance data directly."
+  },
+  "instance.data.sent": {
+    "label": "Instance data sent",
+    "action": "sent instance data to another instance",
+    "description": "Selected instance data was transferred directly to another instance."
+  },
+  "instance.data.imported": {
+    "label": "Instance data imported",
+    "action": "imported instance data",
+    "description": "A database dump from another instance was loaded in."
+  },
+  "instance.move_requested": {
+    "label": "Control-plane move requested",
+    "action": "requested a control-plane move to another instance",
+    "description": "An administrator requested a transfer of instance data and control to another instance."
+  },
+  "instance.server_move_requested": {
+    "label": "Server control-plane move requested",
+    "action": "requested a control-plane move to a server",
+    "description": "An administrator requested a hosted control plane on a selected server."
+  },
+  "audit.disabled": {
+    "label": "Activity recording turned off",
+    "action": "turned off activity recording",
+    "description": "No further actions were recorded until recording was turned back on."
+  },
+  "audit.enabled": {
+    "label": "Activity recording turned on",
+    "action": "turned on activity recording"
+  },
+  "audit.retention_changed": {
+    "label": "Activity retention changed",
+    "action": "changed how long activity is kept"
+  },
+  "audit:write": {
+    "label": "Activity settings changed",
+    "action": "changed activity recording"
+  },
+  "billing.hard_cap_tripped": {
+    "label": "Spending cap reached",
+    "action": "hit the spending cap for",
+    "description": "Cloud resources may have been paused — review billing.",
+    "actionWithoutResource": "hit the spending cap"
+  },
+  "billing.credit_low": {
+    "label": "Cloud credits running low",
+    "action": "approached the credit limit for",
+    "description": "Review the remaining allowance before Cloud workloads are interrupted.",
+    "actionWithoutResource": "approached the credit limit"
+  },
+  "billing.credit_exhausted": {
+    "label": "Credits exhausted",
+    "action": "ran out of credits for",
+    "description": "Metered usage is paused until a top-up or the monthly reset.",
+    "actionWithoutResource": "ran out of credits"
+  },
+  "billing.credit_restored": {
+    "label": "Credits restored",
+    "action": "restored credits for",
+    "actionWithoutResource": "restored credits"
+  },
+  "billing.anniversary_reset": {
+    "label": "Monthly credits reset",
+    "action": "reset the monthly credits of",
+    "actionWithoutResource": "reset the monthly credits"
+  },
+  "quota.threshold_fired": {
+    "label": "Usage threshold crossed",
+    "action": "crossed a usage threshold on",
+    "actionWithoutResource": "crossed a usage threshold"
+  },
+  "billing:write": {
+    "label": "Billing action",
+    "action": "changed billing for",
+    "description": "A billing endpoint was invoked — subscribe, top up, or open the portal.",
+    "actionWithoutResource": "changed billing"
+  },
+  "billing:admin": {
+    "label": "Billing admin action",
+    "action": "ran an admin action on billing for",
+    "description": "A destructive billing endpoint was invoked, such as cancelling a subscription.",
+    "actionWithoutResource": "ran an admin action on billing"
+  },
+  "settings.updated": {
+    "label": "Settings updated",
+    "action": "updated settings"
+  },
+  "settings:write": {
+    "label": "Settings changed",
+    "action": "changed settings"
+  },
+  "settings:admin": {
+    "label": "Settings admin action",
+    "action": "ran an admin action on settings",
+    "description": "A destructive settings endpoint was invoked, such as a wipe or migration."
+  },
+  "updates:write": {
+    "label": "Update applied",
+    "action": "applied an update",
+    "description": "An Openship component was updated or an update scan was triggered."
+  },
+  "cloud.disconnect": {
+    "label": "Cloud disconnected",
+    "action": "disconnected from Openship Cloud"
+  },
+  "cloud:write": {
+    "label": "Cloud action",
+    "action": "ran a cloud action",
+    "description": "A cloud bridge endpoint was invoked — token, preflight, or edge proxy."
+  },
+  "cloud:admin": {
+    "label": "Cloud admin action",
+    "action": "ran a cloud admin action"
+  },
+  "github.install": {
+    "label": "GitHub app installed",
+    "action": "installed the GitHub app on",
+    "actionWithoutResource": "installed the GitHub app"
+  },
+  "github.source.created": {
+    "label": "GitHub App source registered",
+    "action": "registered the GitHub App source",
+    "description": "An organization-owned GitHub App was verified and stored. Secret values are never recorded."
+  },
+  "github.source.updated": {
+    "label": "GitHub App source updated",
+    "action": "updated the GitHub App source",
+    "description": "A GitHub App's identity, endpoint, or encrypted credentials changed."
+  },
+  "github.source.verified": {
+    "label": "GitHub App source verified",
+    "action": "verified the GitHub App source"
+  },
+  "github.source.defaulted": {
+    "label": "Default GitHub App source changed",
+    "action": "made the default GitHub App source"
+  },
+  "github.source.deleted": {
+    "label": "GitHub App source deleted",
+    "action": "deleted the GitHub App source",
+    "description": "The local App credentials and installation bindings were removed; the GitHub App itself was not uninstalled on GitHub."
+  },
+  "github.connect": {
+    "label": "GitHub connection started",
+    "action": "started connecting GitHub for",
+    "actionWithoutResource": "started connecting GitHub"
+  },
+  "github.installation.claim": {
+    "label": "GitHub installation claimed",
+    "action": "claimed the GitHub installation for",
+    "actionWithoutResource": "claimed the GitHub installation"
+  },
+  "github.disconnect": {
+    "label": "GitHub disconnected",
+    "action": "disconnected GitHub from",
+    "actionWithoutResource": "disconnected GitHub"
+  },
+  "github.repo.create": {
+    "label": "Repository created",
+    "action": "created the repository"
+  },
+  "github.repo.delete": {
+    "label": "Repository deleted",
+    "action": "deleted the repository"
+  },
+  "github.webhook.register": {
+    "label": "Deploy-on-push enabled",
+    "action": "enabled deploy-on-push for",
+    "actionWithoutResource": "enabled deploy-on-push"
+  },
+  "github.webhook.delete": {
+    "label": "Deploy-on-push disabled",
+    "action": "disabled deploy-on-push for",
+    "actionWithoutResource": "disabled deploy-on-push"
+  },
+  "github.instance_token.set": {
+    "label": "Instance GitHub token set",
+    "action": "set the instance GitHub token",
+    "description": "A GitHub token shared by every project on this instance was stored."
+  },
+  "github:write": {
+    "label": "GitHub action",
+    "action": "changed a GitHub connection for",
+    "actionWithoutResource": "changed a GitHub connection"
+  },
+  "github:admin": {
+    "label": "GitHub admin action",
+    "action": "ran a GitHub admin action on",
+    "actionWithoutResource": "ran a GitHub admin action"
+  },
+  "notification_channel.created": {
+    "label": "Notification channel added",
+    "action": "added the notification channel"
+  },
+  "notification_channel.updated": {
+    "label": "Notification channel updated",
+    "action": "updated the notification channel"
+  },
+  "notification_channel.deleted": {
+    "label": "Notification channel removed",
+    "action": "removed the notification channel"
+  },
+  "notification_subscription.updated": {
+    "label": "Notification subscription changed",
+    "action": "changed what is sent to",
+    "actionWithoutResource": "changed what is sent"
+  },
+  "notification_subscription.deleted": {
+    "label": "Notification subscription removed",
+    "action": "stopped notifications to",
+    "actionWithoutResource": "stopped notifications"
+  },
+  "notification_default.updated": {
+    "label": "Notification defaults changed",
+    "action": "changed the notification defaults of",
+    "actionWithoutResource": "changed the notification defaults"
+  },
+  "notification_delivery.seen": {
+    "label": "Notification marked as seen",
+    "action": "marked as seen"
+  },
+  "notifications:write": {
+    "label": "Notifications changed",
+    "action": "changed notifications"
+  },
+  "notifications:admin": {
+    "label": "Notifications admin action",
+    "action": "ran a notifications admin action"
+  },
+  "backup_run.succeeded": {
+    "label": "Backup succeeded",
+    "action": "backed up"
+  },
+  "backup_run.failed": {
+    "label": "Backup failed",
+    "action": "failed to back up"
+  },
+  "backup_restore.completed": {
+    "label": "Restore completed",
+    "action": "restored"
+  },
+  "backup_restore.failed": {
+    "label": "Restore failed",
+    "action": "failed to restore"
+  },
+  "backup.webhook.fired": {
+    "label": "Backup triggered by webhook",
+    "action": "triggered a backup of",
+    "actionWithoutResource": "triggered a backup"
+  },
+  "backup.webhook.disabled": {
+    "label": "Backup webhook disabled",
+    "action": "disabled the backup webhook for",
+    "description": "The webhook failed too many times and was switched off.",
+    "actionWithoutResource": "disabled the backup webhook"
+  },
+  "backup_destination:write": {
+    "label": "Backup destination changed",
+    "action": "changed the backup destination"
+  },
+  "backup_destination:admin": {
+    "label": "Backup destination admin action",
+    "action": "ran an admin action on the backup destination"
+  },
+  "backup_destination:backup_policy:write": {
+    "label": "Backup schedule changed",
+    "action": "changed the backup schedule of",
+    "actionWithoutResource": "changed the backup schedule"
+  },
+  "backup_destination:backup_run:write": {
+    "label": "Backup run",
+    "action": "ran a backup of",
+    "actionWithoutResource": "ran a backup"
+  },
+  "backup_destination:backup_restore:write": {
+    "label": "Restore from backup",
+    "action": "restored from a backup of",
+    "actionWithoutResource": "restored from a backup"
+  }
+}

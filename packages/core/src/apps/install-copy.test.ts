@@ -24,8 +24,9 @@ describe("install-phase backbone", () => {
 });
 
 describe("authored install copy is additive (no schemaVersion bump)", () => {
-  it("the supported schema version stays at 1", () => {
-    expect(MAX_SUPPORTED_SCHEMA).toBe(1);
+  it("still accepts schema 1 templates after GPU compatibility adds schema 2", () => {
+    expect(parseAppTemplate({ ...base, schemaVersion: 1 }).ok).toBe(true);
+    expect(parseAppTemplate({ ...base, schemaVersion: MAX_SUPPORTED_SCHEMA + 1 })).toMatchObject({ ok: false, reason: "schema-too-new" });
   });
 
   it("accepts prepareStep title/description/icon (localized) with no version set", () => {

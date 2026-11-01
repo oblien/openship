@@ -20,6 +20,7 @@
  *     the service layer calls manager.invalidate() to clear cache
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor, LogEntry, ProvisionLock } from "../types";
 import { checkAll, checkComponents, COMPONENT_CHECKS } from "./checks";
 import { COMPONENT_INSTALLERS } from "./installer";
@@ -451,7 +452,9 @@ export class SystemManager {
   private kickBackgroundVerify(): void {
     if (this.verifyInFlight) return;
     this.verifyInFlight = this.verify()
-      .catch(() => {})
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "adapters/system/setup");
+      })
       .finally(() => {
         this.verifyInFlight = null;
       });

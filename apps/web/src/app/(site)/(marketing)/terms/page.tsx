@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { Navbar, Footer } from "@/components/landing";
 
 const PAGE_TITLE = "Terms of Service";
 const PAGE_DESCRIPTION =
   "Terms governing Openship Cloud and Openship Business. The self-hosted platform itself is governed by the Apache 2.0 license. Plain language, no surprises.";
 
-export const metadata: Metadata = {
+const metadata: Metadata = {
   title: PAGE_TITLE,
   description: PAGE_DESCRIPTION,
   alternates: { canonical: "/terms" },
@@ -22,6 +23,13 @@ export const metadata: Metadata = {
   },
 };
 
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(metadata, parent);
+}
+
 const SECTIONS = [
   {
     id: "agreement",
@@ -36,7 +44,7 @@ const SECTIONS = [
     title: "The service",
     body: [
       "We provide infrastructure to build, ship, and run your applications - managed databases, mail, storage, routing, and the platform tooling around it.",
-      "Openship Cloud is offered on published subscription plans, listed on our pricing page, with usage-based credits on top. Self-hosted use is free under the Apache 2.0 license.",
+      "Openship Cloud monthly server plans cover purchased CPU, RAM and storage for the paid period. Separately priced services and retained storage after that period follow the terms shown in Billing. Existing metered subscriptions keep their saved terms. Self-hosted use is free under the Apache 2.0 license.",
       "We may improve the service, fix bugs, or evolve features at any time. Material breaking changes get at least 30 days' notice.",
     ],
   },

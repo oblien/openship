@@ -1,5 +1,5 @@
 import "./_setup-env";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 
 /**
  * Mail's cert step must issue through the SAME `platform.ssl` as every other
@@ -20,18 +20,20 @@ const mocks = vi.hoisted(() => ({
     verified: true,
     reason: "issued" as const,
   })),
+  verifyCert: vi.fn().mockResolvedValue({ verified: false }),
   resolveTargetPlatform: vi.fn(),
+  disposePlatform: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   // The orchestrator releases the runtime it resolved when the run ends; these
   // stubs hold no transport, so the release is a no-op here.
   disposeRuntime: () => {},
-  disposePlatform: () => {},
+  disposePlatform: mocks.disposePlatform,
   resolveTargetPlatform: mocks.resolveTargetPlatform,
 }));
 
-import { stepRequestSSL } from "../../../src/modules/mail/mail.service";
+import { stepRequestSSL } from "@repo/platform/engine/modules/mail/mail.service";
 
 function fakeExecutor() {
   const commands: string[] = [];
@@ -45,10 +47,26 @@ const TARGET = { serverId: "srv_1", organizationId: "org_1" };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.resolveTargetPlatform.mockResolvedValue({ ssl: { provisionCert: mocks.provisionCert } } as never);
+  mocks.resolveTargetPlatform.mockResolvedValue({ ssl: { provisionCert: mocks.provisionCert, verifyCert: mocks.verifyCert } } as never);
 });
 
 describe("step 12 — issuance goes through platform.ssl", () => {
+  test.each([false, true])("keeps the provider alive through delayed issuance (failure: %s)", async (fail) => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    mocks.provisionCert.mockImplementationOnce(async () => {
+      await gate;
+      if (fail) throw new Error("issuance failed");
+      return { domain: "mail.example.com", expiresAt: "2030-01-01T00:00:00.000Z", issuer: "R11", verified: true, reason: "issued" as const };
+    });
+    const pending = stepRequestSSL(fakeExecutor().executor, "example.com", () => {}, TARGET);
+    await vi.waitFor(() => expect(mocks.provisionCert).toHaveBeenCalledOnce());
+    expect(mocks.disposePlatform).not.toHaveBeenCalled();
+    finish();
+    expect((await pending).success).toBe(!fail);
+    expect(mocks.disposePlatform).toHaveBeenCalledExactlyOnceWith({ ssl: { provisionCert: mocks.provisionCert, verifyCert: mocks.verifyCert } });
+  });
+
   test("delegates to provisionCert for mail.<domain> and never execs certbot", async () => {
     const { executor, commands } = fakeExecutor();
 
@@ -111,4 +129,19 @@ describe("step 12 — issuance goes through platform.ssl", () => {
     expect(mocks.resolveTargetPlatform).not.toHaveBeenCalled();
     expect(commands).toHaveLength(0);
   });
+});
+
+
+it("reuses a healthy mail certificate during setup without another ACME order", async () => {
+  mocks.verifyCert.mockResolvedValueOnce({ domain: "mail.example.com", verified: true, issuer: "test", expiresAt: "2030-01-01T00:00:00.000Z" });
+  const result = await stepRequestSSL(fakeExecutor().executor, "example.com", () => {}, TARGET);
+  expect(result.success).toBe(true);
+  expect(mocks.provisionCert).not.toHaveBeenCalled();
+});
+
+it("renews an expired certificate when a legacy mail setup is resumed", async () => {
+  mocks.verifyCert.mockResolvedValueOnce({ domain: "mail.example.com", verified: true, issuer: "test", expiresAt: new Date(Date.now() - 86400000).toISOString() });
+  const result = await stepRequestSSL(fakeExecutor().executor, "example.com", () => {}, TARGET);
+  expect(result.success).toBe(true);
+  expect(mocks.provisionCert).toHaveBeenCalledWith("mail.example.com", expect.objectContaining({ force: true }));
 });

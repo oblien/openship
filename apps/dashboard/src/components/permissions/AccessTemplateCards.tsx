@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+
 /**
  * The primary control on the consent screen: pick a named permission template.
  *
@@ -8,17 +10,15 @@
  * so the card set never claims a name the grants no longer match.
  */
 
-import { Boxes, Eye, FolderGit2, ShieldAlert, SlidersHorizontal, RotateCcw } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { TEMPLATE_ORDER, type AccessTemplateId } from "./mcp-access-templates";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
-const ICONS: Record<AccessTemplateId, LucideIcon> = {
-  agent: Boxes,
-  existing: FolderGit2,
-  readOnly: Eye,
-  full: ShieldAlert,
-  custom: SlidersHorizontal,
+const ICONS: Record<AccessTemplateId, IconName> = {
+  agent: "bot",
+  existing: "folder-code",
+  readOnly: "eye",
+  full: "shield-alert",
+  custom: "sliders",
 };
 
 export function AccessTemplateCards({
@@ -65,7 +65,7 @@ export function AccessTemplateCards({
             disabled={disabled}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50"
           >
-            <RotateCcw className="size-3.5" />
+            <UiIcon name="rotate-left" className="size-3.5" />
             {m.resetTemplate}
           </button>
         )}
@@ -105,7 +105,7 @@ function TemplateCard({
   disabled,
   onClick,
 }: {
-  icon: LucideIcon;
+  icon: IconName;
   title: string;
   desc: string;
   badge?: string;
@@ -138,7 +138,7 @@ function TemplateCard({
             : "bg-muted/40 text-muted-foreground"
         }`}
       >
-        <Icon className="size-4" strokeWidth={1.8} />
+        <UiIcon name={Icon} className="size-4" />
       </span>
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-1.5">

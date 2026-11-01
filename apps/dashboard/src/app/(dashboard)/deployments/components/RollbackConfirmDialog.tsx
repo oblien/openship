@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { RotateCcw, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { RestorePlanUI } from "@/lib/api";
@@ -51,7 +52,7 @@ export const RollbackConfirmDialog: React.FC<RollbackConfirmDialogProps> = ({
       <div className="p-6 space-y-5">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <RotateCcw className="w-5 h-5 text-primary" />
+            <UiIcon name="rotate-left" className="w-5 h-5 text-primary" />
           </div>
           <div className="space-y-1">
             <h2 className="text-lg font-semibold text-foreground">{c.title}</h2>
@@ -71,7 +72,7 @@ export const RollbackConfirmDialog: React.FC<RollbackConfirmDialogProps> = ({
             role="alert"
             className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger"
           >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <UiIcon name="warning" className="mt-0.5 size-4 shrink-0" />
             <span>{plan.reason || t.deployments.menu.rollbackTitle.notReady}</span>
           </div>
         )}
@@ -105,7 +106,7 @@ export const RollbackConfirmDialog: React.FC<RollbackConfirmDialogProps> = ({
                       </div>
                       {change.scopeAmbiguous && (
                         <p className="mt-1 flex items-start gap-1.5 text-xs text-warning">
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                          <UiIcon name="warning" className="w-3.5 h-3.5 shrink-0 mt-px" />
                           <span>
                             {change.serviceName ? `${change.serviceName} — ` : ""}
                             {c.scopeAmbiguous}

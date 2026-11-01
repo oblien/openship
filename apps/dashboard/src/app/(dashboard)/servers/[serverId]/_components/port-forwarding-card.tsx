@@ -1,5 +1,7 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Port Forwarding card — Desktop-only.
  *
@@ -16,7 +18,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Network, Plus, Play, Square, Trash2, ExternalLink, Loader2 } from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { TunnelInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
@@ -169,7 +170,7 @@ export function PortForwardingCard({
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
         <div className="flex w-9 h-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.06]">
-          <Network className="size-[18px] text-foreground/80" />
+          <UiIcon name="port-forwarding" className="size-[18px] text-foreground/80" />
         </div>
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-foreground">{tr.servers.ports.title}</h2>
@@ -185,7 +186,7 @@ export function PortForwardingCard({
         {/* Tunnel list */}
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-            <Loader2 className="size-4 animate-spin" />
+            <UiIcon name="spinner" className="size-4 animate-spin" />
             {tr.servers.ports.loading}
           </div>
         ) : tunnels.length === 0 ? (
@@ -218,7 +219,7 @@ export function PortForwardingCard({
                             className="inline-flex items-center gap-1 text-primary hover:underline font-mono"
                           >
                             {t.url.replace(/^https?:\/\//, "")}
-                            <ExternalLink className="size-3" />
+                            <UiIcon name="external-link" className="size-3" />
                           </a>
                         ) : (
                           <span className="font-mono">localhost:{t.localPort ?? t.remotePort}</span>
@@ -235,9 +236,9 @@ export function PortForwardingCard({
                           className="w-7 h-7 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
                         >
                           {isBusy ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <UiIcon name="spinner" className="size-3.5 animate-spin" />
                           ) : (
-                            <Square className="size-3.5" />
+                            <UiIcon name="square" className="size-3.5" />
                           )}
                         </button>
                       ) : (
@@ -248,9 +249,9 @@ export function PortForwardingCard({
                           className="w-7 h-7 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-success disabled:opacity-50 transition-colors"
                         >
                           {isBusy ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <UiIcon name="spinner" className="size-3.5 animate-spin" />
                           ) : (
-                            <Play className="size-3.5" />
+                            <UiIcon name="play" className="size-3.5" />
                           )}
                         </button>
                       )}
@@ -260,7 +261,7 @@ export function PortForwardingCard({
                         title={tr.servers.ports.remove}
                         className="w-7 h-7 rounded-lg hover:bg-danger-bg flex items-center justify-center text-muted-foreground hover:text-danger disabled:opacity-50 transition-colors"
                       >
-                        <Trash2 className="size-3.5" />
+                        <UiIcon name="trash" className="size-3.5" />
                       </button>
                     </div>
                   </div>
@@ -321,9 +322,9 @@ export function PortForwardingCard({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {adding ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <UiIcon name="spinner" className="size-3.5 animate-spin" />
               ) : (
-                <Plus className="size-3.5" />
+                <UiIcon name="plus" className="size-3.5" />
               )}
               {tr.servers.ports.add}
             </button>

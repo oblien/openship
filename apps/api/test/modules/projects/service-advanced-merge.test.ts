@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeAdvanced } from "../../../src/modules/services/service.service";
+import { mergeAdvanced } from "@repo/platform/engine/modules/services/service.service";
 
 /**
  * `service.advanced` is one JSONB blob holding four independently-owned keys:
@@ -66,6 +66,19 @@ describe("mergeAdvanced", () => {
     const files = [{ path: "/etc/kong.yml", content: "_format_version: '3.0'" }];
     expect(mergeAdvanced(null, { files }).files).toEqual(files);
     expect(mergeAdvanced({ files }, { files: null })).toEqual({});
+  });
+
+  it("converts an inline build to runtime files without discarding resource or readiness settings", () => {
+    const files = [{ path: "/etc/openship/start.sh", content: "exec application" }];
+    const next = mergeAdvanced(
+      { ...stored, build: { dockerfile: "FROM application:v1" } },
+      {
+        build: null,
+        files,
+      },
+    );
+    expect(next).toEqual({ ...stored, files });
+    expect("build" in next).toBe(false);
   });
 
   it("REPLACES a key rather than deep-merging it", () => {

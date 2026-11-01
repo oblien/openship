@@ -1,7 +1,7 @@
 {
   "checking": "DNS-Anbieter wird geprüft…",
   "noProviderTitle": "Diese Einträge automatisch einrichten",
-  "noProviderDesc": "Verbinde einen DNS-Anbieter und Openship fügt diese Einträge für dich hinzu.",
+  "noProviderDesc": "Verbinde einen DNS-Anbieter mit Zugriff auf die Zone dieser Domain. Prüfe anschließend die Einträge und wende sie an.",
   "connect": "DNS-Anbieter verbinden",
   "unauthorizedTitle": "DNS-Anbieter muss neu verbunden werden",
   "unauthorizedDesc": "Dein gespeichertes Token wurde abgelehnt. Verbinde es erneut, um DNS automatisch einzurichten.",
@@ -25,5 +25,20 @@
   "outcomeFailed": "Fehlgeschlagen",
   "resultDone": "DNS aktualisiert.",
   "resultPartial": "Einige Einträge erfordern Aufmerksamkeit.",
-  "applyFailed": "DNS konnte nicht eingerichtet werden."
+  "applyFailed": "DNS konnte nicht eingerichtet werden.",
+  "preDeployHint": "Anbieter verbunden. Stelle das Projekt zuerst bereit und wähle dann in seinen Domain-Einstellungen DNS automatisch konfigurieren.",
+  "currentValue": "Aktueller Wert",
+  "desiredValue": "Neuer Wert",
+  "checkAgain": "Erneut prüfen",
+  "manualSetup": "DNS manuell einrichten",
+  "recordsFailed": "DNS-Einträge konnten nicht geladen werden. Bitte erneut versuchen.",
+  "connection": {
+    "description": "Einmal für diesen Arbeitsbereich verbinden. Prüfe DNS-Änderungen, bevor du sie anwendest.",
+    "provider": "DNS-Anbieter",
+    "connection": "Verbindung",
+    "newConnection": "Verbindung hinzufügen",
+    "createToken": "API-Token erstellen",
+    "adminRequired": "Ein Eigentümer oder Administrator muss den DNS-Anbieter verbinden. Du kannst die Einträge weiterhin manuell hinzufügen.",
+    "loadFailed": "DNS-Verbindungen konnten nicht geladen werden. Bitte erneut versuchen."
+  }
 }

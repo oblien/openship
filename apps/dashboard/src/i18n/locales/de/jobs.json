@@ -1,0 +1,291 @@
+{
+  "cloudSubtitle": "Geplante und manuell gestartete Befehle auf deinen verwalteten Servern.",
+  "create": {
+    "commandHint": "Wird auf jedem ausgewählten Server ausgeführt. Verwende docker run --rm für eine Aufgabe in einem Container.",
+    "cloudServersHint": "Nutze einen vorhandenen Server oder füge einen dedizierten Server mit eigenem Abonnement hinzu.",
+    "cloudUsageHint": "Jobs teilen sich die Kapazität und das Nutzungskontingent des ausgewählten Servers. Zur Ausführung muss sein Tarif aktiv sein.",
+    "addDedicatedServer": "Dedizierten Server hinzufügen",
+    "title": "Neuer Job",
+    "name": "Name",
+    "namePlaceholder": "Nächtliches DB-Vakuum",
+    "server": "Server",
+    "servers": "Server",
+    "noServers": "Noch keine Server verbunden — fügen Sie zuerst einen hinzu.",
+    "command": "Befehl",
+    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "scheduleType": "Wann ausführen",
+    "scheduleTypes": {
+      "recurring": "Nach Zeitplan",
+      "once": "Einmalig",
+      "manual": "Manuell"
+    },
+    "sections": {
+      "basics": "Grundlagen",
+      "schedule": "Zeitplan",
+      "servers": "Zielserver",
+      "reliability": "Zuverlässigkeit",
+      "environment": "Umgebung",
+      "triggers": "Abhängigkeiten & Trigger",
+      "notifications": "Benachrichtigungen"
+    },
+    "schedule": "Zeitplan (Cron)",
+    "runAt": "Ausführen um",
+    "manualHint": "Wird nur bei Auslösung ausgeführt — Jetzt ausführen, eine Abhängigkeit oder ein Ereignis.",
+    "timeout": "Zeitlimit (s)",
+    "retryAttempts": "Max. Versuche",
+    "retryBackoff": "Wartezeit (s)",
+    "advanced": "Erweitert",
+    "env": "Umgebungsvariablen",
+    "addVar": "Variable hinzufügen",
+    "secrets": "Secrets",
+    "addSecret": "Secret hinzufügen",
+    "replaceSecrets": "Secrets ersetzen",
+    "secretsSet": "Secret(s) festgelegt",
+    "noSecrets": "Keine Secrets festgelegt.",
+    "dependencies": "Ausführen nach",
+    "dependenciesHint": "Dieser Job wird ausgeführt, nachdem die ausgewählten Jobs erfolgreich abgeschlossen wurden.",
+    "triggers": "Ereignis-Trigger",
+    "notifications": "Benachrichtigungen",
+    "noChannels": "Noch keine Benachrichtigungskanäle vorhanden — fügen Sie einen unter Monitoring → Benachrichtigungen hinzu.",
+    "notificationsHint": "Überschreibt die globalen Benachrichtigungseinstellungen für diesen Job.",
+    "submit": "Job erstellen",
+    "creating": "Wird gespeichert…",
+    "cancel": "Abbrechen",
+    "needServer": "Zuerst einen Server verbinden",
+    "pasteEnv": ".env einfügen",
+    "uploadEnv": ".env hochladen",
+    "envPasteEmpty": "Keine Variablen gefunden",
+    "comingSoon": "Demnächst",
+    "setupChannel": "Kanal einrichten",
+    "customTriggerSoon": "Benutzerdefinierter Trigger",
+    "docsLink": "Mehr über Jobs erfahren",
+    "docsBody": "Zeitpläne, Wiederholungen, Secrets & Benachrichtigungen",
+    "summary": {
+      "title": "Zusammenfassung",
+      "command": "Befehl",
+      "schedule": "Zeitplan",
+      "targets": "Ziele",
+      "retry": "Wiederholung",
+      "timeout": "Timeout",
+      "notify": "Benachrichtigungen",
+      "none": "—",
+      "retryOff": "Keine"
+    }
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub-Deployment-Prüfungen",
+    "cloud:workspace-recovery": "Cloud-Workspace-Operationen",
+    "ssl:renew": "SSL-Zertifikatserneuerung",
+    "projects:orphan-gc": "Bereinigung verwaister Ressourcen",
+    "images:gc": "Bereinigung von Deployment-Artefakten",
+    "domains:verify-pending": "Benutzerdefinierte Domains überprüfen",
+    "updates:scan": "Update-Scan",
+    "backups:retention-prune": "Bereinigung abgelaufener Backups",
+    "backups:stale-sweep": "Abgleich hängengebliebener Backups",
+    "prune:audit": "Audit-Protokoll bereinigen",
+    "prune:incidents": "Vorfallsverlauf bereinigen",
+    "sampler:resources": "Ressourcennutzung erfassen",
+    "system:analytics-scraper": "Analyse-Scraper",
+    "build-cache:gc": "Build-Cache bereinigen",
+    "cloud:https-health": "Cloud-HTTPS-Statusprüfung",
+    "system:server-modules": "Server-Modul-Scan",
+    "system:server-containers": "Server-Container-Scan",
+    "system:health-watch": "Integritätsprüfung",
+    "jobs:due-once": "Einmalige Aufgaben ausführen",
+    "edge:verify": "Edge-Überprüfung",
+    "audit:retention-prune": "Audit-Protokoll bereinigen",
+    "retention-prune-daily": "Alte Backups bereinigen",
+    "backups:stale-run-sweep": "Hängende Backups bereinigen",
+    "domains:check-https": "Cloud-HTTPS-Statusprüfung",
+    "analytics:scrape": "Traffic-Analysedaten erfassen",
+    "resources:sample": "Ressourcennutzung erfassen",
+    "analytics:retention-prune": "Alte Analysedaten bereinigen",
+    "resources:retention-prune": "Alte Ressourcendaten bereinigen",
+    "migrations:recover": "Migrationswiederherstellung",
+    "deployments:cloud-build-queue": "Cloud-Build-Warteschlange",
+    "deployments:cloud-build-recovery": "Cloud-Build-Wiederherstellung",
+    "deployments:reconcile": "Deployment-Abgleich",
+    "permissions:pending-grant-prune": "Ausstehende Einladungen bereinigen",
+    "github:webhook-event-prune": "GitHub-Webhook-Ereignisse bereinigen",
+    "edge:target-verify": "Überprüfung kostenloser Domains",
+    "modules:scan": "Server-Module scannen",
+    "infra:scan": "Verwaltete Container scannen",
+    "mail:inbound-watch": "Eingehende E-Mail-Regeln",
+    "mail:inbound-reconcile": "E-Mail-Regelabgleich",
+    "services:health-watch": "Container-Zustandsüberwachung",
+    "incidents:prune": "Vorfallsverlauf bereinigen",
+    "jobs:oneshot": "Einmalige Aufträge ausführen",
+    "Audit log prune": "Audit-Protokoll bereinigen",
+    "Backup in-flight stale reconciliation": "Hängende Backups bereinigen",
+    "Backup retention prune": "Alte Backups bereinigen",
+    "Cloud HTTPS health": "Cloud-HTTPS-Statusprüfung",
+    "Cloud workspace operations": "Cloud-Workspace-Operationen",
+    "Container health watch": "Container-Zustandsüberwachung",
+    "Deployment artifact cleanup": "Bereinigung von Deployment-Artefakten",
+    "Deployment reconcile": "Deployment-Abgleich",
+    "GitHub deployment Checks": "GitHub-Deployment-Prüfungen",
+    "GitHub webhook event prune": "GitHub-Webhook-Ereignisse bereinigen",
+    "Incident history prune": "Vorfallsverlauf bereinigen",
+    "Managed-container update scan": "Verwaltete Container scannen",
+    "Migration recovery": "Migrationswiederherstellung",
+    "Native-module update scan": "Server-Module scannen",
+    "Notification rule capture drift": "E-Mail-Regelabgleich",
+    "Notification rules": "Eingehende E-Mail-Regeln",
+    "One-time job dispatcher": "Einmalige Aufträge ausführen",
+    "Orphaned resource cleanup": "Verwaiste Ressourcen bereinigen",
+    "Pending grant prune": "Ausstehende Einladungen bereinigen",
+    "Resource usage prune": "Alte Ressourcendaten bereinigen",
+    "Resource usage sampling": "Ressourcennutzung erfassen",
+    "SSL certificate renewal": "SSL-Zertifikate erneuern",
+    "Traffic analytics collection": "Traffic-Analysedaten erfassen",
+    "Traffic analytics prune": "Alte Analysedaten bereinigen",
+    "Update scan": "Nach Updates suchen",
+    "Free-domain target verification": "Überprüfung kostenloser Domains",
+    "Domain DNS verification": "Domain-DNS-Überprüfung"
+  },
+  "backups": {
+    "section": "Backup-Zeitpläne",
+    "sectionDesc": "Automatische Backups, geplant pro Projekt oder Dienst. Wird unter dem Backup-Tab jedes Projekts verwaltet.",
+    "projectDefault": "Projektstandard",
+    "mailServer": "Mailserver",
+    "manage": "In Backups verwalten",
+    "badge": "Backup",
+    "never": "Nie ausgeführt",
+    "status": {
+      "succeeded": "Erfolgreich",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
+      "running": "Wird ausgeführt"
+    }
+  },
+  "title": "Jobs",
+  "subtitle": "Integrierte Wartungsaufgaben und benutzerdefinierte Befehle, die auf Ihren Servern ausgeführt werden.",
+  "empty": "Noch keine geplanten Jobs.",
+  "searchPlaceholder": "Jobs suchen…",
+  "noResults": "Keine Jobs entsprechen Ihren Filtern.",
+  "overview": {
+    "title": "Auf einen Blick",
+    "subtitle": "Jobs auf dieser Instanz",
+    "all": "Alle Jobs",
+    "running": "Wird ausgeführt",
+    "failed": "Fehlgeschlagen",
+    "scheduled": "Geplant",
+    "disabled": "Deaktiviert"
+  },
+  "loadFailed": "Laden der Jobs fehlgeschlagen.",
+  "kind": {
+    "system": "System",
+    "custom": "Benutzerdefiniert"
+  },
+  "fields": {
+    "schedule": "Zeitplan",
+    "nextRun": "Nächste Ausführung",
+    "lastRun": "Letzte Ausführung",
+    "never": "Nie ausgeführt",
+    "notScheduled": "Nicht geplant"
+  },
+  "status": {
+    "success": "Erfolg",
+    "failed": "Fehlgeschlagen",
+    "running": "Wird ausgeführt"
+  },
+  "actions": {
+    "run": "Jetzt ausführen",
+    "running": "Wird ausgeführt…",
+    "edit": "Zeitplan bearbeiten",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "viewLogs": "Logs"
+  },
+  "cronHint": "Standard-5-Felder-Cron (Minute Stunde Tag Monat Wochentag), UTC.",
+  "toast": {
+    "ran": "{label} gestartet.",
+    "ranFailed": "Ausführung von {label} fehlgeschlagen.",
+    "saved": "Zeitplan für {label} aktualisiert.",
+    "saved2": "Job aktualisiert.",
+    "saveFailed": "Aktualisierung von {label} fehlgeschlagen.",
+    "enabled": "{label} aktiviert.",
+    "disabled": "{label} deaktiviert.",
+    "toggleFailed": "Aktualisierung von {label} fehlgeschlagen.",
+    "title": "Jobs",
+    "created": "Job erstellt.",
+    "createFailed": "Erstellen des Jobs fehlgeschlagen.",
+    "deleted": "Job gelöscht.",
+    "deleteFailed": "Löschen des Jobs fehlgeschlagen."
+  },
+  "newJob": "Neuer Job",
+  "sections": {
+    "system": "Systemjobs",
+    "systemDesc": "Integrierte Wartungsaufgaben auf dieser Instanz.",
+    "custom": "Benutzerdefinierte Jobs",
+    "customDesc": "Befehle, die Sie nach Zeitplan auf Ihren Servern ausführen."
+  },
+  "customEmpty": {
+    "title": "Noch keine benutzerdefinierten Jobs",
+    "desc": "Führen Sie einen Befehl auf einem Ihrer Server aus — nach Zeitplan, einmalig oder bei einem Ereignis — mit Wiederholungen, Secrets, Live-Logs und Benachrichtigungen.",
+    "cta": "Job erstellen",
+    "docs": "Dokumentation"
+  },
+  "edit": {
+    "title": "Job bearbeiten",
+    "action": "Bearbeiten",
+    "save": "Änderungen speichern"
+  },
+  "detail": {
+    "back": "Zurück zu Jobs",
+    "tabs": {
+      "overview": "Übersicht",
+      "runs": "Ausführungen"
+    },
+    "servers": "Server",
+    "retry": "Wiederholung",
+    "retryValue": "{n} Versuche, {s}s Backoff",
+    "notifyValue": "{c} Kanal/Kanäle bei {s}",
+    "onceAt": "Einmalig um",
+    "noRuns": "Noch keine Ausführungen."
+  },
+  "delete": {
+    "action": "Löschen",
+    "confirm": "Diesen Job löschen?",
+    "deleting": "Wird gelöscht…"
+  },
+  "logs": {
+    "title": "Ausführungsprotokolle",
+    "streaming": "Wird gestreamt…",
+    "empty": "Noch keine Ausgabe.",
+    "close": "Schließen",
+    "exit": "Exit-Code {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Deployment erfolgreich",
+      "description": "Ein Produktions-Deployment wurde erfolgreich abgeschlossen."
+    },
+    "deployment.failed": {
+      "label": "Deployment fehlgeschlagen",
+      "description": "Build oder Deployment mit Fehler abgebrochen."
+    },
+    "backup_run.succeeded": {
+      "label": "Backup erfolgreich",
+      "description": "Ein geplantes oder manuelles Backup wurde abgeschlossen."
+    },
+    "backup_run.failed": {
+      "label": "Backup fehlgeschlagen",
+      "description": "Ein Backup-Lauf wurde mit einem Fehler beendet."
+    },
+    "backup_restore.completed": {
+      "label": "Wiederherstellung abgeschlossen",
+      "description": "Eine Wiederherstellung wurde abgeschlossen."
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL-Verlängerung fehlgeschlagen",
+      "description": "Zertifikat konnte nicht verlängert werden."
+    },
+    "domain.verification_failed": {
+      "label": "Domain-Verifizierung fehlgeschlagen",
+      "description": "DNS-Prüfung der Domain fehlgeschlagen."
+    }
+  }
+}

@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as tarball from "./source-tarball";
 import type { BuildConfig, CommandExecutor } from "../types";
 import { BuildLogger } from "./build-pipeline";
 import { DockerRuntime } from "./docker";
 
 const COMMIT = "30a396bda22eda34bcd2bc73d5b601683b146e7a";
+
+afterEach(() => vi.restoreAllMocks());
 
 function config(): BuildConfig {
   return {
@@ -42,6 +45,32 @@ function harness(executor: CommandExecutor): CloneHarness {
 }
 
 describe("DockerRuntime clone-on-server pinned commit", () => {
+  it.each([false, true])(
+    "uses Git only when the downloaded archive has submodules: %s",
+    async (hasSubmodules) => {
+      vi.spyOn(tarball, "downloadTarballOnRemote").mockResolvedValue(undefined);
+      const streamExec = vi.fn(async (_command: string) => ({ code: 0, output: "" }));
+      const executor = {
+        exec: vi.fn(async (command: string) => {
+          if (command.startsWith("test -f ") && !hasSubmodules) throw new Error("file absent");
+          return "";
+        }),
+        streamExec,
+      } as unknown as CommandExecutor;
+      await harness(executor).cloneSourceOnRemote(
+        { ...config(), gitCredentialHelperPath: undefined },
+        "/tmp/openship-build-test",
+        new BuildLogger(),
+      );
+      expect(tarball.downloadTarballOnRemote).toHaveBeenCalledOnce();
+      const commands = streamExec.mock.calls.map(([command]) => String(command));
+      expect(commands.some((command) => command.includes(" submodule update "))).toBe(
+        hasSubmodules,
+      );
+      expect(commands.some((command) => command.includes(" clone "))).toBe(hasSubmodules);
+    },
+  );
+
   it("surfaces a clone failure without attempting fetch in a non-repository", async () => {
     const executor = {
       exec: vi.fn(async () => ""),
@@ -80,10 +109,11 @@ describe("DockerRuntime clone-on-server pinned commit", () => {
     const commands = (executor.streamExec as ReturnType<typeof vi.fn>).mock.calls.map(([command]) =>
       String(command),
     );
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(4);
     expect(commands[0]).toContain(" clone ");
     expect(commands[1]).toContain("--unshallow");
     expect(commands[2]).toContain(" checkout ");
+    expect(commands[3]).toContain(" submodule update ");
     for (const command of commands.slice(0, 2)) {
       expect(command.indexOf("auth-header")).toBeLessThan(command.indexOf("git "));
     }

@@ -10,16 +10,17 @@
  * applies localOnly + auth).
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { AppError, isRelayProviderId, RELAY_PROVIDER_IDS } from "@repo/core";
-import { env } from "../../../config";
+import { env } from "@repo/platform/engine/config/index";
 import { getRequestContext } from "../../../lib/request-context";
 import { requestTag } from "../../../middleware/error-handler";
 import { listWebmailTargets } from "./webmail.service";
 import {
   startWebmailDeploy,
   startExternalWebmailDeploy,
-} from "./webmail-install.service";
+} from "@repo/platform/engine/modules/mail/webmail/webmail-install.service";
 
 const HOSTNAME_RE = /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/;
 const portOk = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
@@ -40,7 +41,7 @@ function deployError(c: Context, err: unknown) {
   const message = err instanceof Error ? err.message : "Failed to start deploy";
   // Answered here, so `app.onError` never logs it — same blind spot as the other two
   // self-answered mail 500s.
-  console.error(`[WEBMAIL ERROR] ${requestTag(c)}`, err);
+  errorDiagnostics.error("api/modules/mail/webmail/webmail.controller", `[WEBMAIL ERROR] ${requestTag(c)}`, err);
   return c.json({ error: message }, 500);
 }
 
@@ -56,7 +57,7 @@ export async function getTargetsHandler(c: Context) {
   }
   // org-scoped: only return targets within the caller's org (the route
   // tag proves membership but not that mailServerId is theirs).
-  const options = await listWebmailTargets(mailServerId, ctx.organizationId);
+  const options = await listWebmailTargets(mailServerId, ctx);
   return c.json({ options });
 }
 
@@ -69,7 +70,7 @@ export async function getTargetsHandler(c: Context) {
  *     hostname: string,
  *     target:
  *       | { kind: "self", serverId: string }   // self-hosted on an openship server
- *       | { kind: "cloud" }                    // managed by Opshcloud
+ *       | { kind: "cloud", serverId: string }  // selected managed Cloud server
  *     replaceLegacy?: boolean                  // consent to replace a pre-catalog webmail
  *   }
  *
@@ -88,7 +89,7 @@ export async function startDeployAsProjectHandler(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const ctx = getRequestContext(c);
-  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/webmail/webmail.controller"); return ({}) as Record<string, unknown>; });
   const mailServerId = body.mailServerId as string | undefined;
   const hostname = (body.hostname as string | undefined)?.trim().toLowerCase();
   const targetBody = body.target as { kind?: string; serverId?: string } | undefined;
@@ -97,15 +98,15 @@ export async function startDeployAsProjectHandler(c: Context) {
   if (!hostname || !HOSTNAME_RE.test(hostname))
     return c.json({ error: "Invalid domain" }, 400);
 
-  let target: { kind: "self"; serverId: string } | { kind: "cloud" };
+  let target: { kind: "self"; serverId: string } | { kind: "cloud"; serverId?: string };
   if (targetBody?.kind === "cloud") {
-    target = { kind: "cloud" };
+    target = { kind: "cloud", serverId: targetBody.serverId };
   } else if (targetBody?.kind === "self" && targetBody.serverId) {
     target = { kind: "self", serverId: targetBody.serverId };
   } else {
     return c.json(
       {
-        error: 'target is required: { kind: "self", serverId } or { kind: "cloud" }',
+        error: 'target is required: { kind: "self", serverId } or { kind: "cloud", serverId }',
       },
       400,
     );
@@ -117,9 +118,11 @@ export async function startDeployAsProjectHandler(c: Context) {
       hostname,
       target,
       replaceLegacy: body.replaceLegacy === true,
+      reconnectProjectId: body.reconnectProjectId as string | undefined,
     });
     return c.json({ deploymentId, projectId });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/webmail/webmail.controller");
     return deployError(c, err);
   }
 }
@@ -145,7 +148,7 @@ export async function startExternalDeployAsProjectHandler(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const ctx = getRequestContext(c);
-  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/webmail/webmail.controller"); return ({}) as Record<string, unknown>; });
 
   const hostname = (body.hostname as string | undefined)?.trim().toLowerCase();
   if (!hostname || !HOSTNAME_RE.test(hostname))
@@ -190,6 +193,7 @@ export async function startExternalDeployAsProjectHandler(c: Context) {
     });
     return c.json({ deploymentId, projectId });
   } catch (err) {
+    observeCaughtError(err, "api/modules/mail/webmail/webmail.controller");
     return deployError(c, err);
   }
 }

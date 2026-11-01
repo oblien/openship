@@ -1,0 +1,43 @@
+{
+  "service": "managed_proxy_transfer",
+  "policyId": "managed-transfer-2026-10-v1",
+  "providerRevision": 0,
+  "unlimited": false,
+  "included": true,
+  "status": "active",
+  "purchasedBytes": 53687091200,
+  "purchasedConsumedBytes": 5368709120,
+  "purchasedReservedBytes": 1073741824,
+  "consumedBytes": 12884901888,
+  "reservedBytes": 2147483648,
+  "availableBytes": 274877906944,
+  "includedBytes": 214748364800,
+  "includedConsumedBytes": 7516192768,
+  "includedReservedBytes": 1073741824,
+  "includedAvailableBytes": 206158430208,
+  "purchasedAvailableBytes": 47244640256,
+  "periodConsumedBytes": 7516192768,
+  "warningPercentages": [80, 95],
+  "grace": {
+    "limitBytes": 21474836480,
+    "consumedBytes": 0,
+    "reservedBytes": 0,
+    "availableBytes": 21474836480,
+    "hours": 72,
+    "startsAt": null,
+    "expiresAt": null,
+    "active": false
+  },
+  "wallet": {
+    "currency": "usd",
+    "limitAmount": 0,
+    "chargedAmount": 0,
+    "reservedAmount": 0,
+    "availableBytes": 0
+  },
+  "managedProxyGiBCents": 10,
+  "settings": { "paygLimitAmount": 500, "monthlyOverageLimitAmount": 0 },
+  "publicRouteTrafficMetered": false,
+  "customProxyMetered": false,
+  "computeStopped": false
+}

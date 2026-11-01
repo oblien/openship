@@ -21,7 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   assertLocalEndpointInRoot,
   resolveLocalBackupRoot,
-} from "../../../src/modules/backup-destinations/local-path";
+} from "@repo/platform/engine/modules/backup-destinations/local-path";
 
 /** The shipped default (config/env.ts). The regression this file pins. */
 const DEFAULT_ROOT = "/var/lib/openship/backups";

@@ -2,6 +2,7 @@ import { eq, and, desc, inArray, isNotNull, lte } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { serviceDeployment, service } from "../schema";
+import { serviceDeploymentFinishPatch } from "./service-deployment-timing";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -84,17 +85,28 @@ export function createServiceDeploymentRepo(db: Database) {
       status: ServiceDeploymentStatus,
       extra?: Partial<NewServiceDeployment>,
     ) {
+      const now = new Date();
+      const data = { status, ...extra };
       await db
         .update(serviceDeployment)
-        .set({ status, ...extra, updatedAt: new Date() })
+        .set({
+          ...data,
+          ...serviceDeploymentFinishPatch(data.status, data.finishedAt ?? now, data.finishedAt != null),
+          updatedAt: now,
+        })
         .where(eq(serviceDeployment.id, id));
     },
 
     /** Generic patch used by the deploy worker when it has more than just `status` to set. */
     async update(id: string, data: Partial<NewServiceDeployment>) {
+      const now = new Date();
       await db
         .update(serviceDeployment)
-        .set({ ...data, updatedAt: new Date() })
+        .set({
+          ...data,
+          ...serviceDeploymentFinishPatch(data.status, data.finishedAt ?? now, data.finishedAt != null),
+          updatedAt: now,
+        })
         .where(eq(serviceDeployment.id, id));
     },
 

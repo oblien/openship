@@ -59,11 +59,18 @@
 
 name: openship
 
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   # ─── Database (storage, private) ──────────────────────
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # Fresh installs keep the data dir in a SUBDIR of the volume so initdb never
       # runs against a bare mount root (fails on quirky host filesystems with
@@ -91,6 +98,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     # PRIVATE: not published to the host. api reaches it at redis:6379.
     expose:
@@ -107,6 +115,7 @@ services:
   api:
     image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
+    logging: *default-logging
     ports:
       # Loopback by default — the host-net edge reaches it over loopback.
       # OPENSHIP_BIND_ADDR opts into a public/LAN interface (see header note).
@@ -181,7 +190,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -191,6 +200,7 @@ services:
   dashboard:
     image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
     env_file:
@@ -198,6 +208,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "${DASHBOARD_PORT:-3001}"
+      HOSTNAME: "0.0.0.0"
       INTERNAL_API_URL: http://api:${API_PORT:-4000}
     depends_on:
       api:
@@ -219,6 +230,7 @@ services:
     # Safe here: the edge is a singleton (host networking, one per box).
     container_name: openship-edge
     restart: unless-stopped
+    logging: *default-logging
     network_mode: host
     volumes:
       - /var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z

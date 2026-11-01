@@ -10,16 +10,17 @@
   },
   "page": {
     "title": "新建项目",
-    "subtitle": "导入仓库、粘贴 URL 或从模板开始",
+    "subtitle": "部署应用或导入你自己的项目。",
     "tabs": {
       "folder": "文件夹",
       "github": "GitHub",
-      "url": "Git URL",
-      "template": "模板"
+      "templates": "模板",
+      "gitUrl": "Git 链接"
     }
   },
   "connect": {
     "connectGithub": "连接 GitHub",
+    "deployApp": "部署应用",
     "manageInSettings": "在设置中管理",
     "terminal": {
       "title": "连接 GitHub",
@@ -30,7 +31,9 @@
       "title": "在 GitHub 上输入此代码",
       "goToPrefix": "前往",
       "goToSuffix": "并输入上方的代码。",
-      "waiting": "等待授权中…"
+      "waiting": "等待授权中…",
+      "openGithub": "打开 GitHub",
+      "copyCode": "点击复制"
     },
     "default": {
       "title": "连接 GitHub 以部署",
@@ -44,7 +47,33 @@
       "ghCli": "使用 gh CLI 登录",
       "ghCliDesc": "使用你本机的 GitHub 登录。无需云端。",
       "useGhCli": "使用 gh CLI",
-      "connecting": "连接中…"
+      "connecting": "连接中…",
+      "manual": "手动 GitHub 连接",
+      "manualDesc": "在设置中配置 — 您自己的 GitHub App/OAuth，或此实例的 gh CLI。无需 Openship 账户。",
+      "manualCta": "在设置中配置",
+      "byoc": "SSH 密钥或访问令牌",
+      "byocDesc": "使用您自己的凭据 — 每个服务器的部署密钥或令牌。无需登录。",
+      "byocCta": "配置"
+    },
+    "installationPicker": {
+      "title": "选择 GitHub 访问权限",
+      "description": "为此工作区选择现有的 App 安装。",
+      "sharedHint": "在此使用不会更改其他 Openship 连接。",
+      "connect": "使用此账户",
+      "connected": "已连接",
+      "installAnother": "在其他 GitHub 账户上安装",
+      "failed": "无法连接此安装。",
+      "tryAgain": "重新开始",
+      "successTitle": "GitHub 已连接",
+      "successDescription": "仓库访问已就绪，可以返回 Openship。",
+      "errorTitle": "GitHub 连接需要处理",
+      "returnToApp": "返回资源库"
+    },
+    "token": {
+      "title": "使用 GitHub 令牌连接",
+      "connect": "连接",
+      "create": "在 GitHub 上创建令牌",
+      "failed": "无法保存令牌。"
     }
   },
   "folderUpload": {
@@ -124,8 +153,6 @@
     "noMatchingDesc": "请尝试其他搜索词或调整筛选条件",
     "noReposDesc": "此账户尚无任何仓库",
     "privateBadge": "私有",
-    "localOnly": "仅限本地",
-    "localOnlyTooltip": "Openship App 未安装在 {owner} 上。仅支持本地构建——在该所有者上安装 App 即可启用远程部署。",
     "repoCountSingular": "{count} 个仓库",
     "repoCountPlural": "{count} 个仓库",
     "matching": "匹配“{query}”",
@@ -159,13 +186,75 @@
     "checking": "检查中…",
     "notConnectedManage": "未连接——在设置中管理",
     "optional": "可选",
-    "footnote": "本地库通过 gh CLI 访问；远程部署使用短期令牌——",
-    "manageGithubSettings": "在设置中管理 GitHub"
+    "footnote": "管理用于浏览和部署仓库的 GitHub 连接。",
+    "manageGithubSettings": "在设置中管理 GitHub",
+    "methodToken": "GitHub 令牌",
+    "methodDevice": "GitHub 登录"
   },
   "urlImport": {
     "invalidUrl": "请输入有效的 GitHub 仓库 URL",
     "title": "从 Git URL 导入",
     "description": "粘贴一个公开仓库的 URL 以导入。无需连接 GitHub。",
     "importButton": "导入仓库"
+  },
+  "customAppModal": {
+    "title": "添加自定义应用",
+    "description": "上传应用定义 (JSON)。它将添加到您的目录中并标记为未验证。",
+    "howToWrite": "如何编写",
+    "dropPrefix": "将",
+    "dropSuffix": "拖到此处，或",
+    "browse": "浏览",
+    "validDefinition": "有效的应用定义 —",
+    "unverifiedTitle": "未验证。",
+    "unverifiedBody": "这将部署您提供的镜像 — 而非官方审核的应用。请检查定义并仅添加您信任的应用。",
+    "cancel": "取消",
+    "addApp": "添加应用",
+    "invalidJson": "该文件不是有效的 JSON。",
+    "invalidDefinition": "这不是有效的应用定义 — 请检查必填字段和引用。",
+    "onlyTemplateSupported": "只能添加模板应用（不支持流程应用）。",
+    "addedToast": "已将 \"{name}\" 添加到您的目录中。",
+    "failedToast": "无法添加该应用。"
+  },
+  "catalog": {
+    "apps": {
+      "mail": "在您自己的域名上搭建独立邮件系统 — 在单台服务器上运行 SMTP/IMAP、邮箱和 Web 邮件。或者保留现有邮箱，仅运行 Web 邮件客户端。",
+      "supabase": "完整的自托管 Supabase — 在单个 API 网关后集成 Postgres、身份验证、REST、实时订阅、存储和 Studio。",
+      "mongodb": "配备 Mongo Express Web 管理界面的 MongoDB 文档数据库。",
+      "convex": "自托管的 Convex 响应式后端和仪表板，配备持久化数据卷。",
+      "n8n": "工作流自动化 — 通过可视化编辑器连接各种应用和 API。",
+      "ghost": "专为博客、通讯和会员网站打造的内容发布平台，配备专注的编辑器和独立数据库。",
+      "directus": "基于您的数据提供 REST 和 GraphQL API 的无头 CMS，并配备浏览器端管理工作台。",
+      "nocodb": "类似 Airtable 的电子表格界面，便于直观操作底层 SQL 数据。",
+      "metabase": "商业智能分析工具，针对现有数据进行提问、分析并构建可视化仪表板。",
+      "grafana": "在您自己的基础设施上为指标和日志构建仪表板和可视化呈现。",
+      "gitea": "轻量级 Git 代码托管平台，支持仓库、Issue 和 Pull Request。",
+      "code-server": "在浏览器中运行的 VS Code，直接连接您服务器上的工作区。",
+      "uptime-kuma": "具备状态页面和告警通知的服务运行状态监控工具。",
+      "vaultwarden": "轻量级自托管密码管理器，完全兼容 Bitwarden 官方客户端。",
+      "freshrss": "自建 RSS 和 Atom 订阅源阅读器，提供用于整理订阅的 Web 界面。",
+      "stirling-pdf": "在您控制的基础设施上对 PDF 进行拆分、合并、转换、OCR 识别和编辑。",
+      "it-tools": "面向开发者和系统管理员的浏览器端实用工具集合，无需注册账户。",
+      "excalidraw": "用于绘制草图和流程图的虚拟白板。无状态 — 绘图直接保存在浏览器本地。",
+      "buzz": "人类与 AI 智能体协同工作的自托管工作区 — 在统一审计日志中管理聊天、代码、评审和工作流。",
+      "minio": "兼容 S3 的对象存储，配备 Web 管理控制台 — 可连接任意 S3 客户端或直接绑定到项目上传目录。",
+      "kafka": "配备 Kafbat Kafka UI 网页控制台的 Apache Kafka 事件流代理（KRaft 模式，无需 ZooKeeper）。",
+      "qdrant": "用于 AI 搜索、RAG 和向量嵌入的高性能向量数据库，内置 Web UI 浏览集合与执行查询。",
+      "meilisearch": "极速且具备容错能力的搜索引擎。毫秒级为您的文档建立索引并提供搜索服务。",
+      "neon": "社区驱动的自托管 Neon，具备 Postgres 分支管理、控制台和独立分支连接串。",
+      "posthog": "集成产品分析、会话回放和功能特性的自托管分析套件。",
+      "redis": "用于缓存、会话、限流和队列的内存数据存储 — Valkey（开源 Redis 分支），附带已预连接的 RedisInsight 界面。",
+      "umami": "注重隐私、无 Cookie 的网站访问分析工具 — Google Analytics 的开源替代方案。",
+      "webmail": "快速的自托管 Webmail 客户端。连接任意 IMAP/SMTP 邮箱并在自己域名下收发邮件。",
+      "clickhouse": "专为分析型数据设计的列式 SQL 数据库，附带 CH-UI 控制台用于执行查询和查看结构。",
+      "mindwire": "在私有控制平面后运行编程智能体运行环境，统一管理智能体、凭证和会话。",
+      "pocketbase": "集成了用户认证、实时 SQLite 数据库、文件存储和管理面板的轻量级后端服务。",
+      "authentik": "适用于 SSO、OAuth2、OpenID Connect 和 SAML 的全功能身份验证提供商。",
+      "mariadb": "兼容 MySQL 的数据库，配备轻巧的 Adminer 面板用于表操作和数据导出。",
+      "nextcloud": "私有文件同步与共享系统，包含 Nextcloud Admin、MariaDB、Redis 和定时后台任务。",
+      "odoo": "涵盖客户关系、销售、库存等企业级业务应用套件，配备 PostgreSQL 和即用型管理员账号。",
+      "postgresql": "持久化 PostgreSQL 数据库，内置 pgAdmin 便于浏览器端管理和 SQL 查询。",
+      "rabbitmq": "高可用消息代理，配备用于管理队列、交换机和连接的官方管理仪表板。",
+      "wordpress": "通过 WordPress Admin、独立 MariaDB 数据库和持久化存储快速发布网站、博客和商城。"
+    }
   }
 }

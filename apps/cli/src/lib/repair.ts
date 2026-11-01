@@ -9,6 +9,7 @@
  * from this same-machine CLI, against ~/.openship/data directly. See lib/heal.ts.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -71,7 +72,7 @@ export async function internalGet(path: string, timeoutMs = 8000): Promise<any |
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (call.kind !== "response" || !call.res.ok) return null;
-  return await call.res.json().catch(() => null);
+  return await call.res.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/lib/repair"); return null; });
 }
 
 /** Is the local API answering its liveness stub right now? */
@@ -81,7 +82,8 @@ export async function apiReachable(): Promise<boolean> {
       signal: AbortSignal.timeout(2500),
     });
     return res.ok;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/repair");
     return false;
   }
 }
@@ -117,7 +119,8 @@ export function lastServiceError(): string | null {
         .reverse()
         .find((l) => /error|locked|aborted|malformed|corrupt|throw|cannot|EADDRINUSE/i.test(l));
       if (hit) return hit.trim().slice(0, 240);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "cli/lib/repair");
       /* ignore */
     }
   }
@@ -219,7 +222,7 @@ async function hostControlCheck(api: ApiHostChannel | null): Promise<ComponentCh
   // Imported lazily: the probe shells out to `docker compose exec`, and doctor's
   // other checks must not pay for that module on a bare install.
   const { checkHostChannel } = await import("./host-channel-preflight");
-  return hostControlRow(await checkHostChannel().catch(() => null), api);
+  return hostControlRow(await checkHostChannel().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "cli/lib/repair"); return null; }), api);
 }
 
 /**
@@ -350,7 +353,8 @@ export async function componentChecks(
       signal: AbortSignal.timeout(2500),
     });
     dashUp = res.status > 0;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/repair");
     /* down */
   }
   checks.push({
@@ -448,6 +452,7 @@ export async function runRepair(): Promise<RepairResult> {
     backupDir = backupDataDir();
     bk.stop(`Backup saved → ${chalk.dim(backupDir)}`);
   } catch (err) {
+    observeCaughtError(err, "cli/lib/repair");
     bk.stop("Backup failed — aborting to protect your data.", 1);
     await bringUp();
     return { healed: false, backupDir: null, detail: `Backup failed: ${(err as Error).message}` };
@@ -494,6 +499,7 @@ export async function runRepair(): Promise<RepairResult> {
       deepHeal();
       d.stop("Deep repair done.");
     } catch (err) {
+      observeCaughtError(err, "cli/lib/repair");
       d.stop(`Deep repair failed: ${(err as Error).message}`, 1);
     }
     healthy = await bringUp();
@@ -511,6 +517,7 @@ export async function runRepair(): Promise<RepairResult> {
       restoreBackup(backupDir!);
       r.stop("Backup restored.");
     } catch (err) {
+      observeCaughtError(err, "cli/lib/repair");
       r.stop(`Restore failed: ${(err as Error).message}`, 1);
     }
     await bringUp();

@@ -24,16 +24,20 @@ const h = vi.hoisted(() => ({
   mailServer: { organizationId: "org1" } as { organizationId: string } | undefined,
   project: undefined as { organizationId: string } | undefined,
   destination: { id: "dest1", kind: "s3" } as Record<string, unknown> | undefined,
+  policies: new Map<string, Record<string, unknown>>(),
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, run: () => Promise<unknown>) => run(),
   repos: {
     project: { findById: vi.fn(async () => h.project) },
     server: { get: vi.fn(async () => h.mailServer) },
     backupPolicy: {
+      findById: async (id: string) => h.policies.get(id),
       iterateEnabledForRetention: async function* () {},
     },
     backupRun: {
+      findById: async (id: string) => h.runs.find(run => run.id === id),
       listByOrganization: vi.fn(
         async (organizationId: string, opts: Record<string, unknown>) => {
           h.listCalls.push({ organizationId, ...opts });
@@ -45,6 +49,8 @@ vi.mock("@repo/db", () => ({
         h.softDeleted.push(id);
       }),
     },
+    backupRestore: { findActiveByRunId: async () => undefined },
+    clusterDatabase: { hasActiveImport: async () => false },
     backupDestination: { findById: vi.fn(async () => h.destination) },
   },
 }));
@@ -63,16 +69,16 @@ vi.mock("@repo/adapters", () => ({
   }),
 }));
 
-vi.mock("../backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: vi.fn(async (row: unknown) => row),
 }));
 
-const { prunePolicy } = await import("./retention-prune");
+const { prunePolicy } = await import("@repo/platform/engine/modules/backups/retention-prune");
 
 type PolicyArg = Parameters<typeof prunePolicy>[0];
 
-const mailPolicy = (over: Record<string, unknown> = {}): PolicyArg =>
-  ({
+const mailPolicy = (over: Record<string, unknown> = {}): PolicyArg => {
+  const policy = {
     id: "bkp_mail",
     sourceKind: "mail_server",
     projectId: null,
@@ -83,7 +89,10 @@ const mailPolicy = (over: Record<string, unknown> = {}): PolicyArg =>
     retainCount: 2,
     retainDays: null,
     ...over,
-  }) as unknown as PolicyArg;
+  };
+  h.policies.set(policy.id, policy);
+  return policy as unknown as PolicyArg;
+};
 
 /** A succeeded mail run, `ageDays` old. */
 const run = (id: string, ageDays: number, over: Record<string, unknown> = {}) => ({
@@ -97,7 +106,7 @@ const run = (id: string, ageDays: number, over: Record<string, unknown> = {}) =>
   deletedAt: null,
   retentionLockedUntil: null,
   finishedAt: new Date(Date.now() - ageDays * 86_400_000),
-  artifacts: [{ key: `mail/${id}.tar.zst` }],
+  artifacts: [{ key: `mail/${id}.tar.zst`, sizeBytes: 1234 }],
   manifestKey: `mail/${id}.json`,
   ...over,
 });
@@ -109,7 +118,7 @@ beforeEach(() => {
   h.deletedKeys = [];
   h.mailServer = { organizationId: "org1" };
   h.project = undefined;
-  h.destination = { id: "dest1", kind: "s3" };
+  h.destination = { id: "dest1", organizationId: "org1", kind: "s3" };
 });
 
 describe("prunePolicy — mail-server policies", () => {
@@ -191,6 +200,7 @@ describe("prunePolicy — mail-server policies", () => {
 
   it("still prunes project policies by projectId", async () => {
     h.project = { organizationId: "org2" };
+    h.destination!.organizationId = "org2";
     h.runs = [
       run("p_new", 1, { projectId: "prj1", mailServerId: null, policyId: "bkp_prj" }),
       run("p_old", 9, { projectId: "prj1", mailServerId: null, policyId: "bkp_prj" }),

@@ -1,0 +1,91 @@
+---
+title: server tunnel
+description: Commands, arguments, and options for openship server tunnel.
+cliGroup: openship server tunnel
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server tunnel
+
+Manage tunnels opened on the selected Openship instance (not this CLI machine)
+
+```text
+openship server tunnel [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list <server>`](/docs/cli/reference/server/tunnel#openship-server-tunnel-list) | List saved tunnels and current listeners |
+| [`save <server> <file>`](/docs/cli/reference/server/tunnel#openship-server-tunnel-save) | Save a tunnel configuration on the controller |
+| [`start <server> <tunnel>`](/docs/cli/reference/server/tunnel#openship-server-tunnel-start) | start this tunnel on the controller |
+| [`stop <server> <tunnel>`](/docs/cli/reference/server/tunnel#openship-server-tunnel-stop) | stop this tunnel on the controller |
+| [`remove [options] <server> <tunnel>`](/docs/cli/reference/server/tunnel#openship-server-tunnel-remove) | remove this tunnel on the controller |
+
+## openship server tunnel list
+
+List saved tunnels and current listeners
+
+```text
+openship server tunnel list [options] <server>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+
+## openship server tunnel remove
+
+remove this tunnel on the controller
+
+```text
+openship server tunnel remove [options] <server> <tunnel>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `tunnel` | Tunnel ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm tunnel removal |
+
+## openship server tunnel save
+
+Save a tunnel configuration on the controller
+
+```text
+openship server tunnel save [options] <server> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `file` | JSON remotePort, optional remoteHost, localPort and autoStart; - reads stdin |
+
+## openship server tunnel start
+
+start this tunnel on the controller
+
+```text
+openship server tunnel start [options] <server> <tunnel>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `tunnel` | Tunnel ID |
+
+## openship server tunnel stop
+
+stop this tunnel on the controller
+
+```text
+openship server tunnel stop [options] <server> <tunnel>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `server` | Server ID |
+| `tunnel` | Tunnel ID |

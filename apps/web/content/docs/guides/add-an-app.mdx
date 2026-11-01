@@ -3,9 +3,10 @@ title: Add an app
 description: Write the catalog JSON that makes a one-click Openship app, built up field by field from a bare service to a complete submission — plus how to ship it as a pull request or upload it privately to your own organization.
 ---
 
-Openship's **Apps** tab is a catalog of one-click installs. Each entry is a single JSON file, and that
-file is the whole deliverable: it describes the containers, how they wire together, which secrets to
-generate, how it gets exposed, and what the user sees once it is running.
+Openship's **Apps** tab is a catalog of one-click installs. Each entry is a JSON file that describes
+the containers, how they wire together, which secrets to generate, how it gets exposed, and what
+the user sees once it is running. The same entry powers its public [app page](/apps), with optional
+feature summaries and a Markdown article.
 
 This page walks through writing one from scratch. Every field is catalogued in the
 [App catalog JSON reference](/docs/reference/app-catalog); here we build a real app end to end.
@@ -22,14 +23,20 @@ way. [Jump to the custom-app path](#upload-a-custom-app-no-pull-request) if you 
 
 ## What a pull request contains
 
-One file: `packages/core/src/apps/catalog/<id>.json`, plus the regenerated `catalog.json`. Optionally
-a logo SVG. That is it — no code.
+Submit `packages/core/src/apps/catalog/<id>.json` and the regenerated `catalog.json`. Optionally
+include a Markdown article and a logo asset.
 
 ```
 packages/core/src/apps/catalog/umami.json    ← the app you wrote
+packages/core/src/apps/catalog/articles/umami.md ← optional public overview
 packages/core/src/apps/catalog.json          ← regenerated (a drift test fails CI without it)
 apps/dashboard/public/app-logos/umami.svg    ← only if the logo is not on simpleicons
+apps/web/public/app-logos/umami.svg          ← the same bundled logo for the public page
 ```
+
+See [Public app pages](/docs/reference/app-catalog#public-app-pages) for `marketplace.features`
+and `marketplace.articleFile`. Both apps use the shared `AppLogo` renderer in `packages/ui`;
+add a bundled brand mapping there when the logo is unavailable from the existing sources.
 
 ### The bar it has to clear
 
@@ -40,6 +47,8 @@ Expect review on exactly these points:
   it is before installing.
 - **Official or reputable images, pinned.** The project's own published image at a pinned version
   (`postgres:16-alpine`, `qdrant/qdrant:v1.18.3`) — never an unpinned tag or an unknown publisher.
+  Prefer the published image with environment settings, mounted configuration files and a startup
+  command. A small setup script alone does not require building a new image on the customer's server.
 - **Secure defaults.** Credentials auto-generated, never plaintext defaults. Publicly-exposed admin
   UIs require auth.
 - **Fully auditable.** The JSON is the whole truth — images, ports, env, volumes, all in one small
@@ -358,13 +367,13 @@ rules in **[Building an image](/docs/reference/app-catalog#building-an-image)**.
 
 ## Give it a logo
 
-`logo` is an id resolved by the dashboard's `AppLogo` component:
+`logo` is an id resolved by the shared `AppLogo` component in `packages/ui/src/AppLogo.tsx`:
 
 - **On [simpleicons](https://simpleicons.org)?** Set `logo` to the slug (`"umami"`, `"ghost"`,
   `"grafana"`) and you are done.
 - **Not there, or the mark renders wrong?** Drop an SVG at
-  `apps/dashboard/public/app-logos/<id>.svg` and add a `LOGO_CONFIG` entry mapping the id to it. Apps
-  with no good mark fall back to a generic glyph.
+  both `apps/dashboard/public/app-logos/<id>.svg` and `apps/web/public/app-logos/<id>.svg`, then add
+  a `BRAND_LOGO` entry mapping the id to it. Apps without a usable mark receive a fallback.
 
 ## Regenerate and validate
 
@@ -383,14 +392,21 @@ fields, valid `category`, and every [referential rule](/docs/reference/app-catal
 Order in `catalog.json` is preserved from the existing file (curated, featured-first); a **new** app
 is appended alphabetically, so reorder it by hand if you want it featured earlier.
 
+### Preview your local changes
+
+Run the API with `NODE_ENV=development` and open the app's install page. Development uses the
+regenerated catalog from your checkout for both the form and installation. GitHub's published
+catalog does not replace local changes, so you can preview an unpublished layout or template.
+Regenerate `catalog.json` after each edit as shown above.
+
 ## Ship it
 
 Set `"available": true` once it deploys cleanly end to end. Until then it shows as *coming soon* and
 install is refused server-side, not just hidden in the UI.
 
 <Callout title="A merged app reaches existing instances without a redeploy" type="info">
-The runtime catalog is the bundled copy overlaid by a live fetch of `catalog.json` from the repo, on a
-10-minute TTL. So your app appears on instances that are already running — gated per-entry by
+In production, the runtime catalog is the bundled copy overlaid by a live fetch of `catalog.json`
+from the repo, on a 10-minute TTL. So your app appears on instances that are already running — gated per-entry by
 [`minEngine`](/docs/reference/app-catalog#stability-and-versioning). If your definition uses a
 capability that only shipped in a given release, set `minEngine` to it: older instances then show a
 guided *Requires Openship ≥ X* card instead of failing the install.
@@ -418,7 +434,7 @@ You can label your own `prepare` steps in that third phase with `title` and `des
 - [ ] Env that *embeds* a secret (a connection URL) is listed in `secretEnv`.
 - [ ] Anything the user types is an `installStep` setting, not a `configField`.
 - [ ] `connection` gives the user the URLs and keys they need, with `secret: true` on credentials.
-- [ ] Logo resolves — simpleicons slug, or a vendored SVG plus a `LOGO_CONFIG` entry.
+- [ ] Logo resolves — simpleicons slug, or matching bundled assets plus a shared `BRAND_LOGO` entry.
 - [ ] `bun scripts/gen-catalog.ts` run and `catalog.json` committed.
 - [ ] `bunx vitest run src/apps/catalog.test.ts` passes.
 - [ ] `minEngine` set if the definition uses a recently added capability.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveUpstreamUrl, resolveRouteStrategy } from "../../src/lib/upstream-url";
+import { resolveUpstreamUrl, resolveRouteStrategy } from "@repo/platform/engine/lib/upstream-url";
 
 const dockerRuntime = {
   name: "docker",

@@ -1,5 +1,9 @@
 # Monitoring
 
+For failures inside Openship itself, see [Structured error reporting](structured-error-reporting.md).
+That covers request references, exceptions, background operations and configurable log destinations.
+The monitoring system below measures deployed applications and traffic.
+
 Openship's per-project Monitoring tab answers three questions — what is my app using
 right now, where is my traffic coming from, and what is it returning — and it is designed
 so that answering them costs your visitors nothing.
@@ -302,7 +306,21 @@ yourself at the origin does nothing. See
 `CF-Connecting-IP` and not `X-Forwarded-For`.
 
 For a non-Cloudflare proxy, set `OPENSHIP_EDGE_TRUSTED_PROXIES` (comma-separated CIDRs)
-and optionally `OPENSHIP_EDGE_REAL_IP_HEADER`.
+and optionally `OPENSHIP_EDGE_REAL_IP_HEADER`. Settings are read on the next routing change.
+Only IP literals and CIDRs with valid addresses and prefix lengths are accepted; malformed
+entries are dropped instead of making nginx reject every routing update.
+
+On the containerized edge, the trusted proxies are written to
+`sites-enabled/_openship-real-ip.conf`, because the image's `nginx.conf` is baked. There,
+`OPENSHIP_EDGE_REAL_IP_HEADER` is not applied: the baked config already sets
+`real_ip_header`, and nginx allows only one per scope. A tunnel connector on the same host
+that forwards Cloudflare traffic still sends `CF-Connecting-IP`, so trusting its address is
+enough.
+
+The containerized edge updates this shared include under the routing configuration lock.
+If publication or reload fails, it restores the previous include before recovering the route;
+recovery does not reapply the rejected settings. If restoration itself fails, the operation
+reports the rollback failure and does not reload a partially restored configuration.
 
 ### Free `*.opsh.io` domains
 
@@ -336,3 +354,20 @@ same usage interface), so both sampling and its retention prune run in that mode
 
 The dashboard reads one shape either way: a single resolver reports whether a project's
 traffic source is self-hosted or cloud, and the tab does not know the difference.
+
+## Clearing incident history
+
+In Monitoring → History, an organization owner or administrator can select
+**Clear history** and confirm removal of resolved incidents in the current workspace.
+Active incidents, other workspaces, audit logs, notifications and workloads are kept.
+The operation uses one organization-scoped database delete with a fixed server-side
+cutoff, so incidents resolving after it starts remain. It clears all matching history,
+including entries beyond the feed's 200-row limit. A failed request leaves the control
+retryable; retrying after a lost success response is safe.
+
+This is available on Desktop and self-hosted instances, through the same engine
+operation in HTTP (`DELETE /api/issues/history`) and the SDK
+(`ship.issues.clearHistory()`). The CLI exposes
+`openship monitoring clear-history --yes`; without `--yes` it asks for confirmation.
+Read-only or restricted credentials cannot clear organization history, and Cloud
+does not expose this self-hosted incident-history operation.

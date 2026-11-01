@@ -40,13 +40,14 @@
  * data movement and returns the settings patch + result.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   restoreSubgraph,
   type DatabaseDump,
 } from "@repo/db";
-import { cloudClient } from "../../../lib/cloud/client";
-import { sshManager } from "../../../lib/ssh-manager";
-import { env } from "../../../config/env";
+import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { env } from "@repo/platform/engine/config/env";
 import { stopTunnelAgent, teardownTunnel } from "../../tunneling";
 import { withMigration, type MigrationVariant } from "./with-migration";
 import type { Context } from "hono";
@@ -135,6 +136,7 @@ async function pullDumpFromVps(serverId: string): Promise<DatabaseDump> {
       await exec.exec(`rm -f ${remoteDumpPath}`);
     });
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/migration/switch-back.service");
     const message = err instanceof Error ? err.message : String(err);
     throw new SwitchBackRemoteUnreachableError(message);
   }
@@ -145,6 +147,7 @@ async function pullDumpFromVps(serverId: string): Promise<DatabaseDump> {
   try {
     return JSON.parse(payload) as DatabaseDump;
   } catch (err) {
+    observeCaughtError(err, "api/modules/system/migration/switch-back.service");
     throw new SwitchBackRemoteUnreachableError(
       `dump was not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -246,9 +249,9 @@ export async function switchBackToSingleUser(
             // Don't fail the switch-back if the provider is unreachable —
             // the record will become orphaned but the operator's local
             // instance is back to single-user mode, which is the contract.
-            console.warn(
+            errorDiagnostics.warn("api/modules/system/migration/switch-back.service",
               "[switch-back] tunnel teardown failed:",
-              err instanceof Error ? err.message : err,
+              err instanceof Error ? err.message : err, err,
             );
           }
         }

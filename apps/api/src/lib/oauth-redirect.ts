@@ -7,6 +7,7 @@
  * This deliberately only aliases loopback hostnames and requires every other
  * URL component to match. Public redirect URIs remain exact-match only.
  */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export function findEquivalentLoopbackRedirectUri(
   requestedUri: string,
   registeredUris: readonly string[],
@@ -71,7 +72,8 @@ export async function normalizeMcpRedirectUri(
           redirectUri = stringFormValue(body.redirect_uri);
         }
       }
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/lib/oauth-redirect");
       // Preserve Better Auth's existing validation response for malformed token
       // requests instead of failing inside this compatibility shim.
       return request;

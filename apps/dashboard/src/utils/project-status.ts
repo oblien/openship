@@ -1,3 +1,4 @@
+import type { ProjectLifecycleOperation } from "@repo/core";
 import type { Dictionary } from "@/i18n";
 
 export type ProjectStatus =
@@ -58,7 +59,7 @@ export function migrationNeedsOperator(run: ActiveMigration | null | undefined):
 }
 
 export type ProjectStatusSource = {
-  /** Required only when deriving the status badge's destination. */
+  /** Required when deriving project or status badge links. */
   id?: string | null;
   activeDeploymentId?: string | null;
   /**
@@ -83,6 +84,10 @@ export type ProjectStatusSource = {
    *  didn't sync — also surfaced as "Action Required", with a Retry routing
    *  action (distinct from the keep/reject decision above). */
   routingUnsynced?: boolean | null;
+  /** True when the active workload has a current open health incident, e.g.
+   *  one of its services keeps restarting (GH-672) — "Action Required", since a
+   *  crash-looping release must never read as a green "Live". */
+  runtimeUnhealthy?: boolean | null;
   /** True when the LATEST deploy is blocked on a named, clearable cause (status
    *  `action_required` — today a port conflict). Unlike the two flags above this
    *  is not a property of the live release: a blocked deploy never becomes the
@@ -90,9 +95,10 @@ export type ProjectStatusSource = {
    *  is why such a deploy used to vanish from the project entirely. */
   latestDeploymentBlocked?: boolean | null;
   deletedAt?: string | null;
-  /** True while an atomic teardown is in flight (the real in-progress flag;
-   *  teardown hard-deletes on success, so `deletedAt` is rarely set). */
+  /** Deletion admission fence, retained after cleanup fails. A cleanup error
+   *  makes this awaiting retry; successful teardown hard-deletes the row. */
   deletionInProgress?: boolean | null;
+  lifecycleOperation?: ProjectLifecycleOperation | null;
   /** Marks the Openship control-plane self-app. It IS the running host service and
    *  has no deployment behind it, so it must never fall through to "draft". */
   appTemplateId?: string | null;
@@ -150,12 +156,15 @@ const SETTLED_NON_ACTION_STATUSES = new Set(["ready", "cancelled", "rejected", "
 
 /** Why a project reads "attention". Null when it doesn't. */
 export type ProjectAttentionReason =
+  | "deletion"
   /** Live release is a partial failure awaiting the operator's keep/reject. */
   | "decision"
   /** Live release's free .opsh.io edge route didn't sync (Retry routing). */
   | "routing"
   /** Newest deploy is blocked on a named, clearable cause (port conflict). */
   | "blocked"
+  /** An existing health incident on the active release needs attention. */
+  | "runtimeHealth"
   /** A migration run is parked waiting for the operator to confirm the cutover or roll
    *  back (or to resolve a partial transfer). Nothing advances until they do. */
   | "migrationCutover";
@@ -186,6 +195,7 @@ export function getProjectAttentionReason(
   project: ProjectStatusSource,
 ): ProjectAttentionReason | null {
   if (project.appTemplateId === "openship") return null;
+  if (project.deletionInProgress && project.lifecycleOperation?.status === "failed") return "deletion";
   if (project.deletedAt || project.deletionInProgress) return null;
   // Before every deploy-derived reason: a parked migration is about the WORKLOAD's location,
   // and it outranks anything the deployment row has to say — the target's own deploy is
@@ -203,12 +213,14 @@ export function getProjectAttentionReason(
   if (project.enabled === false) return null;
   if (project.awaitingDecision) return "decision";
   if (project.routingUnsynced) return "routing";
+  if (project.runtimeUnhealthy) return "runtimeHealth";
   if (project.latestDeploymentBlocked) return "blocked";
   if (project.latestDeploymentStatus === "action_required") return "blocked";
   return null;
 }
 
 export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
+  if (project.deletionInProgress && project.lifecycleOperation?.status === "failed") return "attention";
   if (project.deletedAt || project.deletionInProgress) {
     return "deleting";
   }
@@ -269,6 +281,7 @@ export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
   if (
     project.awaitingDecision ||
     project.routingUnsynced ||
+    project.runtimeUnhealthy ||
     project.latestDeploymentBlocked ||
     project.latestDeploymentStatus === "action_required"
   ) {
@@ -319,12 +332,16 @@ export function projectStatusHint(project: ProjectStatusSource, t: Dictionary): 
   if (getProjectStatus(project) !== "attention") return null;
   const p = t.projects;
   switch (getProjectAttentionReason(project)) {
+    case "deletion":
+      return `${p.delete.cleanupFailedTitle} — ${p.delete.retryCleanup}`;
     case "decision":
       return `${p.redeploy.actionRequiredTitle} — ${p.redeploy.reviewDeployment}`;
     case "routing":
       return `${p.routingRetry.title} — ${p.routingRetry.retry}`;
     case "blocked":
       return `${p.draft.headingFailed} — ${p.redeploy.reviewDeployment}`;
+    case "runtimeHealth":
+      return p.runtimeHealthHint;
     // Its own sentence rather than a compose of two halves: unlike the deploy states above,
     // neither half of "a parked migration and what to do about it" existed anywhere to reuse.
     case "migrationCutover":
@@ -332,6 +349,14 @@ export function projectStatusHint(project: ProjectStatusSource, t: Dictionary): 
     default:
       return null;
   }
+}
+
+/** Open the project, or resume setup when a catalog app is still a draft. */
+export function projectCardHref(project: ProjectStatusSource & { id: string }): string {
+  if (project.isApp && project.appTemplateId && getProjectStatus(project) === "draft") {
+    return `/apps/new/${encodeURIComponent(project.appTemplateId)}?projectId=${encodeURIComponent(project.id)}`;
+  }
+  return `/projects/${encodeURIComponent(project.id)}`;
 }
 
 /**
@@ -345,12 +370,16 @@ export function projectActionHref(project: ProjectStatusSource): string | null {
   if (!project.id || getProjectStatus(project) !== "attention") return null;
 
   switch (getProjectAttentionReason(project)) {
+    case "deletion":
+      return `/projects/${project.id}`;
     case "decision":
       return project.activeDeploymentId
         ? `/build/${project.activeDeploymentId}`
         : `/projects/${project.id}/deployments`;
     case "routing":
       return `/projects/${project.id}/domains`;
+    case "runtimeHealth":
+      return `/projects/${project.id}/health`;
     case "blocked":
       return `/projects/${project.id}/deployments`;
     case "migrationCutover":

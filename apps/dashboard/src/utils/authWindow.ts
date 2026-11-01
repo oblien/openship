@@ -14,6 +14,7 @@
 
 /* ── Public types ─────────────────────────────────────────────────── */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 export interface AuthWindowHandle {
   /** True when the browser refused to create the popup. */
   readonly blocked: boolean;
@@ -46,7 +47,8 @@ export function closeAuthWindowAfterSuccess(
   setTimeout(() => {
     try {
       targetWindow.close();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/utils/authWindow");
       /* window already closed / browser denied close */
     }
   }, delayMs);
@@ -127,7 +129,8 @@ function createElectronHandle(initialUrl?: string): AuthWindowHandle {
   if (initialUrl) {
     try {
       desktop?.onboarding?.openExternal?.(initialUrl);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/utils/authWindow");
       /* bridge missing */
     }
   }

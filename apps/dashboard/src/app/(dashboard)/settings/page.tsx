@@ -1,11 +1,14 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 /**
  * Settings — tabbed layout with left sidebar (desktop) + horizontal
  * scroll tabs (mobile). Mirrors the project-detail page pattern.
  *
  * Tabs:
- *   - general        → GitHub connection, deploy defaults, build preferences
+ *   - general        → appearance, build preferences, language, interface, preferences
+ *   - security       → authenticator 2FA, recovery codes and passkeys
  *   - tokens         → clone credentials, API access tokens
  *   - mcp             → MCP connection (endpoint + client config)
  *   - team           → organization members + invitations (moved from /members)
@@ -18,6 +21,7 @@
  */
 
 import { Suspense, useEffect } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -25,6 +29,8 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
 import { BuildPreferences } from "./_components/BuildPreferences";
+import { AppearanceSetting } from "./_components/AppearanceSetting";
+import { AppearanceEditor } from "@/components/appearance/AppearanceEditor";
 import { RoutePreferences } from "./_components/RoutePreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
 import { CloudConnection } from "./_components/CloudConnection";
@@ -37,15 +43,19 @@ import { InstanceInfo } from "./_components/InstanceInfo";
 import { UntrackedEdgeRoutes } from "./_components/UntrackedEdgeRoutes";
 import { LanguageSetting } from "./_components/LanguageSetting";
 import { PreferencesSetting } from "./_components/PreferencesSetting";
+import { PasskeysSetting } from "./_components/PasskeysSetting";
+import { TwoFactorSetting } from "./_components/TwoFactorSetting";
 import { ProductViewSetting } from "./_components/ProductViewSetting";
 import { MailModeSetting } from "./_components/MailModeSetting";
 import { UpdatesTab } from "./_components/UpdatesTab";
+import { SecurityAdvisorySettings } from "./_components/SecurityAdvisorySettings";
 import { InfrastructureTab } from "./_components/InfrastructureTab";
 import { TeamTab } from "./_components/TeamTab";
 import { NotificationsTab } from "./_components/NotificationsTab";
 import { EmailSettings } from "./_components/EmailSettings";
 import { Credentials } from "./_components/Credentials";
 import { DataTransferTab } from "./_components/DataTransferTab";
+import { InstanceLocation } from "@/components/instance/InstanceLocation";
 import {
   SettingsSidebar,
   SettingsMobileTabs,
@@ -59,7 +69,7 @@ export default function SettingsPage() {
     <Suspense
       fallback={
         <PageContainer>
-          <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          <UiIcon name="spinner" className="size-6 animate-spin text-muted-foreground" />
         </PageContainer>
       }
     >
@@ -69,12 +79,15 @@ export default function SettingsPage() {
 }
 
 function SettingsPageInner() {
-  const { selfHosted, deployMode, productView } = usePlatform();
+  const { selfHosted, deployMode, productView, authMode } = usePlatform();
   const { refresh } = useCloud();
   const { showToast } = useToast();
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const { activeTab } = useSettingsTabs();
+  // Customization is a nested General view; retain the original preview URL too.
+  const customizeAppearance = activeTab === "general" &&
+    (searchParams.get("view") === "appearance" || searchParams.get("tab") === "appearance");
 
   /**
    * Openship Mail drops the cards that only a deploy platform has a use for —
@@ -127,8 +140,9 @@ function SettingsPageInner() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6 mt-4 lg:mt-0">
         {/* ── ACTIVE TAB CONTENT (left, primary) ── */}
         <div className="space-y-6 min-w-0">
-          {activeTab === "general" && (
+          {activeTab === "general" && !customizeAppearance && (
             <>
+              <AppearanceSetting />
               {/* Deploy Defaults + Routing hidden for now — advanced/rarely-needed,
                   reduces general-settings noise. The edge defaults to loopback-port
                   and both keep a per-project override; re-enable by uncommenting. */}
@@ -143,6 +157,23 @@ function SettingsPageInner() {
             </>
           )}
 
+          {customizeAppearance && (
+            <>
+              <Link href="/settings" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+                <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
+                {t.settings.appearance.backToGeneral}
+              </Link>
+              <AppearanceEditor />
+            </>
+          )}
+
+          {activeTab === "security" && authMode === "local" && (
+            <>
+              <TwoFactorSetting />
+              <PasskeysSetting />
+            </>
+          )}
+
           {/* Tokens is INBOUND only — somebody authenticating TO Openship. The clone PAT
               moved to Credentials, which is everything pointing the other way. */}
           {activeTab === "tokens" && <PersonalAccessTokens />}
@@ -151,7 +182,12 @@ function SettingsPageInner() {
 
           {activeTab === "team" && <TeamTab />}
 
-          {activeTab === "notifications" && <NotificationsTab />}
+          {activeTab === "notifications" && (
+            <>
+              <SecurityAdvisorySettings />
+              <NotificationsTab />
+            </>
+          )}
 
           {activeTab === "email" && selfHosted && <EmailSettings />}
 
@@ -187,6 +223,20 @@ function SettingsPageInner() {
 
           {activeTab === "instance" && (
             <>
+              {selfHosted && (
+                <InstanceLocation
+                  moveRequested={searchParams.get("move") === "1"}
+                  onMoveOpened={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("move");
+                    window.history.replaceState(
+                      window.history.state,
+                      "",
+                      `${url.pathname}${url.search}${url.hash}`,
+                    );
+                  }}
+                />
+              )}
               <InstanceInfo />
               {/* Instance-wide default product mode (Openship Mail vs the full
                   platform). Owner-gated inside; self-hosted only. */}

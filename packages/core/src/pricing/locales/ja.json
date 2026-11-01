@@ -19,6 +19,10 @@
     "enterprise": {
       "name": "Enterprise",
       "tagline": "カスタムの上限、専用インフラ、SLA。"
+    },
+    "hobby": {
+      "name": "Hobby",
+      "tagline": "個人プロジェクトや日常的なアプリ向けの小さなマネージドサーバー。"
     }
   },
   "features": {
@@ -26,11 +30,10 @@
     "staticOnly": "静的サイトのみ — SSG、SPA、素の HTML",
     "anyWorkload": "何でも動かせる — コンテナ、Compose、ワーカー、Postgres、Redis",
     "runningServices": "同時に稼働するアプリ・データベース・ワーカー {runningServices} 個",
-    "computeMinutes": "毎月 {computeMinutes} コンピュート分",
     "buildMinutes": "毎月 {buildMinutes} 分のビルド時間",
+    "sharedBuilds": "ビルドはサーバーを共有し、月ごとの時間上限はありません",
     "power": "アプリ 1 つあたり最大 {powerCpu} vCPU と {powerRamGb} GB RAM",
     "projects": "プロジェクト {maxProjects} 個",
-    "projectsUnlimited": "プロジェクトは無制限",
     "freeSubdomains": "無料の {freeDomainSuffix} サブドメイン {freeSubdomains} 個",
     "freeSubdomainsUnlimited": "無料の {freeDomainSuffix} サブドメインが無制限",
     "gitDeploys": "GitHub、GitLab、任意の Git リモートからデプロイ",
@@ -50,7 +53,9 @@
     "selfHostedUnlimited": "デプロイ、プロジェクト、サーバー、ドメインすべて無制限",
     "selfHostedServices": "マネージドサービスはすべて利用可能 — Postgres、Redis、メール",
     "selfHostedClients": "CLI、Web、デスクトップ — バックエンドは一つ",
-    "selfHostedFreeSubdomains": "Openship Cloud に接続すると、無料の {freeDomainSuffix} サブドメインが {freeSubdomains} 個"
+    "selfHostedFreeSubdomains": "Openship Cloud に接続すると、無料の {freeDomainSuffix} サブドメインが {freeSubdomains} 個",
+    "monthlyCoverage": "支払い済みの期間はCPU・RAM・ストレージを利用可能",
+    "namespaceCapacity": "合計: {namespaceCpu} vCPU、RAM {namespaceRamGb} GB、ディスク {namespaceDiskGb} GB"
   },
   "selfHosted": {
     "name": "セルフホスト",
@@ -60,9 +65,14 @@
     "cta": "セルフホストを始める"
   },
   "creditPacks": {
-    "pack_5k": "{computeMinutes} コンピュート分",
-    "pack_25k": "{computeMinutes} コンピュート分",
-    "pack_100k": "{computeMinutes} コンピュート分"
+    "pack_5k": "{credits} クレジット",
+    "pack_25k": "{credits} クレジット",
+    "pack_100k": "{credits} クレジット",
+    "pack_500": "{credits} クレジット",
+    "pack_2k": "{credits} クレジット",
+    "pack_400": "{credits} クレジット",
+    "pack_1700": "{credits} クレジット",
+    "pack_4500": "{credits} クレジット"
   },
   "ui": {
     "perMonth": "/月",
@@ -80,6 +90,6 @@
     "campaignEnds": "キャンペーンは {date} まで",
     "wasPrice": "通常 {price}",
     "standardTitle": "すべてのプランに含まれるもの",
-    "creditPackNote": "小規模アプリ約 {appHours} 時間、またはビルド {buildMinutes} 分"
+    "creditPackNote": "計測されたクラウド使用量に適用されます。利用可能な時間はワークロードによって異なります。"
   }
 }

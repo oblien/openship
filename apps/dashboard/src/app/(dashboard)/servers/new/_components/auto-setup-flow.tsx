@@ -1,21 +1,11 @@
-import {
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Download,
-  Loader2,
-  Search,
-  Wifi,
-  XCircle,
-} from "lucide-react";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentState, Step } from "./types";
 import type { SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
 import { ComponentRow } from "./component-row";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
-const SETUP_STEP_ICONS = [Wifi, Search, Download];
+const SETUP_STEP_ICONS = ["wifi", "search", "download"] as const;
 
 function ProgressRow({ component }: { component: SetupComponentProgress }) {
   const { t } = useI18n();
@@ -23,11 +13,11 @@ function ProgressRow({ component }: { component: SetupComponentProgress }) {
     <div className="flex items-center gap-3 py-2 px-3 rounded-lg">
       <div className="shrink-0">
         {component.status === "installing" ? (
-          <Loader2 className="size-4 text-primary animate-spin" />
+          <UiIcon name="spinner" className="size-4 text-primary animate-spin" />
         ) : component.status === "installed" ? (
-          <CheckCircle2 className="size-4 text-success" />
+          <UiIcon name="check-circle" className="size-4 text-success" />
         ) : component.status === "failed" ? (
-          <XCircle className="size-4 text-danger" />
+          <UiIcon name="x-circle" className="size-4 text-danger" />
         ) : (
           <div className="size-4 rounded-full border-2 border-border/50" />
         )}
@@ -169,13 +159,13 @@ export function AutoSetupFlow({
                     }`}
                   >
                     {isFailed ? (
-                      <XCircle className="w-6 h-6 text-destructive-foreground" />
+                      <UiIcon name="x-circle" className="w-6 h-6 text-destructive-foreground" />
                     ) : isCompleted ? (
-                      <Check className="w-6 h-6 text-primary-foreground" />
+                      <UiIcon name="check" className="w-6 h-6 text-primary-foreground" />
                     ) : isCurrent ? (
-                      <Loader2 className="w-6 h-6 text-background animate-spin" />
+                      <UiIcon name="spinner" className="w-6 h-6 text-background animate-spin" />
                     ) : (
-                      <Icon className="w-5 h-5 text-muted-foreground" />
+                      <UiIcon name={Icon} className="w-5 h-5 text-muted-foreground" />
                     )}
                   </div>
                   <span
@@ -230,12 +220,12 @@ export function AutoSetupFlow({
             >
               {streamDone ? (
                 streamFinalStatus === "completed" ? (
-                  <CheckCircle2 className="size-[18px] text-success" />
+                  <UiIcon name="check-circle" className="size-[18px] text-success" />
                 ) : (
-                  <XCircle className="size-[18px] text-danger" />
+                  <UiIcon name="x-circle" className="size-[18px] text-danger" />
                 )
               ) : (
-                <Download className="size-[18px] text-primary" />
+                <UiIcon name="download" className="size-[18px] text-primary" />
               )}
             </div>
             <div className="flex-1">
@@ -276,7 +266,7 @@ export function AutoSetupFlow({
         <div className="bg-card rounded-2xl border border-border/50">
           <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
             <div className="w-9 h-9 bg-success-bg rounded-xl flex items-center justify-center">
-              <CheckCircle2 className="size-[18px] text-success" />
+              <UiIcon name="check-circle" className="size-[18px] text-success" />
             </div>
             <div>
               <h2 className="font-semibold text-foreground text-[15px]">{t.servers.setup.allRequirementsMetTitle}</h2>
@@ -299,9 +289,9 @@ export function AutoSetupFlow({
             className="flex items-center gap-2 w-full px-5 py-3 text-start hover:bg-muted/30 transition-colors rounded-2xl"
           >
             {logsOpen ? (
-              <ChevronDown className="size-4 text-muted-foreground" />
+              <UiIcon name="chevron-down" className="size-4 text-muted-foreground" />
             ) : (
-              <ChevronRight className="size-4 text-muted-foreground rtl:rotate-180" />
+              <UiIcon name="chevron-right" className="size-4 text-muted-foreground rtl:rotate-180" />
             )}
             <span className="text-sm font-medium text-foreground">{t.servers.setup.installLogs}</span>
             <span className="text-xs text-muted-foreground">
@@ -352,7 +342,7 @@ export function AutoSetupFlow({
             onClick={onDone}
             className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all"
           >
-            <CheckCircle2 className="size-4" />
+            <UiIcon name="check-circle" className="size-4" />
             {done ? t.servers.setup.doneGoToServers : t.servers.setup.goToServers}
           </button>
           {failed && failedCount > 0 && (
@@ -360,7 +350,7 @@ export function AutoSetupFlow({
               onClick={onRetry}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
             >
-              <XCircle className="size-4" />
+              <UiIcon name="x-circle" className="size-4" />
               {interpolate(t.servers.setup.retryFailed, { count: String(failedCount) })}
             </button>
           )}

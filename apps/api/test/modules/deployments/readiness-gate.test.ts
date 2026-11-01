@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SYSTEM } from "@repo/core";
-import { resolveReadinessGate, runReadinessGate } from "../../../src/modules/deployments/readiness-gate";
+import { resolveReadinessGate, runReadinessGate } from "@repo/platform/engine/modules/deployments/readiness-gate";
 
 /**
  * `active: false` is the load-bearing assertion in this file. build-pipeline reads

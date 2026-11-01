@@ -55,6 +55,10 @@
     "appsEmptyDesc": "بنقرة واحدة وباستضافة ذاتية كاملة — قواعد بيانات وأتمتة وتحليلات وخزائن كلمات مرور وغيرها، تعمل على سيرفراتك."
   },
   "nav": {
+    "affiliates": "اربح",
+    "resources": "مساحات السحابة",
+    "support": "الدعم",
+    "scale": "التوسّع",
     "home": "الرئيسية",
     "new-project": "مشروع جديد",
     "projects": "المشاريع",
@@ -73,6 +77,7 @@
     "addMailbox": "إضافة صندوق بريد",
     "webmail": "بريد الويب",
     "sections": {
+      "help": "المساعدة",
       "main": "الرئيسية",
       "settings": "الإعدادات",
       "infrastructure": "البنية التحتية",
@@ -82,7 +87,9 @@
       "account": "الحساب"
     },
     "apps": "التطبيقات",
-    "jobs": "المهام"
+    "jobs": "المهام",
+    "workspaces": "مساحات العمل",
+    "actions": "الإجراءات"
   },
   "sidebar": {
     "expand": "توسيع الشريط الجانبي",
@@ -101,10 +108,10 @@
       "description": "خدمات مُدارة بنقرة واحدة — ثبّت وشغّل Convex وWordPress والبريد وغيرها.",
       "createButton": "تثبيت تطبيق",
       "loading": "جارٍ تحميل التطبيقات…",
-      "countOne": "تم تثبيت تطبيق واحد ({count})",
-      "countOther": "تم تثبيت {count} تطبيقات",
+      "countOne": "تطبيق واحد ({count})",
+      "countOther": "{count} تطبيقات",
       "emptyTitle": "ثبّت أول تطبيق لك",
-      "emptyDescription": "شغّل Convex وn8n وGhost وغيرها — بنقرة واحدة وباستضافة ذاتية كاملة. اختر واحدًا للبدء.",
+      "emptyDescription": "انشر قواعد البيانات والأدوات والخدمات من كتالوج التطبيقات.",
       "popular": "التطبيقات الشائعة",
       "alsoDeploy": "يمكنك أيضًا نشر",
       "browseAll": "استعراض كل التطبيقات",
@@ -126,7 +133,27 @@
         "analytics": "التحليلات",
         "automation": "الأتمتة",
         "mail": "البريد",
-        "other": "أدوات"
+        "other": "أدوات",
+        "ai": "الذكاء الاصطناعي والنماذج"
+      },
+      "addCustom": "إضافة مخصصة",
+      "howToAddApp": "كيفية إضافة تطبيق",
+      "removeCustomApp": "إزالة التطبيق المخصص",
+      "needsUpdateDesc": "قم بتحديث نسخة Openship لتثبيت هذا التطبيق.",
+      "needsUpdateBadge": "يتطلب التحديث",
+      "needsVersionBadge": "يتطلب الإصدار {version}",
+      "removedToast": "تمت إزالة \"{name}\".",
+      "removeFailedToast": "تعذر إزالة التطبيق.",
+      "gpu": {
+        "recommended": "يُنصح باستخدام GPU",
+        "required": "يتطلب NVIDIA GPU",
+        "mode": "المعالجة",
+        "cpu": "المعالج فقط",
+        "nvidia": "بطاقة NVIDIA",
+        "hint": "يتطلب وضع NVIDIA برنامج تشغيل متوافقًا وNVIDIA Container Toolkit على خادمك.",
+        "cloudUnsupported": "هذا التطبيق للاستضافة الذاتية فقط. اختر خادمًا متصلًا تستضيفه بنفسك.",
+        "selfHostedOnly": "استضافة ذاتية فقط",
+        "noGpu": "لم يتم اكتشاف GPU. تحقق من برنامج تشغيل NVIDIA وContainer Toolkit أو اختر وضع CPU."
       }
     },
     "projects": {

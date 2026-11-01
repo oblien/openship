@@ -1,7 +1,8 @@
 "use client";
 
+import { Icon as UiIcon } from "@repo/ui/icons";
+
 import React from "react";
-import { CheckCircle2, Loader2, XCircle, Circle } from "lucide-react";
 import type { ServiceDeployStatus } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -10,17 +11,17 @@ import { useI18n } from "@/components/i18n-provider";
 function StatusIcon({ status }: { status: ServiceDeployStatus["status"] }) {
   switch (status) {
     case "running":
-      return <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />;
+      return <UiIcon name="check-circle" className="w-4 h-4 text-primary shrink-0" />;
     case "built":
-      return <CheckCircle2 className="w-4 h-4 text-muted-foreground shrink-0" />;
+      return <UiIcon name="check-circle" className="w-4 h-4 text-muted-foreground shrink-0" />;
     case "building":
     case "deploying":
-      return <Loader2 className="w-4 h-4 text-foreground animate-spin shrink-0" />;
+      return <UiIcon name="spinner" className="w-4 h-4 text-foreground animate-spin shrink-0" />;
     case "failed":
-      return <XCircle className="w-4 h-4 text-destructive shrink-0" />;
+      return <UiIcon name="x-circle" className="w-4 h-4 text-destructive shrink-0" />;
     case "pending":
     default:
-      return <Circle className="w-4 h-4 text-muted-foreground/50 shrink-0" />;
+      return <UiIcon name="circle" className="w-4 h-4 text-muted-foreground/50 shrink-0" />;
   }
 }
 
