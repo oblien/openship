@@ -1,6 +1,6 @@
 {
   "name": "@repo/api",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "^1.5.4",
+    "@better-auth/drizzle-adapter": "1.6.34",
     "@discordjs/rest": "2.6.3",
     "@discordjs/ws": "2.0.4",
     "@hono/node-server": "^1.19.15",
@@ -33,7 +33,7 @@
     "@repo/platform": "workspace:*",
     "@sinclair/typebox": "^0.34.48",
     "@slack/socket-mode": "3.1.0",
-    "better-auth": "^1.5.4",
+    "better-auth": "1.6.34",
     "bullmq": "^5.70.4",
     "cron-parser": "^4.9.0",
     "hono": "^4.12.5",
@@ -56,6 +56,6 @@
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.12"
   }
 }

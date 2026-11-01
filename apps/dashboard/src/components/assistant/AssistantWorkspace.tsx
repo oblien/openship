@@ -316,8 +316,12 @@ function ConversationWorkspace({
   const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     try {
-      setRailOpen(localStorage.getItem("openship.assistant.railCollapsed") !== "true");
-    } catch {}
+      setRailOpen(
+        localStorage.getItem("openship.assistant.railCollapsed") !== "true",
+      );
+    } catch {
+      /* diagnostics-ignore: Storage hints are optional; the workspace retains its current authorized state. */
+    }
     const media = window.matchMedia("(min-width: 1024px)");
     const resize = () => {
       if (media.matches) setMobileRail(false);
@@ -368,10 +372,17 @@ function ConversationWorkspace({
       if (scopeReady)
         try {
           localStorage.setItem(
-            agentChatKey(scope, clientId, target?.id ?? "", snapshot.conversation.agentId),
+            agentChatKey(
+              scope,
+              clientId,
+              target?.id ?? "",
+              snapshot.conversation.agentId,
+            ),
             snapshot.conversation.id,
           );
-        } catch {}
+        } catch {
+          /* diagnostics-ignore: Storage hints are optional; the workspace retains its current authorized state. */
+        }
     }
   }, [
     snapshot?.conversation.id,
@@ -627,7 +638,9 @@ function ConversationWorkspace({
       remembered = localStorage.getItem(
         agentChatKey(scope, clientId, target?.id ?? "", selectedId),
       );
-    } catch {}
+    } catch {
+      /* diagnostics-ignore: Storage hints are optional; the workspace retains its current authorized state. */
+    }
     const previous = fresh ? null : agentResumeChat(knownChats, selectedId, remembered);
     if (previous) return select(previous.id);
     if (!selected) return select(null);
@@ -653,7 +666,9 @@ function ConversationWorkspace({
     setRailOpen((open) => {
       try {
         localStorage.setItem("openship.assistant.railCollapsed", String(open));
-      } catch {}
+      } catch {
+        /* diagnostics-ignore: Storage hints are optional; the workspace retains its current authorized state. */
+      }
       return !open;
     });
   };

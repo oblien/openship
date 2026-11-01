@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+## 0.9.7
+
+Recommended update introducing scoped AI agents, reviewed automations, and chat
+app integrations. Includes dependency security updates and all 0.9.6 fixes.
 
 - **Agent characters** — choose from 16 original flat bots with distinct silhouettes,
   gazes and expressions. Give default specialists a stable individual look across
@@ -139,6 +143,15 @@ Runtime security notices use the signed feed published from `security-advisories
   nothing, retain current permissions until saved, and never retry a task automatically.
   Remote assistant hosts tolerate slow startup and retain their private
   connection record so a retry can reconnect to the same daemon.
+
+- **Release hardening** — include the shared commands package in self-hosted source
+  distributions, keep repository changes explicitly classified as source writes,
+  report safe background failure summaries without logging native credentials,
+  and refresh the generated API and MCP references. Update compatible dependencies
+  for published security fixes while retaining the existing OAuth/MCP data model.
+  Implicit OAuth account linking now requires a verified local account as well
+  as a provider-verified email, preventing pre-registered account hijacking.
+
 ## 0.9.6
 
 Recommended update for database recovery, reliable builds and migrations, GitHub

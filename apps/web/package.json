@@ -1,6 +1,6 @@
 {
   "name": "@repo/web",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {

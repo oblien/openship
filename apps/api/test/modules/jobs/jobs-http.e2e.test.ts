@@ -303,8 +303,10 @@ describe("jobs HTTP — fix #2: cross-org write isolation", () => {
       auth: orgOwner.auth,
     });
     expect(deniedRun.status).toBe(403);
-    expect(deniedRun.body.code).toBe("FORBIDDEN");
-    expect(deniedRun.body.error).toBe("Requires an instance administrator");
+    expect(deniedRun.body.code).toBe("INSTANCE_SCOPE_REQUIRED");
+    expect(deniedRun.body.error).toContain(
+      "Requires instance-wide administrator access.",
+    );
     expect(await repos.jobRun.listRecent({ jobId: "jobs:oneshot" })).toEqual([]);
     expect(await repos.jobRun.listRecent({ jobId: victimJob })).toEqual([]);
     expect(await repos.job.findByKey(victimJob)).toMatchObject({
@@ -391,7 +393,10 @@ describe("jobs HTTP — fix #2: cross-org write isolation", () => {
     });
 
     expect(denied.status).toBe(403);
-    expect(denied.body.error).toBe("Requires an instance administrator");
+    expect(denied.body.code).toBe("INSTANCE_SCOPE_REQUIRED");
+    expect(denied.body.error).toContain(
+      "Requires instance-wide administrator access.",
+    );
     expect(await repos.job.findByKey("services:health-watch")).toBeNull();
     expect(runner.recurring.has("services:health-watch")).toBe(false);
   });

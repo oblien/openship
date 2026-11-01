@@ -50,14 +50,22 @@ export function createReceivers(fetcher?: ProviderFetch): ReceiverFactory {
       });
       client.on("connected", () => hooks.status({ state: "connected" }));
       client.on("reconnecting", () => hooks.status({ state: "retrying" }));
-      client.on("error", () => fail(new Error("Slack connection failed")));
+      client.on("error", () => {
+        /* diagnostics-ignore: Reject the lifecycle promise; the receiver boundary records a safe retry summary. */ return fail(
+          new Error("Slack connection failed"),
+        );
+      });
       client.on("slack_event", ({ body, ack }: any) => {
         void (async () => {
           if (signal.aborted) return;
           const event = normalizeMessage(c, config, body);
           if (event) await hooks.receive(event);
           await ack();
-        })().catch(() => fail(new Error("Slack delivery could not be saved")));
+        })().catch(() => {
+          /* diagnostics-ignore: Forward delivery failure to the observed receiver lifecycle. */ return fail(
+            new Error("Slack delivery could not be saved"),
+          );
+        });
       });
       try {
         await Promise.race([client.start(), closed]);
@@ -112,7 +120,11 @@ export function createReceivers(fetcher?: ProviderFetch): ReceiverFactory {
             }
             if (cursor) await hooks.saveCursor(cursor);
           })
-          .catch(() => fail(new Error("Discord delivery could not be saved")));
+          .catch(() => {
+            /* diagnostics-ignore: Reject the lifecycle promise; the receiver boundary records a safe summary. */ fail(
+              new Error("Discord delivery could not be saved"),
+            );
+          });
       });
       manager.on(WebSocketShardEvents.Ready, (data) => {
         if (data.application.id !== config.applicationId)

@@ -161,7 +161,11 @@ export function createAssistantRuntime(
           const old = profiles.get(key);
           profiles.delete(key);
           touched.delete(key);
-          await (await old?.catch(() => null))?.close();
+          await (
+            await old?.catch(() => {
+              /* diagnostics-ignore: Rejected profile creation was returned to its initiating request; idle eviction is best effort. */ return null;
+            })
+          )?.close();
         }).catch((error) => reportCaughtError(error, "api/assistant/idle-profile"));
       }
     }, 60_000);
@@ -366,15 +370,22 @@ export function createAssistantRuntime(
         repos.assistant.heartbeat(ctx, state.row.id, state.requestId, workerId),
       ])
         .then(async ([credential, row]) => {
-          if (!row || row.stopRequested || (state.token && credential.token !== state.token))
+          if (
+            !row ||
+            row.stopRequested ||
+            (state.token && credential.token !== state.token)
+          )
             await stopLive(state);
         })
         .catch(async () => {
+          // diagnostics-ignore: Authority changes deliberately stop this turn and show a safe permission error.
           state.error =
             "Assistant access changed. Start a new conversation after reviewing your permissions.";
           await stopLive(state);
         })
-        .catch(() => state.controller.abort())
+        .catch(() => {
+          /* diagnostics-ignore: Aborting is the final fallback after stop fails. */ state.controller.abort();
+        })
         .finally(() => {
           checking = false;
         });
@@ -404,9 +415,16 @@ export function createAssistantRuntime(
           : "error";
       if (state.state === "error") state.error = assistantFailure(final.error);
     } catch {
+      if (!state.controller.signal.aborted)
+        reportCaughtError(
+          new Error("Assistant operation failed"),
+          "api/modules/assistant/assistant.service",
+        );
       state.state = state.controller.signal.aborted ? "cancelled" : "error";
       if (state.state === "error") state.error = assistantFailure();
-      await state.run?.cancel().catch(() => {});
+      await state.run?.cancel().catch(() => {
+        /* diagnostics-ignore: The failed turn is already reported; cancellation is best effort. */
+      });
     } finally {
       clearInterval(state.watchdog);
       closeBridge();
@@ -989,9 +1007,16 @@ export function createAssistantRuntime(
           state.finished = consume(ctx, state, bridge.close);
           return activity(state);
         } catch {
+          if (!state.controller.signal.aborted)
+            reportCaughtError(
+              new Error("Assistant operation failed"),
+              "api/modules/assistant/assistant.service",
+            );
           clearInterval(state.watchdog);
           bridge?.close();
-          await state.run?.cancel().catch(() => {});
+          await state.run?.cancel().catch(() => {
+            /* diagnostics-ignore: The failed turn is already reported; cancellation is best effort. */
+          });
           state.state = state.controller.signal.aborted ? "cancelled" : "error";
           state.error = state.state === "error" ? assistantFailure() : undefined;
           await repos.assistant.progress(ctx, id, input.requestId, { state: state.state });
@@ -1244,12 +1269,20 @@ export function createAssistantRuntime(
       idleProfiles = undefined;
       await Promise.all(
         [...live.values()].map(async (state) => {
-          await stopLive(state).catch(() => {});
+          await stopLive(state).catch(() => {
+            /* diagnostics-ignore: Shutdown still waits for turn settlement after cancellation failure. */
+          });
           await state.finished;
         }),
       );
       await Promise.all(
-        [...profiles.values()].map(async (p) => (await p.catch(() => null))?.close()),
+        [...profiles.values()].map(async (p) =>
+          (
+            await p.catch(() => {
+              /* diagnostics-ignore: Failed profile creation was already returned to its initiating request. */ return null;
+            })
+          )?.close(),
+        ),
       );
       profiles.clear();
       touched.clear();

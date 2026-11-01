@@ -5040,6 +5040,14 @@
       "page": "assistant",
       "availability": "Desktop, self-hosted, Cloud",
       "description": "Send a live follow-up from the signed-in user to the same conversation."
+    },
+    "POST /api/assistant/automation-activation-review": {
+      "page": "assistant",
+      "description": "Review saved automation revisions, required permissions and limits before enabling them."
+    },
+    "POST /api/assistant/automation-activation": {
+      "page": "assistant",
+      "description": "Enable explicitly approved automation revisions from the signed-in user\u2019s activation review."
     }
   }
 }

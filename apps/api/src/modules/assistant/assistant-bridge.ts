@@ -1,3 +1,4 @@
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { createServer } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -51,6 +52,11 @@ export async function createAssistantBridge(options: {
       });
       response.end(await result.text());
     } catch {
+      if (!options.signal.aborted)
+        reportCaughtError(
+          new Error("Assistant operation failed"),
+          "api/modules/assistant/assistant-bridge",
+        );
       // Never serialize a native credential, request or transport exception.
       response
         .writeHead(403, { "Content-Type": "application/json" })

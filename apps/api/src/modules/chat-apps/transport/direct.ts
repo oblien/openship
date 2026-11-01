@@ -1,3 +1,4 @@
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { chatLocale } from "../chat-locale";
 import { repos, type ChatAppConnection } from "@repo/db";
 import { encrypt, decrypt } from "@repo/platform/engine/lib/encryption";
@@ -164,6 +165,11 @@ export function createDirectChatTransport(
         },
       })
         .catch(() => {
+          if (!controller.signal.aborted)
+            reportCaughtError(
+              new Error("Chat app background operation failed"),
+              "api/modules/chat-apps/transport/direct",
+            );
           next.status = {
             state: "retrying",
             error: "Check the bot credentials, provider setup and internet connection.",

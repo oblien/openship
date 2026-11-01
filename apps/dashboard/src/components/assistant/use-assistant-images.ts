@@ -83,6 +83,7 @@ export function useAssistantImages() {
         if (issue) throw new Error(issue);
         update(next);
       } catch (error) {
+        /* diagnostics-ignore: Invalid or unreadable user images are displayed inline for the current upload generation. */
         if (revision === generation.current) setError((error as Error).message);
       } finally {
         if (revision === generation.current) setPending((count) => count - 1);

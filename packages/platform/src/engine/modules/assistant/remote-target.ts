@@ -117,6 +117,7 @@ export async function createRemoteAssistantClient(
               ? value
               : undefined;
           } catch {
+            /* diagnostics-ignore: A missing remote binary makes this PATH candidate unavailable. */
             return undefined;
           }
         };
@@ -220,6 +221,7 @@ export async function createRemoteAssistantClient(
           )
             record = value;
         } catch {
+          /* diagnostics-ignore: A missing or incomplete install record is rebuilt under the provisioning lock. */
           /* First installation or an interrupted atomic write. */
         }
         if (record) {
@@ -319,6 +321,7 @@ export async function createRemoteAssistantClient(
           try {
             ready = (await check.health()).version === SDK_VERSION;
           } catch {
+            /* diagnostics-ignore: Readiness is polled during startup; the bounded deadline reports failure. */
             /* Startup only. */
           }
           if (ready) break;

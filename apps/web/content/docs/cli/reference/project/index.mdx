@@ -17,7 +17,7 @@ openship project|projects [options] [command]
 | Subcommand | Purpose |
 | --- | --- |
 | [`list\|ls`](/docs/cli/reference/project#openship-project-list) | List projects in the active organization |
-| [`get <id>`](/docs/cli/reference/project#openship-project-get) | Show a single project |
+| [`get <id>`](/docs/cli/reference/project#openship-project-get) | Show a project and its deployment status |
 | [`rename <id> <name>`](/docs/cli/reference/project#openship-project-rename) | Change a project's display name |
 | [`release-image [options] <id>`](/docs/cli/reference/project#openship-project-release-image) | Track and deploy a versioned prebuilt container image |
 | [`create [options]`](/docs/cli/reference/project#openship-project-create) | Create a project |
@@ -29,7 +29,7 @@ openship project|projects [options] [command]
 | [`disable <id>`](/docs/cli/reference/project#openship-project-disable) | Stop a running project |
 | [`sleep-mode <id> <mode>`](/docs/cli/reference/project#openship-project-sleep-mode) | Set the project sleep mode |
 | [`transfer <id> <direction>`](/docs/cli/reference/project#openship-project-transfer) | Promote a project to Openship Cloud, or bring it back (self-hosted only) |
-| [`logs [options] <id>`](/docs/cli/reference/project#openship-project-logs) | Show or stream runtime (container) logs |
+| [`logs [options] <id>`](/docs/cli/reference/project#openship-project-logs) | View project logs |
 | [`server-logs [options] <id>`](/docs/cli/reference/project#openship-project-server-logs) | Show or stream HTTP request logs (edge/OpenResty) |
 | [`cluster`](/docs/cli/reference/project#openship-project-cluster) | Configure cluster placement and scale a deployed workload |
 | [`database`](/docs/cli/reference/project/database#openship-project-database) | Manage project databases, replicas, backups and application connections |
@@ -58,6 +58,8 @@ openship project|projects [options] [command]
 | [`check-ports <id>`](/docs/cli/reference/project#openship-project-check-ports) | Probe configured service ports on the deployment destination |
 | [`check-output <id>`](/docs/cli/reference/project#openship-project-check-output) | Inspect deployed static output on its actual destination |
 | [`edge-config <id>`](/docs/cli/reference/project#openship-project-edge-config) | Read effective edge routing configuration |
+| [`restart [options] <id>`](/docs/cli/reference/project#openship-project-restart) | Restart the project's active deployment |
+| [`redeploy [options] <id>`](/docs/cli/reference/project#openship-project-redeploy) | Redeploy the project's active deployment from the latest source |
 
 ## openship project check-output
 
@@ -452,7 +454,7 @@ openship project environment list|ls [options] <id>
 
 ## openship project get
 
-Show a single project
+Show a project and its deployment status
 
 ```text
 openship project get [options] <id>
@@ -558,7 +560,7 @@ openship project local scan [options] <path>
 
 ## openship project logs
 
-Show or stream runtime (container) logs
+View project logs
 
 ```text
 openship project logs [options] <id>
@@ -604,6 +606,22 @@ openship project pending [options] <id>
 | Argument | Meaning |
 | --- | --- |
 | `id` | Project ID |
+
+## openship project redeploy
+
+Redeploy the project's active deployment from the latest source
+
+```text
+openship project redeploy [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm the action |
 
 ## openship project release-image
 
@@ -674,6 +692,22 @@ openship project resources set [options] <id> <file>
 | --- | --- |
 | `id` | Project ID |
 | `file` | JSON patch with production/build resource selections, sleepMode or port |
+
+## openship project restart
+
+Restart the project's active deployment
+
+```text
+openship project restart [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm the action |
 
 ## openship project role-config
 

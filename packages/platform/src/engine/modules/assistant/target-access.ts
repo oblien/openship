@@ -47,6 +47,7 @@ export async function assistantTargets(ctx: ExecutionContext): Promise<Assistant
       });
       result.push({ id: server.id, name: server.name || "Server", kind: "server" });
     } catch {
+      /* diagnostics-ignore: Denied servers are omitted so the picker cannot disclose inaccessible resources. */
       /* A picker must not disclose servers the caller cannot administer. */
     }
   }

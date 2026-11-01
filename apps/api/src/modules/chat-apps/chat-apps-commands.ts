@@ -1,3 +1,4 @@
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { AppError, type AppLocale } from "@repo/core";
 import {
   CHAT_COMMANDS,
@@ -269,6 +270,7 @@ export function createChatCommands(
       try {
         event = await resolveChatAction(c, incoming);
       } catch {
+        /* diagnostics-ignore: Invalid, consumed or expired action receipts are refused with a safe reply. */
         return chatReply(copy.expired);
       }
       await enabled(c.id, c.revision);
@@ -307,6 +309,7 @@ export function createChatCommands(
               throw fail("Chat account changed.", 403);
             if (isAssistant && assistant) await assistant.validate(c, event, previous);
           } catch {
+            /* diagnostics-ignore: Revalidation failure denies the command without disclosing credentials or permissions. */
             return chatReply(copy.permissions);
           }
         }
@@ -330,6 +333,11 @@ export function createChatCommands(
           response = text === null ? null : chatReply(text);
         } else response = await execute(c, event, locale);
       } catch (error) {
+        if (!(error instanceof AppError))
+          reportCaughtError(
+            new Error("Chat app background operation failed"),
+            "api/modules/chat-apps/chat-apps-commands",
+          );
         response = chatReply(
           error instanceof AppError
             ? locale === "en" || Object.values(copy).includes(error.message)

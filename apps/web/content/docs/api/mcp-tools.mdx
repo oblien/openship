@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **548 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **549 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -103,9 +103,10 @@ The current API has **548 unique tools**. Permission tags below describe the rou
 | `get_assistant_automation_runs_by_id_proposal`<br />`GET /api/assistant/automation-runs/:id/proposal` | Read the exact saved remediation proposal for an automation run, including a proposed repository patch. Approval must be given by the user in OpenShip. | `settings:read` |
 | `get_assistant_automations`<br />`GET /api/assistant/automations` | List your workspace's assistant automations and recent runs. Flows react to deployment.failed or service.unhealthy and can use a saved scoped agent. Each run links to one inspectable task conversation. Includes paused state, notification channels, and approval status. | `settings:read` |
 | `patch_assistant_automation_settings`<br />`PATCH /api/assistant/automation-settings` | Pause all your assistant automations in this workspace with paused=true. Resuming requires the user in OpenShip. | `settings:write` |
+| `post_assistant_automation_activation_review`<br />`POST /api/assistant/automation-activation-review` | Offer inline activation of saved automations. When the user asks to enable or run flows, call this with their automationIds after preparing the paused configurations. Returns the exact apps, triggers, actions and limits for an Enable & continue review in chat. This read-only operation enables nothing and grants no access. Use this handoff instead of refusing or asking the user to toggle settings manually. After approval, inspect current state and continue the original task. reviewPath is a fallback for external MCP clients. | `settings:read` |
 | `post_assistant_automation_runs_by_id_decision`<br />`POST /api/assistant/automation-runs/:id/decision` | Cancel pending automation work with decision=cancel. decision=approve is reserved for the user's OpenShip session; an agent can never approve its own proposed fix. | `settings:write` |
-| `post_assistant_automations`<br />`POST /api/assistant/automations` | Create an assistant automation through the normal flow API. Choose a project, confirmed incident trigger, optional scoped agentId, response mode and existing channelIds. Agent callers must set enabled=false and automaticConsent=false. Return its ID and send the user to /assistant/automations/&#123;id&#125;/edit to review and enable. No extra scheduler or bot connection is created. | `settings:write` |
-| `put_assistant_automations_by_id`<br />`PUT /api/assistant/automations/:id` | Update a paused automation using the same validations as its editor. Pause an enabled flow before editing it. Agent callers cannot consent to or enable unattended work. Changes invalidate pending runs. | `settings:write` |
+| `post_assistant_automations`<br />`POST /api/assistant/automations` | Create an assistant automation through the normal flow API. Choose a project, confirmed incident trigger, optional scoped agentId, response mode and existing channelIds. Agent callers save enabled=false and automaticConsent=false. If activation is part of the user's request, next call post_assistant_automation_activation_review with the saved automationIds to offer Enable & continue inside chat. Preparing a flow is not enabling it. No extra scheduler or bot connection is created. | `settings:write` |
+| `put_assistant_automations_by_id`<br />`PUT /api/assistant/automations/:id` | Update a paused automation using the same validations as its editor. Pause an enabled flow before editing it. Save enabled=false and automaticConsent=false, then use post_assistant_automation_activation_review when the user wants it enabled. Changes invalidate pending runs; the inline review approves the exact saved revision. | `settings:write` |
 
 ### audit
 
@@ -745,6 +746,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/affiliates/referrals` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
 | `GET /api/affiliates/referrals/payments` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
 | `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/assistant/automation-activation` | User approval of saved automation revisions. Agents offer the read-only activation review. |
 | `GET /api/assistant/callback` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
 | `GET /api/assistant/conversations` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
 | `POST /api/assistant/conversations` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |

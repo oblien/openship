@@ -1,3 +1,4 @@
+import { reportCaughtError } from "@repo/core/diagnostics";
 import type { ChatReply } from "./chat-reply";
 import { repos, type ChatAppConnection } from "@repo/db";
 import type {
@@ -129,6 +130,10 @@ export function createChatApps(
               issues.delete(c.id);
             });
           } catch {
+            reportCaughtError(
+              new Error("Chat app background operation failed"),
+              "api/modules/chat-apps/chat-apps.service",
+            );
             receivers.delete(snapshot.id);
             issues.set(
               snapshot.id,
@@ -358,7 +363,12 @@ export function createChatApps(
       const schedule = () => {
         timer = setTimeout(() => {
           running = tick()
-            .catch(() => {})
+            .catch(() => {
+              reportCaughtError(
+                new Error("Chat app background operation failed"),
+                "api/modules/chat-apps/chat-apps.service",
+              );
+            })
             .finally(() => {
               running = undefined;
               if (!stopped) schedule();

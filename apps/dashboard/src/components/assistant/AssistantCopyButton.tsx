@@ -41,6 +41,7 @@ export function AssistantCopyButton({
           await copyText(value);
           setStatus("copied");
         } catch {
+          /* diagnostics-ignore: Clipboard denial is shown by the copy control. */
           setStatus("error");
         }
       }}

@@ -52,6 +52,7 @@ export function useAssistantResume({
     try {
       remembered = localStorage.getItem(key);
     } catch {
+      /* diagnostics-ignore: Unavailable storage falls back to the currently authorized scoped conversation list. */
       // Storage can be unavailable; the scoped list still provides a recent chat.
     }
     const allowed = error ? [] : (chats ?? []);
@@ -69,7 +70,9 @@ export function useAssistantResume({
       if (!ready) return;
       try {
         localStorage.setItem(key, id);
-      } catch {}
+      } catch {
+        /* diagnostics-ignore: Persisting a resume hint is optional; live scope validation remains authoritative. */
+      }
     },
     [key, ready],
   );
@@ -78,7 +81,9 @@ export function useAssistantResume({
       if (!ready) return;
       try {
         if (localStorage.getItem(key) === id) localStorage.removeItem(key);
-      } catch {}
+      } catch {
+        /* diagnostics-ignore: Removing a resume hint is optional; live scope validation remains authoritative. */
+      }
     },
     [key, ready],
   );

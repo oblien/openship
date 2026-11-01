@@ -132,7 +132,11 @@ function ActivationReview({ request, disabled, onContinue }: Props) {
     setEnabled(result);
     if (onContinue) {
       setContinuing(true);
-      const sent = await onContinue(automationActivationContinuation(result)).catch(() => false);
+      const sent = await onContinue(
+        automationActivationContinuation(result),
+      ).catch(() => {
+        /* diagnostics-ignore: Continue failure is shown inline with an explicit retry. */ return false;
+      });
       setContinuing(false);
       setContinued(sent);
       setContinuationError(!sent);

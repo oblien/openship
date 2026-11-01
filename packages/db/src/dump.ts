@@ -899,6 +899,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  assistant_agent: "Private host profiles and saved execution authority must be reauthorized on the destination.",
   assistant_authorization: "Single-use OAuth consent and native authentication state cannot travel.",
   assistant_connection: "Private host and OAuth-client bindings must be reauthorized on the destination.",
   assistant_conversation: "Conversation metadata refers to private Mindwire profiles on the original host.",

@@ -125,6 +125,7 @@ export async function probeHarness(
       path = await realpath(candidate);
       break;
     } catch {
+      /* diagnostics-ignore: Missing PATH candidates are expected while discovering an installed harness. */
       /* Next PATH entry. */
     }
   }
@@ -176,7 +177,10 @@ export async function inspectHarness(
         "--no-chrome",
       ])
         if (!help.includes(flag))
-          return unavailable("This Claude installation does not support scoped tools.", version);
+          return unavailable(
+            "This Claude installation does not support scoped tools.",
+            version,
+          );
       flags = [
         "--tools",
         "AskUserQuestion",
@@ -191,7 +195,10 @@ export async function inspectHarness(
     }
     return { provider, path, version, available: true, flags };
   } catch {
-    return unavailable(`Could not inspect ${spec.name}. Check its installation and try again.`);
+    /* diagnostics-ignore: Inspection failure is returned as a safe unavailable result; native output may contain credentials. */
+    return unavailable(
+      `Could not inspect ${spec.name}. Check its installation and try again.`,
+    );
   }
 }
 

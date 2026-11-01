@@ -44,6 +44,7 @@ export function ChatCommandMenu({
       await navigator.clipboard.writeText(definitions);
       setCopied(true);
     } catch {
+      /* diagnostics-ignore: Clipboard denial is shown inline with a manual copy alternative. */
       action.setError("Couldn’t copy. Select and copy the definitions below.");
     }
   }

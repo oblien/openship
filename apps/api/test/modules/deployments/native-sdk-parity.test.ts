@@ -2404,9 +2404,15 @@ describe("HTTP/native system parity", () => {
     const local = await native();
     for (const system of [local.system, remote().system]) {
       expect(await system.getSettings()).toHaveProperty("configured");
-      await expect(system.updateSettings({ productMode: "mail" })).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(system.browse({ path: "/" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        system.updateSettings({ productMode: "mail" }),
+      ).rejects.toMatchObject({ code: "INSTANCE_SCOPE_REQUIRED" });
+      await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({
+        code: "INSTANCE_SCOPE_REQUIRED",
+      });
+      await expect(system.browse({ path: "/" })).rejects.toMatchObject({
+        code: "INSTANCE_SCOPE_REQUIRED",
+      });
     }
     expect(h.settingsUpsert).not.toHaveBeenCalled();
   });

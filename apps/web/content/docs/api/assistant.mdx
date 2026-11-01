@@ -224,5 +224,7 @@ in that conversation; only selected `channelIds` receive additional status notif
 | Send a live follow-up or continue the same task conversation. | `POST /api/assistant/agents/:id/tasks/:chatId/messages`<br />`settings:write` · Desktop, self-hosted, Cloud |
 | Stop the current task through normal conversation cancellation. | `POST /api/assistant/agents/:id/tasks/:chatId/stop`<br />`settings:write` · Desktop, self-hosted, Cloud |
 | Send a live follow-up from the signed-in user to the same conversation. | `POST /api/assistant/conversations/:id/messages`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Review saved automation revisions, required permissions and limits before enabling them. | `POST /api/assistant/automation-activation-review`<br />`settings:read` |
+| Enable explicitly approved automation revisions from the signed-in user’s activation review. | `POST /api/assistant/automation-activation`<br />`settings:write` |
 
 {/* api-operations:end */}

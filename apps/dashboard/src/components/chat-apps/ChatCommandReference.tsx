@@ -23,6 +23,7 @@ export function ChatCommandReference() {
       await navigator.clipboard.writeText(command);
       setCopied(command);
     } catch {
+      /* diagnostics-ignore: Clipboard denial is shown by the copy control. */
       setCopyError(true);
     }
   }

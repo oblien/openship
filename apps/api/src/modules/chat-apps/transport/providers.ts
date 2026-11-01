@@ -523,6 +523,7 @@ export function createChatProviders(fetcher: ProviderFetch = fetch) {
     try {
       await telegram(config, "answerCallbackQuery", { callback_query_id: event.reply.callbackId });
     } catch {
+      /* diagnostics-ignore: An expired or duplicate spinner acknowledgement must not discard a durable command. */
       /* command remains queued */
     }
   }
