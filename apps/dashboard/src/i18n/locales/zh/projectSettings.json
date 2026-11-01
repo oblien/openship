@@ -619,6 +619,12 @@
       "repository": "仓库",
       "open": "打开"
     },
+    "branch": {
+      "label": "部署分支",
+      "description": "用于此环境的后续部署。保存不会重新部署应用。",
+      "saved": "部署分支已保存",
+      "saveFailed": "无法保存部署分支"
+    },
     "webhookEndpoint": {
       "title": "Webhook 端点",
       "descriptionSet": "GitHub 将推送事件直接投递到此域名",

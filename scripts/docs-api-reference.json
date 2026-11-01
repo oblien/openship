@@ -87,7 +87,7 @@
     "deployments.restart": {
       "page": "deployments",
       "section": "Control",
-      "description": "Restart the deployment’s runtime.",
+      "description": "Restart the deployment\u2019s runtime.",
       "route": "POST /api/deployments/:id/restart"
     },
     "deployments.skipPortCheck": {
@@ -195,7 +195,7 @@
     "projects.getInfo": {
       "page": "projects",
       "section": "Source and deployment",
-      "description": "Read the project’s detailed information.",
+      "description": "Read the project\u2019s detailed information.",
       "route": "GET /api/projects/:id/info"
     },
     "projects.getGitInfo": {
@@ -237,13 +237,13 @@
     "projects.listDeployments": {
       "page": "projects",
       "section": "Source and deployment",
-      "description": "Read a page of the project’s deployments.",
+      "description": "Read a page of the project\u2019s deployments.",
       "route": "GET /api/projects/:id/deployments"
     },
     "projects.deploymentSession": {
       "page": "projects",
       "section": "Source and deployment",
-      "description": "Read the project’s current deployment session.",
+      "description": "Read the project\u2019s current deployment session.",
       "route": "POST /api/projects/:id/deployment-session"
     },
     "projects.clearBuildCache": {
@@ -417,7 +417,7 @@
     "projects.listEnvironments": {
       "page": "projects",
       "section": "Environments and settings",
-      "description": "List the project’s environments.",
+      "description": "List the project\u2019s environments.",
       "route": "GET /api/projects/:id/environments"
     },
     "projects.createEnvironment": {
@@ -453,7 +453,7 @@
     "projects.setSleepMode": {
       "page": "projects",
       "section": "Environments and settings",
-      "description": "Set the project’s sleep behavior.",
+      "description": "Set the project\u2019s sleep behavior.",
       "route": "POST /api/projects/:id/sleep-mode"
     },
     "projects.setOptions": {
@@ -537,7 +537,7 @@
     "projects.listRouteRules": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "List the project’s edge route rules.",
+      "description": "List the project\u2019s edge route rules.",
       "route": "GET /api/projects/:id/route-rules"
     },
     "projects.createRouteRule": {
@@ -573,7 +573,7 @@
     "projects.listConnections": {
       "page": "projects",
       "section": "Connections, storage, and apps",
-      "description": "List the project’s outgoing resource connections.",
+      "description": "List the project\u2019s outgoing resource connections.",
       "route": "GET /api/projects/:id/connections"
     },
     "projects.listConnectionCandidates": {
@@ -585,7 +585,7 @@
     "projects.listConnectionConsumers": {
       "page": "projects",
       "section": "Connections, storage, and apps",
-      "description": "List projects consuming this project’s outputs.",
+      "description": "List projects consuming this project\u2019s outputs.",
       "route": "GET /api/projects/:id/connections/consumers"
     },
     "projects.createConnection": {
@@ -609,7 +609,7 @@
     "projects.getStorage": {
       "page": "projects",
       "section": "Connections, storage, and apps",
-      "description": "Read the project’s object-storage binding.",
+      "description": "Read the project\u2019s object-storage binding.",
       "route": "GET /api/projects/:id/storage"
     },
     "projects.bindStorage": {
@@ -627,7 +627,7 @@
     "projects.getEdgeConfig": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "Read the project’s edge configuration.",
+      "description": "Read the project\u2019s edge configuration.",
       "route": "GET /api/projects/:id/edge-config"
     },
     "projects.getServerLogStreamToken": {
@@ -945,7 +945,7 @@
     "domains.setPrimary": {
       "page": "domains",
       "section": "Operations",
-      "description": "Select the project’s primary domain.",
+      "description": "Select the project\u2019s primary domain.",
       "route": "POST /api/domains/:id/primary"
     },
     "domains.renewSsl": {
@@ -957,7 +957,7 @@
     "domains.verifySsl": {
       "page": "domains",
       "section": "Operations",
-      "description": "Check the domain’s current certificate.",
+      "description": "Check the domain\u2019s current certificate.",
       "route": "POST /api/domains/:id/verify-ssl"
     },
     "domains.uploadCert": {
@@ -993,7 +993,7 @@
     "dns.listCredentials": {
       "page": "dns",
       "section": "Operations",
-      "description": "List the organization’s DNS credentials.",
+      "description": "List the organization\u2019s DNS credentials.",
       "route": "GET /api/dns/credentials"
     },
     "dns.getCredential": {
@@ -1443,13 +1443,13 @@
     "servers.inspectNetwork": {
       "page": "servers",
       "section": "Private networks",
-      "description": "Inspect a server’s machine identity and private interfaces without changing its network.",
+      "description": "Inspect a server\u2019s machine identity and private interfaces without changing its network.",
       "route": "POST /api/system/servers/:id/network/inspect"
     },
     "servers.githubStatus": {
       "page": "servers",
       "section": "Git credentials",
-      "description": "Read the server’s GitHub authentication status.",
+      "description": "Read the server\u2019s GitHub authentication status.",
       "route": "GET /api/system/servers/:id/github"
     },
     "servers.connectGitHub": {
@@ -1461,7 +1461,7 @@
     "servers.pollGitHubConnection": {
       "page": "servers",
       "section": "Git credentials",
-      "description": "Poll a server’s GitHub authentication flow.",
+      "description": "Poll a server\u2019s GitHub authentication flow.",
       "route": "GET /api/system/servers/:id/github/connect/poll"
     },
     "servers.setGitHubToken": {
@@ -1485,13 +1485,13 @@
     "servers.disconnectGitHub": {
       "page": "servers",
       "section": "Git credentials",
-      "description": "Remove the server’s GitHub authentication.",
+      "description": "Remove the server\u2019s GitHub authentication.",
       "route": "DELETE /api/system/servers/:id/github"
     },
     "servers.listTunnels": {
       "page": "servers",
       "section": "Networking",
-      "description": "List the server’s port-forward configurations.",
+      "description": "List the server\u2019s port-forward configurations.",
       "route": "GET /api/system/servers/:id/tunnels"
     },
     "servers.saveTunnel": {
@@ -1521,19 +1521,19 @@
     "servers.listContainers": {
       "page": "servers",
       "section": "Managed containers",
-      "description": "List one server’s managed containers.",
+      "description": "List one server\u2019s managed containers.",
       "route": "GET /api/system/servers/:id/containers"
     },
     "servers.scanContainers": {
       "page": "servers",
       "section": "Managed containers",
-      "description": "Refresh one server’s managed-container state.",
+      "description": "Refresh one server\u2019s managed-container state.",
       "route": "POST /api/system/servers/:id/containers/scan"
     },
     "servers.containerApplySession": {
       "page": "servers",
       "section": "Managed containers",
-      "description": "Read a container’s active apply session.",
+      "description": "Read a container\u2019s active apply session.",
       "route": "GET /api/system/servers/:id/containers/:component/apply/session"
     },
     "servers.get": {
@@ -1575,7 +1575,7 @@
     "servers.listModules": {
       "page": "servers",
       "section": "Components and installation",
-      "description": "List the server’s managed components.",
+      "description": "List the server\u2019s managed components.",
       "route": "GET /api/system/servers/:id/modules"
     },
     "servers.scanModules": {
@@ -1587,7 +1587,7 @@
     "servers.applyModule": {
       "page": "servers",
       "section": "Components and installation",
-      "description": "Apply a managed component’s configuration.",
+      "description": "Apply a managed component\u2019s configuration.",
       "route": "POST /api/system/servers/:id/modules/:module/apply"
     },
     "servers.getRateLimit": {
@@ -1701,7 +1701,7 @@
     "apps.listCustom": {
       "page": "apps",
       "section": "Operations",
-      "description": "List the organization’s custom app definitions.",
+      "description": "List the organization\u2019s custom app definitions.",
       "route": "GET /api/apps/custom"
     },
     "apps.saveCustom": {
@@ -1839,7 +1839,7 @@
     "backups.run": {
       "page": "backups",
       "section": "Operations",
-      "description": "Trigger a policy’s backup now.",
+      "description": "Trigger a policy\u2019s backup now.",
       "route": "POST /api/backup-policies/:policyId/run"
     },
     "backups.getRun": {
@@ -2055,7 +2055,7 @@
     "github.setInstanceToken": {
       "page": "github",
       "section": "Connect",
-      "description": "Configure the installation’s GitHub token.",
+      "description": "Configure the installation\u2019s GitHub token.",
       "route": "POST /api/github/instance-token"
     },
     "github.disconnect": {
@@ -2175,7 +2175,7 @@
     "github.updateSource": {
       "page": "github",
       "section": "GitHub App sources",
-      "description": "Change a GitHub App source’s configuration.",
+      "description": "Change a GitHub App source\u2019s configuration.",
       "route": "PATCH /api/github/sources/:id"
     },
     "github.verifySource": {
@@ -2208,10 +2208,16 @@
       "description": "List available workspace IDs, names, roles, and credential scope.",
       "route": "GET /api/permissions/workspaces"
     },
+    "permissions.requestAccess": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Present an informational request to review this connection\u2019s permissions. Grants no access.",
+      "route": "GET /api/permissions/access-request"
+    },
     "permissions.orgMeta": {
       "page": "permissions",
       "section": "Operations",
-      "description": "Read the selected organization’s permission metadata.",
+      "description": "Read the selected organization\u2019s permission metadata.",
       "route": "GET /api/permissions/org-meta"
     },
     "permissions.listResources": {
@@ -2241,7 +2247,7 @@
     "permissions.replaceGrants": {
       "page": "permissions",
       "section": "Operations",
-      "description": "Replace the requested subject’s grant set.",
+      "description": "Replace the requested subject\u2019s grant set.",
       "route": "PUT /api/permissions/grants"
     },
     "permissions.listInvitations": {
@@ -2301,7 +2307,7 @@
     "permissions.setMemberRole": {
       "page": "permissions",
       "section": "Operations",
-      "description": "Change a member’s organization role.",
+      "description": "Change a member\u2019s organization role.",
       "route": "PATCH /api/permissions/members/:id"
     },
     "permissions.removeMember": {
@@ -2355,7 +2361,7 @@
     "webhooks.list": {
       "page": "webhooks",
       "section": "Operations",
-      "description": "List the project’s incoming webhooks.",
+      "description": "List the project\u2019s incoming webhooks.",
       "route": "GET /api/projects/:id/incoming-webhooks"
     },
     "webhooks.create": {
@@ -2391,13 +2397,13 @@
     "webhooks.hookDeliveries": {
       "page": "webhooks",
       "section": "Operations",
-      "description": "Read one hook’s delivery history.",
+      "description": "Read one hook\u2019s delivery history.",
       "route": "GET /api/projects/:id/incoming-webhooks/:hookId/deliveries"
     },
     "webhooks.invoke": {
       "page": "webhooks",
       "section": "Operations",
-      "description": "Invoke the hook’s saved action through the SDK.",
+      "description": "Invoke the hook\u2019s saved action through the SDK.",
       "route": "POST /api/projects/:id/incoming-webhooks/:hookId/invoke"
     },
     "webhooks.listDeliveries": {
@@ -2415,7 +2421,7 @@
     "updates.scan": {
       "page": "updates",
       "section": "Operations",
-      "description": "Refresh the organization’s update scan.",
+      "description": "Refresh the organization\u2019s update scan.",
       "route": "POST /api/updates/scan"
     },
     "updates.apply": {
@@ -2493,7 +2499,7 @@
     "settings.get": {
       "page": "settings",
       "section": "Operations",
-      "description": "Read the current user’s preferences and defaults.",
+      "description": "Read the current user\u2019s preferences and defaults.",
       "route": "GET /api/settings"
     },
     "settings.update": {
@@ -2607,7 +2613,7 @@
     "notifications.testChannel": {
       "page": "notifications",
       "section": "Operations",
-      "description": "Test the channel’s delivery configuration.",
+      "description": "Test the channel\u2019s delivery configuration.",
       "route": "POST /api/notifications/channels/:id/test"
     },
     "notifications.removeChannel": {
@@ -2787,7 +2793,7 @@
     "jobs.get": {
       "page": "jobs",
       "section": "Operations",
-      "description": "Read a job’s configuration and recent runs.",
+      "description": "Read a job\u2019s configuration and recent runs.",
       "route": "GET /api/jobs/:key"
     },
     "jobs.update": {
@@ -2811,7 +2817,7 @@
     "jobs.listRuns": {
       "page": "jobs",
       "section": "Operations",
-      "description": "Read a job’s run history.",
+      "description": "Read a job\u2019s run history.",
       "route": "GET /api/jobs/:key/runs"
     },
     "jobs.getRun": {
@@ -3282,7 +3288,7 @@
     },
     "mail.componentAction": {
       "page": "mail",
-      "description": "Run an action (`start`/`stop`/`restart`/…) on one component.",
+      "description": "Run an action (`start`/`stop`/`restart`/\u2026) on one component.",
       "route": "POST /api/mail/admin/:serverId/components/:key/:action"
     },
     "migrations.listSources": {
@@ -3302,7 +3308,7 @@
     },
     "migrations.scan": {
       "page": "migration",
-      "description": "Inspect a server's Docker and return the adoptable stack — read-only, changes nothing.",
+      "description": "Inspect a server's Docker and return the adoptable stack \u2014 read-only, changes nothing.",
       "route": "POST /api/migration/scan"
     },
     "migrations.revealEnv": {
@@ -3392,7 +3398,7 @@
     },
     "instance.onboardingStatus": {
       "page": "system",
-      "description": "First-run check — is any server configured yet?",
+      "description": "First-run check \u2014 is any server configured yet?",
       "route": "GET /api/system/onboarding"
     },
     "instance.configureOnboarding": {
@@ -3417,7 +3423,7 @@
     },
     "instance.migrateToCloud": {
       "page": "data-transfer",
-      "description": "Migrate → Openship Cloud.",
+      "description": "Migrate \u2192 Openship Cloud.",
       "route": "POST /api/system/migration/start-cloud"
     },
     "instance.exposeTunnel": {
@@ -3442,12 +3448,12 @@
     },
     "instance.importData": {
       "page": "data-transfer",
-      "description": "Import an export file, ≤500 MB, with scope and conflict options (instance administrator).",
+      "description": "Import an export file, \u2264500 MB, with scope and conflict options (instance administrator).",
       "route": "POST /api/system/data-transfer/import"
     },
     "mail.setup": {
       "page": "mail",
-      "description": "Start or resume the install wizard — returns an SSE stream.",
+      "description": "Start or resume the install wizard \u2014 returns an SSE stream.",
       "route": "POST /api/mail/setup"
     },
     "migrations.events": {
@@ -3557,7 +3563,7 @@
     "actions.probeRunner": {
       "page": "actions",
       "section": "Runners",
-      "description": "Refresh a runner’s verified capabilities.",
+      "description": "Refresh a runner\u2019s verified capabilities.",
       "route": "POST /api/actions/runners/:id/probe"
     },
     "actions.dispatch": {
@@ -3689,7 +3695,7 @@
     "settings.getAppearance": {
       "page": "settings",
       "section": "Operations",
-      "description": "Read the authenticated user’s saved appearance and portable theme library.",
+      "description": "Read the authenticated user\u2019s saved appearance and portable theme library.",
       "route": "GET /api/settings/appearance"
     },
     "settings.setAppearance": {
@@ -3901,6 +3907,18 @@
       "section": "Operations",
       "description": "Cancel a pending request and release its reservation exactly once.",
       "route": "POST /api/affiliates/payouts/cancel"
+    },
+    "github.publishChange": {
+      "page": "github",
+      "section": "Repositories",
+      "description": "Publish an exact patch as one commit on a new branch, optionally opening a draft PR. Requires live repository write access and approved source paths.",
+      "route": "POST /api/github/repos/:owner/:repo/changes"
+    },
+    "settings.setLocale": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Save the authenticated user\u2019s dashboard language for chat replies and assistant turns without changing other preferences.",
+      "route": "PATCH /api/settings/locale"
     }
   },
   "http": {
@@ -4075,7 +4093,7 @@
     },
     "GET /api/cloud/desktop-handoff": {
       "page": "cloud",
-      "description": "OAuth → one-time code → redirect to the desktop app callback."
+      "description": "OAuth \u2192 one-time code \u2192 redirect to the desktop app callback."
     },
     "POST /api/cloud/disconnect": {
       "page": "cloud",
@@ -4163,7 +4181,7 @@
     },
     "POST /api/cloud/preflight": {
       "page": "cloud",
-      "description": "Cloud deployment preflight — slug / custom-domain availability."
+      "description": "Cloud deployment preflight \u2014 slug / custom-domain availability."
     },
     "POST /api/cloud/resource-proxy": {
       "page": "cloud",
@@ -4191,11 +4209,11 @@
     },
     "GET /api/github/connect/redirect": {
       "page": "github",
-      "description": "GitHub OAuth callback — browser navigates here, no session yet."
+      "description": "GitHub OAuth callback \u2014 browser navigates here, no session yet."
     },
     "GET /api/health": {
       "page": "health",
-      "description": "Liveness probe — returns `{ status, timestamp }`."
+      "description": "Liveness probe \u2014 returns `{ status, timestamp }`."
     },
     "GET /api/images": {
       "page": "images",
@@ -4203,7 +4221,11 @@
     },
     "GET /api/mcp": {
       "page": "mcp",
-      "description": "Returns `405` — this server never pushes messages, so there is no SSE stream to open."
+      "description": "Returns `405` \u2014 this server never pushes messages, so there is no SSE stream to open."
+    },
+    "GET /api/mcp/guide": {
+      "page": "mcp",
+      "description": "List the shared MCP workflow guides or read one with `query.name`. Validates membership and credential scope; returns documentation only, without requiring resource grants."
     },
     "POST /api/mcp": {
       "page": "mcp",
@@ -4251,7 +4273,7 @@
     },
     "GET /api/services/terminal/ws/:serviceId": {
       "page": "service-terminal",
-      "description": "WebSocket upgrade — auth happens inside the handshake (ticket subprotocol or session cookie).",
+      "description": "WebSocket upgrade \u2014 auth happens inside the handshake (ticket subprotocol or session cookie).",
       "sdk": "terminal.openService(id, options)"
     },
     "POST /api/system/bootstrap-admin": {
@@ -4483,11 +4505,11 @@
     },
     "GET /api/cloud/support/mine": {
       "page": "support",
-      "description": "List the signed-in customer’s tickets with status, search and cursor pagination. Uses the personal Cloud session, including on connected local installations."
+      "description": "List the signed-in customer\u2019s tickets with status, search and cursor pagination. Uses the personal Cloud session, including on connected local installations."
     },
     "GET /api/cloud/support/session": {
       "page": "support",
-      "description": "Read the private support account and connection binding. Local installations require the caller’s own verified Cloud link; shared organization credentials never grant private ticket access."
+      "description": "Read the private support account and connection binding. Local installations require the caller\u2019s own verified Cloud link; shared organization credentials never grant private ticket access."
     },
     "POST /api/cloud/support/mine": {
       "page": "support",
@@ -4495,7 +4517,7 @@
     },
     "GET /api/cloud/support/mine/:id": {
       "page": "support",
-      "description": "Read the customer’s own conversation without internal delivery metadata."
+      "description": "Read the customer\u2019s own conversation without internal delivery metadata."
     },
     "POST /api/cloud/support/mine/:id/replies": {
       "page": "support",
@@ -4503,7 +4525,7 @@
     },
     "PATCH /api/cloud/support/mine/:id": {
       "page": "support",
-      "description": "Open or resolve the signed-in customer’s own ticket."
+      "description": "Open or resolve the signed-in customer\u2019s own ticket."
     },
     "GET /": {
       "page": "data-transfer",
@@ -4523,7 +4545,7 @@
     "GET /api/system/instance": {
       "page": "data-transfer",
       "section": "Instance location",
-      "description": "Read this installation’s controller role and handoff progress (instance administrator or trusted Desktop recovery)."
+      "description": "Read this installation\u2019s controller role and handoff progress (instance administrator or trusted Desktop recovery)."
     },
     "GET /api/system/instance/identity": {
       "page": "data-transfer",
@@ -4543,7 +4565,7 @@
     "POST /api/system/instance/move": {
       "page": "data-transfer",
       "section": "Instance location",
-      "description": "Start a reviewed move using the other instance’s code; existing workloads stay on their hosts."
+      "description": "Start a reviewed move using the other instance\u2019s code; existing workloads stay on their hosts."
     },
     "POST /api/system/instance/provision": {
       "page": "data-transfer",
@@ -4588,12 +4610,12 @@
     "POST /api/system/instance/pair": {
       "page": "data-transfer",
       "section": "Instance location",
-      "description": "Issue a ten-minute device code for the signed-in user’s own permissions."
+      "description": "Issue a ten-minute device code for the signed-in user\u2019s own permissions."
     },
     "POST /api/system/instance/pair/claim": {
       "page": "data-transfer",
       "section": "Instance location",
-      "description": "Atomically exchange the one-use code for its issuing user’s remote device session."
+      "description": "Atomically exchange the one-use code for its issuing user\u2019s remote device session."
     },
     "POST /api/system/instance/bootstrap": {
       "page": "data-transfer",
@@ -4743,6 +4765,281 @@
     "GET /api/referrals/:code": {
       "page": "affiliates",
       "description": "Public commercial terms for one code; no account, customer or earnings information."
+    },
+    "GET /api/assistant/status": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read availability and opt-in status without starting a native agent."
+    },
+    "POST /api/assistant/enable": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Begin normal MCP OAuth consent with single-use state and PKCE."
+    },
+    "GET /api/assistant/callback": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Complete consent after validating PKCE, state, account and workspace."
+    },
+    "POST /api/assistant/disable": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Revoke the assistant MCP connection and stop its active turns."
+    },
+    "GET /api/assistant/providers": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read installed agents, connection status and model choices after opt-in."
+    },
+    "GET /api/assistant/providers/:provider": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read one agent and its supported account settings."
+    },
+    "PATCH /api/assistant/providers/:provider": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Save allowed agent settings, excluding tool and permission overrides."
+    },
+    "POST /api/assistant/providers/:provider/auth": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Begin a sign-in method offered by the installed agent."
+    },
+    "POST /api/assistant/providers/:provider/auth/step": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Continue or cancel the active agent sign-in flow."
+    },
+    "POST /api/assistant/providers/:provider/logout": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Disconnect the agent account after its active turns have stopped."
+    },
+    "GET /api/assistant/conversations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "List conversations belonging to the current user and workspace."
+    },
+    "POST /api/assistant/conversations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Create a conversation bound to the current MCP authorization."
+    },
+    "GET /api/assistant/conversations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read the conversation snapshot and recent native history."
+    },
+    "DELETE /api/assistant/conversations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Stop a conversation and delete its local history and metadata."
+    },
+    "GET /api/assistant/conversations/:id/history": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read an earlier native history page using its before cursor."
+    },
+    "POST /api/assistant/conversations/:id/turns": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Start an idempotent turn using the approved MCP connection."
+    },
+    "POST /api/assistant/conversations/:id/activity": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read or long-poll ordered turn activity after a cursor."
+    },
+    "POST /api/assistant/conversations/:id/stop": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Stop the active turn without replaying accepted operations."
+    },
+    "POST /api/assistant/conversations/:id/respond": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Validate and acknowledge a structured question answer once."
+    },
+    "GET /api/chat-apps": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read workspace chat connectors without starting an assistant."
+    },
+    "GET /api/chat-apps/setup": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Prepare the existing connection form for `provider`, optional `purpose` and `transport`. Returns workspace-bound setup guidance without creating a connector or granting access."
+    },
+    "POST /api/chat-apps": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Save a paused connector with encrypted provider credentials; requires a workspace admin session. Outbound connections work locally; webhook connections require public HTTPS."
+    },
+    "PATCH /api/chat-apps/:id": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Enable or pause commands with the current connector revision. Pausing closes the local command gate before stopping the receiver."
+    },
+    "GET /api/chat-apps/:id/configuration": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read editable bot settings without provider credentials; requires an owner or admin session in the connector\u2019s workspace."
+    },
+    "PUT /api/chat-apps/:id/configuration": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Save name, bot roles, allowed destinations, transport and optional replacement credentials with the current revision. A provider update failure pauses the connector."
+    },
+    "DELETE /api/chat-apps/:id": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Remove encrypted provider credentials and linked OpenShip grants."
+    },
+    "POST /api/chat-apps/:id/unlink": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Disconnect only the signed-in user\u2019s chat identities and their OpenShip grants."
+    },
+    "PATCH /api/chat-apps/:id/assistant-policy": {
+      "page": "chat-apps",
+      "description": "Allow or pause assistant chats with the current connector revision; requires a workspace admin session.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "PATCH /api/chat-apps/:id/purpose": {
+      "page": "chat-apps",
+      "description": "Choose an Assistant, deployment-command or combined bot with the current connector revision; requires a workspace admin session.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "PUT /api/chat-apps/:id/assistant": {
+      "page": "chat-apps",
+      "description": "Connect or disconnect the signed-in sender\u2019s own assistant using its current identity revision and approved Assistant access.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "POST /api/chat-apps/pairing": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Start normal MCP consent for a sender-bound, expiring chat challenge."
+    },
+    "POST /api/chat-apps/pairing/complete": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Exchange the consent code with session-bound PKCE and return a sender verification command."
+    },
+    "GET /api/chat-apps/callback": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Redirect only to OpenShip settings; code exchange and sender verification remain separate."
+    },
+    "POST /api/chat-apps/webhooks/:id": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Verify raw provider signatures and destination allowlists before encrypted enqueueing."
+    },
+    "GET /api/assistant/automations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read your workspace flows, run history and pause state."
+    },
+    "POST /api/assistant/automations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Create an app-scoped automation with explicit action consent."
+    },
+    "PUT /api/assistant/automations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Update a flow and invalidate pending work from its previous configuration."
+    },
+    "DELETE /api/assistant/automations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Disable your flow, cancel pending work and retain run history."
+    },
+    "PATCH /api/assistant/automation-settings": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Pause or resume your workspace automations without replaying old incidents."
+    },
+    "POST /api/assistant/automation-runs/:id/decision": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Approve an unchanged, current action once or cancel pending work."
+    },
+    "POST /api/assistant/custom-api": {
+      "page": "assistant",
+      "description": "Register a private Responses-compatible API connection and return its model ID without exposing the key.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "GET /api/assistant/automation-permissions/:projectId": {
+      "page": "assistant",
+      "description": "Read available app recovery and repository permissions within current Assistant consent.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "GET /api/assistant/automation-runs/:id": {
+      "page": "assistant",
+      "description": "Read one owned automation run and its result link.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "GET /api/assistant/automation-runs/:id/proposal": {
+      "page": "assistant",
+      "description": "Read the exact persisted proposal for review under current permissions.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "POST /api/chat-apps/:id/commands/sync": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Refresh native command definitions for an enabled connector using its current revision. Telegram and Discord publish their menus; Slack requires the generated manifest entries. Requires a workspace admin session."
+    },
+    "GET /api/assistant/agents": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "List your specialists and task conversations on the selected host."
+    },
+    "POST /api/assistant/agents": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Create a specialist bounded by current caller and Assistant resource permissions."
+    },
+    "GET /api/assistant/agents/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Inspect a specialist and its saved instructions, scope and task history."
+    },
+    "PUT /api/assistant/agents/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Update a specialist with a revision check; invalidate older task execution."
+    },
+    "POST /api/assistant/agents/:id/archive": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Archive a specialist, stop active tasks and pause its automations; keep history."
+    },
+    "POST /api/assistant/agents/:id/tasks": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Start one scoped task conversation with a stable request ID."
+    },
+    "GET /api/assistant/agents/:id/tasks/:chatId": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Inspect actual task progress and conversation messages."
+    },
+    "POST /api/assistant/agents/:id/tasks/:chatId/messages": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Send a live follow-up or continue the same task conversation."
+    },
+    "POST /api/assistant/agents/:id/tasks/:chatId/stop": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Stop the current task through normal conversation cancellation."
+    },
+    "POST /api/assistant/conversations/:id/messages": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Send a live follow-up from the signed-in user to the same conversation."
     }
   }
 }

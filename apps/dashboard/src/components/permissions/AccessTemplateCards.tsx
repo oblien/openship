@@ -1,5 +1,7 @@
 "use client";
 
+import { useAccessCopy } from "./access-copy";
+
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 /**
@@ -11,7 +13,7 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
  */
 
 import { TEMPLATE_ORDER, type AccessTemplateId } from "./mcp-access-templates";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+import { interpolate } from "@/components/i18n-provider";
 
 const ICONS: Record<AccessTemplateId, IconName> = {
   agent: "bot",
@@ -27,6 +29,8 @@ export function AccessTemplateCards({
   disabled,
   onPick,
   onReset,
+  templates = TEMPLATE_ORDER,
+  recommended = "agent",
 }: {
   active: AccessTemplateId;
   orgName: string;
@@ -34,12 +38,16 @@ export function AccessTemplateCards({
   onPick: (id: AccessTemplateId) => void;
   /** Present only while `active === "custom"` — re-applies the safe default. */
   onReset: () => void;
+  templates?: readonly AccessTemplateId[];
+  recommended?: AccessTemplateId;
 }) {
-  const { t } = useI18n();
-  const m = t.misc.mcpAuthorize;
+  const m = useAccessCopy();
 
-  const copy: Record<AccessTemplateId, { title: string; desc: string; badge?: string; tone?: "warning" }> = {
-    agent: { title: m.tplAgentTitle, desc: m.tplAgentDesc, badge: m.recommendedBadge },
+  const copy: Record<
+    AccessTemplateId,
+    { title: string; desc: string; badge?: string; tone?: "warning" }
+  > = {
+    agent: { title: m.tplAgentTitle, desc: m.tplAgentDesc },
     existing: { title: m.tplExistingTitle, desc: m.tplExistingDesc },
     readOnly: { title: m.tplReadOnlyTitle, desc: interpolate(m.tplReadOnlyDesc, { org: orgName }) },
     full: {
@@ -72,7 +80,7 @@ export function AccessTemplateCards({
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        {TEMPLATE_ORDER.map((id) => (
+        {templates.map((id) => (
           <TemplateCard
             key={id}
             icon={ICONS[id]}
@@ -80,6 +88,7 @@ export function AccessTemplateCards({
             disabled={disabled}
             onClick={() => onPick(id)}
             {...copy[id]}
+            badge={id === recommended ? m.recommendedBadge : copy[id].badge}
           />
         ))}
       </div>
@@ -142,7 +151,9 @@ function TemplateCard({
       </span>
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-1.5">
-          <span className={`text-sm font-medium ${selected ? "text-foreground" : "text-foreground/80"}`}>
+          <span
+            className={`text-sm font-medium ${selected ? "text-foreground" : "text-foreground/80"}`}
+          >
             {title}
           </span>
           {badge && (

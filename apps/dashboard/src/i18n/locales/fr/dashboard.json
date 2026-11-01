@@ -89,7 +89,8 @@
     "apps": "Applications",
     "jobs": "Tâches",
     "workspaces": "Espaces de travail",
-    "actions": "Actions"
+    "actions": "Actions",
+    "assistant": "Agents IA"
   },
   "sidebar": {
     "expand": "Développer la barre latérale",
@@ -244,5 +245,25 @@
       "title": "Facturation et utilisation",
       "description": "Consommation et forfaits"
     }
+  },
+  "investigation": {
+    "action": "Analyser avec l’IA",
+    "deploymentTitle": "Analyser ce déploiement",
+    "issueTitle": "Analyser ce problème",
+    "description": "Vérifiez la demande, ajoutez les détails utiles, puis envoyez-la à votre assistant.",
+    "setup": "Votre analyse est prête. Activez l’assistant et connectez un agent pour continuer.",
+    "invalid": "Ce lien est invalide ou appartient à un autre espace de travail ou compte. Ouvrez le problème d’origine dans son espace et réessayez.",
+    "back": "Ouvrir l’assistant",
+    "deploymentPrompt": "Analyse le déploiement échoué {deploymentId}.",
+    "issuePrompt": "Analyse le problème d’application {issueId}.",
+    "appContext": "Identifiant de l’application : {projectId}.",
+    "instructions": "Utilise les outils OpenShip pour examiner l’état actuel et les journaux pertinents. Explique la cause probable avec des éléments concrets et propose la prochaine étape. Analyse d’abord, sans rien modifier. Si l’accès manque, demande les autorisations précises nécessaires.",
+    "fixAction": "Corriger avec l’IA",
+    "fixTitle": "Corriger ce problème",
+    "fixPrompt": "Examine et corrige le problème de l’application {issueId}.",
+    "fixInstructions": "Utilise les outils OpenShip pour examiner le problème actuel, l’état et les journaux pertinents. Identifie la cause, applique une correction adaptée dans les limites des accès approuvés et vérifie le résultat. Si un accès ou une décision manque, propose la validation correspondante dans le chat. Indique les changements et les problèmes restants ; ne confirme le rétablissement qu’avec des preuves observées.",
+    "reportAction": "Rapport de santé IA",
+    "reportTitle": "Rapport de santé de l’espace de travail",
+    "reportPrompt": "Examine la santé actuelle des applications, déploiements, services et serveurs accessibles de cet espace de travail avec les outils de supervision et de santé OpenShip. Résume ce qui fonctionne, ce qui demande une intervention, les preuves et les prochaines étapes utiles. Signale les données de supervision anciennes ou indisponibles et les limites d’accès. Une liste de problèmes vide ne prouve pas un bon état. Ce rapport est en lecture seule : ne modifie aucune ressource et ne demande pas de diagnostics administrateur à l’échelle de l’instance."
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { LocalePreferenceSync } from "@/components/locale-preference-sync";
 import { GitHubProvider } from "@/context/GitHubContext";
 import { CloudProvider } from "@/context/CloudContext";
 import { PlatformProvider } from "@/context/PlatformContext";
@@ -49,7 +50,7 @@ export function DashboardProviders({
   // Modal content renders where its provider lives, even when opened by a
   // descendant. Keep dashboard dialogs inside their platform/auth/mail context;
   // the root layout's provider serves public screens outside this shell.
-  const content = <ModalProvider>{children}</ModalProvider>;
+  const content = <ModalProvider><LocalePreferenceSync />{children}</ModalProvider>;
   return (
     <AuthProvider initialUser={initialUser}>
       <PlatformProvider

@@ -14,8 +14,8 @@ export function CommissionPreview() {
   return (
     <div className={styles.splitPreview}>
       <div className={styles.splitHeading}>
-        <span>One {budget}% budget. Your choice.</span>
-        <span className={styles.exampleLabel}>Example</span>
+        <span>A shared benefit</span>
+        <span className={styles.exampleLabel}>Interactive example</span>
       </div>
       <div className={styles.splitNumbers} aria-live="polite" aria-atomic="true">
         <div>
@@ -23,7 +23,7 @@ export function CommissionPreview() {
             {commission}
             <span>%</span>
           </p>
-          <p className={styles.splitLabel}>You earn</p>
+          <p className={styles.splitLabel}>Your commission</p>
         </div>
         <span className={styles.splitPlus} aria-hidden="true">
           +
@@ -33,7 +33,7 @@ export function CommissionPreview() {
             {discount}
             <span>%</span>
           </p>
-          <p className={styles.splitLabel}>They save</p>
+          <p className={styles.splitLabel}>Their discount</p>
         </div>
       </div>
       <div className={styles.splitBar} aria-hidden="true">
@@ -63,7 +63,7 @@ export function CommissionPreview() {
             aria-pressed={discount === value}
             onClick={() => setDiscount(value)}
           >
-            {value === 0 ? `Keep the full ${budget}%` : `Give ${value}% off`}
+            {value === 0 ? "No discount" : `${value}% discount`}
           </button>
         ))}
       </div>

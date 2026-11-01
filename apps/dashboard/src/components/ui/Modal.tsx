@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 
 interface ModalProps {
   isOpen: boolean;
+  /** Preserve an in-progress form while its dialog is closed. */
+  keepMounted?: boolean;
   onClose: () => void;
   children: ReactNode;
   width?: string;
@@ -26,6 +28,7 @@ interface ModalProps {
 
 export function Modal({
   isOpen,
+  keepMounted = false,
   onClose,
   children,
   width = "auto",
@@ -60,7 +63,7 @@ export function Modal({
     }
   }, [isOpen]);
 
-  if (!isOpen || !mounted) return null;
+  if ((!isOpen && !keepMounted) || !mounted) return null;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (closable && e.target === e.currentTarget) {
@@ -76,7 +79,9 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center p-4"
+      className={isOpen ? "fixed inset-0 flex items-center justify-center p-4" : "hidden"}
+      hidden={!isOpen}
+      inert={!isOpen}
       data-modal-layer={zIndex}
       style={{ zIndex }}
       onClick={handleBackdropClick}
@@ -95,7 +100,7 @@ export function Modal({
       {/* Keep ordinary dialogs nearly opaque. Large workspace shells can use
           stronger blur and a softer fill; their controls keep the card surfaces. */}
       <div
-        className={`relative w-full rounded-2xl shadow-2xl flex flex-col transition-all duration-300 !overflow-x-hidden ${surface === "frosted" ? "backdrop-blur-3xl" : "backdrop-blur-2xl"}`}
+        className={`relative w-full rounded-2xl shadow-2xl flex flex-col transition-[opacity,transform] duration-300 !overflow-x-hidden ${surface === "frosted" ? "backdrop-blur-3xl" : "backdrop-blur-2xl"}`}
         data-modal-surface={surface}
         style={{
           background: `color-mix(in oklab, var(--th-card-bg-solid) ${surface === "frosted" ? "65%" : "96%"}, transparent)`,
@@ -121,7 +126,7 @@ export function Modal({
         )}
 
         {/* Content */}
-        <div className={`w-full h-full flex flex-col`}>{children}</div>
+        <div className="flex min-h-0 w-full flex-1 flex-col">{children}</div>
         {footer}
       </div>
     </div>,

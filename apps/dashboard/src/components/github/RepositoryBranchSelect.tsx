@@ -10,6 +10,7 @@ import { githubApi } from "@/lib/api/github";
 import { projectsApi } from "@/lib/api/projects";
 
 interface Props {
+  id?: string;
   owner: string;
   repo: string;
   projectId?: string;
@@ -29,6 +30,7 @@ export function RepositoryBranchSelect(props: Props) {
 }
 
 function BranchSelect({
+  id,
   owner,
   repo,
   projectId,
@@ -89,6 +91,7 @@ function BranchSelect({
   return (
     <div className="space-y-1.5">
       <CustomSelect
+        id={id}
         variant="filled"
         triggerClassName="bg-muted/60 hover:bg-muted"
         value={value}

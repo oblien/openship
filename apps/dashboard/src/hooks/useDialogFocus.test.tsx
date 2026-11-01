@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { Modal } from "@/components/ui/Modal";
 import { useDialogFocus } from "./useDialogFocus";
+import { AssistantDialog } from "@/components/assistant/AssistantDialog";
 
 let root: Root, host: HTMLDivElement, opener: HTMLButtonElement;
 function Dialog({ close, nested = false }: { close: () => void; nested?: boolean }) {
@@ -77,4 +78,39 @@ it("restores focus inside the parent when a nested dialog closes", async () => {
   await key("Escape");
   expect(document.querySelector('[aria-label="Child"]')).toBeNull();
   expect(document.activeElement).toBe(first);
+});
+
+it("preserves a closed form without taking focus, and focuses it again when reopened", async () => {
+  function RetainedDialog() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open connections</button>
+        <AssistantDialog
+          label="Connections"
+          keepMounted
+          isOpen={open}
+          onClose={() => setOpen(false)}
+        >
+          <input aria-label="Unfinished connection" defaultValue="" />
+        </AssistantDialog>
+      </>
+    );
+  }
+  await act(async () => root.render(<RetainedDialog />));
+  expect(document.activeElement).toBe(opener);
+  const button = host.querySelector("button")!;
+  button.focus();
+  await act(async () => button.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(document.activeElement).toBe(dialog);
+  const input = dialog.querySelector("input")!;
+  input.value = "Retain this draft";
+  await key("Escape");
+  expect(dialog.closest("[hidden][inert]")).not.toBeNull();
+  expect(document.activeElement).toBe(button);
+  await act(async () => button.click());
+  expect(document.activeElement).toBe(dialog);
+  expect(dialog.closest("[hidden]")).toBeNull();
+  expect(dialog.querySelector("input")!.value).toBe("Retain this draft");
 });

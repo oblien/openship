@@ -1,5 +1,7 @@
 @import "tailwindcss";
+@import "streamdown/styles.css";
 @source "../../../../packages/ui/src/AppLogo.tsx";
+@source "../../node_modules/streamdown/dist/*.js";
 @import "../styles/fonts.css";
 @import "../styles/theme.css";
 @import "../styles/chart.css";

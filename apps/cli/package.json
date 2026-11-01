@@ -54,7 +54,8 @@
     "open": "^10.2.0",
     "ora": "^9.3.0",
     "ssh2": "^1.17.0",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "@repo/commands": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

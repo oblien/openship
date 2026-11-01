@@ -32,6 +32,26 @@ export function createSettingsRepo(db: Database) {
       return row?.appearance ?? null;
     },
 
+    /** Read the language without loading account credentials or appearance assets. */
+    async getLocale(userId: string): Promise<string | undefined> {
+      const row = await db.query.userSettings.findFirst({
+        columns: { locale: true },
+        where: eq(userSettings.userId, userId),
+      });
+      return row?.locale;
+    },
+
+    /** Atomic personal language update; cannot overwrite credentials or other preferences. */
+    async setLocale(userId: string, locale: string): Promise<void> {
+      await db
+        .insert(userSettings)
+        .values({ id: generateId(), userId, locale })
+        .onConflictDoUpdate({
+          target: userSettings.userId,
+          set: { locale, updatedAt: new Date() },
+        });
+    },
+
     /** Atomic partial upsert: saving a theme cannot overwrite credentials or deploy defaults. */
     async setAppearance(userId: string, appearance: NewUserSettings["appearance"]): Promise<void> {
       await db

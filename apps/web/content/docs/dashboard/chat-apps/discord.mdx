@@ -1,0 +1,67 @@
+---
+title: Discord
+description: Register an OpenShip slash command and connect a Discord server bot.
+---
+
+OpenShip receives slash commands through an outbound **Discord Gateway** connection. Each user receives a private reply and links their own OpenShip account. No public OpenShip URL, tunnel or Message Content intent is needed.
+
+## Before you start
+
+You need permission to install a Discord app in your server. Keep OpenShip running with internet access. Use a dedicated application and leave its **Interactions Endpoint URL empty**: Discord delivers interactions by Gateway or webhook, not both.
+
+## 1. Create and install the application
+
+1. Create an app in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. In **General Information**, copy its **Application ID**. In **Bot**, create or copy its bot token. Keep the token private. Leave the app’s **Interactions Endpoint URL** empty.
+3. Configure a server installation with `applications.commands` and `bot` scopes. Install the app on the intended server; do not grant Administrator permission.
+4. In Discord's **User Settings → Advanced**, enable **Developer Mode**. Right-click your server and copy its **Server ID**, then copy the IDs of the channels where commands will be allowed.
+
+Follow Discord's [application command documentation](https://docs.discord.com/developers/interactions/application-commands) for installation and command registration.
+
+## 2. Save the connector
+
+Open **Settings → Chat apps → Discord**. Choose a name and bot role, then enter:
+
+| Field | Value |
+| --- | --- |
+| Discord server ID | The server's ID, also called a guild ID. |
+| Application ID | The app ID from the Developer Portal. |
+| Bot token | The same application's bot token. |
+| Allowed channel IDs | Exact channel IDs, separated by commas. |
+
+Keep **Direct connection** selected. Select **Save connector**, then **Enable bot** and wait for **Connected**. OpenShip authenticates to Discord, maintains the Gateway heartbeat and resumes the session after a connection loss. It does not change your app’s endpoint settings. See [Discord’s interaction delivery modes](https://docs.discord.com/developers/interactions/receiving-and-responding).
+
+## 3. Choose a native command
+
+OpenShip registers `/openship` with Discord when you enable or save the connector. Type `/openship` to choose a subcommand such as `projects`, `status` or `ask`; Discord shows the required argument fields. Only the commands for this bot's selected roles are registered.
+
+For an existing bot, open its actions menu in OpenShip and choose **Native commands → Refresh command menu**. Registration updates only the named `/openship` command in the configured Discord server. It does not replace other application commands. The bot needs the `applications.commands` installation scope.
+
+## 4. Link and test
+
+Choose `/openship link` in an allowed channel, follow the OpenShip consent page, then choose `/openship verify` and paste the returned code into its **code** field. Choose `/openship projects` to list projects your approved access permits. Commands that change a deployment still require confirmation.
+
+Older registrations with a **text** field continue to work until you refresh their menu. Enter the command and argument in that field, for example `status <project-id>`.
+
+## Talk to your assistant
+
+Select **Assistant** for conversations. Also select **Control plane** to use the same bot for deployment commands. Use a separate provider bot/application if you also want a dedicated deployment-command bot. After opt-in, `/openship chats` lists your earlier conversations here, `/openship resume <conversation-id>` continues one, and `/openship chat` opens the same conversation in OpenShip. You can continue it in either place. Choose the matching subcommand and fill in its argument field.
+
+Complete the [assistant opt-in](/docs/dashboard/chat-apps#talk-to-your-assistant). Select `/openship ask`, then enter `Check my latest deployment` in **message**. Follow up with another `ask` command in the same channel. Enter `new` to start a fresh conversation or `stop` to stop your turn.
+
+The assistant replies privately, with a link to the full conversation in OpenShip. Ordinary Discord channel messages and DMs are not routed to the assistant; this connector receives slash interactions over the Gateway and does not request message-content access. Each sender has a separate conversation and must connect their own agent.
+
+## Optional webhook connection
+
+For a public HTTPS installation, choose **Webhook**, provide the application’s public key, then save and enable the connector. Copy **Bot webhook URL** into the app’s **Interactions Endpoint URL**. Discord verifies it with a signed request. Use one delivery mode per application. Switching to an outbound connector requires clearing that endpoint in Discord first.
+
+## Troubleshooting
+
+- **Connected but no commands arrive:** ensure the app’s Interactions Endpoint URL is empty and the `/openship` command is registered in this server.
+- **Reconnecting:** check the bot token, internet access and Gateway connectivity; read the connection status in OpenShip. Keep Desktop awake when it runs the connector.
+- **Webhook endpoint verification fails:** check the connector is enabled, its URL is public HTTPS, and its application ID and public key match the Discord app. Preserve the raw request and signature headers at the proxy.
+- **Command is missing:** check installation scopes, the server ID used for registration, and Discord's **Use Application Commands** permission in that channel.
+- **Command stays unanswered:** check the allowed channel IDs, OpenShip availability and current bot credentials. Read the connector's issue message in OpenShip.
+- **Access denied:** the bot's installation does not grant access to projects. Each person must complete OpenShip linking and approve the relevant permissions.
+
+Before repeating a deployment after a missing reply, check its history in OpenShip.

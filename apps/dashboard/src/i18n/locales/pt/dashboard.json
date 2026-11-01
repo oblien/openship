@@ -89,7 +89,8 @@
     "apps": "Apps",
     "jobs": "Tarefas",
     "workspaces": "Espaços de trabalho",
-    "actions": "Ações"
+    "actions": "Ações",
+    "assistant": "Agentes de IA"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",
@@ -244,5 +245,25 @@
       "title": "Faturamento e uso",
       "description": "Uso e planos"
     }
+  },
+  "investigation": {
+    "action": "Investigar com IA",
+    "deploymentTitle": "Investigar este deploy",
+    "issueTitle": "Investigar este problema",
+    "description": "Revise a solicitação, adicione detalhes úteis e envie ao assistente.",
+    "setup": "Sua investigação está preparada. Ative o assistente e conecte um agente para continuar.",
+    "invalid": "Este link é inválido ou pertence a outro espaço de trabalho ou conta. Abra o problema original no espaço correto e tente novamente.",
+    "back": "Abrir assistente",
+    "deploymentPrompt": "Investigue o deploy com falha {deploymentId}.",
+    "issuePrompt": "Investigue o problema do aplicativo {issueId}.",
+    "appContext": "ID do aplicativo: {projectId}.",
+    "instructions": "Use as ferramentas do OpenShip para examinar o estado atual e os logs relevantes. Explique a causa provável com evidências e sugira o próximo passo. Investigue primeiro, sem alterar nada. Se faltar acesso, solicite as permissões específicas necessárias.",
+    "fixAction": "Corrigir com IA",
+    "fixTitle": "Corrigir este problema",
+    "fixPrompt": "Investigue e corrija o problema do aplicativo {issueId}.",
+    "fixInstructions": "Use as ferramentas do OpenShip para examinar o problema atual, o status e os logs relevantes. Encontre a causa, aplique uma correção adequada dentro dos acessos aprovados e verifique o resultado. Se faltar acesso ou uma decisão necessária, ofereça a revisão correspondente no chat. Informe as alterações e os problemas restantes; confirme a recuperação apenas com evidências observadas.",
+    "reportAction": "Relatório de integridade com IA",
+    "reportTitle": "Relatório de integridade do espaço de trabalho",
+    "reportPrompt": "Analise a integridade atual dos aplicativos, implantações, serviços e servidores acessíveis deste espaço de trabalho usando as ferramentas de monitoramento e integridade do OpenShip. Resuma o que está funcionando, o que precisa de atenção, as evidências e os próximos passos mais úteis. Indique dados de monitoramento desatualizados ou indisponíveis e limitações de acesso. Uma lista vazia de problemas não comprova a integridade. Este relatório é somente leitura: não altere recursos nem solicite diagnósticos administrativos de toda a instância."
   }
 }

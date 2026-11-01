@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
 import type { CloudCapability } from "@repo/core";
 import { useCloudCapabilityCopy, type CloudRequirementPrompt } from "./cloud/capability-copy";
-import { CloudResourceContext } from "./CloudResourceContext";
+import { CloudResourceContext, CloudResourceReadyContext } from "./CloudResourceContext";
 import { useRouter } from "next/navigation";
 import { setApiResourceScope } from "@/lib/api/client";
 import { clearProjectEndpointCaches } from "@/hooks/useProjectEndpoints";
@@ -423,7 +423,11 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     <CloudContext.Provider
       value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: async () => { await checkStatus(); }, setConnected }}
     >
-      <CloudResourceContext.Provider value={resourceKey}>{children}</CloudResourceContext.Provider>
+      <CloudResourceContext.Provider value={resourceKey}>
+        <CloudResourceReadyContext.Provider value={hasNativeCloudAccess || current}>
+          {children}
+        </CloudResourceReadyContext.Provider>
+      </CloudResourceContext.Provider>
 
       {/* ── Connect Modal ──────────────────────────────────── */}
       {modalFeature && (

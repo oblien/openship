@@ -1,0 +1,163 @@
+---
+title: Chat apps
+description: Check and control deployments from Slack, Discord, Telegram and Microsoft Teams.
+---
+
+Chat apps let your team control deployments and talk to their own assistant from an existing conversation. Deployment commands work without AI. Assistant conversations are a separate opt-in for the workspace and each person.
+
+Open **Settings → Chat apps**, or choose **Chat apps** from the assistant's settings menu. Nothing connects automatically. Each connector starts paused, and each person must link their own OpenShip account before reading projects or controlling deployments.
+
+## Connect a bot
+
+Slack, Discord and Telegram work from Desktop or a private server **without a public OpenShip URL, tunnel or inbound port**. OpenShip connects outward using Slack Socket Mode, Discord Gateway or Telegram long polling. Keep OpenShip running with internet access; a sleeping or closed Desktop cannot process commands.
+
+Microsoft Teams uses Bot Framework webhooks and still requires a public HTTPS API endpoint. You can also choose **Webhook** explicitly for the other providers if you already have a public HTTPS installation. Bot connectivity does not require an assistant or a Mindwire daemon.
+
+1. Create a bot/application with your chat provider.
+2. In OpenShip, choose the provider and bot role. The bot runs through your OpenShip instance, including on Cloud; no customer-server installation is needed for commands.
+3. Enter the provider credentials and the exact channel/conversation IDs allowed to receive commands.
+4. Save the connector, then select **Enable bot**.
+5. For a direct connection, wait for **Connected**. For a webhook connection, copy its webhook URL into the provider's configuration and use the same secret/signing key.
+6. Send `/openship link` in an allowed conversation. Sign into OpenShip, select the same workspace and review the permission dialog.
+7. Copy the verification command back into that conversation, from the same chat account. It expires after five minutes.
+
+Opening somebody else's account-linking URL does not link their chat identity. Browser consent and the verification sent by the original chat sender are both required.
+
+For a local installation, open the account-linking URL on the computer running OpenShip (or a device that can reach its private address). A `localhost` link on your phone points to the phone, not your Desktop. Once linked, commands can be sent from any device using that chat account.
+
+### Choose a bot role
+
+![Chat app setup with separate Assistant and Control plane selections](/docs/images/chat-app-bot-roles.png)
+
+- **Assistant** accepts conversations and chat controls, with each person's connected agent.
+- **Control plane** provides project, status, logs, restart and redeploy commands without AI.
+
+Select either option, or select both to use one bot for conversations and deployment commands. At least one option is required.
+
+For separate assistant and operations bots, register a separate bot/application for each connector, then choose its role. Run only one connector for each provider bot. Account linking and help work in every role; `/openship help` shows only that bot's available commands. Selecting Assistant does not connect anybody’s agent automatically: the connector must be enabled and each person must opt in with their own agent.
+
+An owner or admin can open **Settings** on a connection to edit its name, bot options, allowed chat or channel IDs, connection method and credentials. Choose **Save changes** to apply the draft together. Leave credential fields blank to keep their saved values. The provider remains fixed; create another connector to use a different provider. Changing the role or connector policy invalidates earlier chat bindings; start a new conversation afterward. Saved history stays available in OpenShip.
+
+![A connected bot with separate account access and optional assistant connection](/docs/images/chat-app-connection.png)
+
+### App setup guides
+
+Follow the guide for your app to create its bot, find the required IDs, configure its connection and check your first command.
+
+| App | Setup | Reply visibility |
+| --- | --- | --- |
+| Slack | [Connect Slack](/docs/dashboard/chat-apps/slack) | Private to the sender. |
+| Discord | [Connect Discord](/docs/dashboard/chat-apps/discord) | Private to the sender. |
+| Telegram | [Connect Telegram](/docs/dashboard/chat-apps/telegram) | Visible to the conversation. |
+| Microsoft Teams | [Connect Teams](/docs/dashboard/chat-apps/teams) | Visible to the conversation. |
+
+## Talk to your assistant
+
+1. Link your chat account using the steps above. Enable [Assistant](/docs/dashboard/assistant) in the same OpenShip workspace, approve its permissions and connect your Claude Code or Codex agent.
+2. A workspace owner or admin selects **Assistant** in the bot's settings (with **Control plane** optionally selected too), saves, and enables the connector. There is no second assistant switch. Existing connectors with assistant conversations off need an explicit settings save.
+3. In that connection's **Your assistant** row, choose **Connect my assistant**, select your connected agent and model, and confirm. Each teammate does this for their own account; installing a bot does not share its installer's agent.
+4. Send `/openship ask How are my apps doing?`. Follow up using another `ask` command. Use `/openship new` for a fresh conversation or `/openship stop` to stop your current turn.
+
+Discord offers `/openship ask` with a **message** field. Older registrations with a **text** field also accept `ask How are my apps doing?`. Telegram and Teams also accept plain bot messages after opt-in. Slack can accept mentions or direct messages after the optional event subscriptions in its [setup guide](/docs/dashboard/chat-apps/slack#talk-to-your-assistant) are configured. Conversation history is separate for each linked person, channel and provider thread.
+
+### Continue a conversation
+
+Send `/openship chat` to open the current conversation in OpenShip. Its ordinary composer uses the same native Mindwire conversation and history: you can reply in the dashboard and continue from the chat app afterward. Dashboard turns are not automatically broadcast to the chat app; a chat request receives only its own turn's visible answer.
+
+`/openship new` stops the current turn and starts a fresh conversation on your next message. It keeps earlier history. Use `/openship chats` to list up to eight recent conversations from this chat, then `/openship resume <conversation-id>` to select one. If the current conversation is running, stop it before switching. Resume never executes an earlier message again.
+
+History and resume are scoped to the same linked person, channel and provider thread. They cannot attach a different user's conversation, a conversation from another channel, or an unrelated dashboard-created chat. An old chat whose permissions or connection changed cannot regain access through resume; review the settings and start a new chat.
+
+The reply includes a private OpenShip conversation link. Open it for full results, tool activity and permission requests. You can answer a single agent question with `/openship ask <answer>`; more complex forms open in OpenShip. Additional access always requires review in OpenShip. After changing Assistant permissions, reconnect your assistant for this chat and send a new message; earlier work is not replayed.
+
+Assistant tools use the permissions you approved for **Assistant**. Direct deployment commands use their separate **OpenShip Chat** grant. With Assistant write access, an agent may perform authorized operations without the command flow's extra `confirm` step. Choose read-only Assistant access if you want investigations without changes.
+
+Only the visible response is posted, with long replies linked to the full conversation. Raw tool output and reasoning are not automatically posted, but an answer can summarize private app information. Use private bot conversations for sensitive work in Telegram or Teams. **Disconnect my assistant** disables chat access without signing out Claude Code or Codex or disabling your dashboard assistant.
+
+## Native command menus
+
+Telegram and Discord publish native menus when you enable or save a bot. Type `/` in Telegram, or `/openship` in Discord. Slack requires the command definitions in its app manifest; open **Native commands** from the connection's actions menu to copy them. Follow the provider guide above for setup. Existing bots can use **Refresh command menu** from the same menu.
+
+Menus use the same role-filtered command catalog as help and dispatch. Selecting a command never grants permissions or skips deployment confirmation. Creating or updating a connector requires only its provider credentials; it never checks an assistant daemon version.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| `/openship start` | Open the welcome menu and quick actions. |
+| `/openship help` | Show available commands. |
+| `/openship ask <message>` | Talk to your own connected assistant using its approved access. |
+| `/openship new` | Start a new assistant conversation in this chat. |
+| `/openship stop` | Stop your current assistant turn in this chat. |
+| `/openship chats` | List your recent conversations from this chat. |
+| `/openship resume <conversation-id>` | Select an earlier conversation from this chat with its native history. |
+| `/openship chat` | Open the current conversation; continue in OpenShip or the chat app. |
+| `/openship link` | Receive instructions, then a separate message containing only the account-link URL. |
+| `/openship verify <code>` | Finish the browser consent flow from the original chat account. |
+| `/openship projects` | List up to 20 projects visible with your approved permissions, with their IDs. |
+| `/openship status <project-id>` | Show the latest deployment status and open the project. This is not a live application health check. |
+| `/openship logs <project-id>` | Open the project's private log page in OpenShip. Log contents are not posted in chat. |
+| `/openship redeploy <project-id>` | Ask for confirmation to redeploy the project's latest source through the normal pipeline. |
+| `/openship restart <project-id>` | Ask for confirmation to restart the active deployment. |
+| `/openship confirm <code>` | Confirm the exact requested action within five minutes, from the same account and conversation. |
+| `/openship unlink` | Disconnect your chat identity and revoke only its OpenShip grant. |
+
+Redeployment uses the usual build, checks and cutover. Restart uses the existing deployment restart action. A confirmation is rejected if the active deployment, connector revision or linked identity changed. Permission checks run again when the action executes.
+
+### Your first deployment command
+
+1. Send `/openship link`. Read the first message, open the URL in the second message, and approve permissions in OpenShip. Send the returned `/openship verify <code>` command from the original chat account and conversation.
+2. Send `/openship projects`. In Telegram, tap a project button. Other chat apps show its ID for use in the next command.
+3. Send `/openship status <project-id>`, replacing `<project-id>` with that ID. Do not include the angle brackets.
+4. To deploy its latest source, send `/openship redeploy <project-id>`. Read the proposed action and send the exact `/openship confirm <code>` command from the reply within five minutes.
+5. Open the project link to follow the deployment, or send `/openship logs <project-id>` to open private logs in OpenShip.
+
+Read-only access is enough for projects, status and logs. Redeploy and restart also require the permissions for those actions. If access is denied, review your grant; repeating a command does not grant additional permissions. In Discord, select `/openship`, choose a subcommand and fill in its argument when requested.
+
+### Shared command definitions
+
+`@repo/commands` owns the shared project command names, arguments, chat aliases and parser. The CLI registers these definitions with Commander; chat menus, help and the dashboard reference use the same catalog. The following syntax works in both interfaces:
+
+| CLI | Chat | Short chat command |
+| --- | --- | --- |
+| `openship project list` | `/openship project list` | `/openship projects` |
+| `openship project get <id>` | `/openship project get <id>` | `/openship status <id>` |
+| `openship project logs <id>` | `/openship project logs <id>` | `/openship logs <id>` |
+| `openship project restart <id>` | `/openship project restart <id>` | `/openship restart <id>` |
+| `openship project redeploy <id>` | `/openship project redeploy <id>` | `/openship redeploy <id>` |
+
+Chat presents project information and opens logs privately; CLI output remains suited to a terminal. CLI restart/redeploy asks for confirmation (or an explicit `--yes`); chat uses its expiring confirmation bound to the sender and conversation. Existing `openship deployment` commands still take deployment IDs. Terminal-only setup commands are not exposed in chat.
+
+Execution stays in the authenticated client: the CLI uses the SDK, and chat uses the existing MCP tool registry and API dispatcher with the sender's OAuth grant. Both reach the normal resource and deployment operations. Chat never runs CLI processes or inherits terminal credentials.
+
+### Language and Telegram buttons
+
+Replies use your language from OpenShip Settings. Before you link an account, the bot uses the connection owner's language. Linked teammates each keep their own preference. Changing the dashboard language updates subsequent replies; assistant turns also receive that language preference. Command names and IDs remain unchanged.
+
+Telegram `/start` opens a short welcome menu. `/projects` shows project buttons; choosing one opens its status and actions. Sending `/status`, `/logs`, `/restart` or `/redeploy` without an ID also opens a project picker. A restart or redeploy button only prepares the action; **Confirm** is still required. Buttons expire and work only for the original sender, conversation and approved account. The text command remains available on every provider.
+
+## Permissions and privacy
+
+The connection owner installs a bot but does not lend their account to everyone in the channel. Each sender gets an ordinary OpenShip OAuth grant using the shared permission editor. An existing read-only grant cannot restart or redeploy. Removing workspace membership or revoking the grant stops further commands.
+
+Review or change a chat connection's grant in **Settings → MCP**, where it is named **OpenShip Chat · connection name**. The native Codex or Claude Code sign-in is separate and is never used or disconnected by chat commands. Execution is recorded through the normal deployment audit path, attributed to the linked user and OAuth client as a webhook action.
+
+Slack slash-command replies and Discord interactions are private to the sender. Slack assistant thread replies, Telegram and Teams replies can be seen by other conversation members. Bot credentials, incoming messages, reply capabilities and button targets are encrypted in OpenShip’s database and never returned to the dashboard. Credentials are unique to each bot connection. Inbox records expire after seven days; encrypted command receipts expire after 30 days. Connector bindings and private receipts are excluded from instance transfers. Assistant transcripts use the same private agent storage as dashboard conversations.
+
+## Delivery and recovery
+
+OpenShip receives messages through authenticated outbound provider connections or verifies the signature/secret over each raw webhook request. Both modes use the same allowlists, decoder and encrypted inbox. Telegram saves its update cursor after accepting each update; Slack acknowledges persisted events; Discord persists an interaction and confirms its private defer before dispatch. A database lease allows one outbound receiver per connector across API replicas. Pausing or editing a connector fences its old receiver. Commands use the existing authorized dispatcher and never launch an agent.
+
+Assistant messages enter the same runtime, MCP authorization and deployment operations as the dashboard. A durable event receipt tracks the exact request in the existing conversation. Delivery reads that request's native Mindwire run snapshot, never the latest conversation transcript. Reply polling does not block new commands, and an expired delivery lease is reclaimed without starting another model turn. Changing the connector policy, personal opt-in, workspace membership or approved access invalidates that conversation's chat execution. Active turns are rechecked and stopped when access is removed. Already accepted deployment operations follow their normal lifecycle.
+
+Chat turns have a ten-minute limit, including time waiting for an answer. If a reply cannot be delivered, open the conversation in OpenShip before sending the request again. Stopping a turn does not undo operations it has already performed.
+
+OpenShip records an execution receipt before dispatching a command. Repeated provider events and concurrent confirmation attempts do not repeat a deployment. If the API stops after dispatch but before recording a result, the operation is **not automatically replayed**. Check the project's deployment history before issuing another command. This is conservative recovery, not a guarantee that a remote action and its reply are one transaction.
+
+Replies containing multiple messages track delivery of each message separately. A worker can resume after a confirmed send without repeating it. If a provider response is lost and delivery is uncertain, OpenShip does not resend that message automatically. A fresh `/openship link` creates a new linking flow if its URL was not delivered.
+
+**Pause** closes the OpenShip command gate and stops its outbound receiver. It works without contacting an assistant or a chat provider. Removing a connector deletes its encrypted provider credentials and local account bindings. For webhooks, unregister the provider endpoint if you also want to stop delivery attempts.
+
+## Testing and rollout
+
+Automated tests exercise OpenShip OAuth consent, the normal command/deployment dispatcher, read-only grants, tenant isolation, duplicate confirmations, encrypted inbox receipts, provider signatures, receiver leases, separate link messages, partial delivery recovery, localized replies, sender-bound Telegram buttons, and pause/reconfigure behavior. CLI tests verify the shared syntax and existing deployment endpoints. Assistant tests cover separate opt-in, native history and replies, revocation, and sender/channel/thread isolation. Provider traffic and model execution use isolated fixtures; native agent sign-ins are not changed. Test your real bot installation before inviting your team.

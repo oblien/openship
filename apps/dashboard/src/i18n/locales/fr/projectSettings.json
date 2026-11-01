@@ -619,6 +619,12 @@
       "repository": "Dépôt",
       "open": "Ouvrir"
     },
+    "branch": {
+      "label": "Branche de déploiement",
+      "description": "Utilisée pour les prochains déploiements de cet environnement. Enregistrer ne redéploie pas l’application.",
+      "saved": "Branche de déploiement enregistrée",
+      "saveFailed": "Impossible d’enregistrer la branche de déploiement"
+    },
     "webhookEndpoint": {
       "title": "Point de terminaison du webhook",
       "descriptionSet": "GitHub livre les événements push directement à ce domaine",

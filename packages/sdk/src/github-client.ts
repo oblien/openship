@@ -25,6 +25,7 @@ export function createRemoteGitHubOperations(http: HttpClient): GitHubOperations
       listFiles: { method: "GET", path: input => `${repo(input)}/files`, envelope: "data" },
       listTree: { method: "GET", path: input => `${repo(input)}/tree`, envelope: "data" },
       getFile: { method: "GET", path: input => `${repo(input)}/file`, envelope: "data" },
+      publishChange: { method: "POST", path: input => `${repo(input)}/changes`, envelope: "data" },
       listWebhooks: { method: "GET", path: input => `${repo(input)}/webhooks`, envelope: "data" },
       registerWebhook: { method: "POST", path: input => `${repo(input)}/webhooks`, envelope: "data" },
       deleteWebhook: { method: "DELETE", path: input => `${repo(input)}/webhooks` },

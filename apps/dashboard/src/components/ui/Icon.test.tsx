@@ -134,7 +134,7 @@ describe("shared icon rendering", () => {
 describe("icon configuration and recovery", () => {
   const theme: IconTheme = { name: "custom", icons: { server: { file: "custom server.png", mode: "color" } } };
 
-  it("recovers a CDN image that failed before hydration attached its error handler", async () => {
+  it.each(["google", "codex", "claude"] as const)("recovers a %s CDN image that failed before hydration attached its error handler", async (name) => {
     const probes: HTMLImageElement[] = [];
     vi.stubGlobal(
       "Image",
@@ -148,7 +148,7 @@ describe("icon configuration and recovery", () => {
     );
     const element = (
       <IconProvider baseUrl="https://icons.example.test">
-        <Icon name="google" />
+        <Icon name={name} />
       </IconProvider>
     );
     host.innerHTML = renderToString(element);
@@ -158,13 +158,13 @@ describe("icon configuration and recovery", () => {
     await act(async () => {
       root = hydrateRoot(host, element, { onRecoverableError: recoverableError });
     });
-    expect(imageSource()).toBe(iconAssetUrl(outlineModern.google, "https://icons.example.test"));
+    expect(imageSource()).toBe(iconAssetUrl(outlineModern[name], "https://icons.example.test"));
     expect(probes).toHaveLength(1);
     expect(probes[0].src).toBe(imageSource());
     act(() => {
       probes[0].dispatchEvent(new Event("error"));
     });
-    expect(imageSource()).toBe(iconAssetUrl(outlineModern.google));
+    expect(imageSource()).toBe(iconAssetUrl(outlineModern[name]));
     expect(host.querySelector("mask")).toBeNull();
     expect(probes[0].onerror).toBeNull();
     failImage();

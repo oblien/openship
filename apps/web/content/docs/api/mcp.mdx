@@ -56,6 +56,13 @@ body returns `-32600`).
 
 ## List available tools
 
+Tools-only clients can call `get_mcp_guide` with no arguments to list the same workflow
+guides exposed by `prompts/list`, then pass `query.name` to read one. Start with
+`openship-overview` or a relevant guide such as `chat-apps`. The guide endpoint checks
+membership and credential scope but needs no resource grant; it returns documentation,
+not workspace data or additional permissions. This lets agents discover a workflow
+before searching for its tools instead of loading every tool description.
+
 ```
 POST /api/mcp
 ```
@@ -256,6 +263,7 @@ intended: it wasn't granted that project, server, or repository.
 | Operation | REST API |
 | --- | --- |
 | Returns `405` — this server never pushes messages, so there is no SSE stream to open. | `GET /api/mcp`<br />`Handler authentication` |
+| List the shared MCP workflow guides or read one with `query.name`. Validates membership and credential scope; returns documentation only, without requiring resource grants. | `GET /api/mcp/guide`<br />`permissions:read` |
 | Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`. | `POST /api/mcp`<br />`Handler authentication` |
 
 {/* api-operations:end */}

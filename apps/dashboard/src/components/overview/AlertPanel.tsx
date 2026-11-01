@@ -164,7 +164,7 @@ export function AlertRow({
         className={`grid items-center ${
           compact
             ? "grid-cols-[1.75rem_minmax(0,1fr)_auto] gap-x-2.5 gap-y-1"
-            : "grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 @md:grid-cols-[2rem_minmax(0,1fr)_auto]"
+            : "grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 @2xl:grid-cols-[2rem_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)]"
         }`}
       >
         <div
@@ -172,21 +172,20 @@ export function AlertRow({
         >
           <UiIcon name={Icon} className={`${compact ? "size-3.5" : "size-4"} ${s.icon}`} />
         </div>
-        {/* Inline names and labels share the space evenly. In a narrow full list,
-            let the label wrap so both can use the column's available width. */}
+        {/* Wide lists give name, status and actions independent columns. */}
         <div
           className={`col-start-2 row-start-1 flex min-w-0 items-baseline ${
-            compact ? "gap-1.5" : "flex-wrap gap-x-2.5 gap-y-0.5 @md:flex-nowrap"
+            compact ? "gap-1.5" : "flex-wrap gap-x-2.5 gap-y-0.5 @2xl:contents"
           }`}
         >
           <p
-            className={`min-w-0 truncate ${compact ? "flex-1 text-[13px]" : "max-w-full text-sm @md:flex-1"} font-medium text-foreground`}
+            className={`min-w-0 truncate ${compact ? "flex-1 text-[13px]" : "max-w-full text-sm @2xl:col-start-2 @2xl:row-start-1"} font-medium text-foreground`}
           >
             {title}
           </p>
           {label && (
             <span
-              className={`min-w-0 truncate ${compact ? "flex-1 text-[11px]" : "max-w-full text-xs @md:flex-1"} text-muted-foreground`}
+              className={`min-w-0 truncate ${compact ? "flex-1 text-[11px]" : "max-w-full text-xs @2xl:col-start-3 @2xl:row-start-1"} text-muted-foreground`}
             >
               {label}
             </span>
@@ -194,7 +193,7 @@ export function AlertRow({
         </div>
         {children && (
           <div
-            className={`col-start-2 row-start-2 min-w-0 ${compact ? "col-span-2" : "@md:col-span-2 @md:col-start-2"}`}
+            className={`col-start-2 row-start-2 min-w-0 ${compact ? "col-span-2" : "@2xl:col-span-3 @2xl:col-start-2"}`}
           >
             {children}
           </div>
@@ -203,7 +202,7 @@ export function AlertRow({
           className={
             compact
               ? "col-start-3 row-start-1 flex justify-self-end"
-              : "col-start-2 row-start-3 mt-1 flex min-w-0 max-w-full justify-self-start @md:col-start-3 @md:row-start-1 @md:mt-0 @md:justify-self-end"
+              : "col-start-2 row-start-3 mt-1 flex min-w-0 max-w-full justify-self-start @2xl:col-start-4 @2xl:row-start-1 @2xl:mt-0 @2xl:justify-self-end"
           }
         >
           {action}

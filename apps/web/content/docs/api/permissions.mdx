@@ -312,6 +312,7 @@ you can't touch another tenant's rows even by guessing the id).
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | List available workspace IDs, names, roles, and credential scope. | `permissions.listWorkspaces()` | `GET /api/permissions/workspaces`<br />`permissions:read` |
+| Present an informational request to review this connection’s permissions. Grants no access. | `permissions.requestAccess(input)` | `GET /api/permissions/access-request`<br />`permissions:read` |
 | Read the selected organization’s permission metadata. | `permissions.orgMeta()` | `GET /api/permissions/org-meta`<br />`permissions:read` |
 | List resources available for permission grants. | `permissions.listResources(input)` | `GET /api/permissions/resources`<br />`permissions:read` |
 | Create a team organization with the caller as its owner. | `permissions.createTeamOrg(input)` | `POST /api/permissions/create-team-org`<br />`permissions:write` |

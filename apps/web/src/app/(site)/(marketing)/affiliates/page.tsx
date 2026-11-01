@@ -5,7 +5,7 @@ import {
   BarChart3,
   Check,
   ChevronDown,
-  Gift,
+  Cloud,
   Link2,
   Repeat2,
   Wallet,
@@ -16,19 +16,19 @@ import { AFFILIATE_PROGRAM as program } from "@/lib/affiliate-program";
 import { CommissionPreview } from "./commission-preview";
 import styles from "./affiliates.module.css";
 
-const title = "OpenShip Earn — Share OpenShip. Get rewarded.";
+const title = "OpenShip Affiliates — Good tools are worth sharing.";
 const description =
-  `Earn up to ${program.commissionPercent}% on eligible OpenShip Cloud payments for ${program.rewardMonths} months. ` +
-  `Create discount links, track referrals and request cash payouts from $${program.minimumPayoutUsd}.`;
+  "Introduce someone to OpenShip. Share a useful tool, offer an optional discount, " +
+  `and receive up to ${program.commissionPercent}% commission on eligible Cloud payments for ${program.rewardMonths} months.`;
 const socialImage = {
   url: "/og/affiliates.png",
   width: 1200,
   height: 630,
-  alt: "OpenShip Earn. Share OpenShip. Get rewarded. Earn up to 20% on eligible Cloud payments.",
+  alt: "OpenShip Affiliates. Good tools are worth sharing.",
 };
 
 export const metadata: Metadata = {
-  title: "Earn — Affiliate program",
+  title: "Affiliates",
   description,
   alternates: { canonical: "/affiliates" },
   openGraph: {
@@ -52,18 +52,18 @@ export const metadata: Metadata = {
 const steps = [
   {
     icon: Link2,
-    title: "Make your link.",
-    copy: "Join from your Cloud account. Keep the full commission or share part as a customer discount. Choose all eligible plans or specific plans and billing intervals.",
+    title: "Start with a link",
+    copy: "Join from your Cloud account. Choose the eligible plans you want to recommend, and add a customer discount if you like.",
   },
   {
     icon: Repeat2,
-    title: "Share something useful.",
-    copy: "Add your link to a tutorial, newsletter or recommendation. Your audience sees the eligible Cloud plans and their discount before signing in and checking out.",
+    title: "Make an introduction",
+    copy: "A guide, a project, a conversation. Share OpenShip where it helps. People can see their eligible plans and discount before checking out.",
   },
   {
     icon: BarChart3,
-    title: "Follow every reward.",
-    copy: "Track referred customers, confirmed payments, renewals and earnings in your dashboard. Request a cash payout when your available balance reaches your minimum.",
+    title: "Keep track, simply",
+    copy: "See referrals, verified payments and your available commission in one dashboard. Request a payout when you reach your minimum.",
   },
 ];
 
@@ -71,7 +71,7 @@ const questions = [
   {
     question: "How do I join?",
     answer:
-      "Sign in or create an OpenShip Cloud account, open Earn and choose Join the program. Review your program terms, then create your first referral link. You can share a link or its referral code.",
+      "Sign in or create an OpenShip Cloud account, visit the affiliate dashboard and choose Join the program. Review your program terms, then create your first referral link. You can share a link or its referral code.",
   },
   {
     question: "Which purchases qualify?",
@@ -109,53 +109,78 @@ export default function AffiliatesPage() {
           <div className={styles.container}>
             <div className={styles.heroGrid}>
               <div>
-                <p className={styles.eyebrow}>
-                  <Gift size={18} aria-hidden="true" />
-                  OpenShip Earn
-                </p>
+                <p className={styles.eyebrow}>OpenShip Affiliates</p>
                 <h1 id="affiliate-title" className={styles.heroTitle}>
-                  Share OpenShip.
+                  Good tools are
                   <br />
-                  <span>Get rewarded.</span>
+                  <span>worth sharing.</span>
                 </h1>
                 <p className={styles.heroCopy}>
-                  You bring the community. We bring the cloud.
-                  <br className={styles.desktopBreak} />
-                  Earn from the people you send our way.
+                  Help someone find a better way to deploy. Our affiliate program is a small
+                  thank-you for making the introduction.
                 </p>
                 <div className={styles.actions}>
                   <a href={program.joinUrl} className={styles.primaryButton}>
-                    Become an affiliate <ArrowRight size={19} aria-hidden="true" />
+                    Join the program <ArrowRight size={17} aria-hidden="true" />
                   </a>
                   <a href="#how-it-works" className={styles.textLink}>
-                    See how it works
+                    How it works <ArrowRight size={16} aria-hidden="true" />
                   </a>
                 </div>
+                <p className={styles.heroNote}>For developers, educators, and people who build.</p>
               </div>
-              <div className={styles.reward}>
-                <p className={styles.rewardLabel}>Earn up to</p>
-                <p className={styles.rewardValue}>
-                  {program.commissionPercent}
-                  <span>%</span>
-                </p>
-                <p className={styles.rewardCaption}>on eligible Cloud payments.</p>
-                <p className={styles.rewardNote}>
-                  First payment + renewals within {program.rewardMonths} months
-                </p>
+              <div className={styles.connections} aria-hidden="true">
+                <div className={styles.orbit} />
+                <div className={styles.orbitInner} />
+                <svg className={styles.connectionLines} viewBox="0 0 480 420" fill="none">
+                  <path d="M145 105C145 165 240 135 240 210S345 245 345 310" />
+                  <circle cx="145" cy="105" r="3" />
+                  <circle cx="345" cy="310" r="3" />
+                </svg>
+                <div className={styles.introduction}>
+                  <span className={styles.noteIcon}>
+                    <Link2 size={19} />
+                  </span>
+                  <div>
+                    <strong>Your recommendation</strong>
+                    <span>A guide. A project. A good word.</span>
+                  </div>
+                </div>
+                <div className={styles.connectionMark}>
+                  <span />
+                </div>
+                <div className={styles.destination}>
+                  <span className={styles.noteIcon}>
+                    <Cloud size={20} />
+                  </span>
+                  <div>
+                    <strong>Their next deployment</strong>
+                    <span>A new home on OpenShip Cloud.</span>
+                  </div>
+                  <ArrowRight size={16} />
+                </div>
+                <p className={styles.connectionCaption}>Good things travel by word of mouth.</p>
               </div>
             </div>
             <dl className={styles.facts}>
               <div>
-                <dt>Reward period</dt>
-                <dd>{program.rewardMonths} months per referral</dd>
+                <dt>Commission</dt>
+                <dd>
+                  Up to {program.commissionPercent}%<span>on eligible Cloud payments</span>
+                </dd>
               </div>
               <div>
-                <dt>Eligible subscriptions</dt>
-                <dd>Monthly &amp; annual Cloud plans</dd>
+                <dt>Referral period</dt>
+                <dd>
+                  {program.rewardMonths} months<span>from their first eligible payment</span>
+                </dd>
               </div>
               <div>
-                <dt>Default cash payout minimum</dt>
-                <dd>${program.minimumPayoutUsd}, reviewed by OpenShip</dd>
+                <dt>Payouts</dt>
+                <dd>
+                  From ${program.minimumPayoutUsd}
+                  <span>requested by you, reviewed by us</span>
+                </dd>
               </div>
             </dl>
           </div>
@@ -169,9 +194,8 @@ export default function AffiliatesPage() {
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>How it works</p>
             <h2 id="steps-title">
-              From a good word
-              <br />
-              to your next reward.
+              A thoughtful introduction.
+              <br />A straightforward program.
             </h2>
           </div>
           <ol className={styles.steps}>
@@ -193,12 +217,8 @@ export default function AffiliatesPage() {
           aria-labelledby="split-title"
         >
           <div className={styles.splitIntro}>
-            <p className={styles.eyebrow}>Good for you. Good for them.</p>
-            <h2 id="split-title">
-              Your link.
-              <br />
-              Your way to share.
-            </h2>
+            <p className={styles.eyebrow}>A little flexibility</p>
+            <h2 id="split-title">Make the link your own.</h2>
             <p>
               Keep the full {program.commissionPercent}% commission, or give your audience a
               discount from that budget. You choose the split when you create a link.
@@ -220,12 +240,8 @@ export default function AffiliatesPage() {
 
         <section className={`${styles.container} ${styles.section}`} aria-labelledby="timing-title">
           <div className={styles.sectionHeading}>
-            <p className={styles.eyebrow}>When you earn</p>
-            <h2 id="timing-title">
-              The payment counts.
-              <br />
-              You don&apos;t wait for the year to end.
-            </h2>
+            <p className={styles.eyebrow}>The details, upfront</p>
+            <h2 id="timing-title">Clear from the first payment.</h2>
             <p>
               Earnings start when an eligible payment is verified. Cash payouts are requested
               separately.
@@ -272,12 +288,8 @@ export default function AffiliatesPage() {
           aria-labelledby="payout-title"
         >
           <div>
-            <p className={styles.eyebrow}>Your earnings, paid out</p>
-            <h2 id="payout-title">
-              From recommendations
-              <br />
-              to cash payouts.
-            </h2>
+            <p className={styles.eyebrow}>Payouts</p>
+            <h2 id="payout-title">Know where you stand.</h2>
             <p>
               Save your payout account, reach your minimum, then submit a request. We review each
               request and arrange the payment.
@@ -331,18 +343,12 @@ export default function AffiliatesPage() {
 
         <section className={`${styles.container} ${styles.finalCta}`} aria-labelledby="join-title">
           <div>
-            <p className={styles.eyebrow}>
-              <Gift size={18} aria-hidden="true" />
-              OpenShip Earn
-            </p>
-            <h2 id="join-title">
-              A good recommendation
-              <br />
-              deserves a reward.
-            </h2>
+            <p className={styles.eyebrow}>OpenShip Affiliates</p>
+            <h2 id="join-title">Have someone in mind?</h2>
+            <p className={styles.finalCopy}>Share OpenShip when it feels like the right fit.</p>
           </div>
           <a href={program.joinUrl} className={styles.primaryButton}>
-            Create your first link <ArrowRight size={19} aria-hidden="true" />
+            Join the program <ArrowRight size={17} aria-hidden="true" />
           </a>
         </section>
       </main>

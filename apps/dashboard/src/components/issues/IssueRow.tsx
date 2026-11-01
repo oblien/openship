@@ -17,6 +17,8 @@ import { timeAgo } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { KIND_ICON, SEVERITY_TONE, UNKNOWN_KIND_ICON } from "./issueMeta";
 import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
+import { InvestigationLink } from "@/components/assistant/InvestigationLink";
+import { issueInvestigation } from "@/components/assistant/investigation";
 
 /**
  * One issue, rendered from the feed's own fields — no fetching, no re-derivation.
@@ -189,6 +191,7 @@ export function IssueRow({
     .filter(Boolean)
     .join(" · ");
 
+  const investigation = issueInvestigation(issue, "fix");
   return (
     <AlertRow
       tone={tone}
@@ -201,55 +204,65 @@ export function IssueRow({
       }
       label={kindLabel}
       action={
-        selfUpdate ? (
-          <CopyCommand
-            command={SELF_UPDATE_COMMAND}
-            className={cn("shrink-0", !compact && "h-8 max-w-full")}
-          />
-        ) : connectionIssue && onRecheck ? (
-          <button type="button" onClick={onRecheck} disabled={rechecking} title={c.rescan} className={cn(actionClass, "disabled:opacity-60")}>
-            <UiIcon name={rechecking ? "spinner" : "refresh"} className={cn("size-3", rechecking && "animate-spin")} />
-            {rechecking ? c.rescanning : c.connectivity.recheck}
-          </button>
-        ) : issue.infraFix ? (
-          <button type="button" onClick={() => onInfraFix(issue)} className={actionClass}>
-            {issue.infraFix.action === "update" ? (
-              <UiIcon name="refresh" className="size-3" />
-            ) : issue.kind === "edge_absent" ? (
-              <UiIcon name="download" className="size-3" />
-            ) : (
-              <UiIcon name="wrench" className="size-3" />
-            )}
-            {issue.infraFix.action === "update"
-              ? c.update
-              : issue.kind === "edge_absent"
-                ? c.install
-                : c.fix}
-          </button>
-        ) : fix ? (
-          <button
-            type="button"
-            onClick={() => onResolve(issue)}
-            disabled={resolving}
-            aria-busy={resolving}
-            className={actionClass}
-          >
-            {resolving && <UiIcon name="spinner" className="size-3 animate-spin" />}
-            {updating ? c.updating : actionLabel}
-          </button>
-        ) : issue.kind === "mail_down" ? (
-          // A gone mail engine has no fix from here — recreating it needs the secrets
-          // only mail setup holds. Navigation, deliberately the quieter control.
-          <Link href={issue.target.href} className={linkClass}>
-            <UiIcon name="server" className="size-3" />
-            {c.mailSetup}
-          </Link>
-        ) : (
-          <Link href={issue.target.href} className={linkClass}>
-            {c.view}
-            <UiIcon name="arrow-right" className="size-3 rtl:rotate-180" />
-          </Link>
-        )
+        <div className="flex flex-wrap items-center gap-2">
+          {investigation && (
+            <InvestigationLink
+              target={investigation}
+              compact={compact}
+              size="sm"
+              className={compact ? "h-7 w-7 p-0" : "h-8"}
+            />
+          )}
+          {selfUpdate ? (
+            <CopyCommand
+              command={SELF_UPDATE_COMMAND}
+              className={cn("shrink-0", !compact && "h-8 max-w-full")}
+            />
+          ) : connectionIssue && onRecheck ? (
+            <button type="button" onClick={onRecheck} disabled={rechecking} title={c.rescan} className={cn(actionClass, "disabled:opacity-60")}>
+              <UiIcon name={rechecking ? "spinner" : "refresh"} className={cn("size-3", rechecking && "animate-spin")} />
+              {rechecking ? c.rescanning : c.connectivity.recheck}
+            </button>
+          ) : issue.infraFix ? (
+            <button type="button" onClick={() => onInfraFix(issue)} className={actionClass}>
+              {issue.infraFix.action === "update" ? (
+                <UiIcon name="refresh" className="size-3" />
+              ) : issue.kind === "edge_absent" ? (
+                <UiIcon name="download" className="size-3" />
+              ) : (
+                <UiIcon name="wrench" className="size-3" />
+              )}
+              {issue.infraFix.action === "update"
+                ? c.update
+                : issue.kind === "edge_absent"
+                  ? c.install
+                  : c.fix}
+            </button>
+          ) : fix ? (
+            <button
+              type="button"
+              onClick={() => onResolve(issue)}
+              disabled={resolving}
+              aria-busy={resolving}
+              className={actionClass}
+            >
+              {resolving && <UiIcon name="spinner" className="size-3 animate-spin" />}
+              {updating ? c.updating : actionLabel}
+            </button>
+          ) : issue.kind === "mail_down" ? (
+            // A gone mail engine has no fix from here — recreating it needs the secrets
+            // only mail setup holds. Navigation, deliberately the quieter control.
+            <Link href={issue.target.href} className={linkClass}>
+              <UiIcon name="server" className="size-3" />
+              {c.mailSetup}
+            </Link>
+          ) : (
+            <Link href={issue.target.href} className={linkClass}>
+              {c.view}
+              <UiIcon name="arrow-right" className="size-3 rtl:rotate-180" />
+            </Link>
+          )}
+        </div>
       }
     >
       {message && (

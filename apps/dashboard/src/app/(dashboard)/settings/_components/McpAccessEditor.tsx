@@ -31,9 +31,10 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *      gets the same gate this dialog does.
  */
 
-import { useCallback, useMemo, useReducer, useState } from "react";
+import { useCallback, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { grantableTypesForMode } from "@repo/core";
 import { AccessControlEditor } from "@/components/permissions/AccessControlEditor";
+import { useAccessCopy } from "@/components/permissions/access-copy";
 import {
   authorizeBlockedReason,
   dropRejectedGrant,
@@ -56,6 +57,7 @@ import {
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
+import { Button } from "@/components/ui/button";
 
 /**
  * Unscoped-ness is STORED INTENT, never inferred from `grants.length`.
@@ -77,17 +79,25 @@ export function McpAccessEditor({
   detail,
   onClose,
   onSaved,
+  layout = "stacked",
+  notice,
+  onBusyChange,
 }: {
   detail: McpClientDetail;
   onClose: () => void;
   onSaved: () => void;
+  layout?: "stacked" | "dialog";
+  notice?: ReactNode;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useI18n();
   const m = t.settings.mcp;
+  const copy = useAccessCopy();
   const { selfHosted } = usePlatform();
   const { showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<string | null>(null);
   /** Set once the server has told us this widening needs confirming. */
@@ -125,6 +135,7 @@ export function McpAccessEditor({
 
   const save = useCallback(
     async (confirmWiden: boolean) => {
+      if (submitting.current) return;
       setError(null);
       setRejected(null);
       if (wouldSilentlyGrantEverything(selection)) {
@@ -132,6 +143,8 @@ export function McpAccessEditor({
         return;
       }
       setSaving(true);
+      submitting.current = true;
+      onBusyChange?.(true);
       try {
         await tokensApi.mcpAuthorize({
           mode: "edit",
@@ -154,7 +167,6 @@ export function McpAccessEditor({
         // rather than duplicating the rule. Second press sends the confirmation.
         if (code === "SCOPE_WIDEN_NOT_CONFIRMED") {
           setWidenPending(true);
-          setSaving(false);
           return;
         }
 
@@ -172,105 +184,105 @@ export function McpAccessEditor({
           setRejected(
             `${resourceTypeLabel(recovery.dropped.resourceType)} · ${recovery.dropped.resourceId}`,
           );
-          setSaving(false);
           return;
         }
 
         setError(getApiErrorMessage(err, m.scopeSaveFailed));
+      } finally {
+        submitting.current = false;
         setSaving(false);
+        onBusyChange?.(false);
       }
     },
-    [selection, detail, m, showToast, onSaved],
+    [selection, detail, m, showToast, onSaved, onBusyChange],
+  );
+
+  const footer = (
+    <div className="flex items-center justify-end gap-2">
+      <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+        {t.settings.common.cancel}
+      </Button>
+      <Button
+        type="button"
+        variant={widenPending || wouldWiden ? "destructive" : "default"}
+        size="sm"
+        onClick={() => void save(widenPending)}
+        disabled={saving || blocked}
+      >
+        {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
+        {widenPending ? m.confirmWidenAction : m.saveScope}
+      </Button>
+    </div>
   );
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-[15px] font-medium text-foreground">
-          {interpolate(m.editScopeTitle, { client: detail.name })}
-        </h2>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {m.editScopeSubtitle}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {/* The org is stated, not editable — see the ORG_REBIND_NOT_ALLOWED guard. */}
-          {detail.organizationName
-            ? interpolate(m.editScopeOrg, { org: detail.organizationName })
-            : null}
-          {/* One number that makes an accidental wipe visible BEFORE Save. */}
-          {wasScoped
-            ? ` · ${interpolate(
-                detail.grants.length === 1 ? m.wasNResourcesOne : m.wasNResourcesMany,
-                { count: String(detail.grants.length) },
-              )}`
-            : ""}
-        </p>
-      </div>
+    <div className={layout === "dialog" ? "flex min-h-0 flex-1 flex-col" : "space-y-4"}>
+      <div className={layout === "dialog" ? "min-h-0 overflow-y-auto space-y-5 p-6" : "space-y-4"}>
+        <div className={layout === "dialog" ? "pe-10" : undefined}>
+          <h2 className="text-[15px] font-medium text-foreground">
+            {interpolate(copy.editScopeTitle, { client: detail.name })}
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {copy.editScopeSubtitle}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {/* The org is stated, not editable — see the ORG_REBIND_NOT_ALLOWED guard. */}
+            {detail.organizationName
+              ? interpolate(m.editScopeOrg, { org: detail.organizationName })
+              : null}
+            {/* One number that makes an accidental wipe visible BEFORE Save. */}
+            {wasScoped
+              ? ` · ${interpolate(
+                  detail.grants.length === 1 ? m.wasNResourcesOne : m.wasNResourcesMany,
+                  { count: String(detail.grants.length) },
+                )}`
+              : ""}
+          </p>
+        </div>
+        {notice}
 
-      <AccessControlEditor
-        selection={selection}
-        dispatch={dispatch}
-        availableTypes={availableTypes}
-        ctx={ctx}
-        orgKey={detail.organizationId ?? "none"}
-        orgName={detail.organizationName ?? ""}
-        labels={labels}
-        onCatalogLoaded={onCatalogLoaded}
-        layout="stacked"
-        disabled={saving}
-        notice={
-          <>
-            {rejected && (
-              <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
-                <p className="flex items-start gap-2 font-medium">
-                  <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
-                  {interpolate(m.scopeGrantRejected, { resource: rejected })}
-                </p>
-              </div>
-            )}
-            {widenPending && (
-              <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
-                <p className="flex items-start gap-2 font-medium">
-                  <UiIcon name="shield-alert" className="mt-0.5 size-3.5 shrink-0" />
-                  {m.confirmWidenTitle}
-                </p>
-                <p className="mt-1 ps-5 leading-relaxed">{m.confirmWidenBody}</p>
-              </div>
-            )}
-            {error && (
-              <div className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
-                <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
-                {error}
-              </div>
-            )}
-          </>
-        }
-        footer={
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
-            >
-              {t.settings.common.cancel}
-            </button>
-            <button
-              type="button"
-              onClick={() => void save(widenPending)}
-              disabled={saving || blocked}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50 ${
-                widenPending || wouldWiden
-                  ? "bg-danger-solid hover:bg-danger-solid/90"
-                  : "bg-primary hover:bg-primary/90"
-              }`}
-            >
-              {saving && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
-              {widenPending ? m.confirmWidenAction : m.saveScope}
-            </button>
-          </div>
-        }
-      />
+        <AccessControlEditor
+          selection={selection}
+          dispatch={dispatch}
+          availableTypes={availableTypes}
+          ctx={ctx}
+          orgKey={detail.organizationId ?? "none"}
+          orgName={detail.organizationName ?? ""}
+          labels={labels}
+          onCatalogLoaded={onCatalogLoaded}
+          layout={layout}
+          disabled={saving}
+          notice={
+            <>
+              {rejected && (
+                <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
+                  <p className="flex items-start gap-2 font-medium">
+                    <UiIcon name="alert-circle" className="mt-0.5 size-3.5 shrink-0" />
+                    {interpolate(m.scopeGrantRejected, { resource: rejected })}
+                  </p>
+                </div>
+              )}
+              {widenPending && (
+                <div className="rounded-xl border border-warning-border bg-warning-bg p-3.5 text-xs text-warning">
+                  <p className="flex items-start gap-2 font-medium">
+                    <UiIcon name="shield-alert" className="mt-0.5 size-3.5 shrink-0" />
+                    {m.confirmWidenTitle}
+                  </p>
+                  <p className="mt-1 ps-5 leading-relaxed">{m.confirmWidenBody}</p>
+                </div>
+              )}
+              {error && (
+                <div className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
+                  <UiIcon name="alert-circle" className="mt-0.5 size-4 shrink-0" />
+                  {error}
+                </div>
+              )}
+            </>
+          }
+          footer={layout === "stacked" ? footer : undefined}
+        />
+      </div>
+      {layout === "dialog" && <div className="shrink-0 bg-card px-6 py-4">{footer}</div>}
     </div>
   );
 }

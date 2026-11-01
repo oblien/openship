@@ -698,22 +698,19 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
   }, [id]);
 
   // Fetch git
-  const isLoadingGitRef = useRef(false);
-  // True once git info has loaded for the CURRENT project. Re-opening the Source
-  // tab remounts GitSettings and re-calls refreshGit; without this that flashed
-  // the skeleton on every visit even though the context already had the data.
-  // Now a re-open refreshes in the BACKGROUND (data stays visible). Reset on id
-  // change so a different project still shows the skeleton once.
-  const gitLoadedRef = useRef(false);
-  useEffect(() => {
-    gitLoadedRef.current = false;
-  }, [id]);
+  const gitRequestRef = useRef<{ id: string } | null>(null);
+  const gitCurrentIdRef = useRef(id);
+  gitCurrentIdRef.current = id;
+  // Refresh an already-loaded source in place, but show a skeleton for a new environment.
+  const gitLoadedIdRef = useRef<string | null>(null);
   const refreshGit = useCallback(async () => {
+    if (gitCurrentIdRef.current !== id || gitRequestRef.current?.id === id) return;
+    const request = { id };
+    gitRequestRef.current = request;
+    const isCurrent = () => gitRequestRef.current === request && gitCurrentIdRef.current === id;
     try {
-      if (isLoadingGitRef.current) return;
-      isLoadingGitRef.current = true;
       // Only the first load shows the skeleton; later refreshes update in place.
-      setGitData((prev) => ({ ...prev, isLoading: !gitLoadedRef.current, error: null }));
+      setGitData((prev) => ({ ...prev, isLoading: gitLoadedIdRef.current !== id, error: null }));
 
       if (!id) {
         setGitData((prev) => ({ ...prev, isLoading: false }));
@@ -721,6 +718,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
       }
 
       const response = await projectsApi.getGit(id);
+      if (!isCurrent()) return;
 
       if (response.success) {
         // Map commits from API response
@@ -788,6 +786,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
+      if (!isCurrent()) return;
       errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch git data:", error);
       setGitData((prev) => ({
         ...prev,
@@ -797,10 +796,10 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
         recentCommits: [],
       }));
     } finally {
-      isLoadingGitRef.current = false;
-      // Fetch attempt completed for this project → subsequent refreshGit calls
-      // (tab re-open, post-action refresh) update in the background, no skeleton.
-      gitLoadedRef.current = true;
+      if (isCurrent()) {
+        gitRequestRef.current = null;
+        gitLoadedIdRef.current = id;
+      }
     }
   }, [id]);
 

@@ -9,10 +9,10 @@ import { ProjectTabSections } from "./ProjectTabSections";
 import { ReleaseImageSourceSettings } from "./ReleaseImageSourceSettings";
 import type { ProjectUpdateStatus } from "@/lib/api/projects";
 
-const platform = vi.hoisted(() => ({ selfHosted: true, commitStatus: vi.fn() }));
+const platform = vi.hoisted(() => ({ selfHosted: true, commitStatus: vi.fn(), getGit: vi.fn() }));
 
 vi.mock("@/lib/api", () => ({
-  projectsApi: { getCommitStatus: platform.commitStatus },
+  projectsApi: { getCommitStatus: platform.commitStatus, getGit: platform.getGit },
   servicesApi: { list: async () => ({ services: [] }) },
 }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -108,6 +108,7 @@ beforeEach(() => {
   platform.selfHosted = true;
   showReleaseSource = false;
   platform.commitStatus.mockReset().mockResolvedValue({ data: { supported: false } });
+  platform.getGit.mockReset();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -356,5 +357,57 @@ describe("project update indicator", () => {
     expect(platform.commitStatus).toHaveBeenCalledExactlyOnceWith("project");
     expect(indicators()).toHaveLength(0);
     expect(host.textContent).toContain("1.2.3");
+  });
+});
+
+describe("source refresh while switching environments", () => {
+  const git = (branch: string) => ({ success: true, owner: "acme", repo: "app", branch, commits: [] });
+
+  it.each(["success", "failure"])("discards an old source %s without blocking the new environment", async (outcome) => {
+    let finish!: (value: ReturnType<typeof git>) => void;
+    let fail!: (error: Error) => void;
+    platform.getGit.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finish = resolve;
+      fail = reject;
+    }));
+    await render("source", "server", { id: "preview" });
+    let oldRequest!: Promise<void>;
+    const staleRefresh = settings.refreshGit;
+    await act(async () => { oldRequest = settings.refreshGit(); });
+    expect(settings.gitData.isLoading).toBe(true);
+
+    await render("source", "server", { id: "production" });
+    platform.getGit.mockResolvedValueOnce(git("main"));
+    await act(async () => settings.refreshGit());
+    expect(platform.getGit).toHaveBeenLastCalledWith("production");
+    expect(settings.gitData.branch).toBe("main");
+    await act(async () => {
+      if (outcome === "success") finish(git("dev"));
+      else fail(new Error("old source failed"));
+      await oldRequest;
+      await staleRefresh();
+    });
+    expect(settings.gitData.branch).toBe("main");
+    expect(settings.gitData.error).toBeNull();
+    expect(settings.gitData.isLoading).toBe(false);
+    expect(platform.getGit).toHaveBeenCalledTimes(2);
+  });
+
+  it("deduplicates a source read and keeps the current branch visible during later refreshes", async () => {
+    await render("source");
+    platform.getGit.mockResolvedValueOnce(git("main"));
+    await act(async () => settings.refreshGit());
+    let finish!: (value: ReturnType<typeof git>) => void;
+    platform.getGit.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    let request!: Promise<void>;
+    await act(async () => {
+      request = settings.refreshGit();
+      void settings.refreshGit();
+    });
+    expect(platform.getGit).toHaveBeenCalledTimes(2);
+    expect(settings.gitData.isLoading).toBe(false);
+    expect(settings.gitData.branch).toBe("main");
+    await act(async () => { finish(git("release")); await request; });
+    expect(settings.gitData.branch).toBe("release");
   });
 });

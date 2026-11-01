@@ -29,6 +29,20 @@ export const WorkspaceListSchema = Type.Object({
   })),
 });
 export type WorkspaceList = Static<typeof WorkspaceListSchema>;
+const accessRequestInput = Type.Object({
+  reason: Type.String({ minLength: 1, maxLength: 1000, pattern: "\\S" }),
+  access: Type.String({ minLength: 1, maxLength: 2000, pattern: "\\S" }),
+}, { additionalProperties: false });
+/** A suggestion to the user, never an authorization or a set of executable grants. */
+export const PermissionAccessRequestSchema = Type.Composite([accessRequestInput, Type.Object({
+  kind: Type.Literal("permission_request"),
+  granted: Type.Literal(false),
+  organizationId: Type.String(),
+  clientId: stringOrNull,
+  reviewPath: Type.Union([Type.Literal("/settings?tab=mcp"), Type.Literal("/settings?tab=tokens")]),
+})]);
+export type PermissionAccessRequest = Static<typeof PermissionAccessRequestSchema>;
+export type PermissionAccessRequestInput = Static<typeof accessRequestInput>;
 export const ResourceGrantSchema = Type.Composite([PermissionGrantSchema, Type.Object({
   id: Type.String(), organizationId: Type.String(), userId: Type.String(), grantedByUserId: stringOrNull, createdAt: Type.String(),
 })]);
@@ -42,6 +56,7 @@ const pendingInvitation = Type.Object({
 });
 export const PermissionCollectionSchemas = {
   listWorkspaces: { action: "read", output: WorkspaceListSchema },
+  requestAccess: { action: "read", input: accessRequestInput, output: PermissionAccessRequestSchema },
   orgMeta: { action: "read", output: Type.Object({ organizationId: Type.String(), isTeam: Type.Boolean(), memberCount: Type.Integer() }) },
   listResources: { action: "read", input: Type.Object({ type: Type.String({ minLength: 1, maxLength: 100 }), owner: Type.Optional(Type.String({ maxLength: 100 })) }), output: Type.Array(Type.Object({ id: Type.String(), label: Type.String(), meta: Type.Optional(Type.Record(Type.String(), Type.Unknown())) })) },
   createTeamOrg: { action: "write", input: Type.Object({ name: Type.String({ minLength: 1, maxLength: 200 }), slug: Type.Optional(Type.String({ minLength: 1, maxLength: 100, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" })) }), output: Type.Object({ id: Type.String(), name: Type.String(), isTeam: Type.Literal(true) }) },

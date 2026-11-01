@@ -668,6 +668,12 @@
       "repository": "Repository",
       "open": "Open"
     },
+    "branch": {
+      "label": "Deployment branch",
+      "description": "Used for future deployments in this environment. Saving does not redeploy the app.",
+      "saved": "Deployment branch saved",
+      "saveFailed": "Could not save the deployment branch"
+    },
     "webhookEndpoint": {
       "title": "Webhook Endpoint",
       "descriptionSet": "GitHub delivers push events directly to this domain",

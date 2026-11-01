@@ -23,6 +23,11 @@ const repoReads = new Set(["getRepo", "listBranches", "getCloneToken", "detectSt
 
 async function authorize(ctx: ExecutionContext, name: keyof typeof GitHubCollectionSchemas, input: unknown) {
   const spec = GitHubCollectionSchemas[name];
+  if (name === "publishChange") {
+    const target = input as { owner: string; repo: string };
+    if (!(await canUseGitHubRepo(ctx, target, "write"))) throw new NotFoundError("github", `${target.owner}/${target.repo}`);
+    return;
+  }
   if (name === "pollConnect" && (input as { state?: string } | undefined)?.state) {
     return authorization.authorize(ctx, { resourceType: "github", resourceId: "*", action: "read" });
   }

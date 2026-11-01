@@ -1,3 +1,5 @@
+import { chatApps } from "./modules/chat-apps/chat-apps.service";
+import { assistantAutomations } from "./modules/assistant/automation.service";
 import { errorReporter, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { serve } from "@hono/node-server";
 import {
@@ -140,6 +142,9 @@ if (await controllerIsActive()) await tunnelTransport.start();
   injectWebSocket(server);
 }
 
+chatApps.start();
+assistantAutomations.start();
+
 // ─── Graceful shutdown ──────────────────────────────────────────────
 //
 // First time this codebase has a signal handler. Order of operations
@@ -235,6 +240,9 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
     // Budget must leave room for closeDb() inside the takeover grace; a dev
     // reload abandons in-flight jobs rather than the database.
     await Promise.all([
+      (await import("./modules/assistant/assistant.service")).assistant.close(),
+      chatApps.close(),
+      assistantAutomations.close(),
       (await import("@repo/platform/engine/modules/actions/lifecycle")).stopActionController(fastReload ? 500 : 20_000),
       (await import("@repo/platform/engine/modules/ingress/lifecycle")).stopIngressController(),
       shutdownJobRunner(fastReload ? 500 : 20_000),

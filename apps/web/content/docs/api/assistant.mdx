@@ -1,0 +1,228 @@
+---
+title: Assistant
+description: Opt-in assistant controls, with product operations authorized through the normal MCP endpoint.
+---
+
+These endpoints serve Desktop, self-hosted OpenShip, and Cloud. Private connection controls require the signed-in user's session. Personal access
+tokens and OAuth bearers cannot enable the assistant or manage native sign-ins.
+Scoped agent and automation operations are available through the normal authenticated
+API and MCP, with the same resource checks as the dashboard. Cloud runs Mindwire on an explicitly selected customer
+server. It never falls back to the shared control-plane host.
+
+The assistant is off by default for each user and workspace. The dashboard's
+[Assistant guide](/docs/dashboard/assistant) describes setup and usage.
+
+## Authorization
+
+`POST /api/assistant/enable` returns an `authorizationUrl` for the ordinary MCP
+OAuth authorization endpoint. Pass `targetId` from the status response's `targets`
+list (`local` for Desktop/self-hosted, an authorized server ID for Cloud).
+The browser follows the URL to the existing permission
+dialog. Single-use state, PKCE and the original user/workspace binding are checked
+at the callback before the assistant is enabled. Host ownership and administration
+access are checked again at use time. Authorization handshakes are sealed and
+short-lived in the database so callbacks can land on any API replica. A cancelled or expired flow does
+not grant access.
+
+OpenShip's normal OAuth store holds the token. Assistant uses it exclusively to
+forward tool requests to `/api/mcp`, so discovery, validation, permission checks,
+resource ownership and audit behavior remain the same as other MCP clients.
+Private connection and general chat controls are excluded from the MCP catalog.
+Specialist and automation domain operations are exposed through their normal routes.
+
+## Scoped agents and tasks
+
+`GET /api/assistant/agents` lists the user's specialists in the current workspace
+and selected host. `POST` creates one from `name`, optional `icon`, `purpose`, `instructions`,
+`provider`, `model`, `readOnly`, named resource `grants` and a stable `requestId`.
+`PUT /api/assistant/agents/:id` requires the current `revision`. Grants are bounded
+by both the caller's current authority and Assistant consent. Native provider
+credentials and temporary task tokens are never returned.
+
+`icon` is a presentation ID for bundled flat characters. The default `bot` selects
+a consistent character from the agent's stable ID. Explicit choices are `mint`,
+`terminal`, `shield-check`, `rocket`, `activity`, `code`, `database`, `cloud`, `bug`,
+`search`, `git-branch`, `server`, `comet`, `petal`, `puff` and `crew`.
+URLs and markup are rejected.
+Changing only this field preserves the execution revision, current chats and
+enabled automations; the same ownership and resource checks still apply.
+
+`POST /api/assistant/agents/:id/tasks` takes `message` and `requestId`, starts work
+through the existing assistant runtime and returns a conversation, activity and
+local inspection path. Repeating the same request returns the same task. A new
+request creates a new task conversation. Use `GET /:id/tasks/:chatId` to inspect it
+and `POST /:id/tasks/:chatId/messages` to send another message. While running,
+messages are sent to that native turn; after completion they resume the same chat.
+Follow-ups retain the original scope. Reusing a message ID never replays an
+acknowledged input, even after the task finishes.
+
+`POST /api/assistant/agents/:id/archive` takes `revision`, fences new execution,
+pauses attached flows, requests active tasks to stop and retains history. Local
+policy is disabled before native host metadata is updated; `hostSynced: false`
+means the host could not acknowledge its archive. Retrying archive is safe.
+
+Task execution uses short-lived, scoped credentials, bounded by the original
+caller, current membership, current Assistant consent and saved agent permissions.
+Tokens are revoked when the task ends. Model, instructions or scope edits revoke
+old task access and pause attached flows in the same database transaction. Pending
+investigations and approvals are cancelled; review and enable the flows again to
+use the edited agent. Already accepted deployment operations are not undone.
+There is no separate tool runner or transcript store.
+After an edit, older task history remains available in the dashboard. Bearer
+clients can inspect only tasks from the agent's current revision, so narrower
+new grants cannot reveal historical context collected under broader permissions.
+
+## Conversations and retries
+
+Creating a conversation accepts `provider` (`claude` or `codex`) and an optional
+`model`. With `agentId`, the server checks the specialist's scope and uses its saved
+provider and model. This creates an empty native chat without starting a turn.
+Starting a turn accepts a `message` and a caller-generated `requestId`.
+Reuse that ID only when retrying the same message: an accepted request is not
+executed twice, and changing its content returns `409`. Only one turn can run
+per conversation. Renewable leases prevent another API replica from interrupting
+active work. A stop request is observed by the worker within a few seconds. An
+expired worker is reconciled before another turn is admitted.
+
+Activity requests accept `runId`, `after` and optional `waitMs` (up to 25 seconds).
+Apply events in sequence. A `reset` response means the client should reload the
+conversation snapshot. History is paged with the returned `before` cursor.
+Transcripts remain in Mindwire's profile on the selected host; OpenShip stores ownership,
+authorization context and request receipts.
+
+Structured question responses contain `interactionId`, `requestId` and `answers`
+keyed by question ID. Answers are validated against the original question. The
+server records acknowledgement so retries and reloads cannot deliver it twice.
+These responses cannot approve native shell or filesystem access.
+
+Changed permissions require a new conversation. Disabling the assistant revokes
+its MCP connection and stops active turns. Stop and delete serialize with a turn
+that is still starting. None of these actions undo an operation already accepted
+by OpenShip's ordinary deployment or job flow.
+
+## Custom API connections
+
+`POST /api/assistant/custom-api` accepts `name`, `baseUrl`, `apiKey` and `model`.
+The endpoint must support the Responses API and tool calling. Use HTTPS, or HTTP
+on the assistant host’s loopback interface. Embedded URL credentials, query strings
+and fragments are rejected. The endpoint and key are registered in the current
+user/workspace’s private Mindwire profile, without replacing native agent login.
+The response returns a `model` identifier to use with `provider: "codex"`.
+The host must report `customProviderModels: true`; older hosts fail closed instead
+of routing a custom model through the native subscription.
+
+Provider metadata returns connection names, model IDs and `hasKey`, never API keys.
+Another user or workspace cannot reuse a model ID from this private profile.
+
+## Automation controls
+
+`GET /api/assistant/automations` returns this user's flows, recent runs and pause
+state within the current workspace. Create with `POST /api/assistant/automations`
+and update with `PUT /api/assistant/automations/:id`. Set `agentId` to reuse a saved
+specialist. MCP callers can prepare or edit paused flows, but cannot enable them,
+resume global automation settings or approve actions. They must use `enabled: false`
+and `automaticConsent: false`. To offer activation in chat, call
+`POST /api/assistant/automation-activation-review` with `{ "automationIds": ["flow-id"] }`.
+This read-only MCP operation returns the saved configuration and revisions; it changes
+nothing. The assistant presents **Review & enable** instead of asking the user to
+find and toggle each flow manually.
+
+The review's **Enable & continue** action calls the user-session-only
+`POST /api/assistant/automation-activation` with `automations: [{ id, revision }]`
+and `automaticConsent`. This endpoint is not an MCP tool. It rechecks the editor's
+permissions, channel and scheduler validation, and atomically enables the reviewed
+batch. A stale revision rejects the whole batch with HTTP 409. It never widens access
+or resumes globally paused automations. After success, the chat sends the observed
+result to the assistant so it can verify state and continue the original request.
+
+A flow selects one `projectId`, a `trigger` (`deployment.failed` or
+`service.unhealthy`), `provider`, `model`, optional `instructions`, `mode`
+(`report`, `approve` or `automatic`), `allowedActions` (a subset of `restart`,
+`redeploy`, `commit`, `pull_request`), `readRepository`, `channelIds`,
+`cooldownMinutes`, `dailyLimit`, and `enabled`. Automatic mode requires
+`automaticConsent: true`. Report mode has an empty action list. Restart requires
+an active health incident. Send legacy `action: "none"` with an explicit list;
+old drafts without `allowedActions` retain their single `action`.
+
+`GET /api/assistant/automation-permissions/:projectId` accepts optional `agentId` and reports the permissions
+currently available within both workspace membership and Assistant consent.
+`GET /api/assistant/automation-runs/:id` returns one owned run.
+`GET /api/assistant/automation-runs/:id/proposal` returns its exact saved action and,
+for a code fix, the patch and base commit. Proposals are encrypted at rest and
+cannot be read after the flow's authorization changes.
+
+`PATCH /api/assistant/automation-settings` with `{ "paused": true }` cancels
+pending investigations and approvals. `DELETE /api/assistant/automations/:id`
+disables a flow while preserving its history. Resume with `paused: false`;
+incidents from the pause are not replayed.
+
+`POST /api/assistant/automation-runs/:id/decision` accepts `decision: "approve"`
+or `"cancel"`. Approval is consumed atomically before entering the normal
+operation dispatcher. Only the original account can decide; stale, expired,
+changed, revoked or cross-workspace decisions cannot execute. Accepted actions
+are never replayed after a lost response. Restart/redeploy results are verified
+through the existing health monitor.
+
+Investigations use short-lived read-only app grants through the ordinary MCP
+endpoint, plus approved repository read paths when selected. An approved action
+uses a separate short-lived grant for that specific app recovery or repository
+operation inside the server dispatcher. Git redeploys include metadata access to
+the app’s repository. Source writes require explicit path scopes and use the normal
+`github.publishChange` operation. The normal token service validates grants against
+current user access and Assistant consent. That write credential is never given
+to the model. Each run can publish only its stored proposal, not a new answer read
+at approval time. Code publication returns a commit or draft-PR link; it does not
+claim that the app recovered.
+Automation conversations accept follow-up messages during investigation and after
+completion. Continued investigations remain read-only and retain the original app
+scope. Approval and action stages do not accept messages that could change the saved
+proposal. Their transcript stays in the normal Assistant history. Findings and approval are available
+in that conversation; only selected `channelIds` receive additional status notifications.
+
+## HTTP endpoints
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Read availability and opt-in status without starting a native agent. | `GET /api/assistant/status`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Begin normal MCP OAuth consent with single-use state and PKCE. | `POST /api/assistant/enable`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Complete consent after validating PKCE, state, account and workspace. | `GET /api/assistant/callback`<br />`Handler authentication` · Desktop, self-hosted, Cloud |
+| Revoke the assistant MCP connection and stop its active turns. | `POST /api/assistant/disable`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read installed agents, connection status and model choices after opt-in. | `GET /api/assistant/providers`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Read one agent and its supported account settings. | `GET /api/assistant/providers/:provider`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Save allowed agent settings, excluding tool and permission overrides. | `PATCH /api/assistant/providers/:provider`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Begin a sign-in method offered by the installed agent. | `POST /api/assistant/providers/:provider/auth`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Continue or cancel the active agent sign-in flow. | `POST /api/assistant/providers/:provider/auth/step`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Disconnect the agent account after its active turns have stopped. | `POST /api/assistant/providers/:provider/logout`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| List conversations belonging to the current user and workspace. | `GET /api/assistant/conversations`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Create a conversation bound to the current MCP authorization. | `POST /api/assistant/conversations`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read the conversation snapshot and recent native history. | `GET /api/assistant/conversations/:id`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Stop a conversation and delete its local history and metadata. | `DELETE /api/assistant/conversations/:id`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read an earlier native history page using its before cursor. | `GET /api/assistant/conversations/:id/history`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Start an idempotent turn using the approved MCP connection. | `POST /api/assistant/conversations/:id/turns`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read or long-poll ordered turn activity after a cursor. | `POST /api/assistant/conversations/:id/activity`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Stop the active turn without replaying accepted operations. | `POST /api/assistant/conversations/:id/stop`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Validate and acknowledge a structured question answer once. | `POST /api/assistant/conversations/:id/respond`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read your workspace flows, run history and pause state. | `GET /api/assistant/automations`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Create an app-scoped automation with explicit action consent. | `POST /api/assistant/automations`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Update a flow and invalidate pending work from its previous configuration. | `PUT /api/assistant/automations/:id`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Disable your flow, cancel pending work and retain run history. | `DELETE /api/assistant/automations/:id`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Pause or resume your workspace automations without replaying old incidents. | `PATCH /api/assistant/automation-settings`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Approve an unchanged, current action once or cancel pending work. | `POST /api/assistant/automation-runs/:id/decision`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Register a private Responses-compatible API connection and return its model ID without exposing the key. | `POST /api/assistant/custom-api`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read available app recovery and repository permissions within current Assistant consent. | `GET /api/assistant/automation-permissions/:projectId`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Read one owned automation run and its result link. | `GET /api/assistant/automation-runs/:id`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Read the exact persisted proposal for review under current permissions. | `GET /api/assistant/automation-runs/:id/proposal`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| List your specialists and task conversations on the selected host. | `GET /api/assistant/agents`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Create a specialist bounded by current caller and Assistant resource permissions. | `POST /api/assistant/agents`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Inspect a specialist and its saved instructions, scope and task history. | `GET /api/assistant/agents/:id`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Update a specialist with a revision check; invalidate older task execution. | `PUT /api/assistant/agents/:id`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Archive a specialist, stop active tasks and pause its automations; keep history. | `POST /api/assistant/agents/:id/archive`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Start one scoped task conversation with a stable request ID. | `POST /api/assistant/agents/:id/tasks`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Inspect actual task progress and conversation messages. | `GET /api/assistant/agents/:id/tasks/:chatId`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Send a live follow-up or continue the same task conversation. | `POST /api/assistant/agents/:id/tasks/:chatId/messages`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Stop the current task through normal conversation cancellation. | `POST /api/assistant/agents/:id/tasks/:chatId/stop`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Send a live follow-up from the signed-in user to the same conversation. | `POST /api/assistant/conversations/:id/messages`<br />`settings:write` · Desktop, self-hosted, Cloud |
+
+{/* api-operations:end */}

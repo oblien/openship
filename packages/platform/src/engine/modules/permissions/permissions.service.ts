@@ -1,5 +1,5 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import type { PermissionGrantInput, InviteWithGrantsInput } from "@repo/contracts";
+import type { PermissionGrantInput, InviteWithGrantsInput, PermissionAccessRequest, PermissionAccessRequestInput } from "@repo/contracts";
 import { assertAccountMutation, assertOrgAdmin, createInvitationWithGrants, materializeForUser, lockOrganization } from "./organization.service";
 import { db, schema, eq, and, type DatabaseTransaction } from "@repo/db";
 import { createResourceGrantRepo } from "@repo/db/repos";
@@ -48,6 +48,18 @@ import {
 } from "@repo/core";
 
 // ─── Constants + helpers ────────────────────────────────────────────────────
+
+/** Identity-gated, stateless preview. Only the user's ordinary consent flow can grant access. */
+export async function requestAccess(ctx: ExecutionContext, input: PermissionAccessRequestInput): Promise<PermissionAccessRequest> {
+  return {
+    kind: "permission_request", granted: false,
+    reason: input.reason, access: input.access,
+    organizationId: ctx.organizationId,
+    clientId: ctx.principalKind === "oauth" && ctx.sessionId?.startsWith("oauth:")
+      ? ctx.sessionId.slice("oauth:".length) : null,
+    reviewPath: ctx.principalKind === "pat" ? "/settings?tab=tokens" : "/settings?tab=mcp",
+  };
+}
 
 // The grantable surface lives in lib/grantable-types.ts so the satisfiability
 // ratchet test can bind to the same list this endpoint validates against — a copy

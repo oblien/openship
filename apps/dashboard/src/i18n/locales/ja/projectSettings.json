@@ -619,6 +619,12 @@
       "repository": "リポジトリ",
       "open": "開く"
     },
+    "branch": {
+      "label": "デプロイブランチ",
+      "description": "この環境の今後のデプロイに使用します。保存してもアプリは再デプロイされません。",
+      "saved": "デプロイブランチを保存しました",
+      "saveFailed": "デプロイブランチを保存できませんでした"
+    },
     "webhookEndpoint": {
       "title": "Webhook エンドポイント",
       "descriptionSet": "GitHub はプッシュイベントをこのドメインに直接配信します",

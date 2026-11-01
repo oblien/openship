@@ -119,7 +119,7 @@ const MCP_CLIENTS: McpClientDef[] = [
     // `<tool> mcp add` subcommand, so the two CLI recipes read together.
     id: "codex",
     name: "Codex",
-    Icon: "openai",
+    Icon: "codex",
     setup: (e) => ({
       label: "Run in your terminal",
       // Two steps, one block: `mcp add` registers the server, `mcp login` runs

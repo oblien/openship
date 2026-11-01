@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, desc } from "drizzle-orm";
 import type { Database } from "../client";
 import { oauthApplication, oauthAccessToken, oauthConsent, personalAccessToken } from "../schema";
 import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
@@ -15,6 +15,15 @@ import { personalAccessTokenGrant } from "../schema/personal-access-token-grant"
  */
 export function createOAuthRepo(db: Database) {
   return {
+    /** Host-side OAuth client credentials; never return this row from an API response. */
+    async findClientToken(userId: string, clientId: string) {
+      return (await db
+        .select()
+        .from(oauthAccessToken)
+        .where(and(eq(oauthAccessToken.userId, userId), eq(oauthAccessToken.clientId, clientId)))
+        .orderBy(desc(oauthAccessToken.updatedAt))
+        .limit(1))[0];
+    },
     /** The issued-token row for an access token string, or null. */
     async findAccessToken(accessToken: string): Promise<{
       id: string;

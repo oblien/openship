@@ -71,6 +71,8 @@ const ANALYTICS_ROLLUP_RETENTION_DAYS = 400;
 const RESOURCE_USAGE_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
+  { key: "assistant:automations", label: "Assistant automations", defaultCron: "*/15 * * * * *",
+    run: async () => (await import("../assistant/automation-events")).runAssistantAutomationSweep() },
   { key: "github:pr-previews", label: "Pull request preview environments", defaultCron: "*/30 * * * * *",
     run: async () => { await (await import("../projects/pull-request-previews")).runPullRequestPreviewsSweep(); return { checked: true }; } },
   {

@@ -24,6 +24,9 @@ export function incidentSeverity(kind: IncidentKind): number {
 
 export function createServiceIncidentRepo(db: Database) {
   return {
+    async findById(id: string) {
+      return db.query.serviceIncident.findFirst({ where: eq(serviceIncident.id, id) });
+    },
     /** The open incident for one workload, if any. */
     async findOpen(projectId: string, serviceKey: string): Promise<ServiceIncident | undefined> {
       return db.query.serviceIncident.findFirst({
