@@ -66,6 +66,7 @@ import { PromptRegistry, type PromptPayload } from "../../lib/prompt-gateway";
 import { prepareServerEdge, applyProjectEdgeRoutes } from "../domains/project-edge.service";
 import { sizeOfMoveSet } from "./migration-size";
 import { requestBuildAccess, cancelBuildSession } from "../deployments/build.service";
+import { isMultiServiceProject } from "../deployments/compose/project-services";
 import { describeLiveState, resolveLiveServiceState } from "../services/live-state";
 import { linkProjectRepo } from "../projects/project-crud.service";
 import type { ProxySettings } from "@repo/core";
@@ -348,6 +349,8 @@ interface MoveResult {
   bytesMoved: number;
   pendingItems: PendingItem[];
   targetVolumes: string[];
+  /** Source image ID → the reference restored on the target daemon. */
+  imageRefs: ReadonlyMap<string, string>;
 }
 
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000; // 20 min for the target deploy
@@ -995,6 +998,21 @@ class MigrationOrchestratorImpl {
         ? [...repoServices.keys()].some((n) => !adoptedRowNames.has(n))
         : false;
 
+      // An owned single app has a project deployment, not service rows. Keep
+      // this exception separate from an empty Compose scope or attach-live set.
+      let singleAppName: string | undefined;
+      const singleApp = deployChosen.length === 1 ? deployChosen[0] : undefined;
+      if (
+        input.projectMove &&
+        projectRows.length === 0 &&
+        attachChosen.length === 0 &&
+        singleApp
+      ) {
+        const project = await repos.project.findById(projectId);
+        if (project && !isMultiServiceProject(project))
+          singleAppName = rowNameOf(singleApp);
+      }
+
       // Cancel checkpoint on the attach-live path too: a same-server reuse run
       // has an empty deploy set (skips every check below), so without this a
       // cancel during `adopting` would never take effect and the run would
@@ -1027,6 +1045,24 @@ class MigrationOrchestratorImpl {
       // only builds the new ones. Only a pure same-server reuse with NO new repo
       // services skips the deploy entirely (the `else`).
       if (deployChosen.length > 0 || hasNewRepoServices) {
+        // An empty service scope would redeploy reused containers. Validate
+        // before copying data or stopping production; only a proven app is unscoped.
+        if (!singleAppName && deployRowIds.length === 0) {
+          throw new Error(
+            "Nothing to deploy on the target — refusing an unscoped service deployment that would recreate reused containers.",
+          );
+        }
+        if (singleAppName && !adopt.handover[singleAppName]?.trim()) {
+          throw new Error(
+            "The running application's image is unavailable; refusing to rebuild it during migration.",
+          );
+        }
+        if (singleAppName && singleApp?.volumes.length) {
+          throw new Error(
+            "Moving a single application with mounted data is not supported yet; the source has not been stopped.",
+          );
+        }
+
         // ── moving_data: quiesce the deploy set's originals + copy volumes ──
         await this.throwIfCancelled(id);
         await this.transition(id, "moving_data");
@@ -1079,6 +1115,12 @@ class MigrationOrchestratorImpl {
           emitProgress,
           id,
         ));
+        // A digest may load under a different config ID. Hand that proven target
+        // ref to this deploy without rewriting the project's saved source recipe.
+        for (const service of deployChosen) {
+          const ref = move.imageRefs.get(service.imageId ?? service.image ?? "");
+          if (ref && ref !== service.image) adopt.handover[rowNameOf(service)] = ref;
+        }
         pendingItems = move.pendingItems;
         await this.transition(id, "moving_data", {
           bytesMoved: move.bytesMoved,
@@ -1126,22 +1168,9 @@ class MigrationOrchestratorImpl {
         }
 
         // ── deploying ──
-        // Scoped by `serviceIds` (see deployRowIds): the pipeline builds/deploys ONLY the
-        // new/moved services, carries the still-running reused containers forward
-        // untouched, and never reaps them — without mutating any persisted row.
+        // Service deployments stay exclusive; a single app uses its normal
+        // project pipeline with the transferred image pinned for this cutover.
         await this.throwIfCancelled(id);
-        // An EMPTY scope must never reach `requestBuildAccess`: it drops `serviceIds` when
-        // the list is empty, and an unscoped compose deploy recreates every service — the
-        // reuse set included, which is the one outcome adopt-in-place exists to prevent.
-        // Reaching here with nothing to deploy would be a bug in the branch condition
-        // above (`deployChosen.length > 0 || hasNewRepoServices`), so say so and stop
-        // rather than deploying the wrong thing.
-        if (deployRowIds.length === 0) {
-          throw new Error(
-            "Nothing to deploy on the target, but the run reached the deploy step — " +
-              "refusing to run an unscoped deploy that would recreate the reused containers.",
-          );
-        }
         await this.transition(id, "deploying");
         log(`deploying to target server…`);
         {
@@ -1152,49 +1181,15 @@ class MigrationOrchestratorImpl {
               deployTarget: "server",
               serverId: targetServerId,
               runtimeMode: "docker",
-              serviceDeploymentMode: "services",
-              // Deploy ONLY the new/moved rows. `requestBuildAccess` ignores an EMPTY list
-              // (`serviceIds && length > 0`), which would silently mean "deploy everything"
-              // and recreate the reuse set — so the caller refuses to get here with one
-              // (see the guard above this block).
-              serviceIds: deployRowIds,
+              serviceDeploymentMode: singleAppName ? "single" : "services",
+              ...(!singleAppName ? { serviceIds: deployRowIds } : {}),
             },
-            /**
-             * EXCLUSIVE scope, not just "prefer these".
-             *
-             * `serviceIds` on its own means "build these, CARRY the rest forward", and carry
-             * reads `project.activeDeploymentId` — which is null here: a freshly adopted
-             * project has no previous release, and this run's own runtime rows are written by
-             * `attachLiveRuntime` AFTER the deploy. So without this the reuse rows would be
-             * neither carried nor skipped: enabled and holding a real image, they'd deploy
-             * normally and put a SECOND container on the still-running originals' bare
-             * volumes (reuse rows keep `namespaceVolumes: false`) — two writers on one
-             * dataset, the exact opposite of what reuse mode promises.
-             */
             {
-              strictServiceScope: true,
-              // Internal-only artifact provenance. A public deploy request must
-              // never be able to bypass build/pull with an arbitrary host ref.
-              // One-time cutover: native `build:` rows reuse the transferred/running
-              // image on THIS deploy (no rebuild); a later Redeploy has no handover
-              // and rebuilds from the repo.
-              handoverImages: adopt.handover,
-              /**
-               * The SINGLE-APP twin of the map above, and the reason a moved single app rebuilt
-               * itself from source on the target.
-               *
-               * `handoverImages` is the COMPOSE field: `pinnedServiceImage` looks a service NAME up
-               * in it. A single-app deploy asks `pinnedAppImage`, which reads this scalar — and
-               * `snapshotNeedsGitSource` keys off the same thing, so with it unset the target cloned
-               * the repo and ran a full `docker build`. For `makieon` that meant streaming 725 MB of
-               * image across, then rebuilding it from git anyway: minutes of wasted work whose only
-               * visible symptom was a migration that looked stuck on its last step.
-               *
-               * Set only when the workload IS one service, so compose keeps using the map.
-               */
-              ...(Object.keys(adopt.handover).length === 1
-                ? { handoverAppImage: Object.values(adopt.handover)[0] }
-                : {}),
+              // Internal pins apply only to this cutover. Services stay scoped
+              // away from reused siblings; a single app skips its source build.
+              ...(singleAppName
+                ? { handoverAppImage: adopt.handover[singleAppName] }
+                : { strictServiceScope: true, handoverImages: adopt.handover }),
             },
           );
           deploymentId = dep.deployment_id;
@@ -1479,11 +1474,14 @@ class MigrationOrchestratorImpl {
         onProgress?.({ task, kind, totalBytes, movedBytes: [...bytes.values()].reduce((a, b) => a + b, 0) });
       };
       // Image transfer is immutable; failures here must not stop production.
+      const imageRefs = new Map<string, string>();
       for (const image of images) {
         await this.throwIfCancelled(runId);
         const progress = track(`image:${image.tag}`, "image");
-        if (link) await link.transferImage(image, progress);
-        else await transferImage(rtA, rtB, image, { onProgress: progress, log, signal });
+        const ref = link
+          ? await link.transferImage(image, progress)
+          : (await transferImage(rtA, rtB, image, { onProgress: progress, log, signal })).imageRef;
+        imageRefs.set(image.id, ref);
       }
       // Record before creation, and require our exact label when cleaning up.
       if (runId) {
@@ -1520,7 +1518,7 @@ class MigrationOrchestratorImpl {
       // sibling. Rejecting a pool worker early could race a still-live copy.
       await this.throwIfCancelled(runId);
       signal?.throwIfAborted();
-      return { bytesMoved: [...bytes.values()].reduce((a, b) => a + b, 0), pendingItems, targetVolumes: plan.createdVolumes };
+      return { bytesMoved: [...bytes.values()].reduce((a, b) => a + b, 0), pendingItems, targetVolumes: plan.createdVolumes, imageRefs };
     } finally {
       try {
         if (endpoints && runTag) {
