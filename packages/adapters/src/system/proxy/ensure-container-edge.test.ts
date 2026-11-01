@@ -442,6 +442,36 @@ describe("ensureContainerEdge", () => {
     expect(commands.some((c) => c.includes(`docker run -d --name 'openship-edge'`))).toBe(true);
   });
 
+  it("restores a serving edge after the replacement launch loses its SSH channel", async () => {
+    const previousImage = "ghcr.io/oblien/openship-edge:1.0.0";
+    const { executor, commands, onLog } = box({
+      edgeContainer: "openship-edge",
+      edgeContainerImage: previousImage,
+      identityLabels: { "openship.project": "proj-native", "openship.service": "edge" },
+      imagePresent: true,
+    });
+    vi.mocked(executor.streamExec).mockImplementationOnce(async () => {
+      // Removal succeeded, but the replacement's command channel could not open.
+      throw new Error("SSH channel closed during docker run");
+    });
+
+    const result = await ensureContainerEdge(executor, {
+      onLog,
+      image: IMAGE,
+      verifyTimeoutMs: 50,
+    });
+
+    expect(result).toMatchObject({ updated: false, edgeDown: false });
+    expect(await executor.exec("docker inspect -f '{{.State.Status}}' openship-edge")).toBe(
+      "running",
+    );
+    const restored = commands.find((command) => command.startsWith("docker run -d"));
+    expect(restored).toContain(`'${previousImage}'`);
+    expect(restored).toContain("--label 'openship.project=proj-native'");
+    expect(restored).toContain("--label 'openship.service=edge'");
+    expect(said(onLog)).toContain("SSH channel closed during docker run");
+  });
+
   it.each([false, true])("preserves service identity through image update and rollback (failure=%s)", async (runFails) => {
     const identityLabels = {
       "openship.project": "proj-native", "openship.deployment": "dep-current", "openship.service": "edge",

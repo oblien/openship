@@ -71,7 +71,7 @@ import { resolveGitHubApiBaseUrl } from "./github-source.service";
  */
 export interface BuildGitCredential {
   token?: string;
-  /** Ephemeral exact repository grant returned by the expanded App mint. */
+  /** Ephemeral exact repository grant returned by the App credential resolver. */
   tokenRepositories?: string[];
   relay?: boolean;
   /**
@@ -200,8 +200,8 @@ async function diagnoseEmptyAppStep(
 }
 
 /**
- * Parent-only App tokens 404 private submodules (`../other.git` inherits the
- * parent URL's userinfo). Read `.gitmodules` with the parent token, then remint
+ * Parent-only App tokens cannot read private submodules. Read `.gitmodules`
+ * with the parent token, then remint
  * an App token covering the same-owner submodule repos. Soft: a missing file
  * keeps the parent token silently; a read error keeps it with a warning.
  */
@@ -217,6 +217,7 @@ async function expandAppTokenForSubmodules(
   if (!minted?.token || minted.source !== "app-installation" || !owner || !repo) {
     return { result: minted, repos: minted?.token ? 1 : 0 };
   }
+  const parentCredential = { ...minted, repositories: [repo] };
   let extra = await fetchSameOwnerSubmoduleRepos(minted.token, owner, repo, ctx, tokenCtx, extras);
   if (extra.length > MAX_SUBMODULE_REPOS) {
     traceLog(
@@ -226,7 +227,7 @@ async function expandAppTokenForSubmodules(
     );
     extra = extra.slice(0, MAX_SUBMODULE_REPOS);
   }
-  if (!extra.length) return { result: minted, repos: 1 };
+  if (!extra.length) return { result: parentCredential, repos: 1 };
   const reminted = await tokenFor(ctx, purpose, {
     ...tokenCtx,
     only: ["app-installation"],
@@ -242,7 +243,7 @@ async function expandAppTokenForSubmodules(
         `(private submodules may fail to clone)`,
       "warn",
     );
-    return { result: minted, repos: 1 };
+    return { result: parentCredential, repos: 1 };
   }
   traceLog(extras, `App token expanded for ${extra.length} same-owner submodule repo(s): ${extra.join(", ")}`);
   return { result: reminted, repos: reminted.repositories?.length ?? 1 + extra.length };

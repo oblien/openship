@@ -26,7 +26,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import type { Context, Next, MiddlewareHandler } from "hono";
 import type { TSchema } from "@sinclair/typebox";
 import { NotFoundError, capabilityFor, capabilityRoot, normalizeRepoPath } from "@repo/core";
-import { permission, ORG_SINGLETON_RESOURCES, type CheckedResourceType } from "./permission";
+import { permission, ORG_SINGLETON_RESOURCES, isCheckedResourceType, type CheckedResourceType } from "./permission";
 import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
 import { repos } from "@repo/db";
@@ -170,11 +170,14 @@ export function parsePermissionTag(tag: PermissionTag): ParsedTag {
   }
   const resourceSegments = parts.slice(0, -1);
   const leaf = resourceSegments[resourceSegments.length - 1];
+  if (!isCheckedResourceType(leaf)) {
+    throw new Error(`Invalid resource "${leaf}" in tag "${tag}"`);
+  }
 
   return {
     raw: tag,
     root: root as CheckedResourceType,
-    leaf: leaf as CheckedResourceType,
+    leaf,
     action: action as Action | "list",
     isList: action === "list",
   };

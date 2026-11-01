@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const assertPermission = vi.fn(async () => {});
 
-vi.mock("../../src/lib/permission", () => ({
+vi.mock("../../src/lib/permission", async () => ({
   permission: { assert: assertPermission },
   ORG_SINGLETON_RESOURCES: new Set<string>(),
+  isCheckedResourceType: (await import("@repo/platform")).isCheckedResourceType,
 }));
 vi.mock("@repo/db", () => ({ repos: {} }));
 vi.mock("../../src/lib/audit", () => ({

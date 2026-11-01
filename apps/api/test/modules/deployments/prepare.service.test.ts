@@ -743,6 +743,36 @@ describe("resolveProjectInfo", () => {
     });
   });
 
+  it("reads single-app source env from the app folder's openship.json before the root one", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-source-env-"));
+    tempDirs.push(tempDir);
+    await mkdir(join(tempDir, "apps", "web"), { recursive: true });
+    await writeFile(
+      join(tempDir, "apps", "web", "openship.json"),
+      JSON.stringify({ env: { API_URL: "https://api.example.com" } }),
+    );
+
+    // Only the app folder declares env: the deploy must see what the scan showed.
+    await expect(
+      resolveProjectSourceEnv({ source: "local", path: tempDir }, "apps/web"),
+    ).resolves.toEqual({
+      rootEnv: { API_URL: "https://api.example.com" },
+      openshipEnv: { API_URL: "https://api.example.com" },
+    });
+
+    // A root manifest is another app's configuration once the folder has its own.
+    await writeFile(
+      join(tempDir, "openship.json"),
+      JSON.stringify({ env: { API_URL: "https://root.example.com", ROOT_ONLY: "x" } }),
+    );
+    await expect(
+      resolveProjectSourceEnv({ source: "local", path: tempDir }, "apps/web"),
+    ).resolves.toEqual({
+      rootEnv: { API_URL: "https://api.example.com" },
+      openshipEnv: { API_URL: "https://api.example.com" },
+    });
+  });
+
   it('normalizes an undetected package manager to "npm" instead of the internal "unknown" sentinel (#415)', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
     tempDirs.push(tempDir);

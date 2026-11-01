@@ -108,7 +108,7 @@ export function toGitHubSshUrl(repoUrl: string): string {
 export interface GitCloneAuth {
   repoUrl: string;
   gitToken?: string;
-  /** Exact same-owner repository names authorized by an expanded App mint. */
+  /** Exact repository grant for App tokens; otherwise use the URL's namespace. */
   gitTokenRepositories?: string[];
   gitCredentialHelperPath?: string;
   /** SSH mode — key + known_hosts files ALREADY written (0600/0700) by caller. */
@@ -201,31 +201,37 @@ const SCOPED_TOKEN_HELPER = `!f() {
   path=\${path%/}
   path=\${path%.git}
   case "$path" in ""|*[!a-z0-9_./-]*) return 0 ;; esac
-  case " $OPENSHIP_GIT_REPOSITORIES " in
-    *" $path "*) printf 'username=%s\\npassword=%s\\n' "$OPENSHIP_GIT_USERNAME" "$OPENSHIP_GIT_PASSWORD" ;;
-  esac
+  case "$path" in "$OPENSHIP_GIT_NAMESPACE/"*) repo=\${path#"$OPENSHIP_GIT_NAMESPACE/"} ;; *) return 0 ;; esac
+  case "$repo" in ""|.|..|*/*) return 0 ;; esac
+  if [ -n "$OPENSHIP_GIT_REPOSITORIES" ]; then
+    case " $OPENSHIP_GIT_REPOSITORIES " in *" $path "*) ;; *) return 0 ;; esac
+  fi
+  printf 'username=%s\\npassword=%s\\n' "$OPENSHIP_GIT_USERNAME" "$OPENSHIP_GIT_PASSWORD"
 }; f`;
 
 function scopedTokenInvocation(auth: GitCloneAuth): GitCloneInvocation {
   const url = new URL(auth.repoUrl);
-  const [owner, parent, ...extra] = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+  const segments = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+  const parent = segments.pop();
+  const namespace = segments.join("/").toLowerCase();
   const name = /^[A-Za-z0-9_.-]{1,100}$/;
-  const repositories = auth.gitTokenRepositories!;
+  const validName = (value: string) => name.test(value) && value !== "." && value !== "..";
+  const repositories = auth.gitTokenRepositories;
   if (
     url.protocol !== "https:" ||
-    !owner ||
+    !namespace ||
     !parent ||
-    extra.length ||
-    !name.test(owner) ||
-    !name.test(parent) ||
-    !repositories.length ||
-    repositories.length > 26 ||
-    repositories.some((repo) => !name.test(repo) || repo === "." || repo === "..")
+    !segments.every(validName) ||
+    !validName(parent.replace(/\.git$/i, "")) ||
+    (repositories !== undefined &&
+      (!repositories.length || repositories.length > 26 || !repositories.every(validName)))
   )
-    throw new Error("Expanded App clone credentials require exact HTTPS repository grants.");
-  const allowed = [...new Set(repositories.map((repo) => repo.toLowerCase()))];
-  if (!allowed.includes(parent.replace(/\.git$/i, "").toLowerCase()))
-    throw new Error("The App clone grant does not include the parent repository.");
+    throw new Error(
+      "Scoped clone credentials require an HTTPS repository URL and valid repository grants.",
+    );
+  const allowed = repositories && [...new Set(repositories.map((repo) => repo.toLowerCase()))];
+  if (allowed && !allowed.includes(parent.replace(/\.git$/i, "").toLowerCase()))
+    throw new Error("The clone grant does not include the parent repository.");
   url.username = "";
   url.password = "";
   const pair = gitCredentialPair(url.hostname, auth.gitToken!.trim());
@@ -239,7 +245,7 @@ function scopedTokenInvocation(auth: GitCloneAuth): GitCloneInvocation {
     // A redirected clone must not carry credentials to another origin/path.
     ["http.followRedirects", "false"],
     // Transport rewrites contain no secret. Private SSH submodules can use the
-    // App credential only after becoming HTTPS requests to an authorized repo.
+    // credential only after becoming HTTPS requests inside its scope.
     [`url.${base}.insteadOf`, `git@${url.hostname}:`],
     [`url.${base}.insteadOf`, `ssh://git@${url.hostname}/`],
     [`url.${base}.insteadOf`, `ssh://${url.hostname}/`],
@@ -253,9 +259,10 @@ function scopedTokenInvocation(auth: GitCloneAuth): GitCloneInvocation {
       // are rewritten to HTTPS before Git applies this transport policy.
       ["GIT_ALLOW_PROTOCOL", "https", false],
       ["OPENSHIP_GIT_HOST", url.host.toLowerCase(), true],
+      ["OPENSHIP_GIT_NAMESPACE", namespace, true],
       [
         "OPENSHIP_GIT_REPOSITORIES",
-        allowed.map((repo) => `${owner.toLowerCase()}/${repo}`).join(" "),
+        allowed?.map((repo) => `${namespace}/${repo}`).join(" ") ?? "",
         true,
       ],
       ["OPENSHIP_GIT_USERNAME", pair.username, true],
@@ -373,9 +380,14 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     return invocation(auth.repoUrl, [TERMINAL_PROMPT], false);
   }
 
-  // Token / public: token (if any) in the URL; disable host credential helpers
-  // so the URL token is the only auth (GIT_ASKPASS=/bin/echo fails fast).
-  if (auth.gitToken && auth.gitTokenRepositories !== undefined) return scopedTokenInvocation(auth);
+  // One helper for parent and recursive submodule clones. App grants stay exact;
+  // user tokens retain their GitHub permissions within the same host/namespace.
+  // Tokens never live in origin URLs or host-wide credential configuration.
+  if (
+    auth.gitToken?.trim() &&
+    (auth.gitTokenRepositories !== undefined || /^https:\/\//i.test(auth.repoUrl.trimStart()))
+  )
+    return scopedTokenInvocation(auth);
   return invocation(
     injectGitToken(auth.repoUrl, auth.gitToken),
     [TERMINAL_PROMPT, ["GIT_ASKPASS", "/bin/echo", false]],

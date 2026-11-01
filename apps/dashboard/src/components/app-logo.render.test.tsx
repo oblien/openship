@@ -3,7 +3,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppLogo } from "./AppLogo";
+import { AppLogo, refreshCustomAppLogos } from "./AppLogo";
+
+const catalog = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api/apps", () => ({ appsApi: { catalog } }));
 
 let host: HTMLDivElement;
 let root: Root;
@@ -42,5 +45,32 @@ describe("shared app logo", () => {
     expect(host.querySelector("img")?.getAttribute("src")).toBe(
       "https://cdn.simpleicons.org/supabase",
     );
+  });
+
+  it.each([
+    ["an https URL", "https://example.com/logo.png"],
+    ["an image data URI", "data:image/svg+xml;base64,PHN2Zy8+"],
+  ])("renders a custom logo given as %s (#1507)", async (_label, logo) => {
+    await act(async () => root.render(<AppLogo slug={logo} />));
+    expect(host.querySelector("img")?.getAttribute("src")).toBe(logo);
+  });
+
+  it.each(["javascript:alert(1)", "http://example.com/logo.png", "a/b"])(
+    "shows the fallback instead of requesting %s",
+    async (logo) => {
+      await act(async () => root.render(<AppLogo slug={logo} fallback={<span>App</span>} />));
+      expect(host.querySelector("img")).toBeNull();
+      expect(host.textContent).toBe("App");
+    },
+  );
+
+  it("shows a custom app's own logo where only its app id is known (#1507)", async () => {
+    refreshCustomAppLogos();
+    catalog.mockResolvedValue({
+      data: [{ id: "my-tool", custom: true, logo: "https://example.com/my-tool.png" }],
+    });
+    await act(async () => root.render(<AppLogo appId="my-tool" />));
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("https://example.com/my-tool.png");
+    expect(catalog).toHaveBeenCalledTimes(1);
   });
 });

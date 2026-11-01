@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { redactUrlCredentials } from "./url-credentials";
 import { safeErrorMessage } from "./errors";
+import { shellQuote } from "./shell-split";
 
 const APP = "ghs_" + "A".repeat(36);
 const PAT = "ghp_" + "B".repeat(36);
@@ -39,6 +40,22 @@ describe("redactUrlCredentials", () => {
 });
 
 describe("safeErrorMessage", () => {
+  it.each(["legacy-private-token", "quoted'private-token", "private token", "private\ntoken"])(
+    "omits command credentials regardless of token format: %j",
+    (token) => {
+      for (const key of ["USERNAME", "PASSWORD"]) {
+        const command = `OPENSHIP_GIT_${key}=${shellQuote(token)} git clone https://github.com/acme/app.git`;
+        for (const value of [command, shellQuote(command)]) {
+          const result = safeErrorMessage(new Error(`Clone failed: ${value}`));
+          expect(result).not.toContain(token);
+          expect(result).not.toContain("private");
+          expect(result).toContain("Clone failed:");
+          expect(result).toContain("[REDACTED GIT COMMAND]");
+        }
+      }
+    },
+  );
+
   it("redacts credentials in error messages", () => {
     const err = new Error(`git exited with code 128: fatal: unable to access 'https://x-access-token:${APP}@github.com/a/b.git/'`);
     expect(safeErrorMessage(err)).not.toContain(APP);
