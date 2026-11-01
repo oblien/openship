@@ -50,7 +50,7 @@ WORKDIR /app
 #     plane, not an optional extra.
 #   • ca-certificates provides the OS trust store used by git and SSH helpers.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-client rsync git ca-certificates \
+ && apt-get install -y --no-install-recommends openssh-client rsync git ca-certificates util-linux \
  && rm -rf /var/lib/apt/lists/*
 
 # @repo/* exports TypeScript source through workspace links under packages/.

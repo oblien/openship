@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Recover PGlite after a container crash** — hold a Linux kernel file lock so
+  reused PIDs cannot strand the database or admit an owner in another container.
+  Preserve conservative checks for older locks and other operating systems (#1524).
+
 - **Keep monorepo runtime images aligned with each service** — use the service's
   framework and selected builder for its runtime instead of inheriting an
   unrelated parent image. Fill missing builders from the stack registry, preserve
