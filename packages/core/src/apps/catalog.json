@@ -8750,6 +8750,78 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "loki",
+      "name": "Loki",
+      "description": "Log aggregation from Grafana Labs: collect logs from your apps and servers and query them in Grafana.",
+      "kind": "template",
+      "logo": "loki",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "logs",
+        "observability"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "loki",
+          "image": "grafana/loki:3.7.9",
+          "ports": [
+            "8222:3100"
+          ],
+          "exposedPort": 3100,
+          "exposed": true,
+          "commandArgv": [
+            "-config.file=/etc/loki/local-config.yaml",
+            "-compactor.retention-enabled=true",
+            "-compactor.delete-request-store=filesystem",
+            "-store.retention=744h"
+          ],
+          "volumes": [
+            "loki_data:/loki"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "connection": {
+        "title": "Connect to Loki",
+        "description": "Loki has no web page and no login. Add its URL as a Loki data source in Grafana, and point log shippers (Grafana Alloy, Promtail) at /loki/api/v1/push.",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Loki API",
+            "source": "publicUrl:loki",
+            "kind": "url",
+            "recommended": true,
+            "help": "GET /ready returns \"ready\" once Loki has started."
+          }
+        ],
+        "firstLogin": {
+          "note": "Anyone who can reach this URL can read and write your logs, so keep it off a public domain or turn on Password protection for it. Logs are kept for 31 days in the loki_data volume."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Log aggregation",
+            "description": "Collect logs from apps, containers and servers in one place."
+          },
+          {
+            "title": "LogQL queries",
+            "description": "Search and filter logs by label from Grafana."
+          },
+          {
+            "title": "Bounded storage",
+            "description": "Old logs are deleted after 31 days."
+          }
+        ]
+      }
     }
   ]
 }

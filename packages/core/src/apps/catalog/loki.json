@@ -1,0 +1,72 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "loki",
+  "name": "Loki",
+  "description": "Log aggregation from Grafana Labs: collect logs from your apps and servers and query them in Grafana.",
+  "kind": "template",
+  "logo": "loki",
+  "category": "analytics",
+  "tags": [
+    "monitoring",
+    "logs",
+    "observability"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "loki",
+      "image": "grafana/loki:3.7.9",
+      "ports": [
+        "8222:3100"
+      ],
+      "exposedPort": 3100,
+      "exposed": true,
+      "commandArgv": [
+        "-config.file=/etc/loki/local-config.yaml",
+        "-compactor.retention-enabled=true",
+        "-compactor.delete-request-store=filesystem",
+        "-store.retention=744h"
+      ],
+      "volumes": [
+        "loki_data:/loki"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "connection": {
+    "title": "Connect to Loki",
+    "description": "Loki has no web page and no login. Add its URL as a Loki data source in Grafana, and point log shippers (Grafana Alloy, Promtail) at /loki/api/v1/push.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Loki API",
+        "source": "publicUrl:loki",
+        "kind": "url",
+        "recommended": true,
+        "help": "GET /ready returns \"ready\" once Loki has started."
+      }
+    ],
+    "firstLogin": {
+      "note": "Anyone who can reach this URL can read and write your logs, so keep it off a public domain or turn on Password protection for it. Logs are kept for 31 days in the loki_data volume."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Log aggregation",
+        "description": "Collect logs from apps, containers and servers in one place."
+      },
+      {
+        "title": "LogQL queries",
+        "description": "Search and filter logs by label from Grafana."
+      },
+      {
+        "title": "Bounded storage",
+        "description": "Old logs are deleted after 31 days."
+      }
+    ]
+  }
+}
