@@ -12,7 +12,7 @@
  * URL quantifiers are bounded: an unbounded scheme or userinfo class
  * backtracks quadratically on long build-output lines (see build-log-sanitize).
  */
-const URL_USERINFO = /([a-z][a-z0-9+.-]{0,15}:\/\/)[^\s/@'"]{1,512}@/gi;
+const URL_USERINFO = /([a-z][a-z0-9+.-]{0,15}:\/\/)[^\s/@'"]{1,2048}@/gi;
 const GITHUB_TOKEN = /\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g;
 // Executors may quote an entire shell command on failure. Omit its credential
 // assignments and remaining command text, including nested quoting/newlines;

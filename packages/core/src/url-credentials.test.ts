@@ -20,6 +20,12 @@ describe("redactUrlCredentials", () => {
     expect(out).toBe("remote: https://***@github.com/a/b.git and ***");
   });
 
+  it("strips a long JWT-style installation token from a clone URL (#979)", () => {
+    const token = `eyJ${"a".repeat(1000)}.${"b".repeat(500)}`;
+    const out = redactUrlCredentials(`fatal: unable to access 'https://x-access-token:${token}@github.com/a/b.git/'`);
+    expect(out).toBe("fatal: unable to access 'https://***@github.com/a/b.git/'");
+  });
+
   it("leaves credential-free URLs, scp ssh and @ in paths alone", () => {
     const text = "https://github.com/a/b.git git@github.com:a/b.git https://x.dev/users/@me";
     expect(redactUrlCredentials(text)).toBe(text);
