@@ -331,6 +331,13 @@ describe("DockerRuntime build failure paths", () => {
           expectedHint: "could not allocate memory (ENOMEM)",
         },
         {
+          name: "long Docker wrapper with an ordinary nonzero exit",
+          lines: [],
+          errorEvent: { error: longBuildFailure.replace(/137$/, "1") },
+          expectedError: "The build process exited with code 1.",
+          expectedSavedHint: "The build process exited with code 1.",
+        },
+        {
           name: "long Docker wrapper after a killed build",
           lines: ["#10 149.8 error Command failed with exit code 137."],
           errorEvent: { error: longBuildFailure },
@@ -411,6 +418,10 @@ describe("DockerRuntime build failure paths", () => {
           expect(onLog).toHaveBeenCalledWith(
             expect.objectContaining({ message: expect.stringContaining(line) }),
           );
+        }
+        const rawError = scenario.errorEvent?.errorDetail?.message || scenario.errorEvent?.error;
+        if (rawError) {
+          expect(onLog).toHaveBeenCalledWith(expect.objectContaining({ message: rawError }));
         }
         expect(vi.getTimerCount()).toBe(0);
       });
