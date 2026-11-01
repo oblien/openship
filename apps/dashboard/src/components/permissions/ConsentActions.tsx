@@ -3,8 +3,8 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
- * Deny / Authorize. One component, two mount points: inside the sticky rail on
- * large screens, and as a fixed bottom bar below `lg`.
+ * Shared consent actions: inside the page rail, fixed on mobile, or pinned
+ * below the inline dialog body.
  *
  * Why fixed and not just at the end of the page: `::-webkit-scrollbar { display:
  * none }` is global, so a scrolled-away Authorize button gives the user no visual
@@ -13,9 +13,9 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  */
 
 import { Button } from "@/components/ui/button";
-import { useI18n } from "@/components/i18n-provider";
+import { useAccessCopy } from "./access-copy";
 
-export function ActionBar({
+export function ConsentActions({
   variant,
   busy,
   submitting,
@@ -23,15 +23,14 @@ export function ActionBar({
   onDeny,
   onAuthorize,
 }: {
-  variant: "rail" | "fixed";
+  variant: "rail" | "fixed" | "inline";
   busy: boolean;
   submitting: null | "accept" | "deny";
   canAuthorize: boolean;
   onDeny: () => void;
   onAuthorize: () => void;
 }) {
-  const { t } = useI18n();
-  const m = t.misc.mcpAuthorize;
+  const m = useAccessCopy();
 
   const buttons = (
     <div className="flex items-center gap-2">
@@ -39,10 +38,21 @@ export function ActionBar({
         {submitting === "deny" ? <UiIcon name="spinner" className="size-4 animate-spin" /> : m.deny}
       </Button>
       <Button className="flex-1" disabled={busy || !canAuthorize} onClick={onAuthorize}>
-        {submitting === "accept" ? <UiIcon name="spinner" className="size-4 animate-spin" /> : m.authorize}
+        {submitting === "accept" ? (
+          <UiIcon name="spinner" className="size-4 animate-spin" />
+        ) : (
+          m.authorize
+        )}
       </Button>
     </div>
   );
+
+  if (variant === "inline")
+    return (
+      <div className="shrink-0 border-t border-border/40 bg-card px-6 py-4">
+        <div className="ms-auto max-w-sm">{buttons}</div>
+      </div>
+    );
 
   // `shrink-0` matters: this is the pinned footer of the rail's flex column, and
   // without it the buttons would compress instead of the scroll area shrinking.

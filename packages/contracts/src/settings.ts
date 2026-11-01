@@ -1,4 +1,4 @@
-import { APPEARANCE_JSON_SCHEMA, AppearancePreferencesSchema, type AppearancePreferences } from "@repo/core";
+import { APP_LOCALES, APPEARANCE_JSON_SCHEMA, AppearancePreferencesSchema, type AppearancePreferences } from "@repo/core";
 import { Type, Kind, TypeRegistry, type Static } from "@sinclair/typebox";
 import { UpdateBuildModeBody, UpdateRouteStrategyBody, UpdateDeployDefaultsBody, UpdateCloneStrategyPreferenceBody, UpdateTransferPrefsBody, UpdateForwardGitBody } from "./settings-inputs";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
@@ -22,6 +22,7 @@ export const AppearanceSettingsSchema = Type.Object({
   ]),
 });
 export const UserSettingsSchemas = {
+  setLocale: { action: "write", input: Type.Object({ locale: Type.Union(APP_LOCALES.map(value => Type.Literal(value))) }), output: Type.Object({ locale: Type.String() }) },
   getAppearance: { action: "read", output: AppearanceSettingsSchema },
   setAppearance: {
     action: "write",

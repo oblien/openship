@@ -89,7 +89,8 @@
       "account": "Account"
     },
     "workspaces": "Workspaces",
-    "actions": "Actions"
+    "actions": "Actions",
+    "assistant": "AI Agents"
   },
   "sidebar": {
     "expand": "Expand sidebar",
@@ -244,5 +245,25 @@
       "title": "Billing & Usage",
       "description": "Usage & plans"
     }
+  },
+  "investigation": {
+    "action": "Investigate with AI",
+    "deploymentTitle": "Investigate this deployment",
+    "issueTitle": "Investigate this app issue",
+    "description": "Review the request, add anything useful, then send it to your assistant.",
+    "setup": "Your investigation is ready. Enable the assistant and connect an agent to continue.",
+    "invalid": "This investigation link is invalid or belongs to another workspace or account. Open the original issue in its workspace and try again.",
+    "back": "Open assistant",
+    "deploymentPrompt": "Investigate failed deployment {deploymentId}.",
+    "issuePrompt": "Investigate app issue {issueId}.",
+    "appContext": "App ID: {projectId}.",
+    "instructions": "Use OpenShip tools to inspect the current status and relevant logs. Explain the likely cause with evidence and suggest the next step. Investigate first; do not change anything. If access is missing, request the specific permissions needed.",
+    "fixAction": "Fix with AI",
+    "fixTitle": "Fix this app issue",
+    "fixPrompt": "Investigate and fix app issue {issueId}.",
+    "fixInstructions": "Use OpenShip tools to inspect the current issue, status and relevant logs. Find the cause, apply an appropriate fix within your approved access, and verify the result. If access or a required decision is missing, offer the relevant inline review. Report what changed and any remaining issues; claim recovery only with observed evidence.",
+    "reportAction": "AI health report",
+    "reportTitle": "Workspace health report",
+    "reportPrompt": "Review the current health of this workspace’s apps, deployments, services and accessible servers using OpenShip monitoring and health tools. Summarize what is healthy, what needs attention, the evidence and the most useful next steps. Call out stale or unavailable monitoring data and access limitations. An empty issue list is not proof of health. This is a read-only report: do not change resources or request instance-wide administrator diagnostics."
   }
 }

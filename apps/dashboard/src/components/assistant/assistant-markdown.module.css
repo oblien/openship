@@ -1,0 +1,204 @@
+.markdown {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 16px;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+
+.markdown > * {
+  margin-block: 0;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown > [dir]:first-child > :first-child {
+  margin-top: 0;
+}
+.markdown p {
+  margin-block: 0;
+}
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin-block: 0.5rem 0;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+.markdown h1 {
+  font-size: 1.5rem;
+}
+.markdown h2 {
+  font-size: 1.25rem;
+}
+.markdown :is(h3, h4, h5, h6) {
+  font-size: 1.125rem;
+}
+.markdown :is(ul, ol) {
+  padding-inline-start: 1.5rem;
+  list-style-position: outside;
+}
+.markdown li {
+  padding-block: 0.2rem;
+  padding-inline-start: 0.25rem;
+}
+.markdown li::marker {
+  color: var(--muted-foreground);
+}
+.markdown li > p {
+  display: block;
+}
+.markdown li > :is(p + p, ul, ol) {
+  margin-top: 0.5rem;
+}
+.markdown [class~="contains-task-list"] {
+  padding-inline-start: 0;
+  list-style: none;
+}
+.markdown input[type="checkbox"] {
+  margin-inline-end: 0.5rem;
+  accent-color: var(--foreground);
+}
+.markdown a {
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--foreground) 30%, transparent);
+  text-underline-offset: 4px;
+}
+.markdown a:hover {
+  text-decoration-color: currentColor;
+}
+.markdown blockquote {
+  margin-block: 0;
+  margin-inline: 0;
+  padding-inline-start: 1rem;
+  border-inline-start: 2px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+  color: var(--muted-foreground);
+}
+.markdown blockquote > * + * {
+  margin-top: 0.75rem;
+}
+.markdown hr {
+  margin-block: 1.5rem;
+  border-color: var(--border);
+}
+.markdown code {
+  font-size: 0.875em;
+}
+.markdown [data-streamdown="inline-code"] {
+  border-radius: 6px;
+}
+
+.markdown [data-streamdown="code-block"] {
+  margin-block: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 1rem;
+  padding: 0;
+  background: var(--card);
+}
+.markdown [data-streamdown="code-block-header"] {
+  height: auto;
+  min-height: 44px;
+  padding: 0.5rem 7.5rem 0.5rem 1rem;
+}
+.markdown [data-streamdown="code-block-header"] span {
+  margin: 0;
+}
+.markdown [data-streamdown="code-block-actions"] {
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  border: 0;
+  padding: 0;
+  background: var(--card);
+  backdrop-filter: none;
+}
+.markdown [data-streamdown="code-block-body"] {
+  border: 0;
+  border-radius: 0;
+  padding: 0.25rem 1rem 1rem;
+  background: transparent;
+  line-height: 1.75;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.markdown pre {
+  margin: 0;
+  background: transparent;
+  overflow-wrap: normal;
+}
+/* Streamdown supplies Shiki's two palettes. OpenShip also has a dim theme. */
+:global([data-theme="dim"]) .markdown [style*="--shiki-dark"],
+:global([data-theme="dark"]) .markdown [style*="--shiki-dark"] {
+  color: var(--shiki-dark, inherit);
+}
+
+.markdown [data-streamdown="table-wrapper"] {
+  margin-block: 0;
+  min-width: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 1rem;
+  padding: 0;
+  background: var(--card);
+}
+.markdown [data-streamdown="table-wrapper"] > :last-child {
+  border: 0;
+  border-radius: 1rem;
+  padding: 0;
+  background: transparent;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.markdown table {
+  font-size: 15px;
+  overflow-wrap: normal;
+}
+.markdown th {
+  color: var(--foreground);
+  font-weight: 500;
+  text-align: start;
+}
+.markdown :is(th, td) {
+  padding: 0.75rem 1rem;
+  border-color: var(--border);
+}
+.markdown tbody {
+  color: var(--muted-foreground);
+}
+.markdown tbody tr:last-child {
+  border-bottom: 0;
+}
+.markdown button {
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 0.5rem;
+}
+.markdown button:hover {
+  background: var(--muted);
+}
+.markdown :is(a, button):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+@media (min-width: 640px) {
+  .markdown {
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown [data-sd-animate] {
+    animation: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}

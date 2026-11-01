@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { I18nProvider } from "@/components/i18n-provider";
 import { EDGE_ERROR, ISSUE_FIXTURES } from "./issue-fixtures";
 import { IssueList } from "./IssueList";
+vi.mock("@/hooks/use-scoped-resource", () => ({ useResourceScope: () => "user:org:cloud", useResourceScopeReady: () => true }));
 
 /**
  * Does the feed's body group and render every row an operator can be handed?
@@ -138,6 +139,17 @@ describe("tone comes from the worst row in the panel", () => {
 });
 
 describe("each row offers the fix the server attached, and only that", () => {
+  it("offers a scoped AI repair alongside app issue actions and removes it for resolved issues", () => {
+    const issue = ISSUE_FIXTURES.mixed!.find(row => row.kind === "workload_unhealthy")!;
+    const html = render([issue]);
+    expect(html).toContain('aria-label="Fix with AI"');
+    expect(html).toContain("investigate=issue");
+    expect(html).toContain("intent=fix");
+    expect(html).toContain(`project=${issue.target.id}`);
+    expect(html).toContain('href="/projects/p1/health"');
+    expect(render([{ ...issue, resolvedAt: new Date().toISOString() }])).not.toContain("investigate=issue");
+  });
+
   it("gives a stopped component the infra Fix button", () => {
     const html = render(ISSUE_FIXTURES.outage!);
     expect(html).toContain("Edge down");

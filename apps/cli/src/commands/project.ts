@@ -6,6 +6,7 @@
  * Endpoint citations live on the relevant action.
  */
 import { Command } from "commander";
+import { defineProjectCommand, PROJECT_COMMANDS } from "@repo/commands";
 import chalk from "chalk";
 import { getShipClient, ApiError } from "../lib/ship-client";
 import type { CreateProjectInput, TSetReleaseSourceBody } from "@repo/sdk";
@@ -129,9 +130,8 @@ export function releaseImageSourceFromOptions(opts: ReleaseImageOptions): TSetRe
 
 // ─── list ────────────────────────────────────────────────────────────────────
 // GET /api/projects → { data, total, page, perPage } (project.routes.ts:46)
-const listCmd = new Command("list")
+const listCmd = defineProjectCommand(new Command(), PROJECT_COMMANDS.list)
   .alias("ls")
-  .description("List projects in the active organization")
   .action(
     action(async () => {
       const rows: Record<string, unknown>[] = [];
@@ -155,9 +155,7 @@ const listCmd = new Command("list")
 
 // ─── get ─────────────────────────────────────────────────────────────────────
 // GET /api/projects/:id → { data } (project.routes.ts:50)
-const getCmd = new Command("get")
-  .description("Show a single project")
-  .argument("<id>", "Project ID")
+const getCmd = defineProjectCommand(new Command(), PROJECT_COMMANDS.get)
   .action(
     action(async (id: string) => {
       printProject(await getShipClient().projects.get(id));
@@ -540,9 +538,7 @@ const transferCmd = new Command("transfer")
 // ─── logs ────────────────────────────────────────────────────────────────────
 // GET /api/projects/:id/logs?tail= → { data } ;
 // GET /api/projects/:id/logs/stream (SSE: event "log" | "error") (project.routes.ts:107-108)
-const logsCmd = new Command("logs")
-  .description("Show or stream runtime (container) logs")
-  .argument("<id>", "Project ID")
+const logsCmd = defineProjectCommand(new Command(), PROJECT_COMMANDS.logs)
   .option("--tail <n>", "Number of recent lines", positiveInteger)
   .option("--role <name>", "Read one active runtime role instead of the web application")
   .option("--replica <n>", "Role replica number (defaults to 1)", positiveInteger)
@@ -658,3 +654,24 @@ projectCommand.addCommand(projectVolumeCommand);
 for (const command of [projectRoleConfigurationCommand, projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand]) projectCommand.addCommand(command);
 for (const command of [projectUpdateCommand, projectEnvironmentCommand, projectResourcesCommand,
   projectStorageCommand, projectConnectionsCommand, ...projectInspectionCommands]) projectCommand.addCommand(command);
+
+// The project ID has the same meaning in CLI and chat. Both resolve the active
+// deployment and use the existing deployment operation; neither builds a second pipeline.
+for (const definition of [PROJECT_COMMANDS.restart, PROJECT_COMMANDS.redeploy]) {
+  projectCommand.addCommand(defineProjectCommand(new Command(), definition)
+    .option("-y, --yes", "Confirm the action")
+    .action(action(async (id: string, opts: { yes?: boolean }) => {
+      const client = getShipClient();
+      const project = await client.projects.get(id);
+      const deploymentId = project.activeDeploymentId;
+      if (!deploymentId) throw new Error("This project has no active deployment.");
+      await confirmOrExit(opts.yes, `${definition.name} ${project.name} (${deploymentId})?`);
+      if ((await client.projects.get(id)).activeDeploymentId !== deploymentId)
+        throw new Error("The active deployment changed. Request the action again.");
+      const result = definition.name === "restart"
+        ? await client.deployments.restart(deploymentId)
+        : await client.deployments.redeploy(deploymentId, {});
+      if (isJsonMode()) printJson(result);
+      else ok(`  ${definition.name} requested for ${project.name}`);
+    })));
+}

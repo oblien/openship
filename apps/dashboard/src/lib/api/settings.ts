@@ -1,4 +1,4 @@
-import type { AppearancePreferences } from "@repo/core";
+import type { AppLocale, AppearancePreferences } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import { notifyGitHubSourcesChanged } from "./github";
@@ -45,6 +45,7 @@ export interface DeployDefaultsResponse {
 }
 
 export const settingsApi = {
+  setLocale: (locale: AppLocale) => api.patch<{ locale: AppLocale }>("settings/locale", { locale }),
   getAppearance: () => api.get<{ appearance: AppearancePreferences | null }>("settings/appearance"),
   setAppearance: (appearance: AppearancePreferences | null) =>
     api.put<{ appearance: AppearancePreferences | null }>("settings/appearance", { appearance }),

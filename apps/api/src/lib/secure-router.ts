@@ -49,6 +49,7 @@ import {
 import { authMiddleware } from "../middleware/auth";
 import { rateLimiterFor } from "../middleware/rate-limiter";
 import { localOnly } from "../middleware/local-only";
+import { requireInstanceAdmin } from "../middleware/instance-admin";
 import { cloudResourceRouter } from "./cloud/resource-router";
 
 export interface SecureRouterOptions {
@@ -178,6 +179,9 @@ export function secureRouter<T extends Hono>(
     const authed = !isPublicSpec(mergedSpec) && !(mergedSpec as PermissionSpec).skipAuth;
     const rateLimitPolicy = mergedSpec.rateLimit ?? (authed ? "default-authed" : "default-anon");
     chain.push(rateLimiterFor(rateLimitPolicy));
+    if (!isPublicSpec(mergedSpec) && mergedSpec.instanceAdmin && !mergedSpec.authorizationHandledByOperation) {
+      chain.push(requireInstanceAdmin());
+    }
     chain.push(
       isPublicSpec(mergedSpec)
         ? publicRoute({ reason: mergedSpec.reason })

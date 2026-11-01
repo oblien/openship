@@ -31,6 +31,7 @@ export const CATEGORY_GROUPS = [
   { id: "app_health", label: "App health" },
   { id: "backups", label: "Backups" },
   { id: "jobs", label: "Jobs" },
+  { id: "assistant", label: "Assistant" },
   { id: "actions", label: "Actions" },
   { id: "domains", label: "Domains & SSL" },
   { id: "members", label: "Members" },
@@ -65,6 +66,7 @@ export interface NotificationCategory {
 }
 
 export const CATEGORIES: readonly NotificationCategory[] = [
+  { id: "assistant.automation", group: "assistant", label: "Assistant automations", description: "Investigation results, action approvals, and verified recovery from your enabled assistant automations.", defaultEnabled: false },
   {
     id: "security.advisory",
     group: "security",
@@ -304,6 +306,7 @@ export const CATEGORIES: readonly NotificationCategory[] = [
  * cares about).
  */
 const EVENT_TYPE_TO_CATEGORY: Record<string, string> = {
+  "assistant.automation": "assistant.automation",
   "security.advisory": "security.advisory",
   "security.refresh_failed": "security.advisory",
   // Deploy

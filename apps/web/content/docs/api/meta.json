@@ -39,6 +39,8 @@
     "settings",
     "mcp",
     "mcp-tools",
+    "assistant",
+    "chat-apps",
     "---Infrastructure---",
     "servers",
     "system",

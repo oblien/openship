@@ -1,0 +1,85 @@
+---
+title: Telegram
+description: Connect a Telegram bot locally using long polling and an explicit chat allowlist.
+---
+
+Telegram replies are visible in the conversation. Start with a private conversation with your bot if project names and deployment status should stay private.
+
+## Before you start
+
+You need a bot token and the exact chat IDs you want to allow. The default direct connection uses **long polling** and works from Desktop or a private server without a public URL. Keep OpenShip running. Use a dedicated bot with no webhook or other poller; Telegram does not allow polling while a webhook is set.
+
+## 1. Create the bot and collect chat IDs
+
+1. Open [BotFather](https://t.me/BotFather), run `/newbot`, choose a name and username, and save its token privately.
+2. Open a private conversation with the new bot and send a message. For a group, add the bot and send a command addressed to it, such as `/openship@YourBot help`.
+3. Before enabling the connector, set `TELEGRAM_BOT_TOKEN` in your private terminal environment and inspect an update:
+
+```bash
+curl --fail-with-body "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates"
+```
+
+Use `message.chat.id` from the intended conversation. Group chat IDs may be negative; keep the minus sign. A chat title or username is not a chat ID. Do not share the full update, which includes sender and message information.
+
+[`getUpdates`](https://core.telegram.org/bots/api#getupdates) cannot be used while a webhook is configured. For an existing bot, obtain IDs from its existing trusted integration; do not remove a working webhook just to inspect updates. Keep Telegram's group privacy mode enabled for this command flow.
+
+## 2. Save the connector
+
+In **Settings → Chat apps → Telegram**, choose a name and bot role, keep **Direct connection** selected, then enter:
+
+| Field | Value |
+| --- | --- |
+| Bot token from BotFather | Your bot token. |
+| Allowed chat IDs | Exact private/group chat IDs, separated by commas. |
+
+Select **Save connector**, then **Enable bot**. Wait for **Connected**. OpenShip polls Telegram and saves the update cursor after each accepted update, so restarts do not repeat commands. No webhook secret, URL or inbound port is needed. Stop any manual `getUpdates` calls once the connector is enabled.
+
+## 3. Check the connection
+
+If OpenShip reports an existing webhook, it will leave it untouched. Use a new bot, or intentionally retire the old integration and call Telegram’s `deleteWebhook` without `drop_pending_updates`. Then pause and enable the connector again. Two pollers using the same token also conflict; run only one connector per bot.
+
+### Optional webhook connection
+
+For a public HTTPS installation, choose **Webhook**, enter a random webhook secret (16–256 letters, digits, underscores or hyphens), save and enable the connector. Set `OPENSHIP_WEBHOOK_URL` to its **Bot webhook URL** and `TELEGRAM_WEBHOOK_SECRET` to the exact secret entered in OpenShip. With these and `TELEGRAM_BOT_TOKEN` in your private terminal environment, run:
+
+```bash
+curl --fail-with-body --request POST \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  --data-urlencode "url=${OPENSHIP_WEBHOOK_URL}" \
+  --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+  --data-urlencode 'allowed_updates=["message","callback_query"]'
+```
+
+Check that the response has `ok: true`. The `secret_token` authenticates incoming requests. This command replaces that bot's webhook, so use only the bot created for this connection. See Telegram's [`setWebhook` documentation](https://core.telegram.org/bots/api#setwebhook).
+
+## 4. Link and test
+
+Send `/start` in an allowed conversation and tap **Connect account**, or send `/openship link`. The bot sends instructions first and the URL in its own next message. Open it, approve permissions, and send the verification command back from the same account and conversation. Then tap **Choose a project** or send `/projects`.
+
+Project buttons open status and actions. **Restart** and **Redeploy** show what will happen and require a separate **Confirm** button or `/openship confirm <code>` within five minutes. Buttons cannot be used by another person and become invalid if the connection or linked account changes. `/help` shows the full command reference.
+
+You can also send `/status`, `/logs`, `/restart` or `/redeploy` without an ID to choose a project. Commands and buttons use the same permission checks. Replies follow the language selected in OpenShip; the bot owner’s language is used before account linking.
+
+OpenShip registers the command menu when you enable or save the bot and refreshes it when the owner’s language changes. Type `/` or open **Menu** to choose commands such as `/projects`, `/status` or `/ask`, with descriptions and argument hints. In a group, address the bot: `/projects@YourBot` or `/status@YourBot <project-id>`. The existing `/openship projects` syntax still works.
+
+For an existing bot, choose **Native commands → Refresh command menu** from its actions menu in OpenShip. This updates the default menu of your dedicated bot using Telegram's [setMyCommands API](https://core.telegram.org/bots/api#setmycommands). The menu reflects the bot's selected roles; project controls still check the sender's own OpenShip permissions. Commands addressed to another bot are ignored.
+
+## Talk to your assistant
+
+Select **Assistant** for conversations. Also select **Control plane** to use the same bot for deployment commands. Use a separate provider bot/application if you also want a dedicated deployment-command bot. After opt-in, `/openship chats` lists your earlier conversations here, `/openship resume <conversation-id>` continues one, and `/openship chat` opens the same conversation in OpenShip. You can continue it in either place.
+
+Complete the [assistant opt-in](/docs/dashboard/chat-apps#talk-to-your-assistant). In a private bot chat, send a plain message such as `Check my latest deployment`, or `/openship ask Check my latest deployment`. Continue with another message, use `/openship new` for a fresh conversation and `/openship stop` to stop your turn.
+
+In groups, keep privacy mode enabled and address your message to the bot using `/openship@YourBot ask <message>`. Replies are visible to the group. Every sender connects their own agent; one person's opt-in does not enable access for everyone. Telegram topics keep separate conversation context.
+
+## Troubleshooting
+
+- **Buttons do nothing in webhook mode:** include `callback_query` in `allowed_updates` when registering the webhook. Direct connections already request it.
+- **Button expired:** request a fresh menu or action. Use the same account and conversation that created the button.
+- **No response:** verify the chat ID, enabled state and bot username. In groups, address the command to your bot.
+- **Webhook rejected:** make sure both copies of the secret match and the proxy preserves `X-Telegram-Bot-Api-Secret-Token`.
+- **Another receiver is using the bot:** stop the other poller, or use a separate bot. Do not run `getUpdates` manually while the connector is enabled.
+- **Webhook delivery errors:** inspect `getWebhookInfo` on the [Telegram Bot API](https://core.telegram.org/bots/api#getwebhookinfo). Check its URL and last delivery error. Do not post this output publicly.
+- **Group moved to a supergroup:** its chat ID can change. Recreate the connector with the new exact ID. Update the endpoint too if you use webhooks.
+
+See [all commands and confirmation behavior](/docs/dashboard/chat-apps#commands). Check deployment history before retrying a write action whose reply was not delivered.

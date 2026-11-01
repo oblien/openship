@@ -2,6 +2,7 @@
 import { Hono } from "hono";
 import {
   BrowseDirectoriesInputSchema,
+  SystemOperationSchemas,
   UpdateInstanceSettingsInputSchema,
   UpdateInstanceEmailSettingsInputSchema,
   InstanceTestEmailInputSchema,
@@ -27,10 +28,10 @@ r.post("/settings/email/test", { tag: "settings:write", body: InstanceTestEmailI
 
 // The orphan scan compares every organization's domains. Read and removal both
 // require instance authority; removal still names and rechecks a single hostname.
-r.get("/edge/untracked", { tag: "settings:read", authorizationHandledByOperation: true, mcp: { description: "Inspect edge hostnames that are not owned by any project in this instance. Requires instance administrator authority; compare ownership before removing anything." } }, edgeOrphans.listUntrackedEdgeSites);
-r.post("/edge/untracked/remove", { tag: "settings:admin", body: RemoveEdgeOrphanInputSchema, authorizationHandledByOperation: true, auditHandledByOperation: true, mcp: { description: "Remove one untracked hostname from the edge after rechecking that no project owns it. Requires instance administrator authority. Never use this to repair a domain still owned by a project." } }, edgeOrphans.removeUntrackedEdgeSite);
-r.get("/browse", { tag: "settings:read", authorizationHandledByOperation: true, mcp: { description: "Browse source directories on this Openship controller, not the MCP client. Requires instance administrator authority; use folder upload for a client-side directory." }, query: BrowseDirectoriesInputSchema }, fs.browse);
-r.get("/diagnostics", { tag: "settings:read", authorizationHandledByOperation: true, mcp: { description: "Read instance health, database/migration status and resource counts. Requires instance administrator authority. This does not inspect every remote workload." } }, async c =>
+r.get("/edge/untracked", { instanceAdmin: SystemOperationSchemas.listUntrackedEdgeSites.instance, tag: "settings:read", authorizationHandledByOperation: true, mcp: { description: "Inspect edge hostnames that are not owned by any project in this instance. Requires instance administrator authority; compare ownership before removing anything." } }, edgeOrphans.listUntrackedEdgeSites);
+r.post("/edge/untracked/remove", { instanceAdmin: SystemOperationSchemas.removeUntrackedEdgeSite.instance, tag: "settings:admin", body: RemoveEdgeOrphanInputSchema, authorizationHandledByOperation: true, auditHandledByOperation: true, mcp: { description: "Remove one untracked hostname from the edge after rechecking that no project owns it. Requires instance administrator authority. Never use this to repair a domain still owned by a project." } }, edgeOrphans.removeUntrackedEdgeSite);
+r.get("/browse", { instanceAdmin: SystemOperationSchemas.browse.instance, tag: "settings:read", authorizationHandledByOperation: true, mcp: { description: "Browse source directories on this Openship controller, not the MCP client. Requires instance administrator authority; use folder upload for a client-side directory." }, query: BrowseDirectoriesInputSchema }, fs.browse);
+r.get("/diagnostics", { instanceAdmin: SystemOperationSchemas.health.instance, tag: "settings:read", authorizationHandledByOperation: true, mcp: { description: "Read instance health, database/migration status and resource counts. Requires instance administrator authority. This does not inspect every remote workload." } }, async c =>
   c.json(await operationData(c, getPlatformKernel().system.health(operationContext(c)))));
 
 export const systemManagementRoutes = r.hono;

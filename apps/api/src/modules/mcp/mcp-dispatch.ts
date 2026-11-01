@@ -32,6 +32,8 @@ export interface DispatchResult {
 export interface DispatchOrigin {
   /** Canonical principal id — `oauth:<clientId>` / `pat:<tokenId>`. */
   principalId: string;
+  /** Verified chat commands are webhook actions, not AI requests. */
+  source?: "mcp" | "webhook";
   /** The outer request's resolved client IP. */
   clientIp: string | null;
   /** The outer request's user agent (the MCP client's, e.g. `claude-desktop/1.2`). */
@@ -108,7 +110,7 @@ export async function dispatchTool(
   // have come from us — see client-ip.ts) and the UA is not a gate anywhere.
   const headers: Record<string, string> = {
     authorization: `Bearer ${bearerToken}`,
-    ...internalSourceHeader("mcp"),
+    ...internalSourceHeader(origin.source ?? "mcp"),
     ...internalClientHeader(origin.principalId),
   };
   if (origin.clientIp) headers["x-real-ip"] = origin.clientIp;

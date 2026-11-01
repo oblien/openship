@@ -89,7 +89,8 @@
     "apps": "Apps",
     "jobs": "Jobs",
     "workspaces": "Arbeitsbereiche",
-    "actions": "Aktionen"
+    "actions": "Aktionen",
+    "assistant": "KI-Agenten"
   },
   "sidebar": {
     "expand": "Seitenleiste ausklappen",
@@ -244,5 +245,25 @@
       "title": "Abrechnung & Nutzung",
       "description": "Nutzung & Tarife"
     }
+  },
+  "investigation": {
+    "action": "Mit KI untersuchen",
+    "deploymentTitle": "Diese Bereitstellung untersuchen",
+    "issueTitle": "Dieses App-Problem untersuchen",
+    "description": "Prüfe die Anfrage, ergänze hilfreiche Details und sende sie an deinen Assistenten.",
+    "setup": "Deine Untersuchung ist vorbereitet. Aktiviere den Assistenten und verbinde einen Agenten, um fortzufahren.",
+    "invalid": "Dieser Link ist ungültig oder gehört zu einem anderen Arbeitsbereich oder Konto. Öffne das ursprüngliche Problem in seinem Arbeitsbereich und versuche es erneut.",
+    "back": "Assistent öffnen",
+    "deploymentPrompt": "Untersuche die fehlgeschlagene Bereitstellung {deploymentId}.",
+    "issuePrompt": "Untersuche das App-Problem {issueId}.",
+    "appContext": "App-ID: {projectId}.",
+    "instructions": "Prüfe mit OpenShip-Werkzeugen den aktuellen Status und relevante Logs. Erkläre die wahrscheinliche Ursache anhand von Belegen und schlage den nächsten Schritt vor. Untersuche zuerst, ohne Änderungen vorzunehmen. Fordere bei fehlendem Zugriff die konkret benötigten Berechtigungen an.",
+    "fixAction": "Mit KI beheben",
+    "fixTitle": "Dieses App-Problem beheben",
+    "fixPrompt": "Untersuche und behebe das App-Problem {issueId}.",
+    "fixInstructions": "Prüfe mit den OpenShip-Tools das aktuelle Problem, den Status und relevante Protokolle. Ermittle die Ursache, wende eine geeignete Lösung innerhalb deiner genehmigten Zugriffsrechte an und überprüfe das Ergebnis. Fehlen Rechte oder eine nötige Entscheidung, biete die passende Prüfung direkt im Chat an. Berichte über Änderungen und verbleibende Probleme; bestätige die Wiederherstellung nur anhand beobachteter Nachweise.",
+    "reportAction": "KI-Zustandsbericht",
+    "reportTitle": "Zustandsbericht des Arbeitsbereichs",
+    "reportPrompt": "Prüfe den aktuellen Zustand der Apps, Deployments, Dienste und zugänglichen Server dieses Arbeitsbereichs mit den Überwachungs- und Zustandstools von OpenShip. Fasse zusammen, was funktioniert, was Aufmerksamkeit braucht, welche Nachweise vorliegen und welche nächsten Schritte sinnvoll sind. Benenne veraltete oder nicht verfügbare Überwachungsdaten und Zugriffsbeschränkungen. Eine leere Problemliste beweist keinen gesunden Zustand. Erstelle einen Bericht ohne Änderungen an Ressourcen oder Anforderung instanzweiter Administratordiagnosen."
   }
 }

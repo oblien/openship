@@ -899,6 +899,20 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  assistant_authorization: "Single-use OAuth consent and native authentication state cannot travel.",
+  assistant_connection: "Private host and OAuth-client bindings must be reauthorized on the destination.",
+  assistant_conversation: "Conversation metadata refers to private Mindwire profiles on the original host.",
+  assistant_request: "Execution receipts are meaningful only with the originating private conversation.",
+  assistant_automation_settings: "Assistant automation opt-in must be reviewed on the destination.",
+  assistant_automation: "Background authority and host access must be reauthorized on the destination.",
+  assistant_automation_run: "Automation receipts and temporary credentials belong to the originating instance.",
+  chat_app_connection: "Instance-bound private connector hosts; configure again after migration.",
+  chat_app_identity: "Chat actor bindings must never travel to another instance.",
+  chat_app_thread: "Private assistant threads belong to the original sender and connector.",
+  chat_app_challenge: "Ephemeral consent and confirmation capabilities.",
+  chat_app_command: "Private command receipts, specific to the original installation.",
+  chat_app_transport_state: "Encrypted bot credentials and installation-specific receiver leases.",
+  chat_app_inbox: "Private provider deliveries, specific to the original installation.",
   instance_controller:
     "installation-local control-plane authority and device connection; never copied or wiped",
   instance_handoff: "durable installation-local handoff journal; never copied or wiped",

@@ -1,5 +1,7 @@
 "use client";
 
+import { useAccessCopy } from "./access-copy";
+
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -55,8 +57,7 @@ export function AccessScopeSummary({
   onRemoveType: (resourceType: ResourceType) => void;
   onReadOnly: (on: boolean) => void;
 }) {
-  const { t } = useI18n();
-  const m = t.misc.mcpAuthorize;
+  const m = useAccessCopy();
 
   const unscoped = isUnscopedTemplate(selection.template);
   const rows = unscoped ? [] : summaryRows(wireGrants(selection), labels);
@@ -268,8 +269,8 @@ function SummaryGroupBlock({
   onRemove: (resourceType: ResourceType, resourceId: string) => void;
   onRemoveType: (resourceType: ResourceType) => void;
 }) {
+  const m = useAccessCopy();
   const { t } = useI18n();
-  const m = t.misc.mcpAuthorize;
   const w = t.widgets.permissions.resourcePicker;
 
   // The capability bucket has no level to set — "create" is collection-only and
@@ -354,8 +355,7 @@ function SummaryGroupBlock({
 
 /** The level a grant carries, as a read-only tag. */
 function LevelTag({ level }: { level: AccessLevel }) {
-  const { t } = useI18n();
-  const m = t.misc.mcpAuthorize;
+  const m = useAccessCopy();
   const label: Record<AccessLevel, string> = {
     view: m.levelView,
     manage: m.levelManage,

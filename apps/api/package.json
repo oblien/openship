@@ -21,6 +21,8 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.5.4",
+    "@discordjs/rest": "2.6.3",
+    "@discordjs/ws": "2.0.4",
     "@hono/node-server": "^1.19.15",
     "@hono/node-ws": "^1.3.1",
     "@hono/typebox-validator": "^0.3.0",
@@ -30,19 +32,22 @@
     "@repo/db": "workspace:*",
     "@repo/platform": "workspace:*",
     "@sinclair/typebox": "^0.34.48",
+    "@slack/socket-mode": "3.1.0",
     "better-auth": "^1.5.4",
     "bullmq": "^5.70.4",
     "cron-parser": "^4.9.0",
     "hono": "^4.12.5",
     "ioredis": "^5.10.0",
     "ipaddr.js": "^2.4.0",
+    "jose": "6.2.13",
     "maxmind": "^5.0.6",
     "nodemailer": "^10.1.7",
     "pino": "^10.3.1",
     "stripe": "^20.4.0",
     "ws": "^8.21.3",
     "yaml": "^2.8.2",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@repo/commands": "workspace:*"
   },
   "devDependencies": {
     "@repo/sdk": "workspace:*",

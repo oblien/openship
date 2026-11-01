@@ -3,9 +3,10 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 
 /** Keyboard behavior for custom content mounted inside the shared Modal. */
-export function useDialogFocus(onClose: () => void) {
+export function useDialogFocus(onClose: () => void, enabled = true) {
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (!enabled) return;
     const previousFocus = document.activeElement as HTMLElement | null;
     // Shared Modal mounts its portal after this effect. A single animation
     // frame can run before that commit and leave focus behind the backdrop.
@@ -24,7 +25,7 @@ export function useDialogFocus(onClose: () => void) {
       observer?.disconnect();
       if (previousFocus?.isConnected) previousFocus.focus();
     };
-  }, []);
+  }, [enabled]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented) return;

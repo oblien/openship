@@ -1443,6 +1443,90 @@
       "when": 1792683952081,
       "tag": "0205_security_advisories",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1793102400000,
+      "tag": "0206_assistant",
+      "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1793102400001,
+      "tag": "0207_assistant_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1793131200000,
+      "tag": "0208_chat_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1793145600000,
+      "tag": "0209_assistant_automations",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1793196000000,
+      "tag": "0210_chat_assistant",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1793196000001,
+      "tag": "0211_chat_conversations",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1793196000002,
+      "tag": "0212_chat_outbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1793196000003,
+      "tag": "0213_automation_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1793196000004,
+      "tag": "0214_chat_transport",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1793196000005,
+      "tag": "0215_chat_experience",
+      "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1793327200000,
+      "tag": "0216_assistant_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1793327200001,
+      "tag": "0217_assistant_agent_icon",
+      "breakpoints": true
     }
   ]
 }

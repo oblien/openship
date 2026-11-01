@@ -381,6 +381,9 @@ export interface PermissionSpec {
    * A successful adapter must apply its returned operation context.
    */
   authorizationHandledByOperation?: boolean;
+  /** Whole-instance authority, independent of workspace grants. Enforced by the
+   * shared instance policy and used to filter the MCP catalog. */
+  instanceAdmin?: true;
   /**
    * Restrict this route to self-hosted instances. The secure router mounts the
    * `localOnly` middleware ahead of auth, so a request in CLOUD_MODE gets a 404

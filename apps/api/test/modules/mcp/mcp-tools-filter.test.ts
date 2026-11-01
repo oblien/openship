@@ -110,6 +110,15 @@ const ALL = [
 ];
 const names = (tools: McpToolDef[]) => tools.map((t) => t.name).sort();
 
+it("advertises informational permission requests to restricted and read-only clients, without permission writes", () => {
+  const request = tool({ name: "get_permissions_access_request", method: "GET", path: "/api/permissions/access-request", perm: { root: "permissions", leaf: "permissions", action: "read", wildcard: true } });
+  const grants = tool({ name: "get_permissions_grants", method: "GET", path: "/api/permissions/grants", perm: { root: "permissions", leaf: "permissions", action: "read", wildcard: true } });
+  const write = tool({ name: "post_permissions_grants", method: "POST", path: "/api/permissions/grants", perm: { root: "permissions", leaf: "permissions", action: "write", wildcard: true } });
+  for (const readOnly of [true, false]) {
+    expect(names(filterToolsForPrincipal([request, grants, write], principal({ readOnly })))).toEqual(["get_permissions_access_request"]);
+  }
+});
+
 /**
  * `wildcards` is the shorthand for "holds {type,'*',perms}". It also seeds
  * `grantedRootTypes`, because a real wildcard row IS a grant on that type and

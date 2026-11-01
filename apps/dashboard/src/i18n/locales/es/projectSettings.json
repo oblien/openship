@@ -619,6 +619,12 @@
       "repository": "Repositorio",
       "open": "Abrir"
     },
+    "branch": {
+      "label": "Rama de despliegue",
+      "description": "Se usará en los próximos despliegues de este entorno. Guardar no vuelve a desplegar la aplicación.",
+      "saved": "Rama de despliegue guardada",
+      "saveFailed": "No se pudo guardar la rama de despliegue"
+    },
     "webhookEndpoint": {
       "title": "Endpoint de webhook",
       "descriptionSet": "GitHub entrega los eventos de push directamente a este dominio",

@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@repo/core": "workspace:*",
-    "@sinclair/typebox": "^0.34.48"
+    "@sinclair/typebox": "^0.34.48",
+    "mindwire": "0.1.48",
+    "@repo/commands": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

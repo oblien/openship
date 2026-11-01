@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { OwnerRepoParams, CreateRepoBody, WebhookDeleteBody, GitHubSourceManifestBody, GitHubSourceManifestConvertBody, GitHubSourceManualBody, GitHubSourceUpdateBody } from "./github-inputs";
 import { SourceScanSchema } from "./sources";
+import { PublishRepositoryChangeInput, PublishedRepositoryChange } from "./repository-changes";
 import type { ResourceOperationSchema, ScopedOperations, ResourceOperations } from "./resource-operations";
 import type { MappedRepository, MappedAccount, RepositoryDetail, GitHubBranch, GitHubFileContent, GitHubWebhook, GitHubConnectionState, GitHubRepository } from "./github-types";
 export * from "./github-inputs";
@@ -129,6 +130,7 @@ export const GitHubCollectionSchemas = {
   listFiles: { action: "read", input: FileInput, output: Type.Union([Type.Array(FileEntry), FileEntry]) },
   listTree: { action: "read", input: RepoBranchInput, output: Type.Array(Type.Object({ path: Type.String(), type: Type.Union([Type.Literal("file"), Type.Literal("dir")]) })) },
   getFile: { action: "read", input: Type.Object({ ...RepoBranchInput.properties, file: Type.String({ minLength: 1, maxLength: 4096 }) }), output: Type.Object({ sha: Type.String(), size: Type.Number(), content: Type.String(), download_url: nullableString }) },
+  publishChange: { action: "write", input: PublishRepositoryChangeInput, output: PublishedRepositoryChange },
   listWebhooks: { action: "read", input: OwnerRepoParams, output: Type.Array(Webhook) },
   registerWebhook: { action: "write", input: OwnerRepoParams, output: Webhook },
   deleteWebhook: { action: "admin", input: Type.Object({ ...OwnerRepoParams.properties, ...WebhookDeleteBody.properties }), output: success },

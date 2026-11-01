@@ -31,6 +31,13 @@ const r = secureRouter(new Hono(), {
   basePath: "/api/github",
 });
 
+r.post("/repos/:owner/:repo/changes", {
+  tag: "github:write", authorizationHandledByOperation: true, auditHandledByOperation: true,
+  body: Type.Omit(GitHubCollectionSchemas.publishChange.input, ["owner", "repo"]),
+  bodyValidatedByOperation: true,
+  mcp: { description: "Publish a reviewed patch as one commit on a NEW openship branch, optionally opening a draft pull request. Requires exact base branch/SHA and source write access to every file. Never merges, forces, deletes files, or updates existing branches. Use a unique requestId; ambiguous failures must be reviewed before retrying. Branch pushes may trigger the repository's CI." },
+}, ctrl.publishChange);
+
 /* ─── Status / Connection ──────────────────────────────────────────────── */
 r.get(
   "/status",

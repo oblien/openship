@@ -9,6 +9,10 @@ r.get("/workspaces", {
    mcp: { description: "List the Openship workspaces (organizations/workgroups) available to this credential, including empty workspaces. Returns each name, organizationId, slug and role, plus currentOrganizationId, boundOrganizationId, canSwitchOrganization and readOnly. Call before creating an app or Compose project; pass the chosen organizationId as a top-level tool argument on every call. Bound credentials can only list and target their own workspace.",
  },
 }, ctrl.listWorkspaces);
+r.get("/access-request", {
+  tag: "permissions:read", ...shared, query: Collection.requestAccess.input,
+  mcp: { description: "Ask the user to review this connection's access when a task needs unavailable permissions. Supply query.reason and query.access describing the minimum actions and resources needed. Returns an informational request only, with granted=false; it never changes permissions or authorizes a retry. The built-in Assistant shows a Review permissions button. External clients should direct the user to reviewPath in Openship Settings. Wait for the user; never ask for credentials or use another route around denied access." },
+}, ctrl.requestAccess);
 r.get("/org-meta", { tag: "permissions:read", ...shared, mcp: { description: "Read this workspace’s identity, team status and member count." } }, ctrl.orgMeta);
 r.get("/resources", { tag: "permissions:read", ...shared, mcp: { description: "List grantable resources of query.type visible to this credential. This reads resources; it does not grant access." }, query: Collection.listResources.input }, ctrl.listResources);
 r.post("/create-team-org", { tag: "permissions:write", ...shared, body: Collection.createTeamOrg.input }, ctrl.createTeamOrg);

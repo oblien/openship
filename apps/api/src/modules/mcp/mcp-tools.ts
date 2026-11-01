@@ -63,6 +63,7 @@ export interface McpToolDef {
      *  Reachable by an "own projects" create-capable grant — see the
      *  canCreateProjects arm in filterToolsForPrincipal. */
     projectCreate: boolean;
+    instanceAdmin?: true;
     /** Repo content tier this route requires, mirrored from PermissionSpec.source.
      *  Set ⇒ the tool touches repository CONTENT and needs a source capability
      *  beyond the repo grant itself. Undefined ⇒ metadata tier. */
@@ -72,6 +73,8 @@ export interface McpToolDef {
 
 /** The caller's effective capability, resolved once per MCP request for `tools/list` filtering. */
 export interface McpPrincipal {
+  /** Resolved with the same persisted instance-authority policy as HTTP calls. */
+  instanceAdmin?: boolean;
   role: "owner" | "admin" | "member" | "restricted";
   readOnly: boolean;
   /** Resource types the token holds grants on — only consulted when role === "restricted". */
@@ -284,6 +287,7 @@ export function getMcpTools(): McpToolDef[] {
             ? "project"
             : (parsed?.root ?? ""),
           projectCreate: !isPublicSpec(spec) && spec.projectCreate === true,
+          ...(!isPublicSpec(spec) && spec.instanceAdmin ? { instanceAdmin: true as const } : {}),
           // Repo content tier, declared once on the route and consumed both here
           // (advertisement) and by requirePermission (enforcement).
           source: isPublicSpec(spec) ? undefined : spec.source,
@@ -349,11 +353,12 @@ export function filterToolsForPrincipal(
     // Read-only tokens can only call GET — the runtime gate rejects mutations by
     // HTTP method, so mirror that exactly rather than guessing from the tag.
     if (principal.readOnly && t.method !== "GET") return false;
+    if (t.perm.instanceAdmin && !principal.instanceAdmin) return false;
 
-    // Self-discovery needs no resource grant. Its shared identity operation
-    // validates membership and confines the result to the credential's scope.
+    // Self-discovery and informational access requests need no resource grant.
+    // Shared identity operations validate membership and the credential's scope.
     // Keep this exception exact; other permission-management routes stay gated.
-    if (t.method === "GET" && t.path === "/api/permissions/workspaces") return true;
+    if (t.method === "GET" && (t.path === "/api/permissions/workspaces" || t.path === "/api/permissions/access-request" || t.path === "/api/mcp/guide")) return true;
 
     // Repo CONTENT is a capability of its own, orthogonal to role: a repo grant
     // authorises deploying and inspecting metadata, not crawling files. Hide the

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 const provider = vi.hoisted(() => ({ fetch: vi.fn(), cloneToken: vi.fn(), source: vi.fn(), send: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/github/github.auth", async original => ({ ...await original<object>(), githubFetch: provider.fetch, getInstallationToken: provider.cloneToken }));
@@ -39,6 +40,32 @@ const entry = (path: string, type = "file") => ({ name: path.split("/").pop(), p
 afterEach(async () => { vi.clearAllMocks(); await setStoredDeviceToken(null); });
 
 describe("GitHub operations shared by SDK and HTTP", () => {
+  it("publishes a single commit and draft PR through SDK and HTTP with the same source permissions", async () => {
+    const owner = await seedOwner(), c = await clients(owner);
+    const base = "a".repeat(40), tree = "b".repeat(40), next = "c".repeat(40), commit = "d".repeat(40);
+    provider.fetch.mockImplementation(async ({ url, authorizeAs }: { url: string; authorizeAs: string }) => {
+      expect(authorizeAs).toBe("write");
+      const path = new URL(url).pathname;
+      if (path.endsWith("/git/ref/heads/main")) return { object: { sha: base } };
+      if (path.endsWith(`/git/commits/${base}`)) return { tree: { sha: tree } };
+      if (path.endsWith(`/git/trees/${tree}`)) return { tree: [], truncated: false };
+      if (path.endsWith("/git/trees")) return { sha: next };
+      if (path.endsWith("/git/commits")) return { sha: commit, html_url: `https://github.com/acme/app/commit/${commit}` };
+      if (path.endsWith("/git/refs")) return {};
+      if (path.endsWith("/pulls")) return { html_url: "https://github.com/acme/app/pull/42" };
+      throw new Error("Unexpected GitHub call");
+    });
+    const input = { owner: "acme", repo: "app", requestId: randomUUID(), pullRequest: true,
+      patch: { baseBranch: "main", baseSha: base, title: "Fix startup", description: "Review CI", files: [{ path: "src/app.ts", content: "export const fixed = true;" }] } };
+    for (const client of [c.native, c.remote]) {
+      const requestId = randomUUID();
+      expect(await client.github.publishChange({ ...input, requestId })).toEqual({ branch: `openship/changes/${requestId}`, commitSha: commit, url: `https://github.com/acme/app/commit/${commit}`, pullRequestUrl: "https://github.com/acme/app/pull/42" });
+    }
+    const restricted = await clients(await memberOf(owner), owner.orgId);
+    provider.fetch.mockClear();
+    for (const client of [restricted.native, restricted.remote]) await expect(client.github.publishChange(input)).rejects.toBeDefined();
+    expect(provider.fetch).not.toHaveBeenCalled();
+  });
   it("returns branch pagination through native operations and HTTP without truncating later pages", async () => {
     const c = await clients(await seedOwner());
     const branch = { name: "main", commit: { sha: "abc", url: "https://api.github.com/commit/abc" }, protected: false };

@@ -237,7 +237,7 @@ export function resolveScopeIntent(opts: {
  * callers satisfy it — `create` binds to `ctx.organizationId`, and
  * `authorizeMcpClient` passes a ctx from `mintContextFor`.
  */
-async function validateGrants(
+export async function validateGrants(
   ctx: RequestContext,
   grants: Array<{
     resourceType: string;
@@ -324,7 +324,17 @@ async function validateGrants(
 /** POST /api/tokens — mint a token. Returns the plaintext ONCE. */
 export async function create(ctx: RequestContext, body: TCreateTokenBody) {
   assertCredentialManagement(ctx);
+  return mintToken(ctx, body);
+}
 
+/** Internal delegation only. Never exposed by credential routes or returned to an agent. */
+export async function createExecutionToken(ctx: RequestContext, input: { name: string; readOnly: boolean; grants: NonNullable<TCreateTokenBody["grants"]> }) {
+  if (!input.grants.length || (!input.readOnly && ctx.credential?.readOnly))
+    throw new AppError("This task exceeds the initiating credential.", 403, "GRANT_EXCEEDS_ACCESS");
+  return mintToken(ctx, input, Date.now() + 10 * 60000);
+}
+
+async function mintToken(ctx: RequestContext, body: TCreateTokenBody, deadline?: number) {
   // A scoped token carries its own grants. Validate every grant is within the
   // minter's own access BEFORE minting, so a token can never exceed its owner.
   // The "projects it creates" scope is just a grant like any other:
@@ -347,6 +357,7 @@ export async function create(ctx: RequestContext, body: TCreateTokenBody) {
     : null;
   // A short-lived embedding identity or token must not mint a credential that
   // silently outlives the identity that authorized it.
+  if (deadline) expiresAt = new Date(Math.min(expiresAt?.getTime() ?? Infinity, deadline));
   const ceiling = await credentialExpiry(ctx);
   if (ceiling && (!expiresAt || expiresAt > ceiling)) expiresAt = ceiling;
 
