@@ -11,6 +11,7 @@ import {
   assembleGitClone,
   gitShellCommand,
   type GitCloneInvocation,
+  exactCommitFetchArgs,
 } from "./git-clone";
 
 describe("sq (POSIX single-quote)", () => {
@@ -490,4 +491,26 @@ describe("user token clone scope", () => {
     expect(inv.env.GIT_ALLOW_PROTOCOL).toBe("https");
     expect(inv.credArgs).toContain("http.followRedirects=false");
   });
+});
+
+describe("exactCommitFetchArgs", () => {
+  it("fetches a full commit ID with options terminated", () => {
+    const sha = "30a396bda22eda34bcd2bc73d5b601683b146e7a";
+    expect(exactCommitFetchArgs(sha)).toEqual([
+      "fetch",
+      "--progress",
+      "--depth",
+      "1",
+      "--",
+      "origin",
+      sha,
+    ]);
+  });
+
+  it.each(["30a396b", "HEAD~1", "main", "--upload-pack=x", `${"a".repeat(40)}\n`, "g".repeat(40)])(
+    "refuses anything else: %j",
+    (value) => {
+      expect(exactCommitFetchArgs(value)).toBeNull();
+    },
+  );
 });

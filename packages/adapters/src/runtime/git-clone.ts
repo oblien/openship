@@ -32,6 +32,16 @@ export const GIT_SUBMODULE_UPDATE_ARGS = [
   "--progress",
 ] as const;
 
+/**
+ * Git arguments that fetch exactly one commit by its object ID, or null unless
+ * the value is a full SHA. A commit outside the branch's shallow history, such as
+ * a PR merge commit, can only be reached this way: `--unshallow` follows the branch.
+ */
+export function exactCommitFetchArgs(commitSha: string): string[] | null {
+  if (!/^[0-9a-f]{40}$/i.test(commitSha)) return null;
+  return ["fetch", "--progress", "--depth", "1", "--", "origin", commitSha];
+}
+
 /** Alias of `@repo/core`'s {@link shellQuote}. Kept as a name because ~300 call sites in
  *  this package read `sq(...)`; there is one implementation, in core. */
 export const sq = shellQuote;
