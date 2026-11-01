@@ -6,6 +6,7 @@ import {
   NotFoundError,
   UnauthorizedError,
   ORG_SINGLETON_RESOURCE_TYPES,
+  RESOURCE_TYPES,
   capabilityFor,
   capabilityAction,
   capabilityRoot,
@@ -23,15 +24,16 @@ import {
 } from "./context";
 
 export const ORG_SINGLETON_RESOURCES: ReadonlySet<string> = new Set(ORG_SINGLETON_RESOURCE_TYPES);
-export type CheckedResourceType =
-  | ResourceType
-  | "deployment"
-  | "domain"
-  | "service"
-  | "env_var"
-  | "backup_run"
-  | "backup_restore"
-  | "build_session";
+
+/** Checked children include environment variables and build sessions, which are not grant-row types. */
+export const CHECKED_RESOURCE_TYPES = [...RESOURCE_TYPES, "env_var", "build_session"] as const;
+export type CheckedResourceType = (typeof CHECKED_RESOURCE_TYPES)[number];
+
+const CHECKED_RESOURCE_SET: ReadonlySet<string> = new Set(CHECKED_RESOURCE_TYPES);
+
+export function isCheckedResourceType(type: string): type is CheckedResourceType {
+  return CHECKED_RESOURCE_SET.has(type);
+}
 
 export interface PermissionInput {
   resourceType: CheckedResourceType;
