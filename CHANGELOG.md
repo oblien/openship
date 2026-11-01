@@ -53,6 +53,10 @@ Runtime security notices use the signed feed published from `security-advisories
   reused containers stay outside the deployment scope. Single apps with mounted
   data remain unsupported and are refused before data movement (#1525).
 
+- **Keep queued GitHub jobs moving** — only count spare runner registrations
+  whose runners remain admitted and capable for the waiting workflow. Excluded
+  runners, stale approvals and incompatible hosts no longer block dispatch (#1505).
+
 - **Keep Cloud diagnostics available during replica startup** — allow bounded
   schema initialization to wait for another replica, while preserving the short
   write deadlines and local-log fallback used during normal operation.
