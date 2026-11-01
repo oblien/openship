@@ -455,10 +455,13 @@ export async function ensurePendingServiceDomain(opts: {
   serviceId: string;
   hostname: string;
   targetPort?: number;
+  redirectTo?: string;
+  redirectStatus?: number;
 }): Promise<{ created: boolean; domainId: string | null }> {
   const { hostname, existing, mayOwn } = await resolveServiceDomainOwnership(opts);
   if (existing) {
     const patch: Record<string, unknown> = {};
+    if (opts.redirectTo !== undefined) Object.assign(patch, normalizeRedirect(opts));
     if ((existing.serviceId ?? null) !== opts.serviceId) patch.serviceId = opts.serviceId;
     if (opts.targetPort != null && (existing.targetPort ?? null) !== opts.targetPort) {
       patch.targetPort = opts.targetPort;
@@ -478,6 +481,7 @@ export async function ensurePendingServiceDomain(opts: {
     hostname,
     domainType: "custom",
     targetPort: opts.targetPort,
+    ...(opts.redirectTo !== undefined ? normalizeRedirect(opts) : {}),
     verified: false,
     status: "pending",
     isPrimary: false,

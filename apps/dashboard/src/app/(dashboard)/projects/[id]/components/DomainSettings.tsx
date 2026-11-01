@@ -610,6 +610,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     domain: string;
     customDomain: string;
     exposedPort: string;
+    redirectTo: string;
+    redirectStatus: number;
   } | null>(null);
   // "Add route" form: bind a domain and container port to the selected service.
   const [showAddRoute, setShowAddRoute] = useState(serviceScope?.add ?? false);
@@ -618,16 +620,11 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   // A free *.<baseDomain> subdomain only routes through the Openship Cloud edge,
   // so it's a usable default only on a cloud-connected (or SaaS) instance.
   const freeDomainsAvailable = !selfHosted || cloudConnected;
-  const emptyAddRouteDraft = {
-    domainType: (freeDomainsAvailable ? "free" : "custom") as "free" | "custom",
-    domain: "",
-    port: serviceScope?.port ? String(serviceScope.port) : "",
-  };
-  const [addRouteDraft, setAddRouteDraft] = useState<{
-    domainType: "free" | "custom";
-    domain: string;
-    port: string;
-  }>(emptyAddRouteDraft);
+  const emptyAddRouteDraft = () => [createPublicEndpoint({
+    domainType: freeDomainsAvailable ? "free" : "custom",
+    port: portFilter ? String(portFilter) : "",
+  })];
+  const [addRouteDraft, setAddRouteDraft] = useState<PublicEndpoint[]>(emptyAddRouteDraft);
   const [addRouteError, setAddRouteError] = useState<string | null>(null);
   const [addRouteSaving, setAddRouteSaving] = useState(false);
   const [isSavingPublicEndpoints, setIsSavingPublicEndpoints] = useState(false);
@@ -943,7 +940,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       domainType: endpoint.domainType,
       domain: endpoint.domain ?? "",
       customDomain: endpoint.customDomain ?? "",
-      exposedPort: String(endpoint.port),
+      exposedPort: endpoint.port === undefined ? "" : String(endpoint.port),
+      redirectTo: endpoint.redirectTo ?? editingRouteTarget?.redirectTo ?? "",
+      redirectStatus: endpoint.redirectStatus ?? editingRouteTarget?.redirectStatus ?? 301,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingRouteTarget]);
@@ -1708,56 +1707,40 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
   const handleAddRoute = async () => {
     setAddRouteError(null);
-    const { domainType, domain, port } = addRouteDraft;
-    // Free *.opsh.io routes only resolve behind the Openship Cloud edge — gate
-    // the add on a cloud connection, identical to handleSaveRoute /
-    // handleSavePublicEndpoints. requireCloud opens the connect modal and
-    // returns false when not connected, so the free route is never persisted.
-    if (domainType === "free" && !(await freeNeedsCloud())) return;
-    const cleanPort = port.trim();
-    if (!/^\d+$/.test(cleanPort) || Number(cleanPort) < 1 || Number(cleanPort) > 65535) {
-      setAddRouteError(t.projectSettings.domains.toast.enterPort);
-      return;
-    }
+    if (addRouteDraft.some(endpoint => endpoint.domainType === "free") && !(await freeNeedsCloud())) return;
     const selectedServiceId = serviceScope?.serviceId || addRouteServiceId;
     const target = selectedServiceId
-      ? services.find((service) => service.id === selectedServiceId)
-      : findServiceByPort(cleanPort);
+      ? services.find(service => service.id === selectedServiceId)
+      : findServiceByPort(addRouteDraft[0]?.port ?? "");
     if (!target) {
       setAddRouteError(t.projectDetail.services.detail.networking.selectService);
       return;
     }
-    const domainValue = domain.trim();
-    if (!domainValue) {
-      setAddRouteError(domainType === "custom" ? t.projectSettings.domains.toast.enterCustom : t.projectSettings.domains.toast.enterSubdomain);
-      return;
-    }
     setAddRouteSaving(true);
     try {
-      const endpoint = validatedPublicEndpointPayload(createPublicEndpoint({
-        port: cleanPort, domainType,
-        domain: domainType === "free" ? domainValue : "",
-        customDomain: domainType === "custom" ? domainValue : "",
-      }), true);
-      if (!endpoint?.port) {
+      const added = addRouteDraft.map(endpoint => validatedPublicEndpointPayload(endpoint, true));
+      if (added.some(endpoint => !endpoint || (!endpoint.redirectTo && !endpoint.port))) {
         setAddRouteError(t.projectSettings.domains.toast.completeEndpoints);
         return;
       }
+      const endpoints = added as ServiceEndpoint[];
       const current = await servicesApi.get(id, target.id);
       if (!current.success) throw new Error(t.projectSettings.domains.toast.routeUpdateFailed);
       const saved = configuredServiceEndpoints(current.service);
-      const hostname = resolvePublicEndpointHostname(endpoint, baseDomain);
-      if (saved.some((route) => resolvePublicEndpointHostname(route, baseDomain) === hostname)) {
-        setAddRouteError(t.projectSettings.domains.add.noWww);
-        return;
+      const hostname = resolvePublicEndpointHostname(endpoints[0], baseDomain);
+      const hosts = new Set(saved.map(route => resolvePublicEndpointHostname(route, baseDomain)));
+      for (const endpoint of endpoints) {
+        const host = resolvePublicEndpointHostname(endpoint, baseDomain);
+        if (hosts.has(host)) {
+          setAddRouteError(t.projectSettings.domains.add.noWww);
+          return;
+        }
+        hosts.add(host);
       }
-      // Explicitly append: a scalar route patch replaces the first route on
-      // that port, which would silently remove an existing domain.
-      const next: ServiceEndpoint = { ...endpoint, port: endpoint.port };
-      const ok = await handleServiceRouteUpdate(target.id, serviceEndpointsPatch([...saved, next]));
+      const ok = await handleServiceRouteUpdate(target.id, serviceEndpointsPatch([...saved, ...endpoints]));
       if (ok) {
         setShowAddRoute(false);
-        setAddRouteDraft({ ...emptyAddRouteDraft, port: portFilter ? String(portFilter) : "" });
+        setAddRouteDraft(emptyAddRouteDraft());
         if (selfHosted && !isCloudProject && hostname?.startsWith("*.")) {
           // The service save owns domain creation. Read its actual row before
           // opening certificate setup; never invent a domain id from the host.
@@ -2079,7 +2062,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       (routeDraft.domainType !== editingEndpoint.domainType ||
         routeDraft.domain !== (editingEndpoint.domain ?? "") ||
         routeDraft.customDomain !== (editingEndpoint.customDomain ?? "") ||
-        routeDraft.exposedPort !== String(editingEndpoint.port)),
+        routeDraft.exposedPort !== (editingEndpoint.port === undefined ? "" : String(editingEndpoint.port)) ||
+        routeDraft.redirectTo !== (editingEndpoint.redirectTo ?? editingRouteTarget?.redirectTo ?? "") ||
+        routeDraft.redirectStatus !== (editingEndpoint.redirectStatus ?? editingRouteTarget?.redirectStatus ?? 301)),
   );
   const routeSaving = editingRouteService ? routeSavingServiceId === editingRouteService.id : false;
 
@@ -2090,7 +2075,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     const payload = validatedPublicEndpointPayload(createPublicEndpoint({
       ...routeDraft, port: routeDraft.exposedPort,
     }), true);
-    if (!payload?.port || !Number.isInteger(payload.port)) {
+    if (!payload || (!payload.redirectTo && (!payload.port || !Number.isInteger(payload.port)))) {
       showToast(t.projectSettings.domains.toast.completeEndpoints, "error");
       return;
     }
@@ -2102,7 +2087,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       const index = endpoints.findIndex((endpoint) =>
         resolvePublicEndpointHostname(endpoint, baseDomain) === editingRouteTarget.hostname.toLowerCase());
       if (index < 0) throw new Error(t.projectDetail.services.detail.networking.routeChanged);
-      const next: ServiceEndpoint = { ...payload, port: payload.port };
+      const next: ServiceEndpoint = { ...payload, redirectTo: routeDraft.redirectTo };
       const hostname = resolvePublicEndpointHostname(next, baseDomain);
       if (endpoints.some((endpoint, i) => i !== index && resolvePublicEndpointHostname(endpoint, baseDomain) === hostname)) {
         throw new Error(t.projectSettings.domains.add.noWww);
@@ -2209,7 +2194,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             onChange={(event) => {
               const port = Number(event.target.value) || undefined;
               setPortFilter(port);
-              setAddRouteDraft((draft) => ({ ...draft, port: port ? String(port) : "" }));
+              setAddRouteDraft((draft) => draft.map(endpoint => ({ ...endpoint, port: port ? String(port) : "" })));
             }}
             className="h-9 rounded-xl border border-border/50 bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40">
             <option value="">{t.projectDetail.services.detail.networking.allPorts}</option>
@@ -2669,66 +2654,29 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                     const service = services.find((item) => item.id === value);
                     setAddRouteServiceId(value);
                     const port = service && servicePortTargets(service, baseDomain).find((target) => target.protocol === "tcp" && target.port)?.port;
-                    setAddRouteDraft((draft) => ({ ...draft, port: port ? String(port) : "" }));
+                    setAddRouteDraft((draft) => draft.map(endpoint => ({ ...endpoint, port: port ? String(port) : "" })));
                   }}
                 />
               )}
-              <div className="flex items-center gap-2">
-                {(["free", "custom"] as const).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    disabled={addRouteSaving}
-                    onClick={async () => {
-                      if (type === "free" && !(await freeNeedsCloud())) return;
-                      setAddRouteDraft((d) => ({ ...d, domainType: type }));
-                    }}
-                    className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                      addRouteDraft.domainType === type
-                        ? "bg-primary/10 text-primary ring-1 ring-primary/15"
-                        : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
-                    }`}
-                  >
-                    {type === "free" ? t.projectSettings.domains.addRoute.free : t.projectSettings.domains.addRoute.custom}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="flex flex-1 items-center overflow-hidden rounded-xl border border-border/50 bg-background">
-                  <input
-                    value={addRouteDraft.domain}
-                    disabled={addRouteSaving}
-                    aria-label={t.projectSettings.domains.add.domainName}
-                    onChange={(e) => setAddRouteDraft((d) => ({ ...d, domain: e.target.value }))}
-                    placeholder={addRouteDraft.domainType === "custom" ? t.projectSettings.domains.addRoute.customPlaceholder : projectLabel || t.projectSettings.domains.addRoute.defaultServiceName}
-                    className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/50"
-                  />
-                  {addRouteDraft.domainType === "free" && (
-                    <span className="shrink-0 pe-3 text-sm text-muted-foreground">.{baseDomain}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-muted-foreground">{t.projectSettings.domains.addRoute.port}</span>
-                  <input
-                    value={addRouteDraft.port}
-                    aria-label={t.projectDetail.services.detail.networking.containerPort}
-                    disabled={addRouteSaving}
-                    readOnly={!!serviceScope && !!portFilter}
-                    onChange={(e) => setAddRouteDraft((d) => ({ ...d, port: e.target.value }))}
-                    placeholder={t.projectSettings.domains.addRoute.portPlaceholder}
-                    inputMode="numeric"
-                    className="w-24 rounded-xl border border-border/50 bg-background px-3 py-2.5 text-sm text-foreground outline-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={addRouteSaving || servicesLoading || !!servicesData.error}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
-                  >
-                    {addRouteSaving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="plus" className="size-4" />}
-                    {t.projectSettings.domains.addRoute.submit}
-                  </button>
-                </div>
-              </div>
+              <fieldset disabled={addRouteSaving || servicesLoading}>
+                <PublicEndpointsCard
+                  projectName={projectLabel}
+                  endpoints={addRouteDraft}
+                  hasServer
+                  runtimePort={addRouteDraft[0]?.port}
+                  allowPortEdit={!serviceScope || !portFilter}
+                  onChange={setAddRouteDraft}
+                  hideHeader
+                  portInline
+                  allowWww
+                  allowRedirects
+                />
+              </fieldset>
+              <button type="submit" disabled={addRouteSaving || servicesLoading || !!servicesData.error}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background hover:bg-foreground/90 disabled:opacity-50">
+                {addRouteSaving ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="plus" className="size-4" />}
+                {t.projectSettings.domains.addRoute.submit}
+              </button>
               {addRouteError && <p className="text-[12px] text-destructive">{addRouteError}</p>}
             </form>
           )}
@@ -2822,6 +2770,15 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 exposedPort={routeDraft.exposedPort}
                 disabled={routeSaving}
                 liveUrl={editingRouteTarget.liveUrl}
+                redirect={{
+                  to: routeDraft.redirectTo,
+                  status: routeDraft.redirectStatus,
+                  targets: [...new Set([
+                    ...domainSummaries.map(domain => domain.hostname),
+                    ...services.flatMap(service => configuredServiceEndpoints(service).map(endpoint => resolvePublicEndpointHostname(endpoint, baseDomain))),
+                  ])].filter(host => host && host !== editingRouteTarget.hostname && !host.startsWith("*.")),
+                  onChange: ({ to, status }) => setRouteDraft(previous => previous ? { ...previous, redirectTo: to, redirectStatus: status } : previous),
+                }}
                 portInline
                 // The card edits the in-memory draft only — the API is hit ONCE
                 // on Save. saveMode="change" reports each edit straight to state

@@ -22,10 +22,11 @@ export function configuredServiceEndpoints(service: Service): ServiceEndpoint[] 
   return routes.flatMap((route) => {
     const port = validPort(route.port);
     const hostname = route.domainType === "custom" ? route.customDomain?.trim() : route.domain?.trim();
-    if (!port || !hostname) return [];
+    if ((!port && !route.redirectTo) || !hostname) return [];
     return [{
-      port,
+      ...(port ? { port } : {}),
       domainType: route.domainType,
+      ...(route.redirectTo !== undefined ? { redirectTo: route.redirectTo, redirectStatus: route.redirectStatus } : {}),
       ...(route.domainType === "custom" ? { customDomain: hostname } : { domain: hostname }),
     }];
   });
@@ -37,7 +38,7 @@ export function serviceEndpointsPatch(endpoints: ServiceEndpoint[], exposed = tr
   return {
     publicEndpoints: endpoints,
     exposed: exposed && endpoints.length > 0,
-    exposedPort: primary ? String(primary.port) : "",
+    exposedPort: primary?.port === undefined ? "" : String(primary.port),
     domainType: primary?.domainType ?? "free",
     domain: primary?.domain ?? "",
     customDomain: primary?.customDomain ?? "",
@@ -71,7 +72,7 @@ export function servicePortTargets(service: Service, baseDomain: string): Servic
   // Some source-built services have only an exposedPort, without a Compose ports list.
   const exposedPort = validPort(service.exposedPort);
   const endpoints = configuredServiceEndpoints(service);
-  for (const port of [...(exposedPort ? [exposedPort] : []), ...endpoints.map((endpoint) => endpoint.port)]) {
+  for (const port of [...(exposedPort ? [exposedPort] : []), ...endpoints.flatMap((endpoint) => endpoint.port ? [endpoint.port] : [])]) {
     const key = `${port}/tcp`;
     if (!targets.has(key)) targets.set(key, {
       key, port, label: String(port), protocol: "tcp", bindings: [], endpoints: [],

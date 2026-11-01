@@ -28,6 +28,7 @@ export function serializeComposeService(service: ComposeServiceInfo) {
       domain: endpoint.domainType === "custom" ? undefined : endpoint.domain,
       customDomain: endpoint.domainType === "custom" ? endpoint.customDomain : undefined,
       domainType: endpoint.domainType,
+      ...(endpoint.redirectTo !== undefined ? { redirectTo: endpoint.redirectTo, redirectStatus: endpoint.redirectStatus } : {}),
     })),
   };
 }

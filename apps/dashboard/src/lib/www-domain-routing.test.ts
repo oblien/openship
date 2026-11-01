@@ -21,7 +21,7 @@ describe("www domain behavior", () => {
     const bare = domain("example.com");
     const next = toggleWwwDomainRouting([bare], true);
     expect(next).toHaveLength(2);
-    expect(next[0]).toEqual(bare);
+    expect(next[0]).toMatchObject({ ...bare, redirectTo: "" });
     expect(next[1]).toMatchObject({
       customDomain: "www.example.com",
       redirectTo: "example.com",
@@ -47,7 +47,7 @@ describe("www domain behavior", () => {
       "example.com",
       "api.example.com",
     ]);
-    expect(www[0].redirectTo).toBeUndefined();
+    expect(www[0].redirectTo).toBe("");
     expect(www[1].redirectTo).toBe(www[0].customDomain);
     expect(www[2]).toEqual(extra);
     const bare = setWwwDomainRouting(www, "apex");
@@ -63,6 +63,14 @@ describe("www domain behavior", () => {
       expect(payload).not.toHaveProperty("redirectTo");
       expect(payload).not.toHaveProperty("redirectStatus");
     }
+  });
+  it("reuses the serving port when a portless redirect becomes primary", () => {
+    const next = setWwwDomainRouting([
+      domain("example.com"),
+      domain("www.example.com", { port: "", redirectTo: "example.com" }),
+    ], "www");
+    expect(next[0]).toMatchObject({ customDomain: "www.example.com", redirectTo: "", port: "3000" });
+    expect(validatedPublicEndpointPayload(next[0], true)).toMatchObject({ port: 3000 });
   });
   it("keeps the chosen primary when disabling www and repairs references to the removed host", () => {
     const both = setWwwDomainRouting([domain("example.com")], "www");

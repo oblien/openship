@@ -994,3 +994,8 @@ Explain that these settings live in Openship and do not edit repository files.
 - Services and Topology share the same Add service modal. Its compact source selector offers Catalog, From repository, Custom image, and Connect existing; a searchable category dropdown replaces a permanent catalog sidebar.
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
+
+Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls` for the
+wizard and Add domain form. Edit route reuses `RoutingSettingsCard` for the
+canonical target/status. Saving a service route continues through the shared
+DNS, verification, SSL and route-apply flow; a redirect hides its unused port.
