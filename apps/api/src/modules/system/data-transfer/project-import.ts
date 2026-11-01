@@ -15,7 +15,7 @@ import {
   type DatabaseDump,
   type DatabaseTransaction,
 } from "@repo/db";
-import { isLoopbackHost } from "@repo/core";
+import { isDomainProxySettings, isLoopbackHost, sanitizeDomainProxySettings } from "@repo/core";
 import { needsExplicitServerMapping, transferServer } from "./export.service";
 import { resolveExportSelection, summarizeExportCounts } from "./selection";
 import { transferSecretsRequirePassphrase } from "./passphrase-crypto";
@@ -536,6 +536,20 @@ export async function planProjectImport(
     if (!sourceRows.length) continue;
     const incoming = sourceRows.map((source) => {
       const row = structuredClone(source);
+      // An older archive with no field represents inheritance, including when
+      // overwriting a destination that currently has an explicit override.
+      if (name === "domain" && row.proxy === undefined) row.proxy = null;
+      if (name === "domain" && row.proxy !== null) {
+        const proxy = row.proxy;
+        // Imports are untrusted desired settings. Reject invalid values instead
+        // of letting a permissive rendering sanitizer turn them into inheritance.
+        if (!isDomainProxySettings(proxy)) {
+          throw new ProjectImportError(
+            `Domain ${String(row.hostname ?? row.id)} has invalid proxy settings.`,
+          );
+        }
+        row.proxy = sanitizeDomainProxySettings(proxy) ?? null;
+      }
       // Some legacy catalogue entries (servers, git_installation) did not mark
       // hasOrganizationId; actual row columns are authoritative here.
       if ("organizationId" in row) row.organizationId = context.organizationId;

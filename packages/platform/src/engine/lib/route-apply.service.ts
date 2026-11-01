@@ -24,6 +24,7 @@
 
 import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { assertDomainProxyTarget } from "./domain-proxy-capabilities";
 import { repos, type Deployment } from "@repo/db";
 import type {
   EdgeProxyApi,
@@ -173,6 +174,7 @@ export async function reconcileProjectRoutes(
   // Cloud: page/workspace primitives. The webhook proxy is an nginx concern, so
   // it does not apply here (cloud webhook delivery uses a different path).
   if (target.deployTarget === "cloud") {
+    if (registers.length) await assertDomainProxyTarget(project, "cloud");
     for (const r of removes) await removeCloudProjectRoute(project, r);
     if (registers.length) {
       // Recompile the desired project table once. A per-domain root-only write

@@ -30,3 +30,14 @@ describe("domain DNS target forwarding", () => {
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe(method);
   });
 });
+
+it("PATCHes a domain override and preserves explicit zero and inheritance reset", async () => {
+  const fetchMock = captureRequest();
+  for (const proxy of [{ clientMaxBodySize: "0" }, null]) {
+    await domainsApi.update("dom_1", { proxy });
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(String(url)).toContain("/domains/dom_1");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({ proxy });
+  }
+});

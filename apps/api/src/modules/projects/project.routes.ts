@@ -116,7 +116,7 @@ r.post(
   ctrl.importLocal,
 );
 
-/* ─── Live edge config read-back (saved vs. served, per hostname) ───────── */
+/* ─── Edge config read-back (saved vs. generated on disk, per hostname) ─── */
 r.get(
   "/:id/edge-config",
   {
@@ -124,7 +124,7 @@ r.get(
     localOnly: true,
     mcp: {
       description:
-        "Compare saved project routes with the configuration currently served by the self-hosted edge. Use this to investigate routing drift before retrying.",
+        "Compare saved project and domain settings with the self-hosted edge's generated server-block configuration on disk. Use this to investigate routing drift before retrying; configuration files do not prove what running workers serve.",
     },
   },
   edgeConfig.getEdgeConfig,

@@ -1,14 +1,14 @@
 /**
- * Read back what the edge is ACTUALLY serving for a project's hostnames, and
- * compare it to what the project saved.
+ * Compare observed vhost files with the resolved project and domain settings.
  *
  * Saved-equals-served is an assumption, not a fact: a hand-edited vhost, a
  * half-applied reload, a value the API accepted but the sanitizer later dropped,
  * or a directive skipped by the box's nginx version floor all leave the stored
  * settings describing a config the box doesn't have. Nothing surfaced that — the
- * UI echoed the row back to the operator and looked correct. This parses the live
+ * UI echoed the row back to the operator and looked correct. This parses the
  * vhost through the SAME table the renderer writes it from, so the two views are
- * comparable by construction.
+ * comparable by construction. A matching file does not prove running workers
+ * loaded it; this read-back does not probe request behavior.
  *
  * Read-only and fail-soft: an unreachable box reports `reachable: false`, never an
  * error. Self-hosted only (there is no OpenResty to read on cloud).
@@ -20,21 +20,24 @@ import {
   PROXY_DIRECTIVES,
   expectedProxyState,
   sanitizeProxySettings,
+  resolveDomainProxySettings,
+  sanitizeDomainProxySettings,
+  type DomainProxySettings,
   type ProxyDirectiveGroup,
   type ProxySettings,
 } from "@repo/core";
 import { edgeProxy, detectOpenRestyPaths, type ImportedSite } from "@repo/adapters";
 
-import { withServerHostExecutor } from "@repo/platform/engine/lib/edge-host-executor";
+import { withDeploymentEdgeExecutor } from "@repo/platform/engine/lib/edge-host-executor";
 
-/** One directive's saved-vs-served state. */
+/** One directive's expected-versus-observed configuration state. */
 export interface EdgeDirectiveState {
   key: string;
   directive: string;
   group: ProxyDirectiveGroup;
-  /** What a vhost rendered from the project's settings would carry (companions included). */
+  /** What a vhost rendered from resolved project/domain settings would carry (companions included). */
   expected?: string | number | boolean;
-  /** The live value, when it survived validation (i.e. it is adoptable as-is). */
+  /** The observed configuration value, when it survived validation. */
   live?: string | number | boolean;
   /**
    * The live value exactly as the config declares it. Present even when `live` is
@@ -52,13 +55,23 @@ export interface EdgeConfigHostState {
   /** Whether the live vhost terminates TLS (decides whether `http2` is expected). */
   tls: boolean;
   directives: EdgeDirectiveState[];
-  /** Live values that differ from expected AND are valid to store — the "adopt" payload. */
+  /** Observed drift valid for project adoption; excludes body caps with a domain override. */
   adoptable: ProxySettings;
   driftCount: number;
+  /** Observed values come from the edge configuration, not an application probe. */
+  bodyLimit: {
+    saved: DomainProxySettings | null;
+    /** Null until an inherited HTTP default can be observed. */
+    effective: string | null;
+    source: "domain" | "project" | "edge";
+    observed: string | null;
+    /** The vhost file agrees with the resolved cap; says nothing about the running workers. */
+    configurationMatches: boolean | null;
+  };
 }
 
 export interface EdgeConfigReport {
-  /** False when the project has no server, the box is unreachable, or no proxy reads back. */
+  /** False when the deployment edge cannot be reached or no proxy reads back. */
   reachable: boolean;
   /** Which proxy answered, and whether it is our own OpenResty. */
   proxyKind?: string;
@@ -75,9 +88,12 @@ function buildHostState(
   site: ImportedSite | null,
   saved: ProxySettings,
   nginxVersion: readonly [number, number, number] | null,
+  domainProxy?: DomainProxySettings | null,
 ): EdgeConfigHostState {
   const tls = site?.ssl ?? false;
-  const expected = expectedProxyState(saved, { tls, nginxVersion });
+  const resolved = resolveDomainProxySettings(saved, domainProxy);
+  const domainSaved = sanitizeDomainProxySettings(domainProxy) ?? null;
+  const expected = expectedProxyState(resolved, { tls, nginxVersion });
   const live = (site?.proxy ?? {}) as Record<string, string | number | boolean>;
   const liveRaw = site?.proxyRaw ?? {};
 
@@ -103,7 +119,8 @@ function buildHostState(
       ...(raw !== undefined ? { liveRaw: raw } : {}),
       drift,
     });
-    if (drift && got !== undefined) adoptable[spec.key] = got;
+    if (drift && got !== undefined && !(spec.key === "clientMaxBodySize" && domainSaved))
+      adoptable[spec.key] = got;
   }
 
   return {
@@ -113,15 +130,33 @@ function buildHostState(
     directives,
     adoptable: (sanitizeProxySettings(adoptable) ?? {}) as ProxySettings,
     driftCount: directives.filter((d) => d.drift).length,
+    bodyLimit: {
+      saved: domainSaved,
+      effective: resolved?.clientMaxBodySize ?? null,
+      source: domainSaved ? "domain" : saved.clientMaxBodySize !== undefined ? "project" : "edge",
+      observed:
+        typeof live.clientMaxBodySize === "string"
+          ? live.clientMaxBodySize
+          : (liveRaw.clientMaxBodySize ?? null),
+      // An omitted vhost directive inherits the installed HTTP default. The
+      // per-vhost scanner cannot prove that value, so do not invent a 50m read.
+      configurationMatches: !site
+        ? null
+        : resolved?.clientMaxBodySize !== undefined
+          ? resolved.clientMaxBodySize === live.clientMaxBodySize
+          : live.clientMaxBodySize !== undefined || liveRaw.clientMaxBodySize !== undefined
+            ? false
+            : null,
+    },
   };
 }
 
 /**
- * Read the live edge config for every hostname the project owns.
+ * Read the edge configuration files for every hostname the project owns.
  *
  * Hostnames come from the project's domain rows — the same source
- * `pushProjectRules` uses — so this reports on exactly the hosts the edge has
- * vhosts for, free subdomains included.
+ * `pushProjectRules` uses — and include free subdomains and domains whose
+ * vhosts are absent or unreadable.
  */
 export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfigReport> {
   const saved = sanitizeProxySettings(project.routingConfig?.proxy) ?? {};
@@ -130,9 +165,12 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
 
   const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return []; });
   const hostnames = [...new Set(domains.map((d) => d.hostname.toLowerCase()))].sort();
+  const domainProxy = new Map(
+    domains.map((domain) => [domain.hostname.toLowerCase(), domain.proxy]),
+  );
   if (hostnames.length === 0) return { reachable: false, saved, hosts: [] };
 
-  const read = await withServerHostExecutor(project, async (exec) => {
+  const read = await withDeploymentEdgeExecutor(project, async (exec) => {
     const proxy = await edgeProxy(exec);
     if (!proxy) return null;
     // The version floor decides whether `http2 on;` is even expected on this box;
@@ -147,12 +185,19 @@ export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfi
     const hosts: EdgeConfigHostState[] = [];
     for (const hostname of hostnames) {
       const site = await proxy.siteFor(hostname).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return null; });
-      hosts.push(buildHostState(hostname, site, saved, version));
+      hosts.push(buildHostState(hostname, site, saved, version, domainProxy.get(hostname)));
     }
     return { kind: proxy.kind, ours: proxy.ours, version, hosts };
   }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/edge-config.service"); return null; });
 
-  if (!read) return { reachable: false, saved, hosts: [] };
+  if (!read)
+    return {
+      reachable: false,
+      saved,
+      hosts: hostnames.map((hostname) =>
+        buildHostState(hostname, null, saved, null, domainProxy.get(hostname)),
+      ),
+    };
   return {
     reachable: true,
     proxyKind: read.kind,

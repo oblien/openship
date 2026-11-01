@@ -87,6 +87,7 @@ export * from "./deployment-class";
 export * from "./deployment-ownership";
 export * from "./updates";
 export * from "./proxy-settings";
+export * from "./domain-proxy-settings";
 export * from "./audit-taxonomy";
 export * from "./access-grants";
 export * from "./access-capabilities";

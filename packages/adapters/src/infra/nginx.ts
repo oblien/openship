@@ -1283,6 +1283,7 @@ class ConfigRollbackError extends Error {}
 // ─── Implementation ──────────────────────────────────────────────────────────
 
 export class NginxProvider implements RoutingProvider, SslProvider {
+  readonly supportsDomainProxy = true;
   async dnsChallengeProvider() {
     const { createAcmeDnsProvider } = await import("./acme-dns");
     return createAcmeDnsProvider({

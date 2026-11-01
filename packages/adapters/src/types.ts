@@ -669,9 +669,9 @@ interface BaseRouteConfig {
    */
   trailingSlash?: boolean;
   /** Curated reverse-proxy tunables (client_max_body_size, proxy/body timeouts,
-   *  buffering, gzip) rendered at server scope. Effective merge of the
-   *  server default < project < service settings; persists in the route sidecar
-   *  so cert re-registration reproduces it. */
+   *  buffering, gzip) rendered at server scope; persists in the route sidecar
+   *  so cert re-registration reproduces it. Precedence lives in
+   *  packages/core/src/proxy-settings.ts. */
   proxy?: ProxySettings;
 }
 

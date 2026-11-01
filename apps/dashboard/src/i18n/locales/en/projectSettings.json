@@ -1205,6 +1205,29 @@
       "description": "The app keeps running — only this route and its edge registration are removed. You can add it back at any time.",
       "confirm": "Remove route",
       "removing": "Removing…"
+    },
+    "bodyLimit": {
+      "title": "HTTP body limit",
+      "inherit": "Inherit project",
+      "custom": "Custom",
+      "unlimited": "Unlimited (0)",
+      "hint": "Limits HTTP request bodies, including uploads and polling. WebSocket frames and application limits are separate. Use k, m or g; 0 means unlimited.",
+      "saved": "Saved override",
+      "effective": "Effective limit",
+      "source": "Source",
+      "domain": "Domain",
+      "project": "Project",
+      "edge": "Edge default",
+      "observed": "Observed limit",
+      "status": "Configuration check",
+      "matches": "Matches saved value (live reload not confirmed)",
+      "pending": "Configuration differs — retry routing",
+      "unknown": "Unknown",
+      "unsupported": "Requires a self-hosted nginx/OpenResty edge.",
+      "invalid": "Enter a size such as 2m or 1g, or 0 for unlimited.",
+      "save": "Save",
+      "saving": "Saving…",
+      "refresh": "Refresh status"
     }
   },
   "serviceEnvironment": {

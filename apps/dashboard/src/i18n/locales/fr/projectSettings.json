@@ -1156,6 +1156,29 @@
       "description": "L'application continue de fonctionner — seules cette route et son enregistrement edge sont supprimés. Vous pouvez la réajouter à tout moment.",
       "confirm": "Supprimer la route",
       "removing": "Suppression…"
+    },
+    "bodyLimit": {
+      "title": "Limite du corps HTTP",
+      "inherit": "Hériter du projet",
+      "custom": "Personnalisée",
+      "unlimited": "Illimité (0)",
+      "hint": "Limite les corps HTTP, transferts et polling compris. Les trames WebSocket et limites applicatives sont distinctes. Utilisez k, m ou g ; 0 signifie illimité.",
+      "saved": "Valeur enregistrée",
+      "effective": "Limite effective",
+      "source": "Source",
+      "domain": "Domaine",
+      "project": "Projet",
+      "edge": "Défaut Edge",
+      "observed": "Limite observée",
+      "status": "Vérification de la configuration",
+      "matches": "Correspond à la valeur enregistrée (application non confirmée)",
+      "pending": "La configuration diffère — réessayer le routage",
+      "unknown": "Inconnu",
+      "unsupported": "Nécessite un Edge nginx/OpenResty auto-hébergé.",
+      "invalid": "Saisissez 2m, 1g ou 0 pour illimité.",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "refresh": "Actualiser"
     }
   },
   "routeRules": {

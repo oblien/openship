@@ -334,3 +334,32 @@ describe("openship domain error + auth handling", () => {
     expect(err).toContain("unauthorized");
   });
 });
+
+describe("openship domain update", () => {
+  it.each([
+    [["--client-max-body-size", "0"], { proxy: { clientMaxBodySize: "0" } }],
+    [["--client-max-body-size", "2m"], { proxy: { clientMaxBodySize: "2m" } }],
+    [["--inherit-client-max-body-size"], { proxy: null }],
+  ])("sends the chosen override %j", async (flags, body) => {
+    setJsonMode(true);
+    fetchStub = stubFetch(() => ({ json: { data: { ...domainFixture(), proxy: body.proxy } } }));
+    const result = await runCommand(domainCommand, ["update", "domain/a", ...flags]);
+    expect(result.code).toBe(0);
+    expect(fetchStub.calls).toMatchObject([
+      { url: `${API}/domains/domain%2Fa`, method: "PATCH", body },
+    ]);
+    expect(JSON.parse(result.out).proxy).toEqual(body.proxy);
+  });
+  it.each(
+    [
+      [],
+      ["--client-max-body-size", "2m", "--inherit-client-max-body-size"],
+      ["--client-max-body-size", "1m;foo"],
+      ["--client-max-body-size", "9".repeat(100) + "g"],
+    ].map((flags) => [flags]),
+  )("rejects missing/conflicting/unsafe options %j before requests", async (flags) => {
+    fetchStub = stubFetch(() => ({ json: {} }));
+    expect((await runCommand(domainCommand, ["update", "domain-a", ...flags])).code).not.toBe(0);
+    expect(fetchStub.calls).toHaveLength(0);
+  });
+});
