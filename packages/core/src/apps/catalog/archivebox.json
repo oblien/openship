@@ -1,0 +1,118 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "id": "archivebox",
+  "name": "ArchiveBox",
+  "description": "A self-hosted archive for web pages — save a URL and keep its HTML, screenshot, PDF, and more, forever.",
+  "kind": "template",
+  "logo": "archivebox",
+  "category": "other",
+  "repository": "https://github.com/ArchiveBox/ArchiveBox",
+  "tags": ["archive", "bookmarks", "web", "self-hosted"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "archivebox",
+      "image": "archivebox/archivebox:0.9.78rc48",
+      "exposed": true,
+      "exposedPort": 5797,
+      "routes": [{ "port": 5797 }],
+      "restart": "unless-stopped",
+      "volumes": ["archivebox_data:/data"],
+      "environment": {
+        "ALLOWED_HOSTS": "*",
+        "BASE_URL": "{{publicUrl:archivebox}}",
+        "ADMIN_USERNAME": "admin",
+        "ADMIN_EMAIL": "admin@example.com"
+      },
+      "secretEnv": ["ADMIN_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5797/health/ || exit 1"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "30s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "ADMIN_USERNAME",
+      "service": "archivebox",
+      "label": "Admin username",
+      "default": "admin"
+    },
+    {
+      "key": "ADMIN_EMAIL",
+      "service": "archivebox",
+      "label": "Admin email",
+      "default": "admin@example.com"
+    },
+    {
+      "key": "ADMIN_PASSWORD",
+      "service": "archivebox",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "archivebox",
+      "port": 5797,
+      "label": "ArchiveBox",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ],
+  "connection": {
+    "title": "Sign in to ArchiveBox",
+    "description": "Sign in to the admin UI with the username and generated password below.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "ArchiveBox",
+        "source": "publicUrl:archivebox",
+        "kind": "url",
+        "recommended": true,
+        "help": "Open /admin/ to sign in and add URLs to archive."
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:archivebox:ADMIN_USERNAME",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:archivebox:ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "ArchiveBox creates this admin account itself on first start, from the ADMIN_USERNAME/ADMIN_PASSWORD it reads here. Account changes made in the app (a password change, new users) are preserved on redeployment."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Full-page archiving",
+        "description": "Saves HTML, a screenshot, a PDF, and more for every URL you add."
+      },
+      {
+        "title": "Your own archive",
+        "description": "Nothing depends on a third-party service staying online."
+      },
+      {
+        "title": "Persistent storage",
+        "description": "Archived snapshots stay on a project-scoped volume across deployments."
+      }
+    ]
+  }
+}
