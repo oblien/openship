@@ -141,7 +141,7 @@ describe("submodule token expansion", () => {
   it("keeps the parent-only token when there is no .gitmodules (404), without warning", async () => {
     fetchMock.mockResolvedValue(new Response("{}", { status: 404 }));
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", onLog });
-    expect(res).toEqual({ token: PARENT_TOKEN });
+    expect(res).toEqual({ token: PARENT_TOKEN, tokenRepositories: ["webapp"] });
     expect(tokenFor).toHaveBeenCalledTimes(1);
     expect(logs.join("\n")).not.toMatch(/falling back/);
   });
@@ -149,21 +149,21 @@ describe("submodule token expansion", () => {
   it("falls back to the parent token with a warning when reading .gitmodules fails", async () => {
     fetchMock.mockRejectedValue(new Error("socket hang up"));
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", onLog });
-    expect(res).toEqual({ token: PARENT_TOKEN });
+    expect(res).toEqual({ token: PARENT_TOKEN, tokenRepositories: ["webapp"] });
     expect(logs.join("\n")).toMatch(/reading \.gitmodules for .*webapp failed .*falling back to a parent-only token/);
   });
 
   it("falls back with a warning on a non-404 HTTP error", async () => {
     fetchMock.mockResolvedValue(new Response("nope", { status: 500 }));
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", onLog });
-    expect(res).toEqual({ token: PARENT_TOKEN });
+    expect(res).toEqual({ token: PARENT_TOKEN, tokenRepositories: ["webapp"] });
     expect(logs.join("\n")).toMatch(/HTTP 500/);
   });
 
   it("keeps the parent credential when source lookup fails and reports only safe context", async () => {
     resolveGitHubApiBaseUrl.mockRejectedValue(new Error(`${PARENT_TOKEN} private-provider-payload`));
     fetchMock.mockResolvedValue(new Response("{}", { status: 404 }));
-    await expect(resolveBuildGitToken({ ...base, buildStrategy: "server", onLog })).resolves.toEqual({ token: PARENT_TOKEN });
+    await expect(resolveBuildGitToken({ ...base, buildStrategy: "server", onLog })).resolves.toEqual({ token: PARENT_TOKEN, tokenRepositories: ["webapp"] });
     expect(observeCaughtError).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Could not resolve the GitHub source for submodule discovery" }),
       "platform/engine/modules/github/clone-auth",
@@ -177,7 +177,7 @@ describe("submodule token expansion", () => {
     fetchMock.mockResolvedValue(new Response("{}", { status: 404 }));
     await expect(resolveBuildGitToken({ ...base, buildStrategy: "server", onLog: () => {
       throw new Error(`${PARENT_TOKEN} private-log-payload`);
-    } })).resolves.toEqual({ token: PARENT_TOKEN });
+    } })).resolves.toEqual({ token: PARENT_TOKEN, tokenRepositories: ["webapp"] });
     expect(observeCaughtError).toHaveBeenCalledWith(
       expect.objectContaining({ message: "The build log sink rejected a clone authentication diagnostic" }),
       "platform/engine/modules/github/clone-auth",
@@ -202,12 +202,12 @@ describe("submodule token expansion", () => {
       tc.extraRepositories?.length ? null : { token: PARENT_TOKEN, source: "app-installation" },
     );
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", onLog });
-    expect(res).toEqual({ token: PARENT_TOKEN });
+    expect(res).toEqual({ token: PARENT_TOKEN, tokenRepositories: ["webapp"] });
     expect(logs.join("\n")).toMatch(/remint .* returned no token/);
   });
 
-  it("never expands a non-App token (PAT / OAuth reach everything already)", async () => {
-    tokenFor.mockResolvedValue({ token: "ghp_patPATpatPATpatPATpat0003", source: "project" });
+  it.each(["project", "user-pat", "user-oauth"])("keeps %s permissions without extra discovery or App minting", async (source) => {
+    tokenFor.mockResolvedValue({ token: "ghp_patPATpatPATpatPATpat0003", source });
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "server", onLog });
     expect(res).toEqual({ token: "ghp_patPATpatPATpatPATpat0003" });
     expect(fetchMock).not.toHaveBeenCalled();
