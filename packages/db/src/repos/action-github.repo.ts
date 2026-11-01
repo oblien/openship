@@ -547,6 +547,8 @@ export function createActionGitHubRepo(db: Database) {
         )
           return;
         // A provisioning failure needs explicit retry/rerun, never a paid VM loop.
+        // Registrations match by label, so GitHub may hand a session another
+        // queued job. That session no longer serves this demand, nor do its errors.
         const [previous] = await tx
           .select()
           .from(actionRunnerSession)
@@ -555,6 +557,10 @@ export function createActionGitHubRepo(db: Database) {
               eq(actionRunnerSession.organizationId, value.organizationId),
               eq(actionRunnerSession.demandJobId, value.demandJobId),
               or(
+                isNull(actionRunnerSession.admittedJobId),
+                eq(actionRunnerSession.admittedJobId, value.demandJobId),
+              ),
+              or(
                 isNull(actionRunnerSession.cleanedAt),
                 sql`${actionRunnerSession.error} IS NOT NULL`,
               ),
@@ -562,6 +568,38 @@ export function createActionGitHubRepo(db: Database) {
           )
           .limit(1);
         if (previous) return;
+        // A registration whose own demand was taken elsewhere is still listening
+        // and can take this job. Another one would only idle out with an error.
+        const spares = await tx
+          .select({ spec: actionRunnerSession.spec })
+          .from(actionRunnerSession)
+          .innerJoin(
+            actionJob,
+            and(
+              eq(actionJob.id, actionRunnerSession.demandJobId),
+              eq(actionJob.organizationId, actionRunnerSession.organizationId),
+            ),
+          )
+          .where(
+            and(
+              eq(actionRunnerSession.organizationId, value.organizationId),
+              eq(actionRunnerSession.repoOwner, value.repoOwner),
+              eq(actionRunnerSession.repoName, value.repoName),
+              inArray(actionRunnerSession.state, ["preparing", "listening"]),
+              isNull(actionRunnerSession.admittedJobId),
+              isNull(actionRunnerSession.cancelRequestedAt),
+              isNull(actionRunnerSession.cleanedAt),
+              or(sql`${actionJob.status} <> 'queued'`, sql`${actionJob.finishedAt} IS NOT NULL`),
+            ),
+          );
+        const wanted = job.spec.labels.map((label) => label.toLowerCase());
+        if (
+          spares.some(({ spec }) => {
+            const offered = spec.labels.map((label) => label.toLowerCase());
+            return wanted.every((label) => offered.includes(label));
+          })
+        )
+          return;
         return (await tx.insert(actionRunnerSession).values(value).returning())[0];
       });
     },
