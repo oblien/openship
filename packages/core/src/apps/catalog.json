@@ -8750,6 +8750,158 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "pgadmin4",
+      "name": "pgAdmin4",
+      "description": "Browser-based administration and SQL client for PostgreSQL — point it at any Postgres server, not only one deployed here.",
+      "kind": "template",
+      "logo": "pgadmin4",
+      "category": "database",
+      "repository": "https://github.com/pgadmin-org/pgadmin4",
+      "tags": [
+        "postgres",
+        "sql",
+        "admin",
+        "database"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "pgadmin4",
+          "image": "dpage/pgadmin4:9.18",
+          "exposed": true,
+          "exposedPort": 5050,
+          "routes": [
+            {
+              "port": 5050
+            }
+          ],
+          "restart": "unless-stopped",
+          "volumes": [
+            "pgadmin4_data:/var/lib/pgadmin"
+          ],
+          "environment": {
+            "PGADMIN_DISABLE_POSTFIX": "1",
+            "PGADMIN_LISTEN_PORT": "5050"
+          },
+          "secretEnv": [
+            "PGADMIN_DEFAULT_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:5050/misc/ping"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "60s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "PGADMIN_DEFAULT_EMAIL",
+          "service": "pgadmin4",
+          "label": "pgAdmin email",
+          "default": "admin@example.com",
+          "required": true
+        },
+        {
+          "key": "PGADMIN_DEFAULT_PASSWORD",
+          "service": "pgadmin4",
+          "label": "pgAdmin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "general",
+          "label": "Setup",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "PGADMIN_DEFAULT_EMAIL",
+              "service": "pgadmin4",
+              "label": "pgAdmin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app.",
+              "fullWidth": true
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "pgadmin4",
+          "port": 5050,
+          "label": "pgAdmin4",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to pgAdmin4",
+        "description": "Sign in with the email and generated password below, then add any PostgreSQL server (including another Openship-deployed database's private connection URL) from the app.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "pgAdmin4",
+            "source": "publicUrl:pgadmin4",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:pgadmin4:PGADMIN_DEFAULT_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:pgadmin4:PGADMIN_DEFAULT_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users, saved servers) are preserved on redeployment. These are the initial credentials."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Standalone administration",
+            "description": "Connect to any reachable PostgreSQL server, not just one deployed from this catalog."
+          },
+          {
+            "title": "Browser-based SQL client",
+            "description": "Browse schemas, run queries, and manage roles without installing a desktop client."
+          },
+          {
+            "title": "Persistent configuration",
+            "description": "Saved server connections and preferences stay on a project-scoped volume across deployments."
+          }
+        ]
+      }
     }
   ]
 }
