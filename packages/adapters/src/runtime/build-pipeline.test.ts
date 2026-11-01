@@ -175,11 +175,35 @@ describe("runBuildPipeline pinned clone failure boundaries", () => {
     expect(commands[0]).not.toContain("--unshallow");
   });
 
-  it("unshallows only after clone succeeds and the pinned commit is absent", async () => {
+  it("fetches an absent pinned commit by ID without fetching full history", async () => {
     const commands: string[] = [];
     const exec = vi.fn(async (command: string) => {
       if (!command.includes(".env.example") && !command.startsWith("test -d ")) commands.push(command);
       if (command.includes(" cat-file ")) throw new Error("unknown commit");
+    });
+
+    const result = await runBuildPipeline(
+      { projectDir: PROJECT_DIR, exec },
+      pinnedConfig(),
+      new BuildLogger(),
+    );
+
+    expect(result.status).toBe("deploying");
+    const fetches = commands.filter((command) => command.includes(" fetch "));
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]).toContain(
+      "fetch --progress --depth 1 -- origin 30a396bda22eda34bcd2bc73d5b601683b146e7a",
+    );
+    expect(fetches[0]!.indexOf("auth-header")).toBeLessThan(fetches[0]!.indexOf("git "));
+    expect(commands.at(-2)).toContain(" checkout ");
+  });
+
+  it("unshallows only after clone succeeds and fetching the pinned commit by ID fails", async () => {
+    const commands: string[] = [];
+    const exec = vi.fn(async (command: string) => {
+      if (!command.includes(".env.example") && !command.startsWith("test -d ")) commands.push(command);
+      if (command.includes(" cat-file ")) throw new Error("unknown commit");
+      if (command.includes("--depth 1 -- origin")) throw new Error("not our ref");
     });
 
     const result = await runBuildPipeline(

@@ -171,7 +171,7 @@ import {
 import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
-import { GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
+import { exactCommitFetchArgs, GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { resolveImageVolumeBinds } from "./docker-image-volumes";
 import {
@@ -2240,14 +2240,30 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             () => { /* diagnostics-ignore: A nonzero file/commit presence probe selects the existing fetch fallback; actual fetch failures are reported. */ return false; },
           );
         if (!commitPresent) {
-          log.log(
-            `Commit ${config.commitSha} not in the shallow clone; unshallowing and retrying.\n`,
-            "warn",
-          );
-          await run(
-            "fetch",
-            `cd ${dir} && ${gitShellCommand(gitInvocation, "fetch --progress --unshallow")}`,
-          );
+          const fetchArgs = exactCommitFetchArgs(config.commitSha);
+          const fetched =
+            !!fetchArgs &&
+            (await run(
+              "fetch",
+              `cd ${dir} && ${gitShellCommand(gitInvocation, fetchArgs.join(" "))}`,
+            ).then(
+              () => true,
+              () => {
+                /* diagnostics-ignore: Not every Git host serves a commit by ID; full history is the existing fallback and reports its own failure. */
+                signal?.throwIfAborted();
+                return false;
+              },
+            ));
+          if (!fetched) {
+            log.log(
+              `Commit ${config.commitSha} not in the shallow clone; unshallowing and retrying.\n`,
+              "warn",
+            );
+            await run(
+              "fetch",
+              `cd ${dir} && ${gitShellCommand(gitInvocation, "fetch --progress --unshallow")}`,
+            );
+          }
         }
         await run(
           "checkout",

@@ -91,7 +91,7 @@ describe("DockerRuntime clone-on-server pinned commit", () => {
     expect(command).not.toContain("--unshallow");
   });
 
-  it("fetches full history only after the clone succeeds and the commit probe misses", async () => {
+  it("fetches a commit by ID after the clone succeeds and the commit probe misses", async () => {
     const executor = {
       exec: vi.fn(async (command: string) => {
         if (command.includes(" cat-file ")) throw new Error("unknown commit");
@@ -110,11 +110,38 @@ describe("DockerRuntime clone-on-server pinned commit", () => {
       String(command),
     );
     expect(commands).toHaveLength(4);
-    expect(commands[0]).toContain(" clone ");
-    expect(commands[1]).toContain("--unshallow");
+    expect(commands[1]).toContain(`fetch --progress --depth 1 -- origin ${COMMIT}`);
+    expect(commands[1]).not.toContain("--unshallow");
     expect(commands[2]).toContain(" checkout ");
-    expect(commands[3]).toContain(" submodule update ");
-    for (const command of commands.slice(0, 2)) {
+  });
+
+  it("fetches full history only when fetching the commit by ID fails", async () => {
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        if (command.includes(" cat-file ")) throw new Error("unknown commit");
+        return "";
+      }),
+      streamExec: vi.fn(async (command: string) => ({
+        code: command.includes("--depth 1 -- origin") ? 1 : 0,
+        output: "",
+      })),
+    } as unknown as CommandExecutor;
+
+    await harness(executor).cloneSourceOnRemote(
+      config(),
+      "/tmp/openship-build-test",
+      new BuildLogger(),
+    );
+
+    const commands = (executor.streamExec as ReturnType<typeof vi.fn>).mock.calls.map(([command]) =>
+      String(command),
+    );
+    expect(commands).toHaveLength(5);
+    expect(commands[0]).toContain(" clone ");
+    expect(commands[2]).toContain("--unshallow");
+    expect(commands[3]).toContain(" checkout ");
+    expect(commands[4]).toContain(" submodule update ");
+    for (const command of commands.slice(0, 3)) {
       expect(command.indexOf("auth-header")).toBeLessThan(command.indexOf("git "));
     }
   });

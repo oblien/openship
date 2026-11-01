@@ -12,7 +12,7 @@ import type { BuildConfig, LogCallback } from "../types";
 
 import { getTarCreateEnv, prepareSourceTarArgs } from "../archive";
 import { assembleGitClone } from "./build-pipeline";
-import { GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
+import { exactCommitFetchArgs, GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import { localGitSshWriter, materializeGitSsh, type GitSshMaterial } from "./git-ssh-material";
 import { generateDockerfile } from "./docker-build-plan";
 import { generatedBuildIgnore } from "./docker-recipes/cache";
@@ -438,6 +438,21 @@ async function cloneGitSource(
     );
 
     if (config.commitSha) {
+      const fetchArgs = exactCommitFetchArgs(config.commitSha);
+      const commitPresent = await spawnGit(
+        ["-C", targetPath, "cat-file", "-e", `${config.commitSha}^{commit}`],
+        { timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS, env: gitEnv },
+      ).then(
+        () => true,
+        () => { /* diagnostics-ignore: A nonzero commit presence probe selects the exact fetch; a missing object still fails at checkout. */ return false; },
+      );
+      if (!commitPresent && fetchArgs) {
+        await spawnGit([...credArgs, "-C", targetPath, ...fetchArgs], {
+          timeoutMs: GIT_CLONE_IDLE_TIMEOUT_MS,
+          onLog,
+          env: gitEnv,
+        });
+      }
       await spawnGit([...credArgs, "-C", targetPath, "checkout", config.commitSha], {
         timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS,
         onLog,
