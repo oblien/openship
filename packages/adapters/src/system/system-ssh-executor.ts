@@ -326,7 +326,10 @@ export class SystemSshExecutor implements CommandExecutor {
     const timeout = opts?.timeout ?? 30_000;
     const res = await this.runSsh(SystemSshExecutor.ENV_PREFIX + command, { timeout });
     if (res.timedOut) {
-      throw new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`);
+      throw new DOMException(
+        `Command timed out after ${timeout}ms: ${commandForError(command)}`,
+        "TimeoutError",
+      );
     }
     if (res.code !== 0) {
       // 255 is an SSH-level failure (auth/connection); map auth specially so
