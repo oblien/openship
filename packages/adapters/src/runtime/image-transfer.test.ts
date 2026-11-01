@@ -81,6 +81,35 @@ describe("transferImage", () => {
     expect(tags).toEqual([[loadedConfigId, IMG.tag]]);
   });
 
+  test.each([
+    `openship/app@sha256:${"a".repeat(64)}`,
+    `sha256:${"a".repeat(64)}`,
+  ])(
+    "returns a usable loaded reference instead of tagging a digest: %s",
+    async (ref) => {
+      const tags: Array<[string, string]> = [];
+      const loaded = `sha256:${"b".repeat(64)}`;
+      const result = await transferImage(
+        fakeSource([Buffer.from("image")]),
+        fakeTarget([], tags, loaded),
+        { id: IMG.id, tag: ref },
+      );
+      expect(result).toMatchObject({ bytesMoved: 5, imageRef: loaded });
+      expect(tags).toEqual([]);
+    },
+  );
+
+  test("refuses a digest transfer without a target reference instead of guessing a manifest ID", async () => {
+    const tags: Array<[string, string]> = [];
+    await expect(
+      transferImage(fakeSource([Buffer.from("image")]), fakeTarget([], tags), {
+        id: `repo/app@sha256:${"a".repeat(64)}`,
+        tag: `repo/app@sha256:${"a".repeat(64)}`,
+      }),
+    ).rejects.toThrow(/did not report.*image reference/);
+    expect(tags).toEqual([]);
+  });
+
   test("throws when docker save exits non-zero (never a silent truncation)", async () => {
     const sink: Buffer[] = [];
     await expect(
