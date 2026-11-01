@@ -8750,6 +8750,146 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "qbittorrent",
+      "name": "qBittorrent",
+      "description": "qBittorrent-nox with the web UI: a self-hosted BitTorrent client you control from the browser.",
+      "kind": "template",
+      "logo": "qbittorrent",
+      "category": "other",
+      "repository": "https://github.com/qbittorrent/qBittorrent",
+      "tags": [
+        "torrent",
+        "downloads",
+        "bittorrent"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "qbittorrent",
+          "image": "qbittorrentofficial/qbittorrent-nox:5.2.4-1",
+          "exposed": true,
+          "exposedPort": 8080,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "restart": "unless-stopped",
+          "volumes": [
+            "qbt_config:/config",
+            "qbt_downloads:/downloads"
+          ],
+          "entrypointArgv": [
+            "/sbin/tini",
+            "-g",
+            "--",
+            "/bin/sh",
+            "/etc/openship/qbt-entrypoint.sh"
+          ],
+          "environment": {
+            "TZ": "UTC",
+            "QBT_WEBUI_PORT": "8080",
+            "QBT_LEGAL_NOTICE": "confirm",
+            "QBT_TORRENTING_PORT": "6881",
+            "ADMIN_USERNAME": "admin"
+          },
+          "secretEnv": [
+            "ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"
+            ],
+            "interval": "30s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "30s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "ADMIN_USERNAME",
+          "service": "qbittorrent",
+          "label": "Admin username",
+          "default": "admin"
+        },
+        {
+          "key": "ADMIN_PASSWORD",
+          "service": "qbittorrent",
+          "label": "Admin password",
+          "help": "Auto-generated. The image ships with no fixed login: on first boot it either prints a random temporary password to the container log, or falls back to admin/adminadmin on older builds. This value is pre-seeded into the WebUI's config before qBittorrent starts, so you get a real password here instead.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "qbittorrent",
+          "port": 8080,
+          "label": "Web UI",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to qBittorrent",
+        "description": "Sign in with the username and generated password below. qBittorrent never had to invent its own temporary password — this one was set before the app's first start.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Web UI",
+            "source": "publicUrl:qbittorrent",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:qbittorrent:ADMIN_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:qbittorrent:ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. These are the initial credentials."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Browser-controlled downloads",
+            "description": "Add, manage, and monitor torrents from a web UI, no desktop client needed."
+          },
+          {
+            "title": "Persistent storage",
+            "description": "Config and downloaded files stay on project-scoped volumes across deployments."
+          }
+        ]
+      },
+      "files": [
+        {
+          "service": "qbittorrent",
+          "path": "/etc/openship/qbt-entrypoint.sh",
+          "content": "#!/bin/sh\nset -e\nconfigFile=\"/config/qBittorrent/config/qBittorrent.conf\"\nif [ ! -f \"$configFile\" ]; then\n  hash=$(python3 -c \"\nimport os, base64, hashlib, secrets\npw = os.environ['ADMIN_PASSWORD'].encode()\nsalt = secrets.token_bytes(16)\ndk = hashlib.pbkdf2_hmac('sha512', pw, salt, 100000, dklen=64)\nprint('@ByteArray(' + base64.b64encode(salt).decode() + ':' + base64.b64encode(dk).decode() + ')')\n\")\n  mkdir -p \"$(dirname \"$configFile\")\"\n  cat <<CONF > \"$configFile\"\n[BitTorrent]\nSession\\DefaultSavePath=/downloads\nSession\\Port=6881\nSession\\TempPath=/downloads/temp\nSession\\TempPathEnabled=true\n[Meta]\nMigrationVersion=9999\n[Preferences]\nWebUI\\Port=8080\nWebUI\\Username=$ADMIN_USERNAME\nWebUI\\Password_PBKDF2=$hash\nCONF\nfi\nexec /entrypoint.sh\n"
+        }
+      ]
     }
   ]
 }
