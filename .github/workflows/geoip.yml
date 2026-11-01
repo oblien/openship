@@ -1,0 +1,51 @@
+name: GeoIP database
+
+on:
+  workflow_call:
+    inputs:
+      refresh:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: Fetch a fresh validated snapshot for download
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: Validate GeoIP snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Refresh manually or validate the tagged snapshot
+        env:
+          MANUAL_REFRESH: ${{ inputs.refresh }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/geoip"
+          args=(--check)
+          if [ "$MANUAL_REFRESH" = true ]; then args=(); fi
+          bun scripts/update-geoip.mjs "${args[@]}" | tee "$RUNNER_TEMP/geoip/GeoLite2-Country.json"
+          cp apps/api/assets/geoip/GeoLite2-Country.mmdb "$RUNNER_TEMP/geoip/"
+          cat "$RUNNER_TEMP/geoip/GeoLite2-Country.json" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geoip-country
+          path: ${{ runner.temp }}/geoip/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
