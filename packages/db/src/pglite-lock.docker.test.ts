@@ -36,13 +36,30 @@ it.skipIf(process.env.RUN_DOCKER_E2E !== "1")(
         import { createPgliteLock } from './lock.mjs';
         const lock = createPgliteLock();
         try {
-          await lock.acquire('/shared/data', { waitMs: 0, takeover: true });
+          await lock.acquire(process.env.LOCK_DIR || '/shared/data', {
+            waitMs: 0, takeover: process.env.TAKEOVER !== 'false',
+          });
           console.log('ACQUIRED');
           lock.release();
         } catch (error) {
           if (!error.message.includes('already using')) throw error;
           console.log('BLOCKED');
         }
+      `);
+      await writeFile(join(directory, "exit.mjs"), `
+        import { spawnSync } from 'node:child_process';
+        import { createPgliteLock } from './lock.mjs';
+        const lock = createPgliteLock({ registerExitHook: true });
+        await lock.acquire('/shared/exit-data', { waitMs: 0, takeover: false });
+        process.on('exit', () => {
+          const result = spawnSync(process.execPath, ['/fixture/contender.mjs'], {
+            env: { ...process.env, LOCK_DIR: '/shared/exit-data', TAKEOVER: 'false' }, encoding: 'utf8',
+          });
+          if (result.status !== 0 || result.stdout.trim() !== 'BLOCKED')
+            throw new Error('Kernel ownership was released before process exit');
+          console.log('EXIT_OWNER_RETAINED');
+        });
+        process.exit(0);
       `);
       await docker("pull", image);
       await docker("volume", "create", data);
@@ -67,6 +84,11 @@ it.skipIf(process.env.RUN_DOCKER_E2E !== "1")(
       await docker("stop", "--time=5", name);
       const { stdout } = await docker("run", "--rm", ...mounts, image, "node", "/fixture/contender.mjs");
       expect(stdout.trim()).toBe("ACQUIRED");
+      const exiting = await docker("run", "--rm", ...mounts, image, "node", "/fixture/exit.mjs");
+      expect(exiting.stdout.trim()).toBe("EXIT_OWNER_RETAINED");
+      const recovered = await docker("run", "--rm", "--env", "LOCK_DIR=/shared/exit-data",
+        ...mounts, image, "node", "/fixture/contender.mjs");
+      expect(recovered.stdout.trim()).toBe("ACQUIRED");
     } finally {
       await docker("rm", "-f", name).catch(() => {});
       await docker("volume", "rm", data).catch(() => {});

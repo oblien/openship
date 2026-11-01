@@ -328,10 +328,12 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
   function registerExitHook(): void {
     if (!options.registerExitHook || exitHookRegistered) return;
     exitHookRegistered = true;
-    // Best-effort synchronous release on normal exit / process.exit(). Crash and
-    // SIGKILL can't run this — those are covered by stale-pid reclamation on the
-    // next boot.
-    process.once("exit", () => release());
+    // Linux keeps its descriptor until the kernel closes it at actual process
+    // exit: later exit listeners may still touch the database. Explicit close
+    // releases it normally; an unclosed owner leaves a reclaimable marked record.
+    process.once("exit", () => {
+      if (kernelFd === undefined) release();
+    });
   }
 
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
