@@ -1,6 +1,6 @@
 {
   "name": "@repo/cli",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Openship CLI - deploy, manage, and open your Openship platform from the terminal",
   "license": "Apache-2.0",
   "repository": {
