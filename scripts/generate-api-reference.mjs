@@ -78,8 +78,11 @@ export function renderApiReference() {
         const access = [...new Set(variants.map((variant) => variant.access))]
           .map(code)
           .join(" / ");
-        const availability =
-          variants.length && variants.every((variant) => variant.localOnly) ? " · Self-hosted" : "";
+        const availability = row.availability
+          ? ` · ${cell(row.availability)}`
+          : variants.length && variants.every((variant) => variant.localOnly)
+            ? " · Self-hosted"
+            : "";
         const rest = row.route
           ? `${code(row.route)}<br />${access}${availability}`
           : `[Upload workflow](${row.workflow})`;

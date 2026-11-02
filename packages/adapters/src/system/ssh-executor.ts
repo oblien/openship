@@ -573,7 +573,13 @@ export class SshExecutor implements CommandExecutor {
       }
 
       timer = setTimeout(
-        () => terminate(new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`)),
+        () =>
+          terminate(
+            new DOMException(
+              `Command timed out after ${timeout}ms: ${commandForError(command)}`,
+              "TimeoutError",
+            ),
+          ),
         timeout,
       );
       timer.unref?.();

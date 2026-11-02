@@ -210,5 +210,6 @@ transfers; target capabilities determine the effective transport.
 | Configure forwarding of Git identity to build servers. | `settings.setGitForwarding(input)` | `PATCH /api/settings/forward-git`<br />`settings:write` |
 | Read the authenticated user’s saved appearance and portable theme library. | `settings.getAppearance()` | `GET /api/settings/appearance`<br />`settings:read` |
 | Save or reset personal appearance, validated tokens and embedded WOFF2 fonts. | `settings.setAppearance(input)` | `PUT /api/settings/appearance`<br />`settings:write` |
+| Save the authenticated user’s dashboard language for chat replies and assistant turns without changing other preferences. | `settings.setLocale(input)` | `PATCH /api/settings/locale`<br />`settings:write` |
 
 {/* api-operations:end */}

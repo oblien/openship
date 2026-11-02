@@ -8,6 +8,8 @@
     "servers",
     "emails",
     "backups",
+    "assistant",
+    "chat-apps",
     "settings",
     "billing"
   ]

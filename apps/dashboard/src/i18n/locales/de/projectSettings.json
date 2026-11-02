@@ -619,6 +619,12 @@
       "repository": "Repository",
       "open": "Öffnen"
     },
+    "branch": {
+      "label": "Deployment-Branch",
+      "description": "Wird für künftige Deployments in dieser Umgebung verwendet. Speichern löst kein neues Deployment aus.",
+      "saved": "Deployment-Branch gespeichert",
+      "saveFailed": "Deployment-Branch konnte nicht gespeichert werden"
+    },
     "webhookEndpoint": {
       "title": "Webhook-Endpunkt",
       "descriptionSet": "GitHub liefert Push-Ereignisse direkt an diese Domain",

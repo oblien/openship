@@ -89,7 +89,8 @@
       "account": "Hesap"
     },
     "workspaces": "Çalışma alanları",
-    "actions": "Eylemler"
+    "actions": "Eylemler",
+    "assistant": "Yapay zekâ ajanları"
   },
   "sidebar": {
     "expand": "Kenar çubuğunu genişlet",
@@ -244,5 +245,25 @@
       "title": "Faturalandırma ve Kullanım",
       "description": "Kullanım ve planlar"
     }
+  },
+  "investigation": {
+    "action": "Yapay zekâyla incele",
+    "deploymentTitle": "Bu dağıtımı incele",
+    "issueTitle": "Bu uygulama sorununu incele",
+    "description": "İsteği gözden geçirin, yararlı ayrıntıları ekleyin ve asistanınıza gönderin.",
+    "setup": "İnceleme isteğiniz hazır. Devam etmek için asistanı etkinleştirin ve bir ajan bağlayın.",
+    "invalid": "Bu inceleme bağlantısı geçersiz veya başka bir çalışma alanına ya da hesaba ait. Asıl sorunu kendi çalışma alanında açıp tekrar deneyin.",
+    "back": "Asistanı aç",
+    "deploymentPrompt": "Başarısız dağıtımı incele: {deploymentId}.",
+    "issuePrompt": "Uygulama sorununu incele: {issueId}.",
+    "appContext": "Uygulama kimliği: {projectId}.",
+    "instructions": "Mevcut durumu ve ilgili günlükleri incelemek için OpenShip araçlarını kullan. Olası nedeni kanıtlarla açıkla ve sonraki adımı öner. Önce incele, hiçbir değişiklik yapma. Erişim eksikse gereken belirli izinleri iste.",
+    "fixAction": "Yapay zekâyla düzelt",
+    "fixTitle": "Uygulama sorununu düzelt",
+    "fixPrompt": "{issueId} uygulama sorununu araştır ve düzelt.",
+    "fixInstructions": "Güncel sorunu, durumu ve ilgili günlükleri OpenShip araçlarıyla incele. Nedeni bul, onaylanan erişimin kapsamında uygun bir düzeltme uygula ve sonucu doğrula. Erişim veya gerekli bir karar eksikse ilgili incelemeyi sohbet içinde sun. Değişiklikleri ve kalan sorunları bildir; yalnızca gözlemlenen kanıtlarla kurtarmayı doğrula.",
+    "reportAction": "Yapay zekâ durum raporu",
+    "reportTitle": "Çalışma alanı durum raporu",
+    "reportPrompt": "OpenShip izleme ve durum araçlarıyla bu çalışma alanındaki uygulamaların, dağıtımların, hizmetlerin ve erişilebilir sunucuların güncel durumunu incele. Nelerin sağlıklı olduğunu, nelerin dikkat gerektirdiğini, kanıtları ve yararlı sonraki adımları özetle. Eski veya kullanılamayan izleme verilerini ve erişim sınırlarını belirt. Boş bir sorun listesi sağlıklı durumun kanıtı değildir. Bu salt okunur bir rapordur: kaynakları değiştirme veya örnek genelinde yönetici tanılamaları isteme."
   }
 }

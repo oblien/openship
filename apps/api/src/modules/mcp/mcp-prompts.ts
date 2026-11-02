@@ -46,6 +46,8 @@ export function workspaceInstructions(workspace?: { organizationId: string | nul
     "Match the user's requested workspace to that list. If several workspaces are available and the destination is unspecified or ambiguous, ask which one to use before creating resources. Never substitute the default when the requested workspace is unavailable.",
     "Pass the chosen organizationId as a TOP-LEVEL argument alongside body/query on every tool call in the flow (scan, create/ensure, install, service changes, deploy and status). It is fixed scope for that call; no active-workspace switch is persisted. For an authenticated out-of-band upload, also send X-Organization-Id and X-Openship-Scope: fixed.",
     "If boundOrganizationId is set, this credential only accesses that workspace. To use another, the user must authorize a connection or create a token in that workspace; passing a different ID cannot widen access.",
+    "Workspace grants cannot authorize instance-wide administration. If an operation returns INSTANCE_SCOPE_REQUIRED, do not request broader workspace permissions or retry it; use available workspace project and server tools for the task, and explain any information you cannot inspect.",
+    `If a task requires unavailable permissions, call ${toolRef("GET", "/api/permissions/access-request")} once with query.reason and query.access explaining the minimum actions and resources needed, then wait for the user. It only presents a request, never grants access. Do not repeatedly retry denied actions, ask for credentials, or bypass the normal permission editor.`,
     "organizationId selects the request's workspace; serverId selects where the app runs. Neither moves existing project records between Openship instances.",
     ...(env.CLOUD_MODE ? [
       "This is Openship Cloud. Local filesystem paths are not accessible here; use uploaded source or a git repository. Managed servers build on the server (buildStrategy:'server').",
@@ -67,15 +69,43 @@ const BUG_REPORT =
 
 const PROMPTS: PromptDef[] = [
   {
+    name: "agents-and-automations",
+    title: "Specialists, tasks and automations",
+    description: "Create a scoped specialist, delegate a task, inspect and continue its conversation, or prepare an incident-triggered automation.",
+    build: (_args, ref) => [
+      "The general OpenShip assistant manages the workspace. A saved agent is a specialist with instructions, an AI connection/model, and explicitly assigned resources. A task is one inspectable conversation. An automation is an event trigger that starts a fresh task, not another execution engine.",
+      `First use ${ref("GET", "/api/assistant/agents/")} to reuse an appropriate specialist. Use ${ref("POST", "/api/assistant/agents/")} to create one when requested: name, purpose, instructions, provider/model, readOnly, and named project/server/github_repository grants. All grants must fit both your current access and the user's Assistant consent. Reuse requestId for retries. Prefer read-only for investigations; never grant unrelated resources. Creating an agent does not start work.`,
+      `Assign work with ${ref("POST", "/api/assistant/agents/:id/tasks")}. Report acceptance accurately and return the task's conversation link. Use ${ref("GET", "/api/assistant/agents/:id/tasks/:chatId")} to inspect actual progress and results. Use ${ref("POST", "/api/assistant/agents/:id/tasks/:chatId/messages")} to send follow-up instructions to that same conversation, including during a running task. Do not busy-poll or create a second task for a follow-up.`,
+      `For recurring incident handling, inspect ${ref("GET", "/api/assistant/automations")} and check ${ref("GET", "/api/assistant/automation-permissions/:projectId")} with query.agentId. Create through ${ref("POST", "/api/assistant/automations")} using the selected agentId, app, deployment.failed or service.unhealthy trigger, response mode and existing notification channel IDs. Save enabled=false and automaticConsent=false. If the request includes activation, call ${ref("POST", "/api/assistant/automation-activation-review")} with all requested automationIds. This offers an inline Enable & continue review of the saved configuration; use it instead of refusing or sending the user through manual toggles. The review itself enables nothing. After the user approves, read the actual state and continue the remaining authorized task. Never submit approval yourself.`,
+      "Investigations and their follow-ups are read-only for the original app. Approved recovery and repository actions go through the existing reviewed automation pipeline. Agent instructions cannot expand permissions or bypass approval. Changing a specialist invalidates its old task execution scope; start a new task after reviewing the change. Each incident has its own conversation with optional existing notification channels.",
+      "Agents execute on the same user-selected Mindwire host as the assistant. Cloud coordinates the work and never runs a customer's native agent on the shared SaaS host. Native sign-in, provider secrets and permission approvals remain in the existing UI, outside these tools.",
+    ].join("\n\n"),
+  },
+  {
+    name: "chat-apps",
+    title: "Connect a chat app to OpenShip",
+    description: "Set up Slack, Discord, Telegram or Teams for deployment commands, assistant conversations, or both. These are interactive control-plane connections, separate from notification channels.",
+    build: (_args, ref) => [
+      `OpenShip has built-in chat-app connectors in Settings → Chat apps. Read ${ref("GET", "/api/chat-apps")} to check the current workspace's connections and this user's linking status. Never propose building another backend for this feature.`,
+      `For a new connection, call ${ref("GET", "/api/chat-apps/setup")} with query.provider and query.purpose ('commands' for the control plane, 'assistant' for AI conversations, or 'both'). It prepares the ordinary connection form and returns the exact fields and setup steps. This does not create or enable a bot. Present its inline Connect action, or setupPath in external clients, so the user can enter credentials privately. Never ask for bot tokens in conversation.`,
+      "Slack, Discord and Telegram support direct outbound connections without a public OpenShip URL. Teams uses public HTTPS webhooks. Deployment commands run through OpenShip and do not require AI or Mindwire. Assistant conversations use the sender's separately connected agent and approved access.",
+      "After saving, the connector starts paused. The user enables it in Settings → Chat apps. Each sender runs /openship link, opens the supplied URL, reviews the normal OpenShip permissions and sends the verification command back from their own chat account. Bot installation never grants a sender account access.",
+      "Use /openship help for the shared command catalog, including projects, status, logs, redeploy and restart. Destructive changes use the normal confirmation flow. Account consent and changes to bot credentials, destinations or roles stay in the existing settings form.",
+      `After the user finishes setup, call ${ref("GET", "/api/chat-apps")} again and report only the observed connection state. Connected is not proof that account linking or assistant setup is complete.`,
+    ].join("\n\n"),
+  },
+  {
     name: "openship-overview",
     title: "Openship: how to drive it via MCP",
     description:
       "Orientation: the main tool groups, the entry points for each flow, and how permission scoping (incl. per-repo GitHub grants) affects what you can see and do.",
     build: (_args, ref) =>
       [
-        "You are driving Openship (deploy/host platform) through its MCP tools. Everything you call re-runs the real API's auth + permission checks, so you can only do what this token allows — `tools/list` already hides what you can't use.",
+        "Carry out the user’s requested work with these tools, then verify the result. Prepare any required review as an actionable handoff rather than a blanket refusal. You are driving Openship (deploy/host platform) through its MCP tools. Everything you call re-runs the real API's auth + permission checks, so you can only do what this token allows — `tools/list` already hides what you can't use.",
         "",
         "Main tool groups:",
+        `- Agents and automations — ${ref("GET", "/api/assistant/agents/")} and ${ref("GET", "/api/assistant/automations")}. Read the agents-and-automations guide to delegate scoped tasks or prepare incident flows.`,
+        `- Chat apps — ${ref("GET", "/api/chat-apps")} (connection status), ${ref("GET", "/api/chat-apps/setup")} (prepare Slack/Discord/Telegram/Teams setup). Interactive deployment commands and assistant conversations are distinct from notification delivery. Read the chat-apps guide for the complete flow.`,
         `- Projects — ${ref("GET", "/api/projects")} (list), ${ref("GET", "/api/projects/:id")} (detail), config/env/resources/branch setters.`,
         `- Deployments — ${ref("POST", "/api/deployments/build/access")} (deploy), ${ref("GET", "/api/deployments/:id")} (status), ${ref("GET", "/api/deployments/:id/logs")} (logs), rollback/redeploy/restart.`,
         `- GitHub — ${ref("GET", "/api/github/home")} (accounts + repos in one call), browse repos/branches, and ${ref("GET", "/api/github/repos/:owner/:repo/detect")} for build config (read-only; you cannot create/delete repos via MCP).`,

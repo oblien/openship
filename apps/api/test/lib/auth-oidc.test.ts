@@ -308,12 +308,51 @@ describe("OIDC generic-oauth integration", () => {
     expect(accounts).toHaveLength(0);
   });
 
-  it("links to an existing user and marks email verified when email_verified is true", async () => {
+  it("refuses implicit linking to an unverified local account even when the provider verifies the email", async () => {
+    await provisionUser({
+      id: "user_unverified_local",
+      name: "Unverified local user",
+      email: "unverified-local@example.test",
+      emailVerified: false,
+      role: "user",
+    });
+    idpUserInfo = idpProfile({
+      sub: "oidc-sub-local-unverified",
+      email: "unverified-local@example.test",
+      email_verified: true,
+    });
+    const { state, cookieHeader } = await startOidcSignIn();
+    const response = await completeOidcCallback(state, cookieHeader);
+    expect(response.status).toBe(302);
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toBe("account_not_linked");
+    expect(
+      await db
+        .select()
+        .from(schema.user)
+        .where(eq(schema.user.id, "user_unverified_local")),
+    ).toMatchObject([{ emailVerified: false }]);
+    expect(
+      await db
+        .select()
+        .from(schema.account)
+        .where(eq(schema.account.userId, "user_unverified_local")),
+    ).toEqual([]);
+    expect(
+      await db
+        .select()
+        .from(schema.session)
+        .where(eq(schema.session.userId, "user_unverified_local")),
+    ).toEqual([]);
+  });
+
+  it("links to an existing verified user when the provider also verifies the email", async () => {
     await provisionUser({
       id: "user_existing_2",
       name: "Existing User",
       email: "verified@example.test",
-      emailVerified: false,
+      emailVerified: true,
       role: "admin",
     });
 
@@ -327,7 +366,9 @@ describe("OIDC generic-oauth integration", () => {
     const { state, cookieHeader } = await startOidcSignIn();
     const callbackRes = await completeOidcCallback(state, cookieHeader);
     expect(callbackRes.status).toBe(302);
-    expect(callbackRes.headers.get("location")).toBe("http://localhost:3001/projects");
+    expect(callbackRes.headers.get("location")).toBe(
+      "http://localhost:3001/projects",
+    );
 
     const users = await db
       .select()
@@ -343,7 +384,9 @@ describe("OIDC generic-oauth integration", () => {
       .where(eq(schema.account.userId, "user_existing_2"));
     expect(accounts).toHaveLength(1);
     expect(accounts[0]!.providerId).toBe("oidc");
-    expect(accounts[0]!.accountId).toBe(JSON.stringify([ISSUER, "oidc-sub-verified"]));
+    expect(accounts[0]!.accountId).toBe(
+      JSON.stringify([ISSUER, "oidc-sub-verified"]),
+    );
   });
 
   it("enforces the invite-only gate and provisions a verified invitee through the shared flow", async () => {

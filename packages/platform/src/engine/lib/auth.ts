@@ -207,8 +207,11 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       allowDifferentEmails: true,
+      // Implicit linking must not attach a verified IdP identity to an account
+      // pre-registered by someone who never proved ownership of its local email.
+      requireLocalEmailVerified: true,
       // "oidc" is intentionally excluded from trustedProviders so Better Auth
-      // only links an existing user account when the IdP asserts email_verified=true.
+      // also requires the IdP to assert email_verified=true.
       trustedProviders: ["github", "google"],
     },
   },

@@ -89,7 +89,8 @@
     "apps": "Apps",
     "jobs": "Trabajos",
     "workspaces": "Espacios de trabajo",
-    "actions": "Acciones"
+    "actions": "Acciones",
+    "assistant": "Agentes de IA"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",
@@ -244,5 +245,25 @@
       "title": "Facturación y uso",
       "description": "Uso y planes"
     }
+  },
+  "investigation": {
+    "action": "Investigar con IA",
+    "deploymentTitle": "Investigar este despliegue",
+    "issueTitle": "Investigar este problema",
+    "description": "Revisa la solicitud, añade detalles útiles y envíala a tu asistente.",
+    "setup": "La investigación está preparada. Activa el asistente y conecta un agente para continuar.",
+    "invalid": "Este enlace no es válido o pertenece a otro espacio de trabajo o cuenta. Abre el problema original en su espacio e inténtalo de nuevo.",
+    "back": "Abrir asistente",
+    "deploymentPrompt": "Investiga el despliegue fallido {deploymentId}.",
+    "issuePrompt": "Investiga el problema de la aplicación {issueId}.",
+    "appContext": "ID de la aplicación: {projectId}.",
+    "instructions": "Usa las herramientas de OpenShip para revisar el estado actual y los registros relevantes. Explica la causa probable con pruebas y sugiere el siguiente paso. Investiga primero, sin hacer cambios. Si falta acceso, solicita los permisos específicos necesarios.",
+    "fixAction": "Corregir con IA",
+    "fixTitle": "Corregir este problema",
+    "fixPrompt": "Investiga y corrige el problema de la aplicación {issueId}.",
+    "fixInstructions": "Usa las herramientas de OpenShip para revisar el problema actual, el estado y los registros relevantes. Encuentra la causa, aplica una solución adecuada dentro de tus permisos aprobados y verifica el resultado. Si faltan permisos o una decisión necesaria, ofrece la revisión correspondiente en el chat. Informa de los cambios y los problemas pendientes; confirma la recuperación solo con pruebas observadas.",
+    "reportAction": "Informe de estado con IA",
+    "reportTitle": "Informe de estado del espacio de trabajo",
+    "reportPrompt": "Revisa el estado actual de las aplicaciones, despliegues, servicios y servidores accesibles de este espacio de trabajo con las herramientas de supervisión y estado de OpenShip. Resume qué funciona bien, qué necesita atención, las pruebas y los próximos pasos más útiles. Indica los datos de supervisión obsoletos o no disponibles y las limitaciones de acceso. Una lista vacía de problemas no demuestra un estado correcto. Este informe es de solo lectura: no cambies recursos ni solicites diagnósticos de administrador para toda la instancia."
   }
 }

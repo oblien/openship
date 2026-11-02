@@ -185,15 +185,19 @@ describe("rules_guard.lua keeps the properties its comments promise", () => {
   });
 
   it("treats an unresolved country as off a country ALLOW-list (default-deny)", () => {
-    expect(guard).toContain('access.allowCountries[country_of() or ""]');
+    expect(guard).toContain('access.allowCountries[country or ""]');
   });
 
-  it("resolves geo at most once per request, and only when a rule needs it", () => {
-    // `country_of()` is memoized (including the negative result) because the lookup
-    // is the most expensive thing on this path.
-    expect(guard).toContain("if country_cache == nil then");
-    expect(guard).toContain("country_cache or nil");
-    expect(guard).toContain("pcall(require, \"openship.geo_country\")");
+  it("forwards the resolved country before hosts without rules return", () => {
+    expect(guard).toContain('ngx.req.set_header("x-visitor-country", country)');
+    expect(guard).toContain('pcall(geo.get_country_code, ngx.var.remote_addr)');
+    expect(guard.indexOf('ngx.req.set_header')).toBeLessThan(guard.indexOf('local rules ='));
+  });
+
+  it("shares country hits and misses with analytics and protects lookup failures", () => {
+    expect(guard).toContain("ngx.ctx.openship_country = country or false");
+    expect(guard).toContain('pcall(require, "openship.geo_country")');
+    expect(guard).toContain('pcall(geo.get_country_code, ngx.var.remote_addr)');
   });
 
   it("returns early when the host has no rules (the common case)", () => {
@@ -233,8 +237,8 @@ describe("rules_guard.lua keeps the properties its comments promise", () => {
   });
 
   it("applies access before ban before hotlink before rate limit", () => {
-    // Order matters for what a blocked request costs us: the cheap allow/deny checks
-    // run before geo, and the shared-dict write runs last.
+    // After resolving the country header, keep the cheaper access/ban checks
+    // before the shared-dict rate-limit write.
     const at = (needle: string) => guard.indexOf(needle);
     expect(at("local access = spec.access")).toBeLessThan(at("local ban = spec.ban"));
     expect(at("local ban = spec.ban")).toBeLessThan(at("local hot = spec.hotlink"));

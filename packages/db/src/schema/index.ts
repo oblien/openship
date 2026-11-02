@@ -127,3 +127,10 @@ export * from "./ingress-hostname";
 export * from "./pull-request-preview";
 
 export * from "./management-billing";
+
+export { assistantConnection, assistantConversation, assistantRequest, assistantAuthorization } from "./assistant";
+
+export * from "./chat-apps";
+export * from "./assistant-automations";
+
+export * from "./assistant-agents";

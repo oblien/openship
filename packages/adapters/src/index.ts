@@ -102,6 +102,7 @@ export {
 } from "./runtime/docker-transport";
 export {
   transferImage,
+  resolveTransferredImageRef,
   type ImageTransferOptions,
   type ImageTransferResult,
 } from "./runtime/image-transfer";

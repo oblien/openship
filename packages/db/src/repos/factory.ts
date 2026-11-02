@@ -1,3 +1,9 @@
+import { createChatAppsRepo } from "./chat-apps.repo";
+export { type ChatAppConnection, type ChatAppIdentity } from "./chat-apps.repo";
+import { createAssistantAgentsRepo } from "./assistant-agents.repo";
+import { createAssistantRepo } from "./assistant.repo";
+import { createAssistantAutomationsRepo } from "./assistant-automations.repo";
+export { type AssistantRow, type AssistantConnectionRow, type AssistantOwner } from "./assistant.repo";
 import { createManagementBillingRepo } from "./management-billing.repo";
 import { createPullRequestPreviewRepo } from "./pull-request-preview.repo";
 import { createIngressRepo } from "./ingress.repo";
@@ -469,6 +475,10 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     serviceTerminalSession: createServiceTerminalSessionRepo(db),
     cloudHandoffCode: createCloudHandoffCodeRepo(db),
     personalAccessToken: createPersonalAccessTokenRepo(db),
+    assistant: createAssistantRepo(db),
+    assistantAgents: createAssistantAgentsRepo(db),
+    assistantAutomations: createAssistantAutomationsRepo(db),
+    chatApps: createChatAppsRepo(db),
     patGrant: createPersonalAccessTokenGrantRepo(db),
     oauth: createOAuthRepo(db),
     backupDestination: createBackupDestinationRepo(db),

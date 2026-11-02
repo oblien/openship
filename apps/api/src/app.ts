@@ -1,3 +1,4 @@
+import { chatAppRoutes } from "./modules/chat-apps/chat-apps.routes";
 import { referralRoutes } from "./modules/affiliates/referral.routes";
 import { affiliateRoutes } from "./modules/affiliates/affiliate.routes";
 import { actionRoutes } from "./modules/actions/action.routes";
@@ -62,6 +63,7 @@ import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
 import { tokenRoutes } from "./modules/tokens/token.routes";
 import { mcpRoutes } from "./modules/mcp/mcp.routes";
+import { assistantRoutes } from "./modules/assistant/assistant.routes";
 import { notificationsRoutes } from "./modules/notifications/notifications.routes";
 import { updatesRoutes } from "./modules/updates/updates.routes";
 import { imageRoutes } from "./modules/images/images.routes";
@@ -219,6 +221,8 @@ app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/tokens", tokenRoutes);
 app.route("/api/mcp", mcpRoutes);
+app.route("/api/assistant", assistantRoutes);
+app.route("/api/chat-apps", chatAppRoutes);
 app.route("/api/billing", billingPlansRoutes);
 app.route("/api/affiliates", affiliateRoutes);
 app.route("/api/referrals", referralRoutes);
@@ -601,6 +605,8 @@ registerControllerLifecycle({
   start: startControllerBackground,
   stop: async () => {
     try {
+      const { assistant } = await import("./modules/assistant/assistant.service");
+      await assistant.close();
       await quiesceController();
     } finally {
       // A late Actions dispatch can refuse the handoff after its reconciler

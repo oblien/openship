@@ -109,3 +109,15 @@ export * from "./action-routes";
 export * from "./ingress";
 
 export * from "./management-billing";
+
+export * from "./assistant";
+export * from "./assistant-transcript";
+export * from "./assistant-questions";
+export * from "./assistant-fields";
+export * from "./chat-apps";
+export * from "./chat-app-setup";
+export * from "./chat-app-commands";
+export * from "./assistant-automations";
+export * from "./repository-changes";
+
+export * from "./assistant-agents";

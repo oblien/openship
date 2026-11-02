@@ -89,7 +89,8 @@
     "apps": "应用",
     "jobs": "任务",
     "workspaces": "工作区",
-    "actions": "操作"
+    "actions": "操作",
+    "assistant": "AI 智能体"
   },
   "sidebar": {
     "expand": "展开侧边栏",
@@ -244,5 +245,25 @@
       "title": "账单与用量",
       "description": "用量与套餐"
     }
+  },
+  "investigation": {
+    "action": "使用 AI 排查",
+    "deploymentTitle": "排查此部署",
+    "issueTitle": "排查此应用问题",
+    "description": "检查请求，补充有用信息，然后发送给助手。",
+    "setup": "排查请求已准备好。启用助手并连接智能体即可继续。",
+    "invalid": "此排查链接无效，或属于其他工作区或账号。请在原工作区打开该问题后重试。",
+    "back": "打开助手",
+    "deploymentPrompt": "排查失败的部署 {deploymentId}。",
+    "issuePrompt": "排查应用问题 {issueId}。",
+    "appContext": "应用 ID：{projectId}。",
+    "instructions": "使用 OpenShip 工具检查当前状态和相关日志。根据证据说明可能的原因，并建议下一步操作。先排查，不进行任何更改。如果缺少访问权限，请请求具体所需的权限。",
+    "fixAction": "用 AI 修复",
+    "fixTitle": "修复应用问题",
+    "fixPrompt": "调查并修复应用问题 {issueId}。",
+    "fixInstructions": "使用 OpenShip 工具检查当前问题、状态和相关日志。找出原因，在已批准的访问权限范围内应用适当的修复，并验证结果。如果缺少访问权限或必要的决策，请在聊天中提供相应的审核操作。报告改动和剩余问题；只有观察到实际证据时才能确认恢复。",
+    "reportAction": "AI 健康报告",
+    "reportTitle": "工作区健康报告",
+    "reportPrompt": "使用 OpenShip 的监控和健康工具，检查此工作区中应用、部署、服务及可访问服务器的当前状态。总结哪些运行正常、哪些需要处理、相关证据以及最有用的后续步骤。说明过期或不可用的监控数据及访问限制。问题列表为空并不能证明系统健康。这是只读报告：不要修改资源，也不要请求整个实例的管理员诊断。"
   }
 }

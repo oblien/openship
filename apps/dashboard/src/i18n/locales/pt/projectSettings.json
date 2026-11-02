@@ -619,6 +619,12 @@
       "repository": "Repositório",
       "open": "Abrir"
     },
+    "branch": {
+      "label": "Branch de implantação",
+      "description": "Usada nas próximas implantações deste ambiente. Salvar não reimplanta o aplicativo.",
+      "saved": "Branch de implantação salva",
+      "saveFailed": "Não foi possível salvar a branch de implantação"
+    },
     "webhookEndpoint": {
       "title": "Endpoint de webhook",
       "descriptionSet": "O GitHub entrega os eventos de push diretamente a este domínio",

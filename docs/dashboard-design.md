@@ -5,9 +5,73 @@ and a consistent type hierarchy across light, dim, and dark themes.
 
 ## Surfaces and controls
 
+Assistant settings belong in **Settings → Assistant**; event-driven flows and run
+history open from **Automations** in the AI Agents right column.
+Keep the conversation free of view tabs, with an AI Agents return action on the automations page.
+The automation overview has one heading, shared underline tabs for Flows and Run history, and compact
+clickable flow rows. Show the name, app, response mode and status; a small connected icon path previews
+the four steps on wider screens. Offer trigger templates from Create automation instead of repeating
+large template cards below saved flows. Put pause-all and assistant settings in the options menu.
+Reuse the
+agent connection dialog and MCP permission editor. Create and edit automations on
+dedicated pages at `/assistant/automations/new` and `/assistant/automations/[id]/edit`,
+with a back link to the list. A flow is a fixed sequence of Trigger, Investigate,
+Respond and Notify. Use the shared `AutomationSteps` as four compact settings rows connected
+by a subtle vertical line through the icon markers, including alongside expanded fields.
+Use the same stepper in the workspace, editor and expanded chat results. Align labels and values horizontally
+where space permits, and stack them on narrow screens. Selecting a row expands its fields
+directly underneath, within the same surface; only one row is open at a time.
+Keep the whole page scrolling naturally. Use the same `AutomationEditor` and data loader
+for inline editing and dedicated creation/editing routes, with the same validation,
+permissions, notification channels and consent. The steps do not support dragging,
+branching or arbitrary connections. Keep Save and Cancel visible in a compact sticky
+header. Preserve drafts when switching or collapsing rows and restore focus when leaving
+inline edit. Keep the app and paused/enabled status on one line, without repeating trigger,
+response or agent details above the rows. Editing replaces the overview and hides run history
+until Save or Cancel. Avoid numbered tiles, repeated section headings and paused banners.
+Each row's interactive area, hover and keyboard-focus fill spans the full card width;
+clip it at the card's outer corners. Use neutral focus fill instead of an inset blue outline.
+Use filled dropdowns for event, agent and response choices, with brief supporting text.
+Group permissions into app recovery and repository rows with trailing checkboxes;
+avoid a separate card for every permission. Avoid green in the creation flow. Offer
+Create an app in the empty state and dropdown; preserve the draft while setup opens in
+a new tab, then refresh app choices on return. The selected automation's workspace
+shows its settings and run history, with links to existing investigation chats. Keep empty
+run history as a short sentence instead of another large card.
+Loading in AI Agents uses theme-token skeletons shaped like the destination: conversation,
+agent list, editor fields or automation steps. Keep already loaded flow summaries visible
+while inline fields load, keep Cancel available, and replace only unknown values with
+placeholders. Initial loads must not replace the workspace with a centered spinner and
+large loading headline. Keep existing results during refresh, show actual failures with
+Retry, and respect reduced-motion preferences for skeleton animation.
+Use semantic surfaces
+and shared filled inputs/selects. New flows start paused, with explicit consent
+beside automatic actions. Distinguish investigation, approval, action acceptance
+and verified health in run history. Results and the shared action review belong in the
+agent conversation, with optional existing notification channels linking to it. Keep run limits
+in a disclosure, with their current values visible in the summary. Review
+repository patches with their exact base commit and full proposed file contents before
+approval. Publishing a branch or PR is Completed; reserve Healthy for verified app recovery.
+
+Checking agent connections keeps the opening conversation's heading, composer and suggestions
+in their final positions. Put progress in the agent control and disable sending until the
+connection is known; keep drafts editable. Show connection setup only after a successful check
+confirms it is needed, and show failed checks with Retry rather than treating them as disconnections.
+Replies use the shared Streamdown renderer directly on the page, without a provider heading.
+Use its incomplete Markdown handling for streamed and interrupted replies. Mark only the current
+part as streaming so copy becomes available when it settles. Use Shiki highlighting in both light
+and dark/dim themes, compact code-copy controls, and the shared icon catalog. Keep code and wide
+tables within horizontally scrolling surfaces. Code-copy controls copy only code; response
+copy includes the reply's Markdown, never tool output or internal automation metadata. Keep raw HTML
+and model-supplied image loads disabled; allow only web, mail and relative navigation links.
+Tool activity stays compact, with accurate pending/error states and private details in the existing dialog.
+
 Use semantic classes from [theme.css](../apps/dashboard/src/styles/theme.css). The nested-card
 rules in [globals.css](../apps/dashboard/src/app/globals.css) supply the theme-specific layering.
 Keep palette definitions there instead of introducing page-specific colors.
+Empty-state illustrations follow Projects and Backups: neutral layered cards,
+thin theme-token borders, muted placeholders and dashed connectors. Keep any
+color accent small; avoid large status-colored surfaces or decorative glows.
 
 | Element           | Treatment                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------- |
@@ -400,6 +464,9 @@ check retryable before starting the move.
   Keep shared environment, machine power and rollback settings there, including for
   Compose and monorepo projects. Apps & Services owns the service list and per-service
   editors; do not embed that page or add App settings / Deployment modes inside Settings.
+- Source settings expose the selected environment's deployment branch through the shared
+  repository branch picker and an explicit Save action. Saving uses the existing project
+  branch operation, refreshes source details and environment summaries, and never redeploys.
 - Ready native databases use the existing **Use in a project** connection modal.
   Preselect the opened database, keep its credentials masked, and offer writable
   consumers on the same native cluster. Explain incompatible placement inline;
@@ -441,6 +508,7 @@ check retryable before starting the move.
   imports. The page and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
+  Actions follows Jobs under Infrastructure in every platform mode.
   Backups belongs under Infrastructure beside Servers/Resources, Emails and Jobs, in every platform mode.
   Missing-edge warnings use the API's routing requirement, independently of the total project count.
   Private workloads and workers keep the optional install action without an outage/attention indicator.
@@ -904,6 +972,18 @@ a primary-direction change together across concurrent requests.
 
 ## Personal appearance
 
+Dim uses near-black surfaces with a small lift between the page, cards and menus.
+Use white at graduated opacity for its text, with clear body copy and labels;
+keep secondary text readable without adding a colored or gray tint. Preserve its
+established status colors. New Project uses a solid soft lime fill with dark text
+in Dim. Keep it flat, without gradients, highlights or a colored glow.
+These refinements are specific
+to Dim; preserve the Light and Dark palettes. Sidebar section labels keep the
+original small uppercase treatment, wide letter spacing and muted foreground.
+Define these values in the shared tokens rather than component overrides. Maintain
+the translucent card fill and its matching `--th-card-on-page` composite so nested
+cards and scroll fades remain consistent.
+
 Keep the original Appearance card and its four immediate theme switches in Settings → General. Its Customize button opens the editor inline at `/settings?tab=general&view=appearance`, keeping General selected in desktop and mobile navigation. Provide Back to General; do not add a dedicated Appearance tab. Inside Customize, use compact labeled icon buttons for Light, Dim, Dark and System instead of large preview cards; keep New theme alongside the selector and preserve the original cards in General. The editor owns personal themes, token editing, typography and portable JSON import/export. The registry and built-in values in `packages/core/src/appearance.ts` and `appearance-defaults.json` are authoritative. Regenerate `apps/dashboard/src/styles/theme-tokens.css` with `node scripts/generate-theme-tokens.mjs`; `theme.css` retains utilities and semantic aliases. Do not duplicate palettes in components. Preset thumbnails use the immutable built-in values; previews and their bridge aliases resolve within `[data-appearance-preview]`.
 
 Use one versioned format across dashboard, API, SDK, CLI and native operations. Save is user-scoped and explicit; a draft updates CSS variables live, while failures preserve the draft. Read failures must not become editable server defaults. Cache by API origin and authenticated user, discard late responses across account switches, and paint validated cached variables before hydration. The editor's recovery controls use the immutable base palette and system font so users can always reset an unreadable theme. WOFF2 assets travel in JSON; do not load arbitrary remote CSS or fonts from imported themes. Terminals subscribe to the shared appearance event, update their existing renderer and refit without reconnecting the PTY.
@@ -994,3 +1074,275 @@ Explain that these settings live in Openship and do not edit repository files.
 - Services and Topology share the same Add service modal. Its compact source selector offers Catalog, From repository, Custom image, and Connect existing; a searchable category dropdown replaces a permanent catalog sidebar.
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
+
+## Assistant workspace and consent
+
+Failed deployment headers and failed app setup pages offer
+**Investigate with AI**, using the shared assistant icon and secondary button.
+Open app issues use the shorter **Fix with AI** action and prepare a repair request
+that investigates, applies an appropriate authorized fix and verifies the result.
+Comfortable issue rows give the name, status and actions separate columns on wide
+containers; actions move below details on narrower lists so buttons never squeeze
+the status. Compact issue rows keep an accessible icon action. Monitoring's page
+header offers **AI health report**, preparing a read-only report of the current
+workspace's apps, deployments, services and accessible servers. The shortcut
+opens a new, editable request in the normal assistant composer; it never starts a
+turn, enables the assistant or grants access by itself. Carry only resource IDs and
+the originating resource scope in the link, never logs or error text. Preserve the
+request through assistant setup, reject a mismatched account/workspace/Cloud connection,
+and keep existing repair actions alongside it. Resolved issues and update notices do
+not offer an investigation shortcut.
+
+**AI Agents** is the platform navigation label. Inside the enabled workspace, keep a
+collapsible 340px navigation column on the right, matching the normal dashboard summary
+column. The main conversation occupies the remaining width beside the platform navigation.
+Pin the general OpenShip assistant first; list specialists with their character avatars,
+latest task titles and working indicators. Keep Automations in an expandable group with
+actual paused/enabled/running state. Selecting an agent resumes its last visited valid
+conversation, falling back to its latest task. An agent with no chats opens an empty native
+conversation; selecting it never starts work. Store only conversation IDs, scoped to the
+account, workspace, connection, host and agent, and validate them against the current list.
+Keep the switcher focused on agents and automations. Do not add Recent chats or a history
+footer to it. The header history icon opens searchable conversations in the existing compact
+420px right drawer, with New chat and rows grouped by date.
+Selecting an automation shows its fixed steps, run history and links to its existing
+investigation chats. Edit settings or select a step to edit inline with the shared form.
+On small screens, open the same navigation in the shared animated right drawer. Closing it
+restores focus. Keep configuration in the existing agent drawer, closing mobile navigation
+before opening a configuration drawer. Preserve the chat draft while configuring an agent
+or inspecting an automation. The header contains identity, navigation toggle, New chat and
+the settings menu and conversation history icon; agent and automation switching belong in
+the navigation column.
+Opening AI Agents restores the last visited conversation for the current account, workspace,
+Cloud connection and host after checking the scoped list. Explicit chats, automation selections,
+New chat and investigation drafts take precedence; background polling never replaces a draft.
+Place the opening prompt directly above the composer, with compact suggestions below it. In
+the opening prompt, use a medium-weight 30px mobile / 36–40px desktop heading
+and semantic text colors. When a host connection is discovered but needs explicit
+reuse, identify it on the provider card instead of asking the user to sign in again. In
+an existing conversation, scroll messages independently and keep the composer at
+the bottom. Show user messages and response content directly, without a repeated
+conversation title or provider name/avatar above each response. The page header
+identifies the active speaker with its name and a General/Agent/Automation label.
+Keep character avatars in the switcher; chat titles appear in history. Omit the
+permission/keyboard helper line below the composer.
+Before the assistant is enabled, introduce **AI Agents** with a compact 30–36px
+heading, a short description and native provider marks. Group the host picker,
+single **Enable AI Agents** action and brief access guidance in one setup card.
+Pair it with a contained interactive preview of **Deploy**, **Investigate** and **Automate**;
+keep its example tabs, conversation and outcome on one surface. Avoid oversized
+marketing headlines and full-height vertical centering. Switch to two columns based
+on the available content width, so the same layout works beside the dashboard sidebar.
+Each explicitly labelled example shows a short request, three connected actions and an
+outcome. Reuse the character avatars and existing theme surfaces; keep accents to the
+avatars, native provider marks and a small outcome icon. No oversized illustration,
+feature-card grid, repeated onboarding steps or inactive automation toolbar.
+Switching examples is local presentation only; it must not enable anything, start a
+conversation or execute a task. Tabs support arrow keys, Home and End, with visible focus.
+On small screens show the headline, setup action and native provider marks before the
+preview. Keep the host picker beside setup; if no eligible host exists, link to server
+setup. Mention the online host requirement in the automation example. Preserve the
+shared permission review, grant submission and native connection flow. Preparing access
+uses the same permissions-shaped skeleton before and during consent hydration; show
+failures with Retry. No changes to access are implied by visiting the introduction.
+The composer grows with its draft up to a bounded height, has no manual
+resize handle or focus ring, and groups agent/model selection beside Send or Stop.
+Use the translucent card surface (`bg-card/80`) with `backdrop-blur-xl` on the
+composer so content scrolling beneath it stays softly blurred while text and controls stay sharp.
+The opening prompt has room to compose; after sending, the conversation composer
+returns to a medium-height, two-line text area with compact vertical padding and a
+short follow-up placeholder.
+Clear the text and attachment previews immediately on Send, before waiting for the
+server. Restore the exact draft and images if submission fails, preserving the retry
+identity; a delayed response must never replace a different chat's draft. Empty fields
+reset their measured height and scroll position, and stay the same size after the reply
+ends. On touch screens, keep the controls on one row, allowing the model label to truncate. Provider and
+model selectors use compact 12px chevrons, content-sized widths and 13px labels. Sent
+messages use fully rounded 24px bubbles. Replies use 17px body text on desktop and 16px
+on mobile, with roomy line spacing and a clear heading hierarchy. On touch
+devices, Enter inserts a newline; on desktop, Shift + Enter inserts a newline.
+Allow selecting another model from the same connected agent between turns, keeping
+the conversation and its approved access. Image-capable agents expose an attachment
+button plus paste and drop; show removable local previews above the draft. Send images
+with the ordinary turn, using Mindwire's conversation-bound uploads on the agent host.
+Do not accept arbitrary filesystem paths or remote image URLs. Keep the composer and
+Send/Stop usable on small screens. Do not add inactive placeholder controls.
+
+Use Streamdown's bounded word animation for live Markdown, without a second parsing
+or artificial typing queue. Completed messages do not replay their animation. Thinking
+expands inline; live tool steps retain their domain icon and a subtle activity indicator.
+Show the submitted message and an animated Sending indicator immediately, including while
+the first conversation is being created. Keep activity visible through the first snapshot
+and between response chunks until the turn finishes; existing response text is not proof
+that the agent has finished. Live thinking/tool indicators replace the generic Working
+indicator. The stop control uses a small solid square. Smooth scrolling follows
+new content until the user scrolls up; **Latest messages** resumes following. Respect
+reduced motion for text, loading indicators and scrolling.
+
+Keep the chat header to a single identity row: assistant/agent name and its role.
+Character avatars belong in the switcher and picker, including during loading.
+Conversation titles belong in history; the header may retain the title as a
+tooltip, without a second subtitle row. During a conversation, float the composer
+above the transcript with a subtle background fade. The transcript keeps the full
+available height; measure the composer to reserve end padding and position Latest
+messages above it. Growing the draft must not resize the transcript's scrollport.
+
+Use the shared `assistant` AI icon for the platform. Identify harnesses as
+**Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
+in provider selection, connections, history and settings. Use the shared provider
+labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
+A native sign-in option may still say “Sign in with ChatGPT.” Use Codex’s blue mark with a transparent background, without the white app tile, and Claude Code’s original terracotta mark. Keep their colors across themes, without a current-color mask, inversion or added brand tints. Agent connections open in one dialog, with provider navigation and a single
+visible detail panel. Preserve unfinished sign-in forms when switching providers
+or closing this dialog; hidden content must not capture keyboard focus. Show the
+host in that dialog. Keep permission review and the audit trail in the header menu.
+
+Agent creation and configuration open an inset right drawer with a 6px blurred backdrop and a short slide
+transition. Use the existing theme surfaces and respect reduced motion. Browse agents,
+recent chats and templates in one column; expand the same drawer to the available
+screen width to edit instructions and the shared access editor in two equal columns.
+Keep its header and save actions visible while the content scrolls. On small screens,
+stack the form and access editor. Agent details use an **Open chat** action that opens
+the normal assistant composer; do not embed another task composer in the drawer.
+Give each agent an original selectable flat character from `BotAvatarArtwork.tsx`:
+distinct colored silhouettes with small ink-colored eyes, including soft wedges,
+cushions, diamonds, ovals and stepped heads. Use broad, smooth curves with similar
+visual weight at 36px. Vary the face position and simple expressions within a consistent
+eye style. The reference establishes the simplicity of the idea, not specific characters.
+Avoid scalloped flower shapes, literal object silhouettes and extra facial features.
+Use transparent SVG artwork without gradients,
+shadows, surface texture, mechanical details or a surrounding avatar tile. Keep
+the surrounding UI on theme tokens. The compact four-column picker shows all 16
+characters with names and a selection check. Reserve the mint pebble for the general
+assistant's default. Resolve a specialist's default `bot` ID through `agent-avatar.ts`
+using its stable agent ID, never its name or list position; existing default agents
+therefore have varied appearances without rewriting their configuration. New editor
+drafts choose and save a concrete character so the preview matches the saved avatar.
+Explicit character choices always win. Save the chosen ID through the agent API and
+show the same avatar in agent lists, empty chat introductions, automation choices
+and tool results. An avatar-only change must not interrupt its work. Use bot and workflow icons for agents and
+automations in the navigation column. Keep Connections in the top-right overflow menu
+with the plug icon, not as a separate toolbar button. Settings → Assistant also opens the same
+connection dialog.
+Opening or drilling into agents preserves the underlying chat, draft and automation form.
+Agent links from tool results use the same drawer. Close, backdrop and Escape dismiss it
+and return focus to the opener; nested pickers and dialogs handle Escape first. Deep links
+open the corresponding drawer view. Automations keep their existing full-page editor.
+
+**Enable assistant** opens an inline dialog that reuses the MCP authorization form,
+permission templates, resource picker and permission summary. Use Assistant wording
+in this surface; keep the same consent submission, grant checks and OAuth exchange.
+Keep the actions visible below the dialog's scrolling body, including on short or
+mobile screens. The workspace is fixed to where enabling began. Canceling must not
+enable the assistant or start an agent. Permission editing also reuses the shared editor.
+
+When a successful permission-request tool result belongs to the current assistant
+connection, show an **Access requested** card in the conversation. Explain the
+reason and requested access as plain text, with **Review permissions** as the
+only action. Opening it loads current permissions into the shared editor; never
+turn model suggestions into preselected grants. Keep Save and Cancel visible on
+short screens. Cancel leaves access unchanged; saving changed permissions requires
+a new conversation. When the server reports changed access, retire the old request
+and offer **Continue in new chat** with the last user message as an editable draft.
+Never replay a denied action on save, or claim the requested access was approved.
+Refresh this state when returning from Settings or another tab. Model text and
+unrelated tool output cannot create this card.
+
+Automation activation uses a compact **Review & enable** result in chat. Expanding
+loads the current saved flows and shows their apps, triggers, response modes, allowed
+actions and run limits. **Enable & continue** approves those exact revisions through
+the normal user-session API, then sends the observed result into the same conversation.
+Automatic fixes require an explicit checkbox. Recheck current permissions and reject
+stale revisions atomically; never grant access or resume unrelated globally paused flows.
+If continuation fails after activation, keep the enabled result and offer Continue,
+without repeating activation. Model text alone cannot create an approval control.
+
+Tool activity uses compact, domain-specific icons and explicit running, completed,
+failed or stopped states. Open a call to inspect its result, request and returned
+data; group repeated calls and select each one inside the shared details dialog.
+Preserve native tool discovery in saved conversations, including Code Mode activity.
+When native MCP actions are present, keep their orchestration wrappers in the inspector
+instead of adding duplicate action chips. Keep every write's result visible; repeated
+reads may share their latest observation.
+Automation results share one compact collection, collapsed by default, with the name or count
+and a small workflow icon. Expand it to show the shared fixed-step summary for each distinct saved ID;
+collapse removes the previews again. Never fill the transcript with canvases from incidental
+tool calls. Keep Review flow and per-item tool details inside the expanded result.
+Show actual names, triggers, agents, response policy and notification destinations from returned
+configuration. Merge repeated observations of the same flow, retaining every call in the inspector.
+Resolve ID-only receipts on expansion through the workspace-scoped automation API; never invent saved state from
+tool arguments. Review flow opens the regular editor and never enables or runs it.
+Show actual deployment requests with a live-progress link; a completed restart tool
+does not mean health recovery is verified. A successful chat-app setup offer may open
+the existing connection form inline, with the provider and bot role preselected. Check
+the current user's management access and the returned workspace before showing the form;
+close it on a scope change. Credentials are entered only in that form. Tool output cannot
+supply executable actions or arbitrary navigation destinations.
+Known app, server, deployment, service and repository results may show inline cards.
+Use returned identities to build existing OpenShip routes, never result-supplied
+URLs or commands. **Import** opens the regular deployment wizard for review; it
+does not create or deploy on click. Unknown tool output remains inspectable as data.
+Show only observed state: a connected server is not proof that its workloads are
+healthy, and an accepted deployment is not a successful deployment. Keep long data
+inside the inspector's scroll area and restore keyboard focus to its opener.
+
+## Chat apps
+
+Chat connectors live in Settings → Chat apps and are linked from the assistant settings menu.
+Bots connect directly through OpenShip; do not ask for an assistant host or show daemon
+requirements in bot setup. Mindwire is used only by the separately enabled assistant.
+Use shared ChannelLogo provider marks and ordinary filled form controls. Separate workspace bot
+installation from each sender's own account consent. New connectors are paused. Account linking
+reuses McpAuthorizationForm with chat-specific copy and finishes with an expiring verification
+command sent by the original sender. Keep deployment confirmations in the chat conversation,
+show private log links instead of log contents, and explain shared-conversation visibility for
+Telegram and Teams at setup. These commands do not require the assistant to be enabled.
+Default Slack, Discord and Telegram setup to direct outbound connections. Show only
+the credentials required by the selected transport, with live connection/retry status
+in saved cards. Webhook URLs appear only for webhook connections. Explain Teams' public
+HTTPS requirement beside its setup rather than implying all Desktop bots need exposure.
+The connection dialog uses a wide landscape layout. Keep the connection name, credentials and
+destination IDs in the left column. Put the two compact bot options in a settings card on the
+right, with transport in a Connection settings disclosure below them. Show OpenShip and the
+connection method in its summary. Open it initially when Teams needs endpoint guidance. Stack the columns on mobile.
+Keep one scrolling body with a visible Save footer. Give bot and Socket Mode tokens full-width,
+readable text fields, disable autocorrect/spellcheck, and show where to find each value directly
+below its field. Signing/client/webhook secrets remain separate password fields. Use a single-line
+input for comma-separated destination IDs with a visible 20-destination limit. Normalize pasted
+multiline lists to commas and deduplicate before submitting. Bot setup has no assistant-host picker.
+
+Settings owns the page header; do not repeat a Chat apps title above the provider cards.
+Give each provider its own setup-guide link, including inside the connection dialog. Use a
+full-width connection area with a neutral layered-card illustration and three short setup
+steps when empty. Keep failures distinct from an empty connection list. Place the complete
+command reference below connections, with shared Tabs for assistant, projects, deployments and account
+commands, copy actions and an expandable example. Derive syntax and descriptions from the
+same `@repo/commands` catalog used by CLI project syntax, chat parsing and help; avoid a narrow command sidebar.
+
+Connection cards show a compact status header, an account-linking row and an optional personal
+assistant row. Put setup details behind **Settings** and secondary account/removal actions in
+the shared menu. Reuse the wide connection form for editing name, roles, allowed destinations,
+connection method and credentials. Saved credentials are never returned: blank retains them;
+a new value replaces them. The provider remains bound to the connection. Settings saves
+use one revision-checked update; a provider update failure pauses the bot.
+Offer two compact checkboxes, **Assistant** and **Control plane**, with either or both selectable.
+Require at least one before saving. Selecting Assistant is the workspace's permission to offer
+assistant conversations; do not repeat it as another switch on the card. Each linked person must
+still choose **Connect my assistant** and use their own connected provider and approved Assistant
+access. Chat permissions remain separate. Show setup help if no agent is connected and keep
+personal disconnect available when the bot or its Assistant option is disabled. Existing bots
+with assistant conversations off require an explicit settings save; never silently enable them.
+Separate bot registrations can keep assistant chat and commands apart. The account-link command
+replies with only its URL; consent and sender verification use the existing permission dialog.
+Chat-origin conversations keep the ordinary composer and a short continuation hint. History,
+questions and permission review use the same components as dashboard conversations.
+The command reference includes history, resume, current chat, new and stop controls.
+Keep native menu setup in the connection's **Native commands** menu action. Show the same
+role-filtered catalog, with one refresh action for Telegram and Discord. For Slack, provide
+copyable slash-command entries to merge into its app manifest, preserving its other settings.
+Keep the dialog footer visible on short screens. Menus never replace account consent or
+operation confirmations.
+
+Chat replies follow the authenticated user’s dashboard language. Persist that personal preference
+without overwriting other settings. Account-link instructions and the URL are separate messages.
+Telegram uses a compact welcome menu, project/action buttons and a distinct confirmation;
+keep the text commands available for other providers. Buttons preserve the normal consent path.

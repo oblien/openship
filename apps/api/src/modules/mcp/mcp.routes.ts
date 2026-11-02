@@ -24,8 +24,12 @@ import { resolveBearerIdentity } from "../../middleware/auth";
 import { recordToolCall } from "./mcp-audit";
 import { handleMcpMessage, jsonRpcError } from "./mcp-server";
 import type { McpPrincipal } from "./mcp-tools";
+import { instanceAuthorization } from "../../lib/instance-authorization";
+import { mcpGuideRoutes } from "./mcp-guide.routes";
 
 const r = secureRouter(new Hono(), { module: "mcp", basePath: "/api/mcp" });
+
+r.hono.route("/", mcpGuideRoutes);
 
 /**
  * The caller, as this endpoint needs them: their effective capability plus the
@@ -118,6 +122,11 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
 
   return {
     principal: {
+      instanceAdmin: await instanceAuthorization.allows({
+        userId: id.userId,
+        tokenScope: id.scoped ? { tokenId: id.tokenId } : null,
+        credential: { organizationId: id.organizationId, readOnly: id.readOnly },
+      }, "read"),
       role,
       readOnly: id.readOnly,
       grantedRootTypes,

@@ -547,6 +547,8 @@ export function createActionGitHubRepo(db: Database) {
         )
           return;
         // A provisioning failure needs explicit retry/rerun, never a paid VM loop.
+        // Registrations match by label, so GitHub may hand a session another
+        // queued job. That session no longer serves this demand, nor do its errors.
         const [previous] = await tx
           .select()
           .from(actionRunnerSession)
@@ -555,6 +557,10 @@ export function createActionGitHubRepo(db: Database) {
               eq(actionRunnerSession.organizationId, value.organizationId),
               eq(actionRunnerSession.demandJobId, value.demandJobId),
               or(
+                isNull(actionRunnerSession.admittedJobId),
+                eq(actionRunnerSession.admittedJobId, value.demandJobId),
+              ),
+              or(
                 isNull(actionRunnerSession.cleanedAt),
                 sql`${actionRunnerSession.error} IS NOT NULL`,
               ),
@@ -562,6 +568,51 @@ export function createActionGitHubRepo(db: Database) {
           )
           .limit(1);
         if (previous) return;
+        // A registration whose own demand was taken elsewhere can serve this
+        // job only if its runner passes this workflow's current admission checks.
+        const spares = await tx
+          .select({ spec: actionRunnerSession.spec, runner: actionRunner })
+          .from(actionRunnerSession)
+          .innerJoin(
+            actionJob,
+            and(
+              eq(actionJob.id, actionRunnerSession.demandJobId),
+              eq(actionJob.organizationId, actionRunnerSession.organizationId),
+            ),
+          )
+          .innerJoin(
+            actionRunner,
+            and(
+              eq(actionRunner.id, actionRunnerSession.runnerId),
+              eq(actionRunner.organizationId, actionRunnerSession.organizationId),
+            ),
+          )
+          .where(
+            and(
+              eq(actionRunnerSession.organizationId, value.organizationId),
+              eq(actionRunnerSession.repoOwner, value.repoOwner),
+              eq(actionRunnerSession.repoName, value.repoName),
+              inArray(actionRunnerSession.state, ["preparing", "listening"]),
+              isNull(actionRunnerSession.admittedJobId),
+              isNull(actionRunnerSession.cancelRequestedAt),
+              isNull(actionRunnerSession.cleanedAt),
+              or(sql`${actionJob.status} <> 'queued'`, sql`${actionJob.finishedAt} IS NOT NULL`),
+            ),
+          );
+        const wantedSpec = job.spec;
+        const wanted = wantedSpec.labels.map((label) => label.toLowerCase());
+        if (
+          spares.some(({ spec, runner: spare }) => {
+            if (
+              !actionRunnerAdmitted(workflow, run, spare) ||
+              actionRunnerMismatch(spare.capabilities, spare.config, wantedSpec)
+            )
+              return false;
+            const offered = spec.labels.map((label) => label.toLowerCase());
+            return wanted.every((label) => offered.includes(label));
+          })
+        )
+          return;
         return (await tx.insert(actionRunnerSession).values(value).returning())[0];
       });
     },

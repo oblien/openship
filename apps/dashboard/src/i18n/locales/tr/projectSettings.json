@@ -668,6 +668,12 @@
       "repository": "Depo",
       "open": "Aç"
     },
+    "branch": {
+      "label": "Dağıtım dalı",
+      "description": "Bu ortamın sonraki dağıtımlarında kullanılır. Kaydetmek uygulamayı yeniden dağıtmaz.",
+      "saved": "Dağıtım dalı kaydedildi",
+      "saveFailed": "Dağıtım dalı kaydedilemedi"
+    },
     "webhookEndpoint": {
       "title": "Webhook Uç Noktası",
       "descriptionSet": "GitHub push olaylarını doğrudan bu alan adına teslim eder",
