@@ -188,6 +188,7 @@ describe("release continuation", () => {
     ])
       for (const file of [
         "packages/adapters/src/cluster/job.ts",
+        "apps/dashboard/src/app/(dashboard)/servers/[serverId]/page.tsx",
         "bun.lock",
         "apps/api/test/helpers/new-helper.ts",
       ])
@@ -200,6 +201,14 @@ describe("release continuation", () => {
     expect(affectsScope("apps/api/test/e2e/scaling-databases.e2e.test.ts", "application")).toBe(
       false,
     );
+  });
+
+  it("reruns fixture-dependent checks after dashboard teardown changes", () => {
+    const file = "apps/dashboard/src/app/(dashboard)/servers/[serverId]/offline-server.render.test.tsx";
+    for (const scope of ["application", "databases", "storage", "actions-linux", "actions-macos", "fast", "heavy", "update"])
+      expect(affectsScope(file, scope)).toBe(false);
+    for (const scope of ["unit", "build", "sdk"])
+      expect(affectsScope(file, scope)).toBe(true);
   });
 
   it("ignores the resume wrapper but detects altered commands, conditions, runners and environment", () => {
