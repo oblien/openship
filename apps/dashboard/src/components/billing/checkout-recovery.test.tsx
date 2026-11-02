@@ -128,6 +128,21 @@ afterEach(async () => {
 });
 
 describe("unfinished checkout recovery", () => {
+  it("offers cancellation for a missing payment identity without requiring recovery first", async () => {
+    h.get.mockResolvedValueOnce({
+      data: { items: [{ ...item, state: "unconfirmed", checkoutId: null, canCancel: true }] },
+    });
+    h.post.mockResolvedValueOnce({ data: expired });
+    await render();
+    expect(button(copy.recover)).toBeDefined();
+    await click(copy.cancel);
+    await click(copy.confirmCancel);
+    expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/checkout/cancel", {
+      workspaceId: server.id, id: item.id,
+    });
+    expect(window.open).not.toHaveBeenCalled();
+    expect(h.cleared).toHaveBeenCalledOnce();
+  });
   it("shows saved offer terms and resumes the exact payment without selecting another plan", async () => {
     await render();
     expect(dialog()?.textContent).toContain(item.name);

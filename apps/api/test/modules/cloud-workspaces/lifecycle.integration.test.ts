@@ -1068,6 +1068,38 @@ describe("workspace payment and deletion races", () => {
       await drainBackgroundWork();
       expect(await repos.cloudWorkspace.findById(workspace.id)).toBeUndefined();
     });
+    it("cancels a lost checkout response by recovering the original identity internally", async () => {
+      const original = checkout();
+      const create = h.billing.createCheckout.getMockImplementation()!;
+      h.billing.createCheckout.mockImplementationOnce(async (input: any) => {
+        await create(input);
+        throw new Error("lost response");
+      });
+      await expect(purchase(original)).rejects.toThrow("lost response");
+      h.billing.getCatalog.mockResolvedValue({ reseller: { checkoutCancellation: true } });
+      const item = await selected();
+      expect(item).toMatchObject({ state: "unconfirmed", checkoutId: null, canCancel: true });
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      expect(await remote().cancelCheckout({ workspaceId: workspace.id, id: item.id }))
+        .toMatchObject({ status: "expired", checkoutUrl: null });
+      expect(payments.size).toBe(1);
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toEqual([]);
+      for (const [request] of h.billing.createCheckout.mock.calls) expect(request).toEqual(original);
+    });
+    it("keeps a payment completing during missing-identity recovery tracked for settlement", async () => {
+      const original = checkout();
+      const create = h.billing.createCheckout.getMockImplementation()!;
+      h.billing.createCheckout.mockImplementationOnce(async (input: any) => {
+        const result = await create(input);
+        Object.assign(payments.get(result.checkoutId)!, { status: "complete", paymentStatus: "paid" });
+        throw new Error("lost response");
+      });
+      await expect(purchase(original)).rejects.toThrow("lost response");
+      h.billing.getCatalog.mockResolvedValue({ reseller: { checkoutCancellation: true } });
+      expect(await remote().cancelCheckout(await action())).toMatchObject({ status: "processing" });
+      expect(h.billing.cancelCheckout).not.toHaveBeenCalled();
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toHaveLength(1);
+    });
     it("lists all owned servers despite one unavailable payment and cancels only the selected server's checkout", async () => {
       const first = await purchase();
       const sibling = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Staging" });
@@ -1255,6 +1287,7 @@ describe("workspace payment and deletion races", () => {
     ["invalid_offer", 400], ["invalid_redirect_url", 400], ["billing_redirect_not_allowed", 400],
     ["reseller_enterprise_required", 503], ["billing_offer_underfunded", 400],
     ["capacity_price_below_cost", 400], ["insufficient_redeemable_balance", 503],
+    ["capacity_checkout_limit", 429],
   ] as const)("does not strand a never-created checkout after %s rejection", async (providerCode, statusCode) => {
     h.billing.createCheckout.mockRejectedValueOnce(
       new OperationError("Invalid offer", statusCode, "OBLIEN_BILLING_ERROR", {
