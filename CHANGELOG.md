@@ -6,6 +6,19 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+## 0.9.8
+
+Recommended patch restoring scoped agent creation and agent-backed automations
+introduced in 0.9.7.
+
+- **Compatible assistant runtime** — update all Mindwire dependencies to 0.1.60,
+  which supports the required bot protocol 9 and application-managed tools.
+  OpenShip provisions the matching runtime on local and remote assistant hosts
+  while preserving existing profiles and sign-ins.
+- **Release verification** — create, edit and reopen scoped Codex and Claude
+  profiles against the actual released daemon, and verify scoped agent creation
+  and reuse over SSH before publishing. Keep the protocol and permission checks.
+
 ## 0.9.7
 
 Recommended update introducing scoped AI agents, reviewed automations, and chat

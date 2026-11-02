@@ -57,7 +57,7 @@
     "tar": "^7.5.22",
     "yaml": "^2.8.2",
     "zod": "^4.3.6",
-    "mindwire": "0.1.58"
+    "mindwire": "0.1.60"
   },
   "devDependencies": {
     "@actions/artifact": "2.3.2",

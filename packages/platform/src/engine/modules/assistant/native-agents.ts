@@ -9,7 +9,7 @@ export async function nativeAgents(native: AssistantNativeClient) {
   const health = await mw.health();
   if ((health.botsVersion ?? 0) < 9)
     throw new AppError(
-      "Update Mindwire on the assistant host to use scoped agents (bot protocol 9 required).",
+      "Update OpenShip and its assistant host runtime to use scoped agents (Mindwire bot protocol 9 required).",
       409,
       "ASSISTANT_HOST_UPDATE",
     );
@@ -37,11 +37,7 @@ export async function nativeAgents(native: AssistantNativeClient) {
     },
     async get(id: string) {
       const bot = await mw.bots.get(id);
-      if (
-        !(bot as typeof bot & { externalTools?: boolean }).externalTools ||
-        bot.isMaster ||
-        bot.raw
-      )
+      if (!bot.externalTools || bot.isMaster || bot.raw)
         throw new AppError(
           "This native agent is not managed by OpenShip.",
           409,

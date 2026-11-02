@@ -135,6 +135,14 @@ jobs:
           bun run --cwd packages/sdk lint
           bun run --cwd apps/cli lint
 
+      - name: Verify scoped agents against the released Mindwire daemon
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          OPENSHIP_ASSISTANT_E2E: "1"
+        run: >-
+          bun run --cwd packages/platform test
+          test/assistant-agents.e2e.test.ts test/assistant-remote.test.ts
+
       # `turbo run test` across every package with a test script. Includes the two
       # migration suites in packages/db: migrate-chain (the chain applied to a
       # POPULATED database, plus a self-check proving it can fail) and

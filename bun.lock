@@ -246,7 +246,7 @@
         "@repo/commands": "workspace:*",
         "@repo/core": "workspace:*",
         "@sinclair/typebox": "^0.34.48",
-        "mindwire": "0.1.48",
+        "mindwire": "0.1.60",
       },
       "devDependencies": {
         "@types/node": "^22.13.0",
@@ -328,7 +328,7 @@
         "chalk": "^5.6.2",
         "commander": "^14.0.3",
         "dockerode": "^4.0.9",
-        "mindwire": "0.1.48",
+        "mindwire": "0.1.60",
         "open": "^10.2.0",
         "ora": "^9.3.0",
         "ssh2": "^1.17.0",
@@ -364,7 +364,7 @@
         "ioredis": "^5.10.0",
         "jose": "6.2.0",
         "maxmind": "^5.0.6",
-        "mindwire": "0.1.58",
+        "mindwire": "0.1.60",
         "nodemailer": "^10.1.7",
         "pino": "^10.3.1",
         "ssh2": "^1.17.0",
@@ -2643,7 +2643,7 @@
 
     "mimic-response": ["mimic-response@3.1.0", "", {}, "sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ=="],
 
-    "mindwire": ["mindwire@0.1.48", "", { "dependencies": { "oblien": "^2.5.0", "qrcode": "^1.5.4", "ws": "^8.18.3" }, "optionalDependencies": { "@ngrok/ngrok": "^1.7.0" }, "peerDependencies": { "dockerode": ">=4.0.0", "ssh2": ">=1.15.0" }, "optionalPeers": ["dockerode", "ssh2"], "bin": { "mindwire": "dist/cli.js" } }, "sha512-cFxiPjbBBwxOJBsbZmfo3p9HNslKxdT8BnHdhVbAsiCT3Fe5qiFKmVwd2Y+1kSBjrAy/3KuTsewtYEAo8+B02A=="],
+    "mindwire": ["mindwire@0.1.60", "", { "dependencies": { "oblien": "^2.10.0", "qrcode": "^1.5.4", "ws": "^8.22.0" }, "optionalDependencies": { "@ngrok/ngrok": "^1.7.0" }, "peerDependencies": { "dockerode": ">=4.0.0", "ssh2": ">=1.15.0" }, "optionalPeers": ["dockerode", "ssh2"], "bin": { "mindwire": "dist/cli.js" } }, "sha512-Rypnx76XlBWVLKHGi/PeUZWmI09GvwLMmKRSZRMjFDUWvu3W7MNVXr+3wj33XpMj1JcHMtb/5jK+ZIOvxUAZBQ=="],
 
     "minimatch": ["minimatch@3.1.5", "", { "dependencies": { "brace-expansion": "^1.1.7" } }, "sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w=="],
 
@@ -3727,8 +3727,6 @@
 
     "@repo/platform/jose": ["jose@6.2.0", "", {}, "sha512-xsfE1TcSCbUdo6U07tR0mvhg0flGxU8tPLbF03mirl2ukGQENhUg4ubGYQnhVH0b5stLlPM+WOqDkEl1R1y5sQ=="],
 
-    "@repo/platform/mindwire": ["mindwire@0.1.58", "", { "dependencies": { "oblien": "^2.10.0", "qrcode": "^1.5.4", "ws": "^8.22.0" }, "optionalDependencies": { "@ngrok/ngrok": "^1.7.0" }, "peerDependencies": { "dockerode": ">=4.0.0", "ssh2": ">=1.15.0" }, "optionalPeers": ["dockerode", "ssh2"], "bin": { "mindwire": "dist/cli.js" } }, "sha512-fvaX7DNgqSLGff81o8kZUiKfAH9zHP7l0Xy6rCNurUHFCR66R+6D29WIfyjTtvPyw7Oqhrse7QgOqui8vooHIA=="],
-
     "@repo/ui/@types/node": ["@types/node@25.3.5", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-oX8xrhvpiyRCQkG1MFchB09f+cXftgIXb3a7UUa4Y3wpmZPw5tyZGTLWhlESOLq1Rq6oDlc8npVU2/9xiCuXMA=="],
 
     "@repo/web/tailwind-merge": ["tailwind-merge@3.0.2", "", {}, "sha512-l7z+OYZ7mu3DTqrL88RiKrKIqO3NcpEO8V/Od04bNpvk0kiIFndGEoqfuzvj4yuhRkHKjRkII2z+KS2HfPcSxw=="],
@@ -3956,6 +3954,8 @@
     "mdast-util-find-and-replace/escape-string-regexp": ["escape-string-regexp@5.0.0", "", {}, "sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw=="],
 
     "micromatch/picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
+
+    "mindwire/ws": ["ws@8.22.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg=="],
 
     "minipass-collect/minipass": ["minipass@3.3.6", "", { "dependencies": { "yallist": "^4.0.0" } }, "sha512-DxiNidxSEK+tHG6zOIklvNOwm3hvCrbUrdtzY74U6HKTJxvIDfOUL5W5P2Ghd3DTkhhKPYGqeNUIh5qcM4YBfw=="],
 
@@ -4216,8 +4216,6 @@
     "@octokit/plugin-retry/@octokit/types/@octokit/openapi-types": ["@octokit/openapi-types@12.11.0", "", {}, "sha512-VsXyi8peyRq9PqIz/tpqiL2w3w80OgVMwBHltTml3LmVvXiphgeqmY9mvBw9Wu7e0QWk/fqD37ux8yP5uVekyQ=="],
 
     "@octokit/request-error/@octokit/types/@octokit/openapi-types": ["@octokit/openapi-types@24.2.0", "", {}, "sha512-9sIH3nSUttelJSXUrmGzl7QUBFul0/mB8HRYl3fOlgHbIWG+WnYDXU3v/2zMtAvuzZ/ed00Ei6on975FhBfzrg=="],
-
-    "@repo/platform/mindwire/ws": ["ws@8.22.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg=="],
 
     "@repo/ui/@types/node/undici-types": ["undici-types@7.18.2", "", {}, "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="],
 

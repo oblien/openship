@@ -68,6 +68,7 @@ import {
   assistantProfileKey,
 } from "../src/engine/modules/assistant/remote-target";
 import type { AssistantNativeClient } from "../src/engine/modules/assistant/native-target";
+import { nativeAgents } from "../src/engine/modules/assistant/native-agents";
 
 // Explicit opt-in: downloads the SDK-matched daemon if absent. Native account login/logout is never called.
 describe.skipIf(process.env.OPENSHIP_ASSISTANT_E2E !== "1")(
@@ -219,6 +220,15 @@ describe.skipIf(process.env.OPENSHIP_ASSISTANT_E2E !== "1")(
       clients.push(a);
       const health = await a.mindwire.health();
       expect(health.version).toBeTruthy();
+      expect(health.botsVersion).toBeGreaterThanOrEqual(9);
+      const agent = await (
+        await nativeAgents(a)
+      ).create("ssh-investigator", "codex", {
+        name: "SSH investigator",
+        purpose: "Investigate downtime",
+        instructions: "Report findings only.",
+      });
+      expect(agent.externalTools).toBe(true);
       const firstRoot = join(directory, ".openship/assistants", assistantProfileKey(first));
       const recordA = JSON.parse(await readFile(join(firstRoot, "service.json"), "utf8"));
       expect((await stat(join(firstRoot, "service.json"))).mode & 0o777).toBe(0o600);
@@ -234,6 +244,10 @@ describe.skipIf(process.env.OPENSHIP_ASSISTANT_E2E !== "1")(
       const again = await createRemoteAssistantClient(first);
       clients.push(again);
       expect((await again.mindwire.health()).version).toBe(health.version);
+      expect(await (await nativeAgents(again)).get(agent.id)).toMatchObject({
+        id: agent.id,
+        externalTools: true,
+      });
       const reused = JSON.parse(await readFile(join(firstRoot, "service.json"), "utf8"));
       expect(reused).toEqual(recordA);
       // A host process restart must discard the dead transport and preserve the profile.
