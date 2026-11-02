@@ -366,6 +366,8 @@ export const auth = betterAuth({
 
   /* ---------- Advanced ---------- */
   advanced: {
+    // The API client-IP middleware replaces this header using its proxy trust rules.
+    ipAddress: { ipAddressHeaders: ["x-real-ip"] },
     cookiePrefix: COOKIE_PREFIX,
     // Pin secure-cookie behavior when served on a public URL. The dynamic
     // `baseURL` (an object) would otherwise make Better Auth derive `secure`
