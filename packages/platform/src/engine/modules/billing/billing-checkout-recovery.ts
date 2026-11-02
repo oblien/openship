@@ -41,7 +41,7 @@ export async function listCheckouts(ctx: ExecutionContext, input: BillingScopeIn
   const billing = getOblienBillingApi();
   let catalogReadFailed = false;
   const genericCancellation = owners.some((owner) =>
-    owner.pendingCheckouts.some((intent) => intent.checkoutId && !intent.cancellation),
+    owner.pendingCheckouts.some((intent) => !intent.cancellation),
   )
     ? await billing
         .getCatalog()
@@ -93,9 +93,10 @@ export async function listCheckouts(ctx: ExecutionContext, input: BillingScopeIn
             capacity?.pendingCheckout?.checkoutId === intent.checkoutId &&
             capacity?.pendingCheckout?.quote.paymentSource === "stripe";
           const canCancel = Boolean(
-            checkout &&
-            payable(checkout) &&
-            (intent.cancellation || genericCancellation || matchingQuote),
+            !intent.checkoutId
+              ? genericCancellation
+              : checkout && payable(checkout) &&
+                (intent.cancellation || genericCancellation || matchingQuote),
           );
           const cancelUnavailableReason: BillingPendingCheckout["cancelUnavailableReason"] =
             !canCancel && checkout && payable(checkout) && !intent.cancellation
@@ -238,14 +239,28 @@ export async function cancelCheckout(
   return withCloudBillingLock(
     ctx.organizationId,
     async () => {
-      let { owner, intent } = await target(ctx.organizationId, input);
-      if (!intent.checkoutId)
-        throw new AppError(
-          "Recover this payment before canceling it so its checkout can be identified.",
-          409,
-          "BILLING_CHECKOUT_UNCONFIRMED",
-        );
+      let { owner, intent, request } = await target(ctx.organizationId, input);
       const billing = getOblienBillingApi();
+      if (!intent.checkoutId) {
+        const catalog = await billing.getCatalog();
+        if (catalog.reseller?.checkoutCancellation !== true)
+          throw new AppError("Payment cancellation is temporarily unavailable. Please retry.", 503,
+            "BILLING_CHECKOUT_CANCEL_UNAVAILABLE");
+        // Recover the original immutable request inside this cancellation, without
+        // opening its payment page. A lost create response may hide a paid session.
+        try {
+          const recovered = await createTrackedWorkspaceCheckout(owner, request);
+          owner = (await repos.cloudWorkspace.findByIdInOrganization(owner.id, owner.organizationId))!;
+          intent = owner.pendingCheckouts.find((item) => identity(owner, item) === input.id)!;
+          if (!intent || intent.checkoutId !== recovered.checkoutId)
+            throw new AppError("The recovered payment identity changed. Refresh its status.", 409,
+              "BILLING_CHECKOUT_IDENTITY_MISMATCH");
+        } catch (error) {
+          if (isExpiredCheckout(error))
+            return { status: "expired", checkoutId: null, checkoutUrl: null };
+          throw error;
+        }
+      }
       const before = (await billing.getCheckout(owner.namespace!, intent.checkoutId)).checkout;
       const terminal = terminalResult(before);
       if (terminal) {
