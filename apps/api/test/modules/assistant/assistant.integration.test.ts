@@ -19,6 +19,8 @@ const fixture = vi.hoisted(() => {
     botChats: new Map<string, string>(),
     botVersion: 9,
     nativeConfigured: true,
+    unavailableProviders: new Set<string>(),
+    failingProviders: new Set<string>(),
     imageInput: true,
     customCapability: true,
     startGate: undefined as Promise<void> | undefined,
@@ -87,7 +89,10 @@ beforeAll(() => {
       healthy: () => true,
       close: async () => {},
       workspace: async () => "/tmp/assistant-test-no-exec",
-      probe: async () => ({ available: true, version: "test" }),
+      probe: async (provider: string) => {
+        if (fixture.failingProviders.has(provider)) throw new Error("private-provider-error");
+        return { available: !fixture.unavailableProviders.has(provider), version: "test" };
+      },
       mindwire: {
         health: async () => ({ botsVersion: fixture.botVersion }),
         workspace: {
@@ -1078,6 +1083,36 @@ describe("Private custom API connections", () => {
         baseUrl: "https://model.example/v1",
       });
       expect(JSON.stringify(providers)).not.toContain(secret);
+      const modelCatalog = await data(owner, "GET", "/agents/models");
+      expect(modelCatalog.providers.find((p: any) => p.id === "codex")).toMatchObject({
+        ready: true,
+        defaultModel: connection.model,
+        models: [{ id: connection.model, label: "provider/model", default: true }],
+      });
+      for (const privateValue of [
+        secret,
+        "https://model.example/v1",
+        "baseUrl",
+        "hasKey",
+        "authStatus",
+      ])
+        expect(JSON.stringify(modelCatalog)).not.toContain(privateValue);
+      expect(
+        (await data(stranger, "GET", "/agents/models")).providers.flatMap((p: any) => p.models),
+      ).toEqual([]);
+      const project = await seedProject(owner.organizationId);
+      expect(
+        await data(owner, "POST", "/agents", {
+          requestId: randomUUID(),
+          name: "Custom investigator",
+          purpose: "Read app health",
+          instructions: "Inspect only",
+          provider: "codex",
+          model: connection.model,
+          readOnly: true,
+          grants: [{ resourceType: "project", resourceId: project.id, permissions: ["read"] }],
+        }),
+      ).toMatchObject({ provider: "codex", model: connection.model });
       expect(
         (await data(stranger, "GET", "/providers")).flatMap((p: any) => p.customProviders ?? []),
       ).toHaveLength(0);
@@ -2323,6 +2358,102 @@ describe("Scoped agents: shared API, MCP, native bots and task conversations", (
       },
     );
   }
+  it("discovers models through MCP and recovers an invalid selection with the native default", async () => {
+    const test = await specialist();
+    const discovery = await tool(test.owner, "GET", "/api/assistant/agents/models", {});
+    expect(discovery.status).toBe(200);
+    const connection = (discovery.data as any).data.providers.find((p: any) => p.id === "codex");
+    expect(connection).toEqual({
+      id: "codex",
+      name: "Codex",
+      available: true,
+      ready: true,
+      defaultModel: "",
+      models: [
+        { id: "test-model-a", label: "Model A", default: false },
+        { id: "test-model-b", label: "Model B", default: false },
+      ],
+    });
+    const input = { ...test.input, requestId: randomUUID(), model: "invented-model" };
+    const before = fixture.bots.size;
+    const invalid = await tool(test.owner, "POST", "/api/assistant/agents", { body: input });
+    expect(invalid.status).toBe(400);
+    expect(invalid.data).toMatchObject({
+      code: "ASSISTANT_MODEL_UNAVAILABLE",
+      modelsPath: "/api/assistant/agents/models",
+      connection,
+    });
+    expect(fixture.bots.size).toBe(before);
+    const recovered = await tool(test.owner, "POST", "/api/assistant/agents", {
+      body: { ...input, model: connection.defaultModel },
+    });
+    expect(recovered.status, JSON.stringify(recovered.data)).toBe(200);
+    expect((recovered.data as any).data).toMatchObject({ provider: "codex", model: "" });
+    const retry = await tool(test.owner, "POST", "/api/assistant/agents", {
+      body: { ...input, model: "" },
+    });
+    expect((retry.data as any).data.id).toBe((recovered.data as any).data.id);
+    expect(fixture.bots.size).toBe(before + 1);
+  });
+  it("keeps a working provider discoverable when another is missing or fails", async () => {
+    const test = await specialist();
+    const before = fixture.bots.size;
+    fixture.unavailableProviders.add("claude");
+    try {
+      const catalog = await tool(test.owner, "GET", "/api/assistant/agents/models", {});
+      expect(catalog.status).toBe(200);
+      expect((catalog.data as any).data.providers).toEqual([
+        expect.objectContaining({ id: "codex", ready: true, defaultModel: "" }),
+        expect.objectContaining({
+          id: "claude",
+          available: false,
+          ready: false,
+          defaultModel: null,
+          models: [],
+        }),
+      ]);
+      const missing = await tool(test.owner, "POST", "/api/assistant/agents", {
+        body: { ...test.input, requestId: randomUUID(), provider: "claude", model: "" },
+      });
+      expect(missing.status).toBe(409);
+      expect(missing.data).toMatchObject({ code: "ASSISTANT_PROVIDER_UNAVAILABLE" });
+      fixture.failingProviders.add("claude");
+      const partial = await tool(test.owner, "GET", "/api/assistant/agents/models", {});
+      expect(partial.status).toBe(200);
+      expect((partial.data as any).data.providers[0]).toMatchObject({ id: "codex", ready: true });
+      expect((partial.data as any).data.providers[1].issue).toContain("Could not read");
+      expect(JSON.stringify(partial.data)).not.toContain("private-provider-error");
+      expect(fixture.bots.size).toBe(before);
+    } finally {
+      fixture.unavailableProviders.clear();
+      fixture.failingProviders.clear();
+    }
+  });
+  it("reports sign-in separately and requires assistant consent before model discovery", async () => {
+    const disconnected = await actor();
+    const denied = await request(disconnected, "GET", "/agents/models");
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: "ASSISTANT_DISABLED" });
+    const test = await specialist();
+    const before = fixture.bots.size;
+    fixture.nativeConfigured = false;
+    try {
+      const catalog = await data(test.owner, "GET", "/agents/models");
+      expect(
+        catalog.providers.every(
+          (p: any) => !p.ready && p.defaultModel === null && !p.models.length,
+        ),
+      ).toBe(true);
+      const denied = await tool(test.owner, "POST", "/api/assistant/agents", {
+        body: { ...test.input, requestId: randomUUID(), model: "" },
+      });
+      expect(denied.status).toBe(409);
+      expect(denied.data).toMatchObject({ code: "ASSISTANT_SIGN_IN" });
+      expect(fixture.bots.size).toBe(before);
+    } finally {
+      fixture.nativeConfigured = true;
+    }
+  });
   it("creates through MCP, reuses the API and never exposes private connection controls", async () => {
     const test = await specialist();
     const result = await tool(test.owner, "POST", "/api/assistant/agents", { body: test.input });

@@ -13,6 +13,17 @@ r.use("*", async (c, next) => {
   await next();
 });
 r.get(
+  "/models",
+  {
+    tag: "settings:read",
+    mcp: {
+      description:
+        'Discover available AI connections and exact model IDs on this user\'s selected assistant host before creating or editing a specialist. Choose a ready provider and use its defaultModel or a listed model ID; "" selects the connected native default. Never guess model IDs or infer that all providers are disconnected from one failed choice. Returns no credentials or private connection settings.',
+    },
+  },
+  async (c) => c.json({ data: await agents.models(ctx(c)) }),
+);
+r.get(
   "/",
   {
     tag: "settings:read",
@@ -30,7 +41,7 @@ r.post(
     body: AssistantAgentCreate,
     mcp: {
       description:
-        "Create a saved scoped specialist using the normal agent API. Set its purpose, instructions, provider/model, readOnly and concrete resource grants, all within your current access. Reuse requestId on retries. This creates no task or schedule; delegate a task or attach an automation separately. Agents cannot manage credentials, create other agents or expand their permissions.",
+        'Create a saved scoped specialist using the normal agent API. First read get_assistant_agents_models; select a ready provider and its defaultModel or an exact listed model ID. model="" uses the connected native default. Set purpose, instructions, readOnly and concrete resource grants within your current access. Reuse requestId on retries. This creates no task or schedule; delegate a task or attach an automation separately. Agents cannot manage credentials, create other agents or expand their permissions.',
     },
   },
   async (c) => {

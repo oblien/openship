@@ -4991,6 +4991,11 @@
       "availability": "Desktop, self-hosted, Cloud",
       "description": "Refresh native command definitions for an enabled connector using its current revision. Telegram and Discord publish their menus; Slack requires the generated manifest entries. Requires a workspace admin session."
     },
+    "GET /api/assistant/agents/models": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Discover ready AI connections and exact model IDs without exposing private settings."
+    },
     "GET /api/assistant/agents": {
       "page": "assistant",
       "availability": "Desktop, self-hosted, Cloud",
