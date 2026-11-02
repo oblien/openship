@@ -5,8 +5,10 @@ import type {
   AssistantAgent,
   AssistantAgentConfig,
   AssistantAgentIcon,
+  AssistantAgentModelProvider,
   AssistantProvider,
 } from "@repo/contracts";
+import { ASSISTANT_PROVIDER_LABELS } from "@repo/contracts";
 import { captureExecutionAuthority } from "@repo/platform/engine/lib/execution-authority";
 import { nativeAgents } from "@repo/platform/engine/modules/assistant/native-agents";
 import type { RequestContext } from "../../lib/request-context";
@@ -20,6 +22,7 @@ import {
   withAssistantLock,
 } from "./assistant-access";
 import { ownedAgent, validateAgentGrants } from "./agent-access";
+import { agentModelProvider, assertAgentModel } from "./agent-models";
 
 export function createAssistantAgents(
   runtime: ReturnType<typeof createAssistantRuntime> = assistant,
@@ -61,6 +64,31 @@ export function createAssistantAgents(
     };
   }
   const service = {
+    async models(ctx: RequestContext): Promise<{ providers: AssistantAgentModelProvider[] }> {
+      await assistantCredential(ctx);
+      const providers = await Promise.all(
+        (["codex", "claude"] as const).map(async (id): Promise<AssistantAgentModelProvider> => {
+          try {
+            return agentModelProvider(await runtime.provider(ctx, id));
+          } catch {
+            // A failed connection must not hide another working provider. Never
+            // return the native error graph, which can contain private settings.
+            reportCaughtError(new Error("Could not read agent models"), "api/assistant/models");
+            return {
+              id,
+              name: ASSISTANT_PROVIDER_LABELS[id],
+              available: false,
+              ready: false,
+              defaultModel: null,
+              models: [],
+              issue:
+                "Could not read this connection. Check its assistant host and retry model discovery.",
+            };
+          }
+        }),
+      );
+      return { providers };
+    },
     async list(ctx: RequestContext) {
       const access = await assistantCredential(ctx);
       const rows = (await repos.assistantAgents.list(ctx)).filter(
@@ -185,8 +213,7 @@ export function createAssistantAgents(
         )
           throw assistantError("Archive an unused agent before creating another.", 400);
         const info = await runtime.provider(ctx, input.provider);
-        if (input.model && !info.models.some((m) => m.id === input.model))
-          throw assistantError("Choose an available model for this agent.", 400);
+        assertAgentModel(info, input.model);
         const bot = previous
           ? await api.update(id, (await api.get(id)).revision, identity)
           : await api.create(id, input.provider, identity);

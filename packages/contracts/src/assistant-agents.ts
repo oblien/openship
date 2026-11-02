@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { TokenGrantSchema } from "./token-inputs";
-import type { AssistantConversation } from "./assistant";
+import type { AssistantConversation, AssistantProvider } from "./assistant";
 
 /** Specialists work on named resources. Workspace administration stays with the general assistant. */
 export const ASSISTANT_AGENT_RESOURCE_TYPES = ["project", "server", "github_repository"] as const;
@@ -34,7 +34,11 @@ export const AssistantAgentInput = Type.Object(
     purpose: Type.String({ minLength: 1, maxLength: 500 }),
     instructions: Type.String({ maxLength: 8000 }),
     provider: Type.Union([Type.Literal("claude"), Type.Literal("codex")]),
-    model: Type.String({ maxLength: 256 }),
+    model: Type.String({
+      maxLength: 256,
+      description:
+        'Use an exact model ID from GET /api/assistant/agents/models, or "" for the connected provider\'s default. Never guess a model ID.',
+    }),
     readOnly: Type.Boolean(),
     grants: Type.Array(TokenGrantSchema, { minItems: 1, maxItems: 50 }),
   },
@@ -72,6 +76,17 @@ export interface AssistantAgent extends AssistantAgentConfig {
   archived: boolean;
   createdAt: string;
   tasks: AssistantConversation[];
+}
+/** Safe model discovery for the same user, workspace and assistant host. */
+export interface AssistantAgentModelProvider {
+  id: AssistantProvider;
+  name: string;
+  available: boolean;
+  ready: boolean;
+  /** Empty string selects the native default; null means no usable connection. */
+  defaultModel: string | null;
+  models: { id: string; label: string; default: boolean }[];
+  issue?: string;
 }
 export const ASSISTANT_AGENT_TEMPLATES = [
   {
