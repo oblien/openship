@@ -35,6 +35,12 @@ it("isolates auth rate limits by the resolved client IP and rejects forged forwa
     expect(await status("172.18.0.2", "203.0.113.10", "192.0.2.2, 203.0.113.10")).toBe(429);
     expect(await status("172.18.0.2", "203.0.113.11", "192.0.2.1, 203.0.113.11")).toBe(200);
 
+    // Rate-limit keys retain Better Auth's IPv6 /64 grouping even though
+    // session pinning records the full address.
+    expect(await status("172.18.0.2", "2001:db8:1::1")).toBe(200);
+    expect(await status("172.18.0.2", "2001:db8:1::2")).toBe(429);
+    expect(await status("172.18.0.2", "2001:db8:2::1")).toBe(200);
+
     env.TRUST_PROXY = false;
     // A direct untrusted peer cannot change its bucket with any forwarded header.
     expect(await status("203.0.113.20", "192.0.2.10")).toBe(200);

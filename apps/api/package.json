@@ -20,6 +20,7 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
+    "@better-auth/core": "1.6.34",
     "@better-auth/drizzle-adapter": "1.6.34",
     "@discordjs/rest": "2.6.3",
     "@discordjs/ws": "2.0.4",

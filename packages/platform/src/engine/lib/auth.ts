@@ -1,6 +1,7 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { organizationOptions, isSaasDeployment } from "./organization-lifecycle";
 import { betterAuth, type User } from "better-auth";
+import { getIp } from "@better-auth/core/utils/ip";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, mcp, emailOTP } from "better-auth/plugins";
@@ -332,7 +333,16 @@ export const auth = betterAuth({
         },
       },
       create: {
-        before: async (session) => {
+        before: async (session, context) => {
+          // Session pinning needs the full address. Keep Better Auth's IPv6
+          // subnet masking for rate-limit keys, not stored session fingerprints.
+          const ipAddress = context?.headers
+            ? getIp(context.headers, {
+                advanced: {
+                  ipAddress: { ...context.context.options.advanced?.ipAddress, ipv6Subnet: 128 },
+                },
+              })
+            : session.ipAddress;
           // Default activeOrganizationId to the user's deterministic
           // personal org (`org_${userId}`) so the org plugin endpoints
           // work without an explicit setActive call after sign-in.
@@ -348,11 +358,11 @@ export const auth = betterAuth({
           // db.insert(schema.session) inside `mintSession`
           // (lib/cloud-auth-proxy.ts) bypasses Better Auth entirely
           // and sets activeOrganizationId itself.
-          if (session.activeOrganizationId) return;
           return {
             data: {
               ...session,
-              activeOrganizationId: `org_${session.userId}`,
+              ipAddress: ipAddress ?? session.ipAddress,
+              activeOrganizationId: session.activeOrganizationId || `org_${session.userId}`,
             },
           };
         },
