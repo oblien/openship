@@ -13,15 +13,18 @@ export function managedHarness(input: {
 }) {
   let pending: Promise<AssistantNativeClient> | undefined;
   async function client() {
+    // Both provider probes share this profile. Queue recovery so a concurrent
+    // refresh cannot close or replace another refresh's new connection.
+    const next = Promise.resolve(pending).then(async (current) => {
+      if (current?.healthy()) return current;
+      await current?.close();
+      return input.connect();
+    });
+    pending = next;
     try {
-      if (pending && !(await pending).healthy()) {
-        await (await pending).close();
-        pending = undefined;
-      }
-      if (!pending) pending = input.connect();
-      return await pending;
+      return await next;
     } catch (error) {
-      pending = undefined;
+      if (pending === next) pending = undefined;
       throw error;
     }
   }

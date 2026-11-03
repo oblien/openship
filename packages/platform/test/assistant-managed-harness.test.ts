@@ -113,4 +113,24 @@ describe("managed Cloud harness installation", () => {
     expect(f.native.close).toHaveBeenCalledTimes(1);
     expect(f.connect).toHaveBeenCalledTimes(3);
   });
+
+  it("shares one reconnect when both providers refresh after a transport failure", async () => {
+    const f = fixture();
+    f.files.set(`${f.directory}/service.json`, "private service record");
+    await f.tools.state("codex");
+    vi.mocked(f.native.healthy).mockReturnValue(false);
+    f.connect.mockResolvedValue({ ...f.native, healthy: () => true });
+    let finishClose!: () => void;
+    vi.mocked(f.native.close).mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishClose = resolve;
+      }),
+    );
+    const refresh = Promise.all([f.tools.state("codex"), f.tools.state("claude")]);
+    await vi.waitFor(() => expect(f.native.close).toHaveBeenCalled());
+    finishClose();
+    await refresh;
+    expect(f.native.close).toHaveBeenCalledTimes(1);
+    expect(f.connect).toHaveBeenCalledTimes(2);
+  });
 });
