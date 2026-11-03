@@ -701,6 +701,10 @@ check retryable before starting the move.
   Keep Pending payments inside Payments & invoices, including for unpaid servers, with
   a yellow pending count on that tab. Share one scoped read with the recovery list, refresh
   on return from hosted checkout, and remove counts only after confirmed cancellation.
+  Removing the selected unused server clears its billing URL selection and returns to
+  the new-server Plans view. A billing URL for a removed or deleting workspace recovers
+  there without checkout or automatic-purchase parameters, preserving only its organization
+  scope. Do not reselect a draft while its removal finishes.
   Cloud lists unfinished payments across the organization's servers. Connected installations
   use the same Cloud inventory, filtered to a selected server when requested, without
   creating local execution links. Preserve local aliases for explicitly linked servers

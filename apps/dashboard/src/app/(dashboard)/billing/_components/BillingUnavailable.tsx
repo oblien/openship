@@ -9,6 +9,7 @@ import { useI18n } from "@/components/i18n-provider";
 
 export type BillingUnavailableReason =
   | "workspace-required"
+  | "workspace-removed"
   | "saas-not-enabled"
   | "billing-not-configured"
   | "billing-forbidden"
@@ -113,6 +114,7 @@ export function BillingUnavailable({ reason }: { reason: BillingUnavailableReaso
     "billing-forbidden": t.billing.unavailable.forbidden,
     "billing-sign-in-required": t.billing.unavailable.signInRequired,
     "billing-unreachable": t.billing.unavailable.loadFailed,
+    "workspace-removed": t.billing.unavailable.loadFailed,
   }[reason];
 
   return (
