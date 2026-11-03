@@ -149,6 +149,23 @@ describe("published October runtime guidance", () => {
     expiresAt: "2026-10-25T00:00:00.000Z",
     ...publishedAdvisories,
   });
+  it("requires an explicit major upgrade for Node 20 instead of another ineffective image refresh", () => {
+    const matches = matchSecurityAdvisories(
+      feed,
+      [],
+      [
+        { runtime: "node", serviceId: null, version: "20.20.2" },
+        { runtime: "node", serviceId: "patchable", version: "22.23.3" },
+      ],
+    );
+    expect(matches.find((match) => match.serviceId === null)).toMatchObject({
+      runtimeUpgradeRequired: true,
+      evidence: "node 20.20.2",
+    });
+    expect(
+      matches.find((match) => match.serviceId === "patchable")?.runtimeUpgradeRequired,
+    ).not.toBe(true);
+  });
   it.each([
     ["8.2.34", "8.2.35"],
     ["8.3.35", "8.3.36"],

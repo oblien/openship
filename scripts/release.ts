@@ -35,7 +35,7 @@
  *   2. Refuse if not on main (override with --force-branch)
  *   3. Refuse if HEAD is behind origin/main (you'd push an old commit)
  *   4. Compute next version from apps/api/package.json
- *   5. Sync both root package.json and apps/api/package.json
+ *   5. Refresh GeoIP and sync package versions
  *   6. Commit "Bump to vX.Y.Z"
  *   7. Push the bump commit to main
  *   8. Tag vX.Y.Z and push the tag
@@ -61,6 +61,7 @@ import { buildReleaseAdvisory } from "./release-advisory";
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ROOT_PKG = join(ROOT, "package.json");
 const API_PKG = join(ROOT, "apps/api/package.json");
+const GEOIP_DB = join(ROOT, "apps/api/assets/geoip/GeoLite2-Country.mmdb");
 // The upgrade-prompt gate. A release ships SILENTLY unless `publish` writes an
 // advisory here for the new version (see release-advisories.json's $comment).
 const ADVISORIES = join(ROOT, "release-advisories.json");
@@ -254,34 +255,26 @@ if (dryRun) {
   if (force && tagExists(tag)) {
     log(`[dry-run] --force: tag ${tag} exists → would DELETE it (local + origin) and re-push`);
   }
+  log(`[dry-run] would refresh and validate GeoIP before creating the release commit and tag.`);
   log(`[dry-run] no files written, no git ops executed.`);
   process.exit(0);
 }
 
-if (tagExists(tag)) {
-  if (!force) {
-    console.error(
-      `Refusing: tag ${tag} already exists. ` +
-        (bump.kind === "current"
-          ? `Bump the version (patch/minor/major), or pass --force to re-release ${tag}.`
-          : `Pick a different version, or pass --force to re-release ${tag}.`),
-    );
-    process.exit(1);
-  }
-  // --force: salvage an existing tag. Delete it locally AND on origin so the
-  // `git tag` + push below create a FRESH ref — a same-SHA re-push reports
-  // "up-to-date" and fires no workflow, which is exactly why a plain re-run of
-  // an existing tag does nothing.
+const existingTag = tagExists(tag);
+if (existingTag && !force) {
+  console.error(`Refusing: tag ${tag} already exists. Bump the version or pass --force to re-release an unpublished tag.`);
+  process.exit(1);
+}
+refreshReleaseGeoip();
+if (existingTag) {
   log(`⚠ --force: tag ${tag} exists — deleting it (local + origin) to re-release`);
   retireExistingTag(tag);
 }
 
 /* ─── Apply ─────────────────────────────────────────────────────────── */
 
-// Files to stage into the (single) release commit. Version bumps + the
-// announcement advisory both ride the SAME commit so the advisory is pinned to
-// the tag clients pull.
-const staged: string[] = [];
+// GeoIP, versions and the announcement share the release commit and tag.
+const staged: string[] = [GEOIP_DB];
 
 if (bump.kind !== "current") {
   for (const p of SYNCED_PKGS) writeVersion(p, next);
@@ -345,6 +338,11 @@ if (ghMatch) {
 watchCi(tag, actionsUrl);
 
 /* ─── Helpers ──────────────────────────────────────────────────────── */
+
+function refreshReleaseGeoip(): void {
+  const result = spawnSync(process.execPath, [join(ROOT, "scripts/update-geoip.mjs")], { cwd: ROOT, stdio: "inherit" });
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
 
 function usageAndExit(code = 1): never {
   const out = code === 0 ? console.log : console.error;
@@ -543,6 +541,10 @@ async function continueRelease(): Promise<void> {
     log("[dry-run] would push the current branch and update the unpublished tag with this resume record.");
     return;
   }
+  refreshReleaseGeoip();
+  git("add", GEOIP_DB);
+  if (spawnSync("git", ["diff", "--cached", "--quiet"], { cwd: ROOT }).status !== 0)
+    git("commit", "-m", "build: refresh release GeoIP snapshot");
   git("push", "origin", `HEAD:refs/heads/${currentBranch()}`);
   const localRef = spawnSync("git", ["rev-parse", "--verify", `refs/tags/${targetTag}`], { encoding: "utf8", cwd: ROOT });
   git("tag", "-f", "-a", targetTag, "HEAD", "-m", `${targetTag}\n\n${RESUME_TRAILER} ${runIds.join(",")}`);

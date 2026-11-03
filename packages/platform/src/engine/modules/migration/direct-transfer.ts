@@ -417,6 +417,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
       const plan = envOps(grant.value.profile).pkgInstallVariants({
         apt: answered(["procps", "util-linux"]), dnf: answered(["procps-ng", "util-linux"]),
         yum: answered(["procps-ng", "util-linux"]), apk: answered(["procps", "util-linux"]),
+        pacman: answered(["procps-ng", "util-linux"]),
         brew: answered(["flock"]),
       }, { installRecommends: false });
       if (!plan.supported) throw new Error(plan.reason);
@@ -432,7 +433,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
     if (!grant.supported) throw new Error(grant.reason);
     const plan = envOps(grant.value.profile).pkgInstallVariants({
       apt: answered(["openssh-client"]), dnf: answered(["openssh-clients"]), yum: answered(["openssh-clients"]),
-      apk: answered(["openssh-client-default"]), brew: answered(["openssh"]),
+      apk: answered(["openssh-client-default"]), pacman: answered(["openssh"]), brew: answered(["openssh"]),
     }, { installRecommends: false });
     if (!plan.supported) throw new Error(plan.reason);
     log("Installing SSH client tools for the transfer…");

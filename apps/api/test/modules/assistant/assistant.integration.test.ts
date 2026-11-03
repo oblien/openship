@@ -11,6 +11,8 @@ const fixture = vi.hoisted(() => {
   return {
     forward: vi.fn(),
     factory: vi.fn(),
+    setup: vi.fn(async (_provider: string) => {}),
+    managedHosts: new Set<string>(),
     script: undefined as undefined | ((run: any, options: any) => AsyncGenerator<any>),
     runs: [] as any[],
     history: [] as any[],
@@ -19,6 +21,8 @@ const fixture = vi.hoisted(() => {
     botChats: new Map<string, string>(),
     botVersion: 9,
     nativeConfigured: true,
+    unavailableProviders: new Set<string>(),
+    failingProviders: new Set<string>(),
     imageInput: true,
     customCapability: true,
     startGate: undefined as Promise<void> | undefined,
@@ -39,6 +43,8 @@ import {
 } from "../../../src/modules/assistant/automation.service";
 import { captureAssistantAutomationEvent } from "@repo/platform/engine/modules/assistant/automation-events";
 import { resolveExecutionAuthority } from "@repo/platform/engine/lib/execution-authority";
+import * as cloudQuota from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { AppError } from "@repo/core";
 import type { AssistantAutomationConfig } from "@repo/contracts";
 import { env } from "@repo/platform/engine/config/env";
 import { auth } from "@repo/platform/engine/lib/auth";
@@ -81,13 +87,17 @@ const app = new Hono()
 beforeAll(() => {
   fixture.forward.mockImplementation((request) => app.fetch(request));
   resetMcpToolCache();
-  fixture.factory.mockImplementation(async () => {
+  fixture.factory.mockImplementation(async (connection) => {
     const custom: Record<string, any> = {};
     return {
       healthy: () => true,
       close: async () => {},
       workspace: async () => "/tmp/assistant-test-no-exec",
-      probe: async () => ({ available: true, version: "test" }),
+      ...(fixture.managedHosts.has(connection.serverId) ? { setup: fixture.setup } : {}),
+      probe: async (provider: string) => {
+        if (fixture.failingProviders.has(provider)) throw new Error("private-provider-error");
+        return { available: !fixture.unavailableProviders.has(provider), version: "test" };
+      },
       mindwire: {
         health: async () => ({ botsVersion: fixture.botVersion }),
         workspace: {
@@ -418,6 +428,114 @@ describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
     expect(await repos.assistant.connection(owner)).toBeUndefined();
   });
 
+  it("uses an existing paid Cloud instance without SSH and installs only through explicit session setup", async () => {
+    const owner = await actor(),
+      other = await actor();
+    const paid = await repos.cloudWorkspace.create({
+      organizationId: owner.organizationId,
+      name: "Production Cloud",
+    });
+    await repos.cloudWorkspace.create({
+      organizationId: owner.organizationId,
+      name: "Unpaid Cloud",
+    });
+    const foreign = await repos.cloudWorkspace.create({
+      organizationId: other.organizationId,
+      name: "Foreign Cloud",
+    });
+    await db
+      .update(schema.cloudWorkspace)
+      .set({ planTierId: "pro", subscriptionStatus: "active" })
+      .where(eq(schema.cloudWorkspace.id, paid.id));
+    await db
+      .update(schema.cloudWorkspace)
+      .set({ planTierId: "pro", subscriptionStatus: "active" })
+      .where(eq(schema.cloudWorkspace.id, foreign.id));
+    const server = (await repos.server.findByWorkspace(paid.id, owner.organizationId))!;
+    const quota = vi.spyOn(cloudQuota, "assertCloudCanSpend").mockResolvedValue(undefined);
+    const previous = { cloud: env.CLOUD_MODE, advertised: env.OPENSHIP_ADVERTISED_ORIGIN };
+    fixture.managedHosts.add(server.id);
+    fixture.setup.mockClear();
+    env.CLOUD_MODE = true;
+    env.OPENSHIP_ADVERTISED_ORIGIN = "https://assistant-cloud.example.test";
+    try {
+      expect(server.sshHost).toBeNull();
+      expect(await data(owner, "GET", "/status")).toMatchObject({
+        cloud: true,
+        enabled: false,
+        targets: [{ id: server.id, kind: "cloud", name: "Production Cloud" }],
+      });
+      expect((await request(owner, "POST", "/providers/codex/setup")).status).toBe(403);
+      // No target ID is necessary when there is exactly one paid runtime.
+      await connect(owner);
+      expect(await repos.assistant.connection(owner)).toMatchObject({ serverId: server.id });
+      expect(await data(owner, "GET", "/status")).toMatchObject({
+        enabled: true,
+        target: { kind: "cloud", id: server.id },
+      });
+      fixture.unavailableProviders.add("codex");
+      await data(owner, "GET", "/providers");
+      expect(fixture.setup).not.toHaveBeenCalled();
+      expect(await data(owner, "POST", "/providers/codex/setup")).toEqual({ accepted: true });
+      expect(fixture.setup).toHaveBeenCalledExactlyOnceWith("codex");
+      expect(fixture.factory.mock.calls.at(-1)?.[0]).toMatchObject({
+        userId: owner.userId,
+        organizationId: owner.organizationId,
+        serverId: server.id,
+      });
+      expect(quota).toHaveBeenCalledWith(owner.organizationId, paid.id);
+      expect(
+        quota.mock.calls.every(([org, id]) => org === owner.organizationId && id === paid.id),
+      ).toBe(true);
+      expect((await request(other, "POST", "/providers/codex/setup")).status).toBe(403);
+      fixture.unavailableProviders.delete("codex");
+      await data(owner, "POST", "/providers/codex/setup");
+      expect(fixture.setup).toHaveBeenCalledTimes(1);
+      // A cached paid label is never permission to install after coverage is lost.
+      quota.mockRejectedValue(new AppError("Paid coverage expired", 402, "CLOUD_BILLING_BLOCKED"));
+      fixture.unavailableProviders.add("codex");
+      const blocked = await request(owner, "POST", "/providers/codex/setup");
+      expect(blocked.status).toBe(402);
+      expect(fixture.setup).toHaveBeenCalledTimes(1);
+    } finally {
+      quota.mockRestore();
+      fixture.managedHosts.delete(server.id);
+      fixture.unavailableProviders.delete("codex");
+      env.CLOUD_MODE = previous.cloud;
+      env.OPENSHIP_ADVERTISED_ORIGIN = previous.advertised;
+    }
+  });
+
+  it("requires a selection with several paid Cloud instances and never moves an existing local connection", async () => {
+    const owner = await actor();
+    await connect(owner);
+    const local = await repos.assistant.connection(owner);
+    for (const name of ["Production", "Staging"]) {
+      const workspace = await repos.cloudWorkspace.create({
+        organizationId: owner.organizationId,
+        name,
+      });
+      await db
+        .update(schema.cloudWorkspace)
+        .set({ planTierId: "pro", subscriptionStatus: "active" })
+        .where(eq(schema.cloudWorkspace.id, workspace.id));
+    }
+    const cloud = env.CLOUD_MODE,
+      before = fixture.factory.mock.calls.length;
+    env.CLOUD_MODE = true;
+    try {
+      const status = await data(owner, "GET", "/status");
+      expect(status).toMatchObject({ enabled: false, target: null });
+      expect(status.targets).toHaveLength(2);
+      expect((await request(owner, "POST", "/enable", {})).status).toBe(403);
+      expect((await request(owner, "GET", "/providers")).status).toBe(403);
+      expect(await repos.assistant.connection(owner)).toEqual(local);
+      expect(fixture.factory.mock.calls).toHaveLength(before);
+    } finally {
+      env.CLOUD_MODE = cloud;
+    }
+  });
+
   it("keeps an active turn alive across API replicas and accepts a stop from another replica", async () => {
     const owner = await actor();
     await connect(owner);
@@ -635,6 +753,16 @@ describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
         /\/assistant\/(providers|enable|disable|custom-api|conversations)/.test(t.path),
       ),
     ).toBe(false);
+    await connect(owner);
+    expect((await request(owner, "POST", "/providers/codex/setup")).status).toBe(400);
+    expect(
+      (
+        await app.request(`${origin}/api/assistant/providers/codex/setup`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${pat.token}` },
+        })
+      ).status,
+    ).toBe(403);
   });
   it("uses actual consent, rejects state replay, and forwards only the approved MCP tools", async () => {
     const owner = await actor(),
@@ -1078,6 +1206,36 @@ describe("Private custom API connections", () => {
         baseUrl: "https://model.example/v1",
       });
       expect(JSON.stringify(providers)).not.toContain(secret);
+      const modelCatalog = await data(owner, "GET", "/agents/models");
+      expect(modelCatalog.providers.find((p: any) => p.id === "codex")).toMatchObject({
+        ready: true,
+        defaultModel: connection.model,
+        models: [{ id: connection.model, label: "provider/model", default: true }],
+      });
+      for (const privateValue of [
+        secret,
+        "https://model.example/v1",
+        "baseUrl",
+        "hasKey",
+        "authStatus",
+      ])
+        expect(JSON.stringify(modelCatalog)).not.toContain(privateValue);
+      expect(
+        (await data(stranger, "GET", "/agents/models")).providers.flatMap((p: any) => p.models),
+      ).toEqual([]);
+      const project = await seedProject(owner.organizationId);
+      expect(
+        await data(owner, "POST", "/agents", {
+          requestId: randomUUID(),
+          name: "Custom investigator",
+          purpose: "Read app health",
+          instructions: "Inspect only",
+          provider: "codex",
+          model: connection.model,
+          readOnly: true,
+          grants: [{ resourceType: "project", resourceId: project.id, permissions: ["read"] }],
+        }),
+      ).toMatchObject({ provider: "codex", model: connection.model });
       expect(
         (await data(stranger, "GET", "/providers")).flatMap((p: any) => p.customProviders ?? []),
       ).toHaveLength(0);
@@ -2323,6 +2481,102 @@ describe("Scoped agents: shared API, MCP, native bots and task conversations", (
       },
     );
   }
+  it("discovers models through MCP and recovers an invalid selection with the native default", async () => {
+    const test = await specialist();
+    const discovery = await tool(test.owner, "GET", "/api/assistant/agents/models", {});
+    expect(discovery.status).toBe(200);
+    const connection = (discovery.data as any).data.providers.find((p: any) => p.id === "codex");
+    expect(connection).toEqual({
+      id: "codex",
+      name: "Codex",
+      available: true,
+      ready: true,
+      defaultModel: "",
+      models: [
+        { id: "test-model-a", label: "Model A", default: false },
+        { id: "test-model-b", label: "Model B", default: false },
+      ],
+    });
+    const input = { ...test.input, requestId: randomUUID(), model: "invented-model" };
+    const before = fixture.bots.size;
+    const invalid = await tool(test.owner, "POST", "/api/assistant/agents", { body: input });
+    expect(invalid.status).toBe(400);
+    expect(invalid.data).toMatchObject({
+      code: "ASSISTANT_MODEL_UNAVAILABLE",
+      modelsPath: "/api/assistant/agents/models",
+      connection,
+    });
+    expect(fixture.bots.size).toBe(before);
+    const recovered = await tool(test.owner, "POST", "/api/assistant/agents", {
+      body: { ...input, model: connection.defaultModel },
+    });
+    expect(recovered.status, JSON.stringify(recovered.data)).toBe(200);
+    expect((recovered.data as any).data).toMatchObject({ provider: "codex", model: "" });
+    const retry = await tool(test.owner, "POST", "/api/assistant/agents", {
+      body: { ...input, model: "" },
+    });
+    expect((retry.data as any).data.id).toBe((recovered.data as any).data.id);
+    expect(fixture.bots.size).toBe(before + 1);
+  });
+  it("keeps a working provider discoverable when another is missing or fails", async () => {
+    const test = await specialist();
+    const before = fixture.bots.size;
+    fixture.unavailableProviders.add("claude");
+    try {
+      const catalog = await tool(test.owner, "GET", "/api/assistant/agents/models", {});
+      expect(catalog.status).toBe(200);
+      expect((catalog.data as any).data.providers).toEqual([
+        expect.objectContaining({ id: "codex", ready: true, defaultModel: "" }),
+        expect.objectContaining({
+          id: "claude",
+          available: false,
+          ready: false,
+          defaultModel: null,
+          models: [],
+        }),
+      ]);
+      const missing = await tool(test.owner, "POST", "/api/assistant/agents", {
+        body: { ...test.input, requestId: randomUUID(), provider: "claude", model: "" },
+      });
+      expect(missing.status).toBe(409);
+      expect(missing.data).toMatchObject({ code: "ASSISTANT_PROVIDER_UNAVAILABLE" });
+      fixture.failingProviders.add("claude");
+      const partial = await tool(test.owner, "GET", "/api/assistant/agents/models", {});
+      expect(partial.status).toBe(200);
+      expect((partial.data as any).data.providers[0]).toMatchObject({ id: "codex", ready: true });
+      expect((partial.data as any).data.providers[1].issue).toContain("Could not read");
+      expect(JSON.stringify(partial.data)).not.toContain("private-provider-error");
+      expect(fixture.bots.size).toBe(before);
+    } finally {
+      fixture.unavailableProviders.clear();
+      fixture.failingProviders.clear();
+    }
+  });
+  it("reports sign-in separately and requires assistant consent before model discovery", async () => {
+    const disconnected = await actor();
+    const denied = await request(disconnected, "GET", "/agents/models");
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: "ASSISTANT_DISABLED" });
+    const test = await specialist();
+    const before = fixture.bots.size;
+    fixture.nativeConfigured = false;
+    try {
+      const catalog = await data(test.owner, "GET", "/agents/models");
+      expect(
+        catalog.providers.every(
+          (p: any) => !p.ready && p.defaultModel === null && !p.models.length,
+        ),
+      ).toBe(true);
+      const denied = await tool(test.owner, "POST", "/api/assistant/agents", {
+        body: { ...test.input, requestId: randomUUID(), model: "" },
+      });
+      expect(denied.status).toBe(409);
+      expect(denied.data).toMatchObject({ code: "ASSISTANT_SIGN_IN" });
+      expect(fixture.bots.size).toBe(before);
+    } finally {
+      fixture.nativeConfigured = true;
+    }
+  });
   it("creates through MCP, reuses the API and never exposes private connection controls", async () => {
     const test = await specialist();
     const result = await tool(test.owner, "POST", "/api/assistant/agents", { body: test.input });

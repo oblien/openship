@@ -80,6 +80,9 @@ r.post("/disable", { tag: "settings:write" }, (c) =>
 r.get("/providers", { tag: "settings:read" }, (c) =>
   result(c, async () => assistant.providers(ctx(c))),
 );
+r.post("/providers/:provider/setup", { tag: "settings:write" }, (c) =>
+  result(c, async () => assistant.setupProvider(ctx(c), provider(c))),
+);
 r.post("/custom-api", { tag: "settings:write", body: AssistantInputs.customApi }, async (c) =>
   result(c, async () => assistant.customApi(ctx(c), await c.req.json())),
 );

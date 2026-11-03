@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 /**
  * The single, professional surface for updates + advisories, for BOTH the
  * desktop app and self-hosted servers:
- *   - a severity-colored advisory banner (critical always shows),
+ *   - a severity-colored advisory banner with saved runtime-notice visibility,
  *   - a subtle "update available" banner,
  *   - a one-time "what's new" card after an update lands,
  *   - a changelog details modal.
@@ -14,13 +14,15 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  */
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { changelogUrl, type AdvisorySeverity } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import { useUpdates } from "./useUpdates";
 import { RuntimeSecurityDialog } from "./RuntimeSecurityDialog";
+import { useSecurityBannerPreference } from "./useSecurityBannerPreference";
+import DropdownMenu from "@/components/ui/DropdownMenu";
 
 const SEVERITY = {
   critical: {
@@ -75,11 +77,18 @@ export function UpdateCenter() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const securityBanners = useSecurityBannerPreference();
   useEffect(() => setSecurityOpen(false), [pathname]);
 
-  const advisory = state?.advisories[0]; // most severe first
+  const advisory = state?.advisories.find(
+    (item) =>
+      securityBanners.enabled || !runtimeAdvisories?.some((runtime) => runtime.id === item.id),
+  );
   const runtimeAdvisory = runtimeAdvisories?.find((item) => item.id === advisory?.id);
   const affectedProjects = runtimeAdvisory?.projects ?? [];
+  const runtimeSeverity = affectedProjects[0]?.findings[0]?.severity;
+  const severityLabels = t.projectSettings.securityAdvisories.severity;
   // An in-flight download/install owns the top surface — suppress the advisory
   // banner so we never stack it next to its own progress bar.
   const updating = desktop && updatePhase !== "idle";
@@ -160,7 +169,9 @@ export function UpdateCenter() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className={`text-[11px] font-semibold uppercase tracking-wide ${s.fg}`}>
-                      {w.severity[advisory.severity as AdvisorySeverity]}
+                      {runtimeSeverity && Object.hasOwn(severityLabels, runtimeSeverity)
+                        ? severityLabels[runtimeSeverity as keyof typeof severityLabels]
+                        : w.severity[advisory.severity as AdvisorySeverity]}
                     </span>
                     <span className="text-[14px] font-semibold text-foreground">
                       {advisory.title}
@@ -245,14 +256,35 @@ export function UpdateCenter() {
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => dismissAdvisory(advisory.id)}
-                  aria-label={w.dismiss}
-                  className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-                >
-                  <UiIcon name="close" className="size-4" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {runtimeAdvisory && (
+                    <DropdownMenu
+                      trigger={<UiIcon name="settings" className="size-4" />}
+                      triggerLabel={t.projectSettings.securityAdvisories.bannerSettings}
+                      triggerClassName="rounded-lg p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+                      actions={[
+                        {
+                          id: "hide-security-banners",
+                          label: t.projectSettings.securityAdvisories.hideBanners,
+                          onClick: () => securityBanners.setEnabled(false),
+                        },
+                        {
+                          id: "security-banner-settings",
+                          label: t.projectSettings.securityAdvisories.bannerSettings,
+                          onClick: () => router.push("/settings?tab=notifications"),
+                        },
+                      ]}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => dismissAdvisory(advisory.id)}
+                    aria-label={w.dismiss}
+                    className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                  >
+                    <UiIcon name="close" className="size-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );

@@ -33,6 +33,8 @@ export const assistantApi = {
       .data,
   provider: async (id: AssistantProvider) =>
     (await api.get<{ data: AssistantProviderInfo }>(provider(id), { timeout: 60000 })).data,
+  setupProvider: (id: AssistantProvider) =>
+    api.post(`${provider(id)}/setup`, {}, { timeout: 60000 }),
   authBegin: async (id: AssistantProvider, method: string) =>
     (await api.post<{ data: AuthState }>(`${provider(id)}/auth`, { method }, { timeout: 60000 }))
       .data,

@@ -450,6 +450,7 @@ export function createAssistantRuntime(
       installedVersion: probe.version,
       available: probe.available,
       issue: probe.issue,
+      setup: probe.setup,
       authStatus: { configured: false },
       authMethods: [],
       models: [],
@@ -509,7 +510,14 @@ export function createAssistantRuntime(
       requireAssistantSession(ctx);
       const targets = await assistantTargets(ctx);
       const connection = await repos.assistant.connection(ctx);
-      const base = { available: true, enabled: false, clientId: null, targets, target: null };
+      const base = {
+        available: true,
+        cloud: env.CLOUD_MODE,
+        enabled: false,
+        clientId: null,
+        targets,
+        target: null,
+      };
       if (!connection) return base;
       try {
         await assistantCredential(ctx);
@@ -546,6 +554,20 @@ export function createAssistantRuntime(
     provider,
     async providers(ctx: RequestContext) {
       return Promise.all(PROVIDERS.map((id) => provider(ctx, id)));
+    },
+    async setupProvider(ctx: RequestContext, id: AssistantProvider) {
+      requireAssistantSession(ctx);
+      return withAssistantLock(`setup:${ownerKey(ctx)}:${id}`, async () => {
+        const native = await client(ctx);
+        if (!native.setup)
+          throw assistantError(
+            "Automatic agent setup is available on managed Cloud instances.",
+            400,
+            "ASSISTANT_SETUP_UNAVAILABLE",
+          );
+        if (!(await native.probe(id)).available) await native.setup(id);
+        return { accepted: true };
+      });
     },
     async authBegin(ctx: RequestContext, id: AssistantProvider, methodId: string) {
       return withAssistantLock(`auth:${ownerKey(ctx)}:${id}`, async () => {

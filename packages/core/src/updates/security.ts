@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { valid, validRange, satisfies } from "semver";
+import { valid, validRange, satisfies, intersects, major } from "semver";
 import { INSPECTED_RUNTIMES, type InspectedRuntime } from "../stacks";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -101,6 +101,7 @@ export interface SecurityMatch {
   evidence: string;
   confidence: "confirmed" | "possible";
   image: SecurityImageEvidence | null;
+  runtimeUpgradeRequired?: boolean;
 }
 
 /** Docker Hub aliases all describe the same repository. Tags are never versions. */
@@ -166,6 +167,9 @@ export function matchSecurityAdvisories(
               image: null,
               confidence: "confirmed",
               evidence: `${runtime.runtime} ${runtime.version}`,
+              ...(target.fixed && !intersects(`${major(runtime.version)}.x`, target.fixed)
+                ? { runtimeUpgradeRequired: true }
+                : {}),
             });
         }
     }

@@ -11,6 +11,13 @@ They are UI evidence, not proof that a live application was scanned or patched.
 [Mobile banner](advisory-found-mobile.png) · [Review dialog](advisory-review.png) ·
 [Mobile review](advisory-review-mobile.png) · [Browser checks](browser-checks.json)
 
+The additional Cloud fixtures show [a required Node 20 major upgrade](runtime-upgrade-required.png)
+and [the saved banner preference in Settings](banner-settings.png). They use the same
+components with Cloud deployment metadata and an observed `node 20.20.2` finding marked
+`runtimeUpgradeRequired`. [Additional browser checks](banner-preference-browser-checks.json)
+cover the configuration action, mobile overflow, hiding critical banners, reload
+persistence and restoring visibility without deployment or policy writes.
+
 Run the dashboard development server, then:
 
 ```sh

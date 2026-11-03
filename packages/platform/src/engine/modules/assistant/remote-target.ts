@@ -19,6 +19,7 @@ import {
 } from "./harness-policy";
 import { CODEX_GUARD } from "./codex-guard";
 import type { AssistantNativeClient, MindwireHostConnection } from "./native-target";
+import { managedHarness } from "./managed-harness";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 export const assistantProfileKey = (
@@ -42,7 +43,7 @@ async function writeAtomic(executor: CommandExecutor, path: string, value: strin
 /** Customer-host transport only. Provisioning uses the same owned execution boundary as deployments. */
 export async function createRemoteAssistantClient(
   connection: MindwireHostConnection,
-  purpose: "assistant" | "chat-apps" = "assistant",
+  purpose: "assistant" | "chat-apps" | "assistant-setup" = "assistant",
 ): Promise<AssistantNativeClient> {
   const server = await revalidateAssistantTarget(connection, connection.serverId);
   if (!server) throw fail("Choose a server for this assistant.");
@@ -50,6 +51,7 @@ export async function createRemoteAssistantClient(
   let closed = false;
   let failed = false;
   let handle: TargetHandle | undefined;
+  let tools: ReturnType<typeof managedHarness> | undefined;
   const assertAccess = () => revalidateAssistantTarget(connection, server.id);
   try {
     const [system, home, searchPath] = await access.run(async (executor) =>
@@ -67,7 +69,7 @@ export async function createRemoteAssistantClient(
     const root = posix.join(
       home.trim(),
       ".openship",
-      purpose === "assistant" ? "assistants" : "chat-apps",
+      purpose === "assistant" ? "assistants" : purpose,
       assistantProfileKey(connection),
     );
     const temporary = `/tmp/openship-mw-${purpose}-${assistantProfileKey(connection).slice(0, 20)}`;
@@ -84,6 +86,18 @@ export async function createRemoteAssistantClient(
       TMP: temporary,
       TEMP: temporary,
     };
+    if (server.workspaceId && purpose === "assistant") {
+      tools = managedHarness({
+        directory: posix.join(
+          home.trim(),
+          ".openship",
+          "assistant-setup",
+          assistantProfileKey(connection),
+        ),
+        executor: access.executor,
+        connect: () => createRemoteAssistantClient(connection, "assistant-setup"),
+      });
+    }
     // These folders contain only this member's agent sign-in and chats. Never import server-admin auth.
     await access.run((executor) =>
       executor.exec(
@@ -104,6 +118,19 @@ export async function createRemoteAssistantClient(
         `assistant:probe:${server!.id}:${assistantProfileKey(connection)}:${provider}`,
       ).run(async () => {
         const executor = access.executor;
+        const setup = await tools?.state(provider);
+        if (setup)
+          return {
+            provider,
+            available: false,
+            version: "",
+            flags: [],
+            setup,
+            issue:
+              setup.state === "installing"
+                ? `Preparing ${HARNESS[provider].name} in your Cloud instance…`
+                : `Could not finish setting up ${HARNESS[provider].name}. Retry setup.`,
+          };
         const find = async (binary: string) => {
           try {
             const value = (
@@ -121,7 +148,7 @@ export async function createRemoteAssistantClient(
             return undefined;
           }
         };
-        const path = await find(HARNESS[provider].binary);
+        const path = (await tools?.executable(provider)) ?? (await find(HARNESS[provider].binary));
         const node = provider === "codex" ? await find("node") : undefined;
         const result = await inspectHarness(provider, path, async (args) => {
           const output = await access.run((ex) =>
@@ -137,6 +164,10 @@ export async function createRemoteAssistantClient(
           result.available = false;
           result.issue =
             "Install a supported Node.js runtime on this server to use the scoped Codex connection.";
+        }
+        if (!result.available && tools) {
+          result.setup = { state: "required" };
+          result.issue = `Set up ${HARNESS[provider].name} in your Cloud instance, then connect your account.`;
         }
         await writeAtomic(executor, `${root}/bin/codex-guard.mjs`, CODEX_GUARD, 0o600);
         await writeAtomic(
@@ -364,6 +395,15 @@ export async function createRemoteAssistantClient(
     return {
       mindwire,
       probe,
+      ...(tools
+        ? {
+            setup: async (provider: AssistantProvider) => {
+              await assertAccess();
+              await tools!.start(provider);
+              probes.delete(provider);
+            },
+          }
+        : {}),
       healthy: () => !closed && !failed,
       async workspace(id) {
         await assertAccess();
@@ -375,7 +415,11 @@ export async function createRemoteAssistantClient(
         if (closed) return;
         closed = true;
         try {
-          await mindwire.close();
+          try {
+            await tools?.close();
+          } finally {
+            await mindwire.close();
+          }
         } finally {
           await handle?.stop();
           await access.release();

@@ -6,19 +6,22 @@ description: Opt-in assistant controls, with product operations authorized throu
 These endpoints serve Desktop, self-hosted OpenShip, and Cloud. Private connection controls require the signed-in user's session. Personal access
 tokens and OAuth bearers cannot enable the assistant or manage native sign-ins.
 Scoped agent and automation operations are available through the normal authenticated
-API and MCP, with the same resource checks as the dashboard. Cloud runs Mindwire on an explicitly selected customer
-server. It never falls back to the shared control-plane host.
+API and MCP, with the same resource checks as the dashboard. Cloud runs Mindwire
+on the customer's paid Cloud instance or selected connected server. It never
+falls back to the shared control-plane host.
 
 The assistant is off by default for each user and workspace. The dashboard's
 [Assistant guide](/docs/dashboard/assistant) describes setup and usage.
 
 ## Authorization
 
-`POST /api/assistant/enable` returns an `authorizationUrl` for the ordinary MCP
-OAuth authorization endpoint. Pass `targetId` from the status response's `targets`
-list (`local` for Desktop/self-hosted, an authorized server ID for Cloud).
-The browser follows the URL to the existing permission
-dialog. Single-use state, PKCE and the original user/workspace binding are checked
+`POST /api/assistant/enable` prepares the ordinary MCP OAuth consent and returns
+`clientId`, `consentCode`, `state` and `organizationId` for the embedded permission
+dialog. Pass `targetId` from the status response's `targets` list (`kind: "local"`
+for Desktop/self-hosted, `"cloud"` for a paid managed instance, or `"server"` for
+an authorized connected host). Omitting it in Cloud selects the sole eligible paid
+instance; multiple instances require a selection. This default does not move an
+existing connection to another host. Single-use state, PKCE and the original user/workspace binding are checked
 at the callback before the assistant is enabled. Host ownership and administration
 access are checked again at use time. Authorization handshakes are sealed and
 short-lived in the database so callbacks can land on any API replica. A cancelled or expired flow does
@@ -30,6 +33,22 @@ resource ownership and audit behavior remain the same as other MCP clients.
 Private connection and general chat controls are excluded from the MCP catalog.
 Specialist and automation domain operations are exposed through their normal routes.
 
+## Managed Cloud setup
+
+After consent, `GET /api/assistant/providers` reports missing native tools with
+`setup.state: "required"` on a managed Cloud instance. An explicit
+`POST /api/assistant/providers/:provider/setup` starts Mindwire's installation job
+for `codex` or `claude` and returns `{ "data": { "accepted": true } }`. Poll the
+provider to see `"installing"`, a retryable `"failed"`, or `available: true` and
+the normal sign-in methods once setup finishes. Reading status never installs a CLI.
+
+Setup requires a signed-in session, current Assistant consent, administration
+access to the exact host, and current paid Cloud coverage. It reuses that instance;
+it does not purchase or provision another one. Installation has a separate private
+profile, while execution continues through OpenShip's scoped harness wrappers.
+This endpoint is excluded from MCP and rejects local or SSH hosts with
+`ASSISTANT_SETUP_UNAVAILABLE`.
+
 ## Scoped agents and tasks
 
 `GET /api/assistant/agents` lists the user's specialists in the current workspace
@@ -38,6 +57,21 @@ and selected host. `POST` creates one from `name`, optional `icon`, `purpose`, `
 `PUT /api/assistant/agents/:id` requires the current `revision`. Grants are bounded
 by both the caller's current authority and Assistant consent. Native provider
 credentials and temporary task tokens are never returned.
+
+Before choosing a provider or model, call `GET /api/assistant/agents/models`
+(`settings:read`, also exposed through MCP). It reports each connection's
+availability, readiness, `defaultModel` and usable model IDs on the selected host.
+An empty `defaultModel` selects the connected native default; `null` means that
+connection is not ready. Custom API models are scoped to this user and workspace.
+The response excludes credentials, sign-in details, endpoint URLs and settings.
+An unavailable provider does not hide other working connections.
+
+Use a listed model ID or `model: ""` for the native default. Invalid selections
+return `ASSISTANT_MODEL_UNAVAILABLE` with the safe connection catalog so callers
+can correct the request. `ASSISTANT_PROVIDER_UNAVAILABLE` means the provider is
+unavailable on the selected host; `ASSISTANT_SIGN_IN` means the selected connection
+needs sign-in.
+These checks happen before a native bot or saved agent is created.
 
 `icon` is a presentation ID for bundled flat characters. The default `bot` selects
 a consistent character from the agent's stable ID. Explicit choices are `mint`,
@@ -190,6 +224,7 @@ in that conversation; only selected `channelIds` receive additional status notif
 | Complete consent after validating PKCE, state, account and workspace. | `GET /api/assistant/callback`<br />`Handler authentication` · Desktop, self-hosted, Cloud |
 | Revoke the assistant MCP connection and stop its active turns. | `POST /api/assistant/disable`<br />`settings:write` · Desktop, self-hosted, Cloud |
 | Read installed agents, connection status and model choices after opt-in. | `GET /api/assistant/providers`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Prepare a native agent in the user's existing paid Cloud instance after consent. | `POST /api/assistant/providers/:provider/setup`<br />`settings:write` · Cloud |
 | Read one agent and its supported account settings. | `GET /api/assistant/providers/:provider`<br />`settings:read` · Desktop, self-hosted, Cloud |
 | Save allowed agent settings, excluding tool and permission overrides. | `PATCH /api/assistant/providers/:provider`<br />`settings:write` · Desktop, self-hosted, Cloud |
 | Begin a sign-in method offered by the installed agent. | `POST /api/assistant/providers/:provider/auth`<br />`settings:write` · Desktop, self-hosted, Cloud |
@@ -214,6 +249,7 @@ in that conversation; only selected `channelIds` receive additional status notif
 | Read available app recovery and repository permissions within current Assistant consent. | `GET /api/assistant/automation-permissions/:projectId`<br />`settings:read` · Desktop, self-hosted, Cloud |
 | Read one owned automation run and its result link. | `GET /api/assistant/automation-runs/:id`<br />`settings:read` · Desktop, self-hosted, Cloud |
 | Read the exact persisted proposal for review under current permissions. | `GET /api/assistant/automation-runs/:id/proposal`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Discover ready AI connections and exact model IDs without exposing private settings. | `GET /api/assistant/agents/models`<br />`settings:read` · Desktop, self-hosted, Cloud |
 | List your specialists and task conversations on the selected host. | `GET /api/assistant/agents`<br />`settings:read` · Desktop, self-hosted, Cloud |
 | Create a specialist bounded by current caller and Assistant resource permissions. | `POST /api/assistant/agents`<br />`settings:write` · Desktop, self-hosted, Cloud |
 | Inspect a specialist and its saved instructions, scope and task history. | `GET /api/assistant/agents/:id`<br />`settings:read` · Desktop, self-hosted, Cloud |

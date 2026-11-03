@@ -89,6 +89,17 @@ describe("classifyDistro", () => {
     expect(it).toEqual({ distro: "unknown", family: "rhel" });
   });
 
+  it("names Arch and the derivatives whose packages match it", () => {
+    for (const id of ["arch", "archarm", "cachyos", "manjaro", "endeavouros", "garuda", "artix"]) {
+      expect(classifyDistro(id), id).toEqual({ distro: "arch", family: "arch" });
+    }
+    // An unlisted rebuild still lands in the family via ID_LIKE, and stays unnamed.
+    expect(classifyDistro("somearchrebuild", "arch")).toEqual({
+      distro: "unknown",
+      family: "arch",
+    });
+  });
+
   it("takes the FIRST ID_LIKE token that maps, not the first token", () => {
     // Amazon Linux 2 ships `ID_LIKE="centos rhel fedora"`; a hypothetical distro can lead
     // with a token we've never heard of. Bailing on the first unmapped token would put a
@@ -162,6 +173,9 @@ describe("assessHostSupport", () => {
         unsupportedReason: null,
       });
     }
+    expect(
+      assessHostSupport({ ...ok, distroFamily: "arch", distroId: "cachyos", packageManager: "pacman" }),
+    ).toEqual({ supported: true, unsupportedReason: null });
   });
 
   it("supports macOS without asking about a distro", () => {
@@ -237,14 +251,24 @@ describe("assessHostSupport", () => {
     expect(silent.unsupportedReason).not.toContain("FreeBSD");
   });
 
-  it("refuses suse and arch by name, with the package manager it lacks", () => {
+  it("refuses openSUSE by name, naming zypper", () => {
     const suse = assessHostSupport({ ...ok, distroFamily: "suse", distroId: "opensuse-leap" });
     expect(suse.supported).toBe(false);
     expect(suse.unsupportedReason).toContain("zypper");
     expect(suse.unsupportedReason).toContain("opensuse-leap");
+    expect(suse.unsupportedReason).toContain("Arch");
+  });
 
-    const arch = assessHostSupport({ ...ok, distroFamily: "arch", distroId: "arch" });
-    expect(arch.unsupportedReason).toContain("pacman");
+  it("refuses an Arch host only when pacman itself is missing", () => {
+    const missing = assessHostSupport({
+      ...ok,
+      distroFamily: "arch",
+      distroId: "cachyos",
+      packageManager: "none",
+    });
+    expect(missing.supported).toBe(false);
+    expect(missing.unsupportedReason).toContain("pacman");
+    expect(missing.unsupportedReason).toContain("cachyos");
   });
 
   it("quotes the ID back for a distro it could not place at all", () => {
@@ -311,7 +335,8 @@ describe("assessHostSupport", () => {
       { ...ok, os: "unknown" },
       { ...ok, arch: "unknown" },
       { ...ok, distroFamily: "suse" },
-      { ...ok, distroFamily: "arch" },
+      { ...ok, distroFamily: "arch", packageManager: "pacman" },
+      { ...ok, distroFamily: "arch", packageManager: "none" },
       { ...ok, distroFamily: "unknown" },
       { ...ok, packageManager: "none" },
     ];
