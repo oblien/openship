@@ -145,11 +145,11 @@ describe("service sync — compose config JSON mapping", () => {
     const errors: string[] = [];
     const svc = mapComposeService(
       "qbit",
-      { image: "linuxserver/qbittorrent", network_mode: "service:gluetun", pid: "container:abc" },
+      { image: "linuxserver/qbittorrent", network_mode: "service:gluetun", pid: "service:gluetun" },
       "/repo",
       errors,
     );
-    expect(svc.advanced).toEqual({ networkMode: "service:gluetun", pidMode: "container:abc" });
+    expect(svc.advanced).toEqual({ networkMode: "service:gluetun", pidMode: "service:gluetun" });
     expect(errors).toEqual([]);
   });
 
