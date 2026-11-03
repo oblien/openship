@@ -1562,6 +1562,13 @@
       "when": 1793714400002,
       "tag": "0222_host_security_advisories",
       "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1793725200000,
+      "tag": "0223_cloud_customer_email",
+      "breakpoints": true
     }
   ]
 }

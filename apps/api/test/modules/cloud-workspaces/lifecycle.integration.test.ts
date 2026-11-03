@@ -690,7 +690,8 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
       event: "payment.succeeded",
       namespace: workspace.namespace,
       timestamp: new Date().toISOString(),
-      data: {},
+      data: { namespace: workspace.namespace, paymentId: "in_workspace_email_test", kind: "subscription",
+        amount: { unitAmount: 2400, currency: "usd" }, metadata: { openship_organization: owner.orgId } },
     });
     const signature = createHmac("sha256", "workspace-test-webhook-secret")
       .update(body)
@@ -707,6 +708,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
       });
     expect((await deliver("bad-signature")).status).toBe(401);
     expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(await db.select().from(schema.cloudCustomerEmail).where(eq(schema.cloudCustomerEmail.organizationId, owner.orgId))).toEqual([]);
     h.billing.getCheckout.mockImplementation(async () => ({
       checkout: {
         id: "checkout-complete",
@@ -725,6 +727,8 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     ]);
     expect((result[0] as Response).status).toBe(200);
     expect((result[1] as Response).status).toBe(200);
+    expect((await db.select().from(schema.cloudCustomerEmail).where(eq(schema.cloudCustomerEmail.organizationId, owner.orgId)))
+      .map(mail => mail.kind).sort()).toEqual(["invoice", "purchase"]);
     expect(result[2]).toMatchObject({ fulfilled: true, creditsGranted: 0 });
     await drainBackgroundWork();
     expect(h.client.workspaces.create).toHaveBeenCalledTimes(1);

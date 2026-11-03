@@ -39,6 +39,8 @@ export type SendMailOptions = {
   replyTo?: string;
   /** Stable identity for durable deliveries retried after a process restart. */
   messageId?: string;
+  /** Internal SaaS-only identities; never forwarded through the Cloud mail relay. */
+  customerSender?: "support" | "billing";
   /**
    * Preferred transport source. Default "auto" — uses the platform
    * mailbox when provisioned, otherwise falls back to env-configured
@@ -458,6 +460,7 @@ async function getTransportChain(
  * throw here would have changed behaviour for all eight call sites at once.
  */
 export async function sendMail(opts: SendMailOptions): Promise<boolean> {
+  if (opts.customerSender && !env.CLOUD_MODE) throw new Error("Customer mail is Cloud-only");
   const preferSource = opts.preferSource ?? "auto";
 
   // Cloud relay branch — only meaningful on a local self-hosted instance.
@@ -505,6 +508,8 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
   // error so one broken source (e.g. wrong instance-SMTP creds) doesn't block
   // delivery when another can carry it. Throw only when every source fails.
   const message = {
+    ...(opts.customerSender ? { from: opts.customerSender === "support"
+      ? "OpenShip Support <support@openship.io>" : "OpenShip Billing <noreply@openship.io>" } : {}),
     to: opts.to,
     subject: opts.subject,
     html: opts.html,

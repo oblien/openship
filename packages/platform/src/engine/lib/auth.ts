@@ -327,6 +327,7 @@ export const auth = betterAuth({
             name: user.name,
             email: user.email,
             emailVerified: user.emailVerified,
+            welcomeEmail: env.CLOUD_MODE,
           });
           const { cloudAnalytics } = await import("../modules/cloud-analytics");
           cloudAnalytics.capture({ userId: user.id, organizationId: `org_${user.id}` }, "cloud_signup_completed", {}, `signup:${user.id}`);
