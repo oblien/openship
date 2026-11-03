@@ -128,8 +128,24 @@ new/changed rules are inspected by the bounded background job.
 Automatic security refresh is an explicit, off-by-default project switch with
 its limited scope explained beside it. Keep per-channel security alert controls
 in Settings → Notifications. Runtime security checks may use cached, bounded
-version probes inside isolated containers. Keep **Check again** beside the last
+version probes inside isolated containers. Workspace owners and admins can pause
+runtime advisory checks with the separate saved setting in Settings → Notifications.
+Monitoring must show checks disabled rather than a clean result; banner visibility
+remains a separate browser preference. Pausing checks also pauses automatic security refreshes.
+Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
+Host notices share that banner and review, linking to **Servers → Runs**. Monitoring's
+Security view shows workspace-local scan state and the default-on checks policy.
+Opening either view reads cached observations; it must not execute host commands.
+Runs shows the exact reviewed package versions, interruption guidance, bounded output
+and verification outcome. Use the shared job run output viewer with persisted steps,
+resumable events and the shared terminal. A dropped log connection is a connection
+error, not a failed patch. Keep patch installation and kernel reboot as separate
+explicit reviews. Apply remains on the server and never opens project Deployments.
+Keep saved run history and logs available to server admins when host execution is
+disabled or the connection needs repair; only execution controls become unavailable.
+Failed checks retain known warnings and show stale or unavailable coverage. Reset
+pending review and run state when the account, workspace or server changes.
 The failed deployment page offers **Retry deployment** only when the server reports a retained
 completed image. It replays that attempt's saved configuration with no build or replacement image
 pull. Keep ordinary **Redeploy** available for a new build. Routing-only warnings use the existing

@@ -142,7 +142,7 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
   const requests = vi.fn(async (input: unknown) => {
     const url = String(input);
     if (
-      url.includes("api.github.com/repos/oblien/openship/contents/security-advisories.signed.json")
+      url.includes("api.github.com/repos/oblien/openship/contents/security-advisories.v2.signed.json")
     )
       return Response.json(proof, { headers: { etag: `"${revision}"` } });
     if (url.endsWith("/releases/latest")) return Response.json({ tag_name: "v0.9.3" });
@@ -173,7 +173,7 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
     await db
       .update(schema.advisoryFeed)
       .set({ nextCheckAt: new Date(0) })
-      .where(eq(schema.advisoryFeed.id, "security"));
+      .where(eq(schema.advisoryFeed.id, "security:v2"));
   };
 
   await scanSecurityAdvisories();
@@ -190,6 +190,18 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
   expect(await deliveries()).toEqual([]);
 
   await publish([notice]);
+  await client.updates.setSecurityCheckPolicy({ checksEnabled: false });
+  expect((await client.updates.advisories()).overview).toEqual({
+    checksEnabled: false,
+    projects: [],
+    pendingProjects: 0,
+    unknownProjects: 0,
+  });
+  await expect(client.updates.checkSecurity(project.id)).rejects.toThrow(/disabled/);
+  expect((await scanSecurityAdvisories()).checked).toBe(0);
+  expect(h.probe).not.toHaveBeenCalled();
+  expect(await deliveries()).toEqual([]);
+  await client.updates.setSecurityCheckPolicy({ checksEnabled: true });
   // The root banner does not execute commands while matching a new feed.
   const pending = await client.updates.advisories();
   expect(pending.overview.pendingProjects).toBe(1);

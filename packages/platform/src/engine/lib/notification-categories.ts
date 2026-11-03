@@ -71,7 +71,7 @@ export const CATEGORIES: readonly NotificationCategory[] = [
     id: "security.advisory",
     group: "security",
     label: "Security advisory",
-    description: "A published security advisory affects Openship or one of your deployed services. Includes the cause and the available update.",
+    description: "A published security advisory affects Openship, a deployed service or a customer-operated server. Includes the cause and the available update.",
     defaultEnabled: true,
     defaultPerChannel: true,
     defaultChannelKinds: ["email", "webhook", "in_app", "slack", "discord", "msteams", "telegram"],

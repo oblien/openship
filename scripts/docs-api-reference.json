@@ -2442,6 +2442,18 @@
       "description": "Compare deployed image and recorded base-image digests with the registry.",
       "route": "POST /api/updates/:projectId/runtime/check"
     },
+    "updates.securityCheckPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Read the workspace runtime advisory check setting and permission to change it.",
+      "route": "GET /api/updates/security/policy"
+    },
+    "updates.setSecurityCheckPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Enable or disable runtime advisory checks for this workspace. Owners and admins only.",
+      "route": "PUT /api/updates/security/policy"
+    },
     "updates.advisories": {
       "page": "updates",
       "section": "Operations",
@@ -3919,6 +3931,42 @@
       "section": "Operations",
       "description": "Save the authenticated user\u2019s dashboard language for chat replies and assistant turns without changing other preferences.",
       "route": "PATCH /api/settings/locale"
+    },
+    "servers.security": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Read cached host advisory findings, permissions and inspection freshness.",
+      "route": "GET /api/system/servers/:id/security"
+    },
+    "servers.checkSecurity": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Inspect a customer-operated Ubuntu host with bounded commands; installs nothing. Requires server admin.",
+      "route": "POST /api/system/servers/:id/security/check"
+    },
+    "servers.planSecurityPatch": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Review exact stable Ubuntu package changes or a separate kernel reboot. Returns an expiring approval bound to this server and actor; requires server admin.",
+      "route": "POST /api/system/servers/:id/security/plan"
+    },
+    "servers.applySecurityPatch": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Execute the reviewed token after rechecking permissions, advisory and exact host plan. Returns a server run ID; requires server admin.",
+      "route": "POST /api/system/servers/:id/security/apply"
+    },
+    "servers.securityRuns": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Read this server\u2019s patch and reboot run output and verification state. Requires server admin.",
+      "route": "GET /api/system/servers/:id/security/runs"
+    },
+    "servers.securityRunEvents": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Subscribe to this server run\u2019s saved steps, live logs and final verification. Reconnect only reads the existing run; requires server admin.",
+      "route": "GET /api/system/servers/:id/security/runs/:runId/stream"
     }
   },
   "http": {

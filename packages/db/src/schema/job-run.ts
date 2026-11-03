@@ -47,5 +47,6 @@ export const jobRun = pgTable(
   (t) => [
     // Primary access pattern: recent runs for one job, newest first.
     index("job_run_job_started_idx").on(t.jobId, t.startedAt),
+    index("job_run_server_started_idx").on(t.serverId, t.startedAt),
   ],
 );

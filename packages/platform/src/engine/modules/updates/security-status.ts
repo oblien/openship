@@ -38,6 +38,7 @@ export function buildProjectSecurityResult(
         confidence: match.confidence,
         canRefresh:
           !upstream.stale &&
+          !inventory.unknownServices.includes(match.serviceId) &&
           match.advisory.action === "refresh-images" &&
           (!match.image || isMutableImageRef(match.image.ref)),
       });

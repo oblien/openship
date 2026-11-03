@@ -5,8 +5,20 @@ import { pathToFileURL } from "node:url";
 import {
   SecurityManifestSchema,
   securitySigningBytes,
+  type SecurityManifest,
 } from "../packages/core/src/updates/security";
 import trust from "../packages/core/src/updates/signing-public-key.json";
+
+/** Older clients reject unknown targets and fields. Never broaden a scoped notice. */
+export function legacySecurityAdvisories(source: SecurityManifest): SecurityManifest {
+  return {
+    ...source,
+    advisories: source.advisories.filter(
+      (a) =>
+        !a.modes && a.action !== "patch-host" && a.targets.every((t) => t.kind !== "host-package"),
+    ),
+  };
+}
 
 /** Reusable by the publisher and integration tests; private keys never leave the signer. */
 export function signSecurityAdvisories(
@@ -40,8 +52,23 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   );
   const privateKey = process.env.OPENSHIP_DESKTOP_SIGNING_KEY;
   if (!privateKey) throw new Error("OPENSHIP_DESKTOP_SIGNING_KEY is required.");
+  const signed = signSecurityAdvisories(source, privateKey);
   await writeFile(
-    process.argv[2] ?? "security-advisories.signed.json",
-    JSON.stringify(signSecurityAdvisories(source, privateKey)) + "\n",
+    process.argv[2] ?? "security-advisories.v2.signed.json",
+    JSON.stringify(signed) + "\n",
   );
+  if (process.argv[3]) {
+    const manifest = JSON.parse(signed.payload) as SecurityManifest;
+    await writeFile(
+      process.argv[3],
+      JSON.stringify(
+        signSecurityAdvisories(
+          legacySecurityAdvisories(manifest),
+          privateKey,
+          trust.publicKey,
+          manifest.revision,
+        ),
+      ) + "\n",
+    );
+  }
 }

@@ -5,8 +5,24 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
 import { UpdateCenter } from "./UpdateCenter";
 import { SecurityAdvisorySettings } from "@/app/(dashboard)/settings/_components/SecurityAdvisorySettings";
+import { SecurityOverviewPanel } from "./SecurityOverviewPanel";
 
-const h = vi.hoisted(() => ({ account: "account-one", updates: vi.fn(), push: vi.fn() }));
+const h = vi.hoisted(() => ({
+  account: "account-one",
+  updates: vi.fn(),
+  push: vi.fn(),
+  policy: vi.fn(),
+  setPolicy: vi.fn(),
+  checksEnabled: true,
+  canManage: true,
+}));
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({ data: { user: { id: "user" }, session: {} } }),
+}));
+vi.mock("@/lib/api/updates", async (original) => ({
+  ...(await original<object>()),
+  updatesApi: { securityCheckPolicy: h.policy, setSecurityCheckPolicy: h.setPolicy },
+}));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.account }));
 vi.mock("@/components/i18n-provider", async (original) => ({
   ...(await original<object>()),
@@ -48,6 +64,15 @@ function button(label: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.account = "account-one";
+  h.checksEnabled = true;
+  h.canManage = true;
+  h.policy.mockReset().mockImplementation(async () => ({
+    data: { checksEnabled: h.checksEnabled, canManage: h.canManage },
+  }));
+  h.setPolicy.mockReset().mockImplementation(async (enabled) => {
+    h.checksEnabled = enabled;
+    return { data: { checksEnabled: enabled, canManage: h.canManage } };
+  });
   project.findings[0].severity = "high";
   localStorage.clear();
   h.updates.mockReturnValue({
@@ -120,4 +145,77 @@ it("shares a visibility change from another browser tab", async () => {
   });
   expect(container.textContent).not.toContain(runtime.title);
   expect(button(copy.showBanners).getAttribute("aria-checked")).toBe("false");
+});
+
+it("opens a host-only advisory from the root banner and links to server runs", async () => {
+  const server = {
+    serverId: "host-one",
+    name: "Customer host",
+    supported: true,
+    findings: [
+      { id: "host-fix", title: "Kernel update", state: "reboot_required", severity: "high" },
+    ],
+  };
+  const host = {
+    id: "runtime:host-fix",
+    title: "Kernel update",
+    severity: "critical",
+    projects: [],
+    servers: [server],
+  };
+  h.updates.mockReturnValue({
+    ...h.updates(),
+    state: { advisories: [host] },
+    runtimeAdvisories: [host],
+    securityOverview: { projects: [], servers: [server], pendingProjects: 0, unknownProjects: 0 },
+  });
+  await act(async () => render());
+  expect(container.textContent).toContain("Customer host");
+  await act(async () =>
+    button(
+      baseDictionary.projectSettings.hostSecurity.reviewResources.replace("{count}", "1"),
+    ).click(),
+  );
+  expect(document.querySelector('a[href="/servers/host-one?tab=runs"]')).not.toBeNull();
+});
+
+it("saves inspection policy on the server and restores it on remount", async () => {
+  await act(async () => render());
+  await act(async () => button(copy.checksEnabled).click());
+  expect(h.setPolicy).toHaveBeenCalledExactlyOnceWith(false);
+  expect(button(copy.checksEnabled).getAttribute("aria-checked")).toBe("false");
+  expect(button(copy.showBanners).getAttribute("aria-checked")).toBe("true");
+  await act(async () => root.render(null));
+  await act(async () => render());
+  expect(button(copy.checksEnabled).getAttribute("aria-checked")).toBe("false");
+});
+
+it("keeps the saved setting when the server rejects a change", async () => {
+  h.setPolicy.mockRejectedValueOnce(new Error("Could not save policy"));
+  await act(async () => render());
+  await act(async () => button(copy.checksEnabled).click());
+  expect(container.textContent).toContain("Could not save policy");
+  expect(button(copy.checksEnabled).getAttribute("aria-checked")).toBe("true");
+});
+
+it("disables the workspace control for accounts without management permission", async () => {
+  h.canManage = false;
+  await act(async () => render());
+  expect(button(copy.checksEnabled).disabled).toBe(true);
+  await act(async () => button(copy.checksEnabled).click());
+  expect(h.setPolicy).not.toHaveBeenCalled();
+});
+
+it("shows disabled inspection in Monitoring without claiming a clean scan", async () => {
+  await act(async () =>
+    root.render(
+      <SecurityOverviewPanel
+        overview={{ checksEnabled: false, projects: [], pendingProjects: 0, unknownProjects: 0 }}
+        onChecked={() => {}}
+      />,
+    ),
+  );
+  expect(container.textContent).toContain(copy.checksDisabled);
+  expect(container.textContent).not.toContain(copy.noMatches);
+  expect(container.querySelector('a[href="/settings?tab=notifications"]')).not.toBeNull();
 });

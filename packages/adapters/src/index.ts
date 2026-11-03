@@ -138,7 +138,7 @@ export {
   withManagedCommandTracking,
   currentManagedCommandTracking,
 } from "./runtime/cloud/command-tracking";
-export { BuildLogger } from "./runtime/build-pipeline";
+export { BuildLogger, BuildLogger as PipelineLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
   type DeployRouting,

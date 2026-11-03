@@ -1548,6 +1548,20 @@
       "when": 1793714400000,
       "tag": "0220_archive_compose_services",
       "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1793714400001,
+      "tag": "0221_security_advisory_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1793714400002,
+      "tag": "0222_host_security_advisories",
+      "breakpoints": true
     }
   ]
 }

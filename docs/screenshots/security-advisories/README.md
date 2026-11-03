@@ -18,6 +18,10 @@ components with Cloud deployment metadata and an observed `node 20.20.2` finding
 cover the configuration action, mobile overflow, hiding critical banners, reload
 persistence and restoring visibility without deployment or policy writes.
 
+The [workspace check setting](checks-disabled-settings.png) shows inspection disabled
+with banner visibility still enabled. It uses the real Settings component, light theme
+and synthetic API responses; no production settings were changed.
+
 Run the dashboard development server, then:
 
 ```sh

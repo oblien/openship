@@ -2,10 +2,9 @@ import type { JobDependencies } from "../../../jobs";
 import type { ExecutionContext } from "../../../context";
 import { repos } from "@repo/db";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
-import { runEvents } from "../../lib/run-events";
 import { authorization } from "../../lib/authorization";
 import { assertJobWritable, assertJobRunnable, assertJobServersWritable, assertJobReferences, canReadJob, canReadRun, requireReadableJob, requireReadableRun } from "./job-access";
-import { jobRunBus, type JobRunEvent } from "./job-run.sse";
+import { jobRunEvents } from "./job-run.sse";
 import { JOB_TRIGGER_EVENTS } from "./job-events";
 import { configureWorkflowJob, workflowJobRuns } from "./job-workflow";
 import { workflowJobConfig, resolveServerIds } from "./job.types";
@@ -87,11 +86,6 @@ export const jobDependencies: JobDependencies = {
   },
   async openRunStream(ctx, id, signal) {
     await requireReadableRun(ctx, id);
-    return runEvents<JobRunEvent, Awaited<ReturnType<typeof requireReadableRun>>>({
-      reconcile: { everyMs: 3000, isTransient: event => event.type === "log" },
-      bus: jobRunBus, id, signal, load: () => requireReadableRun(ctx, id),
-      snapshot: run => ({ type: "snapshot", run }),
-      complete: run => run.status === "success" || run.status === "failed" ? { type: "complete", status: run.status, error: run.error } : null,
-    });
+    return jobRunEvents(id, () => requireReadableRun(ctx, id), signal);
   },
 };

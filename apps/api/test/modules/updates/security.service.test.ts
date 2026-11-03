@@ -17,6 +17,7 @@ import {
 } from "@repo/platform/engine/modules/updates/security.service";
 import { securityOverview } from "@repo/platform/engine/modules/updates/security-overview";
 import { securityProbeKey } from "@repo/platform/engine/modules/updates/security-inventory";
+import * as securityInventory from "@repo/platform/engine/modules/updates/security-inventory";
 import {
   assertSecurityRefreshConfiguration,
   assertSecurityUpdateEnvironment,
@@ -183,6 +184,96 @@ async function fixture(owner?: Awaited<ReturnType<typeof seedOwner>>) {
 }
 
 describe("security operations", () => {
+  it.each([false, true])(
+    "rejects retained evidence before dispatching a refresh (automatic=%s)",
+    async (automatic) => {
+      const f = await fixture();
+      if (automatic) await setProjectSecurityPolicy(f.ctx, f.project.id, { autoRefresh: true });
+      const previous = (await repos.securityAdvisory.project(f.project.id))!
+        .inventory as securityInventory.SecurityInventory;
+      const read = vi.spyOn(securityInventory, "projectSecurityInventory").mockResolvedValue({
+        ...previous,
+        unknownServices: [f.service.id],
+      });
+      try {
+        await expect(
+          applySecurityAdvisory(f.ctx, f.project.id, f.input, automatic),
+        ).rejects.toThrow(/Current security evidence is unavailable/);
+        expect(h.deploy).not.toHaveBeenCalled();
+        expect(h.digest).not.toHaveBeenCalled();
+      } finally {
+        read.mockRestore();
+      }
+    },
+  );
+  it("persists a workspace opt-out, skips inspection and alerts, and resumes without deleting evidence", async () => {
+    const f = await fixture(),
+      other = await fixture();
+    expect(await f.client.updates.securityCheckPolicy()).toEqual({
+      checksEnabled: true,
+      canManage: true,
+    });
+    const before = await repos.securityAdvisory.project(f.project.id);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: false });
+    expect(await f.client.updates.securityCheckPolicy()).toEqual({
+      checksEnabled: false,
+      canManage: true,
+    });
+    expect(await other.client.updates.securityCheckPolicy()).toEqual({
+      checksEnabled: true,
+      canManage: true,
+    });
+    const overview = await f.client.updates.advisories();
+    expect(overview.overview).toEqual({
+      checksEnabled: false,
+      projects: [],
+      pendingProjects: 0,
+      unknownProjects: 0,
+    });
+    const candidates = await repos.securityAdvisory.candidates(9);
+    expect(candidates.some((p) => p.id === f.project.id)).toBe(false);
+    expect(candidates.some((p) => p.id === other.project.id)).toBe(true);
+    await expect(f.client.updates.security(f.project.id)).rejects.toThrow(/disabled/);
+    await expect(f.client.updates.checkSecurity(f.project.id)).rejects.toThrow(/disabled/);
+    await expect(f.client.updates.applySecurity(f.project.id, f.input)).rejects.toThrow(/disabled/);
+    expect(h.deploy).not.toHaveBeenCalled();
+    const prepare = vi.spyOn(notification, "prepare");
+    try {
+      await scanSecurityAdvisories();
+      expect(prepare.mock.calls.some(([input]) => input.resourceId === f.project.id)).toBe(false);
+    } finally {
+      prepare.mockRestore();
+    }
+    expect((await repos.securityAdvisory.project(f.project.id))?.inventory).toEqual(
+      before?.inventory,
+    );
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: true });
+    expect((await f.client.updates.security(f.project.id)).findings).toHaveLength(1);
+  });
+
+  it("allows admins but prevents members from changing workspace-wide inspection policy", async () => {
+    const f = await fixture();
+    await db
+      .update(schema.member)
+      .set({ role: "admin" })
+      .where(eq(schema.member.userId, f.owner.userId));
+    expect((await f.client.updates.securityCheckPolicy()).canManage).toBe(true);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: false });
+    expect(await repos.securityAdvisory.checksEnabled(f.owner.orgId)).toBe(false);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: true });
+    await db
+      .update(schema.member)
+      .set({ role: "member" })
+      .where(eq(schema.member.userId, f.owner.userId));
+    const response = await app.request("/api/updates/security/policy", {
+      method: "PUT",
+      headers: { ...f.owner.auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ checksEnabled: false }),
+    });
+    expect(response.status).toBe(403);
+    expect(await repos.securityAdvisory.checksEnabled(f.owner.orgId)).toBe(true);
+  });
+
   it.each([
     { trigger: "rollback", meta: {} },
     { trigger: "manual", meta: { adopt: true } },
@@ -276,7 +367,8 @@ describe("security operations", () => {
       .set({ role: "restricted" })
       .where(eq(schema.member.userId, f.owner.userId));
     const restricted = { ...f.ctx, role: "restricted" as const };
-    expect(await securityOverview(restricted, feed)).toEqual({
+    expect(await securityOverview(restricted, feed)).toMatchObject({
+      checksEnabled: true,
       projects: [],
       pendingProjects: 0,
       unknownProjects: 0,
@@ -449,6 +541,10 @@ describe("security operations", () => {
     };
     const current = (await repos.project.findById(f.project.id))!;
     await assertSecurityRefreshConfiguration(current, snapshot);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: false });
+    await expect(assertSecurityRefreshConfiguration(current, snapshot)).rejects.toThrow(/disabled/);
+    expect((await repos.securityAdvisory.project(f.project.id))?.autoRefresh).toBe(true);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: true });
     await expect(
       assertSecurityRefreshConfiguration(current, {
         ...snapshot,
