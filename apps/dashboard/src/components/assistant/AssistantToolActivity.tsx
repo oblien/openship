@@ -67,7 +67,12 @@ export function AssistantToolActivity({
     [...groups].flatMap(([name, calls]) =>
       (/^(post|put|patch|delete)_/.test(name) ? calls : [calls.at(-1)!]).flatMap((call) => {
         const view = presentToolResult(call.tool);
-        return view ? [{ index: call.index, view }] : [];
+        // Routine reads belong in the inspector. Only write receipts and an
+        // explicit connection setup offer need another surface in the chat.
+        return view?.items.length &&
+          (!name.startsWith("get_") || view.items.some((item) => item.setup))
+          ? [{ index: call.index, view }]
+          : [];
       }),
     ),
   );
@@ -110,11 +115,18 @@ export function AssistantToolActivity({
               ? "failed"
               : assistantToolState(last.tool, active);
           const meta = describeAssistantTool(last.tool);
+          const result =
+            callState === "completed" && name.startsWith("get_")
+              ? presentToolResult(last.tool)
+              : null;
+          const resultLabel = result
+            ? `${result.items.length} ${result.items.length === 1 ? "result" : "results"}`
+            : undefined;
           return (
             <button
               type="button"
               key={name}
-              aria-label={`${meta.title} · ${stateLabel[callState]}${calls.length > 1 ? ` · ${calls.length} calls` : ""}`}
+              aria-label={`${meta.title} · ${stateLabel[callState]}${resultLabel ? ` · ${resultLabel}` : ""}${calls.length > 1 ? ` · ${calls.length} calls` : ""}`}
               onClick={() => setSelected((running ?? failed ?? last).index)}
               className="group/tool flex min-w-0 items-center gap-2 rounded-lg bg-card/70 px-3 py-2.5 text-start transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -126,7 +138,11 @@ export function AssistantToolActivity({
               <span
                 className={`text-[11px] ${callState === "failed" ? "text-danger" : "text-muted-foreground"}`}
               >
-                {running ? <AssistantLiveIndicator label="Running" /> : stateLabel[callState]}
+                {running ? (
+                  <AssistantLiveIndicator label="Running" />
+                ) : (
+                  (resultLabel ?? stateLabel[callState])
+                )}
               </span>
               <Icon
                 name={

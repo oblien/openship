@@ -1302,6 +1302,9 @@ without repeating activation. Model text alone cannot create an approval control
 Tool activity uses compact, domain-specific icons and explicit running, completed,
 failed or stopped states. Open a call to inspect its result, request and returned
 data; group repeated calls and select each one inside the shared details dialog.
+Routine reads show their returned item count in that activity control. Keep lists,
+individual lookup results and empty-state explanations inside the inspector; do not
+append a resource card for every lookup to the conversation.
 Preserve native tool discovery in saved conversations, including Code Mode activity.
 When native MCP actions are present, keep their orchestration wrappers in the inspector
 instead of adding duplicate action chips. Keep every write's result visible; repeated
@@ -1311,7 +1314,7 @@ and a small workflow icon. Expand it to show the shared fixed-step summary for e
 collapse removes the previews again. Never fill the transcript with canvases from incidental
 tool calls. Keep Review flow and per-item tool details inside the expanded result.
 Show actual names, triggers, agents, response policy and notification destinations from returned
-configuration. Merge repeated observations of the same flow, retaining every call in the inspector.
+configuration. Merge repeated write receipts for the same flow, retaining every call in the inspector.
 Resolve ID-only receipts on expansion through the workspace-scoped automation API; never invent saved state from
 tool arguments. Review flow opens the regular editor and never enables or runs it.
 Show actual deployment requests with a live-progress link; a completed restart tool
@@ -1320,7 +1323,9 @@ the existing connection form inline, with the provider and bot role preselected.
 the current user's management access and the returned workspace before showing the form;
 close it on a scope change. Credentials are entered only in that form. Tool output cannot
 supply executable actions or arbitrary navigation destinations.
-Known app, server, deployment, service and repository results may show inline cards.
+Successful writes may show inline resource receipts. Keep creation and deployment
+links visible, and preserve explicit setup and approval controls. Read-only app,
+server, deployment, service and repository results open from their tool activity.
 Use returned identities to build existing OpenShip routes, never result-supplied
 URLs or commands. **Import** opens the regular deployment wizard for review; it
 does not create or deploy on click. Unknown tool output remains inspectable as data.
