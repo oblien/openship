@@ -95,6 +95,7 @@
       "name": "@repo/dashboard",
       "version": "0.1.0",
       "dependencies": {
+        "@better-auth/oauth-provider": "1.7.15",
         "@better-auth/passkey": "1.7.15",
         "@noble/hashes": "^2.0.1",
         "@radix-ui/react-slot": "^1.2.4",

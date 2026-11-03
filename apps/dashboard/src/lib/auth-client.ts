@@ -5,6 +5,7 @@ import {
   twoFactorClient,
 } from "better-auth/client/plugins";
 import { passkeyClient } from "@better-auth/passkey/client";
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { getAuthBaseUrl } from "@/lib/api/urls";
 import { reportClientError } from "./error-reporting";
 
@@ -16,7 +17,7 @@ import { reportClientError } from "./error-reporting";
  */
 const AUTH_BASE_URL = getAuthBaseUrl();
 
-export const authClient = createAuthClient({
+const clientOptions = {
   baseURL: AUTH_BASE_URL,
   fetchOptions: {
     onError: (context) => {
@@ -30,13 +31,33 @@ export const authClient = createAuthClient({
       delay: 0,
     },
   },
-  plugins: [
-    organizationClient(),
-    emailOTPClient(),
-    passkeyClient(),
-    twoFactorClient(),
-  ],
+} satisfies Parameters<typeof createAuthClient>[0];
+
+export const authClient = createAuthClient({
+  ...clientOptions,
+  plugins: [organizationClient(), emailOTPClient(), passkeyClient(), twoFactorClient()],
 });
+
+// The provider plugin adds signed page data to POSTs. Limit that continuation
+// behavior to OAuth actions so changing organizations cannot resume the grant.
+const oauthClient = createAuthClient({
+  ...clientOptions,
+  plugins: [oauthProviderClient()],
+});
+
+export async function submitMcpConsent(
+  accept: boolean,
+  consentCode: string | null,
+): Promise<string | null> {
+  const result = await oauthClient.oauth2.consent({
+    accept,
+    ...(consentCode ? { oauth_query: consentCode } : {}),
+  });
+  if (result.error) {
+    throw Object.assign(new Error("consent failed"), { status: result.error.status });
+  }
+  return result.data?.url ?? null;
+}
 
 /** Password creation for a freshly authenticated OAuth-only account. */
 export function setAccountPassword(newPassword: string) {
