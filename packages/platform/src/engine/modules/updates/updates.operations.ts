@@ -12,7 +12,7 @@ import {
 } from "./security.service";
 export const updatesDependencies: UpdateDependencies = {
   collection: {
-    securityCheckPolicy: securityCheckPolicy,
+    securityCheckPolicy,
     setSecurityCheckPolicy: setSecurityCheckPolicy,
     advisories: organizationAdvisories,
     list: service.listOrganizationUpdates,

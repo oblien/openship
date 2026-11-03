@@ -142,6 +142,8 @@ and verification outcome. Use the shared job run output viewer with persisted st
 resumable events and the shared terminal. A dropped log connection is a connection
 error, not a failed patch. Keep patch installation and kernel reboot as separate
 explicit reviews. Apply remains on the server and never opens project Deployments.
+Keep saved run history and logs available to server admins when host execution is
+disabled or the connection needs repair; only execution controls become unavailable.
 Failed checks retain known warnings and show stale or unavailable coverage. Reset
 pending review and run state when the account, workspace or server changes.
 The failed deployment page offers **Retry deployment** only when the server reports a retained
@@ -392,6 +394,13 @@ the summary denominator. Use UTC calendar days and label the retained-history sc
 cancellations and unfinished attempts from success rate; count queued attempts as in progress.
 Each project retains its own history.
 Old `/deployments` links redirect to Monitoring while preserving filters.
+
+When redeploy detects changed Compose source, show a review modal with the added,
+changed, and removed service names. Configure opens the existing deployment
+wizard with the fresh source and saved settings/destination; cancel performs no
+synchronization. Show the change summary in the wizard and validate its source
+revision before deploying. Retire removed services through normal deployment
+cleanup while preserving their persistent data and deployment history.
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
@@ -715,6 +724,10 @@ check retryable before starting the move.
   Keep Pending payments inside Payments & invoices, including for unpaid servers, with
   a yellow pending count on that tab. Share one scoped read with the recovery list, refresh
   on return from hosted checkout, and remove counts only after confirmed cancellation.
+  Removing the selected unused server clears its billing URL selection and returns to
+  the new-server Plans view. A billing URL for a removed or deleting workspace recovers
+  there without checkout or automatic-purchase parameters, preserving only its organization
+  scope. Do not reselect a draft while its removal finishes.
   Cloud lists unfinished payments across the organization's servers. Connected installations
   use the same Cloud inventory, filtered to a selected server when requested, without
   creating local execution links. Preserve local aliases for explicitly linked servers

@@ -5,12 +5,14 @@ import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
 import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import { env } from "@repo/platform/engine/config/env";
+import * as hostControl from "@repo/platform/engine/lib/host-control";
 import {
   planHostPatch,
   applyHostPatch,
   inspectHostSecurity,
   serverSecurityStatus,
   hostPatchRuns,
+  hostPatchRunEvents,
   decodeHostPatchToken,
   recoverHostPatchRuns,
 } from "@repo/platform/engine/modules/updates/host-security";
@@ -155,6 +157,42 @@ beforeEach(() => {
   });
 });
 describe("server advisory maintenance", () => {
+  it("keeps history and saved logs readable when execution is unavailable, with server isolation", async () => {
+    const f = await fixture(),
+      foreign = await fixture();
+    const run = await repos.jobRun.start({
+      jobId: `security:patch:${f.id}`,
+      serverId: f.id,
+      serverIds: [f.id],
+      kind: "custom",
+    });
+    await repos.jobRun.finish(run.id, {
+      status: "failed",
+      output: "Saved diagnostic output",
+      summary: { phase: "needs_review" },
+    });
+    await db.update(schema.servers).set({ isLocal: true }).where(eq(schema.servers.id, f.id));
+    vi.spyOn(hostControl, "resolveHostControlEnabled").mockResolvedValue(false);
+    await repos.securityAdvisory.setChecksEnabled(foreign.owner.orgId, false);
+    expect((await serverSecurityStatus(f.ctx, f.id)).supported).toBe(false);
+    expect(await hostPatchRuns(f.ctx, f.id)).toEqual([
+      expect.objectContaining({ id: run.id, output: "Saved diagnostic output" }),
+    ]);
+    const events = [];
+    for await (const event of await hostPatchRunEvents(f.ctx, f.id, run.id))
+      events.push(JSON.parse(event.data));
+    expect(events.map((event) => event.type)).toEqual(["snapshot", "complete"]);
+    expect(events[0].run.output).toBe("Saved diagnostic output");
+    await expect(hostPatchRuns(foreign.ctx, f.id)).rejects.toThrow();
+    await expect(hostPatchRunEvents(foreign.ctx, f.id, run.id)).rejects.toThrow();
+    await expect(hostPatchRunEvents(f.ctx, foreign.id, run.id)).rejects.toThrow();
+    await expect(planHostPatch(f.ctx, f.id, { advisoryId: advisory.id })).rejects.toThrow(
+      /Host control is disabled/,
+    );
+    expect(h.exec).not.toHaveBeenCalled();
+    expect(h.stream).not.toHaveBeenCalled();
+    await repos.securityAdvisory.setChecksEnabled(f.owner.orgId, false);
+  });
   it("expires interrupted patch and reboot records without issuing commands, even with checks disabled", async () => {
     const f = await fixture();
     await repos.securityAdvisory.setChecksEnabled(f.owner.orgId, false);
@@ -279,6 +317,59 @@ describe("server advisory maintenance", () => {
     expect(h.stream).toHaveBeenCalledTimes(1);
     expect(h.work).toHaveLength(0);
   });
+  it.each(["install", "reboot"] as const)(
+    "rejects incomplete target evidence after %s",
+    async (operation) => {
+      const f = await fixture();
+      (h.feed as AdvisoryFeedState).security!.advisories[0]!.targets.push({
+        kind: "host-package",
+        distribution: "ubuntu",
+        release: "24.04",
+        package: "libssl3",
+        fixedVersion: "3.0.13-0ubuntu3.5",
+      });
+      const full = {
+        ...observed,
+        rows: [
+          { ...observed.rows[0]!, state: operation === "reboot" ? "reboot_required" : "affected" },
+          {
+            ...observed.rows[0]!,
+            key: "HOST-TEST:1",
+            package: "libssl3",
+            state: operation === "reboot" ? "reboot_required" : "affected",
+          },
+        ],
+      };
+      h.exec.mockResolvedValue(encode(full)).mockResolvedValueOnce(
+        encode({
+          observation: full,
+          changes:
+            operation === "reboot"
+              ? []
+              : [...planned.changes, { ...planned.changes[0]!, package: "libssl3" }],
+        }),
+      );
+      h.stream.mockResolvedValue({
+        code: 0,
+        output: encode(operation === "reboot" ? full : fixed()),
+      });
+      const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id, operation });
+      const { runId } = await applyHostPatch(f.ctx, f.id, { token: plan.token });
+      if (operation === "install") h.exec.mockResolvedValue(encode(fixed()));
+      await h.work.shift()!();
+      if (operation === "reboot") {
+        expect((await repos.jobRun.findById(runId))?.status).toBe("running");
+        h.exec.mockResolvedValue(encode({ ...fixed(), bootId: "boot-b" }));
+        await inspectHostSecurity(f.ctx, f.id, h.feed as AdvisoryFeedState, true);
+      }
+      expect(await repos.jobRun.findById(runId)).toMatchObject({
+        status: "failed",
+        summary: { phase: "needs_review", targetKeys: ["HOST-TEST:0", "HOST-TEST:1"] },
+      });
+      expect(h.stream).toHaveBeenCalledTimes(1);
+      await repos.securityAdvisory.setChecksEnabled(f.owner.orgId, false);
+    },
+  );
   it("uses setup's component checks and reports a post-patch health regression", async () => {
     const f = await fixture();
     const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id });

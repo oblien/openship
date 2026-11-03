@@ -17,6 +17,7 @@ import {
 } from "@repo/platform/engine/modules/updates/security.service";
 import { securityOverview } from "@repo/platform/engine/modules/updates/security-overview";
 import { securityProbeKey } from "@repo/platform/engine/modules/updates/security-inventory";
+import * as securityInventory from "@repo/platform/engine/modules/updates/security-inventory";
 import {
   assertSecurityRefreshConfiguration,
   assertSecurityUpdateEnvironment,
@@ -183,6 +184,28 @@ async function fixture(owner?: Awaited<ReturnType<typeof seedOwner>>) {
 }
 
 describe("security operations", () => {
+  it.each([false, true])(
+    "rejects retained evidence before dispatching a refresh (automatic=%s)",
+    async (automatic) => {
+      const f = await fixture();
+      if (automatic) await setProjectSecurityPolicy(f.ctx, f.project.id, { autoRefresh: true });
+      const previous = (await repos.securityAdvisory.project(f.project.id))!
+        .inventory as securityInventory.SecurityInventory;
+      const read = vi.spyOn(securityInventory, "projectSecurityInventory").mockResolvedValue({
+        ...previous,
+        unknownServices: [f.service.id],
+      });
+      try {
+        await expect(
+          applySecurityAdvisory(f.ctx, f.project.id, f.input, automatic),
+        ).rejects.toThrow(/Current security evidence is unavailable/);
+        expect(h.deploy).not.toHaveBeenCalled();
+        expect(h.digest).not.toHaveBeenCalled();
+      } finally {
+        read.mockRestore();
+      }
+    },
+  );
   it("persists a workspace opt-out, skips inspection and alerts, and resumes without deleting evidence", async () => {
     const f = await fixture(),
       other = await fixture();

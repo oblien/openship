@@ -5,6 +5,7 @@ import {
   AppError,
   ValidationError,
   safeErrorMessage,
+  shellQuote,
   type SecurityAdvisory,
   type SecurityHostTarget,
 } from "@repo/core";
@@ -75,7 +76,6 @@ type Inventory = {
   connection: string;
 };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const sq = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const runKey = (serverId: string) => `security:host:${serverId}`;
 const jobKey = (serverId: string) => `security:patch:${serverId}`;
 
@@ -118,7 +118,7 @@ function command(
 ) {
   if (targets.length > 200) throw new ValidationError("Too many host rules for one inspection.");
   const arg = Buffer.from(JSON.stringify({ mode, targets, expected })).toString("base64");
-  const python = `/usr/bin/python3 -I -c ${sq(HOST_SECURITY_SCRIPT)} ${sq(arg)}`;
+  const python = `/usr/bin/python3 -I -c ${shellQuote(HOST_SECURITY_SCRIPT)} ${shellQuote(arg)}`;
   return mode === "inspect"
     ? python
     : `if [ "$(id -u)" = 0 ]; then ${python}; else /usr/bin/sudo -n -- ${python}; fi`;
@@ -136,6 +136,21 @@ function outputJson(output: string): unknown {
 async function inspect(executor: CommandExecutor, targets: Target[]) {
   return observationSchema.parse(
     outputJson(await executor.exec(command("inspect", targets), { timeout: 15_000 })),
+  );
+}
+
+/** A partial observation cannot prove that every reviewed target was fixed. */
+function verifiedTargets(
+  rows: Observation["rows"],
+  expectedKeys: readonly string[],
+  allowPendingReboot = false,
+) {
+  return (
+    expectedKeys.length > 0 &&
+    expectedKeys.every((key) => rows.some((row) => row.key === key)) &&
+    rows.every(
+      (row) => row.state === "fixed" || (allowPendingReboot && row.state === "reboot_required"),
+    )
   );
 }
 
@@ -540,6 +555,7 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
       connection: approval.connection,
       operation: approval.operation,
       bootId: approval.plan.observation.bootId,
+      targetKeys: approval.plan.observation.rows.map((row) => row.key),
       changes: approval.plan.changes,
       phase: "queued",
       steps: [
@@ -643,10 +659,7 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
                   ...fullObservation,
                   rows: fullObservation.rows.filter((row) => targetKeys.has(row.key)),
                 };
-                if (
-                  !observed.rows.length ||
-                  observed.rows.some((r) => r.state === "affected" || r.state === "unknown")
-                )
+                if (!verifiedTargets(observed.rows, summary.targetKeys, true))
                   throw new ValidationError(
                     "The installed patch could not be verified. Review the server.",
                   );
@@ -737,12 +750,14 @@ async function reconcileReboot(
             );
           const advisory = feed.security?.advisories.find((a) => a.id === summary!.advisoryId);
           const rows = observation.rows.filter((r) => r.key.startsWith(`${summary!.advisoryId}:`));
+          const targetKeys = Array.isArray(summary!.targetKeys)
+            ? summary!.targetKeys.filter((key): key is string => typeof key === "string")
+            : [];
           if (
             feed.stale ||
             !advisory ||
             hash(advisory) !== summary!.advisoryHash ||
-            !rows.length ||
-            rows.some((r) => r.state !== "fixed")
+            !verifiedTargets(rows, targetKeys)
           )
             throw new ValidationError(
               "The host restarted but the running kernel fix could not be verified.",
@@ -814,8 +829,19 @@ export async function recoverHostPatchRuns() {
   }
 }
 
+/** Saved output remains readable when execution is disabled or a connection is
+ * removed. Reading history needs current server authority, never host execution. */
+async function requireHostRunAccess(ctx: ExecutionContext, id: string) {
+  await authorization.authorize(
+    { ...ctx, scopeMode: "fixed" },
+    { resourceType: "server", resourceId: id, action: "admin" },
+  );
+  if (!(await repos.server.getInOrganization(id, ctx.organizationId)))
+    throw new AppError("Server not found", 404);
+}
+
 export async function hostPatchRuns(ctx: ExecutionContext, id: string) {
-  await host(ctx, id);
+  await requireHostRunAccess(ctx, id);
   const runs = await repos.jobRun.listRecent({ jobId: jobKey(id), serverId: id, limit: 30 });
   for (let i = 0; i < runs.length; i++) runs[i] = await recoverInterruptedHostRun(runs[i]!);
   return runs.map((run) => ({
@@ -846,15 +872,7 @@ export async function hostPatchRunEvents(
   signal?: AbortSignal,
 ) {
   const load = async () => {
-    await authorization.authorize(
-      { ...ctx, scopeMode: "fixed" },
-      {
-        resourceType: "server",
-        resourceId: id,
-        action: "admin",
-      },
-    );
-    await host(ctx, id);
+    await requireHostRunAccess(ctx, id);
     const run = await repos.jobRun.findById(runId);
     if (!run || run.serverId !== id || run.jobId !== jobKey(id))
       throw new AppError("Run not found", 404);

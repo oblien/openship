@@ -16,6 +16,7 @@ import { mapWithLimit } from "../../lib/map-with-limit";
 import { getProjectRuntimeImages } from "./runtime-image-check";
 import { parseRuntimeProbe, runtimeVersionProbe } from "./runtime-probes";
 import { assertSecurityChecksEnabled } from "./security-check-policy";
+import { nextSecurityInspection, securityObservationDue } from "./security-freshness";
 
 export interface SecurityInventory {
   deploymentId: string | null;
@@ -26,8 +27,6 @@ export interface SecurityInventory {
   /** Rules that requested this observation, independent of feed/signature renewal. */
   probeKey?: string;
 }
-
-import { nextSecurityInspection, securityObservationDue } from "./security-freshness";
 
 const pending = new Map<string, Promise<SecurityInventory>>();
 
@@ -203,10 +202,19 @@ async function readSecurityInventory(
   const previous = await repos.securityAdvisory.project(projectId);
   const prior = previous?.inventory as SecurityInventory | null;
   if (previous?.deploymentId === active.id && prior?.probeKey === probeKey) {
-    const unavailable = new Set(inventory.unknownServices);
-    const retained = prior.runtimes.filter((r) => unavailable.has(r.serviceId));
+    // One working runtime does not prove another runtime's failed/missing probe
+    // was fixed. Retain only missing runtime identities, never old versions of
+    // a runtime that was successfully observed again.
+    const identity = (row: SecurityRuntimeEvidence) => JSON.stringify([row.serviceId, row.runtime]);
+    const observed = new Set(inventory.runtimes.map(identity));
+    const retained = prior.runtimes.filter((row) => !observed.has(identity(row)));
     inventory.runtimes.push(...retained);
-    if (retained.length) inventory.checkedAt = prior.checkedAt;
+    if (retained.length) {
+      inventory.checkedAt = prior.checkedAt;
+      inventory.unknownServices = [
+        ...new Set([...inventory.unknownServices, ...retained.map((row) => row.serviceId)]),
+      ];
+    }
   }
   const failures = inventory.unknownServices.length
     ? Math.min((previous?.probeFailures ?? 0) + 1, 16)

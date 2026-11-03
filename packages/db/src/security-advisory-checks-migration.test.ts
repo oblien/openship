@@ -13,7 +13,7 @@ it("enables checks on upgrade and preserves a saved opt-out when migration is re
     await db.exec(`CREATE TABLE organization (id text PRIMARY KEY);
       INSERT INTO organization VALUES ('existing');`);
     const migration = await readFile(
-      new URL("../drizzle/0220_security_advisory_checks.sql", import.meta.url),
+      new URL("../drizzle/0221_security_advisory_checks.sql", import.meta.url),
       "utf8",
     );
     await db.exec(migration);
@@ -35,7 +35,9 @@ it("upgrades an OAuth-provider database with both advisory migrations and retain
   const journal = JSON.parse(await readFile(join(migrations, "meta/_journal.json"), "utf8")) as {
     entries: Array<{ idx: number; tag: string }>;
   };
-  const cutoff = journal.entries.findIndex((entry) => entry.tag.endsWith("_security_advisory_checks"));
+  const cutoff = journal.entries.findIndex((entry) =>
+    entry.tag.endsWith("_security_advisory_checks"),
+  );
   expect(cutoff).toBeGreaterThan(0);
   const entries = journal.entries.slice(0, cutoff);
   const prefix = await mkdtemp(join(tmpdir(), "advisory-upgrade-"));
@@ -66,7 +68,11 @@ it("upgrades an OAuth-provider database with both advisory migrations and retain
     expect(
       (await db.query("SELECT client_id, disabled, redirect_uris FROM oauth_client")).rows,
     ).toEqual([
-      { client_id: "existing-client", disabled: true, redirect_uris: ["https://client.example/callback"] },
+      {
+        client_id: "existing-client",
+        disabled: true,
+        redirect_uris: ["https://client.example/callback"],
+      },
     ]);
   } finally {
     await db.close();

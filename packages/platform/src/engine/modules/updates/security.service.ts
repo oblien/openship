@@ -1,4 +1,3 @@
-import { tryAcquireAdvisoryLock } from "@repo/db";
 import {
   recoverHostPatchRuns,
   hostTargets,
@@ -19,7 +18,7 @@ import {
   type SecurityMatch,
 } from "@repo/core";
 import type { ApplySecurityInput, ProjectSecurityResult } from "@repo/contracts";
-import { repos, db } from "@repo/db";
+import { repos, db, tryAcquireAdvisoryLock } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
 import { withProjectStateLock } from "../../lib/project-runtime-lock";
@@ -207,6 +206,16 @@ export async function applySecurityAdvisory(
       feed.security!.advisories,
       true,
     );
+    // Retained evidence keeps warnings visible after a failed probe; it must
+    // never authorize a manual or automatic refresh through the API.
+    if (
+      inventory.deploymentId !== input.deploymentId ||
+      !inventory.checkedAt ||
+      inventory.unknownServices.includes(input.serviceId ?? null)
+    )
+      throw new ValidationError(
+        "Current security evidence is unavailable for this service. Run Check again before applying an advisory.",
+      );
     const matches = matchSecurityAdvisories(
       feed.security!,
       inventory.images,

@@ -236,7 +236,7 @@ Example target shape (illustrative package versions, not a published vulnerabili
 Supply the normal advisory ID, revision, title, message, severity, URL and publication
 time as well. The feed supports at most 200 host targets. `patch-host` accepts only
 host targets; `refresh-images` cannot contain them. A host `manual` notice supplies
-guidance without enabling patch/reboot actions. Migration `0221_host_security_advisories.sql`
+guidance without enabling patch/reboot actions. Migration `0222_host_security_advisories.sql`
 adds expiring observations and workspace task state; it preserves project consent.
 Host caches and task state are re-created after an instance move. Existing job-run
 history remains local under the normal history retention policy.

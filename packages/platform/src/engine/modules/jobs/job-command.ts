@@ -29,7 +29,7 @@ import { enrichErrorContext } from "@repo/core/diagnostics/node";
 import { repos, type Job, type JobRun } from "@repo/db";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
-import { AppError, NotFoundError, safeErrorMessage } from "@repo/core";
+import { AppError, NotFoundError, safeErrorMessage, shellQuote } from "@repo/core";
 import { OperationError } from "@repo/contracts";
 import type { LogEntry } from "@repo/adapters";
 import { withServerExecution } from "../../lib/server-execution";
@@ -57,11 +57,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function primaryServerId(cfg: CommandConfig): string | null {
   const ids = resolveServerIds(cfg);
   return ids.length === 1 ? ids[0] : null;
-}
-
-/** Single-quote a value for a POSIX shell (escaping embedded quotes). */
-function shellQuote(v: string): string {
-  return `'${v.replace(/'/g, `'\\''`)}'`;
 }
 
 /** Prepend `export K='v';` for each (valid-identifier) env var. */

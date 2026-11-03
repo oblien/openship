@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   post: vi.fn(),
   remove: vi.fn(),
   refresh: vi.fn(),
+  replace: vi.fn(),
   cleared: vi.fn(),
   started: vi.fn(),
   removed: vi.fn(),
@@ -32,7 +33,7 @@ vi.mock("@/lib/api/system", () => ({ systemApi: { removeManagedServer: h.remove 
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: h.user }, session: { activeOrganizationId: h.org } } }),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: h.refresh }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: h.refresh, replace: h.replace }) }));
 
 const copy = baseDictionary.billing.pendingPayments;
 const server = {
@@ -111,6 +112,7 @@ beforeEach(() => {
   h.cloudKey = "cloud-account-a";
   h.user = "user-a";
   h.org = "org-a";
+  window.history.replaceState(null, "", "/projects/new");
   h.get.mockImplementation(async () => ({ data: { items: [structuredClone(item)] } }));
   h.post.mockResolvedValue({ data: ready });
   h.remove.mockResolvedValue({ ...server, state: "deleting" });
@@ -202,6 +204,34 @@ describe("unfinished checkout recovery", () => {
     await click(copy.choosePlan);
     expect(h.close).toHaveBeenCalledOnce();
     expect(dialog()?.querySelector('a[href^="/billing/plans"]')).toBeNull();
+  });
+
+  it("clears the deleted billing selection and purchase parameters after canceling and removing a draft", async () => {
+    window.history.replaceState(null, "", `/billing/payment?workspaceId=${server.id}&organizationId=org-a&checkout=cancelled&session_id=cs_pending&startCheckout=1`);
+    h.post.mockResolvedValueOnce({ data: expired });
+    await render();
+    await click(copy.cancel);
+    await click(copy.confirmCancel);
+    h.refresh.mockClear();
+    await click(copy.deleteServer);
+    await click(baseDictionary.billing.workspaces.confirmDelete);
+    expect(h.removed).toHaveBeenCalledExactlyOnceWith(server.id);
+    expect(h.replace).toHaveBeenCalledExactlyOnceWith("/billing/plans?newServer=1&organizationId=org-a", { scroll: false });
+    expect(h.refresh).not.toHaveBeenCalled();
+  });
+
+  it("preserves another server's billing selection when removing a canceled draft", async () => {
+    window.history.replaceState(null, "", "/billing/payment?workspaceId=cws-paid&organizationId=org-a");
+    h.post.mockResolvedValueOnce({ data: expired });
+    await render();
+    await click(copy.cancel);
+    await click(copy.confirmCancel);
+    h.refresh.mockClear();
+    await click(copy.deleteServer);
+    await click(baseDictionary.billing.workspaces.confirmDelete);
+    expect(h.replace).not.toHaveBeenCalled();
+    expect(h.refresh).toHaveBeenCalledOnce();
+    expect(window.location.search).toContain("workspaceId=cws-paid");
   });
 
   it("keeps an uncertain cancellation recoverable after its request fails", async () => {

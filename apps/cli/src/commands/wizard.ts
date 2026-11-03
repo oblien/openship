@@ -35,6 +35,7 @@ import {
 } from "@clack/prompts";
 
 import { isValidEmail } from "@repo/core";
+import { isCloudDeviceAuthorization, type CloudDeviceAuthorization } from "@repo/contracts";
 import { startService, normalizeUrl } from "./up";
 import {
   internalFetch,
@@ -133,17 +134,40 @@ async function connectOpenshipCloud(port: string, token?: string): Promise<{ ema
 
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
-  const state = b64url(randomBytes(24)); // 192-bit unguessable poll capability
 
   const apiBase = cloudApiUrl.replace(/\/$/, "");
   // Device/poll handshake — the server-friendly flow (and fine locally too):
   // NO loopback listener and NO browser→box redirect. The CLI opens the auth
-  // URL, the user clicks Authorize, and the CLI POLLS the SaaS with its
-  // unguessable `state` to pick up the one-time, PKCE-locked code. This is why
-  // it works over SSH — the browser (on the user's laptop) never has to reach
-  // back to this box.
-  //   - mode=device → the consent page confirms in-place; the code is delivered
-  //     by the poll below, so there is NO redirect param at all.
+  // URL, the user enters the one-time code printed here, and the CLI POLLS the
+  // SaaS with the server-issued `state` to pick up the one-time, PKCE-locked
+  // code. This is why it works over SSH — the browser (on the user's laptop)
+  // never has to reach back to this box.
+  let device: CloudDeviceAuthorization;
+  try {
+    const res = await fetch(`${apiBase}/api/cloud/device-authorize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code_challenge: challenge }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      log.error("Couldn't start the Openship Cloud device authorization. Update this instance and try again.");
+      return null;
+    }
+    const data: unknown = await res.json();
+    if (!isCloudDeviceAuthorization(data)) {
+      log.error("Openship Cloud returned an invalid device authorization. Try again.");
+      return null;
+    }
+    device = data;
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/commands/wizard");
+    log.error("Couldn't reach Openship Cloud to start the device authorization. Try again.");
+    return null;
+  }
+  const state = device.state;
+  //   - mode=device → the consent page asks for the code below; the code is
+  //     delivered by the poll, so there is NO redirect param at all.
   const handoff =
     `${apiBase}/api/cloud/connect-handoff` +
     `?state=${encodeURIComponent(state)}&code_challenge=${challenge}&mode=device`;
@@ -151,8 +175,10 @@ async function connectOpenshipCloud(port: string, token?: string): Promise<{ ema
   const overSsh = !!(process.env.SSH_CONNECTION || process.env.SSH_TTY || process.env.SSH_CLIENT);
   // Print the URL as a bare, single-line, selectable value. clack's note() boxes
   // and gutters it, which wraps the URL across lines and makes it uncopyable.
-  log.step("Open this URL in your browser to authorize, then click Authorize:");
+  log.step("Open this URL in your browser, then enter the confirmation code below:");
   console.log("\n" + chalk.cyan.underline(handoff) + "\n");
+  log.step("Confirmation code (only approve if this is your terminal):");
+  console.log("\n" + chalk.bold(device.user_code) + "\n");
   // A box with a desktop browser can auto-open it; over SSH there's none, so
   // the user opens the printed URL on their own machine.
   if (!overSsh) void open(handoff).catch((diagnosticFailure) => {
@@ -160,13 +186,13 @@ async function connectOpenshipCloud(port: string, token?: string): Promise<{ ema
   });
 
   const s = spinner();
-  s.start("Waiting for you to authorize in the browser");
+  s.start("Waiting for you to enter the code and authorize in the browser");
   // Poll the SaaS for our code once the user approves. Fixed 2.5s cadence keeps
-  // us well under the SaaS per-IP limit (300/min) across the 5-min window. The
+  // us well under the SaaS per-IP limit (300/min) until the request expires. The
   // box already needs SaaS reachability to finish the exchange below, so
   // polling here adds no new network requirement.
   let code: string | null = null;
-  const deadline = Date.now() + 300_000;
+  const deadline = Date.now() + device.expires_in * 1000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 2500));
     try {

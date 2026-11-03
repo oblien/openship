@@ -15,12 +15,23 @@ const h = vi.hoisted(() => ({
   apply: vi.fn(),
   runs: vi.fn(),
 }));
-vi.mock("@/hooks/useRunEvents", () => ({ useRunEvents: () => ({ error: null, connected: true, reconnect: vi.fn() }) }));
-vi.mock("@/components/import-project/LogSnapshotTerminal", () => ({ LogSnapshotTerminal: ({ logs }: { logs: string }) => <pre>{logs}</pre> }));
+vi.mock("@/hooks/useRunEvents", () => ({
+  useRunEvents: () => ({ error: null, connected: true, reconnect: vi.fn() }),
+}));
+vi.mock("@/components/import-project/LogSnapshotTerminal", () => ({
+  LogSnapshotTerminal: ({ logs }: { logs: string }) => <pre>{logs}</pre>,
+}));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.scope }));
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({
+    data: { user: { id: "test-user" }, session: { activeOrganizationId: h.scope } },
+  }),
+}));
 vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
 vi.mock("@/lib/api/client", () => ({
   getApiRequestScopeVersion: () => h.version,
+  getActiveOrganizationId: () => h.scope,
+  subscribeActiveOrganization: () => () => {},
   getApiErrorMessage: (e: Error) => e.message,
 }));
 vi.mock("@/lib/api/server-security", () => ({ serverSecurityApi: h }));
@@ -126,6 +137,32 @@ it("keeps rejected plans visible and does not invent a successful run", async ()
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("server changed");
   expect(container.textContent).toContain(c.noRuns);
 });
+it("refreshes the accepted run even while an older status request is pending", async () => {
+  await act(async () => render());
+  let resolve!: (value: { data: ServerSecurityResult }) => void;
+  h.get.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  await act(async () => button(c.reviewPatch).click());
+  h.runs.mockResolvedValue({
+    data: [
+      {
+        id: "run-1",
+        startedAt: new Date().toISOString(),
+        status: "running",
+        summary: { advisoryId: "HOST-TEST" },
+        output: "Accepted run is visible immediately",
+      },
+    ],
+  });
+  await act(async () => button(c.applyPatch).click());
+  expect(container.textContent).toContain("Accepted run is visible immediately");
+  await act(async () => resolve({ data: state }));
+  expect(container.textContent).toContain("Accepted run is visible immediately");
+});
 it("discards late reviewed plans after a workspace change", async () => {
   let resolve!: (value: { data: HostPatchPlan }) => void;
   h.plan.mockImplementation(
@@ -168,5 +205,30 @@ it("keeps disabled checks visible without permitting a probe or patch", async ()
     baseDictionary.projectSettings.securityAdvisories.checksDisabled,
   );
   expect(h.check).not.toHaveBeenCalled();
+  expect(h.apply).not.toHaveBeenCalled();
+});
+
+it("keeps saved runs available when host execution becomes unsupported", async () => {
+  state = { ...state, supported: false, findings: [] };
+  h.runs.mockResolvedValue({
+    data: [
+      {
+        id: "saved-run",
+        startedAt: new Date().toISOString(),
+        status: "failed",
+        summary: { advisoryId: "HOST-TEST", phase: "needs_review" },
+        output: "Saved diagnostic output",
+      },
+    ],
+  });
+  await act(async () => render());
+  expect(h.runs).toHaveBeenCalledWith("customer-host");
+  const history = container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+  expect(history).not.toBeNull();
+  await act(async () => history!.click());
+  expect(container.textContent).toContain("Saved diagnostic output");
+  expect(button(baseDictionary.projectSettings.securityAdvisories.checkAgain).disabled).toBe(true);
+  expect(h.check).not.toHaveBeenCalled();
+  expect(h.plan).not.toHaveBeenCalled();
   expect(h.apply).not.toHaveBeenCalled();
 });

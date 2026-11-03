@@ -174,14 +174,13 @@ describe("authenticated SMTP submission", () => {
                 });
           if (mode === "plaintext") {
             await expect(send).rejects.toMatchObject({ code: "ETLS" });
-            await expect.poll(() => smtp.commands).toContain("STARTTLS");
+            // The fixture reports commands over stdout, so the client can fail before the line arrives.
+            await vi.waitFor(() => expect(smtp.commands).toContain("STARTTLS"));
             expect(smtp.credentials).toEqual([]);
             expect(smtp.deliveries).toEqual([]);
           } else {
             await expect(send).resolves.toBe(source === "instance" ? undefined : true);
-            // The SMTP reply and fixture observations use separate pipes. A
-            // resolved send can arrive before stdout reports the delivery.
-            await expect.poll(() => smtp.deliveries).toHaveLength(1);
+            await vi.waitFor(() => expect(smtp.deliveries).toHaveLength(1));
             expect(smtp.credentials).toHaveLength(1);
             expect(smtp.credentials[0]).toMatchObject({ secure: true });
             expect(smtp.deliveries[0]).toMatchObject({ secure: true });

@@ -1,97 +1,63 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { HostPatchPlan, JobRun, ServerSecurityResult } from "@repo/contracts";
-import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import type { HostPatchPlan, JobRun } from "@repo/contracts";
+import {
+  useResourceScope,
+  useScopedResource,
+  useScopedMutation,
+} from "@/hooks/use-scoped-resource";
 import { useI18n } from "@/components/i18n-provider";
 import { JobRunOutput } from "@/components/jobs/JobRunOutput";
 import { Button } from "@/components/ui/button";
 import { serverSecurityApi } from "@/lib/api/server-security";
-import { getApiErrorMessage, getApiRequestScopeVersion } from "@/lib/api/client";
 
 export function ServerSecurityRuns({ serverId }: { serverId: string }) {
-  const scope = useCloudResourceKey();
+  const scope = useResourceScope();
   return <ServerRuns key={`${scope}:${serverId}`} serverId={serverId} />;
 }
 function ServerRuns({ serverId }: { serverId: string }) {
   const { t } = useI18n();
   const c = t.projectSettings.hostSecurity;
   const a = t.projectSettings.securityAdvisories;
-  const [status, setStatus] = useState<ServerSecurityResult | null>(null);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [plan, setPlan] = useState<HostPatchPlan | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const mounted = useRef(true);
-  const reading = useRef(false);
-  const mutating = useRef(false);
   const load = useCallback(async () => {
-    if (reading.current) return;
-    reading.current = true;
-    const scope = getApiRequestScopeVersion();
-    try {
-      const { data } = await serverSecurityApi.get(serverId);
-      const history =
-        data.supported && data.canManage ? (await serverSecurityApi.runs(serverId)).data : [];
-      if (!mounted.current || scope !== getApiRequestScopeVersion()) return;
-      setStatus(data);
-      setRuns(history);
-      setSelected(
-        (current) => current ?? history.find((run) => run.status === "running")?.id ?? null,
-      );
-      setError(null);
-    } catch (e) {
-      if (mounted.current && scope === getApiRequestScopeVersion()) setError(getApiErrorMessage(e));
-    } finally {
-      reading.current = false;
-    }
+    const { data: status } = await serverSecurityApi.get(serverId);
+    const runs = status.canManage ? (await serverSecurityApi.runs(serverId)).data : [];
+    return { status, runs };
   }, [serverId]);
+  const resource = useScopedResource(load, 60_000);
+  const mutation = useScopedMutation();
+  const status = resource.data?.status;
+  const busy = mutation.busy;
+  const error = mutation.error ?? resource.error;
   useEffect(() => {
-    mounted.current = true;
-    void load();
-    return () => {
-      mounted.current = false;
-    };
-  }, [load]);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState !== "hidden") void load();
-    }, 60_000);
-    return () => clearInterval(timer);
-  }, [load]);
-  const act = async (work: () => Promise<void>) => {
-    if (mutating.current) return;
-    mutating.current = true;
-    const scope = getApiRequestScopeVersion();
-    setBusy(true);
-    setError(null);
-    try {
-      await work();
-      if (mounted.current && scope === getApiRequestScopeVersion()) await load();
-    } catch (e) {
-      if (mounted.current && scope === getApiRequestScopeVersion()) setError(getApiErrorMessage(e));
-    } finally {
-      mutating.current = false;
-      if (mounted.current) setBusy(false);
+    if (!resource.data) return;
+    setRuns(resource.data.runs);
+    setSelected(
+      (current) =>
+        current ?? resource.data!.runs.find((run) => run.status === "running")?.id ?? null,
+    );
+  }, [resource.data]);
+  const act = async <T,>(work: () => Promise<T>) => {
+    const result = await mutation.execute(work);
+    if (result !== null) resource.refresh();
+    return result;
+  };
+  const prepare = async (advisoryId: string, operation: "install" | "reboot" = "install") => {
+    const result = await act(() => serverSecurityApi.plan(serverId, advisoryId, operation));
+    if (result) setPlan(result.data);
+  };
+  const apply = async () => {
+    if (!plan) return;
+    const result = await act(() => serverSecurityApi.apply(serverId, plan.token));
+    if (result) {
+      setSelected(result.data.runId);
+      setPlan(null);
     }
   };
-  const prepare = (advisoryId: string, operation: "install" | "reboot" = "install") =>
-    act(async () => {
-      const scope = getApiRequestScopeVersion();
-      const { data } = await serverSecurityApi.plan(serverId, advisoryId, operation);
-      if (mounted.current && scope === getApiRequestScopeVersion()) setPlan(data);
-    });
-  const apply = () =>
-    plan &&
-    act(async () => {
-      const scope = getApiRequestScopeVersion();
-      const { data } = await serverSecurityApi.apply(serverId, plan.token);
-      if (mounted.current && scope === getApiRequestScopeVersion()) {
-        setSelected(data.runId);
-        setPlan(null);
-      }
-    });
   const runLabel = (run: JobRun) => {
     if (run.status === "failed") return c.needsReview;
     const phase = run.summary?.phase;
@@ -294,11 +260,11 @@ function ServerRuns({ serverId }: { serverId: string }) {
                   run={run}
                   path={`system/servers/${encodeURIComponent(serverId)}/security/runs/${encodeURIComponent(run.id)}/stream`}
                   onSnapshot={(snapshot) => {
-                    if (!mounted.current) return;
                     setRuns((current) =>
                       current.map((item) => (item.id === snapshot.id ? snapshot : item)),
                     );
-                    if (run.status === "running" && snapshot.status !== "running") void load();
+                    if (run.status === "running" && snapshot.status !== "running")
+                      resource.refresh();
                   }}
                 />
               </div>

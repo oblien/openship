@@ -4127,6 +4127,10 @@
       "page": "cloud",
       "description": "Consent page mints a one-time handoff code (cookie session checked inline)."
     },
+    "POST /api/cloud/device-authorize": {
+      "page": "cloud",
+      "description": "Start a pending device authorization with a user code and PKCE challenge; browser consent is required before credentials are issued."
+    },
     "POST /api/cloud/connect-finalize": {
       "page": "cloud",
       "description": "Complete the connect popup: exchange the PKCE code and store the cloud bearer."

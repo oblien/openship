@@ -148,6 +148,48 @@ describe("scoped runtime inventory", () => {
       now.mockRestore();
     }
   });
+  it("retains a missing runtime's evidence during a partial probe without retaining superseded versions", async () => {
+    const f = await fixture();
+    const rules: SecurityAdvisory[] = [
+      {
+        id: "partial-probe",
+        revision: 1,
+        title: "Fixture",
+        message: "Fixture",
+        severity: "high",
+        publishedAt: "2026-01-01T00:00:00Z",
+        url: "https://example.test/security",
+        action: "manual",
+        targets: [
+          { kind: "runtime", runtime: "node", affected: "<22.23.4", fixed: ">=22.23.4" },
+          { kind: "runtime", runtime: "python", affected: "<3.12.9", fixed: ">=3.12.9" },
+        ],
+      },
+    ];
+    h.exec.mockResolvedValue(
+      "OPENSHIP_RUNTIME_node\nv22.23.3\nOPENSHIP_RUNTIME_python\nPython 3.12.8\n",
+    );
+    const before = await projectSecurityInventory(f.ctx, f.project.id, rules);
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+    try {
+      h.exec.mockResolvedValue(
+        "OPENSHIP_RUNTIME_node\nerror loading shared libraries\nOPENSHIP_RUNTIME_python\nPython 3.12.9\n",
+      );
+      const result = await projectSecurityInventory(f.ctx, f.project.id, rules, true);
+      expect(result.runtimes).toEqual(
+        expect.arrayContaining([
+          { serviceId: f.service.id, runtime: "node", version: "22.23.3" },
+          { serviceId: f.service.id, runtime: "python", version: "3.12.9" },
+        ]),
+      );
+      expect(result.runtimes).toHaveLength(2);
+      expect(result.unknownServices).toEqual([f.service.id]);
+      expect(result.checkedAt).toBe(before.checkedAt);
+      expect((await repos.securityAdvisory.project(f.project.id))?.probeFailures).toBe(1);
+    } finally {
+      now.mockRestore();
+    }
+  });
   it("discards evidence if the active deployment changes during inspection", async () => {
     const f = await fixture();
     h.exec.mockImplementation(async () => {

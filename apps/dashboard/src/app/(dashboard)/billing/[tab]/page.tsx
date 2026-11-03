@@ -14,7 +14,7 @@ import { BillingContent } from "../_components/BillingContent";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { getSession } from "@/lib/server/session";
-import { billingTabHref } from "@/lib/billing-links";
+import { billingTabHref, newServerBillingHref } from "@/lib/billing-links";
 import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
@@ -79,6 +79,11 @@ export default async function BillingTabPage({
   }
 
   if (result.kind === "unavailable") {
+    // A removed draft may still be selected in a bookmark or checkout return.
+    // Drop its purchase parameters instead of retrying the deleted identity.
+    // A new-server view also avoids selecting the draft while removal finishes.
+    if (result.reason === "workspace-removed")
+      redirect(newServerBillingHref(organizationId));
     return <BillingPageView view={view}><BillingContent layout={activeTab === "plans" ? "plans" : "details"} sidebar={null}>
       <BillingUnavailable reason={result.reason} />
     </BillingContent></BillingPageView>;

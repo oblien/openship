@@ -173,7 +173,7 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
     await db
       .update(schema.advisoryFeed)
       .set({ nextCheckAt: new Date(0) })
-      .where(eq(schema.advisoryFeed.id, "security"));
+      .where(eq(schema.advisoryFeed.id, "security:v2"));
   };
 
   await scanSecurityAdvisories();

@@ -93,7 +93,7 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
     await db
       .update(schema.advisoryFeed)
       .set({ nextCheckAt: new Date(0) })
-      .where(eq(schema.advisoryFeed.id, "security"));
+      .where(eq(schema.advisoryFeed.id, "security:v2"));
   };
   async function settle(id: string) {
     const deadline = Date.now() + 120_000;
