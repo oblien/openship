@@ -13,6 +13,7 @@ import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 import { scanSecurityAdvisories } from "@repo/platform/engine/modules/updates/security.service";
 import { processQueuedNotifications } from "@repo/platform/engine/lib/notification-workers";
+import { env } from "@repo/platform/engine/config/env";
 
 const h = vi.hoisted(() => ({
   key: "",
@@ -250,13 +251,41 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
 
   await client.updates.checkSecurity(project.id);
   expect(h.probe).toHaveBeenCalledTimes(2);
+
+  // A successful rebuild cannot patch an EOL major while retaining its version.
+  // Cloud must explain the required configuration change and refuse a no-op apply.
+  const wasCloud = env.CLOUD_MODE;
+  env.CLOUD_MODE = true;
+  try {
+    h.probe.mockResolvedValue("OPENSHIP_RUNTIME_node\nv20.20.2\n");
+    const requiresUpgrade = await client.updates.checkSecurity(project.id);
+    expect(requiresUpgrade.findings[0]).toMatchObject({
+      runtimeUpgradeRequired: true,
+      canRefresh: false,
+      evidence: ["node 20.20.2"],
+    });
+    expect((await client.updates.advisories()).overview.projects[0].findings[0]).toMatchObject({
+      runtimeUpgradeRequired: true,
+      canRefresh: false,
+    });
+    await expect(
+      client.updates.applySecurity(project.id, {
+        advisoryId: notice.id,
+        deploymentId: deployed.id,
+        serviceId: service.id,
+      }),
+    ).rejects.toThrow("newer runtime major version");
+    expect(h.refresh).not.toHaveBeenCalled();
+  } finally {
+    env.CLOUD_MODE = wasCloud;
+  }
   expect(await deliveries()).toHaveLength(1);
   const forbiddenCheck = await app.request(`/api/updates/${project.id}/security/check`, {
     method: "POST",
     headers: other.auth,
   });
   expect(forbiddenCheck.status).toBe(404);
-  expect(h.probe).toHaveBeenCalledTimes(2);
+  expect(h.probe).toHaveBeenCalledTimes(4);
 
   // Same mutable tag, different deployment and runtime: do not reuse the old evidence.
   const replacement = await repos.deployment.create({
@@ -282,7 +311,7 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
   expect((await client.updates.advisories()).overview.projects).toEqual([
     expect.objectContaining({ projectId: project.id, findings: [], checkedAt: expect.any(String) }),
   ]);
-  expect(h.probe).toHaveBeenCalledTimes(3);
+  expect(h.probe).toHaveBeenCalledTimes(5);
   const stale = await app.request(`/api/updates/${project.id}/security/apply`, {
     method: "POST",
     headers: { ...owner.auth, "Content-Type": "application/json" },

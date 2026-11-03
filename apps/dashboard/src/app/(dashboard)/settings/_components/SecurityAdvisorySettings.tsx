@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useUpdates } from "@/components/updates/useUpdates";
 import { RuntimeSecurityDialog } from "@/components/updates/RuntimeSecurityDialog";
 import { SettingsSection } from "./SettingsSection";
+import { SettingsToggleRow } from "./SettingsToggleRow";
+import { useSecurityBannerPreference } from "@/components/updates/useSecurityBannerPreference";
 
 /** Keep inspection and consent reachable after a notice is dismissed or resolved. */
 export function SecurityAdvisorySettings() {
@@ -13,9 +15,17 @@ export function SecurityAdvisorySettings() {
   const copy = t.projectSettings.securityAdvisories;
   const { securityOverview, refresh } = useUpdates();
   const [open, setOpen] = useState(false);
+  const banners = useSecurityBannerPreference();
   return (
     <SettingsSection icon="shield-check" title={copy.title} description={copy.notifications}>
-      <p className="mb-4 text-sm text-muted-foreground">{copy.automaticDescription}</p>
+      <div className="mb-4">
+        <SettingsToggleRow
+          checked={banners.enabled}
+          onChange={banners.setEnabled}
+          label={copy.showBanners}
+          description={copy.bannerDescription}
+        />
+      </div>
       <Button
         variant="secondary"
         disabled={!securityOverview.projects.length}

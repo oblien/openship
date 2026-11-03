@@ -112,6 +112,13 @@ project Deployments or service panels. Group evidence and actions by affected ap
 inside the dialog. The compact banner names only the apps and services affected by its
 advisory, with observed runtime versions. Monitoring → Security retains active findings
 independently of banner dismissal and reuses the same review component and cached overview.
+The banner settings menu can hide runtime security banners, including critical ones,
+for the current browser/account/workspace. Settings → Notifications restores them.
+Keep this visibility choice separate from security checks, notification delivery and
+per-project automatic-refresh consent. Operator maintenance notices stay independent.
+When the signed advisory has no patched release in the observed runtime's major,
+show the required version-change guidance and open the existing saved deployment
+configuration. Do not offer another image refresh as a fix or silently upgrade a major.
 Keep detailed guidance and automatic-update settings in disclosures; show unknown/stale
 coverage and inspection time without claiming a complete vulnerability scan.
 Reading the root banner aggregates current observations without container exec;

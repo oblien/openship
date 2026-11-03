@@ -27,7 +27,7 @@ import { reportCaughtError } from "@repo/core/diagnostics";
 import { getAdvisoryFeed, type AdvisoryFeedState } from "./advisory-feed";
 import { projectSecurityInventory } from "./security-inventory";
 import { updateProjectRuntime } from "./runtime-update";
-import { buildProjectSecurityResult } from "./security-status";
+import { buildProjectSecurityResult, RUNTIME_UPGRADE_REQUIRED_MESSAGE } from "./security-status";
 import { approveSecurityUpdate } from "./security-refresh-guard";
 import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
 
@@ -212,6 +212,8 @@ export async function applySecurityAdvisory(
       throw new ValidationError(
         "This advisory has no applicable runtime refresh. Review its guidance.",
       );
+    if (matches.some((item) => item.runtimeUpgradeRequired))
+      throw new ValidationError(RUNTIME_UPGRADE_REQUIRED_MESSAGE);
     let verified:
       | { deploymentId: string; images: Record<string, string>; expiresAt: string }
       | undefined;

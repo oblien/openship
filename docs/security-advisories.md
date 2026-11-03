@@ -17,6 +17,12 @@ Configured versions and digest pins remain unchanged. A pinned vulnerable image
 requires an explicit configuration change; rebuilding a pinned vulnerable
 Dockerfile does not fix it automatically.
 
+If the advisory has no patched release in the observed runtime's major version, the
+review explains the required major upgrade and opens the existing saved deployment
+configuration. For example, refreshing a Node 20 image cannot supply a patched Node
+22 runtime. Review the version/image or Dockerfile change and redeploy explicitly;
+the advisory action never silently upgrades application runtime majors.
+
 The review distinguishes confirmed matches, possible tag matches, unavailable
 checks and incomplete runtime coverage. No matches is not an assurance that an
 application has no vulnerabilities. Runtime probes report installed versions;
@@ -26,6 +32,11 @@ application exposes a vulnerable code path.
 **Monitoring → Security** keeps the same app/service review and per-app automatic-refresh
 controls accessible after the banner is dismissed. Dismissal only hides the banner;
 active findings remain in Monitoring until new evidence no longer matches the advisory.
+The banner's settings menu can also hide runtime security banners in the current
+browser and account/workspace, including critical notices. Restore them with
+**Settings → Notifications → Show security banners**. This does not disable inspection,
+notification delivery or any project's automatic-refresh policy. Cloud operational
+notices remain independent.
 After the dashboard observes a successful deployment of an affected app, it rereads that
 app's deployment-keyed security inventory and refreshes the shared overview. Starting a
 redeploy, a failed deploy, or a successful build that still contains the affected runtime
