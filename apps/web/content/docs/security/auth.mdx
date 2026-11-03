@@ -224,6 +224,11 @@ handshake is automatic: the first unauthenticated request returns a `401` pointi
 (Proof Key for Code Exchange — a way to complete OAuth safely without a stored client secret), and you
 approve it on a **consent screen** in your browser.
 
+For a public self-hosted instance, configure `OPENSHIP_PUBLIC_URL` or a verified instance domain
+before connecting an OAuth client. OAuth issuers and resources use that trusted configuration;
+request host and forwarded headers cannot register another server. Desktop uses its configured
+local origin automatically.
+
 That consent screen is where you set the agent's limits — **read-only** and/or a specific set of
 projects, servers, and repositories. Your choices are saved as the client's binding and enforced through
 the exact same grant model as a scoped PAT. An OAuth token that somehow skips consent has **no binding,

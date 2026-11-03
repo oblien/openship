@@ -320,6 +320,12 @@ const TABLES: ReadonlyArray<TableSpec> = [
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
+  {
+    sqlName: "oauth_client",
+    table: schema.oauthClient,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
   // OAuth 2.1 authorization-server state for MCP connections (Better Auth
   // oidc-provider). The client REGISTRATION and the user's CONSENT travel so an
   // already-connected MCP client can re-authenticate itself on the receiver;
@@ -333,7 +339,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
   {
     sqlName: "oauth_consent",
-    table: schema.oauthConsent,
+    table: schema.legacyOauthConsent,
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
@@ -943,6 +949,14 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_handoff_code: "60s one-time cloud-connect codes",
   data_transfer_session: "short-lived whole-instance transfer capability and upload lease",
   data_transfer_chunk: "short-lived chunk staging for a whole-instance transfer",
+  oauth_jwks: "OAuth signing keys belong to this installation; the destination generates its own",
+  oauth_resource: "OAuth resource identifiers and policy belong to the destination origin",
+  oauth_client_resource: "Resource links are rebuilt for the destination's resource identifiers",
+  oauth_refresh_token: "Live OAuth grants must be re-authorized after an instance transfer",
+  oauth_provider_access_token: "Live OAuth bearer credentials must never travel in an export",
+  oauth_provider_consent: "Re-authorize OAuth permissions against the destination resources",
+  oauth_client_assertion: "Short-lived OAuth assertion replay protection",
+  mcp_oauth_token: "Encrypted host-side OAuth credentials; reconnect on the destination",
   oauth_access_token:
     "live MCP bearer/refresh tokens; the client re-authenticates against the " +
     "oauth_application + oauth_consent rows that DO travel, so shipping them adds " +
@@ -1161,6 +1175,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   // bundle instead of shipping an MCP client secret in plaintext — the same reason
   // instance_settings.tunnelToken is registered with the `plaintext` scheme.
   { table: "oauth_application", column: "clientSecret" },
+  { table: "oauth_client", column: "clientSecret" },
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },

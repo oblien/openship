@@ -33,8 +33,9 @@ export async function prepareMcpConsent(
   ctx: RequestContext,
   input: { origin: string; name: string; redirectUri: string; state: string },
 ) {
-  const registered = await mcpOAuthRequest(input.origin, "mcp/register", {
+  const registered = await mcpOAuthRequest(input.origin, "oauth2/register", {
     client_name: input.name,
+    application_type: new URL(input.redirectUri).protocol === "http:" ? "native" : "web",
     redirect_uris: [input.redirectUri],
     token_endpoint_auth_method: "none",
     grant_types: ["authorization_code", "refresh_token"],
@@ -60,11 +61,11 @@ export async function prepareMcpConsent(
     cookie = ctx.hono?.req.header("cookie");
   if (cookie) headers.set("cookie", cookie);
   const response = await app.fetch(
-    new Request(`${new URL(input.origin).origin}/api/auth/mcp/authorize?${params}`, { headers }),
+    new Request(`${new URL(input.origin).origin}/api/auth/oauth2/authorize?${params}`, { headers }),
   );
   const location = response.headers.get("location"),
     consent = location ? new URL(location, resolveDashboardPublicUrl()) : null;
-  const consentCode = consent?.searchParams.get("consent_code");
+  const consentCode = consent?.searchParams.has("sig") ? consent.searchParams.toString() : null;
   if (
     response.status !== 302 ||
     consent?.pathname !== "/mcp/authorize" ||
@@ -99,7 +100,7 @@ export async function mcpClientToken(
         );
       await mcpOAuthRequest(
         input.origin,
-        "mcp/token",
+        "oauth2/token",
         new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: row.refreshToken,

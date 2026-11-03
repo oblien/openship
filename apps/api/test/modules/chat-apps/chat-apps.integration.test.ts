@@ -35,7 +35,7 @@ import { tokenRoutes } from "../../../src/modules/tokens/token.routes";
 import { chatAppRoutes } from "../../../src/modules/chat-apps/chat-apps.routes";
 import { projectRoutes } from "../../../src/modules/projects/project.routes";
 import { deploymentRoutes } from "../../../src/modules/deployments/deployment.routes";
-import { forceMcpConsent } from "../../../src/middleware/mcp-consent";
+import { bootstrapMcpSession } from "../../../src/middleware/mcp-session";
 import { clientIpMiddleware } from "../../../src/middleware/client-ip";
 import { handleApiError } from "../../../src/middleware/error-handler";
 import { scanRoutes } from "../../../src/lib/route-scanner";
@@ -61,10 +61,15 @@ import { permissionsRoutes } from "../../../src/modules/permissions/permissions.
 import { getMcpTools } from "../../../src/modules/mcp/mcp-tools";
 import { appendAssistantEvents, chatNativeCommands, chatSlackCommands } from "@repo/contracts";
 const origin = "http://localhost:4000";
+const advertisedOrigin = env.OPENSHIP_ADVERTISED_ORIGIN;
+beforeEach(() => {
+  env.OPENSHIP_ADVERTISED_ORIGIN = advertisedOrigin;
+});
 const app = new Hono()
   .onError(handleApiError)
   .use("*", clientIpMiddleware)
-  .use("/api/auth/mcp/authorize", forceMcpConsent)
+  .use("/api/auth/mcp/authorize", bootstrapMcpSession)
+  .use("/api/auth/oauth2/authorize", bootstrapMcpSession)
   .route("/api/auth", authRoutes)
   .route("/api/settings", settingsRoutes)
   .route("/api/tokens", tokenRoutes)
@@ -142,6 +147,7 @@ beforeAll(() => {
   }));
 });
 afterAll(async () => {
+  env.OPENSHIP_ADVERTISED_ORIGIN = advertisedOrigin;
   await assistant.close();
   await shutdownRateLimit();
 });
@@ -231,10 +237,10 @@ async function authorize(
   expect(grant.status, await grant.clone().text()).toBe(200);
   const accepted = await request(a, "POST", "/api/auth/oauth2/consent", {
     accept: true,
-    consent_code: prepared.consentCode,
+    oauth_query: prepared.consentCode,
   });
   expect(accepted.status).toBe(200);
-  const callback = new URL((await accepted.json()).redirectURI);
+  const callback = new URL((await accepted.json()).url);
   const verified = await data(a, "/api/chat-apps/pairing/complete", {
     state: prepared.state,
     code: callback.searchParams.get("code"),
@@ -604,6 +610,9 @@ describe("Direct chat connectors, without an assistant daemon", () => {
       message: { message_id: id, text, chat: { id: channel }, from: { id: user } },
     });
   async function setup(purpose: "commands" | "assistant" | "both" = "commands") {
+    // Public webhook hosts are configured by the operator, not authorized by
+    // whichever Host/forwarded header happens to reach the OAuth endpoint.
+    env.OPENSHIP_ADVERTISED_ORIGIN = "https://openship.example";
     const owner = await actor(),
       f = transportFixture(),
       settings = input(purpose);
@@ -1093,10 +1102,10 @@ async function enableAgent(a: Actor, readOnly = true, targetId?: string) {
   });
   const accepted = await request(a, "POST", "/api/auth/oauth2/consent", {
     accept: true,
-    consent_code: prepared.consentCode,
+    oauth_query: prepared.consentCode,
   });
   expect(accepted.status, await accepted.clone().text()).toBe(200);
-  const callback = (await accepted.json()).redirectURI;
+  const callback = (await accepted.json()).url;
   expect((await request(a, "GET", callback)).status).toBe(302);
   return prepared.clientId as string;
 }

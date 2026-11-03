@@ -1,99 +1,147 @@
-import { and, eq, inArray, desc } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { and, eq, inArray, desc, gt, lt, isNull, or } from "drizzle-orm";
 import type { Database } from "../client";
-import { oauthApplication, oauthAccessToken, oauthConsent, personalAccessToken } from "../schema";
-import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
+import type { Encryption } from "../encryption";
+import {
+  oauthClient,
+  oauthRefreshToken,
+  oauthAccessToken,
+  oauthConsent,
+  mcpOAuthToken,
+  session,
+  personalAccessToken,
+  personalAccessTokenGrant,
+} from "../schema";
 
-/**
- * Read + revocation access to the Better Auth OAuth tables.
- *
- * The plugin OWNS creation of these rows (see schema/oauth.ts) — we never
- * insert. The only writes here are DELETEs for a user-initiated "disconnect
- * this MCP client" (there's no Better Auth API to revoke a user's issued
- * tokens/consent for a client, so we drop the rows directly), plus the
- * audience-rebind UPDATE described on `rebindAccessToken`. Reads back the
- * client's display name for the "connected clients" list.
- */
-export function createOAuthRepo(db: Database) {
+const digest = (token: string) => createHash("sha256").update(token).digest("base64url");
+
+/** Provider grants stay in Better Auth; encrypted receipts support host-side connections. */
+export function createOAuthRepo(db: Database, encryption: Pick<Encryption, "encrypt" | "decrypt">) {
   return {
-    /** Host-side OAuth client credentials; never return this row from an API response. */
-    async findClientToken(userId: string, clientId: string) {
-      return (await db
-        .select()
-        .from(oauthAccessToken)
-        .where(and(eq(oauthAccessToken.userId, userId), eq(oauthAccessToken.clientId, clientId)))
-        .orderBy(desc(oauthAccessToken.updatedAt))
-        .limit(1))[0];
-    },
-    /** The issued-token row for an access token string, or null. */
-    async findAccessToken(accessToken: string): Promise<{
-      id: string;
-      userId: string | null;
+    async recordIssuedToken(input: {
+      accessToken: string;
+      refreshToken?: string;
+      userId: string;
       clientId: string;
+      sessionId: string;
       scopes: string;
       accessTokenExpiresAt: Date;
-    } | null> {
+    }) {
+      const [refresh] = input.refreshToken
+        ? await db
+            .select()
+            .from(oauthRefreshToken)
+            .where(
+              and(
+                eq(oauthRefreshToken.token, digest(input.refreshToken)),
+                eq(oauthRefreshToken.userId, input.userId),
+                eq(oauthRefreshToken.clientId, input.clientId),
+              ),
+            )
+            .limit(1)
+        : [];
+      if (input.refreshToken && (!refresh || refresh.revoked))
+        throw new Error("Missing OAuth refresh grant");
+      await db
+        .insert(mcpOAuthToken)
+        .values({
+          id: randomUUID(),
+          accessTokenHash: digest(input.accessToken),
+          accessTokenEncrypted: encryption.encrypt(input.accessToken),
+          refreshTokenEncrypted: input.refreshToken ? encryption.encrypt(input.refreshToken) : null,
+          accessTokenExpiresAt: input.accessTokenExpiresAt,
+          refreshTokenExpiresAt: refresh?.expiresAt ?? null,
+          clientId: input.clientId,
+          userId: input.userId,
+          sessionId: input.sessionId,
+          refreshId: refresh?.id ?? null,
+          scopes: input.scopes,
+        })
+        .onConflictDoNothing({ target: mcpOAuthToken.accessTokenHash });
+      await db
+        .delete(mcpOAuthToken)
+        .where(
+          and(
+            eq(mcpOAuthToken.userId, input.userId),
+            eq(mcpOAuthToken.clientId, input.clientId),
+            lt(mcpOAuthToken.accessTokenExpiresAt, new Date()),
+          ),
+        );
+    },
+
+    /** Host-side credentials only; never serialize this return value to an API client. */
+    async findClientToken(userId: string, clientId: string) {
+      const [row] = await db
+        .select()
+        .from(mcpOAuthToken)
+        .where(and(eq(mcpOAuthToken.userId, userId), eq(mcpOAuthToken.clientId, clientId)))
+        .orderBy(desc(mcpOAuthToken.createdAt))
+        .limit(1);
+      if (!row) return undefined;
+      return {
+        ...row,
+        accessToken: encryption.decrypt(row.accessTokenEncrypted),
+        refreshToken: row.refreshTokenEncrypted
+          ? encryption.decrypt(row.refreshTokenEncrypted)
+          : null,
+      };
+    },
+
+    /** Exact issued-token lookup, including live session/client/grant revocation. */
+    async findAccessToken(accessToken: string) {
       const [row] = await db
         .select({
-          id: oauthAccessToken.id,
-          userId: oauthAccessToken.userId,
-          clientId: oauthAccessToken.clientId,
-          scopes: oauthAccessToken.scopes,
-          accessTokenExpiresAt: oauthAccessToken.accessTokenExpiresAt,
+          id: mcpOAuthToken.id,
+          userId: mcpOAuthToken.userId,
+          clientId: mcpOAuthToken.clientId,
+          scopes: mcpOAuthToken.scopes,
+          accessTokenExpiresAt: mcpOAuthToken.accessTokenExpiresAt,
         })
-        .from(oauthAccessToken)
-        .where(eq(oauthAccessToken.accessToken, accessToken))
+        .from(mcpOAuthToken)
+        .innerJoin(session, eq(session.id, mcpOAuthToken.sessionId))
+        .innerJoin(oauthClient, eq(oauthClient.clientId, mcpOAuthToken.clientId))
+        .leftJoin(oauthRefreshToken, eq(oauthRefreshToken.id, mcpOAuthToken.refreshId))
+        .where(
+          and(
+            eq(mcpOAuthToken.accessTokenHash, digest(accessToken)),
+            gt(mcpOAuthToken.accessTokenExpiresAt, new Date()),
+            gt(session.expiresAt, new Date()),
+            or(isNull(oauthClient.disabled), eq(oauthClient.disabled, false)),
+            isNull(oauthRefreshToken.revoked),
+          ),
+        )
         .limit(1);
       return row ?? null;
     },
 
-    /**
-     * Swap an issued access token's stored string. Used ONLY by the MCP token
-     * endpoint to replace the plugin's opaque value with the audience-bound JWT
-     * handed to the client (see lib/mcp-token.ts) — introspection stays an
-     * exact-string lookup either way. Returns false when the row is gone.
-     */
-    async rebindAccessToken(currentToken: string, nextToken: string): Promise<boolean> {
-      const updated = await db
-        .update(oauthAccessToken)
-        .set({ accessToken: nextToken, updatedAt: new Date() })
-        .where(eq(oauthAccessToken.accessToken, currentToken))
-        .returning();
-      return updated.length > 0;
-    },
-
-    /** Display metadata (clientId → name) for a set of client_ids. */
     async listApplicationsByClientIds(
       clientIds: string[],
     ): Promise<Array<{ clientId: string; name: string }>> {
-      if (clientIds.length === 0) return [];
-      return db
-        .select({ clientId: oauthApplication.clientId, name: oauthApplication.name })
-        .from(oauthApplication)
-        .where(inArray(oauthApplication.clientId, clientIds));
+      if (!clientIds.length) return [];
+      const rows = await db
+        .select({ clientId: oauthClient.clientId, name: oauthClient.name })
+        .from(oauthClient)
+        .where(inArray(oauthClient.clientId, clientIds));
+      return rows.map((row) => ({ ...row, name: row.name ?? "MCP client" }));
     },
 
-    /**
-     * Fully disconnect an MCP client for one user, atomically. Spans the OAuth
-     * tables AND the scope binding (a personal_access_token row + its grants),
-     * so it runs in a single transaction — a mid-way failure rolls back rather
-     * than leaving a half-torn-down authorization.
-     *
-     * Order matters for the failure case even inside a tx: tokens are revoked
-     * first, so the intent (kill access) is expressed up front. Steps:
-     *   1. delete issued access/refresh tokens (client's bearer stops resolving)
-     *   2. delete recorded consent (a reconnect re-prompts → new binding)
-     *   3. delete the scope binding + its resource grants
-     */
+    /** Delete provider grants and receipts together with the user's scope binding. */
     async disconnectMcpClient(userId: string, clientId: string): Promise<void> {
       await db.transaction(async (tx) => {
         await tx
+          .delete(mcpOAuthToken)
+          .where(and(eq(mcpOAuthToken.userId, userId), eq(mcpOAuthToken.clientId, clientId)));
+        await tx
           .delete(oauthAccessToken)
           .where(and(eq(oauthAccessToken.userId, userId), eq(oauthAccessToken.clientId, clientId)));
-
+        await tx
+          .delete(oauthRefreshToken)
+          .where(
+            and(eq(oauthRefreshToken.userId, userId), eq(oauthRefreshToken.clientId, clientId)),
+          );
         await tx
           .delete(oauthConsent)
           .where(and(eq(oauthConsent.userId, userId), eq(oauthConsent.clientId, clientId)));
-
         const bindings = await tx
           .delete(personalAccessToken)
           .where(
@@ -103,12 +151,10 @@ export function createOAuthRepo(db: Database) {
             ),
           )
           .returning();
-
-        const bindingId = bindings[0]?.id;
-        if (bindingId) {
+        for (const binding of bindings) {
           await tx
             .delete(personalAccessTokenGrant)
-            .where(eq(personalAccessTokenGrant.tokenId, bindingId));
+            .where(eq(personalAccessTokenGrant.tokenId, binding.id));
         }
       });
     },
