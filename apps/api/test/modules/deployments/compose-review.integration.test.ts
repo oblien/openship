@@ -19,7 +19,7 @@ afterEach(async () => {
 
 describe("Compose source review and synchronization", () => {
   it("previews add/change/remove without writes, then archives removed containers for the existing reaper", async () => {
-    const org = await seedOrg();
+    const org = await seedOrg({ ownsHost: true });
     const localPath = await mkdtemp(join(tmpdir(), "compose-review-"));
     dirs.push(localPath);
     const project = await seedProject(org.organizationId, {
