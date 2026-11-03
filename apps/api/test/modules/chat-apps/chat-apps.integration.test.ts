@@ -65,6 +65,7 @@ const app = new Hono()
   .onError(handleApiError)
   .use("*", clientIpMiddleware)
   .use("/api/auth/mcp/authorize", forceMcpConsent)
+  .use("/api/auth/oauth2/authorize", forceMcpConsent)
   .route("/api/auth", authRoutes)
   .route("/api/settings", settingsRoutes)
   .route("/api/tokens", tokenRoutes)
@@ -231,10 +232,10 @@ async function authorize(
   expect(grant.status, await grant.clone().text()).toBe(200);
   const accepted = await request(a, "POST", "/api/auth/oauth2/consent", {
     accept: true,
-    consent_code: prepared.consentCode,
+    oauth_query: prepared.consentCode,
   });
   expect(accepted.status).toBe(200);
-  const callback = new URL((await accepted.json()).redirectURI);
+  const callback = new URL((await accepted.json()).url);
   const verified = await data(a, "/api/chat-apps/pairing/complete", {
     state: prepared.state,
     code: callback.searchParams.get("code"),
@@ -1093,10 +1094,10 @@ async function enableAgent(a: Actor, readOnly = true, targetId?: string) {
   });
   const accepted = await request(a, "POST", "/api/auth/oauth2/consent", {
     accept: true,
-    consent_code: prepared.consentCode,
+    oauth_query: prepared.consentCode,
   });
   expect(accepted.status, await accepted.clone().text()).toBe(200);
-  const callback = (await accepted.json()).redirectURI;
+  const callback = (await accepted.json()).url;
   expect((await request(a, "GET", callback)).status).toBe(302);
   return prepared.clientId as string;
 }

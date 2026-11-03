@@ -2,6 +2,9 @@ import "../mail/_setup-env";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExecutionContext } from "@repo/platform";
 
+// This suite isolates project repositories; no auth database is available.
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: {} }));
+
 const h = vi.hoisted(() => ({
   project: {
     findById: vi.fn(),

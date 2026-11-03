@@ -1,4 +1,5 @@
-import type { OAuth2UserInfo } from "@better-auth/core/oauth2";
+import { resolveAuthBaseUrl } from "./public-url";
+import type { OidcProfile } from "./oidc";
 import type { AdvertisedAuthProvider } from "@repo/contracts";
 import {
   diagnostics as errorDiagnostics,
@@ -68,7 +69,7 @@ function nonEmpty(value: unknown): string {
 }
 
 /** User-table fields only. Raw claims such as `sub` or `groups` are not columns. */
-function toOidcUser(issuer: string, profile: Record<string, unknown>): OAuth2UserInfo | null {
+function toOidcUser(issuer: string, profile: Record<string, unknown>): OidcProfile | null {
   // OIDC subjects are opaque, case-sensitive identifiers. Normalizing one can
   // select a different already-linked account at the same issuer.
   const id = typeof profile.sub === "string" ? profile.sub : "";
@@ -106,8 +107,15 @@ export function oidcProviderConfig(): OidcProviderConfig | undefined {
   }
   try {
     return {
-      ...createOidcProvider({ issuer, clientId, clientSecret, nodeEnv: env.NODE_ENV }, (profile) =>
-        toOidcUser(issuer, profile),
+      ...createOidcProvider(
+        {
+          issuer,
+          clientId,
+          clientSecret,
+          nodeEnv: env.NODE_ENV,
+          redirectURI: `${resolveAuthBaseUrl()}/api/auth/oauth2/callback/oidc`,
+        },
+        (profile) => toOidcUser(issuer, profile),
       ),
       providerId: "oidc",
       displayName: env.OIDC_DISPLAY_NAME?.trim() || DEFAULT_OIDC_DISPLAY_NAME,

@@ -11,16 +11,19 @@
  * Handlers live in auth.controller.ts; this file is route wiring only.
  */
 
-import { Hono } from "hono";
-import { db, eq, repos, schema } from "@repo/db";
+import { Hono, type Handler } from "hono";
+import { db, eq, schema } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 import { auth } from "@repo/platform/engine/lib/auth";
+import { withMcpIssuer } from "@repo/platform/engine/lib/mcp-issuer";
+import { publicOriginFor } from "../../lib/mcp-resource";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
 import { authMiddleware } from "../../middleware/auth";
 import * as organizationController from "./organization.controller";
 import { internalAuth } from "../../middleware/internal-auth";
 import { firstSignupGuard } from "../../middleware/local-bootstrap";
 import * as ctrl from "./auth.controller";
+import { ensureMcpProviderResources } from "../../lib/mcp-provider-resources";
 import { handleMcpTokenRequest } from "./mcp-token.handler";
 import { REPOSITORY_OAUTH_STATE_PREFIX } from "@repo/platform/engine/modules/github/github-repository-authorization";
 
@@ -58,41 +61,6 @@ authRoutes.post("/organization/leave", authMiddleware, organizationController.le
 // remote peer can never create an account through /sign-up here.
 authRoutes.on("POST", "/sign-up/*", firstSignupGuard);
 
-// The mcp() plugin's discovery metadata advertises `jwks_uri` and
-// `userinfo_endpoint` under /api/auth/mcp/* but implements NEITHER — both fell
-// through to the catch-all and 404'd. A verifying OAuth client (Claude.ai)
-// fetches the jwks to validate the id_token; an empty answer kills the
-// connection right after the token exchange. Serve them here, BEFORE the
-// catch-all. The key is the instance's persistent RS256 keypair that also
-// signs the (re-issued) id_token — see lib/mcp-oidc-keys.ts.
-authRoutes.get("/mcp/jwks", async (c) => {
-  const { getMcpSigningKey } = await import("../../lib/mcp-oidc-keys");
-  const key = await getMcpSigningKey();
-  return c.json({ keys: [key.publicJwk] }, 200, {
-    "Cache-Control": "public, max-age=3600",
-    "Access-Control-Allow-Origin": "*",
-  });
-});
-
-authRoutes.get("/mcp/userinfo", async (c) => {
-  const token = c.req.header("authorization")?.replace(/^Bearer /i, "");
-  if (!token) {
-    return c.json({ error: "invalid_token" }, 401, { "WWW-Authenticate": "Bearer" });
-  }
-  const row = await repos.oauth.findAccessToken(token);
-  if (!row?.userId || row.accessTokenExpiresAt < new Date()) {
-    return c.json({ error: "invalid_token" }, 401, { "WWW-Authenticate": "Bearer" });
-  }
-  const user = await repos.user.findById(row.userId);
-  if (!user) return c.json({ error: "invalid_token" }, 401, { "WWW-Authenticate": "Bearer" });
-  const scopes = row.scopes.split(" ");
-  return c.json({
-    sub: user.id,
-    ...(scopes.includes("profile") ? { name: user.name } : {}),
-    ...(scopes.includes("email") ? { email: user.email, email_verified: user.emailVerified } : {}),
-  });
-});
-
 // Better Auth catch-all — must be last so the desktop overrides + signup guard win.
 // Reuse the registered GitHub callback. Repository-grant states are separate
 // from Better Auth's sign-in states and never create or transfer login links.
@@ -102,20 +70,73 @@ authRoutes.get("/callback/github", async (c, next) => {
   return finishRepositoryAuthorization(c);
 });
 
-authRoutes.on(["GET", "POST"], "/*", async (c) => {
-  const request = await normalizeMcpRedirectUri(c.req.raw, async (clientId) => {
-    const [client] = await db
-      .select({ redirectUrls: schema.oauthApplication.redirectUrls })
-      .from(schema.oauthApplication)
-      .where(eq(schema.oauthApplication.clientId, clientId))
-      .limit(1);
-    return client?.redirectUrls.split(",");
+const handleProviderRequest: Handler = async (c) =>
+  withMcpIssuer(publicOriginFor(c.req.raw), async () => {
+    // Existing MCP clients may cache the 1.6 endpoint URLs. Forward aliases into
+    // the provider's new endpoints so PKCE and client authentication stay intact.
+    const url = new URL(c.req.url);
+    const aliases: Record<string, string> = {
+      "/mcp/authorize": "/oauth2/authorize",
+      "/mcp/token": "/oauth2/token",
+      "/mcp/register": "/oauth2/register",
+      "/mcp/jwks": "/jwks",
+      "/mcp/userinfo": "/oauth2/userinfo",
+    };
+    const alias = aliases[url.pathname.slice("/api/auth".length)];
+    if (alias) url.pathname = `/api/auth${alias}`;
+    if (url.pathname.startsWith("/api/auth/oauth2/"))
+      await ensureMcpProviderResources(publicOriginFor(c.req.raw));
+    let forwarded = new Request(url, c.req.raw);
+    if (forwarded.method === "POST" && url.pathname.endsWith("/oauth2/register")) {
+      // Older MCP clients omit application_type for loopback callbacks. Infer
+      // native only for loopback HTTP; explicit web declarations still validate.
+      const body = (await forwarded
+        .clone()
+        .json()
+        .catch(() => {
+          // diagnostics-ignore: Invalid JSON bypasses this shim and reaches the provider's validation.
+          return null;
+        })) as Record<string, unknown> | null;
+      if (
+        body &&
+        body.application_type === undefined &&
+        Array.isArray(body.redirect_uris) &&
+        body.redirect_uris.length &&
+        body.redirect_uris.every((uri) => {
+          try {
+            const callback = new URL(String(uri));
+            return (
+              callback.protocol === "http:" &&
+              ["localhost", "127.0.0.1", "[::1]"].includes(callback.hostname)
+            );
+          } catch {
+            return false;
+          }
+        })
+      ) {
+        const headers = new Headers(forwarded.headers);
+        headers.delete("content-length");
+        forwarded = new Request(forwarded, {
+          headers,
+          body: JSON.stringify({ ...body, application_type: "native" }),
+        });
+      }
+    }
+    const request = await normalizeMcpRedirectUri(forwarded, async (clientId) => {
+      const [client] = await db
+        .select({ redirectUris: schema.oauthClient.redirectUris })
+        .from(schema.oauthClient)
+        .where(eq(schema.oauthClient.clientId, clientId))
+        .limit(1);
+      return client?.redirectUris;
+    });
+    if (c.req.method === "POST" && url.pathname.endsWith("/oauth2/token")) {
+      return handleMcpTokenRequest(request);
+    }
+    return auth.handler(request);
   });
-  // MCP token grants go through the RFC 8707 wrapper (validates `resource`,
-  // audience-binds the issued token) before reaching the plugin. Everything
-  // else is delegated verbatim.
-  if (c.req.method === "POST" && new URL(request.url).pathname.endsWith("/mcp/token")) {
-    return handleMcpTokenRequest(request);
-  }
-  return auth.handler(request);
-});
+
+// Keep these documented compatibility routes explicit in the HTTP inventory.
+authRoutes.get("/mcp/jwks", handleProviderRequest);
+authRoutes.get("/mcp/userinfo", handleProviderRequest);
+authRoutes.on(["GET", "POST"], "/*", handleProviderRequest);

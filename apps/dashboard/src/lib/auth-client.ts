@@ -3,7 +3,6 @@ import {
   organizationClient,
   emailOTPClient,
   twoFactorClient,
-  genericOAuthClient,
 } from "better-auth/client/plugins";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { getAuthBaseUrl } from "@/lib/api/urls";
@@ -36,7 +35,6 @@ export const authClient = createAuthClient({
     emailOTPClient(),
     passkeyClient(),
     twoFactorClient(),
-    genericOAuthClient(),
   ],
 });
 

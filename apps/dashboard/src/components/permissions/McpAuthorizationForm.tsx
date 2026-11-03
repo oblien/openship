@@ -91,7 +91,7 @@ const orgClient = (
   }
 ).organization;
 
-/** Consent POST → `{ redirectURI }`. Uses the auth client so the cookie session
+/** Consent POST → `{ url }`. Uses the auth client so the cookie session
  *  + auth base URL are handled for us. */
 async function postConsent(accept: boolean, consentCode: string | null): Promise<string | null> {
   const res = await (
@@ -99,17 +99,17 @@ async function postConsent(accept: boolean, consentCode: string | null): Promise
       $fetch: (
         path: string,
         opts: { method: string; body: Record<string, unknown> },
-      ) => Promise<{ data?: { redirectURI?: string } | null; error?: { status?: number } | null }>;
+      ) => Promise<{ data?: { url?: string; redirect_uri?: string } | null; error?: { status?: number } | null }>;
     }
   ).$fetch("/oauth2/consent", {
     method: "POST",
-    body: { accept, ...(consentCode ? { consent_code: consentCode } : {}) },
+    body: { accept, ...(consentCode ? { oauth_query: consentCode } : {}) },
   });
   if (res.error) {
     const status = res.error.status;
     throw Object.assign(new Error("consent failed"), { status });
   }
-  return res.data?.redirectURI ?? null;
+  return res.data?.url ?? res.data?.redirect_uri ?? null;
 }
 
 function AuthorizationForm({

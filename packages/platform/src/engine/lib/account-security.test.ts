@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { createHash, createPrivateKey, randomBytes, sign } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createOTP } from "@better-auth/utils/otp";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { createDatabase, schema, type DatabaseConnection } from "@repo/db/factory";
@@ -108,8 +109,21 @@ function createAuth() {
         clientSecret: "test-google-secret",
         verifyIdToken: async () => true,
         getUserInfo: async () => ({
-          user: { id: oauthEmail, email: oauthEmail, name: "Test user", emailVerified: true },
-          data: {},
+          user: { email: oauthEmail, name: "Test user", emailVerified: true },
+          data: {
+            sub: oauthEmail,
+            email: oauthEmail,
+            email_verified: true,
+            name: "Test user",
+            aud: "test-google-client",
+            azp: "test-google-client",
+            iss: "https://accounts.google.com",
+            exp: Math.floor(Date.now() / 1000) + 300,
+            iat: Math.floor(Date.now() / 1000),
+            family_name: "user",
+            given_name: "Test",
+            picture: "",
+          },
         }),
       },
     },
@@ -179,7 +193,7 @@ async function totp(id: string) {
     .from(schema.twoFactor)
     .where(eq(schema.twoFactor.userId, id));
   const secret = await symmetricDecrypt({ key: SECRET, data: factor!.secret });
-  return (await auth.api.generateTOTP({ body: { secret } })).code;
+  return createOTP(secret).totp();
 }
 
 async function enroll() {

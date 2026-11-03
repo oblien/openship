@@ -62,21 +62,12 @@ export function OAuthButtons({
       // throwing, so inspecting the return value is what actually surfaces a
       // misconfigured/failed provider — the try/catch only covers thrown
       // network/abort errors. Without this the spinner spun forever.
-      const { error } =
-        provider === "oidc"
-          ? await signIn.oauth2({
-              providerId: "oidc",
-              callbackURL: cb,
-              newUserCallbackURL: cb,
-              errorCallbackURL: errorCb,
-            })
-          : await signIn.social({
-              provider,
-              callbackURL: cb,
-              // First-time OAuth users take the newUser branch; keep them on the app.
-              newUserCallbackURL: cb,
-              errorCallbackURL: errorCb,
-            });
+      const { error } = await signIn.social({
+        provider,
+        callbackURL: cb,
+        newUserCallbackURL: cb,
+        errorCallbackURL: errorCb,
+      });
       if (error) {
         toast("error", error.message ?? t.auth.errors.oauthFailed);
         setLoading(null);

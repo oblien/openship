@@ -1,20 +1,17 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
 import { auth } from "@repo/platform/engine/lib/auth";
-import { isAllowedMcpResource, publicOriginFor, publicRequestUrl } from "../lib/mcp-resource";
+import { canonicalMcpResource, isAllowedMcpResource, publicOriginFor, publicRequestUrl } from "../lib/mcp-resource";
 
 /**
  * Gate the MCP OAuth authorize flow: (1) force it through our consent page, and
  * (2) on desktop zero-auth, establish the loopback session so it reaches consent
  * instead of a dead login page.
  *
- * (1) better-auth's mcp() plugin only redirects `/mcp/authorize` to the
- * configured `consentPage` when `prompt === "consent"` EXACTLY; otherwise it
- * mints a code immediately and consent never runs. Our consent page
- * (`dashboard/mcp/authorize` → POST /api/tokens/mcp-authorize) is the ONLY writer
- * of the OAuth binding (org + scope) that `tryOAuthMcpAuth` requires — a token
- * minted on the bypass path has no binding and is denied everything. Standard
- * MCP clients (Claude, Cursor) don't send `prompt=consent`, so we inject it.
+ * (1) Always show Openship's organization/resource permissions, including when
+ * the provider remembers an earlier consent. The consent page is the only
+ * writer of the binding that bearer authentication requires. A provider token
+ * without that binding is denied every resource.
  *
  * (2) An external MCP client's authorize request carries NO session, so
  * better-auth would redirect to the login page — unreachable on the desktop's
@@ -73,7 +70,8 @@ export async function forceMcpConsent(c: Context, next: Next): Promise<Response 
   }
 
   // (1) Force the consent param for the (session-bearing) authorize request.
-  if (url.searchParams.get("prompt") !== "consent") {
+  if (url.searchParams.get("prompt") !== "consent" || !resource) {
+    if (!resource) url.searchParams.set("resource", canonicalMcpResource(publicOriginFor(c.req.raw)));
     url.searchParams.set("prompt", "consent");
     return c.redirect(url.toString(), 302);
   }

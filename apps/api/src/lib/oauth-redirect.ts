@@ -47,8 +47,8 @@ export async function normalizeMcpRedirectUri(
   resolveRegisteredUris: RegisteredRedirectUriResolver,
 ): Promise<Request> {
   const url = new URL(request.url);
-  const isAuthorize = request.method === "GET" && url.pathname.endsWith("/mcp/authorize");
-  const isToken = request.method === "POST" && url.pathname.endsWith("/mcp/token");
+  const isAuthorize = request.method === "GET" && /\/(?:mcp|oauth2)\/authorize$/.test(url.pathname);
+  const isToken = request.method === "POST" && /\/(?:mcp|oauth2)\/token$/.test(url.pathname);
 
   if (!isAuthorize && !isToken) return request;
 
