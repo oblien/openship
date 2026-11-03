@@ -580,7 +580,7 @@ check retryable before starting the move.
   Manage is open and disable switching while checkout is in progress. Deployment and
   server-acquisition dialogs retain their compute-only choices. The direct Manage URL
   remains available for payment returns and reuses the same view.
-- The affiliate program is labeled **Earn** in the sidebar and page heading, with
+- The referral program is labeled **Referral** in the sidebar and page heading, with
   the shared `gift` icon in the sidebar. It uses full-width tabs for links,
   customers and payout history. Keep the
   four earnings cards above the tabs. Place program terms and first-use guidance in
@@ -623,6 +623,9 @@ check retryable before starting the move.
   on interval changes. Existing subscriptions keep their saved interval; Manage remains
   monthly. Disable interval changes during checkout and never reuse a quote from another
   interval. Do not add another product navigation or price calculator.
+  Keep referral entry in a quiet footer below the plans, using a small label,
+  the shared filled input and a secondary Apply button. Do not place a native
+  disclosure above the purchase header; keep applied terms and errors in that footer.
 - Manage uses standalone Basic and Priority pricing cards matching Cloud's card spacing,
   icons and typography. Keep the native radio selection, with a neutral filled action
   and checkmark inside each card; reserve the primary fill for checkout. Do not wrap the
