@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { reportCaughtError } from "@repo/core/diagnostics";
 import {
   AppError,
   ValidationError,
@@ -173,7 +174,8 @@ export async function inspectHostSecurity(
       observation = await withServerExecution(ctx.organizationId, id, (executor) =>
         inspect(executor, targets),
       );
-    } catch {
+    } catch (cause) {
+      reportCaughtError(cause, "security-advisories.host-inspection");
       error =
         "Host inspection unavailable. Check the connection, Ubuntu support and python3-apt, then retry.";
       const previous = current?.inventory as Inventory | null;
@@ -268,7 +270,9 @@ async function buildServerSecurityStatus(
     try {
       await assertServerExecution(server);
       if ((await isLocalHostRow(server)) && !(await resolveHostControlEnabled())) supported = false;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof AppError && [403, 404, 409].includes(error.statusCode)))
+        reportCaughtError(error, "security-advisories.host-capability");
       supported = false;
     }
   }
@@ -534,7 +538,9 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
                     .then(() =>
                       repos.jobRun.progress(runId, { ...summary, phase: "installing" }, snapshot),
                     )
-                    .catch(() => {});
+                    .catch((error) => {
+                      reportCaughtError(error, "security-advisories.host-run-checkpoint");
+                    });
                 }
               },
               { signal: AbortSignal.timeout(10 * 60_000) },
@@ -574,6 +580,7 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
           });
         }
       } catch (error) {
+        reportCaughtError(error, "security-advisories.host-patch");
         await checkpoint;
         await repos.jobRun.finish(runId, {
           status: "failed",
@@ -601,7 +608,9 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
         await inspectHostSecurity(ctx, id, feed, true);
     });
     accepted = true;
-    void work.catch(() => {}); // deferBackgroundWork owns diagnostics and shutdown drainage.
+    void work.catch(() => {
+      // diagnostics-ignore: deferBackgroundWork already reports rejections and owns shutdown drainage.
+    });
     return { runId };
   } finally {
     if (!accepted) await lock.release();
