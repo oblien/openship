@@ -1260,6 +1260,17 @@
     "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
   },
   "securityAdvisories": {
+    "bannerSettings": "Güvenlik bannerı ayarları",
+    "hideBanners": "Güvenlik bannerlarını gizle",
+    "showBanners": "Güvenlik bannerlarını göster",
+    "bannerDescription": "Bu tarayıcı ve çalışma alanında uygulama güvenlik bildirimlerini panonun üstünde göster. Bulgular İzleme bölümünde kalır; güvenlik kontrolleri ve bildirim teslimi devam eder.",
+    "openRuntimeConfiguration": "Çalışma ortamı ayarlarını incele",
+    "severity": {
+      "critical": "Kritik",
+      "high": "Yüksek",
+      "moderate": "Orta",
+      "low": "Düşük"
+    },
     "sourceRedeployRequired": "Çalışma ortamını yenilemeden önce bu uygulamayı kayıtlı kaynak kodundan yeniden derleyin. Mevcut imajın doğrulanmış bir kaynak revizyonu yok. Kaynaktan yeniden dağıtım daha yeni kod içerebilir; Dağıtımlar bölümünde inceleyin, ardından bu güvenlik duyurusunu tekrar kontrol edin.",
     "openSourceRedeploy": "Kaynaktan yeniden dağıtımı aç",
     "reviewApps": "Etkilenen uygulamaları incele ({count})",

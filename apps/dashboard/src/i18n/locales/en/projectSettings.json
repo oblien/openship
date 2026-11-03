@@ -1260,6 +1260,17 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "moderate": "Moderate",
+      "low": "Low"
+    },
+    "bannerSettings": "Security banner settings",
+    "hideBanners": "Hide security banners",
+    "showBanners": "Show security banners",
+    "bannerDescription": "Show app security notices at the top of the dashboard in this browser and workspace. Findings stay available in Monitoring; security checks and notification delivery continue.",
+    "openRuntimeConfiguration": "Review runtime configuration",
     "sourceRedeployRequired": "Rebuild this app from its saved source before refreshing its runtime. The current image has no verified source revision. A source redeploy may include newer code; review it in Deployments, then check this advisory again.",
     "openSourceRedeploy": "Open source redeploy",
     "reviewApps": "Review affected apps ({count})",

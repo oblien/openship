@@ -30,6 +30,7 @@ export const ProjectSecurityResultSchema = Type.Object({
       canRefresh: Type.Boolean(),
       refreshBlockedReason: Type.Optional(Type.String()),
       sourceRedeployRequired: Type.Optional(Type.Boolean()),
+      runtimeUpgradeRequired: Type.Optional(Type.Boolean()),
     }),
   ),
 });
