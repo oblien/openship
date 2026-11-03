@@ -27,6 +27,7 @@ import { mcpIssuer } from "./mcp-issuer";
 import { allowedMcpResources } from "./mcp-resources";
 import { mcpOAuthPolicy } from "./mcp-oauth-policy";
 import { getAuthMode } from "./auth-mode";
+import { sessionBridge } from "./session-bridge";
 
 /**
  * Better Auth - handles registration, login, OAuth, sessions, tokens.
@@ -368,11 +369,7 @@ export const auth = betterAuth({
           // mirrorCloudUser and ensureLocalUser), so this FK target
           // is always valid.
           //
-          // Only fires for sessions Better Auth's internal adapter
-          // creates (sign-in/sign-up/OAuth/refresh). The direct
-          // db.insert(schema.session) inside `mintSession`
-          // (lib/cloud-auth-proxy.ts) bypasses Better Auth entirely
-          // and sets activeOrganizationId itself.
+          // Shared by sign-in, OAuth and the authenticated local/Cloud bridge.
           return {
             data: {
               ...session,
@@ -394,13 +391,19 @@ export const auth = betterAuth({
     // The API client-IP middleware replaces this header using its proxy trust rules.
     ipAddress: { ipAddressHeaders: ["x-real-ip"] },
     cookiePrefix: COOKIE_PREFIX,
-    // Pin secure-cookie behavior when served on a public URL. The dynamic
-    // `baseURL` (an object) would otherwise make Better Auth derive `secure`
-    // from NODE_ENV (→ true in prod) instead of the previous static-localhost
-    // `false` — which renames the session cookie (`__Secure-` prefix, logging
-    // everyone out once) and breaks the pre-TLS HTTP window. Preserve today's
-    // exact behavior; secure-cookie hardening is a separate, deliberate change.
-    ...(env.OPENSHIP_PUBLIC_URL ? { useSecureCookies: false } : {}),
+    // Keep established cookie names for dynamic public URLs, including the HTTP
+    // setup window. Configure the Secure attribute from the trusted public URL
+    // without renaming existing cookies when a self-hosted instance adopts TLS.
+    ...(env.OPENSHIP_PUBLIC_URL
+      ? {
+          useSecureCookies: false,
+          // Preserve the established cookie name while sharing TLS policy with
+          // the local/Cloud bridge. HTTP setup still needs a non-Secure cookie.
+          defaultCookieAttributes: {
+            secure: env.OPENSHIP_PUBLIC_URL.trim().toLowerCase().startsWith("https://"),
+          },
+        }
+      : {}),
     ...(sharedCookieDomain
       ? {
           crossSubDomainCookies: {
@@ -413,6 +416,7 @@ export const auth = betterAuth({
 
   /* ---------- Plugins ---------- */
   plugins: [
+    sessionBridge(),
     ...accountSecurityPlugins({
       database: db,
       // DB-discovered self-app domains construct URLs; they do not grant trust.

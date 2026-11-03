@@ -40,15 +40,15 @@ export const mcpOAuthPolicy = createAuthMiddleware(async (ctx) => {
   // For an initial request, preserve GET queries and POST forms, including PKCE.
   const key = ctx.method === "POST" ? "body" : "query";
   const parameters = ctx[key] ?? {};
-  const prompt =
-    typeof parameters.prompt === "string"
-      ? [
-          ...new Set([
-            ...parameters.prompt.split(/\s+/).filter((value: string) => value && value !== "none"),
-            "consent",
-          ]),
-        ].join(" ")
-      : (parameters.prompt ?? "consent");
+  let prompt = parameters.prompt;
+  if (prompt === undefined) prompt = "consent";
+  else if (typeof prompt === "string" && prompt.trim()) {
+    const prompts = prompt.split(/\s+/);
+    // Keep interactive permission review, but let the provider own silent
+    // requests and validation (including the invalid "none consent" pair).
+    // Normalizing empty/invalid input here would hide it from that validation.
+    if (!prompts.includes("none") && !prompts.includes("consent")) prompt += " consent";
+  }
   return {
     context: {
       [key]: {

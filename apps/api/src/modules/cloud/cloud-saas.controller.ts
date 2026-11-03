@@ -11,7 +11,7 @@
  *   POST /api/cloud/edge-proxy        - sync Oblien edge proxy (namespace token)
  *   POST /api/cloud/pages             - proxy Oblien pages.create (namespace token)
  *   POST /api/cloud/preflight         - cloud deployment preflight check
- *   GET  /api/cloud/desktop-handoff   - OAuth → one-time code → redirect to desktop
+ *   GET  /api/cloud/desktop-handoff   - validates params, redirects to desktop consent
  *   GET  /api/cloud/connect-handoff   - validates params, 302s to dashboard consent page
  *   POST /api/cloud/connect-authorize - dashboard consent page mints code with session
  *   POST /api/cloud/exchange-code     - exchange code for user + session (no auth)
@@ -27,13 +27,12 @@ import {
   exchangeHandoffCode,
   validateDesktopRedirect,
   validateConnectRedirect,
-  buildAuthHandoff,
   generateHandoffCode,
   findHandoffCodeByState,
   mintSession,
 } from "../../lib/cloud-auth-proxy";
 import { runCloudPreflight } from "@repo/platform/engine/lib/cloud-preflight";
-import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
+import { cloudRuntimeTarget, trustedOrigins } from "@repo/platform/engine/config/env";
 import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { canMintInstallationToken } from "@repo/platform/engine/modules/github/github-access";
 import {
@@ -222,10 +221,9 @@ export async function account(c: Context) {
 /**
  * GET /api/cloud/desktop-handoff?redirect=<url>&state=<state>&code_challenge=<challenge>
  *
- * Security:
- *   - redirect MUST be localhost (desktop callback) - no open redirect
- *   - state is passed through unchanged for CSRF protection
- *   - code_challenge (PKCE S256) is bound to the one-time code
+ * Read-only browser entry point. Approval and credential creation happen only
+ * through the consent page's authenticated POST, including for older clients
+ * that still navigate directly to this endpoint.
  */
 export async function desktopHandoff(c: Context) {
   const codeChallenge = c.req.query("code_challenge");
@@ -234,16 +232,16 @@ export async function desktopHandoff(c: Context) {
   }
   const validation = validateDesktopRedirect(c.req.query("redirect"));
   if (!validation.ok) return c.json({ error: validation.error }, validation.status);
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  const result = await buildAuthHandoff({
-    session,
-    redirect: validation.url,
-    state: c.req.query("state"),
-    codeChallenge,
-    dashboardOrigin: cloudRuntimeTarget.dashboard,
-    loginFlow: "desktop-cloud",
-  });
-  return c.redirect(result.url);
+  const state = c.req.query("state");
+  if (!state || state.length > 256) {
+    return c.json({ error: "state query parameter is required", code: "MISSING_STATE" }, 400);
+  }
+  const consentUrl = new URL("/authorize", cloudRuntimeTarget.dashboard);
+  consentUrl.searchParams.set("callback", validation.url.toString());
+  consentUrl.searchParams.set("state", state);
+  consentUrl.searchParams.set("code_challenge", codeChallenge);
+  consentUrl.searchParams.set("flow", "desktop-cloud");
+  return c.redirect(consentUrl.toString());
 }
 
 // ─── Self-hosted connect handoff ─────────────────────────────────────────────
@@ -309,7 +307,7 @@ export async function connectHandoff(c: Context) {
  * handoff code bound to the supplied PKCE challenge and returns the
  * final callback URL the page should navigate to.
  *
- * Body shape: { redirect, state, codeChallenge }
+ * Body shape: { redirect?, state, codeChallenge, mode?: "desktop" | "device" }
  *
  * Returns:
  *   200 { callbackUrl }        — on success
@@ -318,9 +316,23 @@ export async function connectHandoff(c: Context) {
  *   500 { error, code }        — on unexpected mint failure
  */
 export async function connectAuthorize(c: Context) {
+  // Only the browser consent UI may create a linked session. Require its exact
+  // trusted origin and JSON transport, even when this controller is mounted
+  // without the application-wide origin middleware.
+  const origin = c.req.header("origin");
+  if (!origin || !trustedOrigins.includes(origin)) {
+    return c.json({ error: "Origin not allowed", code: "ORIGIN_REJECTED" }, 403);
+  }
+  if (c.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return c.json({ error: "JSON body required", code: "INVALID_BODY" }, 415);
+  }
   let body: { redirect?: string; state?: string; codeChallenge?: string; mode?: string };
   try {
-    body = await c.req.json<{ redirect?: string; state?: string; codeChallenge?: string; mode?: string }>();
+    const parsed = await c.req.json<unknown>();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return c.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, 400);
+    }
+    body = parsed;
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "api/modules/cloud/cloud-saas.controller");
     return c.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, 400);
@@ -340,7 +352,10 @@ export async function connectAuthorize(c: Context) {
   // no redirect target to guard.
   let redirectUrl: string | undefined;
   if (!isDevice) {
-    const validation = validateConnectRedirect(body.redirect);
+    const validation =
+      body.mode === "desktop"
+        ? validateDesktopRedirect(body.redirect)
+        : validateConnectRedirect(body.redirect);
     if (!validation.ok) {
       return c.json({ error: validation.error, code: "INVALID_REDIRECT" }, validation.status);
     }
@@ -351,7 +366,12 @@ export async function connectAuthorize(c: Context) {
     return c.json({ error: "state is required", code: "MISSING_STATE" }, 400);
   }
 
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  // Approval creates a new credential, so require the live session and current
+  // workspace rather than Cloud's cached browser identity.
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+    query: { disableCookieCache: true },
+  });
   if (!session) {
     return c.json({ error: "Authentication required", code: "UNAUTHENTICATED" }, 401);
   }
