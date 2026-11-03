@@ -411,7 +411,18 @@
     "suggestedFix": "Correção sugerida",
     "fixStep1": "Abra o separador Domínios.",
     "fixStep2": "Adicione uma rota ou domínio personalizado para a porta do serviço.",
-    "fixStep3": "Verifique o domínio e implemente."
+    "fixStep3": "Verifique o domínio e implemente.",
+    "composeReview": {
+      "title": "O Compose mudou",
+      "addedTitle": "Há novos serviços para configurar",
+      "description": "O ficheiro Compose mudou desde a última configuração. Reveja os serviços e as definições atuais antes de voltar a implementar.",
+      "configure": "Configurar",
+      "cancel": "Cancelar",
+      "added": "Adicionados",
+      "changed": "Alterados",
+      "removed": "Removidos",
+      "reviewHint": "Reveja estas alterações do Compose e implemente para as aplicar. Os serviços removidos param durante a implementação; os seus dados persistentes são mantidos."
+    }
   },
   "connections": {
     "nativeClusterHint": "Escolha um projeto no cluster deste banco de dados. Apenas projetos vinculados recebem acesso privado.",

@@ -513,6 +513,20 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.audit).not.toHaveBeenCalled();
   });
 
+  it("requires project write access before preparing saved configuration in HTTP and native calls", async () => {
+    h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    h.grants.set("org-a:alice:deployment:*", { permissions: ["write"] });
+    h.grants.set("org-a:alice:project:project-a", { permissions: ["read"] });
+    const local = await native();
+    for (const deployments of [remote().deployments, local.deployments]) {
+      await deployments.prepare({ owner: "acme", repo: "app" });
+      h.localInfo.mockClear();
+      await expect(deployments.prepare({ projectId: "project-a", owner: "acme", repo: "app" }))
+        .rejects.toMatchObject({ statusCode: 404 });
+      expect(h.localInfo).not.toHaveBeenCalled();
+    }
+  });
+
   it("retains empty-option defaults before calling the scanner", async () => {
     const local = await native();
     for (const deployments of [remote().deployments, local.deployments]) {

@@ -379,6 +379,13 @@ cancellations and unfinished attempts from success rate; count queued attempts a
 Each project retains its own history.
 Old `/deployments` links redirect to Monitoring while preserving filters.
 
+When redeploy detects changed Compose source, show a review modal with the added,
+changed, and removed service names. Configure opens the existing deployment
+wizard with the fresh source and saved settings/destination; cancel performs no
+synchronization. Show the change summary in the wizard and validate its source
+revision before deploying. Retire removed services through normal deployment
+cleanup while preserving their persistent data and deployment history.
+
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
