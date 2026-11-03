@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AssistantToolResources } from "./AssistantToolResources";
 import { AssistantToolActivity } from "./AssistantToolActivity";
+import { AssistantToolResult } from "./AssistantToolResult";
 import { AssistantAccessRequest, permissionRequest } from "./AssistantAccessRequest";
 import {
   assistantToolState,
@@ -30,6 +31,67 @@ const repo = {
 };
 
 describe("OpenShip tool result presentation", () => {
+  it("keeps routine lookups compact without empty sections or automatic resource lists", () => {
+    const apps = Array.from({ length: 8 }, (_, index) => ({
+      id: `app-${index}`,
+      name: `App ${index}`,
+    }));
+    const html = renderToStaticMarkup(
+      <AssistantToolActivity
+        active={false}
+        parts={[
+          { type: "tool", tool: tool("get_assistant_agents", { data: [] }) },
+          { type: "tool", tool: tool("get_assistant_automations", { data: { automations: [] } }) },
+          { type: "tool", tool: tool("get_projects", { data: apps, total: 8 }) },
+        ]}
+      />,
+    );
+    expect(html).toContain("Find specialists · Completed · 0 results");
+    expect(html).toContain("Find automations · Completed · 0 results");
+    expect(html).toContain("Find apps · Completed · 8 results");
+    expect(html).not.toMatch(/No specialists|No automations|Apps from tool|View all|View app/);
+    expect(html).not.toContain("App 0");
+    const details = renderToStaticMarkup(
+      <AssistantToolResult tool={tool("get_projects", { data: apps })} />,
+    );
+    expect(details).toContain("App 0");
+    expect(details).toContain("App 7");
+    expect(details).toContain('href="/projects/app-7"');
+  });
+
+  it("uses the latest repeated read and keeps lookup results out of the transcript", () => {
+    const html = renderToStaticMarkup(
+      <AssistantToolActivity
+        active={false}
+        parts={[
+          { type: "tool", tool: tool("get_projects", { data: [{ id: "old", name: "Old app" }] }) },
+          { type: "tool", tool: tool("get_projects", { data: [] }) },
+        ]}
+      />,
+    );
+    expect(html).toContain("Find apps · Completed · 0 results · 2 calls");
+    expect(html).not.toContain("Old app");
+    expect(html).not.toContain("No apps in this result.");
+  });
+
+  it("retains explicit setup offers in chat even though setup is a read tool", () => {
+    const html = renderToStaticMarkup(
+      <AssistantToolActivity
+        active={false}
+        parts={[
+          {
+            type: "tool",
+            tool: tool("get_chat_apps_setup", {
+              data: { ...chatAppSetup("slack", "commands"), organizationId: "workspace" },
+            }),
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("Connect Slack");
+    expect(html).toContain("Connect a chat app");
+  });
+
   it("shows native actions once while keeping every deployment result visible", () => {
     const deploy = (id: string): AssistantTool => ({
       ...tool("post_deployments_build_access", { success: true, deployment_id: id }),
