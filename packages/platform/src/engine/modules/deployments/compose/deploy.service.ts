@@ -707,9 +707,9 @@ export function createServiceRuntimeConfig(opts: {
    * cutover, so activation must not contact the registry a second time. */
   imageAlreadyPrepared?: boolean;
 }): MultiServiceDeployConfig {
+  validateComposeNamespaces(opts.service.advanced);
   const { project, dep, service, image, environment, resources, namespaces } =
     opts;
-  validateComposeNamespaces(service.advanced);
   // Monorepo sub-apps store their long-running process in `startCommand`;
   // compose services in `command`. The DB invariant is that compose rows
   // never have `startCommand` set, so a single `??` chain covers both:
