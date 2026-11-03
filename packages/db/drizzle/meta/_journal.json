@@ -1534,6 +1534,13 @@
       "when": 1793327200002,
       "tag": "0218_two_factor_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793327200003,
+      "tag": "0219_security_advisory_checks",
+      "breakpoints": true
     }
   ]
 }

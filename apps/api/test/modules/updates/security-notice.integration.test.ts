@@ -190,6 +190,18 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
   expect(await deliveries()).toEqual([]);
 
   await publish([notice]);
+  await client.updates.setSecurityCheckPolicy({ checksEnabled: false });
+  expect((await client.updates.advisories()).overview).toEqual({
+    checksEnabled: false,
+    projects: [],
+    pendingProjects: 0,
+    unknownProjects: 0,
+  });
+  await expect(client.updates.checkSecurity(project.id)).rejects.toThrow(/disabled/);
+  expect((await scanSecurityAdvisories()).checked).toBe(0);
+  expect(h.probe).not.toHaveBeenCalled();
+  expect(await deliveries()).toEqual([]);
+  await client.updates.setSecurityCheckPolicy({ checksEnabled: true });
   // The root banner does not execute commands while matching a new feed.
   const pending = await client.updates.advisories();
   expect(pending.overview.pendingProjects).toBe(1);

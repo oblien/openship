@@ -14,6 +14,8 @@ export async function securityOverview(
   feed: AdvisoryFeedState,
 ): Promise<SecurityOverview> {
   const overview: SecurityOverview = { projects: [], pendingProjects: 0, unknownProjects: 0 };
+  overview.checksEnabled = await repos.securityAdvisory.checksEnabled(ctx.organizationId);
+  if (!overview.checksEnabled) return overview;
   const [projects, observations] = await Promise.all([
     listAuthorizedProjects(ctx, ctx.organizationId),
     repos.securityAdvisory.listByOrganization(ctx.organizationId),

@@ -7,6 +7,10 @@ import type {
   ScopedOperations,
 } from "./resource-operations";
 const nullableString = Type.Union([Type.String(), Type.Null()]);
+const SecurityCheckPolicySchema = Type.Object({
+  checksEnabled: Type.Boolean(),
+  canManage: Type.Boolean(),
+});
 export const ProjectSecurityResultSchema = Type.Object({
   projectId: Type.String(),
   deploymentId: nullableString,
@@ -35,6 +39,7 @@ export const ProjectSecurityResultSchema = Type.Object({
   ),
 });
 export const SecurityOverviewSchema = Type.Object({
+  checksEnabled: Type.Optional(Type.Boolean()),
   /** Authorized active apps and opted-in policies, including unknown/pending observations. */
   projects: Type.Array(
     Type.Object({
@@ -100,6 +105,15 @@ export const ProjectUpdateSchema = Type.Object({
 });
 export const UpdateCollectionSchemas = {
   advisories: { action: "read", output: AdvisoryFeedResultSchema },
+  securityCheckPolicy: {
+    action: "read",
+    output: SecurityCheckPolicySchema,
+  },
+  setSecurityCheckPolicy: {
+    action: "write",
+    input: Type.Object({ checksEnabled: Type.Boolean() }, { additionalProperties: false }),
+    output: SecurityCheckPolicySchema,
+  },
   list: {
     action: "read",
     input: Type.Object({ behindOnly: Type.Optional(Type.Boolean()) }),
@@ -155,6 +169,7 @@ export type ProjectUpdate = Static<typeof ProjectUpdateSchema>;
 export type ProjectSecurityResult = Static<typeof ProjectSecurityResultSchema>;
 export type AdvisoryFeedResult = Static<typeof AdvisoryFeedResultSchema>;
 export type SecurityOverview = Static<typeof SecurityOverviewSchema>;
+export type SecurityCheckPolicy = Static<typeof SecurityCheckPolicySchema>;
 export type ApplySecurityInput = Static<typeof UpdateProjectSchemas.applySecurity.input>;
 export type UpdateRuntimeInput = Static<typeof UpdateProjectSchemas.updateRuntime.input>;
 export type RuntimeImageCheckResult = Static<typeof RuntimeImageCheckResultSchema>;

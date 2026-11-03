@@ -1260,10 +1260,15 @@
     "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
   },
   "securityAdvisories": {
+    "checksEnabled": "Vérifier les avis de sécurité des environnements d’exécution",
+    "checksDescription": "La désactivation suspend les inspections automatiques, les nouvelles alertes et les actualisations automatiques de sécurité de cet espace de travail. Les résultats et consentements existants sont conservés.",
+    "checksDisabled": "Les vérifications des avis de sécurité des environnements d’exécution sont désactivées pour cet espace de travail.",
+    "manageChecks": "Gérer les vérifications de sécurité",
+    "retrySettings": "Réessayer",
     "bannerSettings": "Paramètres des bannières de sécurité",
     "hideBanners": "Masquer les bannières de sécurité",
     "showBanners": "Afficher les bannières de sécurité",
-    "bannerDescription": "Afficher les avis de sécurité des applications en haut du tableau de bord dans ce navigateur et cet espace de travail. Les résultats restent disponibles dans Surveillance ; les vérifications et les notifications continuent.",
+    "bannerDescription": "Afficher les avis de sécurité des applications en haut du tableau de bord dans ce navigateur et cet espace de travail. Les vérifications et les canaux de notification se règlent séparément.",
     "openRuntimeConfiguration": "Configurer l’environnement",
     "severity": {
       "critical": "Critique",

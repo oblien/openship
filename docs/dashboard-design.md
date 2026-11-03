@@ -128,7 +128,11 @@ new/changed rules are inspected by the bounded background job.
 Automatic security refresh is an explicit, off-by-default project switch with
 its limited scope explained beside it. Keep per-channel security alert controls
 in Settings → Notifications. Runtime security checks may use cached, bounded
-version probes inside isolated containers. Keep **Check again** beside the last
+version probes inside isolated containers. Workspace owners and admins can pause
+runtime advisory checks with the separate saved setting in Settings → Notifications.
+Monitoring must show checks disabled rather than a clean result; banner visibility
+remains a separate browser preference. Pausing checks also pauses automatic security refreshes.
+Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
 The failed deployment page offers **Retry deployment** only when the server reports a retained
 completed image. It replays that attempt's saved configuration with no build or replacement image

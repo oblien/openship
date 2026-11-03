@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { SecurityOverview } from "@repo/contracts";
 import { SECURITY_FEED_SOURCE } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -20,6 +21,15 @@ export function SecurityOverviewPanel({
   const copy = t.projectSettings.securityAdvisories;
   const resourceKey = useCloudResourceKey();
   const [showOther, setShowOther] = useState(false);
+  if (overview.checksEnabled === false)
+    return (
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <p role="status">{copy.checksDisabled}</p>
+        <Button variant="secondary" size="sm" asChild>
+          <Link href="/settings?tab=notifications">{copy.manageChecks}</Link>
+        </Button>
+      </div>
+    );
   const affected = overview.projects.filter(
     (project) => project.findings.length || project.autoRefresh,
   );

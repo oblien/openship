@@ -1260,10 +1260,15 @@
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   },
   "securityAdvisories": {
+    "checksEnabled": "Comprobar avisos de seguridad del entorno de ejecución",
+    "checksDescription": "Al desactivarlo se pausan las inspecciones automáticas, las nuevas alertas y las actualizaciones automáticas de seguridad de este espacio de trabajo. Se conservan los resultados y el consentimiento existentes.",
+    "checksDisabled": "Las comprobaciones de avisos de seguridad del entorno de ejecución están desactivadas en este espacio de trabajo.",
+    "manageChecks": "Gestionar comprobaciones de seguridad",
+    "retrySettings": "Reintentar",
     "bannerSettings": "Ajustes de avisos de seguridad",
     "hideBanners": "Ocultar avisos de seguridad",
     "showBanners": "Mostrar avisos de seguridad",
-    "bannerDescription": "Mostrar avisos de seguridad de las aplicaciones en la parte superior del panel en este navegador y espacio de trabajo. Los hallazgos siguen disponibles en Monitorización; las comprobaciones y las notificaciones continúan.",
+    "bannerDescription": "Mostrar avisos de seguridad de las apps en la parte superior del panel de este navegador y espacio de trabajo. Las comprobaciones y los canales de notificación se gestionan por separado.",
     "openRuntimeConfiguration": "Revisar configuración de ejecución",
     "severity": {
       "critical": "Crítica",

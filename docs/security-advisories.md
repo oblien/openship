@@ -4,6 +4,14 @@ Openship checks public advisory metadata and matches it against locally recorded
 image digests and observed runtime versions. Security notifications are enabled by
 default. **Automatic deployment changes are off by default.**
 
+Workspace owners and admins can turn off **Check runtime security advisories** in
+**Settings → Notifications**. This saved workspace policy pauses runtime inspections,
+new runtime advisory alerts and automatic security refreshes, including refreshes
+that have not passed their worker's final check. Work already executing can finish.
+Monitoring shows that checks are disabled; it does not report a clean scan. Existing
+observations and project refresh consent are retained and used again when checks
+resume. Public feed polling, platform updates and other workspaces remain independent.
+
 ## What users see
 
 Matching runtime advisories appear in the existing root-level critical/update

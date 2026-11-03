@@ -6,6 +6,18 @@ import { organization } from "../schema/organization";
 
 export function createSecurityAdvisoryRepo(db: Database) {
   return {
+    async checksEnabled(organizationId: string) {
+      const row = await db.query.organization.findFirst({
+        where: eq(organization.id, organizationId),
+        columns: { securityAdvisoryChecksEnabled: true },
+      });
+      return row?.securityAdvisoryChecksEnabled ?? true;
+    },
+    async setChecksEnabled(organizationId: string, checksEnabled: boolean) {
+      await db.update(organization)
+        .set({ securityAdvisoryChecksEnabled: checksEnabled })
+        .where(eq(organization.id, organizationId));
+    },
     async organizationsForScan(afterId?: string, limit = 100) {
       return db
         .select({ id: organization.id })
@@ -18,10 +30,12 @@ export function createSecurityAdvisoryRepo(db: Database) {
       const rows = await db
         .select({ project })
         .from(project)
+        .innerJoin(organization, eq(organization.id, project.organizationId))
         .leftJoin(projectSecurity, eq(projectSecurity.projectId, project.id))
         .where(
           and(
             isNull(project.deletedAt),
+            eq(organization.securityAdvisoryChecksEnabled, true),
             isNotNull(project.activeDeploymentId),
             or(
               isNull(projectSecurity.evaluatedAt),

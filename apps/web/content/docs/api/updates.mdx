@@ -224,6 +224,8 @@ A changed digest describes image content, not a security remediation guarantee.
 | Apply an available update to the specified project ID. | `updates.apply(id)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
 | Refresh configured runtime images and rebuild selected services at the deployed source version. | `updates.updateRuntime(id, input?)` | `POST /api/updates/:projectId/runtime`<br />`project:write` |
 | Compare deployed image and recorded base-image digests with the registry. | `updates.checkRuntime(id, input?)` | `POST /api/updates/:projectId/runtime/check`<br />`project:read` |
+| Read the workspace runtime advisory check setting and permission to change it. | `updates.securityCheckPolicy()` | `GET /api/updates/security/policy`<br />`updates:read` |
+| Enable or disable runtime advisory checks for this workspace. Owners and admins only. | `updates.setSecurityCheckPolicy(input)` | `PUT /api/updates/security/policy`<br />`updates:write` |
 | Read the shared release/security feeds and authorized workspace findings from current cached observations. | `updates.advisories()` | `GET /api/updates/advisories`<br />`updates:read` |
 | Refresh isolated runtime observations and match current verified advisories. | `updates.checkSecurity(id)` | `POST /api/updates/:projectId/security/check`<br />`project:read` |
 | Match public security advisories against scoped deployment evidence. | `updates.security(id)` | `GET /api/updates/:projectId/security`<br />`project:read` |

@@ -2442,6 +2442,18 @@
       "description": "Compare deployed image and recorded base-image digests with the registry.",
       "route": "POST /api/updates/:projectId/runtime/check"
     },
+    "updates.securityCheckPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Read the workspace runtime advisory check setting and permission to change it.",
+      "route": "GET /api/updates/security/policy"
+    },
+    "updates.setSecurityCheckPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Enable or disable runtime advisory checks for this workspace. Owners and admins only.",
+      "route": "PUT /api/updates/security/policy"
+    },
     "updates.advisories": {
       "page": "updates",
       "section": "Operations",

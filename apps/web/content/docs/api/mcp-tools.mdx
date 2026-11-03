@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **550 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **552 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -696,6 +696,7 @@ The current API has **550 unique tools**. Permission tags below describe the rou
 | `get_updates`<br />`GET /api/updates` | List update statuses for the org (apps, projects, self-app, webmail). ?behind=1 filters to those with an update available. | `updates:read` |
 | `get_updates_advisories`<br />`GET /api/updates/advisories` | Read the shared release/security feeds and authorized workspace findings from current cached observations. Does not execute container commands; respects feed polling and backoff. | `updates:read` |
 | `get_updates_by_projectId_security`<br />`GET /api/updates/:projectId/security` | Match verified security notices against deployed image receipts and bounded, isolated runtime version checks. Does not deploy. | `project:read` |
+| `get_updates_security_policy`<br />`GET /api/updates/security/policy` | Read the workspace runtime security advisory check setting and whether this account can change it. | `updates:read` |
 | `post_updates_by_projectId_apply`<br />`POST /api/updates/:projectId/apply` | Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup). | `project:write` |
 | `post_updates_by_projectId_runtime`<br />`POST /api/updates/:projectId/runtime` | Refresh published runtime images and rebuild selected services at the active commit, without upgrading application code. Omit serviceIds to update the project. | `project:write` |
 | `post_updates_by_projectId_runtime_check`<br />`POST /api/updates/:projectId/runtime/check` | Check configured image tags and recorded build bases against their current registry digests. Does not deploy. | `project:read` |
@@ -703,6 +704,7 @@ The current API has **550 unique tools**. Permission tags below describe the rou
 | `post_updates_by_projectId_security_check`<br />`POST /api/updates/:projectId/security/check` | Refresh this project's isolated runtime observations and compare them with verified advisories. Does not deploy or bypass GitHub feed backoff. | `project:read` |
 | `post_updates_scan`<br />`POST /api/updates/scan` | Trigger a fresh update scan across the org's projects/apps. | `updates:write` |
 | `put_updates_by_projectId_security_policy`<br />`PUT /api/updates/:projectId/security/policy` | Opt in or out of automatic, signed, verified image security refreshes for this project. Off by default. | `project:write` |
+| `put_updates_security_policy`<br />`PUT /api/updates/security/policy` | Enable or disable runtime security advisory checks for this workspace. Only owners and admins can change this setting. | `updates:write` |
 
 ## HTTP-only routes
 

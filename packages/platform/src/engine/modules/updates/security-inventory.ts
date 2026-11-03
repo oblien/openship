@@ -15,6 +15,7 @@ import { liveContainerIdWithRuntime, livePrimaryContainerId } from "../services/
 import { mapWithLimit } from "../../lib/map-with-limit";
 import { getProjectRuntimeImages } from "./runtime-image-check";
 import { parseRuntimeProbe, runtimeVersionProbe } from "./runtime-probes";
+import { assertSecurityChecksEnabled } from "./security-check-policy";
 
 export interface SecurityInventory {
   deploymentId: string | null;
@@ -56,6 +57,7 @@ export async function projectSecurityInventory(
 ): Promise<SecurityInventory> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  await assertSecurityChecksEnabled(ctx.organizationId);
   const active = await findActiveDeployment(project);
   const empty: SecurityInventory = {
     deploymentId: null,
