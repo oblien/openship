@@ -87,6 +87,8 @@ export function UpdateCenter() {
   );
   const runtimeAdvisory = runtimeAdvisories?.find((item) => item.id === advisory?.id);
   const affectedProjects = runtimeAdvisory?.projects ?? [];
+  const runtimeSeverity = affectedProjects[0]?.findings[0]?.severity;
+  const severityLabels = t.projectSettings.securityAdvisories.severity;
   // An in-flight download/install owns the top surface — suppress the advisory
   // banner so we never stack it next to its own progress bar.
   const updating = desktop && updatePhase !== "idle";
@@ -167,7 +169,9 @@ export function UpdateCenter() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className={`text-[11px] font-semibold uppercase tracking-wide ${s.fg}`}>
-                      {w.severity[advisory.severity as AdvisorySeverity]}
+                      {runtimeSeverity && Object.hasOwn(severityLabels, runtimeSeverity)
+                        ? severityLabels[runtimeSeverity as keyof typeof severityLabels]
+                        : w.severity[advisory.severity as AdvisorySeverity]}
                     </span>
                     <span className="text-[14px] font-semibold text-foreground">
                       {advisory.title}

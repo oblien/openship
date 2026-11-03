@@ -4,7 +4,7 @@
   "checks": [
     "Node 20 requires explicit runtime configuration",
     "desktop and mobile have no horizontal overflow",
-    "critical banners can be hidden from their settings menu",
+    "runtime security banners can be hidden from their settings menu",
     "visibility survives reload",
     "Settings restores banners",
     "visibility does not mutate security policy or deploy"

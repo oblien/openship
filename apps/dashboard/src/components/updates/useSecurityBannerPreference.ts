@@ -23,7 +23,9 @@ export function useSecurityBannerPreference() {
     if (sessionPreferences.has(key)) return sessionPreferences.get(key)!;
     try {
       return localStorage.getItem(key) !== "0";
-    } catch {
+    } catch (error) {
+      sessionPreferences.set(key, true);
+      reportCaughtError(error, "updates/security-banner-preference");
       return true;
     }
   }, [key]);

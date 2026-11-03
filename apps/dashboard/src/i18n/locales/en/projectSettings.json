@@ -1260,6 +1260,12 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "moderate": "Moderate",
+      "low": "Low"
+    },
     "bannerSettings": "Security banner settings",
     "hideBanners": "Hide security banners",
     "showBanners": "Show security banners",

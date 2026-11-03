@@ -1260,6 +1260,17 @@
     "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   },
   "securityAdvisories": {
+    "bannerSettings": "Einstellungen für Sicherheitsbanner",
+    "hideBanners": "Sicherheitsbanner ausblenden",
+    "showBanners": "Sicherheitsbanner anzeigen",
+    "bannerDescription": "Sicherheitshinweise für Apps oben im Dashboard in diesem Browser und Arbeitsbereich anzeigen. Ergebnisse bleiben unter Monitoring verfügbar; Sicherheitsprüfungen und Benachrichtigungen laufen weiter.",
+    "openRuntimeConfiguration": "Laufzeitkonfiguration prüfen",
+    "severity": {
+      "critical": "Kritisch",
+      "high": "Hoch",
+      "moderate": "Mittel",
+      "low": "Niedrig"
+    },
     "sourceRedeployRequired": "Erstelle diese App aus ihrer gespeicherten Quelle neu, bevor du ihre Laufzeit aktualisierst. Das aktuelle Image hat keine verifizierte Quellrevision. Eine erneute Bereitstellung aus der Quelle kann neueren Code enthalten. Prüfe ihn unter „Bereitstellungen“ und überprüfe diesen Hinweis anschließend erneut.",
     "openSourceRedeploy": "Bereitstellung aus Quelle öffnen",
     "reviewApps": "Betroffene Apps prüfen ({count})",

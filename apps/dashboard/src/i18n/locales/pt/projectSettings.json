@@ -1260,6 +1260,17 @@
     "pinned": "As imagens estão fixadas por digest. Edite a referência configurada para atualizá-las."
   },
   "securityAdvisories": {
+    "bannerSettings": "Configurações dos banners de segurança",
+    "hideBanners": "Ocultar banners de segurança",
+    "showBanners": "Mostrar banners de segurança",
+    "bannerDescription": "Mostrar avisos de segurança dos aplicativos no topo do painel neste navegador e espaço de trabalho. Os resultados continuam disponíveis em Monitoramento; as verificações de segurança e as notificações continuam.",
+    "openRuntimeConfiguration": "Revisar configuração de execução",
+    "severity": {
+      "critical": "Crítica",
+      "high": "Alta",
+      "moderate": "Moderada",
+      "low": "Baixa"
+    },
     "sourceRedeployRequired": "Recompile este aplicativo a partir do código-fonte salvo antes de atualizar seu ambiente de execução. A imagem atual não tem uma revisão de código verificada. Uma nova implantação a partir do código-fonte pode incluir código mais recente; revise-o em Implantações e verifique este aviso novamente.",
     "openSourceRedeploy": "Abrir reimplantação a partir do código-fonte",
     "reviewApps": "Rever apps afetadas ({count})",

@@ -1260,6 +1260,17 @@
     "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
   },
   "securityAdvisories": {
+    "bannerSettings": "Paramètres des bannières de sécurité",
+    "hideBanners": "Masquer les bannières de sécurité",
+    "showBanners": "Afficher les bannières de sécurité",
+    "bannerDescription": "Afficher les avis de sécurité des applications en haut du tableau de bord dans ce navigateur et cet espace de travail. Les résultats restent disponibles dans Surveillance ; les vérifications et les notifications continuent.",
+    "openRuntimeConfiguration": "Configurer l’environnement",
+    "severity": {
+      "critical": "Critique",
+      "high": "Élevée",
+      "moderate": "Modérée",
+      "low": "Faible"
+    },
     "sourceRedeployRequired": "Reconstruisez cette application à partir de sa source enregistrée avant de mettre à jour son environnement d’exécution. L’image actuelle ne possède aucune révision source vérifiée. Un redéploiement depuis la source peut inclure du code plus récent ; vérifiez-le dans Déploiements, puis consultez à nouveau cet avis.",
     "openSourceRedeploy": "Ouvrir le redéploiement depuis la source",
     "reviewApps": "Examiner les apps concernées ({count})",

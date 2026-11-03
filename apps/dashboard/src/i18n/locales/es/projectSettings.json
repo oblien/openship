@@ -1260,6 +1260,17 @@
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   },
   "securityAdvisories": {
+    "bannerSettings": "Ajustes de avisos de seguridad",
+    "hideBanners": "Ocultar avisos de seguridad",
+    "showBanners": "Mostrar avisos de seguridad",
+    "bannerDescription": "Mostrar avisos de seguridad de las aplicaciones en la parte superior del panel en este navegador y espacio de trabajo. Los hallazgos siguen disponibles en Monitorización; las comprobaciones y las notificaciones continúan.",
+    "openRuntimeConfiguration": "Revisar configuración de ejecución",
+    "severity": {
+      "critical": "Crítica",
+      "high": "Alta",
+      "moderate": "Moderada",
+      "low": "Baja"
+    },
     "sourceRedeployRequired": "Vuelve a compilar esta aplicación desde su código fuente guardado antes de actualizar su entorno de ejecución. La imagen actual no tiene una revisión de código verificada. Una nueva implementación desde el código fuente puede incluir código más reciente; revísalo en Implementaciones y vuelve a comprobar este aviso.",
     "openSourceRedeploy": "Abrir implementación desde el código fuente",
     "reviewApps": "Revisar apps afectadas ({count})",

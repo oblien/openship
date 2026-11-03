@@ -1260,6 +1260,17 @@
     "pinned": "镜像已通过摘要固定。请编辑配置的引用以更新镜像。"
   },
   "securityAdvisories": {
+    "bannerSettings": "安全横幅设置",
+    "hideBanners": "隐藏安全横幅",
+    "showBanners": "显示安全横幅",
+    "bannerDescription": "在此浏览器和工作区的控制面板顶部显示应用安全通知。检测结果仍可在监控中查看，安全检查和通知发送将继续进行。",
+    "openRuntimeConfiguration": "检查运行时配置",
+    "severity": {
+      "critical": "严重",
+      "high": "高",
+      "moderate": "中等",
+      "low": "低"
+    },
     "sourceRedeployRequired": "刷新运行时之前，请从已保存的源代码重新构建此应用。当前镜像没有经过验证的源代码修订版本。从源代码重新部署可能会包含更新的代码；请先在“部署”中查看，然后再次检查此安全公告。",
     "openSourceRedeploy": "打开源代码重新部署",
     "reviewApps": "查看受影响的应用（{count}）",

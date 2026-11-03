@@ -19,7 +19,7 @@ const copy = baseDictionary.projectSettings.securityAdvisories;
 const project = {
   projectId: "esge",
   name: "esge",
-  findings: [{ id: "node", evidence: ["node 20.20.2"], serviceName: null }],
+  findings: [{ id: "node", evidence: ["node 20.20.2"], serviceName: null, severity: "high" }],
 };
 const runtime = {
   id: "runtime:node",
@@ -48,6 +48,7 @@ function button(label: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.account = "account-one";
+  project.findings[0].severity = "high";
   localStorage.clear();
   h.updates.mockReturnValue({
     state: {
@@ -74,32 +75,41 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("hides critical runtime banners immediately, persists the choice, and restores it from Settings", async () => {
-  await act(async () => render());
-  expect(container.textContent).toContain(runtime.title);
-  await act(async () => button(copy.bannerSettings).click());
-  await act(async () => button(copy.hideBanners).click());
-  expect(container.textContent).not.toContain(runtime.title);
-  expect(container.textContent).toContain("Scheduled maintenance");
-  expect(button(copy.showBanners).getAttribute("aria-checked")).toBe("false");
-  expect(localStorage.getItem("openship_security_banners:account-one")).toBe("0");
-  // Hiding the banner never mutates findings or per-project automatic-update consent.
-  expect(h.updates().securityOverview).toBe(overview);
-  expect(overview.projects[0].findings).toHaveLength(1);
+it.each(["high", "critical"] as const)(
+  "shows the actual %s severity and saves banner visibility independently of findings",
+  async (severity) => {
+    project.findings[0].severity = severity;
+    await act(async () => render());
+    expect(container.textContent).toContain(runtime.title);
+    expect(
+      [...container.querySelectorAll("span")].some(
+        (item) => item.textContent === copy.severity[severity],
+      ),
+    ).toBe(true);
+    await act(async () => button(copy.bannerSettings).click());
+    await act(async () => button(copy.hideBanners).click());
+    expect(container.textContent).not.toContain(runtime.title);
+    expect(container.textContent).toContain("Scheduled maintenance");
+    expect(button(copy.showBanners).getAttribute("aria-checked")).toBe("false");
+    expect(localStorage.getItem("openship_security_banners:account-one")).toBe("0");
+    // Hiding the banner never mutates findings or per-project automatic-update consent.
+    expect(h.updates().securityOverview).toBe(overview);
+    expect(overview.projects[0].findings).toHaveLength(1);
 
-  await act(async () => root.render(null));
-  await act(async () => render());
-  expect(container.textContent).not.toContain(runtime.title);
-  h.account = "account-two";
-  await act(async () => render());
-  expect(container.textContent).toContain(runtime.title);
-  h.account = "account-one";
-  await act(async () => render());
-  expect(container.textContent).not.toContain(runtime.title);
-  await act(async () => button(copy.showBanners).click());
-  expect(container.textContent).toContain(runtime.title);
-  expect(localStorage.getItem("openship_security_banners:account-one")).toBe("1");
-});
+    await act(async () => root.render(null));
+    await act(async () => render());
+    expect(container.textContent).not.toContain(runtime.title);
+    h.account = "account-two";
+    await act(async () => render());
+    expect(container.textContent).toContain(runtime.title);
+    h.account = "account-one";
+    await act(async () => render());
+    expect(container.textContent).not.toContain(runtime.title);
+    await act(async () => button(copy.showBanners).click());
+    expect(container.textContent).toContain(runtime.title);
+    expect(localStorage.getItem("openship_security_banners:account-one")).toBe("1");
+  },
+);
 
 it("shares a visibility change from another browser tab", async () => {
   await act(async () => render());
