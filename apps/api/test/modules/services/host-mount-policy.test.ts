@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
+import { CloudDockerRuntime, DockerRuntime } from "@repo/adapters";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { assertDeployVolumePolicy } from "@repo/platform/engine/modules/deployments/host-mount-policy";
 import { createServiceRuntimeConfig } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
@@ -122,9 +123,68 @@ describe("authored mounts through HTTP and native operations", () => {
       bound.clients.http.services.update(bound.project.id, bound.service.id, { volumes }),
     ).rejects.toMatchObject({ status: 403 });
   });
+
+  it.each(["native", "http"] as const)(
+    "%s preserves Cloud repository mounts without granting host access",
+    async (transport) => {
+      const { project, service, clients } = await setup();
+      const cloud = env.CLOUD_MODE;
+      env.CLOUD_MODE = true;
+      try {
+        const volumes = ["./config:/etc/app:ro", "data:/data"];
+        await clients[transport].services.update(project.id, service.id, { volumes });
+        expect((await repos.service.findById(service.id))?.volumes).toEqual(volumes);
+        await expect(
+          clients[transport].services.update(project.id, service.id, {
+            volumes: [...volumes, "/var/run/docker.sock:/socket"],
+          }),
+        ).rejects.toMatchObject(transport === "native" ? { statusCode: 403 } : { status: 403 });
+        expect((await repos.service.findById(service.id))?.volumes).toEqual(volumes);
+      } finally {
+        env.CLOUD_MODE = cloud;
+      }
+    },
+  );
 });
 
 describe("deployment boundary for repository, restored and previously stored mounts", () => {
+  it("permits repository mounts only through the managed Cloud resolver", async () => {
+    vi.stubEnv("OPENSHIP_ALLOW_HOST_BIND_MOUNTS", undefined);
+    const runtime = Object.create(CloudDockerRuntime.prototype) as CloudDockerRuntime;
+    const volumes = ["./config:/etc/app:ro"];
+    const { project, service } = await setup();
+    const dep = await seedDeployment(project);
+    const input = {
+      project,
+      dep,
+      service: { ...service, volumes },
+      image: "alpine:3",
+      environment: {},
+    };
+    expect(createServiceRuntimeConfig({ ...input, runtime }).volumes).toEqual(volumes);
+    expect(() => createServiceRuntimeConfig(input)).toThrow("Host bind mounts are disabled");
+    expect(() =>
+      createServiceRuntimeConfig({
+        ...input,
+        runtime: Object.create(DockerRuntime.prototype) as DockerRuntime,
+      }),
+    ).toThrow("Host bind mounts are disabled");
+    const phase = {
+      project,
+      dep,
+      runtime,
+      snapshot: { volumes },
+      buildResult: {},
+      deployRouting: { deployMode: "server" },
+      routeState: {},
+    } as unknown as Parameters<typeof createServerDeployConfig>[0];
+    expect(createServerDeployConfig(phase).volumes).toEqual(volumes);
+    vi.stubEnv("OPENSHIP_ALLOW_HOST_BIND_MOUNTS", "true");
+    // A self-hosted control plane's opt-in must not authorize its Cloud target.
+    phase.snapshot.volumes = ["/etc:/host"];
+    expect(() => createServerDeployConfig(phase)).toThrow("Host bind mounts are disabled");
+  });
+
   it.each([undefined, "false", "1", "TRUE"])(
     "denies authored host mounts with opt-in %s",
     (setting) => {

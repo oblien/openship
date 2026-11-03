@@ -16,7 +16,8 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "@better-auth/passkey": "1.6.34",
+    "@better-auth/oauth-provider": "1.7.15",
+    "@better-auth/passkey": "1.7.15",
     "@noble/hashes": "^2.0.1",
     "@radix-ui/react-slot": "^1.2.4",
     "@repo/contracts": "workspace:*",
@@ -30,7 +31,7 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.11.6",
-    "better-auth": "1.6.34",
+    "better-auth": "1.7.15",
     "chart.js": "^4.4.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

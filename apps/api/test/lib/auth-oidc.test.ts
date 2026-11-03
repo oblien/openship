@@ -202,7 +202,7 @@ afterEach(() => {
   clearAuthModeCache();
 });
 
-async function startOidcSignIn(): Promise<{
+async function startOidcSignIn(input: Record<string, unknown> = {}): Promise<{
   state: string;
   cookieHeader: string;
   authorizationUrl: URL;
@@ -212,6 +212,7 @@ async function startOidcSignIn(): Promise<{
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ...input,
         providerId: "oidc",
         callbackURL: "http://localhost:3001/projects",
       }),
@@ -249,6 +250,41 @@ async function completeOidcCallback(state: string, cookieHeader: string): Promis
 }
 
 describe("OIDC generic-oauth integration", () => {
+  it("preserves sign-in hints using one validated discovery request", async () => {
+    const start = await startOidcSignIn({
+      loginHint: "owner@example.test",
+      additionalParams: { prompt: "select_account" },
+    });
+    expect(discoveryRequests).toBe(1);
+    const query = start.authorizationUrl.searchParams;
+    expect(query.get("login_hint")).toBe("owner@example.test");
+    expect(query.get("prompt")).toBe("select_account");
+    expect(query.get("redirect_uri")).toBe("http://localhost:4000/api/auth/oauth2/callback/oidc");
+    expect(query.get("code_challenge")).toBeTruthy();
+    expect(query.get("code_challenge_method")).toBe("S256");
+    expect(query.get("nonce")).toBeTruthy();
+    expect(query.get("scope")).toBe("openid email profile");
+  });
+
+  it.each(["state", "redirect_uri", "code_challenge", "nonce", "scope"])(
+    "lets Better Auth reject an injected %s before contacting the IdP",
+    async (parameter) => {
+      const response = await auth.handler(
+        new Request("http://localhost:4000/api/auth/sign-in/social", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: "oidc",
+            additionalParams: { [parameter]: "injected-value" },
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect(discoveryRequests).toBe(0);
+      expect(tokenRequests).toBe(0);
+    },
+  );
+
   it("cannot bootstrap the first instance administrator through OIDC", async () => {
     idpUserInfo = idpProfile({
       sub: "first-user",
@@ -291,7 +327,7 @@ describe("OIDC generic-oauth integration", () => {
     const callbackRes = await completeOidcCallback(state, cookieHeader);
     expect(callbackRes.status).toBe(302);
     const redirectLocation = new URL(callbackRes.headers.get("location")!);
-    expect(redirectLocation.searchParams.get("error")).toBe("user_info_is_missing");
+    expect(redirectLocation.searchParams.get("error")).toBe("unable_to_get_user_info");
 
     const users = await db
       .select()
@@ -484,7 +520,7 @@ describe("OIDC generic-oauth integration", () => {
       const start = await startOidcSignIn();
       const response = await completeOidcCallback(start.state, start.cookieHeader);
       expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe(
-        "user_info_is_missing",
+        "unable_to_get_user_info",
       );
       expect(
         await db.select().from(schema.user).where(eq(schema.user.email, "invited@example.test")),
@@ -616,7 +652,7 @@ describe("OIDC callback token validation", () => {
     const response = await completeOidcCallback(start.state, start.cookieHeader);
     expect(response.status).toBe(302);
     expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe(
-      "user_info_is_missing",
+      "unable_to_get_user_info",
     );
     expect(await db.select().from(schema.account)).toHaveLength(0);
     expect(await db.select().from(schema.session)).toHaveLength(0);
@@ -640,7 +676,7 @@ describe("OIDC callback token validation", () => {
     const start = await startOidcSignIn();
     const response = await completeOidcCallback(start.state, start.cookieHeader);
     expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe(
-      "user_info_is_missing",
+      "unable_to_get_user_info",
     );
     expect(await db.select().from(schema.session)).toHaveLength(0);
   });
@@ -651,7 +687,7 @@ describe("OIDC callback token validation", () => {
     const start = await startOidcSignIn();
     const response = await completeOidcCallback(start.state, start.cookieHeader);
     expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe(
-      "user_info_is_missing",
+      "unable_to_get_user_info",
     );
     expect(await db.select().from(schema.account)).toHaveLength(0);
     expect(await db.select().from(schema.session)).toHaveLength(0);
@@ -882,7 +918,7 @@ describe("OIDC transport and MFA", () => {
     tokenMode = "redirect token";
     const response = await completeOidcCallback(start.state, start.cookieHeader);
     expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe(
-      "oauth_code_verification_failed",
+      "invalid_code",
     );
     expect(tokenRequests).toBe(1);
     expect(await db.select().from(schema.session)).toHaveLength(0);
@@ -910,7 +946,7 @@ describe("OIDC transport and MFA", () => {
       const start = await startOidcSignIn();
       const response = await completeOidcCallback(start.state, start.cookieHeader);
       expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe(
-        "user_info_is_missing",
+        "unable_to_get_user_info",
       );
       expect(tokenRequests).toBe(1);
       expect(await db.select().from(schema.session)).toHaveLength(0);

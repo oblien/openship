@@ -71,6 +71,7 @@
   },
   "private": true,
   "overrides": {
+    "@hono/node-server": "2.1.3",
     "isbinaryfile": "5.0.7"
   },
   "patchedDependencies": {

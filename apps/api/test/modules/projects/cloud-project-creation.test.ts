@@ -28,6 +28,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 import { shutdownRateLimit } from "../../../src/lib/rate-limit";
 import { maybeCloudProjectRequest } from "@repo/platform/engine/lib/cloud/project-creation";
 import { projectDependencies } from "@repo/platform/engine/modules/projects/project.operations";
+import { buildDependencies } from "@repo/platform/engine/modules/deployments/build.operations";
 import { env } from "@repo/platform/engine/config/index";
 
 const cloudProject = {
@@ -113,6 +114,33 @@ afterAll(async () => {
 });
 
 describe("managed Cloud project creation through the connected controller", () => {
+  it("delegates repository mount admission to Cloud while retaining credential scope", async () => {
+    const input = {
+      projectId: cloudProject.id,
+      services: [
+        {
+          name: "web",
+          image: "nginx:alpine",
+          ports: [],
+          environment: {},
+          dependsOn: [],
+          volumes: ["./config:/etc/nginx:ro"],
+        },
+      ],
+    };
+    const result = { project_id: cloudProject.id, deployment_id: "cloud-deployment" };
+    h.fetch.mockResolvedValue(Response.json(result, { status: 202 }));
+    expect(await buildDependencies.access(ctx(), input)).toEqual(result);
+    expect(h.fetch).toHaveBeenCalledWith(owner.orgId, "/api/deployments/build/access", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    await expect(
+      buildDependencies.access({ ...ctx(), scopeMode: "fixed" }, input),
+    ).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(h.fetch).toHaveBeenCalledOnce();
+  });
+
   it("runs directly on Cloud itself without forwarding back to the same API", async () => {
     const prior = env.CLOUD_MODE;
     try {
@@ -171,7 +199,11 @@ describe("managed Cloud project creation through the connected controller", () =
       const response = await request(path, input);
       expect(response.status).toBe(path.endsWith("ensure") ? 200 : 201);
       const body = await response.json();
-      expect(path.endsWith("ensure") ? body.project_id : body.data.id).toBe(cloudProject.id);
+      expect(body).toMatchObject(
+        path.endsWith("ensure")
+          ? { project_id: cloudProject.id }
+          : { data: { id: cloudProject.id } },
+      );
       expect(JSON.parse(h.fetch.mock.calls[0][2].body)).toEqual({
         ...input,
         serverId: "cloud-server",
@@ -194,7 +226,7 @@ describe("managed Cloud project creation through the connected controller", () =
       `/api/apps/catalog/wordpress/host-fit?serverId=${linkedServerId}&deployTarget=cloud`,
     );
     expect(response.status).toBe(200);
-    expect((await response.json()).data.cloud.status).toBe("ready");
+    expect(await response.json()).toMatchObject({ data: { cloud: { status: "ready" } } });
     expect(h.fetch.mock.calls[0][1]).toBe(
       "/api/apps/catalog/wordpress/host-fit?deployTarget=cloud&serverId=cloud-server",
     );
@@ -220,7 +252,7 @@ describe("managed Cloud project creation through the connected controller", () =
       serverId: linkedServerId,
     });
     expect(response.status).toBe(403);
-    expect((await response.json()).code).toBe("PLAN_LIMIT_EXCEEDED");
+    expect(await response.json()).toMatchObject({ code: "PLAN_LIMIT_EXCEEDED" });
     expect((await repos.project.listByOrganization(owner.orgId)).rows).toEqual([]);
   });
 
@@ -249,7 +281,7 @@ describe("managed Cloud project creation through the connected controller", () =
       serverId: linkedServerId,
     });
     expect(response.status).toBe(409);
-    expect((await response.json()).code).toBe("CLOUD_SERVER_CONNECTION_CHANGED");
+    expect(await response.json()).toMatchObject({ code: "CLOUD_SERVER_CONNECTION_CHANGED" });
     expect(h.fetch).not.toHaveBeenCalled();
   });
 

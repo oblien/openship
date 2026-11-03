@@ -68,7 +68,7 @@ export { cloudHandoffCode } from "./cloud-handoff-code";
 export { dataTransferSession, dataTransferChunk } from "./data-transfer";
 export { personalAccessToken } from "./personal-access-token";
 export { personalAccessTokenGrant } from "./personal-access-token-grant";
-export { oauthApplication, oauthAccessToken, oauthConsent } from "./oauth";
+export { oauthApplication, legacyOauthAccessToken, legacyOauthConsent } from "./oauth";
 export { backupDestination, backupPolicy, backupRun, backupRestore } from "./backup";
 export { dockerMigrationRun } from "./docker-migration";
 export {
@@ -134,3 +134,5 @@ export * from "./chat-apps";
 export * from "./assistant-automations";
 
 export * from "./assistant-agents";
+
+export * from "./oauth-provider";

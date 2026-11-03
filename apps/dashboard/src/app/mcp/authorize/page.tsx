@@ -41,11 +41,13 @@ function McpAuthorizeInner() {
       </div>
     );
   if (!session) return <SignInPrompt alreadyTried={searchParams.get(RETRY_PARAM) === "1"} />;
+  const oauthQuery = new URLSearchParams(searchParams.toString());
+  oauthQuery.delete(RETRY_PARAM);
   return (
     <McpAuthorizationForm
-      key={searchParams.get("consent_code")}
+      key={searchParams.get("sig")}
       clientId={searchParams.get("client_id")}
-      consentCode={searchParams.get("consent_code")}
+      consentCode={oauthQuery.toString()}
       onComplete={complete}
       onUnauthorized={unauthorized}
     />

@@ -12,7 +12,7 @@ it("retains old observations and consent, expires legacy evidence, and cascades 
       INSERT INTO organization VALUES ('org'); INSERT INTO servers VALUES ('host');
       INSERT INTO project_security VALUES ('app', '{"existing":true}', true);`);
     const sql = await readFile(
-      new URL("../drizzle/0220_host_security_advisories.sql", import.meta.url),
+      new URL("../drizzle/0221_host_security_advisories.sql", import.meta.url),
       "utf8",
     );
     await db.exec(sql);

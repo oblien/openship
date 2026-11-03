@@ -4,7 +4,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { PermissionReviewSkeleton } from "./PermissionReviewSkeleton";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { authClient, useSession } from "@/lib/auth-client";
+import { authClient, submitMcpConsent, useSession } from "@/lib/auth-client";
 import { interpolate } from "@/components/i18n-provider";
 import {
   tokensApi,
@@ -90,27 +90,6 @@ const orgClient = (
     };
   }
 ).organization;
-
-/** Consent POST → `{ redirectURI }`. Uses the auth client so the cookie session
- *  + auth base URL are handled for us. */
-async function postConsent(accept: boolean, consentCode: string | null): Promise<string | null> {
-  const res = await (
-    authClient as unknown as {
-      $fetch: (
-        path: string,
-        opts: { method: string; body: Record<string, unknown> },
-      ) => Promise<{ data?: { redirectURI?: string } | null; error?: { status?: number } | null }>;
-    }
-  ).$fetch("/oauth2/consent", {
-    method: "POST",
-    body: { accept, ...(consentCode ? { consent_code: consentCode } : {}) },
-  });
-  if (res.error) {
-    const status = res.error.status;
-    throw Object.assign(new Error("consent failed"), { status });
-  }
-  return res.data?.redirectURI ?? null;
-}
 
 function AuthorizationForm({
   clientId,
@@ -325,7 +304,7 @@ function AuthorizationForm({
             fullAccess: isUnscopedTemplate(selection.template),
           });
         }
-        const redirectURI = await postConsent(accept, consentCode);
+        const redirectURI = await submitMcpConsent(accept, consentCode);
         await onComplete(redirectURI, accept);
       } catch (err) {
         const status = (err as { status?: number }).status;
