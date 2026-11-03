@@ -21,7 +21,8 @@ const HOSTS = {
   centos7: host({ osRelease: OS_RELEASE.centos7, pm: "yum" }),
   alpine320: host({ osRelease: OS_RELEASE.alpine320, pm: "apk", sm: "openrc", libc: "musl" }),
   opensuse156: host({ osRelease: OS_RELEASE.opensuse156, pm: "none" }),
-  arch: host({ osRelease: OS_RELEASE.arch, pm: "none" }),
+  arch: host({ osRelease: OS_RELEASE.arch, pm: "pacman" }),
+  cachyos: host({ osRelease: OS_RELEASE.cachyos, pm: "pacman" }),
   /** Unplaceable ID *and* nothing to install with. An unplaceable ID alone is driven —
    *  the package manager is the gate, not the family name. */
   mysteryNoPm: host({ osRelease: OS_RELEASE.mystery, pm: "none" }),
@@ -61,6 +62,7 @@ const FOREIGN_MANAGERS: Readonly<Record<string, readonly string[]>> = {
   dnf: ["apt-get", "yum ", "apk ", "brew ", "zypper", "pacman"],
   yum: ["apt-get", "dnf ", "apk ", "brew ", "zypper", "pacman"],
   apk: ["apt-get", "dnf ", "yum ", "brew ", "zypper", "pacman"],
+  pacman: ["apt-get", "dnf ", "yum ", "apk ", "brew ", "zypper"],
   brew: ["apt-get", "dnf ", "yum ", "apk ", "zypper", "pacman"],
   none: ["apt-get", "dnf ", "yum ", "apk ", "brew ", "zypper", "pacman"],
 };
@@ -255,8 +257,18 @@ describe("toolchain catalog / refuses instead of installing the wrong thing", ()
     expect(refusal("go", HOSTS.unknownArch)).toMatch(/architecture/i);
   });
 
+  it("installs Arch's own packages, including on CachyOS", () => {
+    for (const profile of [HOSTS.arch, HOSTS.cachyos]) {
+      expect(script("node", profile)).toContain("pacman -Sy --needed --noconfirm nodejs npm");
+      expect(script("java", profile)).toContain("jdk21-openjdk");
+      expect(script("python3", profile)).toContain("python python-pip");
+      expect(script("composer", profile)).toContain("pacman -Sy --needed --noconfirm composer");
+      expect(script("node", profile)).not.toContain("nodesource");
+    }
+  });
+
   it("refuses every tool on a host it does not support, naming the distro", () => {
-    for (const unsupported of [HOSTS.opensuse156, HOSTS.arch, HOSTS.mysteryNoPm]) {
+    for (const unsupported of [HOSTS.opensuse156, HOSTS.mysteryNoPm]) {
       for (const tool of TOOLS) {
         const plan = toolchainCatalog.installs[tool]!(unsupported);
         expect(plan.supported, `${tool} answered for ${unsupported.distroId}`).toBe(false);

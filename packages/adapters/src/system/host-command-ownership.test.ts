@@ -91,7 +91,7 @@ const RULES: readonly OwnershipRule[] = [
     // while apt works" in a progress notice is not, and the refusal that lists
     // "apt-get, dnf, yum or apk" as what it looked for is the opposite of authoring.
     pattern:
-      /\b(?:apt|apt-get|apt-cache|dpkg|dnf|yum|apk|zypper|pacman|brew)[ \t]+(?:-{1,2}[\w-]+[ \t]+)*(?:install|remove|purge|uninstall|autoremove|add|del|delete|update|upgrade|policy|list|search|info)\b/,
+      /\b(?:apt|apt-get|apt-cache|dpkg|dnf|yum|apk|zypper|pacman|brew)[ \t]+(?:-{1,2}[\w-]+[ \t]+)*(?:install|remove|purge|uninstall|autoremove|add|del|delete|update|upgrade|policy|list|search|info)\b|\bpacman[ \t]+-[SRUFQDT]/,
     owners: [
       OPS,
       PROSE,
@@ -354,6 +354,7 @@ describe("the detector looks and never touches", () => {
     for (const probe of [
       "command -v apt-get",
       "command -v apk",
+      "command -v pacman",
       "ufw status",
       "firewall-cmd --state",
     ]) {

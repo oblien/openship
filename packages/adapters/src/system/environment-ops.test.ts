@@ -37,10 +37,20 @@ const HOSTS = {
   alpine320: host({ osRelease: OS_RELEASE.alpine320, pm: "apk", sm: "openrc", libc: "musl" }),
   mint213: host({ osRelease: OS_RELEASE.mint213, fw: "ufw" }),
   popos2204: host({ osRelease: OS_RELEASE.popos2204 }),
+  /** Driven with pacman. Commands here may name pacman and nothing else's manager. */
+  arch: host({ osRelease: OS_RELEASE.arch, pm: "pacman" }),
+  /** The reported regression: CachyOS, ID_LIKE=arch, ufw, sudo user. */
+  cachyos: host({
+    osRelease: OS_RELEASE.cachyos,
+    pm: "pacman",
+    fw: "ufw",
+    uid: "1000",
+    user: "mike",
+    home: "/home/mike",
+    sudo: "y",
+  }),
   /** Refused by name. Nothing here may emit zypper. */
   opensuse156: host({ osRelease: OS_RELEASE.opensuse156, pm: "none" }),
-  /** Refused by name. Nothing here may emit pacman. */
-  arch: host({ osRelease: OS_RELEASE.arch, pm: "none" }),
   /**
    * An ID nobody knows, with a package manager that works — and therefore DRIVEN.
    *
@@ -92,7 +102,6 @@ const HOST_NAMES = Object.keys(HOSTS) as HostName[];
 
 const UNSUPPORTED: readonly HostName[] = [
   "opensuse156",
-  "arch",
   "mysteryNoPm",
   "unknownArch",
   "forcedCommand",
@@ -116,6 +125,7 @@ const CALLS: Readonly<Record<keyof HostCommands, (ops: EnvOps) => Answer<unknown
       dnf: answered(["python3", "python3-pip"]),
       yum: answered(["python3", "python3-pip"]),
       apk: refused("Openship has no apk package set for Python."),
+      pacman: answered(["python", "python-pip"]),
       brew: answered(["python@3.12"]),
     }),
   pkgRemove: (ops) => ops.pkgRemove(["rsync"]),
@@ -254,7 +264,7 @@ describe("envOps gating", () => {
     const reason = HOSTS.mysteryNoPm.unsupportedReason ?? "";
     expect(HOSTS.mysteryNoPm.supported).toBe(false);
     expect(reason).toContain("frobnicate");
-    expect(reason).toMatch(/apt-get, dnf, yum or apk/);
+    expect(reason).toMatch(/apt-get, dnf, yum, apk or pacman/);
   });
 
   it("still answers facts about a host it refuses to drive", () => {
@@ -267,10 +277,10 @@ describe("envOps gating", () => {
     expect(ops.sshdEnableHint()).toContain("sshd");
   });
 
-  it("emits no zypper or pacman anywhere, on any host", () => {
-    // The distros we refuse are refused *specifically* — naming zypper in the reason is
-    // the point. What must never happen is a command that runs it, on any host: that is
-    // exactly the "half-wired new distro" shape the two-arm type exists to prevent.
+  it("emits pacman only on Arch-family hosts, and never zypper", () => {
+    // openSUSE is refused by name — naming zypper in the reason is the point. What must
+    // never happen is a command that runs it. pacman is the opposite: it is wired, and
+    // it may appear only on the family it belongs to.
     for (const hostName of HOST_NAMES) {
       for (const answer of allAnswers(HOSTS[hostName])) {
         if (!answer.supported) continue;
@@ -279,7 +289,10 @@ describe("envOps gating", () => {
           : typeof answer.value === "object" && answer.value
             ? Object.values(answer.value).join(" ")
             : String(answer.value);
-        expect(text).not.toMatch(/\bzypper\b|\bpacman\b/);
+        expect(text, hostName).not.toMatch(/\bzypper\b/);
+        if (HOSTS[hostName].distroFamily !== "arch") {
+          expect(text, hostName).not.toMatch(/\bpacman\b/);
+        }
       }
     }
   });
@@ -426,11 +439,44 @@ describe("envOps docker install", () => {
         script.includes("cli-plugins/docker-compose") ||
         // …or the vendor script, which appends `docker-compose-plugin` to its own package
         // list on both its apt and its rpm path (verified in the script's source).
-        script.includes("get.docker.com");
+        script.includes("get.docker.com") ||
+        // Arch extra's `docker-compose` package is Compose v2. It installs
+        // /usr/lib/docker/cli-plugins/docker-compose (file list checked against extra).
+        /\bpacman\b.*\bdocker-compose\b/.test(script);
       expect(compose, `${hostName} installs Docker with no \`docker compose\`: ${script}`).toBe(
         true,
       );
     }
+  });
+
+  it("installs Docker and Compose from the distro repos on Arch", () => {
+    // extra's package names, including on CachyOS. Not get.docker.com: that script has
+    // no Arch arm. Not a downloaded plugin: `docker-compose` already is the plugin.
+    const expected = ["pacman -Sy --needed --noconfirm docker docker-compose docker-buildx"];
+    expect(steps(envOps(HOSTS.arch).dockerInstall())).toEqual(expected);
+    expect(steps(envOps(HOSTS.cachyos).dockerInstall())).toEqual(expected);
+    expect(opScript(expected)).not.toContain("get.docker.com");
+  });
+
+  it("drives the CachyOS host 0.9.8 refused", () => {
+    // ID=cachyos, ID_LIKE=arch, systemd, ufw, non-root sudo. The refusal quoted
+    // pm=none because the probe never looked for pacman.
+    const profile = HOSTS.cachyos;
+    expect(profile.distro).toBe("arch");
+    expect(profile.distroId).toBe("cachyos");
+    expect(profile.distroFamily).toBe("arch");
+    expect(profile.packageManager).toBe("pacman");
+    expect(profile.supported).toBe(true);
+    expect(profile.unsupportedReason).toBeNull();
+
+    const ops = envOps(profile);
+    expect(ops.describe()).toContain("CachyOS");
+    expect(ops.describe()).toContain("pm=pacman");
+    expect(ops.describe()).toContain("firewall=ufw");
+    expect(ops.describe()).toContain("mike+sudo");
+    expect(steps(ops.pkgInstall(["git"]))).toEqual(["pacman -Sy --needed --noconfirm git"]);
+    expect(steps(ops.pkgRemove(["git"]))).toEqual(["pacman -Rns --noconfirm git"]);
+    expect(ops.sshdEnableHint()).toBe("sudo systemctl enable --now sshd");
   });
 
   it("installs docker-cli-compose, not docker-compose, on Alpine", () => {
@@ -474,8 +520,12 @@ describe("envOps packages", () => {
     expect(steps(envOps(HOSTS.amzn2023).pkgInstall(["git"]))).toEqual(["dnf install -y git"]);
     expect(steps(envOps(HOSTS.centos7).pkgInstall(["git"]))).toEqual(["yum install -y git"]);
     expect(steps(envOps(HOSTS.alpine320).pkgInstall(["git"]))).toEqual(["apk add --no-cache git"]);
+    expect(steps(envOps(HOSTS.arch).pkgInstall(["git"]))).toEqual([
+      "pacman -Sy --needed --noconfirm git",
+    ]);
     expect(steps(envOps(HOSTS.macos).pkgInstall(["git"]))).toEqual(["brew install git"]);
     expect(steps(envOps(HOSTS.alpine320).pkgRemove(["git"]))).toEqual(["apk del git"]);
+    expect(steps(envOps(HOSTS.arch).pkgRemove(["git"]))).toEqual(["pacman -Rns --noconfirm git"]);
   });
 
   it("can install network prerequisites without optional firewall or kernel recommendations", () => {
@@ -510,7 +560,9 @@ describe("envOps packages", () => {
     expect(HOSTS.macosNoBrew.supported).toBe(true);
     const install = envOps(HOSTS.macosNoBrew).pkgInstall(["git"]);
     expect(install.supported).toBe(false);
-    if (!install.supported) expect(install.reason).toContain("apt-get, dnf, yum, apk and brew");
+    if (!install.supported) {
+      expect(install.reason).toContain("apt-get, dnf, yum, apk, pacman and brew");
+    }
   });
 
   it("keeps the version-probe command each parser was written against", () => {
@@ -522,6 +574,9 @@ describe("envOps packages", () => {
     ]);
     expect(steps(envOps(HOSTS.alpine320).pkgAvailableVersion("git"))).toEqual([
       "apk policy git 2>/dev/null",
+    ]);
+    expect(steps(envOps(HOSTS.arch).pkgAvailableVersion("git"))).toEqual([
+      "pacman -Si git 2>/dev/null",
     ]);
   });
 
@@ -574,6 +629,7 @@ describe("envOps services", () => {
     // nothing on exactly the RHEL hosts most likely to need it.
     expect(envOps(HOSTS.ubuntu2404).sshdEnableHint()).toBe("sudo systemctl enable --now ssh");
     expect(envOps(HOSTS.amzn2023).sshdEnableHint()).toBe("sudo systemctl enable --now sshd");
+    expect(envOps(HOSTS.arch).sshdEnableHint()).toBe("sudo systemctl enable --now sshd");
     expect(envOps(HOSTS.alpine320).sshdEnableHint()).toContain("rc-update add sshd default");
     expect(envOps(HOSTS.macos).sshdEnableHint()).toContain("systemsetup");
   });
