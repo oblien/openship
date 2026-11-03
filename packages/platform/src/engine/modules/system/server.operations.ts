@@ -1,4 +1,4 @@
-import { serverSecurityResources } from "../updates/host-security";
+import { serverSecurityResources } from "./server-security.operations";
 import { assertManagementAccess } from "../billing/management.service";
 import { verifyCustomerSshConnection } from "../../lib/customer-ssh";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
