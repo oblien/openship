@@ -180,9 +180,9 @@ describe("authenticated SMTP submission", () => {
             expect(smtp.deliveries).toEqual([]);
           } else {
             await expect(send).resolves.toBe(source === "instance" ? undefined : true);
+            await vi.waitFor(() => expect(smtp.deliveries).toHaveLength(1));
             expect(smtp.credentials).toHaveLength(1);
             expect(smtp.credentials[0]).toMatchObject({ secure: true });
-            expect(smtp.deliveries).toHaveLength(1);
             expect(smtp.deliveries[0]).toMatchObject({ secure: true });
           }
         } finally {
