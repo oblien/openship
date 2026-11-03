@@ -321,6 +321,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Openship <noreply@openship.io>"),
+  /** Optional Cloud customer aliases authorized by the same SMTP credentials.
+   * Unset/blank aliases use the transport's configured sender. */
+  SMTP_SUPPORT_FROM: z.string().trim().optional(),
+  SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */
   /**
