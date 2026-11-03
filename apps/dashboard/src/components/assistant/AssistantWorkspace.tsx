@@ -165,35 +165,64 @@ function AssistantEntry({ scope }: { scope: string }) {
             {t.dashboard.investigation.setup}
           </p>
         )}
-        {!status.loading && targets.some((t) => t.kind === "server") && (
+        {!status.loading && chosenTarget && chosenTarget.kind !== "local" && (
           <div className="mb-5 text-start">
-            <label className="mb-2 block text-sm font-medium" htmlFor="assistant-host">
-              Agent host
-            </label>
-            <CustomSelect
-              id="assistant-host"
-              options={targets.map((t) => ({
-                value: t.id,
-                label: t.name,
-                icon: <Icon name="server" className="size-4" />,
-              }))}
-              value={chosenTarget?.id ?? ""}
-              onChange={setTargetId}
-              placeholder="Choose your server"
-              variant="filled"
-              triggerClassName="bg-muted/60 hover:bg-muted h-11"
-              disabled={action.busy}
-            />
+            {targets.length === 1 && chosenTarget.kind === "cloud" ? (
+              <div className="flex items-center gap-3 rounded-xl bg-muted/60 px-4 py-3">
+                <Icon name="cloud" className="size-5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{chosenTarget.name}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Runs on your OpenShip Cloud plan
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className="mb-2 block text-sm font-medium" htmlFor="assistant-host">
+                  Run agents on
+                </label>
+                <CustomSelect
+                  id="assistant-host"
+                  options={targets.map((t) => ({
+                    value: t.id,
+                    label: t.kind === "cloud" ? `${t.name} · OpenShip Cloud` : t.name,
+                    icon: (
+                      <Icon name={t.kind === "cloud" ? "cloud" : "server"} className="size-4" />
+                    ),
+                  }))}
+                  value={chosenTarget?.id ?? ""}
+                  onChange={setTargetId}
+                  placeholder="Choose where your agents run"
+                  variant="filled"
+                  triggerClassName="bg-muted/60 hover:bg-muted h-11"
+                  disabled={action.busy}
+                />
+              </>
+            )}
           </div>
         )}
         {!status.loading && !targets.length && !status.error ? (
           <div className="text-sm leading-6 text-muted-foreground">
-            <p>Connect a server to give your agents a place to work.</p>
+            <p>
+              {status.data?.cloud
+                ? "Run agents on your Cloud plan, or connect your own server."
+                : "Connect a server to give your agents a place to work."}
+            </p>
             <Button asChild size="lg" className="mt-4 w-full gap-3 px-5">
-              <Link href="/servers/new">
-                Connect a server <Icon name="arrow-right" />
+              <Link href={status.data?.cloud ? "/billing/plans" : "/servers/new"}>
+                {status.data?.cloud ? "Choose a Cloud plan" : "Connect a server"}{" "}
+                <Icon name="arrow-right" />
               </Link>
             </Button>
+            {status.data?.cloud && (
+              <Link
+                href="/servers/new"
+                className="mt-3 block text-center text-xs hover:text-foreground"
+              >
+                Use your own server
+              </Link>
+            )}
           </div>
         ) : (
           <>
@@ -209,7 +238,7 @@ function AssistantEntry({ scope }: { scope: string }) {
               }
               onClick={() => void openPermissions()}
             >
-              {status.loading ? "Loading…" : action.busy ? "Opening setup…" : "Enable AI Agents"}
+              {status.loading ? "Loading…" : action.busy ? "Opening setup…" : "Enable Agents"}
               <Icon
                 name={status.loading || action.busy ? "spinner" : "arrow-right"}
                 className={status.loading || action.busy ? "animate-spin" : ""}

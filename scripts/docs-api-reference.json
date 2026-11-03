@@ -4791,6 +4791,11 @@
       "availability": "Desktop, self-hosted, Cloud",
       "description": "Read installed agents, connection status and model choices after opt-in."
     },
+    "POST /api/assistant/providers/:provider/setup": {
+      "page": "assistant",
+      "availability": "Cloud",
+      "description": "Prepare a native agent in the user's existing paid Cloud instance after consent."
+    },
     "GET /api/assistant/providers/:provider": {
       "page": "assistant",
       "availability": "Desktop, self-hosted, Cloud",

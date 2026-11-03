@@ -34,6 +34,12 @@ export function AgentConnections({
   error: string | null;
 }) {
   const [custom, setCustom] = useState(false);
+  const installing = agents.some((agent) => agent.setup?.state === "installing");
+  useEffect(() => {
+    if (!installing || loading || error) return;
+    const timer = setTimeout(onRefresh, 2000);
+    return () => clearTimeout(timer);
+  }, [installing, agents, loading, error, onRefresh]);
   return (
     <div className="p-5 sm:p-8">
       <div className="mb-7 pe-10">
@@ -89,7 +95,11 @@ export function AgentConnections({
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{ASSISTANT_PROVIDER_LABELS[agent.id]}</span>
                   <span className="mt-1 hidden text-xs text-muted-foreground sm:block">
-                    {agent.authStatus.configured ? "Connected" : "Not connected"}
+                    {agent.setup?.state === "installing"
+                      ? "Setting up…"
+                      : agent.authStatus.configured
+                        ? "Connected"
+                        : "Not connected"}
                   </span>
                 </span>
                 {agent.authStatus.configured && (
@@ -205,17 +215,39 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
         <div className="min-w-0 flex-1">
           <h3 className="text-lg font-medium">{ASSISTANT_PROVIDER_LABELS[info.id]}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {info.authStatus.configured
-              ? "Connected"
-              : info.available
-                ? "Ready to connect"
-                : "Not available"}
+            {info.setup?.state === "installing"
+              ? "Setting up in Cloud…"
+              : info.authStatus.configured
+                ? "Connected"
+                : info.available
+                  ? "Ready to connect"
+                  : "Not available"}
             {info.installedVersion ? ` · ${info.installedVersion}` : ""}
           </p>
         </div>
         {info.authStatus.configured && <Icon name="check" className="size-4 text-success" />}
       </div>
       {info.issue && <p className="mt-4 text-sm leading-6 text-muted-foreground">{info.issue}</p>}
+      {!info.available && info.setup && (
+        <Button
+          className="mt-5 gap-2"
+          disabled={action.busy || info.setup.state === "installing"}
+          onClick={async () => {
+            if (await action.execute(() => assistantApi.setupProvider(info.id))) refresh();
+          }}
+        >
+          {action.busy || info.setup.state === "installing" ? (
+            <>
+              <Icon name="spinner" className="size-4 animate-spin motion-reduce:animate-none" />{" "}
+              Setting up…
+            </>
+          ) : info.setup.state === "failed" ? (
+            "Retry setup"
+          ) : (
+            `Set up ${ASSISTANT_PROVIDER_LABELS[info.id]}`
+          )}
+        </Button>
+      )}
       {info.available && (
         <div className="mt-5 space-y-5">
           {info.authStatus.configured ? (
@@ -387,17 +419,17 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
               )}
             </>
           )}
-          {(action.error || pollError) && (
-            <p role="alert" className="text-sm text-danger">
-              {action.error || pollError}
-              {pollError && (
-                <button className="ms-2 underline" onClick={() => setPollError(null)}>
-                  Retry
-                </button>
-              )}
-            </p>
-          )}
         </div>
+      )}
+      {(action.error || pollError) && (
+        <p role="alert" className="mt-4 text-sm text-danger">
+          {action.error || pollError}
+          {pollError && (
+            <button className="ms-2 underline" onClick={() => setPollError(null)}>
+              Retry
+            </button>
+          )}
+        </p>
       )}
     </section>
   );

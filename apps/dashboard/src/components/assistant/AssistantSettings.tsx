@@ -72,7 +72,13 @@ function SettingsContent() {
           <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-background/60 p-4">
             <span className="flex items-center gap-2 text-sm">
               <Icon
-                name={status.data.target?.kind === "server" ? "server" : "monitor"}
+                name={
+                  status.data.target?.kind === "cloud"
+                    ? "cloud"
+                    : status.data.target?.kind === "server"
+                      ? "server"
+                      : "monitor"
+                }
                 className="size-4 text-muted-foreground"
               />
               {status.data.target?.name ?? "Assistant host"}

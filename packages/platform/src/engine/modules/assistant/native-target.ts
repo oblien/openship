@@ -22,6 +22,7 @@ export type MindwireHostConnection = Pick<
 export interface AssistantNativeClient {
   mindwire: Mindwire;
   probe(provider: AssistantProvider): Promise<HarnessProbe>;
+  setup?(provider: AssistantProvider): Promise<void>;
   workspace(id: string): Promise<string>;
   healthy(): boolean;
   close(): Promise<void>;

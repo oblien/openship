@@ -9,6 +9,7 @@ import {
   OPENSHIP_CHAT_INSTRUCTIONS,
   ASSISTANT_PROVIDER_LABELS,
   type AssistantProvider,
+  type AssistantProviderInfo,
 } from "@repo/contracts";
 import type { TurnOptions } from "mindwire";
 import { CODEX_GUARD } from "./codex-guard";
@@ -36,6 +37,7 @@ export interface HarnessProbe {
   version: string;
   available: boolean;
   issue?: string;
+  setup?: AssistantProviderInfo["setup"];
   flags: string[];
 }
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
