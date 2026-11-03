@@ -1,8 +1,13 @@
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createServer as httpServer, type Server as HttpServer } from "node:http";
 import { createServer as smtpServer, type Server as SmtpServer, type Socket } from "node:net";
+import { createSecureContext, TLSSocket } from "node:tls";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import { Hono } from "hono";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -14,6 +19,7 @@ import { CloudSupportService } from "@repo/platform/engine/modules/cloud-support
 // platform mail provisioning are the only boundaries isolated in this test.
 const state = vi.hoisted(() => ({
   url: "",
+  certificate: undefined as Buffer | undefined,
   env: {
     CLOUD_MODE: true,
     DEPLOY_MODE: "docker",
@@ -39,6 +45,21 @@ vi.mock("@repo/db", () => ({ repos: { mailServer: { list: state.localMail } } })
 vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: { api: { getSession: vi.fn() } } }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: vi.fn() }));
 vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt: vi.fn() }));
+vi.mock("nodemailer", async (original) => {
+  const real = await original<{ default: typeof import("nodemailer") }>();
+  return {
+    default: {
+      ...real.default,
+      createTransport: (options: SMTPTransport.Options) =>
+        real.default.createTransport({
+          ...options,
+          // Trust only the disposable fixture certificate. Keep production TLS
+          // requirements and hostname/certificate verification intact.
+          tls: { ...options.tls, ca: state.certificate },
+        }),
+    },
+  };
+});
 vi.mock("@repo/platform/engine/modules/cloud-support/index", () => ({
   get cloudSupport() {
     return state.service;
@@ -60,8 +81,9 @@ let repo: ReturnType<typeof createCloudSupportRepo>;
 let post: typeof import("../../../../web/src/app/api/contact/route").POST;
 let apiMode = "ok";
 let rejectRecipient = "";
+let certificateDirectory = "";
 const sockets = new Set<Socket>();
-const delivered: Array<{ recipient: string; message: string }> = [];
+const delivered: Array<{ recipient: string; message: string; secure: boolean }> = [];
 const forwarded: Headers[] = [];
 const payload = () => ({
   requestId: randomUUID(),
@@ -87,16 +109,30 @@ const submit = (body: unknown) =>
   );
 
 beforeAll(async () => {
-  smtp = smtpServer((socket) => {
+  certificateDirectory = mkdtempSync(join(tmpdir(), "openship-support-smtp-"));
+  const certificate = spawnSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+    "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
+    "-keyout", join(certificateDirectory, "key.pem"),
+    "-out", join(certificateDirectory, "cert.pem"),
+  ]);
+  if (certificate.status !== 0) throw new Error("Failed to generate SMTP fixture certificate");
+  state.certificate = readFileSync(join(certificateDirectory, "cert.pem"));
+  const secureContext = createSecureContext({
+    key: readFileSync(join(certificateDirectory, "key.pem")),
+    cert: state.certificate,
+  });
+  const attach = (socket: Socket, secure = false, greeting = true) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
+    socket.on("error", () => {});
     socket.setEncoding("utf8");
-    socket.write("220 localhost SMTP test\r\n");
+    if (greeting) socket.write("220 localhost SMTP test\r\n");
     let buffer = "",
       data = false,
       recipient = "",
       message = "";
-    socket.on("data", (chunk) => {
+    const read = (chunk: string | Buffer) => {
       buffer += chunk;
       while (buffer.includes("\r\n")) {
         const end = buffer.indexOf("\r\n");
@@ -104,13 +140,19 @@ beforeAll(async () => {
         buffer = buffer.slice(end + 2);
         if (data) {
           if (line === ".") {
-            delivered.push({ recipient, message });
+            delivered.push({ recipient, message, secure });
             data = false;
             message = "";
             socket.write("250 accepted\r\n");
           } else message += line.replace(/^\.\./, ".") + "\r\n";
         } else if (line.startsWith("EHLO") || line.startsWith("HELO"))
-          socket.write("250-localhost\r\n250-AUTH PLAIN\r\n250 SIZE 65536\r\n");
+          socket.write(`250-localhost\r\n${secure ? "" : "250-STARTTLS\r\n"}250-AUTH PLAIN\r\n250 SIZE 65536\r\n`);
+        else if (line === "STARTTLS" && !secure) {
+          socket.write("220 Begin TLS\r\n");
+          socket.removeListener("data", read);
+          attach(new TLSSocket(socket, { isServer: true, secureContext }), true, false);
+          return;
+        } else if (!secure) socket.write("530 Must issue STARTTLS first\r\n");
         else if (line.startsWith("AUTH")) socket.write("235 authenticated\r\n");
         else if (line.startsWith("RCPT TO:")) {
           recipient = line.match(/<([^>]+)>/)?.[1] ?? "";
@@ -125,8 +167,10 @@ beforeAll(async () => {
         } else if (line === "QUIT") socket.end("221 goodbye\r\n");
         else socket.write("250 ok\r\n");
       }
-    });
-  });
+    };
+    socket.on("data", read);
+  };
+  smtp = smtpServer((socket) => attach(socket));
   await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve));
   state.env.SMTP_PORT = (smtp.address() as { port: number }).port;
   client = new PGlite("memory://");
@@ -186,6 +230,7 @@ afterAll(async () => {
     await new Promise<void>((resolve) => api.close(() => resolve()));
   }
   await client?.close();
+  if (certificateDirectory) rmSync(certificateDirectory, { recursive: true, force: true });
 });
 
 it("saves a website submission through HTTP and delivers both emails through the real SMTP sender", async () => {
@@ -196,6 +241,7 @@ it("saves a website submission through HTTP and delivers both emails through the
   expect(await repo.find(receipt.id)).toMatchObject({ message: body.message });
   expect(await state.service!.flush()).toEqual({ delivered: 2, failed: 0 });
   expect(delivered).toHaveLength(2);
+  expect(delivered.every((message) => message.secure)).toBe(true);
   const acknowledgement = delivered.find((m) => m.recipient === body.email)!;
   expect(acknowledgement.message).toContain("Reply-To: support@openship.io");
   expect(acknowledgement.message).toContain("From: Openship Support <support@openship.io>");
@@ -222,6 +268,7 @@ it("keeps the ticket after an actual SMTP recipient rejection and delivers on re
   await state.service!.retry(receipt.id);
   expect(await state.service!.flush()).toEqual({ delivered: 1, failed: 0 });
   expect(delivered).toHaveLength(2);
+  expect(delivered.every((message) => message.secure)).toBe(true);
 });
 
 it.each(["unavailable", "invalid-receipt"])(

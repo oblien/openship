@@ -174,14 +174,16 @@ describe("authenticated SMTP submission", () => {
                 });
           if (mode === "plaintext") {
             await expect(send).rejects.toMatchObject({ code: "ETLS" });
-            expect(smtp.commands).toContain("STARTTLS");
+            await expect.poll(() => smtp.commands).toContain("STARTTLS");
             expect(smtp.credentials).toEqual([]);
             expect(smtp.deliveries).toEqual([]);
           } else {
             await expect(send).resolves.toBe(source === "instance" ? undefined : true);
+            // The SMTP reply and fixture observations use separate pipes. A
+            // resolved send can arrive before stdout reports the delivery.
+            await expect.poll(() => smtp.deliveries).toHaveLength(1);
             expect(smtp.credentials).toHaveLength(1);
             expect(smtp.credentials[0]).toMatchObject({ secure: true });
-            expect(smtp.deliveries).toHaveLength(1);
             expect(smtp.deliveries[0]).toMatchObject({ secure: true });
           }
         } finally {
