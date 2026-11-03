@@ -1,4 +1,5 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { normalizeIP } from "@better-auth/core/utils/ip";
 import type { Context, Next } from "hono";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { env } from "@repo/platform/engine/config/env";
@@ -53,7 +54,11 @@ export async function cloudSessionAuth(c: Context, next: Next) {
     const storedIp = row.ipAddress ?? "";
     const storedUa = row.userAgent ?? "";
 
-    const ipMismatch = storedIp && incomingIp && storedIp !== incomingIp;
+    // Canonicalize spelling and IPv4-mapped IPv6 without merging IPv6 hosts.
+    const ipMismatch =
+      storedIp &&
+      incomingIp &&
+      normalizeIP(storedIp, { ipv6Subnet: 128 }) !== normalizeIP(incomingIp, { ipv6Subnet: 128 });
     const uaMismatch = storedUa && incomingUa && storedUa !== incomingUa;
 
     if (ipMismatch || uaMismatch) {

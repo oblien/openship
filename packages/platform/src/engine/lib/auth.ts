@@ -1,7 +1,7 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { organizationOptions, isSaasDeployment } from "./organization-lifecycle";
 import { betterAuth, type User } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, getIP } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, jwt, emailOTP } from "better-auth/plugins";
 import { oauthProvider } from "@better-auth/oauth-provider";
@@ -349,7 +349,16 @@ export const auth = betterAuth({
         },
       },
       create: {
-        before: async (session) => {
+        before: async (session, context) => {
+          // Session pinning needs the full address. Keep Better Auth's IPv6
+          // subnet masking for rate-limit keys, not stored session fingerprints.
+          const ipAddress = context?.headers
+            ? getIP(context.headers, {
+                advanced: {
+                  ipAddress: { ...context.context.options.advanced?.ipAddress, ipv6Subnet: 128 },
+                },
+              })
+            : session.ipAddress;
           // Default activeOrganizationId to the user's deterministic
           // personal org (`org_${userId}`) so the org plugin endpoints
           // work without an explicit setActive call after sign-in.
@@ -361,11 +370,11 @@ export const auth = betterAuth({
           // is always valid.
           //
           // Shared by sign-in, OAuth and the authenticated local/Cloud bridge.
-          if (session.activeOrganizationId) return;
           return {
             data: {
               ...session,
-              activeOrganizationId: `org_${session.userId}`,
+              ipAddress: ipAddress ?? session.ipAddress,
+              activeOrganizationId: session.activeOrganizationId || `org_${session.userId}`,
             },
           };
         },
@@ -379,6 +388,8 @@ export const auth = betterAuth({
 
   /* ---------- Advanced ---------- */
   advanced: {
+    // The API client-IP middleware replaces this header using its proxy trust rules.
+    ipAddress: { ipAddressHeaders: ["x-real-ip"] },
     cookiePrefix: COOKIE_PREFIX,
     // Keep established cookie names for dynamic public URLs, including the HTTP
     // setup window. Configure the Secure attribute from the trusted public URL
