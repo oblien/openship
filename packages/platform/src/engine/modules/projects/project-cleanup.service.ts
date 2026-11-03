@@ -208,7 +208,7 @@ export async function collectProjectManifest(
   const wipeVolumes = options.wipeVolumes ?? false;
   const resources: CleanupResource[] = [];
   const dockerBinding = await cloudDockerWorkspaceForCleanup(project.id, project.organizationId);
-  const services = await repos.service.listByProject(project.id);
+  const services = await repos.service.listByProject(project.id, { includeArchived: true });
   const seenContainers = new Set<string>();
   const seenVolumes = new Set<string>();
   const seenRouteHostnames = new Set<string>();
@@ -910,7 +910,7 @@ export async function collectProjectManifest(
  * Read-only - does NOT modify state. Cheap enough to call on modal open.
  */
 export async function previewProjectDeletion(project: Project): Promise<DeletionPreview> {
-  const services = await repos.service.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-cleanup.service"); return []; });
+  const services = await repos.service.listByProject(project.id, { includeArchived: true }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-cleanup.service"); return []; });
   const { rows: allDeps } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
 
   const previewServices: DeletionPreviewService[] = [];

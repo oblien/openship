@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isCreateDeploymentResult } from "@repo/contracts";
@@ -23,6 +24,7 @@ export function useRuntimeUpdate(
   const { showToast } = useToast();
   const router = useRouter();
   const showCloudPricing = useCloudDeployPricing(workspaceId);
+  const showComposeReview = useComposeReview(projectId);
   const resourceKey = useCloudResourceKey();
   const identity = JSON.stringify([resourceKey, projectId, serviceId, revision]);
   const currentIdentity = useRef(identity);
@@ -69,6 +71,7 @@ export function useRuntimeUpdate(
         );
       } catch (error) {
         if (!current()) return;
+        if (showComposeReview(error)) return;
         if (
           showCloudPricing(error, async () => {
             if (current()) await runUpdate(advisory);
@@ -94,7 +97,7 @@ export function useRuntimeUpdate(
       copy.title,
       copy.uncertain,
       router,
-      showCloudPricing,
+      showCloudPricing, showComposeReview,
       showToast,
     ],
   );

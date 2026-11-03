@@ -1,3 +1,4 @@
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useState } from "react";
@@ -49,6 +50,7 @@ export function EnvVarsEditor({
   const { t } = useI18n();
   const { projectData } = useProjectSettings();
   const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
+  const showComposeReview = useComposeReview(projectId);
   const hasActiveDeployment = Boolean(projectData?.activeDeploymentId);
   const [rows, setRows] = useState<Row[]>([]);
   const [baseline, setBaseline] = useState<PersistedProjectEnv[] | null>(null);
@@ -166,7 +168,7 @@ export function EnvVarsEditor({
       showToast(t.projectSettings.envVars.toast.applying, "success", t.projectSettings.envVars.toast.applyingTitle);
       onClose();
     } catch (err) {
-      if (!showCloudPricing(err)) showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
+      if (!showComposeReview(err) && !showCloudPricing(err)) showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
     } finally {
       setApplying(false);
     }
