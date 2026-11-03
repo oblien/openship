@@ -17,14 +17,14 @@ import { env } from "@repo/platform/engine/config/env";
 import { seedOrg } from "../helpers/seed";
 import { authRoutes } from "../../src/modules/auth/auth.routes";
 import { tokenRoutes } from "../../src/modules/tokens/token.routes";
-import { forceMcpConsent } from "../../src/middleware/mcp-consent";
+import { bootstrapMcpSession } from "../../src/middleware/mcp-session";
 import { resolveBearerIdentity } from "../../src/middleware/auth";
 import { shutdownRateLimit } from "../../src/lib/rate-limit";
 
 const ORIGIN = "https://mcp.example.test";
 const app = new Hono()
-  .use("/api/auth/mcp/authorize", forceMcpConsent)
-  .use("/api/auth/oauth2/authorize", forceMcpConsent)
+  .use("/api/auth/mcp/authorize", bootstrapMcpSession)
+  .use("/api/auth/oauth2/authorize", bootstrapMcpSession)
   .route("/api/auth", authRoutes)
   .route("/api/tokens", tokenRoutes);
 
@@ -147,6 +147,161 @@ function refresh(flow: Flow, refreshToken: string) {
 }
 
 describe("Better Auth 1.7 MCP compatibility and grant boundaries", () => {
+  it("does not register an untrusted forwarded host on an unauthenticated request", async () => {
+    await auth.$context;
+    const configured = env.OPENSHIP_PUBLIC_URL;
+    const advertised = env.OPENSHIP_ADVERTISED_ORIGIN;
+    try {
+      env.OPENSHIP_PUBLIC_URL = "";
+      env.OPENSHIP_ADVERTISED_ORIGIN = "";
+      const response = await app.request(`${ORIGIN}/api/auth/oauth2/userinfo`, {
+        headers: {
+          "x-forwarded-host": "untrusted.example.test",
+          "x-forwarded-proto": "https",
+        },
+      });
+      expect(response.ok).toBe(false);
+      expect(
+        await db
+          .select({ identifier: schema.oauthResource.identifier })
+          .from(schema.oauthResource)
+          .where(eq(schema.oauthResource.identifier, "https://untrusted.example.test/api/mcp")),
+      ).toEqual([]);
+    } finally {
+      env.OPENSHIP_PUBLIC_URL = configured;
+      env.OPENSHIP_ADVERTISED_ORIGIN = advertised;
+    }
+  });
+
+  it.each(["GET", "POST"])(
+    "preserves %s authorization parameters and requires consent for returning clients",
+    async (method) => {
+      const flow = await prepare();
+      await tokens(flow); // The provider already remembers this client's consent.
+      const query = new URLSearchParams(flow.query);
+      query.delete("prompt");
+      query.delete("resource");
+      const response = await app.request(
+        `${ORIGIN}/api/auth/oauth2/authorize${method === "GET" ? `?${query}` : ""}`,
+        {
+          method,
+          headers: {
+            cookie: flow.cookie,
+            ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+          },
+          ...(method === "POST" ? { body: query } : {}),
+        },
+      );
+      expect(response.status, await response.clone().text()).toBe(302);
+      const destination = new URL(response.headers.get("location")!);
+      expect(destination.pathname).toBe("/mcp/authorize");
+      for (const key of [
+        "client_id",
+        "state",
+        "code_challenge",
+        "code_challenge_method",
+        "redirect_uri",
+      ]) {
+        expect(destination.searchParams.get(key), key).toBe(query.get(key));
+      }
+      expect(destination.searchParams.get("sig")).toBeTruthy();
+      expect(destination.searchParams.get("resource")).toBe(`${ORIGIN}/api/mcp`);
+      const authorizationCode = await code({
+        ...flow,
+        oauthQuery: destination.searchParams.toString(),
+      });
+      expect((await exchange(flow, authorizationCode)).status).toBe(200);
+    },
+  );
+
+  it("uses provider APIs for a trusted origin change and keeps resource administration off HTTP", async () => {
+    const flow = await prepare();
+    const configured = env.OPENSHIP_PUBLIC_URL;
+    const changedOrigin = "https://verified-domain.example.test";
+    try {
+      env.OPENSHIP_PUBLIC_URL = changedOrigin;
+      const query = new URLSearchParams(flow.query);
+      query.set("resource", `${changedOrigin}/api/mcp`);
+      const response = await app.request(`${changedOrigin}/api/auth/oauth2/authorize?${query}`, {
+        headers: { cookie: flow.cookie },
+      });
+      expect(response.status, await response.clone().text()).toBe(302);
+      const destination = new URL(response.headers.get("location")!);
+      expect(destination.searchParams.get("sig")).toBeTruthy();
+      const authorizationCode = await code({
+        ...flow,
+        oauthQuery: destination.searchParams.toString(),
+      });
+      const issued = await exchange(
+        flow,
+        authorizationCode,
+        flow.verifier,
+        `${changedOrigin}/api/mcp`,
+      );
+      expect(issued.status, await issued.clone().text()).toBe(200);
+      const { access_token } = (await issued.json()) as { access_token: string };
+      await expect(
+        jwtVerify(access_token, createLocalJWKSet(await auth.api.getJwks()), {
+          issuer: changedOrigin,
+          audience: `${changedOrigin}/api/mcp`,
+        }),
+      ).resolves.toBeTruthy();
+
+      // A later read cannot overwrite an operator's disabled resource policy.
+      await db
+        .update(schema.oauthResource)
+        .set({ disabled: true })
+        .where(eq(schema.oauthResource.identifier, `${changedOrigin}/api/mcp`));
+      const rejected = await app.request(`${changedOrigin}/api/auth/oauth2/authorize?${query}`, {
+        headers: { cookie: flow.cookie },
+      });
+      expect(rejected.status).toBe(302);
+      expect(new URL(rejected.headers.get("location")!).searchParams.get("error")).toBe(
+        "invalid_target",
+      );
+
+      const admin = await app.request(`${changedOrigin}/api/auth/admin/oauth2/resources`, {
+        method: "POST",
+        headers: { cookie: flow.cookie, "content-type": "application/json" },
+        body: JSON.stringify({ identifier: "https://untrusted.example.test/api/mcp" }),
+      });
+      expect(admin.status).toBe(404);
+    } finally {
+      env.OPENSHIP_PUBLIC_URL = configured;
+    }
+  });
+
+  it("preserves the signed grant through password login before showing consent", async () => {
+    const flow = await prepare();
+    const user = await repos.user.findById(flow.userId);
+    const password = "mcp-login-regression-password";
+    await db.insert(schema.account).values({
+      id: randomUUID(),
+      userId: flow.userId,
+      accountId: flow.userId,
+      providerId: "credential",
+      password: await (await auth.$context).password.hash(password),
+    });
+    const anonymous = await app.request(`${ORIGIN}/api/auth/oauth2/authorize?${flow.query}`);
+    const loginUrl = new URL(anonymous.headers.get("location")!);
+    const login = await app.request(`${ORIGIN}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: user!.email,
+        password,
+        oauth_query: loginUrl.searchParams.toString(),
+      }),
+    });
+    expect(login.status, await login.clone().text()).toBe(200);
+    const result = (await login.json()) as { url: string };
+    const destination = new URL(result.url);
+    expect(destination.pathname).toBe("/mcp/authorize");
+    expect(destination.searchParams.get("sig")).toBeTruthy();
+    expect(destination.searchParams.get("state")).toBe(flow.query.get("state"));
+    expect(destination.searchParams.get("code_challenge")).toBe(flow.query.get("code_challenge"));
+  });
+
   it("advertises reachable provider endpoints and its public signing keys", async () => {
     const response = await oauthProviderAuthServerMetadata(auth)(
       new Request(`${ORIGIN}/.well-known/oauth-authorization-server`),

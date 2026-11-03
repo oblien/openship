@@ -47,7 +47,7 @@ export async function normalizeMcpRedirectUri(
   resolveRegisteredUris: RegisteredRedirectUriResolver,
 ): Promise<Request> {
   const url = new URL(request.url);
-  const isAuthorize = request.method === "GET" && /\/(?:mcp|oauth2)\/authorize$/.test(url.pathname);
+  const isAuthorize = /\/(?:mcp|oauth2)\/authorize$/.test(url.pathname);
   const isToken = request.method === "POST" && /\/(?:mcp|oauth2)\/token$/.test(url.pathname);
 
   if (!isAuthorize && !isToken) return request;
@@ -55,7 +55,7 @@ export async function normalizeMcpRedirectUri(
   let clientId: string | undefined;
   let redirectUri: string | undefined;
 
-  if (isAuthorize) {
+  if (isAuthorize && request.method === "GET") {
     clientId = url.searchParams.get("client_id") ?? undefined;
     redirectUri = url.searchParams.get("redirect_uri") ?? undefined;
   } else {
@@ -88,7 +88,7 @@ export async function normalizeMcpRedirectUri(
   const canonicalUri = findEquivalentLoopbackRedirectUri(redirectUri, registeredUris);
   if (!canonicalUri || canonicalUri === redirectUri) return request;
 
-  if (isAuthorize) {
+  if (isAuthorize && request.method === "GET") {
     url.searchParams.set("redirect_uri", canonicalUri);
     return new Request(url, request);
   }

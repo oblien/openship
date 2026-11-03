@@ -16,14 +16,12 @@ import { db, eq, schema } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { withMcpIssuer } from "@repo/platform/engine/lib/mcp-issuer";
-import { publicOriginFor } from "../../lib/mcp-resource";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
 import { authMiddleware } from "../../middleware/auth";
 import * as organizationController from "./organization.controller";
 import { internalAuth } from "../../middleware/internal-auth";
 import { firstSignupGuard } from "../../middleware/local-bootstrap";
 import * as ctrl from "./auth.controller";
-import { ensureMcpProviderResources } from "../../lib/mcp-provider-resources";
 import { handleMcpTokenRequest } from "./mcp-token.handler";
 import { REPOSITORY_OAUTH_STATE_PREFIX } from "@repo/platform/engine/modules/github/github-repository-authorization";
 
@@ -71,7 +69,7 @@ authRoutes.get("/callback/github", async (c, next) => {
 });
 
 const handleProviderRequest: Handler = async (c) =>
-  withMcpIssuer(publicOriginFor(c.req.raw), async () => {
+  withMcpIssuer(async () => {
     // Existing MCP clients may cache the 1.6 endpoint URLs. Forward aliases into
     // the provider's new endpoints so PKCE and client authentication stay intact.
     const url = new URL(c.req.url);
@@ -84,44 +82,7 @@ const handleProviderRequest: Handler = async (c) =>
     };
     const alias = aliases[url.pathname.slice("/api/auth".length)];
     if (alias) url.pathname = `/api/auth${alias}`;
-    if (url.pathname.startsWith("/api/auth/oauth2/"))
-      await ensureMcpProviderResources(publicOriginFor(c.req.raw));
-    let forwarded = new Request(url, c.req.raw);
-    if (forwarded.method === "POST" && url.pathname.endsWith("/oauth2/register")) {
-      // Older MCP clients omit application_type for loopback callbacks. Infer
-      // native only for loopback HTTP; explicit web declarations still validate.
-      const body = (await forwarded
-        .clone()
-        .json()
-        .catch(() => {
-          // diagnostics-ignore: Invalid JSON bypasses this shim and reaches the provider's validation.
-          return null;
-        })) as Record<string, unknown> | null;
-      if (
-        body &&
-        body.application_type === undefined &&
-        Array.isArray(body.redirect_uris) &&
-        body.redirect_uris.length &&
-        body.redirect_uris.every((uri) => {
-          try {
-            const callback = new URL(String(uri));
-            return (
-              callback.protocol === "http:" &&
-              ["localhost", "127.0.0.1", "[::1]"].includes(callback.hostname)
-            );
-          } catch {
-            return false;
-          }
-        })
-      ) {
-        const headers = new Headers(forwarded.headers);
-        headers.delete("content-length");
-        forwarded = new Request(forwarded, {
-          headers,
-          body: JSON.stringify({ ...body, application_type: "native" }),
-        });
-      }
-    }
+    const forwarded = new Request(url, c.req.raw);
     const request = await normalizeMcpRedirectUri(forwarded, async (clientId) => {
       const [client] = await db
         .select({ redirectUris: schema.oauthClient.redirectUris })

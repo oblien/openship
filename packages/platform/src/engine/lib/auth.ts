@@ -24,6 +24,8 @@ import { oidcProviderConfig, socialProviderCredentials } from "./auth-providers"
 import { isAuthorizedLocalSignup } from "./local-bootstrap";
 import { accountSecurityPlugins } from "./account-security";
 import { mcpIssuer } from "./mcp-issuer";
+import { allowedMcpResources } from "./mcp-resources";
+import { mcpOAuthPolicy } from "./mcp-oauth-policy";
 import { getAuthMode } from "./auth-mode";
 
 /**
@@ -91,6 +93,7 @@ const oidcOAuth = oidcProviderConfig();
 
 export const auth = betterAuth({
   basePath: "/api/auth",
+  hooks: { before: mcpOAuthPolicy },
   logger: {
     level: "warn",
     // Better Auth plugins can catch failures internally before returning an
@@ -537,19 +540,19 @@ export const auth = betterAuth({
       },
       jwks: { keyPairConfig: { alg: "RS256" } },
     }),
-    // Openship owns MCP transport, discovery and request-scoped resources. Use
+    // Openship owns MCP transport and discovery. Use
     // the provider directly so an HTTP public URL during setup cannot prevent
     // the entire authentication service from starting.
     oauthProvider({
-      resources: [`${resolveAuthBaseUrl()}/api/mcp`, `${resolveAuthBaseUrl()}/api/proxy/api/mcp`],
-      clientRegistrationDefaultResources: [
-        `${resolveAuthBaseUrl()}/api/mcp`,
-        `${resolveAuthBaseUrl()}/api/proxy/api/mcp`,
-      ],
-      // Migrated 1.6 clients predate resource links. Both enabled resources name
+      resources: allowedMcpResources(new URL(resolveAuthBaseUrl()).origin),
+      resourceSeedMode: "insertOnly",
+      clientRegistrationDefaultResources: allowedMcpResources(new URL(resolveAuthBaseUrl()).origin),
+      // Migrated 1.6 clients predate resource links. These resources name
       // this same server; per-user permissions remain enforced by Openship.
       enforcePerClientResources: false,
-      resourcePrivileges: async () => false,
+      // Resource APIs are SERVER_ONLY. The runtime reconciler may read/create
+      // configured resources; it cannot change operator policy or client links.
+      resourcePrivileges: async ({ action }) => action === "read" || action === "create",
       dpop: { signingAlgorithms: [] },
       // This page carries the signed OAuth query through login and MFA before
       // displaying permissions; a bare login URL would lose the pending grant.

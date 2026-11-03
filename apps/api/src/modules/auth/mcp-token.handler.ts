@@ -2,10 +2,10 @@ import { createLocalJWKSet, jwtVerify } from "jose";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { auth } from "@repo/platform/engine/lib/auth";
+import { mcpIssuer } from "@repo/platform/engine/lib/mcp-issuer";
 import {
   allowedMcpResources,
   isAllowedMcpResource,
-  publicOriginFor,
   resolveTokenAudience,
 } from "../../lib/mcp-resource";
 
@@ -15,7 +15,7 @@ import {
  * disconnects; never re-sign or relax the provider's token validation.
  */
 export async function handleMcpTokenRequest(request: Request): Promise<Response> {
-  const origin = publicOriginFor(request);
+  const origin = mcpIssuer();
   const contentType = request.headers.get("content-type") ?? "";
   let params: URLSearchParams;
   try {

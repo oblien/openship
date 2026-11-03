@@ -64,7 +64,7 @@ import { githubRoutes } from "../../../src/modules/github/github.routes";
 import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { parseAssistantAutomationReport } from "@repo/contracts";
 import { projectRoutes } from "../../../src/modules/projects/project.routes";
-import { forceMcpConsent } from "../../../src/middleware/mcp-consent";
+import { bootstrapMcpSession } from "../../../src/middleware/mcp-session";
 import { clientIpMiddleware } from "../../../src/middleware/client-ip";
 import { handleApiError } from "../../../src/middleware/error-handler";
 import { shutdownRateLimit } from "../../../src/lib/rate-limit";
@@ -74,8 +74,8 @@ const origin = "http://localhost:4000";
 const app = new Hono()
   .onError(handleApiError)
   .use("*", clientIpMiddleware)
-  .use("/api/auth/mcp/authorize", forceMcpConsent)
-  .use("/api/auth/oauth2/authorize", forceMcpConsent)
+  .use("/api/auth/mcp/authorize", bootstrapMcpSession)
+  .use("/api/auth/oauth2/authorize", bootstrapMcpSession)
   .route("/api/auth", authRoutes)
   .route("/api/tokens", tokenRoutes)
   .route("/api/assistant", assistantRoutes)
