@@ -1,0 +1,204 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "id": "fider",
+  "name": "Fider",
+  "description": "A feedback board where your users suggest, vote on, and discuss ideas, with a private PostgreSQL database.",
+  "kind": "template",
+  "logo": "fider",
+  "category": "other",
+  "repository": "https://github.com/getfider/fider",
+  "tags": ["feedback", "roadmap", "voting", "community"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "fider-db",
+      "image": "postgres:16-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "fider",
+        "POSTGRES_DB": "fider"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["fider_db_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U fider -d fider"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      }
+    },
+    {
+      "name": "fider",
+      "image": "getfider/fider:v0.38.2",
+      "exposed": true,
+      "exposedPort": 3000,
+      "routes": [{ "port": 3000 }],
+      "restart": "unless-stopped",
+      "dependsOn": ["fider-db"],
+      "environment": {
+        "BASE_URL": "{{publicUrl:fider}}",
+        "HOST_MODE": "single",
+        "DATABASE_URL": "postgres://fider:{{config:DB_PASSWORD}}@fider-db:5432/fider?sslmode=disable"
+      },
+      "secretEnv": ["DATABASE_URL", "JWT_SECRET", "EMAIL_SMTP_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "./fider ping"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "30s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "fider-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "fider-db"
+    },
+    {
+      "key": "DB_PASSWORD",
+      "service": "fider",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "fider-db"
+    },
+    {
+      "key": "JWT_SECRET",
+      "service": "fider",
+      "label": "Session signing secret",
+      "help": "Auto-generated. Signs sign-in sessions; changing it signs everyone out.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "email",
+      "label": "Outgoing email",
+      "description": "Fider has no passwords: people sign in with a link sent by email, so it will not start without an SMTP server.",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "EMAIL_SMTP_HOST",
+          "service": "fider",
+          "label": "SMTP host",
+          "type": "text",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "placeholder": "smtp.example.com"
+        },
+        {
+          "key": "EMAIL_SMTP_PORT",
+          "service": "fider",
+          "label": "SMTP port",
+          "type": "number",
+          "default": "587",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "integer": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "EMAIL_SMTP_USERNAME",
+          "service": "fider",
+          "label": "SMTP username",
+          "type": "text",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "help": "Leave empty for a relay that needs no login."
+        },
+        {
+          "key": "EMAIL_SMTP_PASSWORD",
+          "service": "fider",
+          "label": "SMTP password",
+          "type": "password",
+          "secret": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "EMAIL_NOREPLY",
+          "service": "fider",
+          "label": "From address",
+          "type": "text",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "placeholder": "noreply@example.com",
+          "help": "The sender shown on sign-in and notification emails.",
+          "fullWidth": true
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "endpoints": [
+    {
+      "service": "fider",
+      "port": 3000,
+      "label": "Fider",
+      "kind": "http",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "fider-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "connection": {
+    "title": "Set up Fider",
+    "description": "Fider has no username or password. Open the site, enter your name and email, and follow the link it sends you to finish.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Fider",
+        "source": "publicUrl:fider",
+        "kind": "url",
+        "recommended": true,
+        "help": "The email you enter on first visit becomes the administrator."
+      }
+    ],
+    "firstLogin": {
+      "note": "Do this right after the deploy: until the first site is created, anyone who opens this URL can claim the administrator account. The sign-in email goes through the SMTP server you configured, so check it is reachable if no email arrives."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Feedback and voting",
+        "description": "Collect ideas from your users and let them vote on what matters."
+      },
+      {
+        "title": "Private database",
+        "description": "Posts and votes live in a dedicated, project-scoped Postgres instance."
+      },
+      {
+        "title": "Passwordless sign-in",
+        "description": "People sign in with an emailed link, so there are no passwords to manage."
+      }
+    ]
+  }
+}
