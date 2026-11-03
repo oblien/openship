@@ -272,7 +272,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     rename: vi.fn(async () => undefined), writeFile: vi.fn(async () => undefined),
   } as unknown as CommandExecutor;
   h.services = [{ id: "svc-web", name: "web", projectId: "p1", kind: "compose", enabled: true, exposed: true,
-    ports: ["8080", "9090"], image: "web:v1", dependsOn: [], environment: {}, volumes: ["data:/data"],
+    ports: ["8080", "9090"], image: "web:v1", dependsOn: [], environment: {}, volumes: ["data:/data", "./config:/etc/web:ro"],
     exposedPort: "8080", domainType: "free", domain: "app", advanced: null,
     publicEndpoints: [{ port: 8080, domain: "app", domainType: "free" }, { port: 9090, domain: "console", domainType: "free" }] },
   { id: "svc-api", name: "api", projectId: "p1", kind: "compose", enabled: true, exposed: false,
@@ -293,6 +293,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     routing, ssl: { provisionCert: vi.fn(), verifyCert: vi.fn() } as never });
   expect(result.status).toBe("ready");
   expect(result.routeWarnings ?? []).toEqual([]);
+  expect(configurations.find(config => config.serviceName === "web")?.volumes).toEqual(["data:/data", "./config:/etc/web:ro"]);
   expect(configurations.find(config => config.serviceName === "web")?.cloudEndpoints).toEqual([
     { hostname: "app.opsh.io", port: 8080, custom: false }, { hostname: "console.opsh.io", port: 9090, custom: false },
   ]);

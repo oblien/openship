@@ -698,6 +698,7 @@ export function createServiceRuntimeConfig(opts: {
   service: Service;
   image: string;
   environment: Record<string, string>;
+  runtime?: MultiServiceRuntimeAdapter;
   resources?: ResourceConfig;
   /** Docker-ready shared namespaces (`container:<id>` / `none`), pre-resolved. */
   namespaces?: { network?: string; pid?: string };
@@ -712,7 +713,7 @@ export function createServiceRuntimeConfig(opts: {
   const { project, dep, service, image, environment, resources, namespaces } =
     opts;
   const volumes = appRowVolumes(project, service);
-  assertDeployVolumePolicy(volumes);
+  assertDeployVolumePolicy(volumes, opts.runtime);
   // Monorepo sub-apps store their long-running process in `startCommand`;
   // compose services in `command`. The DB invariant is that compose rows
   // never have `startCommand` set, so a single `??` chain covers both:
@@ -1146,7 +1147,7 @@ async function deployComposeServicesCore(
     // A selected dependent may share a carried provider, so validate every provider too.
     validateComposeNamespaces(service.advanced);
     if (!opts?.strictScope || !opts.targetServiceIds || opts.targetServiceIds.has(service.id)) {
-      assertDeployVolumePolicy(appRowVolumes(project, service));
+      assertDeployVolumePolicy(appRowVolumes(project, service), runtime);
       parseContainerHosts(service.advanced?.extraHosts);
       validateComposeGpuConfig(service.advanced);
       parseComposeShmSize(service.advanced?.shmSize);
@@ -3196,6 +3197,7 @@ async function deployComposeServicesCore(
       const serviceRuntimeConfig = createServiceRuntimeConfig({
         project,
         dep,
+        runtime,
         service: svc,
         image: preparedImages.get(svc.id)?.deploymentRef ?? image,
         environment: mergedEnv,

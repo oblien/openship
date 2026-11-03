@@ -57,7 +57,6 @@ export const buildDependencies: BuildDependencies = {
     return JSON.parse(JSON.stringify(prepare.projectInfoToPublicResponse(await prepare.resolveProjectInfo(input), body)));
   },
   async access(ctx, input) {
-    await (await import("./host-mount-policy")).assertHostMountWriteAccess(ctx, input);
     if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none" && input.publicEndpoints === undefined) input.publicEndpoints = [];
     const source = await resolveProjectAuthority(input.projectId, ctx.organizationId);
     // A destination changes where commands run, never where a project is stored.
@@ -71,6 +70,7 @@ export const buildDependencies: BuildDependencies = {
       if (!isAcceptedDeploymentResult(body)) throw new AppError("Invalid cloud build response", 502, "INVALID_CLOUD_RESPONSE");
       return body;
     }
+    await (await import("./host-mount-policy")).assertHostMountWriteAccess(ctx, input);
     const service = await import("./build.service");
     return service.requestBuildAccess(ctx, input);
   },

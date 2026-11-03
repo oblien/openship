@@ -2089,7 +2089,7 @@ function buildDeployEnvironment(
  * reservations and the previous release are assigned during activation preflight. */
 export function createServerDeployConfig(phase: DeployPhaseInputs): DeployConfig {
   const { dep, project, snapshot, buildSessionId, buildResult, envMap, prodResources, routeState } = phase;
-  assertDeployVolumePolicy(snapshot.volumes);
+  assertDeployVolumePolicy(snapshot.volumes, phase.runtime);
   return {
     deploymentId: dep.id,
     projectId: project.id,
