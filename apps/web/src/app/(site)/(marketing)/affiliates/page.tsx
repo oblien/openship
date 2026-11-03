@@ -16,19 +16,13 @@ import { AFFILIATE_PROGRAM as program } from "@/lib/affiliate-program";
 import { CommissionPreview } from "./commission-preview";
 import styles from "./affiliates.module.css";
 
-const title = "OpenShip Affiliates — Good tools are worth sharing.";
+const title = "OpenShip Referral — Good tools are worth sharing.";
 const description =
   "Introduce someone to OpenShip. Share a useful tool, offer an optional discount, " +
   `and receive up to ${program.commissionPercent}% commission on eligible Cloud payments for ${program.rewardMonths} months.`;
-const socialImage = {
-  url: "/og/affiliates.png",
-  width: 1200,
-  height: 630,
-  alt: "OpenShip Affiliates. Good tools are worth sharing.",
-};
 
 export const metadata: Metadata = {
-  title: "Affiliates",
+  title: "Referral program",
   description,
   alternates: { canonical: "/affiliates" },
   openGraph: {
@@ -37,7 +31,6 @@ export const metadata: Metadata = {
     url: "/affiliates",
     siteName: "OpenShip",
     type: "website",
-    images: [socialImage],
   },
   twitter: {
     card: "summary_large_image",
@@ -45,7 +38,6 @@ export const metadata: Metadata = {
     description,
     site: "@openshipio",
     creator: "@openshipio",
-    images: [socialImage],
   },
 };
 
@@ -71,7 +63,7 @@ const questions = [
   {
     question: "How do I join?",
     answer:
-      "Sign in or create an OpenShip Cloud account, visit the affiliate dashboard and choose Join the program. Review your program terms, then create your first referral link. You can share a link or its referral code.",
+      "Sign in or create an OpenShip Cloud account, open Referral in your account and choose Join the program. Review your program terms, then create your first referral link. You can share a link or its referral code.",
   },
   {
     question: "Which purchases qualify?",
@@ -109,14 +101,14 @@ export default function AffiliatesPage() {
           <div className={styles.container}>
             <div className={styles.heroGrid}>
               <div>
-                <p className={styles.eyebrow}>OpenShip Affiliates</p>
+                <p className={styles.eyebrow}>OpenShip Referral</p>
                 <h1 id="affiliate-title" className={styles.heroTitle}>
                   Good tools are
                   <br />
                   <span>worth sharing.</span>
                 </h1>
                 <p className={styles.heroCopy}>
-                  Help someone find a better way to deploy. Our affiliate program is a small
+                  Help someone find a better way to deploy. Our referral program is a small
                   thank-you for making the introduction.
                 </p>
                 <div className={styles.actions}>
@@ -343,7 +335,7 @@ export default function AffiliatesPage() {
 
         <section className={`${styles.container} ${styles.finalCta}`} aria-labelledby="join-title">
           <div>
-            <p className={styles.eyebrow}>OpenShip Affiliates</p>
+            <p className={styles.eyebrow}>OpenShip Referral</p>
             <h2 id="join-title">Have someone in mind?</h2>
             <p className={styles.finalCopy}>Share OpenShip when it feels like the right fit.</p>
           </div>

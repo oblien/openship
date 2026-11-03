@@ -1,9 +1,9 @@
 ---
-title: Affiliates
+title: Referral
 description: Account-owned referral links, renewal reporting and cash payout requests.
 ---
 
-Affiliate operations belong to the authenticated person. They do not accept a
+Referral operations belong to the authenticated person. They do not accept a
 beneficiary, namespace or commission rate from the caller. Project and
 organization-bound credentials cannot access personal earnings. A read-only
 account credential can read but cannot join, create links or request payouts.
@@ -27,13 +27,13 @@ Amounts are integer USD cents; rates are basis points (500 means 5%). The defaul
 payout minimum is $50, and the actual per-user minimum is in `overview.member`.
 Save the idempotency key before requesting a payout and reuse it after an uncertain
 response. Changing the amount requires a new key. Payout requests reserve funds;
-they do not send cash. Only pending requests can be canceled by the affiliate.
+they do not send cash. Only pending requests can be canceled by the referrer.
 Approval and external transfer recording are trusted operator actions, with no
 tenant-facing API.
 
 `createOffer` takes `policyId`, `name`, `discountBps`, `idempotencyKey`, and optional
 `planId` and `expiresAt`. The policy sets the commission allowance; the customer
-discount reduces the affiliate share. A plan restriction uses the VM capacity
+discount reduces the referrer’s share. A plan restriction uses the VM capacity
 fingerprint from the live catalog. Revoking a link prevents new reservations and
 preserves accepted checkout and subscription terms.
 
@@ -42,7 +42,7 @@ Eligible purchases use the normal subscription endpoint with optional
 equivalent qualify. Manage, PAYG and top-ups do not. Reporting uses anonymized
 customer labels, not their email, credentials or project data.
 
-See the [affiliate guide](/docs/guides/affiliates) for the customer workflow.
+See the [referral guide](/docs/guides/affiliates) for the customer workflow.
 
 {/* api-operations:start */}
 

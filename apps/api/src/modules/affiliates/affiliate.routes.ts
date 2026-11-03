@@ -13,7 +13,7 @@ const r = secureRouter(affiliateRoutes, { module: "affiliates", basePath: "/api/
 const metadata = {
   authorizationHandledByOperation: true,
   mcpExcluded:
-    "Personal affiliate earnings and cash payout requests are managed in the Affiliates page.",
+    "Personal referral earnings and cash payout requests are managed in the Referral page.",
 };
 const read = { ...metadata, tag: "billing:read" as const };
 const write = {
