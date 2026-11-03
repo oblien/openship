@@ -31,6 +31,17 @@ import {
   findHandoffCodeByState,
   mintSession,
 } from "../../lib/cloud-auth-proxy";
+import {
+  issueDeviceAuthorization,
+  validateDeviceAuthorization,
+  consumeDeviceAuthorization,
+} from "./cloud-device-authorization.service";
+import {
+  isCloudCodeChallenge,
+  isCloudHandoffState,
+  isCloudDeviceUserCode,
+  isRecord,
+} from "@repo/contracts";
 import { runCloudPreflight } from "@repo/platform/engine/lib/cloud-preflight";
 import { cloudRuntimeTarget, trustedOrigins } from "@repo/platform/engine/config/env";
 import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
@@ -227,13 +238,13 @@ export async function account(c: Context) {
  */
 export async function desktopHandoff(c: Context) {
   const codeChallenge = c.req.query("code_challenge");
-  if (!codeChallenge || !/^[A-Za-z0-9_-]{40,128}$/.test(codeChallenge)) {
+  if (!isCloudCodeChallenge(codeChallenge)) {
     return c.json({ error: "code_challenge query parameter is required", code: "MISSING_CODE_CHALLENGE" }, 400);
   }
   const validation = validateDesktopRedirect(c.req.query("redirect"));
   if (!validation.ok) return c.json({ error: validation.error }, validation.status);
   const state = c.req.query("state");
-  if (!state || state.length > 256) {
+  if (!isCloudHandoffState(state)) {
     return c.json({ error: "state query parameter is required", code: "MISSING_STATE" }, 400);
   }
   const consentUrl = new URL("/authorize", cloudRuntimeTarget.dashboard);
@@ -245,6 +256,33 @@ export async function desktopHandoff(c: Context) {
 }
 
 // ─── Self-hosted connect handoff ─────────────────────────────────────────────
+
+/**
+ * POST /api/cloud/device-authorize  { code_challenge }
+ *
+ * Step 1 of the headless CLI flow. The CLI calls this before opening the
+ * browser; we return an opaque `state` (identifies the pending request)
+ * and a short `user_code` (printed in the terminal). The consent page requires
+ * the human to type the user code, so a link alone cannot authorize a device.
+ *
+ * Public + rate-limited: the returned state is a capability, but it is useless
+ * without the PKCE verifier at exchange time and the user code at consent time.
+ */
+export async function deviceAuthorize(c: Context) {
+  const body = await c.req
+    .json<unknown>()
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/cloud/cloud-saas.controller");
+      return null;
+    });
+  if (!isRecord(body) || !isCloudCodeChallenge(body.code_challenge)) {
+    return c.json(
+      { error: "code_challenge is required", code: "MISSING_CODE_CHALLENGE" },
+      400,
+    );
+  }
+  return c.json(await issueDeviceAuthorization(body.code_challenge));
+}
 
 /**
  * GET /api/cloud/connect-handoff?redirect=<url>&state=<state>&code_challenge=<challenge>
@@ -269,12 +307,18 @@ export async function desktopHandoff(c: Context) {
 export async function connectHandoff(c: Context) {
   const isDevice = c.req.query("mode") === "device";
   const codeChallenge = c.req.query("code_challenge");
-  if (!codeChallenge || !/^[A-Za-z0-9_-]{40,128}$/.test(codeChallenge)) {
+  if (!isCloudCodeChallenge(codeChallenge)) {
     return c.json({ error: "code_challenge query parameter is required", code: "MISSING_CODE_CHALLENGE" }, 400);
   }
   const state = c.req.query("state");
-  if (!state || typeof state !== "string" || state.length === 0 || state.length > 256) {
+  if (!isCloudHandoffState(state)) {
     return c.json({ error: "state query parameter is required", code: "MISSING_STATE" }, 400);
+  }
+  if (isDevice && !(await validateDeviceAuthorization(state, codeChallenge))) {
+    return c.json(
+      { error: "Invalid or expired device authorization", code: "INVALID_DEVICE_AUTHORIZATION" },
+      400,
+    );
   }
 
   // Redirect to the dashboard consent page. The dashboard handles
@@ -326,10 +370,10 @@ export async function connectAuthorize(c: Context) {
   if (c.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     return c.json({ error: "JSON body required", code: "INVALID_BODY" }, 415);
   }
-  let body: { redirect?: string; state?: string; codeChallenge?: string; mode?: string };
+  let body: Record<string, unknown>;
   try {
     const parsed = await c.req.json<unknown>();
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!isRecord(parsed)) {
       return c.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, 400);
     }
     body = parsed;
@@ -340,7 +384,7 @@ export async function connectAuthorize(c: Context) {
 
   const isDevice = body.mode === "device";
   const codeChallenge = body.codeChallenge;
-  if (!codeChallenge || !/^[A-Za-z0-9_-]{40,128}$/.test(codeChallenge)) {
+  if (!isCloudCodeChallenge(codeChallenge)) {
     return c.json(
       { error: "codeChallenge is required", code: "MISSING_CODE_CHALLENGE" },
       400,
@@ -352,18 +396,27 @@ export async function connectAuthorize(c: Context) {
   // no redirect target to guard.
   let redirectUrl: string | undefined;
   if (!isDevice) {
+    const redirect = typeof body.redirect === "string" ? body.redirect : undefined;
     const validation =
       body.mode === "desktop"
-        ? validateDesktopRedirect(body.redirect)
-        : validateConnectRedirect(body.redirect);
+        ? validateDesktopRedirect(redirect)
+        : validateConnectRedirect(redirect);
     if (!validation.ok) {
       return c.json({ error: validation.error, code: "INVALID_REDIRECT" }, validation.status);
     }
     redirectUrl = validation.url.toString();
   }
   const state = body.state;
-  if (!state || typeof state !== "string" || state.length === 0 || state.length > 256) {
+  if (!isCloudHandoffState(state)) {
     return c.json({ error: "state is required", code: "MISSING_STATE" }, 400);
+  }
+
+  const userCode = isDevice && isCloudDeviceUserCode(body.userCode) ? body.userCode : undefined;
+  if (isDevice && !userCode) {
+    return c.json(
+      { error: "The code shown in your terminal is required", code: "MISSING_USER_CODE" },
+      400,
+    );
   }
 
   // Approval creates a new credential, so require the live session and current
@@ -377,6 +430,14 @@ export async function connectAuthorize(c: Context) {
   }
 
   try {
+    // Consume only after live authentication. Invalid and unauthenticated
+    // attempts must not burn another terminal's pending approval.
+    if (userCode && !(await consumeDeviceAuthorization(state, codeChallenge, userCode))) {
+      return c.json(
+        { error: "Invalid or expired device authorization code", code: "INVALID_USER_CODE" },
+        400,
+      );
+    }
     // CRITICAL: do NOT hand the local instance the user's current
     // browser cookie session token. The local instance later calls
     // POST /api/cloud/disconnect which deletes the session row by

@@ -6,6 +6,7 @@ import type { EnsureProjectInput } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { validateSourceDirectory } from "../../../source-files";
 import { assertNativeSourcePath } from "../../native/source-policy";
+import { assertLocalSourceContentAccess } from "../../lib/local-source-authority";
 import { env } from "../../config";
 import { authorization } from "../../lib/authorization";
 import * as prepareService from "../deployments/prepare.service";
@@ -28,12 +29,16 @@ async function localDirectory(path: string): Promise<string> {
 /** Preserve scanner metadata and use the same creation policy/atomic token grant as projects.create. */
 export function createProjectLocalDependencies(create: (ctx: ExecutionContext, input: EnsureProjectInput) => Promise<unknown>): NonNullable<ProjectDependencies["local"]> {
   return {
-    async scan(_ctx, input) {
+    async scan(ctx, input) {
+      if (input.includeEnv) await assertLocalSourceContentAccess(ctx);
       const directory = await localDirectory(input.path);
       const info = await prepareService.resolveProjectInfo({ source: "local", path: directory });
       return { success: true, path: input.path, ...prepareService.projectInfoToScanResponse(info, input) };
     },
     async import(ctx, input) {
+      // Import persists scanner-derived Compose values even without an
+      // includeEnv option, so every local import is a content read.
+      await assertLocalSourceContentAccess(ctx);
       const body = { ...input, localPath: await localDirectory(input.localPath) };
       // Retain all inferred Compose, monorepo, routing and build fields from the HTTP import.
       const info = await prepareService.resolveProjectInfo({ source: "local", path: body.localPath, composePath: body.composePath });

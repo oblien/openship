@@ -1,5 +1,6 @@
 export * from "./deployments";
 export * from "./cloud-support";
+export * from "./cloud-auth";
 export * from "./deployment-resources";
 export * from "./deployment-controls";
 export * from "./validation";

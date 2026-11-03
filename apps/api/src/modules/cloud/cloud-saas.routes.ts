@@ -19,6 +19,7 @@ const r = secureRouter(new Hono(), {
 // Public browser entry points only validate and redirect to explicit consent.
 r.public("get", "/desktop-handoff", { reason: "Desktop handoff redirect - validates params and opens dashboard consent; no credential creation" }, saas.desktopHandoff);
 r.public("get", "/connect-handoff", { reason: "Connect handoff redirect - validates params and 302s to dashboard consent page" }, saas.connectHandoff);
+r.public("post", "/device-authorize", { reason: "Device authorization start - returns a pending request + user code; rate-limited, no session" }, saas.deviceAuthorize);
 // POST /connect-authorize is called from the dashboard consent page. It
 // performs the session check inline (cookie-based) and 401s if missing,
 // which the page handles by routing the user to /login?returnTo=...

@@ -11,6 +11,7 @@ import { assertNativeSourcePath } from "../../native/source-policy";
 import { resolveProjectAuthority } from "../../lib/cloud/project-authority";
 import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
 import { audit } from "../../lib/audit-emitter";
+import { assertLocalSourceContentAccess } from "../../lib/local-source-authority";
 
 /** Validate the source and permission to include editable values in its scan. */
 async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentInput): Promise<Source> {
@@ -41,6 +42,9 @@ async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentI
   if (source === "local") {
     if (env.CLOUD_MODE) throw new AppError("Local projects are not available in cloud mode", 403);
     if (!body.path) throw new ValidationError("path is required");
+    // A local path reads server-side files. Native callers are confined to
+    // sourceRoots; outside that runtime, revealing values needs instance authority.
+    if (body.includeEnv) await assertLocalSourceContentAccess(ctx);
     const native = process.env.OPENSHIP_NATIVE === "true";
     const path = native ? await assertNativeSourcePath(body.path) : body.path;
     // A relative folder can resolve through a symlink beyond the approved roots.
