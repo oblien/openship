@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { serializeMonorepoApp } from "./monorepo-config";
 import { persistRouteProtectionDrafts, clearRouteProtectionDrafts } from "./route-protection-drafts";
 
@@ -261,6 +262,7 @@ export function useDeploymentBuild(
   const openGithubConnect = useServerGitHubConnectModal();
   const { installUrl, state: githubState } = useGitHub();
   const [state, setState] = useState<DeploymentState>(INITIAL_STATE);
+  const showComposeReview = useComposeReview(state.projectId || config.projectId);
   useEffect(() => {
     if (state.deploymentSuccess && state.projectId && state.deploymentId)
       void refreshSecurityAfterDeployment(cloudScope, state.projectId, state.deploymentId);
@@ -980,6 +982,7 @@ export function useDeploymentBuild(
       // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
+        composeRevision: config.composeRevision,
         branch: config.branch || undefined,
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
@@ -1057,6 +1060,10 @@ export function useDeploymentBuild(
       errorDiagnostics.error("dashboard/context/deployment/useDeploymentBuild", "Deployment error:", err);
       const message = getApiErrorMessage(err, "Failed to start deployment");
       const errorCode = extractErrorCode(err);
+      if (showComposeReview(err)) {
+        setState((prev) => ({ ...prev, isDeploying: false }));
+        return null;
+      }
 
       const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
       // Backend defense-in-depth: a cloud-requiring preflight failure carries a
@@ -1086,7 +1093,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showModal, showToast]);
+  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showComposeReview, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -1614,7 +1621,7 @@ export function useDeploymentBuild(
         // A missing GitHub credential surfaces the SAME modal as the deploy
         // wizard (never a bare toast) — one shared handler, one source of truth.
         const openedModal =
-          showCloudPricing(error, async () => {
+          showComposeReview(error) || showCloudPricing(error, async () => {
             const id = await redeploy(deploymentId, options);
             if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
           }) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
@@ -1624,7 +1631,7 @@ export function useDeploymentBuild(
         redeployRequestRef.current = false;
       }
     },
-    [buildStream, showToast, showCloudPricing, maybeOpenCredentialModal],
+    [buildStream, showToast, showCloudPricing, showComposeReview, maybeOpenCredentialModal],
   );
 
   const reset = useCallback(() => {

@@ -29,7 +29,7 @@ export async function bootstrapMcpSession(c: Context, next: Next): Promise<Respo
     ipAddress: "127.0.0.1",
     userAgent: "mcp-authorize",
   });
-  await setSessionCookie(c, session.token, session.expiresAt);
+  await setSessionCookie(c, session.token);
   // Replay with the cookie, preserving a POST's form body and PKCE parameters.
   return c.redirect(publicRequestUrl(c.req.raw).toString(), c.req.method === "POST" ? 307 : 302);
 }

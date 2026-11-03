@@ -1,7 +1,5 @@
 import type { Context } from "hono";
-import { setSignedCookie } from "hono/cookie";
-import { env } from "@repo/platform/engine/config/env";
-import { COOKIE_PREFIX } from "@repo/platform/engine/lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 
 /**
  * Stamp the response with a signed Better Auth session cookie. Shared by every
@@ -10,22 +8,12 @@ import { COOKIE_PREFIX } from "@repo/platform/engine/lib/auth";
  * consistent — drift between paths causes subtle "logged in but redirected to
  * /login" bugs.
  */
-export async function setSessionCookie(
-  c: Context,
-  token: string,
-  expiresAt: Date,
-): Promise<void> {
-  // Secure ONLY when actually served over TLS — SaaS (CLOUD_MODE) or a self-host
-  // behind https (OPENSHIP_PUBLIC_URL). A loopback/LAN http instance (desktop,
-  // dev, `openship up` without --public-url) MUST NOT set Secure, or the browser
-  // silently drops the cookie and the user gets a "logged in → /login" loop.
-  const secure =
-    env.CLOUD_MODE || (env.OPENSHIP_PUBLIC_URL?.trim().toLowerCase().startsWith("https://") ?? false);
-  await setSignedCookie(c, `${COOKIE_PREFIX}.session_token`, token, env.BETTER_AUTH_SECRET, {
-    httpOnly: true,
-    secure,
-    sameSite: "Lax",
-    path: "/",
-    expires: expiresAt,
+export async function setSessionCookie(c: Context, token: string): Promise<void> {
+  const requestHeaders = new Headers(c.req.raw.headers);
+  requestHeaders.set("authorization", `Bearer ${token}`);
+  const { headers } = await auth.api.setBridgeSessionCookie({
+    headers: requestHeaders,
+    returnHeaders: true,
   });
+  for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true });
 }

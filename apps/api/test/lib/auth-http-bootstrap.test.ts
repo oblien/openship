@@ -15,6 +15,8 @@ afterAll(() => closeDb());
 it("keeps authentication available with an HTTP public URL during setup", async () => {
   const context = await auth.$context;
   expect(context.baseURL).toBe("http://192.0.2.10:3001/api/auth");
+  expect(context.authCookies.sessionToken.name).toBe("openship.session_token");
+  expect(context.authCookies.sessionToken.attributes.secure).toBe(false);
   const response = await auth.handler(new Request("http://192.0.2.10:3001/api/auth/get-session"));
   expect(response.status).toBe(200);
   expect(await response.json()).toBeNull();

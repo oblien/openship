@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   pricing: vi.fn(),
   resourceKey: "account-one",
 }));
+vi.mock("@/context/ModalContext", () => ({ useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast }) }));
