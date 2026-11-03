@@ -785,6 +785,8 @@ check retryable before starting the move.
   reserved RAM and retained storage. Keep checkout unavailable until customer-funded purchases are
   supported. Do not expose reseller wallet balances or call hypothetical comparisons
   recorded savings.
+- Cloud deployment plan dialogs show recovery guidance once above the picker;
+  do not repeat the restriction message in a separate callout.
 - Custom resources sit beside the preset plan choice. Keep CPU, RAM and disk controls
   with a compact monthly total, wait for a matching server quote before enabling
   checkout, and expose bundle pricing details on demand. Applying a paid resource
@@ -879,6 +881,8 @@ and supporting metadata. Match nearby page headings instead of introducing a new
 Use **Domains & routing** for sections covering domains, published ports, and internal access. Use
 **Domains** when the section only manages hostnames. Put shared UI copy in the locale dictionaries.
 Keep hints concise and explain choices where they help the user decide.
+When the Free/Custom toggle is hidden, keep domain actions such as route protection
+inline with the hostname input; do not reserve a separate row for an icon.
 Routing rules have visible sections for rewrites, redirects, response headers, and
 URL behavior. Group proxy settings into uploads, timeouts, response buffering,
 compression, headers/protocol, and upstream TLS. Use human labels and shared filled
