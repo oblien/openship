@@ -261,7 +261,9 @@ export async function describeContainerById(
 export const EDGE_CONTAINER_NAME = "openship-edge";
 
 export function isOurEdgeContainer(name?: string, image?: string): boolean {
-  return /openship-edge/i.test(`${name ?? ""} ${image ?? ""}`);
+  return (
+    name === EDGE_CONTAINER_NAME || /(?:^|\/)openship-edge(?::[^/]+|@[^/]+)?$/.test(image ?? "")
+  );
 }
 
 /** A container Openship created — `openship.project` is stamped on every one. */
