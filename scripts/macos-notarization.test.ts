@@ -144,6 +144,33 @@ describe("resumable macOS notarization", () => {
     expect(messages.some((message) => message.startsWith("Notarized and validated"))).toBe(false);
   });
 
+  it("retries an interrupted ticket validation without resubmitting the installer", async () => {
+    await submitNotarization(path, context, runner);
+    calls.length = 0;
+    const run = runner.run;
+    let validations = 0;
+    runner.run = async (args) => {
+      const result = await run(args);
+      return args[1] === "validate" && ++validations === 1 ? networkError : result;
+    };
+    await finishNotarization(path, context, runner);
+    expect(calls.map((args) => args[1])).toEqual(["info", "staple", "validate", "validate"]);
+    expect(messages.some((message) => message.startsWith("Notarized and validated"))).toBe(true);
+  });
+
+  it("bounds validation retries and refuses publication when the ticket cannot be verified", async () => {
+    await submitNotarization(path, context, runner);
+    calls.length = 0;
+    const run = runner.run;
+    runner.run = async (args) => {
+      const result = await run(args);
+      return args[1] === "validate" ? networkError : result;
+    };
+    await expect(finishNotarization(path, context, runner)).rejects.toThrow("Could not validate");
+    expect(calls.filter((args) => args[1] === "validate")).toHaveLength(3);
+    expect(messages.some((message) => message.startsWith("Notarized and validated"))).toBe(false);
+  });
+
   it("retries a ticket that has not propagated yet and then validates it", async () => {
     await submitNotarization(path, context, runner);
     calls.length = 0;

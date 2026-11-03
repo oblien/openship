@@ -74,6 +74,9 @@ main since 0.9.8, plus deployment, billing, assistant and dashboard improvements
   component version checks instead of Debian commands.
 - **Fresh GeoIP data** — refresh and validate the country database before creating
   release tags, with a scheduled refresh workflow for ongoing updates.
+- **Release verification** — retain the published 0.9.8 Compose template for real
+  upgrade tests. Retry transient Apple ticket-validation failures while still
+  requiring a successfully validated installer before publication.
 
 ### Cloud, billing and email
 
