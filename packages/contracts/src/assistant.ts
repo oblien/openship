@@ -33,6 +33,8 @@ export interface AssistantProviderInfo {
   installedVersion: string;
   available: boolean;
   issue?: string;
+  /** Native tools can be prepared inside the user's managed Cloud instance. */
+  setup?: { state: "required" | "installing" | "failed" };
   authStatus: AuthStatus;
   authMethods: AuthMethod[];
   models: ModelInfo[];
@@ -67,6 +69,7 @@ export function assistantDefaultModel(info: AssistantProviderInfo | undefined) {
 }
 export interface AssistantStatus {
   available: boolean;
+  cloud?: boolean;
   enabled: boolean;
   clientId: string | null;
   target: AssistantTarget | null;
@@ -75,7 +78,7 @@ export interface AssistantStatus {
 export interface AssistantTarget {
   id: string;
   name: string;
-  kind: "local" | "server";
+  kind: "local" | "server" | "cloud";
 }
 export interface AssistantConversation {
   id: string;

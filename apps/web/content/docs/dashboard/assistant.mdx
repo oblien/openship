@@ -8,18 +8,19 @@ agent, displaying each harness’s native name and icon. It is off by default fo
 workspace in Desktop, self-hosted OpenShip, and Cloud.
 
 Desktop runs Mindwire on your computer and can reuse your local agent sign-in.
-Self-hosted installations use a private profile on the OpenShip host. Cloud requires
-you to choose one of your managed or connected servers: Mindwire runs on that
-server, never on the shared Cloud control plane. Installing and using that host
-requires server administration permission and the server's normal active access.
+Self-hosted installations use a private profile on the OpenShip host. Cloud uses
+your existing paid Cloud instance, or a connected server you choose. A single paid
+instance is selected by default; no separate SSH server or additional instance is
+needed. Mindwire runs there, never on the shared Cloud control plane. Installing
+and using that host requires administration permission and its normal active access.
 Each account, workspace and server has its own agent profile. Cloud and self-hosted
 profiles do not import an operator's native agent credentials.
 
 ## Enable the assistant
 
 1. Open **AI Agents** in the sidebar. Preview deployment, investigation and
-   automation examples, then select **Enable AI Agents**. On Cloud, first choose
-   the server where the agent will run.
+   automation examples, then select **Enable Agents**. On Cloud, your paid instance
+   appears automatically. Choose a destination if you have several.
 2. Review the permissions dialog without leaving Assistant. It reuses the same
    resource picker, permission templates and consent flow as [MCP authorization](/docs/mcp).
    Choose the resources and operations the assistant may use. Start with
@@ -30,8 +31,11 @@ profiles do not import an operator's native agent credentials.
    You can also manage connections from **Settings → Assistant**.
    Mindwire can reuse a compatible local sign-in or show the agent's available
    sign-in methods. Agent credentials stay in Mindwire's private profile on the
-   selected host. OpenShip installs the matching Mindwire daemon after opt-in;
-   install Claude Code or Codex on that host before connecting it.
+   selected host. OpenShip installs the matching Mindwire daemon after opt-in.
+   On a managed Cloud instance, select **Set up Codex** or **Set up Claude Code**
+   to prepare the agent, then connect your account. Installation progress appears
+   here, with a retry action if it fails. On Desktop, self-hosted or connected SSH
+   hosts, install Claude Code or Codex on that host before connecting it.
 5. Choose a connection and model, then send your first message.
 
 Enabling the feature grants access only after you complete MCP consent. It does
