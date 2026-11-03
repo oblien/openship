@@ -47,10 +47,11 @@ const HOSTS = {
   ubuntuRoot: host({}),
   ubuntuSudo: host({ ...NON_ROOT, sudo: "y" }),
   ubuntuStuck: host({ ...NON_ROOT, sudo: "n" }),
-  /** Recognized and REFUSED — no pacman provisioning path. Sudo still works fine here. */
-  archSudo: host({ ...NON_ROOT, sudo: "y", osRelease: OS_RELEASE.arch }),
-  archRoot: host({ osRelease: OS_RELEASE.arch }),
-  archStuck: host({ ...NON_ROOT, sudo: "n", osRelease: OS_RELEASE.arch }),
+  /** Recognized and REFUSED — no zypper provisioning path. Sudo still works fine here. */
+  opensuseSudo: host({ ...NON_ROOT, sudo: "y", osRelease: OS_RELEASE.opensuse156, pm: "none" }),
+  opensuseStuck: host({ ...NON_ROOT, sudo: "n", osRelease: OS_RELEASE.opensuse156, pm: "none" }),
+  /** The reported host: CachyOS, pacman, passwordless sudo. */
+  archSudo: host({ ...NON_ROOT, sudo: "y", osRelease: OS_RELEASE.cachyos, pm: "pacman" }),
   /** Answered something other than our keys — the AWS forced-command AMI. */
   intercepted: parseEnvironmentProbe(unansweredProbe('Please login as the user "ec2-user"')),
 };
@@ -101,7 +102,7 @@ describe("privilegedExecutor", () => {
   });
 
   it("refuses a host it cannot drive, by default, with the host's own reason", async () => {
-    on(HOSTS.archSudo);
+    on(HOSTS.opensuseSudo);
 
     const grant = await privilegedExecutor(PLAIN, "Installing docker");
 
@@ -109,7 +110,21 @@ describe("privilegedExecutor", () => {
     if (grant.supported) return;
     // The distro reason, not "needs root" — privilege is the narrower question and its
     // message shadowed the real one on exactly the hosts this ordering exists for.
-    expect(grant.reason).toContain("pacman");
+    expect(grant.reason).toContain("zypper");
+  });
+
+  it("drives an Arch-family host once pacman is present", async () => {
+    on(HOSTS.archSudo);
+
+    const grant = await privilegedExecutor(PLAIN, "Installing docker");
+
+    expect(grant.supported).toBe(true);
+    if (!grant.supported) return;
+    expect(grant.value.elevation).toBe("sudo");
+    expect(grant.value.executor).toBe(ELEVATED);
+    expect(grant.value.profile.distroFamily).toBe("arch");
+    expect(grant.value.profile.distroId).toBe("cachyos");
+    expect(grant.value.profile.packageManager).toBe("pacman");
   });
 
   /**
@@ -122,7 +137,7 @@ describe("privilegedExecutor", () => {
    * callers degrade rather than throw.
    */
   it("still elevates on a host it won't provision — sudo doesn't depend on the distro", async () => {
-    on(HOSTS.archSudo);
+    on(HOSTS.opensuseSudo);
 
     const grant = await privilegedExecutor(PLAIN, "Writing Openship server state", {
       onRefusedHost: "proceed",
@@ -135,7 +150,7 @@ describe("privilegedExecutor", () => {
   });
 
   it("proceeds unelevated only when there is genuinely no route to root", async () => {
-    on(HOSTS.archStuck);
+    on(HOSTS.opensuseStuck);
 
     const grant = await privilegedExecutor(PLAIN, "Writing Openship server state", {
       onRefusedHost: "proceed",
@@ -190,11 +205,11 @@ describe("rootOrDegrade", () => {
 
   /**
    * The reason the warning is keyed on the OUTCOME rather than on which arm produced it.
-   * Warning here would fire on every openSUSE/Arch deploy that then worked perfectly,
+   * Warning here would fire on every openSUSE deploy that then worked perfectly,
    * and a warning that cries wolf on a working deploy is how the real one stops being read.
    */
   it("says nothing when it proceeded on a refused host and got sudo anyway", async () => {
-    on(HOSTS.archSudo);
+    on(HOSTS.opensuseSudo);
     const report = vi.fn();
 
     await expect(rootOrDegrade(PLAIN, opts(report))).resolves.toBe(ELEVATED);
@@ -202,7 +217,7 @@ describe("rootOrDegrade", () => {
   });
 
   it("warns exactly once, naming the work and the loss, when it has no privilege", async () => {
-    on(HOSTS.archStuck);
+    on(HOSTS.opensuseStuck);
     const report = vi.fn();
 
     // Degrades rather than throwing: routing gaps must never fail a deploy, because an

@@ -91,6 +91,7 @@ if command -v apt-get >/dev/null 2>&1; then PM=apt
 elif command -v dnf >/dev/null 2>&1; then PM=dnf
 elif command -v yum >/dev/null 2>&1; then PM=yum
 elif command -v apk >/dev/null 2>&1; then PM=apk
+elif command -v pacman >/dev/null 2>&1; then PM=pacman
 elif command -v brew >/dev/null 2>&1; then PM=brew
 fi
 echo "opsh_pm=$PM"
@@ -335,6 +336,7 @@ const PACKAGE_MANAGERS = members<SystemPackageManager>({
   dnf: true,
   yum: true,
   apk: true,
+  pacman: true,
   brew: true,
   none: true,
 });
