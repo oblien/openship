@@ -2713,6 +2713,18 @@ it("rejects an invalid GPU request before pulling images or replacing any siblin
   expect(fixture.runtime.destroy).not.toHaveBeenCalled();
 });
 
+it.each([false, true])("refuses an external namespace provider before any cutover (scoped=%s)", async (strictScope) => {
+  const fixture = imageRefreshFixture();
+  h.services[0]!.advanced = { networkMode: "container:openship-edge" };
+  h.services[1]!.advanced = { networkMode: "service:db" };
+  await expect(fixture.run(strictScope
+    ? { strictScope: true, targetServiceIds: new Set(["svc-api"]) }
+    : {})).rejects.toThrow("direct container references");
+  expect(fixture.pull).not.toHaveBeenCalled();
+  expect(fixture.activate).not.toHaveBeenCalled();
+  expect(fixture.runtime.destroy).not.toHaveBeenCalled();
+});
+
 it.each([{ ports: [] }, { ports: ["127.0.0.1:25774:25774"] }])(
   "deploys private services without taking over the edge ($ports)",
   async ({ ports }) => {

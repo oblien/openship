@@ -152,14 +152,14 @@ describe("resolveServiceNamespaces", () => {
     ).toEqual({ namespaces: { network: "container:cid-vpn", pid: "container:cid-app" } });
   });
 
-  it("passes container: and none straight through", () => {
+  it("refuses a stored container reference and preserves network_mode none", () => {
     expect(
       resolveServiceNamespaces(
         svc({ name: "qbit", advanced: { networkMode: "container:deadbeef" } }),
         new Map(),
         stack,
       ),
-    ).toEqual({ namespaces: { network: "container:deadbeef" } });
+    ).toEqual({ error: expect.stringContaining("direct container references") });
     expect(
       resolveServiceNamespaces(
         svc({ name: "qbit", advanced: { networkMode: "none" } }),
@@ -207,7 +207,7 @@ describe("resolveServiceNamespaces", () => {
     expect(resolveServiceNamespaces(svc({ name: "app" }), new Map(), stack)).toEqual({});
   });
 
-  it("ignores a stored value that is not a supported mode", () => {
+  it("fails closed on a stored value that is not a supported mode", () => {
     // `host` can't be stored by the parser, but a hand-written row must not
     // smuggle it past the refusal either.
     expect(
@@ -216,6 +216,6 @@ describe("resolveServiceNamespaces", () => {
         new Map(),
         stack,
       ),
-    ).toEqual({});
+    ).toEqual({ error: expect.stringContaining("host is not supported") });
   });
 });

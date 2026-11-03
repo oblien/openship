@@ -180,6 +180,7 @@ export function createProjectControls(
       return data;
     },
     async setOptions(ctx, id, input) {
+      await (await import("../deployments/host-mount-policy")).assertHostMountWriteAccess(ctx, input);
       const data = presentProject(
         await (await service()).updateOptions(id, input, ctx.organizationId),
       );
