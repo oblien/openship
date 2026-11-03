@@ -8750,6 +8750,297 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "invoiceninja",
+      "name": "Invoice Ninja",
+      "description": "Invoicing, quotes, payments and expenses for your business, with a private MySQL database, Redis queue, and a preconfigured administrator.",
+      "kind": "template",
+      "logo": "invoiceninja",
+      "category": "other",
+      "repository": "https://github.com/invoiceninja/invoiceninja",
+      "tags": [
+        "invoicing",
+        "billing",
+        "accounting",
+        "payments"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "invoiceninja-db",
+          "image": "mysql:8.4.13",
+          "restart": "unless-stopped",
+          "environment": {
+            "MYSQL_DATABASE": "ninja",
+            "MYSQL_USER": "ninja"
+          },
+          "secretEnv": [
+            "MYSQL_PASSWORD",
+            "MYSQL_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "invoiceninja_db_data:/var/lib/mysql"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "mysqladmin ping -h localhost -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          }
+        },
+        {
+          "name": "invoiceninja-redis",
+          "image": "redis:8.10.3-alpine",
+          "restart": "unless-stopped",
+          "volumes": [
+            "invoiceninja_redis_data:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "redis-cli",
+              "ping"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          }
+        },
+        {
+          "name": "invoiceninja",
+          "image": "invoiceninja/invoiceninja-debian:5.13.50",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "invoiceninja-db",
+            "invoiceninja-redis"
+          ],
+          "entrypointArgv": [
+            "sh",
+            "-c",
+            "export APP_KEY=\"base64:$(php -r \"echo base64_encode(hex2bin(getenv('APP_KEY_SEED')));\")\"; exec /usr/local/bin/init.sh supervisord -c /etc/supervisor/supervisord.conf"
+          ],
+          "volumes": [
+            "invoiceninja_public:/var/www/html/public",
+            "invoiceninja_storage:/var/www/html/storage"
+          ],
+          "environment": {
+            "APP_URL": "{{publicUrl:invoiceninja-web}}",
+            "APP_ENV": "production",
+            "APP_DEBUG": "false",
+            "REQUIRE_HTTPS": "false",
+            "TRUSTED_PROXIES": "*",
+            "CACHE_DRIVER": "redis",
+            "QUEUE_CONNECTION": "redis",
+            "SESSION_DRIVER": "redis",
+            "REDIS_HOST": "invoiceninja-redis",
+            "REDIS_PORT": "6379",
+            "REDIS_PASSWORD": "null",
+            "FILESYSTEM_DISK": "debian_docker",
+            "DB_CONNECTION": "mysql",
+            "DB_HOST": "invoiceninja-db",
+            "DB_PORT": "3306",
+            "DB_DATABASE": "ninja",
+            "DB_USERNAME": "ninja",
+            "IS_DOCKER": "true",
+            "SCOUT_DRIVER": "null",
+            "PDF_GENERATOR": "snappdf",
+            "PHANTOMJS_PDF_GENERATION": "false",
+            "MAIL_MAILER": "log"
+          },
+          "secretEnv": [
+            "DB_PASSWORD",
+            "APP_KEY_SEED",
+            "IN_PASSWORD"
+          ]
+        },
+        {
+          "name": "invoiceninja-web",
+          "image": "nginx:1.31.8-alpine",
+          "exposed": true,
+          "exposedPort": 80,
+          "routes": [
+            {
+              "port": 80
+            }
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "invoiceninja"
+          ],
+          "volumes": [
+            "invoiceninja_public:/var/www/html/public:ro",
+            "invoiceninja_storage:/var/www/html/storage:ro"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1/health || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "120s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MYSQL_ROOT_PASSWORD",
+          "service": "invoiceninja-db",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "MYSQL_PASSWORD",
+          "service": "invoiceninja-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "invoiceninja-db"
+        },
+        {
+          "key": "DB_PASSWORD",
+          "service": "invoiceninja",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "invoiceninja-db"
+        },
+        {
+          "key": "APP_KEY_SEED",
+          "service": "invoiceninja",
+          "label": "Application key",
+          "help": "Auto-generated. Encrypts stored credentials and sessions; losing it makes them unreadable. Converted to Laravel's base64 APP_KEY on start.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "IN_PASSWORD",
+          "service": "invoiceninja",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "setup",
+          "label": "Initial account",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "IN_USER_EMAIL",
+              "service": "invoiceninja",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "required": true,
+              "installStep": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app."
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "invoiceninja-web",
+          "port": 80,
+          "label": "Invoice Ninja",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "invoiceninja-db",
+          "port": 3306,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "files": [
+        {
+          "service": "invoiceninja-web",
+          "path": "/etc/nginx/conf.d/laravel.conf",
+          "content": "server {\n    listen 80 default_server;\n    server_name _;\n    root /var/www/html/public;\n\n    add_header X-Frame-Options \"SAMEORIGIN\";\n    add_header X-Content-Type-Options \"nosniff\";\n\n    index index.php;\n    charset utf-8;\n\n    location / {\n        try_files $uri $uri/ /index.php?$query_string;\n    }\n\n    location = /favicon.ico { access_log off; log_not_found off; }\n    location = /robots.txt  { access_log off; log_not_found off; }\n\n    error_page 404 /index.php;\n\n    location ~ \\.php$ {\n        fastcgi_pass invoiceninja:9000;\n        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    location ~ /\\.(?!well-known).* {\n        deny all;\n    }\n}\n"
+        },
+        {
+          "service": "invoiceninja-web",
+          "path": "/etc/nginx/conf.d/invoiceninja.conf",
+          "content": "client_max_body_size 10M;\nclient_body_buffer_size 10M;\nserver_tokens off;\nfastcgi_buffers 32 16K;\ngzip on;\ngzip_comp_level 2;\ngzip_min_length 1M;\ngzip_proxied any;\ngzip_types *;\n"
+        }
+      ],
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 2048
+      },
+      "connection": {
+        "title": "Sign in to Invoice Ninja",
+        "description": "Sign in with the email and generated password below. The account is created on first start.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Invoice Ninja",
+            "source": "publicUrl:invoiceninja-web",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:invoiceninja:IN_USER_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:invoiceninja:IN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. Outgoing email is set to log only; add your SMTP server in the app under Settings > Email Settings to send invoices. The image is large (about 4 GB) and the first start runs database migrations, so allow a couple of minutes."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Invoices and quotes",
+            "description": "Create, send, and track invoices, quotes, and payments."
+          },
+          {
+            "title": "Private database",
+            "description": "Your data lives in a dedicated, project-scoped MySQL instance, with Redis for the queue."
+          },
+          {
+            "title": "Background jobs included",
+            "description": "Queue workers and the scheduler run alongside the app."
+          }
+        ]
+      }
     }
   ]
 }
