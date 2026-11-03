@@ -68,7 +68,7 @@ export function IssuesView() {
   const security = useUpdates();
   const securityCount = security.securityOverview.projects.filter(
     (project) => project.findings.length,
-  ).length;
+  ).length + (security.securityOverview.servers ?? []).filter(s => s.findings.length).length;
   const securityCopy = t.projectSettings.securityAdvisories;
   const { selfHosted, deployMode } = usePlatform();
   const online = useBrowserOnline();
@@ -498,7 +498,7 @@ export function IssuesView() {
               {securityCopy.title}
             </p>
             <Button size="sm" variant="secondary" onClick={() => setTab("security")}>
-              {interpolate(securityCopy.reviewApps, { count: securityCount })}
+              {interpolate(t.projectSettings.hostSecurity.reviewResources, { count: securityCount })}
             </Button>
           </div>
         )}

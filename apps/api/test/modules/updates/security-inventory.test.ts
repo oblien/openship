@@ -82,7 +82,7 @@ describe("scoped runtime inventory", () => {
     await expect(projectSecurityInventory(other.ctx, f.project.id, advisories)).rejects.toThrow();
     expect(h.exec).toHaveBeenCalledTimes(1);
   });
-  it("inspects only on rule/deployment changes or an explicit check, not elapsed time", async () => {
+  it("expires healthy evidence and refreshes on rule changes and explicit checks", async () => {
     const f = await fixture();
     await projectSecurityInventory(f.ctx, f.project.id, []);
     expect(h.resolve).not.toHaveBeenCalled();
@@ -91,9 +91,10 @@ describe("scoped runtime inventory", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 48 * 3_600_000);
     try {
       await projectSecurityInventory(f.ctx, f.project.id, [...advisories].reverse());
-      expect(h.exec).toHaveBeenCalledTimes(1);
-      await projectSecurityInventory(f.ctx, f.project.id, advisories, true);
       expect(h.exec).toHaveBeenCalledTimes(2);
+      now.mockReturnValue(Date.now() + 1);
+      await projectSecurityInventory(f.ctx, f.project.id, advisories, true);
+      expect(h.exec).toHaveBeenCalledTimes(3);
     } finally {
       now.mockRestore();
     }
@@ -102,7 +103,27 @@ describe("scoped runtime inventory", () => {
       f.project.id,
       advisories.map((a) => ({ ...a, revision: 2 })),
     );
-    expect(h.exec).toHaveBeenCalledTimes(3);
+    expect(h.exec).toHaveBeenCalledTimes(4);
+  });
+  it("retries temporary failures after backoff, without probing on every read", async () => {
+    const f = await fixture();
+    h.exec.mockRejectedValueOnce(new Error("temporarily unavailable"));
+    const first = await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    expect(first.unknownServices).toEqual([f.service.id]);
+    await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    expect(h.exec).toHaveBeenCalledTimes(1);
+    const row = await repos.securityAdvisory.project(f.project.id);
+    expect(row?.probeFailures).toBe(1);
+    const now = vi.spyOn(Date, "now").mockReturnValue(row!.nextInspectionAt!.getTime() + 1);
+    try {
+      expect(
+        (await projectSecurityInventory(f.ctx, f.project.id, advisories)).unknownServices,
+      ).toEqual([]);
+      expect(h.exec).toHaveBeenCalledTimes(2);
+      expect((await repos.securityAdvisory.project(f.project.id))?.probeFailures).toBe(0);
+    } finally {
+      now.mockRestore();
+    }
   });
   it("never falls back to executing version commands on a shared or bare host", async () => {
     const f = await fixture();
@@ -112,6 +133,20 @@ describe("scoped runtime inventory", () => {
     expect(result.unknownServices).toEqual([f.service.id]);
     expect(h.exec).not.toHaveBeenCalled();
     expect(h.dispose).toHaveBeenCalledTimes(1);
+  });
+  it("preserves previously observed runtime warnings during temporary probe failures", async () => {
+    const f = await fixture();
+    const initial = await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    h.exec.mockRejectedValue(new Error("offline"));
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+    try {
+      const result = await projectSecurityInventory(f.ctx, f.project.id, advisories, true);
+      expect(result.runtimes).toEqual(initial.runtimes);
+      expect(result.checkedAt).toBe(initial.checkedAt);
+      expect(result.unknownServices).toEqual([f.service.id]);
+    } finally {
+      now.mockRestore();
+    }
   });
   it("discards evidence if the active deployment changes during inspection", async () => {
     const f = await fixture();

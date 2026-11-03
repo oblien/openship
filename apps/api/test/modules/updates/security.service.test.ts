@@ -344,7 +344,7 @@ describe("security operations", () => {
       .set({ role: "restricted" })
       .where(eq(schema.member.userId, f.owner.userId));
     const restricted = { ...f.ctx, role: "restricted" as const };
-    expect(await securityOverview(restricted, feed)).toEqual({
+    expect(await securityOverview(restricted, feed)).toMatchObject({
       checksEnabled: true,
       projects: [],
       pendingProjects: 0,

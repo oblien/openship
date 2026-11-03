@@ -1260,9 +1260,9 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
-    "checksEnabled": "Check runtime security advisories",
-    "checksDescription": "Pause automatic runtime inspections, new advisory alerts and automatic security refreshes for this workspace when off. Existing findings and refresh consent are retained.",
-    "checksDisabled": "Runtime security advisory checks are disabled for this workspace.",
+    "checksEnabled": "Check security advisories",
+    "checksDescription": "When off, pauses runtime and host inspections, new advisory alerts and security patch actions for this workspace. Existing evidence and project refresh consent are retained.",
+    "checksDisabled": "Security advisory checks are disabled for this workspace.",
     "manageChecks": "Manage advisory checks",
     "retrySettings": "Try again",
     "severity": {
@@ -1274,7 +1274,7 @@
     "bannerSettings": "Security banner settings",
     "hideBanners": "Hide security banners",
     "showBanners": "Show security banners",
-    "bannerDescription": "Show app security notices at the top of the dashboard in this browser and workspace. Advisory checks and notification channels are controlled separately.",
+    "bannerDescription": "Show app and server security notices at the top of the dashboard in this browser and workspace. Advisory checks and notification channels are controlled separately.",
     "openRuntimeConfiguration": "Review runtime configuration",
     "sourceRedeployRequired": "Rebuild this app from its saved source before refreshing its runtime. The current image has no verified source revision. A source redeploy may include newer code; review it in Deployments, then check this advisory again.",
     "openSourceRedeploy": "Open source redeploy",
@@ -1284,7 +1284,7 @@
     "checking": "Checking…",
     "title": "Security advisories",
     "unavailable": "Security checks are unavailable or out of date. Existing notices remain visible.",
-    "affected": "Findings for apps you can access in the current organization.",
+    "affected": "Findings for apps and servers you can access in this workspace.",
     "noMatches": "No matching advisories in the checked evidence. This is not a complete vulnerability scan.",
     "partial": "Some runtimes could not be checked.",
     "guidance": "Read advisory",
@@ -1299,5 +1299,42 @@
     "persistent": "Active findings stay here when the banner is dismissed.",
     "otherApps": "Other apps ({count})",
     "details": "Details & guidance"
+  },
+  "hostSecurity": {
+    "title": "Server security",
+    "reviewPatch": "Review patch",
+    "applyPatch": "Apply reviewed patch",
+    "patchDetails": "Review server patch",
+    "interruption": "This installs the listed packages and may restart services. Review all changes. Already running services may still need an operator restart.",
+    "rebootRequired": "Reboot required. The running kernel must be checked after reboot.",
+    "manual": "Manual review required",
+    "runs": "Runs",
+    "noRuns": "No security patch runs yet.",
+    "scanTask": "Advisory inspection task",
+    "scanHint": "Runs on the saved schedule. Observations expire and failed checks retry with backoff.",
+    "schedulerPaused": "Scheduled inspections are paused.",
+    "checkPending": "An inspection is pending. Cached evidence may be out of date.",
+    "verified": "Version check passed",
+    "needsReview": "Needs review",
+    "nextCheck": "Next inspection",
+    "notSupported": "Host patching is available for customer-operated Ubuntu hosts. Provider-managed infrastructure uses its own maintenance process.",
+    "package": "Package",
+    "current": "Installed",
+    "target": "Planned version",
+    "reviewResources": "Review affected resources ({count})",
+    "openRuns": "Open server runs",
+    "lastRun": "Last scan",
+    "appOpen": "Runs while Openship is open.",
+    "scanStates": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "partial": "Partially checked",
+      "interrupted": "Interrupted"
+    },
+    "reviewReboot": "Review reboot",
+    "applyReboot": "Schedule reboot",
+    "rebooting": "Reboot scheduled; awaiting kernel verification",
+    "rebootInterruption": "This reboots the server in one minute and interrupts all its workloads. Openship will verify the running kernel when the host reconnects."
   }
 }

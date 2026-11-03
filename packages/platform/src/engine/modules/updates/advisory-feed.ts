@@ -1,3 +1,5 @@
+import { securityAdvisoryAppliesToMode } from "@repo/core";
+import { env } from "../../config/env";
 import {
   RELEASES_LATEST_API,
   SECURITY_FEED_API,
@@ -193,7 +195,8 @@ export async function getAdvisoryFeed(ctx?: ExecutionContext): Promise<AdvisoryF
   const stale = !manifest || Date.parse(manifest.expiresAt) <= Date.now();
   return {
     release: (release?.body as ReleaseFeedSnapshot | null) ?? { latest: null, manifest: null },
-    security: manifest,
+    security: manifest ? { ...manifest, advisories: manifest.advisories.filter(a =>
+      securityAdvisoryAppliesToMode(a, env.CLOUD_MODE ? "cloud" : env.DEPLOY_MODE === "desktop" ? "desktop" : "selfhosted")) } : null,
     stale,
     checkedAt: security?.checkedAt?.toISOString() ?? null,
     nextCheckAt: security?.nextCheckAt.toISOString() ?? null,

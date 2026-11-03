@@ -244,7 +244,7 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (
         url.includes(
-          "api.github.com/repos/oblien/openship/contents/security-advisories.signed.json",
+          "api.github.com/repos/oblien/openship/contents/security-advisories.v2.signed.json",
         )
       )
         return Response.json(proof, { headers: { etag: `"${revision}"` } });

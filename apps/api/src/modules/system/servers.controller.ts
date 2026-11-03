@@ -87,3 +87,19 @@ export async function retryServerOperation(c: Context) {
 export async function removeManagedServer(c: Context) {
   return c.json(await operationData(c, operations().removeManaged(operationContext(c), param(c, "id"), await c.req.json())), 202);
 }
+
+export async function serverSecurity(c: Context) {
+  return c.json({ data: await operationData(c, operations().security(operationContext(c), param(c, "id"))) });
+}
+export async function checkServerSecurity(c: Context) {
+  return c.json({ data: await operationData(c, operations().checkSecurity(operationContext(c), param(c, "id"))) });
+}
+export async function planServerSecurity(c: Context) {
+  return c.json({ data: await operationData(c, operations().planSecurityPatch(operationContext(c), param(c, "id"), await c.req.json())) });
+}
+export async function applyServerSecurity(c: Context) {
+  return c.json({ data: await operationData(c, operations().applySecurityPatch(operationContext(c), param(c, "id"), await c.req.json())) });
+}
+export async function serverSecurityRuns(c: Context) {
+  return c.json({ data: await operationData(c, operations().securityRuns(operationContext(c), param(c, "id"))) });
+}

@@ -87,7 +87,11 @@ export function UpdateCenter() {
   );
   const runtimeAdvisory = runtimeAdvisories?.find((item) => item.id === advisory?.id);
   const affectedProjects = runtimeAdvisory?.projects ?? [];
-  const runtimeSeverity = affectedProjects[0]?.findings[0]?.severity;
+  const affectedServers = runtimeAdvisory?.servers ?? [];
+  const additionalResources =
+    Math.max(0, affectedProjects.length - 3) + Math.max(0, affectedServers.length - 3);
+  const runtimeSeverity =
+    affectedProjects[0]?.findings[0]?.severity ?? affectedServers[0]?.findings[0]?.severity;
   const severityLabels = t.projectSettings.securityAdvisories.severity;
   // An in-flight download/install owns the top surface — suppress the advisory
   // banner so we never stack it next to its own progress bar.
@@ -182,6 +186,14 @@ export function UpdateCenter() {
                       className="mt-2 flex flex-wrap gap-2 text-[13px]"
                       aria-label={t.projectSettings.securityAdvisories.affected}
                     >
+                      {affectedServers.slice(0, 3).map((server) => (
+                        <li
+                          key={server.serverId}
+                          className="min-w-0 break-words rounded-lg bg-background/30 px-2.5 py-1"
+                        >
+                          {server.name}
+                        </li>
+                      ))}
                       {affectedProjects.slice(0, 3).map((project) => (
                         <li
                           key={project.projectId}
@@ -201,8 +213,8 @@ export function UpdateCenter() {
                           </span>
                         </li>
                       ))}
-                      {affectedProjects.length > 3 && (
-                        <li className="self-center">+{affectedProjects.length - 3}</li>
+                      {additionalResources > 0 && (
+                        <li className="self-center">+{additionalResources}</li>
                       )}
                     </ul>
                   ) : (
@@ -217,9 +229,14 @@ export function UpdateCenter() {
                         onClick={() => setSecurityOpen(true)}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background transition-opacity hover:opacity-90"
                       >
-                        {interpolate(t.projectSettings.securityAdvisories.reviewApps, {
-                          count: affectedProjects.length,
-                        })}
+                        {interpolate(
+                          affectedServers.length
+                            ? t.projectSettings.hostSecurity.reviewResources
+                            : t.projectSettings.securityAdvisories.reviewApps,
+                          {
+                            count: affectedProjects.length + affectedServers.length,
+                          },
+                        )}
                         <UiIcon name="arrow-right" className="size-3.5" />
                       </button>
                     )}
@@ -289,9 +306,9 @@ export function UpdateCenter() {
             </div>
           );
         })()}
-      {securityOpen && !!affectedProjects.length && (
+      {securityOpen && !!(affectedProjects.length + affectedServers.length) && (
         <RuntimeSecurityDialog
-          overview={{ ...securityOverview, projects: affectedProjects }}
+          overview={{ ...securityOverview, projects: affectedProjects, servers: affectedServers }}
           onClose={() => setSecurityOpen(false)}
           onChecked={refresh}
         />

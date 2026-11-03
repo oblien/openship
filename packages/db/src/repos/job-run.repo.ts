@@ -30,6 +30,10 @@ export function createJobRunRepo(db: Database) {
     /** Dependency re-delivery must not execute an accepted command twice. */
     startOnce: insertRun,
 
+    async progress(id: string, summary: Record<string, unknown>, output?: string) {
+      await db.update(jobRun).set({ summary, ...(output === undefined ? {} : { output }) })
+        .where(and(eq(jobRun.id, id), eq(jobRun.status, "running")));
+    },
     /** Close a run row with its outcome. */
     async finish(
       id: string,
@@ -60,9 +64,9 @@ export function createJobRunRepo(db: Database) {
     },
 
     /** Recent runs, optionally for a single job, newest first. */
-    async listRecent(opts?: { jobId?: string; limit?: number }): Promise<JobRun[]> {
+    async listRecent(opts?: { jobId?: string; serverId?: string; limit?: number }): Promise<JobRun[]> {
       const limit = Math.max(1, Math.min(opts?.limit ?? 50, 200));
-      const where = opts?.jobId ? eq(jobRun.jobId, opts.jobId) : undefined;
+      const where = and(opts?.jobId ? eq(jobRun.jobId, opts.jobId) : undefined, opts?.serverId ? eq(jobRun.serverId, opts.serverId) : undefined);
       return db
         .select()
         .from(jobRun)

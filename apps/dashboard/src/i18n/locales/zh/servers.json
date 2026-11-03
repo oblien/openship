@@ -247,7 +247,8 @@
       "ssh": "SSH 访问",
       "runtimeApi": "运行时 API",
       "workloads": "工作负载",
-      "settings": "设置"
+      "settings": "设置",
+      "runs": "运行记录"
     },
     "healthy": "健康",
     "issues": "问题",

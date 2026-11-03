@@ -42,6 +42,6 @@ export async function setSecurityCheckPolicy(
 export async function assertSecurityChecksEnabled(organizationId: string) {
   if (!(await repos.securityAdvisory.checksEnabled(organizationId)))
     throw new ValidationError(
-      "Runtime security advisory checks are disabled for this workspace. Enable them in Settings → Notifications.",
+      "Security advisory checks are disabled for this workspace. Enable them in Settings → Notifications.",
     );
 }

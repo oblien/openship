@@ -1,3 +1,4 @@
+import { ServerSecurityResultSchema } from "./server-security";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ReleaseFeedSnapshot, SecurityManifest } from "@repo/core";
 import { CreateDeploymentResultSchema, isCreateDeploymentResult } from "./deployments";
@@ -39,6 +40,11 @@ export const ProjectSecurityResultSchema = Type.Object({
   ),
 });
 export const SecurityOverviewSchema = Type.Object({
+  servers: Type.Optional(Type.Array(ServerSecurityResultSchema)),
+  scan: Type.Optional(Type.Object({
+    status: Type.String(), startedAt: nullableString, finishedAt: nullableString,
+    schedule: nullableString, schedulerEnabled: Type.Boolean(), runsWhileAppOpen: Type.Boolean(),
+  })),
   checksEnabled: Type.Optional(Type.Boolean()),
   /** Authorized active apps and opted-in policies, including unknown/pending observations. */
   projects: Type.Array(

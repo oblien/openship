@@ -66,11 +66,9 @@ beforeEach(() => {
   h.account = "account-one";
   h.checksEnabled = true;
   h.canManage = true;
-  h.policy
-    .mockReset()
-    .mockImplementation(async () => ({
-      data: { checksEnabled: h.checksEnabled, canManage: h.canManage },
-    }));
+  h.policy.mockReset().mockImplementation(async () => ({
+    data: { checksEnabled: h.checksEnabled, canManage: h.canManage },
+  }));
   h.setPolicy.mockReset().mockImplementation(async (enabled) => {
     h.checksEnabled = enabled;
     return { data: { checksEnabled: enabled, canManage: h.canManage } };
@@ -147,6 +145,38 @@ it("shares a visibility change from another browser tab", async () => {
   });
   expect(container.textContent).not.toContain(runtime.title);
   expect(button(copy.showBanners).getAttribute("aria-checked")).toBe("false");
+});
+
+it("opens a host-only advisory from the root banner and links to server runs", async () => {
+  const server = {
+    serverId: "host-one",
+    name: "Customer host",
+    supported: true,
+    findings: [
+      { id: "host-fix", title: "Kernel update", state: "reboot_required", severity: "high" },
+    ],
+  };
+  const host = {
+    id: "runtime:host-fix",
+    title: "Kernel update",
+    severity: "critical",
+    projects: [],
+    servers: [server],
+  };
+  h.updates.mockReturnValue({
+    ...h.updates(),
+    state: { advisories: [host] },
+    runtimeAdvisories: [host],
+    securityOverview: { projects: [], servers: [server], pendingProjects: 0, unknownProjects: 0 },
+  });
+  await act(async () => render());
+  expect(container.textContent).toContain("Customer host");
+  await act(async () =>
+    button(
+      baseDictionary.projectSettings.hostSecurity.reviewResources.replace("{count}", "1"),
+    ).click(),
+  );
+  expect(document.querySelector('a[href="/servers/host-one?tab=runs"]')).not.toBeNull();
 });
 
 it("saves inspection policy on the server and restores it on remount", async () => {

@@ -217,6 +217,11 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       },
     }),
     ...createRemoteResourceOperations(http, ServerResourceSchemas, {
+      security: { method: "GET", path: id => path(id) + "/security", envelope: "data" },
+      checkSecurity: { method: "POST", path: id => path(id) + "/security/check", envelope: "data" },
+      planSecurityPatch: { method: "POST", path: id => path(id) + "/security/plan", envelope: "data" },
+      applySecurityPatch: { method: "POST", path: id => path(id) + "/security/apply", envelope: "data" },
+      securityRuns: { method: "GET", path: id => path(id) + "/security/runs", envelope: "data" },
       infrastructure: { method: "GET", path: (id) => path(id) + "/infrastructure" },
       inspectSwarm: { method: "GET", path: (id) => path(id) + "/swarm", inputLocation: "query" },
       connectSwarm: { method: "POST", path: (id) => path(id) + "/swarm/connect" },

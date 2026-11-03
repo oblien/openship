@@ -1,3 +1,4 @@
+import { ServerSecuritySchemas } from "./server-security";
 import {
   NetworkCollectionSchemas,
   ComputeClusterCollectionSchemas,
@@ -514,6 +515,7 @@ export const ServerCollectionSchemas = {
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ServerResourceSchemas = {
+  ...ServerSecuritySchemas,
   ...ManagedServerResourceSchemas,
   usage: { action: "read", output: CloudWorkspaceUsageSchema },
   getNetworkSettings: {

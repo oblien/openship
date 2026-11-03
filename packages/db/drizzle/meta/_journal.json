@@ -1541,6 +1541,13 @@
       "when": 1793327200003,
       "tag": "0219_security_advisory_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1793698022140,
+      "tag": "0220_host_security_advisories",
+      "breakpoints": true
     }
   ]
 }

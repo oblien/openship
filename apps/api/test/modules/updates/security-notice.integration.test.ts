@@ -142,7 +142,7 @@ it("inspects on a newly published advisory, delivers once, and clears it only af
   const requests = vi.fn(async (input: unknown) => {
     const url = String(input);
     if (
-      url.includes("api.github.com/repos/oblien/openship/contents/security-advisories.signed.json")
+      url.includes("api.github.com/repos/oblien/openship/contents/security-advisories.v2.signed.json")
     )
       return Response.json(proof, { headers: { etag: `"${revision}"` } });
     if (url.endsWith("/releases/latest")) return Response.json({ tag_name: "v0.9.3" });
