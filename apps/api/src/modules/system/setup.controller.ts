@@ -15,7 +15,6 @@ import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { getSetup as readSetup, validateAuthModeChange } from "@repo/platform/engine/modules/system/settings.operations";
 import { operationContext, operationData } from "../../lib/operation-context";
 import type { Context } from "hono";
-import { setSignedCookie } from "hono/cookie";
 import { db, repos, schema, eq, and } from "@repo/db";
 import { assertSshSettings, generateId, normalizeRollbackWindow, normalizeSshTransport, safeErrorMessage } from "@repo/core";
 import { hashPassword } from "better-auth/crypto";
@@ -36,7 +35,7 @@ import { encryptSecretField } from "@repo/platform/engine/lib/credential-encrypt
 import { ensureLocalUser, invalidateLocalUserCache } from "../../lib/local-user";
 import { ensureLocalServer } from "@repo/platform/engine/lib/startup/self-server";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
-import { COOKIE_PREFIX } from "@repo/platform/engine/lib/auth";
+import { setSessionCookie } from "../../lib/session-cookie";
 import { mintSession } from "../../lib/cloud-auth-proxy";
 import { invalidatePlatformTransport } from "@repo/platform/engine/lib/mail";
 
@@ -583,19 +582,7 @@ export async function upgradeToAuth(c: Context) {
     ipAddress,
     userAgent,
   });
-  await setSignedCookie(
-    c,
-    `${COOKIE_PREFIX}.session_token`,
-    session.token,
-    env.BETTER_AUTH_SECRET,
-    {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Lax",
-      path: "/",
-      expires: session.expiresAt,
-    },
-  );
+  await setSessionCookie(c, session.token);
 
   return c.json({
     ok: true,

@@ -144,14 +144,38 @@ describe("Cloud consent identity and switching", () => {
 
   it("keeps the Desktop handoff state and challenge after explicit consent", async () => {
     desktopParams();
+    h.authorize.mockResolvedValueOnce({
+      callbackUrl: "http://localhost:4500/api/auth/cloud-callback?code=approved&state=opaque-state",
+    });
     await render(true);
     await click(m.authorize);
     const url = new URL(window.location.href);
-    expect(url.pathname).toBe("/api/cloud/desktop-handoff");
-    expect(url.searchParams.get("redirect")).toBe(h.params.get("callback"));
+    expect(url.pathname).toBe("/api/auth/cloud-callback");
     expect(url.searchParams.get("state")).toBe("opaque-state");
-    expect(url.searchParams.get("code_challenge")).toBe(challenge);
-    expect(h.authorize).not.toHaveBeenCalled();
+    expect(url.searchParams.get("code")).toBe("approved");
+    expect(h.authorize).toHaveBeenCalledExactlyOnceWith({
+      redirect: h.params.get("callback"),
+      state: "opaque-state",
+      codeChallenge: challenge,
+      mode: "desktop",
+    });
+  });
+
+  it("does not submit Desktop approval twice and allows retry after a failed POST", async () => {
+    desktopParams();
+    let fail!: (error: Error) => void;
+    h.authorize.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    await render(true);
+    await click(m.authorize);
+    expect(h.authorize).toHaveBeenCalledTimes(1);
+    expect(button(m.authorizing)?.disabled).toBe(true);
+    await act(async () => fail(new Error("Approval failed")));
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Approval failed");
+    expect(button(m.authorize)?.disabled).toBe(false);
   });
 
   it("blocks authorization while loading, then retries a failed organization read", async () => {

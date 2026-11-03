@@ -1,4 +1,5 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { mintSession } from "../../../lib/cloud-auth-proxy";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { db, eq, schema, withAdvisoryLock, type DatabaseTransaction } from "@repo/db";
@@ -563,23 +564,20 @@ export async function activateTarget(
       return JSON.parse(decrypt(row.result)) as InstanceConnection;
     if (row.status !== "prepared" || (await controllerState()).role !== "prepared")
       throw fail("Verify the received snapshot before activating this instance.");
-    const sessionToken = secret();
-    const connection = await deviceConnection(origin, row.manifest.targetId, sessionToken);
-    await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const [membership] = await tx
         .select()
         .from(schema.member)
         .where(eq(schema.member.userId, row.manifest!.ownerUserId))
         .limit(1);
       if (!membership) throw fail("The instance administrator has no workspace.");
-      await tx.insert(schema.session).values({
-        id: randomUUID(),
-        token: sessionToken,
+      const session = await mintSession({
+        purpose: "local-cookie",
         userId: row.manifest!.ownerUserId,
         activeOrganizationId: membership.organizationId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000),
         userAgent: "Openship Desktop (paired instance)",
-      });
+      }, tx);
+      const connection = await deviceConnection(origin, row.manifest!.targetId, session.token);
       await tx
         .update(schema.instanceHandoff)
         .set({ status: "complete", result: encrypt(JSON.stringify(connection)) })
@@ -590,8 +588,8 @@ export async function activateTarget(
           .set({ desktopUserId: row.manifest!.ownerUserId })
           .where(eq(schema.instanceController.id, "local"));
       await setControllerRole("active", id, tx, null);
+      return connection;
     });
-    return connection;
   });
   const state = await controllerState();
   const environment = state.environment

@@ -22,8 +22,8 @@ export interface CloudConnectAuthorizeBody {
   redirect?: string;
   state: string;
   codeChallenge: string;
-  /** "device" = headless CLI poll flow: confirm in-place, no redirect. */
-  mode?: "device";
+  /** Desktop callbacks are loopback-only; device flow confirms without a redirect. */
+  mode?: "desktop" | "device";
 }
 
 export interface CloudConnectAuthorizeResponse {
