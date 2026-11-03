@@ -30,7 +30,6 @@ import { updateProjectRuntime } from "./runtime-update";
 import { buildProjectSecurityResult, RUNTIME_UPGRADE_REQUIRED_MESSAGE } from "./security-status";
 import { approveSecurityUpdate } from "./security-refresh-guard";
 import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
-import { assertSecurityChecksEnabled } from "./security-check-policy";
 
 const key = (...parts: (string | number | null)[]) =>
   createHash("sha256").update(JSON.stringify(parts)).digest("hex");
@@ -94,7 +93,6 @@ export async function projectSecurityStatus(
 ): Promise<ProjectSecurityResult> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  await assertSecurityChecksEnabled(ctx.organizationId);
   const upstream = feed ?? (await getAdvisoryFeed(ctx));
   const state = await repos.securityAdvisory.project(projectId);
   const inventory = await projectSecurityInventory(

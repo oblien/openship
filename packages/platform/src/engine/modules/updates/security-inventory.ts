@@ -57,6 +57,7 @@ export async function projectSecurityInventory(
 ): Promise<SecurityInventory> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  // Shared admission point for status checks and advisory refreshes.
   await assertSecurityChecksEnabled(ctx.organizationId);
   const active = await findActiveDeployment(project);
   const empty: SecurityInventory = {

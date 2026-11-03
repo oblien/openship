@@ -228,8 +228,16 @@ describe("security operations", () => {
     expect((await f.client.updates.security(f.project.id)).findings).toHaveLength(1);
   });
 
-  it("prevents members from changing workspace-wide inspection policy", async () => {
+  it("allows admins but prevents members from changing workspace-wide inspection policy", async () => {
     const f = await fixture();
+    await db
+      .update(schema.member)
+      .set({ role: "admin" })
+      .where(eq(schema.member.userId, f.owner.userId));
+    expect((await f.client.updates.securityCheckPolicy()).canManage).toBe(true);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: false });
+    expect(await repos.securityAdvisory.checksEnabled(f.owner.orgId)).toBe(false);
+    await f.client.updates.setSecurityCheckPolicy({ checksEnabled: true });
     await db
       .update(schema.member)
       .set({ role: "member" })

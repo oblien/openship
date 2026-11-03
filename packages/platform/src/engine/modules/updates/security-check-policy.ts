@@ -3,11 +3,11 @@ import { repos } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
+import { isOrganizationAdmin } from "../../lib/organization-authorization";
 
 async function canManage(ctx: ExecutionContext) {
-  const membership = await repos.member.find(ctx.organizationId, ctx.userId);
   return (
-    (membership?.role === "owner" || membership?.role === "admin") &&
+    (await isOrganizationAdmin(ctx)) &&
     authorization.checkPermissionOnResource(ctx, {
       resourceType: "updates",
       resourceId: "*",
