@@ -928,6 +928,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_support_ticket:
     "Private Cloud support requests; never export one customer's correspondence to another installation",
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
+  cloud_customer_email: "Private Cloud onboarding and invoice delivery state; never transfer or replay on another installation",
   cloud_analytics_event:
     "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
   cloud_analytics_checkout: "Cloud-only analytics checkout correlation",

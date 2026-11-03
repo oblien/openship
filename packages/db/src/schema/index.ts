@@ -102,6 +102,7 @@ export {
   cloudAnalyticsWorkspace,
 } from "./cloud-analytics";
 export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
+export { cloudCustomerEmail } from "./cloud-customer-email";
 export { instanceController, instanceHandoff } from "./instance-controller";
 export {
   actionRunner,

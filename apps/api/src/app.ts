@@ -523,6 +523,9 @@ async function startControllerBackground(): Promise<void> {
       );
 
       if (env.CLOUD_MODE) {
+        void import("@repo/platform/engine/modules/customer-email/index")
+          .then(({ startCustomerEmails }) => startCustomerEmails())
+          .catch(() => errorDiagnostics.warn("api/app", "[customer-email] Delivery could not start; queued emails remain saved."));
         void import("@repo/platform/engine/modules/cloud-support/index")
           .then(({ startCloudSupport }) => startCloudSupport())
           .catch(() =>
