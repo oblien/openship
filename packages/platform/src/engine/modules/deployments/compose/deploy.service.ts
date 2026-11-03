@@ -16,6 +16,7 @@ import { repos, type Deployment, type Domain, type Project, type Service } from 
 import { deploymentForcesImagePull, deploymentImagePullPolicy, isMutableImageRef } from "../image-pull-policy";
 import type { DeploymentConfigSnapshot } from "../build.service";
 import { assertSecurityUpdateEnvironment } from "../../updates/security-refresh-guard";
+import { assertDeployVolumePolicy } from "../host-mount-policy";
 import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
 import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib/resources";
 import { posix as pathPosix } from "node:path";
@@ -710,6 +711,8 @@ export function createServiceRuntimeConfig(opts: {
   validateComposeNamespaces(opts.service.advanced);
   const { project, dep, service, image, environment, resources, namespaces } =
     opts;
+  const volumes = appRowVolumes(project, service);
+  assertDeployVolumePolicy(volumes);
   // Monorepo sub-apps store their long-running process in `startCommand`;
   // compose services in `command`. The DB invariant is that compose rows
   // never have `startCommand` set, so a single `??` chain covers both:
@@ -730,7 +733,7 @@ export function createServiceRuntimeConfig(opts: {
     image,
     ports: (service.ports as string[]) ?? [],
     environment,
-    volumes: appRowVolumes(project, service),
+    volumes,
     namespaceVolumes: service.namespaceVolumes,
     command: runtimeCommand,
     commandArgv,
@@ -1143,6 +1146,7 @@ async function deployComposeServicesCore(
     // A selected dependent may share a carried provider, so validate every provider too.
     validateComposeNamespaces(service.advanced);
     if (!opts?.strictScope || !opts.targetServiceIds || opts.targetServiceIds.has(service.id)) {
+      assertDeployVolumePolicy(appRowVolumes(project, service));
       parseContainerHosts(service.advanced?.extraHosts);
       validateComposeGpuConfig(service.advanced);
       parseComposeShmSize(service.advanced?.shmSize);

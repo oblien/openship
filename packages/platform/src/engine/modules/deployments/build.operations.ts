@@ -57,6 +57,7 @@ export const buildDependencies: BuildDependencies = {
     return JSON.parse(JSON.stringify(prepare.projectInfoToPublicResponse(await prepare.resolveProjectInfo(input), body)));
   },
   async access(ctx, input) {
+    await (await import("./host-mount-policy")).assertHostMountWriteAccess(ctx, input);
     if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none" && input.publicEndpoints === undefined) input.publicEndpoints = [];
     const source = await resolveProjectAuthority(input.projectId, ctx.organizationId);
     // A destination changes where commands run, never where a project is stored.
