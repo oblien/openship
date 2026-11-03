@@ -64,7 +64,7 @@ import { githubRoutes } from "../../../src/modules/github/github.routes";
 import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { parseAssistantAutomationReport } from "@repo/contracts";
 import { projectRoutes } from "../../../src/modules/projects/project.routes";
-import { forceMcpConsent } from "../../../src/middleware/mcp-consent";
+import { bootstrapMcpSession } from "../../../src/middleware/mcp-session";
 import { clientIpMiddleware } from "../../../src/middleware/client-ip";
 import { handleApiError } from "../../../src/middleware/error-handler";
 import { shutdownRateLimit } from "../../../src/lib/rate-limit";
@@ -74,7 +74,8 @@ const origin = "http://localhost:4000";
 const app = new Hono()
   .onError(handleApiError)
   .use("*", clientIpMiddleware)
-  .use("/api/auth/mcp/authorize", forceMcpConsent)
+  .use("/api/auth/mcp/authorize", bootstrapMcpSession)
+  .use("/api/auth/oauth2/authorize", bootstrapMcpSession)
   .route("/api/auth", authRoutes)
   .route("/api/tokens", tokenRoutes)
   .route("/api/assistant", assistantRoutes)
@@ -262,7 +263,7 @@ async function connect(owner: Actor, readOnly = true, targetId?: string) {
   const authorization = new URL(
     fixture.forward.mock.calls
       .map(([request]) => (request as Request).url)
-      .findLast((url) => url.includes(`/api/auth/mcp/authorize?`) && url.includes(clientId))!,
+      .findLast((url) => url.includes(`/api/auth/oauth2/authorize?`) && url.includes(clientId))!,
   );
   expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
   expect(authorization.searchParams.get("state")).toBe(state);
@@ -275,10 +276,10 @@ async function connect(owner: Actor, readOnly = true, targetId?: string) {
   });
   const grant = await request(owner, "POST", `${origin}/api/auth/oauth2/consent`, {
     accept: true,
-    consent_code: consentCode,
+    oauth_query: consentCode,
   });
   expect(grant.status, await grant.clone().text()).toBe(200);
-  const callback = (await grant.json()).redirectURI;
+  const callback = (await grant.json()).url;
   const completed = await request(owner, "GET", callback, undefined, {
     accept: "application/json",
   });
@@ -328,10 +329,10 @@ describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
     expect((await request(owner, "GET", "/providers")).status).toBe(403);
     const denied = await request(owner, "POST", `${origin}/api/auth/oauth2/consent`, {
       accept: false,
-      consent_code: prepared.consentCode,
+      oauth_query: prepared.consentCode,
     });
     expect(denied.status).toBe(200);
-    const callback = (await denied.json()).redirectURI;
+    const callback = (await denied.json()).url;
     const completed = await request(owner, "GET", callback, undefined, {
       accept: "application/json",
     });
@@ -364,12 +365,12 @@ describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
     });
     const consent = await request(other, "POST", `${origin}/api/auth/oauth2/consent`, {
       accept: true,
-      consent_code: next.consentCode,
+      oauth_query: next.consentCode,
     });
     expect(consent.status).toBe(200);
     // The code retains its original user. A binding approved by another user
     // cannot satisfy the callback's exact user/workspace identity check.
-    const callback = (await consent.json()).redirectURI;
+    const callback = (await consent.json()).url;
     const completed = await request(other, "GET", callback, undefined, {
       accept: "application/json",
     });
@@ -987,9 +988,9 @@ describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
     const original = await repos.oauth.findClientToken(owner.userId, clientId);
     const created = await chat(owner);
     await db
-      .update(schema.oauthAccessToken)
+      .update(schema.mcpOAuthToken)
       .set({ accessTokenExpiresAt: new Date(Date.now() - 1000) })
-      .where(eq(schema.oauthAccessToken.id, original!.id));
+      .where(eq(schema.mcpOAuthToken.id, original!.id));
     expect((await data(owner, "GET", "/status")).enabled).toBe(true);
     const renewed = await repos.oauth.findClientToken(owner.userId, clientId);
     expect(renewed!.accessToken).not.toBe(original!.accessToken);

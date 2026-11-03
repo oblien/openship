@@ -52,7 +52,7 @@ export function CommissionPreview() {
         step={1}
         value={discount}
         onChange={(event) => setDiscount(Number(event.target.value))}
-        aria-valuetext={`${discount}% customer discount, ${commission}% affiliate commission`}
+        aria-valuetext={`${discount}% customer discount, ${commission}% referral commission`}
         aria-describedby={`${id}-example`}
       />
       <div className={styles.presets} aria-label="Discount examples">

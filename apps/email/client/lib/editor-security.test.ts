@@ -3,6 +3,9 @@ import { Window } from "happy-dom";
 import { mergeAttributes } from "@tiptap/core";
 import { DOMSerializer, Schema } from "prosemirror-model";
 
+// GHSA-cp6q-959q-f8rh also flags 2.27.3, but that release contains the v2
+// backport of the own-__proto__ fix. Keep the real DOM regression while Novel
+// still requires Tiptap 2; upgrading only core to v3 breaks the editor stack.
 describe("composer editor dependency compatibility", () => {
   it("does not turn a JSON prototype key into executable inherited DOM attributes", async () => {
     const browser = new Window();

@@ -8,24 +8,13 @@
  * a service ends up stored with a mode the runtime then can't honor — the exact
  * shape of the bug this module exists to close (#533).
  *
- * WHAT WE ACCEPT, AND WHY NOT `host`
- * ----------------------------------
- * `service:<name>` and `container:<id>` are namespace SHARING: the dependent
- * container gets no interface/pid-space of its own and lives inside another
- * container's. That composes with openship's model — the provider is still a
- * normal service on the project network, still behind the edge, still a row we
- * own — so we resolve the reference and apply it.
- *
- * `host` is not sharing, it's an escape. A host-netns container binds host
- * interfaces directly (Docker ignores PortBindings entirely), which voids the
- * loopback-only-behind-the-edge invariant every other workload upholds, and it
- * reaches every 127.0.0.1 service on the box — including openship's own API,
- * which grants zero-auth to loopback callers. That is a privilege grant arriving
- * through a compose file, on a path with no operator decision in it. Refused at
- * import with the field named, rather than applied or silently dropped.
- *
- * Pure string logic, no dependencies.
+ * Authored modes may reference a sibling service in this stack or disable
+ * networking. Raw container names/IDs can name another project or the control
+ * plane, so only the deployment engine may produce Docker's container:<id>
+ * spelling after resolving a service reference against its own running stack.
  */
+
+import { ValidationError } from "./errors";
 
 /** A namespace reference, once validated. */
 export type ComposeNamespaceRef =
@@ -33,10 +22,7 @@ export type ComposeNamespaceRef =
   | { kind: "none" }
   /** `service:<name>` — share a sibling IN THIS STACK. Resolved to a container
    *  id at deploy, which is why it also implies a start-order dependency. */
-  | { kind: "service"; service: string }
-  /** `container:<id>` — share a container by id/name. Not resolvable to a stack
-   *  member, so it is passed through and validated by Docker at create. */
-  | { kind: "container"; container: string };
+  | { kind: "service"; service: string };
 
 /** Which compose key a value came from — only used to word errors. */
 export type ComposeNamespaceField = "network_mode" | "pid";
@@ -45,8 +31,6 @@ export type ComposeNamespaceParse =
   | { ok: true; ref: ComposeNamespaceRef; value: string }
   | { ok: false; reason: string };
 
-/** Docker accepts a 12- or 64-char hex id, or a container NAME. */
-const CONTAINER_REF = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 /** Compose service names are DNS-ish; mirrors what the parser keys services by. */
 const SERVICE_REF = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
@@ -97,12 +81,11 @@ export function parseComposeNamespace(
     return { ok: true, ref: { kind: "service", service: serviceRef }, value };
   }
 
-  const containerRef = value.startsWith("container:") ? value.slice("container:".length) : undefined;
-  if (containerRef !== undefined) {
-    if (!CONTAINER_REF.test(containerRef)) {
-      return { ok: false, reason: `${field}: "${value}" is not a valid container reference.` };
-    }
-    return { ok: true, ref: { kind: "container", container: containerRef }, value };
+  if (value.startsWith("container:")) {
+    return {
+      ok: false,
+      reason: `${field}: direct container references are not supported. Use service:<name> to share a namespace with a service in this stack.`,
+    };
   }
 
   return {
@@ -110,8 +93,21 @@ export function parseComposeNamespace(
     reason:
       `${field}: "${value}" is not supported. Openship accepts ` +
       (field === "network_mode" ? `"none", ` : "") +
-      `"service:<name>" (a service in this stack) and "container:<id>".`,
+      `"service:<name>" (a service in this stack).`,
   };
+}
+
+/** Validate API/SDK writes and retained rows using the same import policy. */
+export function validateComposeNamespaces(
+  advanced: { networkMode?: string; pidMode?: string } | null | undefined,
+): void {
+  for (const [value, field] of [
+    [advanced?.networkMode, "network_mode"],
+    [advanced?.pidMode, "pid"],
+  ] as const) {
+    const parsed = parseComposeNamespace(value, field);
+    if (parsed && !parsed.ok) throw new ValidationError(parsed.reason);
+  }
 }
 
 /** Re-read a stored `advanced.networkMode` / `advanced.pidMode`. */

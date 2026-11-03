@@ -14,7 +14,7 @@ import { observeRequestErrors } from "./middleware/error-observation";
 import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
-import { forceMcpConsent } from "./middleware/mcp-consent";
+import { bootstrapMcpSession } from "./middleware/mcp-session";
 import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
 import {
@@ -33,7 +33,7 @@ import { sanitizeRequestLogLine } from "./lib/request-log-redaction";
 
 import { authRoutes } from "./modules/auth/auth.routes";
 import { auth } from "@repo/platform/engine/lib/auth";
-import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
+import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
 import {
   MCP_RESOURCE_PATHS,
   protectedResourceMetadata,
@@ -87,8 +87,7 @@ if (await controllerIsActive()) await repos.configurationSecrets.backfillLegacy(
 
 export const app = new Hono();
 
-const oauthAuthServerMetadata = oAuthDiscoveryMetadata(auth);
-const oauthProtectedResourceMetadata = oAuthProtectedResourceMetadata(auth);
+const oauthAuthServerMetadata = oauthProviderAuthServerMetadata(auth);
 
 /**
  * Serve one of the plugin's discovery documents re-pointed at the origin THIS
@@ -124,7 +123,12 @@ function requestScopedMetadata(
 }
 
 const serveAuthServerMetadata = requestScopedMetadata(oauthAuthServerMetadata);
-const serveProtectedResourceMetadata = requestScopedMetadata(oauthProtectedResourceMetadata);
+const serveProtectedResourceMetadata = async (req: Request) => {
+  const origin = publicOriginFor(req);
+  return Response.json(protectedResourceMetadata(origin, `${origin}/api/mcp`), {
+    headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+  });
+};
 
 /* ---------- Global middleware ---------- */
 app.use("*", observeRequestErrors);
@@ -195,11 +199,9 @@ app.use("/api/auth/*", authRouteLimiter);
 // /api/auth catch-all route mount so Hono runs it first.
 app.use("/api/auth/organization/*", betterAuthShield);
 
-// Force MCP OAuth clients through our consent page (which writes the org/scope
-// binding) — better-auth otherwise skips consent unless prompt==="consent"
-// exactly, minting a bindingless token that's denied everything. Must run
-// BEFORE the /api/auth catch-all so it can redirect first.
-app.use("/api/auth/mcp/authorize", forceMcpConsent);
+// Establish the desktop loopback session before Better Auth's consent flow.
+app.use("/api/auth/mcp/authorize", bootstrapMcpSession);
+app.use("/api/auth/oauth2/authorize", bootstrapMcpSession);
 
 /* ---------- Shared routes (self-hosted + cloud + desktop) ---------- */
 app.route("/api/health", healthRoutes);

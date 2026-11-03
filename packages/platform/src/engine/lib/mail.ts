@@ -67,6 +67,7 @@ const envTransport: Transporter | null = envSmtpConfigured
       host: env.SMTP_HOST,
       port: env.SMTP_PORT ?? 587,
       secure: (env.SMTP_PORT ?? 587) === 465,
+      requireTLS: (env.SMTP_PORT ?? 587) !== 465,
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 30_000,
@@ -208,6 +209,7 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
       host: smtpHost,
       port: creds.smtpPort,
       secure: creds.secure,
+      requireTLS: !creds.secure,
       auth: {
         user: creds.email,
         pass: creds.password,
@@ -321,6 +323,7 @@ async function getInstanceTransport(): Promise<{
     host,
     port,
     secure: port === 465,
+    requireTLS: port !== 465,
     auth: { user, pass },
   });
   const resolved = { transport, from: settings?.smtpFrom?.trim() || user };

@@ -480,7 +480,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     assistantAutomations: createAssistantAutomationsRepo(db),
     chatApps: createChatAppsRepo(db),
     patGrant: createPersonalAccessTokenGrantRepo(db),
-    oauth: createOAuthRepo(db),
+    oauth: createOAuthRepo(db, encryption),
     backupDestination: createBackupDestinationRepo(db),
     backupPolicy: createBackupPolicyRepo(db),
     backupRun: createBackupRunRepo(db),

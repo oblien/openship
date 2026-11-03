@@ -1,10 +1,10 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { organizationOptions, isSaasDeployment } from "./organization-lifecycle";
 import { betterAuth, type User } from "better-auth";
-import { getIp } from "@better-auth/core/utils/ip";
-import { APIError } from "better-auth/api";
+import { APIError, getIP } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { bearer, mcp, emailOTP } from "better-auth/plugins";
+import { bearer, jwt, emailOTP } from "better-auth/plugins";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { organization } from "better-auth/plugins/organization";
 import { db, getDriver, repos, schema, and, eq, gt, sql } from "@repo/db";
 import { env, runtimeTarget, runtimeTargetId, trustedOrigins, localDashboardUrl } from "../config/env";
@@ -23,6 +23,9 @@ import { oidcOAuthPlugin } from "./oidc";
 import { oidcProviderConfig, socialProviderCredentials } from "./auth-providers";
 import { isAuthorizedLocalSignup } from "./local-bootstrap";
 import { accountSecurityPlugins } from "./account-security";
+import { mcpIssuer } from "./mcp-issuer";
+import { allowedMcpResources } from "./mcp-resources";
+import { mcpOAuthPolicy } from "./mcp-oauth-policy";
 import { getAuthMode } from "./auth-mode";
 
 /**
@@ -90,6 +93,7 @@ const oidcOAuth = oidcProviderConfig();
 
 export const auth = betterAuth({
   basePath: "/api/auth",
+  hooks: { before: mcpOAuthPolicy },
   logger: {
     level: "warn",
     // Better Auth plugins can catch failures internally before returning an
@@ -124,9 +128,14 @@ export const auth = betterAuth({
       organization: schema.organization,
       member: schema.member,
       invitation: schema.invitation,
-      oauthApplication: schema.oauthApplication,
+      jwks: schema.jwks,
+      oauthClient: schema.oauthClient,
+      oauthResource: schema.oauthResource,
+      oauthClientResource: schema.oauthClientResource,
+      oauthRefreshToken: schema.oauthRefreshToken,
       oauthAccessToken: schema.oauthAccessToken,
       oauthConsent: schema.oauthConsent,
+      oauthClientAssertion: schema.oauthClientAssertion,
       passkey: schema.passkey,
       twoFactor: schema.twoFactor,
     },
@@ -251,7 +260,17 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user) => {
+        before: async (user, ctx) => {
+          const denyCreation = (message: string): never => {
+            // 1.7 propagates database-hook denials from social callbacks as JSON.
+            // Send browser callbacks back to the existing public error page.
+            if (ctx?.path?.startsWith("/callback/") || ctx?.path?.startsWith("/oauth2/callback/")) {
+              const target = new URL(`${resolveDashboardPublicUrl()}/auth/error`);
+              target.searchParams.set("error", message);
+              throw ctx.redirect(target.href);
+            }
+            throw new APIError("FORBIDDEN", { message });
+          };
           // Invite-only sign-up on SELF-HOSTED instances (defense-in-depth for the
           // OAuth/social path — password signup is gated earlier by the /sign-up
           // route guard + the token-bound /api/system/invite-signup endpoint).
@@ -264,9 +283,7 @@ export const auth = betterAuth({
             // synthetic user must COUNT, so it doesn't fail open as "no admin".
             const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
             if (!anyUser && !isAuthorizedLocalSignup()) {
-              throw new APIError("FORBIDDEN", {
-                message: "Initialize this instance through the local setup before signing in.",
-              });
+              denyCreation("Initialize this instance through the local setup before signing in.");
             }
             if (anyUser) {
               const email = (user.email ?? "").trim().toLowerCase();
@@ -292,9 +309,7 @@ export const auth = betterAuth({
               // their personal org but can't mint instance accounts).
               const inviterIsAdmin = !!inviter && inviter.role === "admin";
               if (!invite || !inviterIsAdmin) {
-                throw new APIError("FORBIDDEN", {
-                  message: "Sign-up is invite-only on this instance. Ask an admin to invite you.",
-                });
+                denyCreation("Sign-up is invite-only on this instance. Ask an admin to invite you.");
               }
             }
           }
@@ -337,7 +352,7 @@ export const auth = betterAuth({
           // Session pinning needs the full address. Keep Better Auth's IPv6
           // subnet masking for rate-limit keys, not stored session fingerprints.
           const ipAddress = context?.headers
-            ? getIp(context.headers, {
+            ? getIP(context.headers, {
                 advanced: {
                   ipAddress: { ...context.context.options.advanced?.ipAddress, ipv6Subnet: 128 },
                 },
@@ -526,33 +541,43 @@ export const auth = betterAuth({
       },
     }),
 
-    /**
-     * MCP OAuth 2.1 authorization server. Turns Openship into a standards-
-     * compliant remote MCP server: discovery-based clients (Claude, Cursor)
-     * self-register (DCR), run the PKCE authorize flow, hit our consent page,
-     * and receive an OAuth access token. That token is then bridged into the
-     * SAME scoped-principal permission model a scoped PAT uses (see
-     * `tryOAuthMcpAuth` in middleware/auth.ts) — no duplicated authorization.
-     *
-     * Endpoints mounted under /api/auth: /.well-known/oauth-authorization-server,
-     * /.well-known/oauth-protected-resource, /mcp/{authorize,token,register,
-     * get-session}, /oauth2/consent. Discovery is re-served at the origin root
-     * in app.ts (the spec expects it there, not under /api/auth).
-     *
-     * PATs remain the API-key path for REST/CLI and still authenticate /api/mcp.
-     */
-    mcp({
-      // Redirect targets on the DASHBOARD — the public dashboard origin when
-      // served publicly (a remote OAuth client must land on a reachable login/
-      // consent page, not localhost:3001), else the static runtime dashboard.
-      loginPage: `${resolveDashboardPublicUrl()}/login`,
-      oidcConfig: {
-        loginPage: `${resolveDashboardPublicUrl()}/login`,
-        consentPage: `${resolveDashboardPublicUrl()}/mcp/authorize`,
-        requirePKCE: true, // OAuth 2.1
-        storeClientSecret: "hashed",
-        allowDynamicClientRegistration: true, // MCP clients self-register
+    // The provider owns JWT signing, resource binding and refresh rotation.
+    // Openship still requires its per-user organization/resource binding at consent.
+    jwt({
+      jwt: {
+        get issuer() {
+          return mcpIssuer();
+        },
       },
+      jwks: { keyPairConfig: { alg: "RS256" } },
+    }),
+    // Openship owns MCP transport and discovery. Use
+    // the provider directly so an HTTP public URL during setup cannot prevent
+    // the entire authentication service from starting.
+    oauthProvider({
+      resources: allowedMcpResources(new URL(resolveAuthBaseUrl()).origin),
+      resourceSeedMode: "insertOnly",
+      clientRegistrationDefaultResources: allowedMcpResources(new URL(resolveAuthBaseUrl()).origin),
+      // Migrated 1.6 clients predate resource links. These resources name
+      // this same server; per-user permissions remain enforced by Openship.
+      enforcePerClientResources: false,
+      // Resource APIs are SERVER_ONLY. The runtime reconciler may read/create
+      // configured resources; it cannot change operator policy or client links.
+      resourcePrivileges: async ({ action }) => action === "read" || action === "create",
+      dpop: { signingAlgorithms: [] },
+      // This page carries the signed OAuth query through login and MFA before
+      // displaying permissions; a bare login URL would lose the pending grant.
+      loginPage: `${resolveDashboardPublicUrl()}/mcp/authorize`,
+      consentPage: `${resolveDashboardPublicUrl()}/mcp/authorize`,
+      storeClientSecret: "hashed",
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationRequirePKCE: true,
+      scopes: ["openid", "profile", "email", "offline_access"],
+      clientRegistrationDefaultScopes: ["openid", "profile", "email", "offline_access"],
+      clientRegistrationAllowedScopes: ["openid", "profile", "email", "offline_access"],
+      grantTypes: ["authorization_code", "refresh_token"],
+      refreshTokenReuseInterval: 0,
     }),
 
     /**

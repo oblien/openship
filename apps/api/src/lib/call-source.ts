@@ -101,7 +101,7 @@ export function resolveCallClientId(c: Context): string | null {
  *
  * Derivation, once the trusted claim is out of the way:
  *   cookie / zero-auth session → dashboard  (a browser, or a local single-user box)
- *   OAuth bearer               → mcp        (auth.ts resolves one through `getMcpSession`,
+ *   OAuth bearer               → mcp        (auth.ts resolves an issued-token receipt,
  *                                            so an OAuth principal IS an MCP session)
  *   PAT + an openship-cli UA   → cli
  *   any other bearer           → api
