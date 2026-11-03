@@ -186,10 +186,15 @@ export function createOidcProvider(
 
   return {
     ...config,
-    async prepare() {
-      const doc = await discovery();
-      this.authorizationUrl = doc.authorization.href;
-      this.tokenUrl = doc.token.href;
+    async getAuthorizationEndpoint() {
+      try {
+        return (await discovery()).authorization.href;
+      } catch (error) {
+        reportCaughtError(error, "platform/engine/lib/oidc");
+        throw new APIError("BAD_REQUEST", {
+          message: "The OIDC provider configuration could not be verified.",
+        });
+      }
     },
     async refresh(refreshToken: string) {
       const doc = await discovery();
@@ -249,7 +254,6 @@ export function oidcOAuthPlugin(provider?: ReturnType<typeof createOidcProvider>
         // 1.7 captures configured URLs during init. Discovery must remain lazy
         // and validated so an unavailable IdP cannot prevent API startup.
         oidc.createAuthorizationURL = async (data) => {
-          await provider.prepare();
           return createAuthorizationURL({
             id: "oidc",
             options: {
@@ -257,32 +261,19 @@ export function oidcOAuthPlugin(provider?: ReturnType<typeof createOidcProvider>
               clientSecret: provider.clientSecret,
               redirectURI: provider.redirectURI,
             },
-            authorizationEndpoint: provider.authorizationUrl!,
+            authorizationEndpoint: await provider.getAuthorizationEndpoint(),
             state: data.state,
             codeVerifier: data.codeVerifier,
             scopes: [...new Set([...(provider.scopes ?? []), ...(data.scopes ?? [])])],
             redirectURI: data.redirectURI,
+            loginHint: data.loginHint,
+            additionalParams: data.additionalParams,
           });
         };
       }
       return result;
     }) as typeof plugin.init,
     hooks: {
-      before: [
-        {
-          matcher: isStart,
-          handler: createAuthMiddleware(async () => {
-            try {
-              await provider!.prepare();
-            } catch (error) {
-              reportCaughtError(error, "platform/engine/lib/oidc");
-              throw new APIError("BAD_REQUEST", {
-                message: "The OIDC provider configuration could not be verified.",
-              });
-            }
-          }),
-        },
-      ],
       after: [
         {
           matcher: isStart,

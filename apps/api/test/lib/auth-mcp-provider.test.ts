@@ -90,6 +90,17 @@ async function prepare() {
   };
 }
 type Flow = Awaited<ReturnType<typeof prepare>>;
+function authorize(query: URLSearchParams, cookie?: string, method = "GET") {
+  return app.request(`${ORIGIN}/api/auth/oauth2/authorize${method === "GET" ? `?${query}` : ""}`, {
+    method,
+    headers: {
+      ...(cookie ? { cookie } : {}),
+      ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    ...(method === "POST" ? { body: query } : {}),
+  });
+}
+
 async function consent(flow: Flow, oauthQuery = flow.oauthQuery) {
   return app.request(`${ORIGIN}/api/auth/oauth2/consent`, {
     method: "POST",
@@ -181,17 +192,7 @@ describe("Better Auth 1.7 MCP compatibility and grant boundaries", () => {
       const query = new URLSearchParams(flow.query);
       query.delete("prompt");
       query.delete("resource");
-      const response = await app.request(
-        `${ORIGIN}/api/auth/oauth2/authorize${method === "GET" ? `?${query}` : ""}`,
-        {
-          method,
-          headers: {
-            cookie: flow.cookie,
-            ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
-          },
-          ...(method === "POST" ? { body: query } : {}),
-        },
-      );
+      const response = await authorize(query, flow.cookie, method);
       expect(response.status, await response.clone().text()).toBe(302);
       const destination = new URL(response.headers.get("location")!);
       expect(destination.pathname).toBe("/mcp/authorize");
@@ -213,6 +214,98 @@ describe("Better Auth 1.7 MCP compatibility and grant boundaries", () => {
       expect((await exchange(flow, authorizationCode)).status).toBe(200);
     },
   );
+
+  it.each(["GET", "POST"])(
+    "lets the provider return %s prompt=none errors without opening an interaction page",
+    async (method) => {
+      const flow = await prepare();
+      const query = new URLSearchParams(flow.query);
+      query.set("prompt", "none");
+      query.delete("resource");
+      for (const [cookie, error] of [
+        [undefined, "login_required"],
+        [flow.cookie, "consent_required"],
+      ] as const) {
+        const response = await authorize(query, cookie, method);
+        expect(response.status).toBe(302);
+        const destination = new URL(response.headers.get("location")!);
+        expect(destination.origin + destination.pathname).toBe("https://client.example/callback");
+        expect(destination.searchParams.get("error")).toBe(error);
+        expect(destination.searchParams.get("state")).toBe(query.get("state"));
+        expect(destination.searchParams.get("iss")).toBe(ORIGIN);
+        expect(destination.searchParams.has("code")).toBe(false);
+      }
+      expect(await repos.oauth.findClientToken(flow.userId, flow.clientId)).toBeUndefined();
+    },
+  );
+
+  it.each(
+    ["GET", "POST"].flatMap((method) =>
+      ["none consent", "none login", "", "   ", "unsupported"].map((prompt) => ({
+        method,
+        prompt,
+      })),
+    ),
+  )(
+    "leaves invalid $method prompt $prompt for the provider to reject",
+    async ({ method, prompt }) => {
+      const flow = await prepare();
+      const query = new URLSearchParams(flow.query);
+      query.set("prompt", prompt);
+      const response = await authorize(query, flow.cookie, method);
+      expect(response.status).toBe(302);
+      const destination = new URL(response.headers.get("location")!);
+      expect(destination.origin + destination.pathname).toBe("https://client.example/callback");
+      expect(destination.searchParams.get("error")).toBe("invalid_request");
+      expect(destination.searchParams.get("state")).toBe(query.get("state"));
+      expect(destination.searchParams.has("code")).toBe(false);
+    },
+  );
+
+  it("keeps provider consent and Openship permissions independent on a silent authorization", async () => {
+    const flow = await prepare();
+    await tokens(flow);
+    const query = new URLSearchParams(flow.query);
+    query.set("prompt", "none");
+    const response = await authorize(query, flow.cookie);
+    const destination = new URL(response.headers.get("location")!);
+    expect(destination.origin + destination.pathname).toBe("https://client.example/callback");
+    const authorizationCode = destination.searchParams.get("code");
+    expect(authorizationCode).toBeTruthy();
+    const issued = await exchange(flow, authorizationCode!);
+    expect(issued.status).toBe(200);
+    const { access_token } = (await issued.json()) as { access_token: string };
+    expect(await resolveBearerIdentity(access_token, new Headers())).toMatchObject({
+      userId: flow.userId,
+      scoped: true,
+      hasBinding: false,
+    });
+    await repos.oauth.disconnectMcpClient(flow.userId, flow.clientId);
+    expect(await resolveBearerIdentity(access_token, new Headers())).toBeNull();
+    const disconnected = await authorize(query, flow.cookie);
+    expect(new URL(disconnected.headers.get("location")!).searchParams.get("error")).toBe(
+      "consent_required",
+    );
+  });
+
+  it("keeps redirect and resource validation with the provider for prompt=none", async () => {
+    const flow = await prepare();
+    const query = new URLSearchParams(flow.query);
+    query.set("prompt", "none");
+    query.set("redirect_uri", "https://untrusted.example/callback");
+    const invalidRedirect = await authorize(query, flow.cookie);
+    const errorPage = new URL(invalidRedirect.headers.get("location")!);
+    expect(errorPage.origin).toBe(ORIGIN);
+    expect(errorPage.searchParams.get("error")).toBeTruthy();
+    query.set("redirect_uri", flow.query.get("redirect_uri")!);
+    query.set("resource", "https://untrusted.example/api/mcp");
+    const invalidResource = await authorize(query, flow.cookie);
+    const callback = new URL(invalidResource.headers.get("location")!);
+    expect(callback.origin + callback.pathname).toBe("https://client.example/callback");
+    expect(callback.searchParams.get("error")).toBe("invalid_target");
+    expect(callback.searchParams.get("state")).toBe(query.get("state"));
+    expect(callback.searchParams.has("code")).toBe(false);
+  });
 
   it("uses provider APIs for a trusted origin change and keeps resource administration off HTTP", async () => {
     const flow = await prepare();
