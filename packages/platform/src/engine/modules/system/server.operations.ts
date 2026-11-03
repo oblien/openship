@@ -877,6 +877,9 @@ export const serverDependencies: ServerDependencies = {
     ...serverClusterResources,
     ...serverGitHubResources,
   },
+  async securityRunEvents(ctx, id, runId, signal) {
+    return (await import("../updates/host-security")).hostPatchRunEvents(ctx, id, runId, signal);
+  },
   installations: serverInstallationDependencies,
   containers: serverContainerStreams,
 };

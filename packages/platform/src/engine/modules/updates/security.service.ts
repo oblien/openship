@@ -1,5 +1,6 @@
 import { tryAcquireAdvisoryLock } from "@repo/db";
 import {
+  recoverHostPatchRuns,
   hostTargets,
   hostProbeKey,
   inspectHostSecurity,
@@ -336,6 +337,7 @@ async function scanSecurityAdvisoriesWork(
   mark: (id: string) => Promise<void>,
   organizations: Map<string, boolean>,
 ) {
+  await recoverHostPatchRuns();
   await reconcileSecurityRefreshes();
   const first = (await repos.project.listAllForScan(1))[0];
   const owner = first ? await resolveOrgOwner(first.organizationId) : null;

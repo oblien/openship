@@ -43,6 +43,7 @@ let history = [],
   browser,
   ownsDir = false;
 const writes = [],
+  streams = [],
   errors = [];
 try {
   await mkdir(dir);
@@ -119,16 +120,44 @@ try {
               id: "preview-run",
               jobId: "security:patch:preview-host",
               startedAt: "2026-11-03T09:10:00Z",
-              status: "success",
-              summary: { advisoryId: finding.id, phase: "verified" },
+              status: "running",
+              summary: {
+                advisoryId: finding.id,
+                phase: "installing",
+                steps: [
+                  { id: "prepare", label: "Check server and approval", status: "completed" },
+                  { id: "apply", label: "Install reviewed packages", status: "running" },
+                  {
+                    id: "verify",
+                    label: "Verify packages and server components",
+                    status: "pending",
+                  },
+                ],
+              },
               output:
-                "Installing reviewed packages…\nInstalled OpenSSL and its reviewed dependency.\nInstalled package versions verified.",
+                "Installing reviewed packages…\nInstalled OpenSSL and its reviewed dependency.\nInstalled package versions verified.\n",
               error: null,
             },
           ];
           status = { ...status, findings: [] };
           body = { data: { runId: "preview-run" } };
         } else throw new Error(`Unexpected fixture write: ${url.pathname}`);
+      } else if (url.pathname.endsWith("/security/runs/preview-run/stream")) {
+        streams.push({ path: url.pathname, method: request.method() });
+        const before = history[0];
+        history = [{ ...before, status: "success", summary: { ...before.summary,
+          phase: "verified", logSeq: 1,
+          steps: before.summary.steps.map(step => ({ ...step, status: "completed" })),
+        } }];
+        const events = [
+          { type: "snapshot", run: before },
+          { type: "log", seq: 1, line: "Installed package versions verified.", level: "info" },
+          { type: "snapshot", run: history[0] },
+          { type: "complete", status: "success" },
+        ];
+        return route.fulfill({ status: 200, contentType: "text/event-stream", headers,
+          body: events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+        });
       } else if (url.pathname.endsWith("/security/runs")) body = { data: history };
       else if (url.pathname.endsWith("/security")) body = { data: status };
       else if (url.pathname.endsWith("/health/env"))
@@ -167,11 +196,18 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await shot("review-patch-mobile.png");
   await page.getByRole("button", { name: "Apply reviewed patch", exact: true }).click();
-  await page.getByText("Installed package versions verified.", { exact: false }).waitFor();
+  await page.getByText("Verify packages and server components", { exact: true }).waitFor();
+  await page.getByText("Version check passed", { exact: true }).waitFor();
+  await page.locator(".xterm-screen").waitFor();
+  assert.ok(streams.length > 0);
+  assert.ok(streams.every(stream => stream.method === "GET"));
+  await page.waitForTimeout(500);
   assert.equal(writes.length, 2);
   assert.ok(page.url().includes("server-security-capture"));
   await shot("verified-run-mobile.png");
   await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.waitForTimeout(300);
+  await shot("verified-run.png");
   status = {
     ...status,
     findings: [
@@ -199,6 +235,7 @@ try {
       {
         source: "synthetic intercepted API; actual dashboard components",
         writes,
+        streams,
         pageErrors: errors,
         checks: [
           "read-only page load",
@@ -206,6 +243,7 @@ try {
           "exact dependency versions",
           "mobile overflow",
           "server run output",
+          "shared live stream completes without another apply",
           "separate reboot review",
           "visible monitoring task",
         ],

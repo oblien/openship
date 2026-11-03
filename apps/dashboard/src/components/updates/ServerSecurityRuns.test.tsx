@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   apply: vi.fn(),
   runs: vi.fn(),
 }));
+vi.mock("@/hooks/useRunEvents", () => ({ useRunEvents: () => ({ error: null, connected: true, reconnect: vi.fn() }) }));
+vi.mock("@/components/import-project/LogSnapshotTerminal", () => ({ LogSnapshotTerminal: ({ logs }: { logs: string }) => <pre>{logs}</pre> }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.scope }));
 vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
 vi.mock("@/lib/api/client", () => ({

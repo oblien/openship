@@ -138,7 +138,9 @@ Host notices share that banner and review, linking to **Servers → Runs**. Moni
 Security view shows workspace-local scan state and the default-on checks policy.
 Opening either view reads cached observations; it must not execute host commands.
 Runs shows the exact reviewed package versions, interruption guidance, bounded output
-and verification outcome. Keep patch installation and kernel reboot as separate
+and verification outcome. Use the shared job run output viewer with persisted steps,
+resumable events and the shared terminal. A dropped log connection is a connection
+error, not a failed patch. Keep patch installation and kernel reboot as separate
 explicit reviews. Apply remains on the server and never opens project Deployments.
 Failed checks retain known warnings and show stale or unavailable coverage. Reset
 pending review and run state when the account, workspace or server changes.

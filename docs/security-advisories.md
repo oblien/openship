@@ -170,6 +170,16 @@ A host finding opens **Servers → Runs**. **Check again** only inspects. **Revi
 refreshes APT metadata and shows every exact package/version change, including dependencies.
 **Apply reviewed patch** creates a persistent server run with bounded output and a verified,
 reboot-required or needs-review outcome. It never redirects to a project deployment.
+Runs uses the existing Jobs recorder and event bus, deployment pipeline logger and
+log sanitizer, and the shared terminal. There is one persisted run per approval:
+preflight → reviewed install → independent package verification and component checks.
+Setup's Docker/Edge checks run before and after maintenance; only previously healthy
+components are required to stay healthy. Missing patch prerequisites stop the operation.
+Preparation and execution take the same provisioning lock as deployments and component
+setup. APT download/install progress follows the shared bounded log pipe, with durable
+checkpoints and sequence-aware replay. Opening the run stream never replays Apply.
+The final observation is saved before success is published, so the finding and run agree.
+
 Host patching is always explicit; workspace alerts do not authorize installs or reboots.
 The initial implementation supports Ubuntu hosts with `/usr/bin/python3` and `python3-apt`.
 Installation needs root or noninteractive sudo; Openship does not install prerequisites
@@ -198,7 +208,10 @@ cannot clear that notice: the running image's source version must also match the
 After installation, **Review reboot** shows the workload interruption and creates a
 separate approval. Scheduling it reboots the host in one minute. The run remains pending
 until a new boot reports a fixed running kernel; offline, old-kernel or interrupted
-verification requires review. No automatic reboot is implied by installing a patch.
+verification requires review. An acknowledged reboot survives an engine restart as
+verification-only work. The existing advisory scheduler closes interrupted or overdue
+runs even with checks paused or an unavailable feed; it never retries their commands.
+No automatic reboot is implied by installing a patch.
 Other package checks verify installed versions; running processes may still need an
 operator restart. Version evidence is not application-health or exploit verification.
 
@@ -325,6 +338,7 @@ HTTP, native SDK and desktop use the same operations and permissions:
 | `servers.checkSecurity(id)`                                                 | `POST /system/servers/:id/security/check` | Server admin  |
 | `servers.planSecurityPatch(id, { advisoryId, operation })`                  | `POST /system/servers/:id/security/plan`  | Server admin  |
 | `servers.applySecurityPatch(id, { token })`                                 | `POST /system/servers/:id/security/apply` | Server admin  |
+| `servers.securityRunEvents(id, runId)` | `GET /system/servers/:id/security/runs/:runId/stream` | Server admin |
 | `servers.securityRuns(id)`                                                  | `GET /system/servers/:id/security/runs`   | Server admin  |
 
 The CLI exposes `openship server security get|check|plan|apply|runs`. Plan and apply

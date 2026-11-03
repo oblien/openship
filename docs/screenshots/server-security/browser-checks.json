@@ -22,6 +22,12 @@
       }
     }
   ],
+  "streams": [
+    {
+      "path": "/api/system/servers/preview-host/security/runs/preview-run/stream",
+      "method": "GET"
+    }
+  ],
   "pageErrors": [],
   "checks": [
     "read-only page load",
@@ -29,6 +35,7 @@
     "exact dependency versions",
     "mobile overflow",
     "server run output",
+    "shared live stream completes without another apply",
     "separate reboot review",
     "visible monitoring task"
   ]

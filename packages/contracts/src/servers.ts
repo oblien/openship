@@ -704,5 +704,6 @@ export interface ServerOperations
     input?: ServerInstallSessionInput,
     options?: { signal?: AbortSignal },
   ): AsyncIterable<DeploymentEvent>;
+  securityRunEvents(id: string, runId: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   monitor(id: string, options?: ServerMonitorOptions): AsyncIterable<DeploymentEvent>;
 }

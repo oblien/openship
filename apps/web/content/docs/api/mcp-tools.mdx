@@ -1057,6 +1057,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `PUT /api/system/servers/:id/github/deploy-key-mode` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
 | `POST /api/system/servers/:id/github/ssh-key` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
 | `PUT /api/system/servers/:id/github/token` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
+| `GET /api/system/servers/:id/security/runs/:runId/stream` | SSE transport for live progress. Read securityRuns for saved status and logs over MCP. |
 | `DELETE /api/system/settings` | Instance reset/recovery is an operator workflow in Settings, not a tenant automation operation. |
 | `PATCH /api/system/settings` | Instance identity and authentication settings are operator-controlled through Settings; workspace deployment preferences have dedicated MCP tools. |
 | `PUT /api/system/settings/email` | Instance-wide email identity and credentials are configured by the instance administrator in Settings. |

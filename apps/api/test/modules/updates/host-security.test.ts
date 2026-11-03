@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { repos, seedOwner, seedServer, db, schema } from "../jobs/_harness";
 import { eq } from "drizzle-orm";
+import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
+import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import { env } from "@repo/platform/engine/config/env";
 import {
@@ -10,6 +12,7 @@ import {
   serverSecurityStatus,
   hostPatchRuns,
   decodeHostPatchToken,
+  recoverHostPatchRuns,
 } from "@repo/platform/engine/modules/updates/host-security";
 import type { AdvisoryFeedState } from "@repo/platform/engine/modules/updates/advisory-feed";
 import type { SecurityAdvisory } from "@repo/core";
@@ -25,7 +28,13 @@ const h = vi.hoisted(() => ({
   feed: null as unknown,
   exec: vi.fn(),
   stream: vi.fn(),
+  checks: vi.fn(),
+  patched: false,
   work: [] as (() => Promise<unknown>)[],
+}));
+vi.mock("@repo/adapters", async (original) => ({
+  ...(await original<object>()),
+  checkComponents: h.checks,
 }));
 vi.mock("@repo/platform/engine/modules/updates/advisory-feed", () => ({
   getAdvisoryFeed: async () => h.feed,
@@ -79,6 +88,18 @@ const observed = {
     },
   ],
 };
+const fixed = () => ({
+  ...observed,
+  rows: [
+    {
+      ...observed.rows[0],
+      state: "fixed",
+      installed: "3.0.13-0ubuntu3.5",
+      candidate: null,
+      canPatch: false,
+    },
+  ],
+});
 const planned = {
   observation: observed,
   changes: [{ package: "openssl", previous: "3.0.13-0ubuntu3.4", version: "3.0.13-0ubuntu3.5" }],
@@ -110,30 +131,191 @@ beforeEach(() => {
   vi.restoreAllMocks();
   h.feed = feed();
   h.work = [];
+  h.patched = false;
+  h.checks.mockReset().mockImplementation(async (_executor, names: string[]) =>
+    names.map((name) => ({
+      name,
+      label: name,
+      installed: true,
+      healthy: true,
+      message: name + " is healthy",
+    })),
+  );
   h.exec.mockReset().mockImplementation(async (cmd: string) => {
     // Decode only the generated base64 argument, never execute a host command in these tests.
     const args = JSON.parse(
       Buffer.from(cmd.match(/'([A-Za-z0-9+/=]+)'(?:; fi)?$/)![1], "base64").toString(),
     );
-    return encode(args.mode.startsWith("plan") ? planned : observed);
+    return encode(args.mode.startsWith("plan") ? planned : h.patched ? fixed() : observed);
   });
-  h.stream.mockReset().mockResolvedValue({
-    code: 0,
-    output: encode({
-      ...observed,
-      rows: [
-        {
-          ...observed.rows[0],
-          state: "fixed",
-          installed: planned.changes[0].version,
-          candidate: null,
-          canPatch: false,
-        },
-      ],
-    }),
+  h.stream.mockReset().mockImplementation(async (_command, onLog) => {
+    onLog({ timestamp: new Date().toISOString(), message: "Installing openssl", level: "info" });
+    h.patched = true;
+    return { code: 0, output: encode(fixed()) };
   });
 });
 describe("server advisory maintenance", () => {
+  it("expires interrupted patch and reboot records without issuing commands, even with checks disabled", async () => {
+    const f = await fixture();
+    await repos.securityAdvisory.setChecksEnabled(f.owner.orgId, false);
+    for (const phase of ["installing", "rebooting"]) {
+      const run = await repos.jobRun.start({
+        jobId: `security:patch:${f.id}`,
+        serverId: f.id,
+        kind: "custom",
+      });
+      await repos.jobRun.progress(
+        run.id,
+        { phase, ...(phase === "rebooting" ? { resumePolicy: "verify" } : {}) },
+        "saved before interruption",
+      );
+      await db
+        .update(schema.jobRun)
+        .set({ startedAt: new Date(Date.now() - 31 * 60_000) })
+        .where(eq(schema.jobRun.id, run.id));
+      await recoverHostPatchRuns();
+      expect(await repos.jobRun.findById(run.id)).toMatchObject({
+        status: "failed",
+        output: "saved before interruption",
+        summary: { phase: "needs_review" },
+      });
+    }
+    expect(h.stream).not.toHaveBeenCalled();
+    expect(h.exec).not.toHaveBeenCalled();
+  });
+  it("shares deployment/setup admission and refuses a patch while provisioning owns the host", async () => {
+    const f = await fixture();
+    const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id });
+    await createProvisionLock(`provision:server:${f.id}`).run(async () => {
+      await expect(planHostPatch(f.ctx, f.id, { advisoryId: advisory.id })).rejects.toMatchObject({
+        statusCode: 409,
+      });
+      const { runId } = await applyHostPatch(f.ctx, f.id, { token: plan.token });
+      await h.work.shift()!();
+      expect(await repos.jobRun.findById(runId)).toMatchObject({
+        status: "failed",
+        summary: { phase: "needs_review" },
+      });
+      expect(h.stream).not.toHaveBeenCalled();
+    });
+  });
+  it("checkpoints sanitized live logs and structured steps before finishing the same run", async () => {
+    const f = await fixture();
+    const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id });
+    const { runId } = await applyHostPatch(f.ctx, f.id, { token: plan.token });
+    const seen: JobRunEvent[] = [];
+    const unsubscribe = jobRunBus.subscribe(runId, (event) => seen.push(event));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.stream.mockImplementation(async (_command, log) => {
+      log({
+        message: "package\u0000 progress https://credential@example.test/file",
+        level: "info",
+      });
+      await gate;
+      h.patched = true;
+      return { code: 0, output: encode(fixed()) };
+    });
+    const work = h.work.shift()!();
+    try {
+      await vi.waitFor(() =>
+        expect(seen.some((e) => e.type === "log" && e.line.includes("package progress"))).toBe(
+          true,
+        ),
+      );
+      await vi.waitFor(
+        async () =>
+          expect((await repos.jobRun.findById(runId))?.output).toContain("package progress"),
+        { timeout: 4000 },
+      );
+      const during = (await repos.jobRun.findById(runId))!;
+      expect(during.status).toBe("running");
+      expect(during.output).not.toContain("credential");
+      expect(during.output).not.toContain("\u0000");
+      expect((during.summary as { steps: unknown[] }).steps).toEqual([
+        expect.objectContaining({ id: "prepare", status: "completed" }),
+        expect.objectContaining({ id: "apply", status: "running" }),
+        expect.objectContaining({ id: "verify", status: "pending" }),
+      ]);
+    } finally {
+      release();
+      await work;
+      unsubscribe();
+    }
+    const saved = (await repos.jobRun.findById(runId))!;
+    expect(saved.status).toBe("success");
+    expect(saved.output).not.toContain("OPENSHIP_HOST_SECURITY=");
+    expect(seen.filter((e) => e.type === "complete")).toHaveLength(1);
+    expect(
+      seen.filter((e) => e.type === "log").every((e) => e.seq && !e.line.includes("credential")),
+    ).toBe(true);
+    expect(
+      (saved.summary as { steps: { status: string }[] }).steps.every(
+        (step) => step.status === "completed",
+      ),
+    ).toBe(true);
+  });
+  it("does not claim success from exit zero when the independent installed-version check fails", async () => {
+    const f = await fixture();
+    const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id });
+    h.stream.mockResolvedValue({ code: 0, output: encode(fixed()) }); // host still reports the affected version
+    const { runId } = await applyHostPatch(f.ctx, f.id, { token: plan.token });
+    await h.work.shift()!();
+    expect(await repos.jobRun.findById(runId)).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("could not be verified"),
+      summary: {
+        phase: "needs_review",
+        steps: [
+          expect.objectContaining({ status: "completed" }),
+          expect.objectContaining({ status: "completed" }),
+          expect.objectContaining({ status: "failed" }),
+        ],
+      },
+    });
+    expect(await applyHostPatch(f.ctx, f.id, { token: plan.token })).toEqual({ runId });
+    expect(h.stream).toHaveBeenCalledTimes(1);
+    expect(h.work).toHaveLength(0);
+  });
+  it("uses setup's component checks and reports a post-patch health regression", async () => {
+    const f = await fixture();
+    const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id });
+    h.checks.mockImplementation(async (_executor, names: string[]) =>
+      names.map((name) => ({
+        name,
+        label: name,
+        installed: true,
+        healthy: !h.patched,
+        message: h.patched ? "Docker daemon unavailable" : "Ready",
+      })),
+    );
+    const { runId } = await applyHostPatch(f.ctx, f.id, { token: plan.token });
+    await h.work.shift()!();
+    expect(h.checks.mock.calls.map((call) => call[1])).toEqual([
+      ["docker"],
+      ["edge"],
+      ["docker", "edge"],
+    ]);
+    expect(await repos.jobRun.findById(runId)).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("previously healthy"),
+      summary: { phase: "needs_review" },
+    });
+  });
+  it("rechecks policy after readiness probes, before any privileged command", async () => {
+    const f = await fixture();
+    const plan = await planHostPatch(f.ctx, f.id, { advisoryId: advisory.id });
+    h.checks.mockImplementation(async () => {
+      await repos.securityAdvisory.setChecksEnabled(f.owner.orgId, false);
+      return [];
+    });
+    const { runId } = await applyHostPatch(f.ctx, f.id, { token: plan.token });
+    await h.work.shift()!();
+    expect(h.stream).not.toHaveBeenCalled();
+    expect((await repos.jobRun.findById(runId))?.status).toBe("failed");
+  });
   it("sends a default-on scoped alert once, records task status, and skips a disabled workspace", async () => {
     const f = await fixture(),
       disabled = await fixture();
@@ -217,6 +399,20 @@ describe("server advisory maintenance", () => {
     await h.work.shift()!();
     expect((await remote.securityRuns(f.id))[0]).toMatchObject({ id: runId, status: "success" });
     expect(await native.securityRuns(f.id)).toEqual(await remote.securityRuns(f.id));
+    for (const client of [remote, native]) {
+      const events = [];
+      for await (const event of client.securityRunEvents(f.id, runId))
+        events.push(JSON.parse(event.data));
+      expect(events.map((e) => e.type)).toEqual(["snapshot", "complete"]);
+      expect(events[0].run).toMatchObject({
+        id: runId,
+        status: "success",
+        summary: { phase: "verified" },
+      });
+      await expect(
+        client.securityRunEvents(foreign.id, runId)[Symbol.asyncIterator]().next(),
+      ).rejects.toThrow();
+    }
     const extra = await app.request(`/api/system/servers/${f.id}/security/plan`, {
       method: "POST",
       headers: { ...f.owner.auth, "Content-Type": "application/json" },
@@ -337,6 +533,9 @@ describe("server advisory maintenance", () => {
       status: "running",
       summary: { phase: "rebooting" },
     });
+    // The engine may restart along with the host. Preserve verification, never replay the reboot.
+    await repos.jobRun.failStaleRunning();
+    expect((await repos.jobRun.findById(runId))?.status).toBe("running");
     const pending = await repos.securityAdvisory.host(f.id);
     expect(pending!.nextInspectionAt!.getTime() - pending!.checkedAt!.getTime()).toBe(60_000);
     expect(pending!.probeFailures).toBe(0);

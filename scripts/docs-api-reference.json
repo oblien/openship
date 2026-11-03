@@ -3961,6 +3961,12 @@
       "section": "Security maintenance",
       "description": "Read this server\u2019s patch and reboot run output and verification state. Requires server admin.",
       "route": "GET /api/system/servers/:id/security/runs"
+    },
+    "servers.securityRunEvents": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Subscribe to this server run\u2019s saved steps, live logs and final verification. Reconnect only reads the existing run; requires server admin.",
+      "route": "GET /api/system/servers/:id/security/runs/:runId/stream"
     }
   },
   "http": {

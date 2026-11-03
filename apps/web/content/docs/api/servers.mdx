@@ -839,6 +839,7 @@ shared storage before removing the cluster runtime.
 | Review exact stable Ubuntu package changes or a separate kernel reboot. Returns an expiring approval bound to this server and actor; requires server admin. | `servers.planSecurityPatch(id, input)` | `POST /api/system/servers/:id/security/plan`<br />`server:admin` |
 | Execute the reviewed token after rechecking permissions, advisory and exact host plan. Returns a server run ID; requires server admin. | `servers.applySecurityPatch(id, input)` | `POST /api/system/servers/:id/security/apply`<br />`server:admin` |
 | Read this server’s patch and reboot run output and verification state. Requires server admin. | `servers.securityRuns(id)` | `GET /api/system/servers/:id/security/runs`<br />`server:admin` |
+| Subscribe to this server run’s saved steps, live logs and final verification. Reconnect only reads the existing run; requires server admin. | `servers.securityRunEvents(id, runId, options?)` | `GET /api/system/servers/:id/security/runs/:runId/stream`<br />`server:admin` |
 
 ### Legacy network URLs
 

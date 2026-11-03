@@ -44,13 +44,13 @@ export {
  * build / deploy) and plain log lines. Every runtime emits through this
  * instead of constructing raw LogEntry objects.
  */
-export class BuildLogger {
+export class BuildLogger<Step extends string = BuildStep> {
   private cacheLines = new Map<string, string>();
   private cacheSteps = new Set<string>();
   private cacheHits = new Set<string>();
   private cacheFinished = new Set<string>();
   constructor(
-    private readonly onLog?: LogCallback,
+    private readonly onLog?: LogCallback<Step>,
     private readonly onBuildOutput?: (data: string, streamId: string) => void,
   ) {}
 
@@ -86,7 +86,7 @@ export class BuildLogger {
   }
 
   /** Emit a step lifecycle event (running / completed / failed / skipped). */
-  step(step: BuildStep, status: NonNullable<LogEntry["stepStatus"]>, message: string): void {
+  step(step: Step, status: NonNullable<LogEntry["stepStatus"]>, message: string): void {
     this.onLog?.({
       timestamp: new Date().toISOString(),
       message,
@@ -100,7 +100,7 @@ export class BuildLogger {
    * Run a step: emit running → execute → emit completed/failed.
    * Throws on failure so the caller can handle it.
    */
-  async runStep(step: BuildStep, label: string, fn: () => Promise<void>): Promise<void> {
+  async runStep(step: Step, label: string, fn: () => Promise<void>): Promise<void> {
     this.step(step, "running", label);
     try {
       await fn();
@@ -113,7 +113,7 @@ export class BuildLogger {
   }
 
   /** Get the underlying callback for passing to exec / stream functions. */
-  get callback(): LogCallback {
+  get callback(): LogCallback<Step> {
     return (entry) => this.onLog?.(entry);
   }
 }

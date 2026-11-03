@@ -2,7 +2,7 @@
 export const HOST_SECURITY_SCRIPT = String.raw`
 import base64, json, os, platform, shlex, sys, subprocess
 import apt, apt_pkg
-from apt.progress.base import OpProgress
+from apt.progress.base import OpProgress, AcquireProgress, InstallProgress
 
 args = json.loads(base64.b64decode(sys.argv[1]))
 mode = args['mode']
@@ -15,6 +15,24 @@ apt_pkg.config.set('Acquire::Retries', '0')
 apt_pkg.config.set('Dpkg::Options::', '--force-confold')
 os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
 os.environ['NEEDRESTART_MODE'] = 'l'
+
+# Use python-apt's native progress callbacks, on the same stdout log pipe.
+# https://apt-team.pages.debian.net/python-apt/library/apt.progress.base.html
+class Downloads(AcquireProgress):
+    def fetch(self, item):
+        super().fetch(item)
+        print('Downloading: ' + item.shortdesc, flush=True)
+    def fail(self, item):
+        super().fail(item)
+        print('Download failed: ' + item.shortdesc, flush=True)
+
+class Installation(InstallProgress):
+    def status_change(self, pkg, percent, status):
+        super().status_change(pkg, percent, status)
+        print('Install %d%%: %s — %s' % (percent, pkg, status), flush=True)
+    def error(self, pkg, errormsg):
+        super().error(pkg, errormsg)
+        print('Install failed: %s — %s' % (pkg, errormsg), flush=True)
 
 def emit(value):
     print('OPENSHIP_HOST_SECURITY=' + json.dumps(value, separators=(',', ':')), flush=True)
@@ -134,7 +152,7 @@ else:
             print('Installing the reviewed security packages. Services may restart.', flush=True)
             # Minimal/cloud Ubuntu images sometimes omit APT's download directory.
             os.makedirs(os.path.join(apt_pkg.config.find_dir('Dir::Cache::archives'), 'partial'), mode=0o755, exist_ok=True)
-            if not cache.commit(allow_unauthenticated=False):
+            if not cache.commit(fetch_progress=Downloads(), install_progress=Installation(), allow_unauthenticated=False):
                 raise RuntimeError('APT did not finish the patch.')
             cache.open(progress=OpProgress())
             emit(inspect(cache))

@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { HostPatchPlan, JobRun, ServerSecurityResult } from "@repo/contracts";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { useI18n } from "@/components/i18n-provider";
+import { JobRunOutput } from "@/components/jobs/JobRunOutput";
 import { Button } from "@/components/ui/button";
 import { serverSecurityApi } from "@/lib/api/server-security";
 import { getApiErrorMessage, getApiRequestScopeVersion } from "@/lib/api/client";
@@ -36,6 +37,9 @@ function ServerRuns({ serverId }: { serverId: string }) {
       if (!mounted.current || scope !== getApiRequestScopeVersion()) return;
       setStatus(data);
       setRuns(history);
+      setSelected(
+        (current) => current ?? history.find((run) => run.status === "running")?.id ?? null,
+      );
       setError(null);
     } catch (e) {
       if (mounted.current && scope === getApiRequestScopeVersion()) setError(getApiErrorMessage(e));
@@ -51,14 +55,11 @@ function ServerRuns({ serverId }: { serverId: string }) {
     };
   }, [load]);
   useEffect(() => {
-    const timer = setInterval(
-      () => {
-        if (document.visibilityState !== "hidden") void load();
-      },
-      runs.some((r) => r.status === "running") ? 3000 : 60_000,
-    );
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void load();
+    }, 60_000);
     return () => clearInterval(timer);
-  }, [load, runs]);
+  }, [load]);
   const act = async (work: () => Promise<void>) => {
     if (mutating.current) return;
     mutating.current = true;
@@ -92,6 +93,7 @@ function ServerRuns({ serverId }: { serverId: string }) {
       }
     });
   const runLabel = (run: JobRun) => {
+    if (run.status === "failed") return c.needsReview;
     const phase = run.summary?.phase;
     return phase === "rebooting"
       ? c.rebooting
@@ -99,9 +101,7 @@ function ServerRuns({ serverId }: { serverId: string }) {
         ? c.rebootRequired
         : phase === "verified"
           ? c.verified
-          : run.status === "failed"
-            ? c.needsReview
-            : t.jobs.status.running;
+          : t.jobs.status.running;
   };
   return (
     <div className="space-y-5">
@@ -288,15 +288,19 @@ function ServerRuns({ serverId }: { serverId: string }) {
               <span>{runLabel(run)}</span>
             </button>
             {selected === run.id && (
-              <div className="mt-3 space-y-2">
-                {run.error && (
-                  <p role="alert" className="text-sm text-danger">
-                    {run.error}
-                  </p>
-                )}
-                <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">
-                  {run.output || runLabel(run)}
-                </pre>
+              <div className="mt-3">
+                <JobRunOutput
+                  key={run.id}
+                  run={run}
+                  path={`system/servers/${encodeURIComponent(serverId)}/security/runs/${encodeURIComponent(run.id)}/stream`}
+                  onSnapshot={(snapshot) => {
+                    if (!mounted.current) return;
+                    setRuns((current) =>
+                      current.map((item) => (item.id === snapshot.id ? snapshot : item)),
+                    );
+                    if (run.status === "running" && snapshot.status !== "running") void load();
+                  }}
+                />
               </div>
             )}
           </div>

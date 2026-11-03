@@ -22,6 +22,10 @@ r.post("/servers/:id/security/plan", { tag: "server:admin", body: ServerResource
   mcp: { description: "Refresh package indexes and prepare an expiring host security patch plan. Review all package changes and service interruption before applying its token." } }, serversCtrl.planServerSecurity);
 r.post("/servers/:id/security/apply", { tag: "server:admin", body: ServerResourceSchemas.applySecurityPatch.input, auditHandledByOperation: true,
   mcp: { description: "Apply an explicitly reviewed host patch token. Revalidates the exact plan and returns a server run ID; kernel installation may still require a reboot." } }, serversCtrl.applyServerSecurity);
+r.get("/servers/:id/security/runs/:runId/stream", {
+  tag: "server:admin", authorizationHandledByOperation: true,
+  mcpExcluded: "SSE transport for live progress. Read securityRuns for saved status and logs over MCP.",
+}, serversCtrl.serverSecurityRunEvents);
 r.get("/servers/:id/security/runs", { tag: "server:admin", mcp: { description: "Read this server's security patch runs, bounded output and verified or reboot-required outcomes." } }, serversCtrl.serverSecurityRuns);
 
 

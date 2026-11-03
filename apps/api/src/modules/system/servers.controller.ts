@@ -4,6 +4,7 @@ import { parseInput, ServerResourceSchemas } from "@repo/contracts";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { param } from "../../lib/controller-helpers";
 import { operationContext, operationData } from "../../lib/operation-context";
+import { operationEvents } from "../../lib/operation-stream";
 
 const operations = () => getPlatformKernel().servers;
 export async function serverDestinations(c: Context) {
@@ -102,4 +103,10 @@ export async function applyServerSecurity(c: Context) {
 }
 export async function serverSecurityRuns(c: Context) {
   return c.json({ data: await operationData(c, operations().securityRuns(operationContext(c), param(c, "id"))) });
+}
+
+export async function serverSecurityRunEvents(c: Context) {
+  return operationEvents(c, signal => operations().openSecurityRunEvents(
+    operationContext(c), param(c, "id"), param(c, "runId"), { signal },
+  ));
 }

@@ -8,9 +8,9 @@ import {
   type SecurityAdvisory,
   type SecurityHostTarget,
 } from "@repo/core";
-import { repos, tryAcquireAdvisoryLock, type Server } from "@repo/db";
-import type { HostPatchPlan, ServerSecurityResult } from "@repo/contracts";
-import type { CommandExecutor } from "@repo/adapters";
+import { repos, tryAcquireAdvisoryLock, type Server, type JobRun } from "@repo/db";
+import type { HostPatchPlan, ServerSecurityResult, JobRunStep } from "@repo/contracts";
+import { PipelineLogger, checkComponents, type CommandExecutor } from "@repo/adapters";
 import type { ExecutionContext } from "../../../context";
 import { env } from "../../config/env";
 import { authorization } from "../../lib/authorization";
@@ -18,7 +18,9 @@ import { requireConnectedServer, assertServerExecution } from "../system/server-
 import { isLocalHostRow } from "../../lib/box-org";
 import { resolveHostControlEnabled } from "../../lib/host-control";
 import { withServerExecution } from "../../lib/server-execution";
-import { jobRunBus } from "../jobs/job-run.sse";
+import { jobRunEvents } from "../jobs/job-run.sse";
+import { createJobRunRecorder } from "../jobs/job-run-recorder";
+import { withServerProvisioning } from "../system/server-provisioning";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
@@ -27,7 +29,13 @@ import { assertSecurityChecksEnabled } from "./security-check-policy";
 import { nextSecurityInspection, securityObservationDue } from "./security-freshness";
 import { HOST_SECURITY_SCRIPT } from "./host-security-script";
 
-const text = z.string().max(300);
+const text = z
+  .string()
+  .max(300)
+  .refine(
+    (value) => !/[^\x20-\x7e]/.test(value),
+    "Host identifiers and versions must contain printable ASCII.",
+  );
 const rowSchema = z
   .object({
     key: text,
@@ -184,30 +192,58 @@ export async function inspectHostSecurity(
         observedAt = previous.observedAt ?? current.checkedAt?.toISOString() ?? null;
       } else observedAt = null;
     }
-    const currentServer = await repos.server.getInOrganization(id, ctx.organizationId);
-    if (!currentServer || connectionKey(currentServer) !== connectionKey(server)) return;
-    const failures =
-      error || observation?.rows.some((r) => r.state === "unknown")
-        ? Math.min((current?.probeFailures ?? 0) + 1, 16)
-        : 0;
-    await repos.securityAdvisory.saveHost({
-      serverId: id,
-      organizationId: ctx.organizationId,
-      inventory: { observation, observedAt, error, connection: connectionKey(server) },
-      probeKey: key,
-      checkedAt,
-      probeFailures: failures,
-      // Be eligible at the next scheduler tick while waiting for a kernel reboot.
-      // Actual connection failures still use exponential backoff.
-      nextInspectionAt:
-        !error && observation?.rows.some((r) => r.state === "reboot_required")
-          ? new Date(checkedAt.getTime() + 60_000)
-          : nextSecurityInspection(id, checkedAt, failures),
-    });
-    if (observation && !error) await reconcileReboot(id, observation);
+    if (
+      !(await saveHostObservation(
+        ctx,
+        server,
+        key,
+        current,
+        observation,
+        error,
+        checkedAt,
+        observedAt,
+      ))
+    )
+      return;
+    if (observation && !error) await reconcileReboot(ctx, id, observation, feed);
   } finally {
     await lock.release();
   }
+}
+
+/** The same observation write serves inspections and a patch's final verification. */
+async function saveHostObservation(
+  ctx: ExecutionContext,
+  server: Server,
+  key: string,
+  current: Awaited<ReturnType<typeof repos.securityAdvisory.host>>,
+  observation: Observation | null,
+  error: string | null,
+  checkedAt = new Date(),
+  observedAt: string | null = checkedAt.toISOString(),
+): Promise<boolean> {
+  const id = server.id;
+  const currentServer = await repos.server.getInOrganization(id, ctx.organizationId);
+  if (!currentServer || connectionKey(currentServer) !== connectionKey(server)) return false;
+  const failures =
+    error || observation?.rows.some((r) => r.state === "unknown")
+      ? Math.min((current?.probeFailures ?? 0) + 1, 16)
+      : 0;
+  await repos.securityAdvisory.saveHost({
+    serverId: id,
+    organizationId: ctx.organizationId,
+    inventory: { observation, observedAt, error, connection: connectionKey(server) },
+    probeKey: key,
+    checkedAt,
+    probeFailures: failures,
+    // Be eligible at the next scheduler tick while waiting for a kernel reboot.
+    // Actual connection failures still use exponential backoff.
+    nextInspectionAt:
+      !error && observation?.rows.some((r) => r.state === "reboot_required")
+        ? new Date(checkedAt.getTime() + 60_000)
+        : nextSecurityInspection(id, checkedAt, failures),
+  });
+  return true;
 }
 
 export async function serverSecurityStatus(
@@ -402,19 +438,21 @@ export async function planHostPatch(
   if (!lock)
     throw new AppError("Server maintenance is already running. Try again after it finishes.", 409);
   try {
-    const plan = await withServerExecution(
-      ctx.organizationId,
-      id,
-      async (executor) =>
-        planSchema.parse(
-          outputJson(
-            await executor.exec(
-              command(operation === "reboot" ? "plan-reboot" : "plan", hostTargets([advisory])),
-              { timeout: 120_000 },
+    const plan = await withServerProvisioning(ctx, id, () =>
+      withServerExecution(
+        ctx.organizationId,
+        id,
+        async (executor) =>
+          planSchema.parse(
+            outputJson(
+              await executor.exec(
+                command(operation === "reboot" ? "plan-reboot" : "plan", hostTargets([advisory])),
+                { timeout: 120_000 },
+              ),
             ),
           ),
-        ),
-      { mutation: true },
+        { mutation: true },
+      ),
     );
     const expiresAt = Math.min(Date.now() + 10 * 60_000, Date.parse(feed.security!.expiresAt));
     const payload = Buffer.from(
@@ -498,10 +536,24 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
     if (!run) return { runId };
     const summary = {
       advisoryId: approval.advisoryId,
+      advisoryHash: approval.advisoryHash,
+      connection: approval.connection,
       operation: approval.operation,
       bootId: approval.plan.observation.bootId,
       changes: approval.plan.changes,
       phase: "queued",
+      steps: [
+        { id: "prepare", label: "Check server and approval", status: "pending" },
+        {
+          id: "apply",
+          label:
+            approval.operation === "reboot"
+              ? "Schedule reviewed reboot"
+              : "Install reviewed packages",
+          status: "pending",
+        },
+        { id: "verify", label: "Verify packages and server components", status: "pending" },
+      ] satisfies JobRunStep[],
     };
     await repos.jobRun.progress(runId, summary);
     audit.recordAsync(operationAuditContext(ctx), {
@@ -511,101 +563,140 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
       after: { operation: "applySecurityPatch", advisoryId: approval.advisoryId, runId },
     });
     const work = deferBackgroundWork(async () => {
-      const started = Date.now();
-      let output = "";
-      let checkpoint = Promise.resolve();
-      let lastCheckpoint = 0;
+      const recorder = createJobRunRecorder(run, summary);
+      const logger = new PipelineLogger<"prepare" | "apply" | "verify">(recorder.onLog);
+      let observationSaved = false;
+      let outcome: { phase: string; kernel: string } | undefined;
       try {
-        const { advisory } = await validate();
-        await repos.jobRun.progress(runId, { ...summary, phase: "installing" });
-        const result = await withServerExecution(
-          ctx.organizationId,
-          id,
-          (executor) =>
-            executor.streamExec(
-              command(
-                approval.operation === "reboot" ? "reboot" : "apply",
-                hostTargets([advisory]),
-                approval.plan,
-              ),
-              (entry) => {
-                output = (output + entry.message + "\n").slice(-200_000);
-                jobRunBus.publish(runId, { type: "log", line: entry.message, level: entry.level });
-                if (Date.now() - lastCheckpoint > 2000) {
-                  lastCheckpoint = Date.now();
-                  const snapshot = output;
-                  checkpoint = checkpoint
-                    .then(() =>
-                      repos.jobRun.progress(runId, { ...summary, phase: "installing" }, snapshot),
-                    )
-                    .catch((error) => {
-                      reportCaughtError(error, "security-advisories.host-run-checkpoint");
-                    });
-                }
-              },
-              { signal: AbortSignal.timeout(10 * 60_000) },
-            ),
-          { mutation: true },
-        );
-        output = result.output.slice(-200_000);
-        if (result.code !== 0)
-          throw new ValidationError(
-            "The host patch did not complete. Review the run output before retrying.",
+        await recorder.progress({ phase: "checking" });
+        logger.step("prepare", "running", "Check server and approval");
+        await withServerProvisioning(ctx, id, async () => {
+          const { advisory, feed, server } = await validate();
+          await withServerExecution(
+            ctx.organizationId,
+            id,
+            async (executor) => {
+              // Use setup's component probes; a patch never auto-installs unrelated tools.
+              // The compiled inspection also verifies Ubuntu, host isolation and python3-apt.
+              await inspect(executor, hostTargets([advisory]));
+              const components = await checkComponents(executor, ["docker"]);
+              if (components.some((c) => c.name === "docker" && c.healthy))
+                components.push(...(await checkComponents(executor, ["edge"])));
+              const healthyComponents = components.filter((c) => c.healthy).map((c) => c.name);
+              for (const component of components)
+                logger.log(
+                  component.message ?? component.label,
+                  component.healthy ? "info" : "warn",
+                );
+              await recorder.progress({ healthyComponents });
+              logger.step("prepare", "completed", "Server prerequisites and approval checked");
+              await recorder.progress({
+                phase: approval.operation === "reboot" ? "rebooting" : "installing",
+              });
+              let commandObservation: Observation | undefined;
+              await logger.runStep("apply", summary.steps[1]!.label, async () => {
+                // Permissions/policy may change while the readiness probes are running.
+                await validate();
+                const result = await executor.streamExec(
+                  command(
+                    approval.operation === "reboot" ? "reboot" : "apply",
+                    hostTargets([advisory]),
+                    approval.plan,
+                  ),
+                  (entry) => {
+                    // Structured protocol data is consumed below, never rendered as a log.
+                    for (const line of entry.message.split(/\r?\n/))
+                      if (line && !line.startsWith("OPENSHIP_HOST_SECURITY="))
+                        logger.log(line, entry.level);
+                  },
+                  { signal: AbortSignal.timeout(10 * 60_000) },
+                );
+                if (result.code !== 0)
+                  throw new ValidationError(
+                    "The host patch did not complete. Review the run output before retrying.",
+                  );
+                commandObservation = observationSchema.parse(outputJson(result.output));
+              });
+              if (approval.operation === "reboot") {
+                logger.step(
+                  "verify",
+                  "running",
+                  "Waiting for the server to restart and the fixed kernel to be verified",
+                );
+                await recorder.suspend({
+                  phase: "rebooting",
+                  resumePolicy: "verify",
+                  kernel: commandObservation!.kernel,
+                });
+                return;
+              }
+              await recorder.progress({ phase: "verifying" });
+              let observed: Observation | undefined;
+              await logger.runStep("verify", summary.steps[2]!.label, async () => {
+                // Independent post-command probe: exit zero is not proof of a patched host.
+                const fullObservation = await inspect(
+                  executor,
+                  hostTargets(feed.security?.advisories ?? []),
+                );
+                const targetKeys = new Set(hostTargets([advisory]).map((target) => target.key));
+                observed = {
+                  ...fullObservation,
+                  rows: fullObservation.rows.filter((row) => targetKeys.has(row.key)),
+                };
+                if (
+                  !observed.rows.length ||
+                  observed.rows.some((r) => r.state === "affected" || r.state === "unknown")
+                )
+                  throw new ValidationError(
+                    "The installed patch could not be verified. Review the server.",
+                  );
+                const checks = await checkComponents(executor, healthyComponents);
+                await recorder.progress({ checks });
+                for (const check of checks)
+                  logger.log(check.message ?? check.label, check.healthy ? "info" : "error");
+                if (checks.some((c) => !c.healthy))
+                  throw new ValidationError(
+                    "A previously healthy server component failed its check. Review the run before further maintenance.",
+                  );
+                for (const row of observed.rows)
+                  logger.log(row.package + ": " + row.installed + " — " + row.state);
+                observationSaved = await saveHostObservation(
+                  ctx,
+                  server,
+                  hostProbeKey(feed.security?.advisories ?? []),
+                  await repos.securityAdvisory.host(id),
+                  fullObservation,
+                  null,
+                );
+                if (!observationSaved)
+                  throw new ValidationError("Server connection changed during verification.");
+              });
+              const phase =
+                observed!.rows.some((r) => r.state === "reboot_required") ||
+                observed!.rebootRequired
+                  ? "reboot_required"
+                  : "verified";
+              if (phase === "reboot_required")
+                logger.log(
+                  "Packages installed. A separately reviewed reboot is still required.",
+                  "warn",
+                );
+              outcome = { phase, kernel: observed!.kernel };
+            },
+            { mutation: true },
           );
-        const observed = observationSchema.parse(outputJson(result.output));
-        if (
-          observed.rows.some((r) => r.state === "affected" || r.state === "unknown") ||
-          !observed.rows.length
-        )
-          throw new ValidationError(
-            "The installed patch could not be verified. Review the server.",
-          );
-        const phase =
-          observed.rows.some((r) => r.state === "reboot_required") || observed.rebootRequired
-            ? "reboot_required"
-            : "verified";
-        await checkpoint;
-        if (approval.operation === "reboot") {
-          await repos.jobRun.progress(
-            runId,
-            { ...summary, phase: "rebooting", kernel: observed.kernel },
-            output,
-          );
-        } else {
-          await repos.jobRun.finish(runId, {
-            status: "success",
-            output,
-            durationMs: Date.now() - started,
-            summary: { ...summary, phase, kernel: observed.kernel },
-          });
-        }
+        });
+        if (outcome) await recorder.finish("success", outcome);
       } catch (error) {
         reportCaughtError(error, "security-advisories.host-patch");
-        await checkpoint;
-        await repos.jobRun.finish(runId, {
-          status: "failed",
-          output,
-          durationMs: Date.now() - started,
-          error: safeErrorMessage(error),
-          summary: { ...summary, phase: "needs_review" },
-        });
+        logger.log(safeErrorMessage(error), "error");
+        await recorder.finish("failed", { phase: "needs_review" }, error);
       } finally {
-        try {
-          const finished = await repos.jobRun.findById(runId);
-          if (finished && finished.status !== "running")
-            jobRunBus.publish(runId, {
-              type: "complete",
-              status: finished.status === "success" ? "success" : "failed",
-              error: finished.error,
-            });
-        } finally {
-          await lock.release();
-        }
+        await lock.release();
       }
       // Renew findings after execution. A successful install alone never clears a kernel warning.
-      const feed = await getAdvisoryFeed(ctx);
-      if (await repos.securityAdvisory.checksEnabled(ctx.organizationId))
-        await inspectHostSecurity(ctx, id, feed, true);
+      if (!observationSaved && (await repos.securityAdvisory.checksEnabled(ctx.organizationId)))
+        await inspectHostSecurity(ctx, id, await getAdvisoryFeed(ctx), true);
     });
     accepted = true;
     void work.catch(() => {
@@ -617,7 +708,12 @@ export async function applyHostPatch(ctx: ExecutionContext, id: string, input: {
   }
 }
 
-async function reconcileReboot(id: string, observation: Observation) {
+async function reconcileReboot(
+  ctx: ExecutionContext,
+  id: string,
+  observation: Observation,
+  feed: AdvisoryFeedState,
+) {
   const runs = await repos.jobRun.listRecent({ jobId: jobKey(id), serverId: id, limit: 30 });
   for (const run of runs) {
     const summary = run.summary as Record<string, unknown> | null;
@@ -627,51 +723,101 @@ async function reconcileReboot(id: string, observation: Observation) {
       summary.bootId === observation.bootId
     )
       continue;
-    const rows = observation.rows.filter((r) => r.key.startsWith(`${summary.advisoryId}:`));
-    const verified = rows.length > 0 && rows.every((r) => r.state === "fixed");
-    await repos.jobRun.finish(run.id, {
-      status: verified ? "success" : "failed",
-      durationMs: Date.now() - run.startedAt.getTime(),
-      summary: {
-        ...summary,
-        phase: verified ? "verified" : "needs_review",
-        kernel: observation.kernel,
-      },
-      ...(verified
-        ? {}
-        : { error: "The host restarted but the running kernel fix could not be verified." }),
-    });
-    jobRunBus.publish(run.id, { type: "complete", status: verified ? "success" : "failed" });
+    const recorder = createJobRunRecorder(run, summary!);
+    const logger = new PipelineLogger<"verify">(recorder.onLog);
+    try {
+      await logger.runStep(
+        "verify",
+        "Verify packages and server components after reboot",
+        async () => {
+          const server = await host(ctx, id);
+          if (connectionKey(server) !== summary!.connection)
+            throw new ValidationError(
+              "Server connection changed while awaiting reboot verification.",
+            );
+          const advisory = feed.security?.advisories.find((a) => a.id === summary!.advisoryId);
+          const rows = observation.rows.filter((r) => r.key.startsWith(`${summary!.advisoryId}:`));
+          if (
+            feed.stale ||
+            !advisory ||
+            hash(advisory) !== summary!.advisoryHash ||
+            !rows.length ||
+            rows.some((r) => r.state !== "fixed")
+          )
+            throw new ValidationError(
+              "The host restarted but the running kernel fix could not be verified.",
+            );
+          const names = Array.isArray(summary!.healthyComponents)
+            ? summary!.healthyComponents.filter(
+                (name): name is string => name === "docker" || name === "edge",
+              )
+            : [];
+          const checks = await withServerExecution(ctx.organizationId, id, (executor) =>
+            checkComponents(executor, names),
+          );
+          await recorder.progress({ checks });
+          for (const check of checks)
+            logger.log(check.message ?? check.label, check.healthy ? "info" : "error");
+          if (checks.some((check) => !check.healthy))
+            throw new ValidationError(
+              "The host restarted but a previously healthy server component failed its check.",
+            );
+          logger.log("New boot verified with the fixed kernel: " + observation.kernel);
+        },
+      );
+      await recorder.finish("success", { phase: "verified", kernel: observation.kernel });
+    } catch (error) {
+      reportCaughtError(error, "security-advisories.reboot-verification");
+      await recorder.finish("failed", { phase: "needs_review", kernel: observation.kernel }, error);
+    }
+  }
+}
+
+function hostRunExpired(run: JobRun) {
+  const waitingForBoot = (run.summary as Record<string, unknown> | null)?.phase === "rebooting";
+  return (
+    run.status === "running" &&
+    Date.now() - run.startedAt.getTime() > (waitingForBoot ? 30 : 15) * 60_000
+  );
+}
+async function recoverInterruptedHostRun(run: JobRun): Promise<JobRun> {
+  if (!run.serverId || !hostRunExpired(run)) return run;
+  const lock = await tryAcquireAdvisoryLock(runKey(run.serverId));
+  if (!lock) return run;
+  try {
+    // Another worker may have verified the run after the caller's list read.
+    const current = await repos.jobRun.findById(run.id);
+    if (!current || !hostRunExpired(current)) return current ?? run;
+    await createJobRunRecorder(current, (current.summary as Record<string, unknown>) ?? {}).finish(
+      "failed",
+      { phase: "needs_review" },
+      new Error("Execution was interrupted. Check the host before preparing another patch."),
+    );
+    return (await repos.jobRun.findById(run.id)) ?? current;
+  } finally {
+    await lock.release();
+  }
+}
+/** Run from the existing advisory scheduler even when the feed/check policy is
+ * unavailable. This only closes expired records; it cannot issue host commands. */
+export async function recoverHostPatchRuns() {
+  const deadline = Date.now() + 5000;
+  const runs = await repos.jobRun.listRecent({
+    jobIdPrefix: "security:patch:",
+    status: "running",
+    startedBefore: new Date(Date.now() - 15 * 60_000),
+    limit: 100,
+  });
+  for (const run of runs) {
+    if (Date.now() >= deadline) break;
+    await recoverInterruptedHostRun(run);
   }
 }
 
 export async function hostPatchRuns(ctx: ExecutionContext, id: string) {
   await host(ctx, id);
   const runs = await repos.jobRun.listRecent({ jobId: jobKey(id), serverId: id, limit: 30 });
-  for (const run of runs) {
-    // Never retry an interrupted privileged operation. The host must be inspected first.
-    const waitingForBoot = (run.summary as Record<string, unknown> | null)?.phase === "rebooting";
-    if (
-      run.status === "running" &&
-      Date.now() - run.startedAt.getTime() > (waitingForBoot ? 30 : 15) * 60_000
-    ) {
-      const lock = await tryAcquireAdvisoryLock(runKey(id));
-      if (lock) {
-        try {
-          await repos.jobRun.finish(run.id, {
-            status: "failed",
-            error: "Execution was interrupted. Check the host before preparing another patch.",
-            summary: { ...(run.summary as object), phase: "needs_review" },
-          });
-          run.status = "failed";
-          run.summary = { ...(run.summary as object), phase: "needs_review" };
-          run.error = "Execution was interrupted. Check the host before preparing another patch.";
-        } finally {
-          await lock.release();
-        }
-      }
-    }
-  }
+  for (let i = 0; i < runs.length; i++) runs[i] = await recoverInterruptedHostRun(runs[i]!);
   return runs.map((run) => ({
     ...run,
     summary: run.summary as Record<string, unknown> | null,
@@ -691,3 +837,29 @@ export const serverSecurityResources = {
   applySecurityPatch: applyHostPatch,
   securityRuns: hostPatchRuns,
 };
+
+/** Same durable run stream as Jobs, authorized by this server rather than instance-wide job access. */
+export async function hostPatchRunEvents(
+  ctx: ExecutionContext,
+  id: string,
+  runId: string,
+  signal?: AbortSignal,
+) {
+  const load = async () => {
+    await authorization.authorize(
+      { ...ctx, scopeMode: "fixed" },
+      {
+        resourceType: "server",
+        resourceId: id,
+        action: "admin",
+      },
+    );
+    await host(ctx, id);
+    const run = await repos.jobRun.findById(runId);
+    if (!run || run.serverId !== id || run.jobId !== jobKey(id))
+      throw new AppError("Run not found", 404);
+    return recoverInterruptedHostRun(run);
+  };
+  await load();
+  return jobRunEvents(runId, load, signal);
+}
