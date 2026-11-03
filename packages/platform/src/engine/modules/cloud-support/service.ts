@@ -208,6 +208,33 @@ export class CloudSupportService {
     return receipt(await this.options.repo.create({ id, inputHash, ...value }));
   }
 
+  /** Trusted worker entry point. One operation owns one support case and one
+   * customer email, including concurrent workers and retries after a crash. */
+  async reportProvisioningFailure(input: {
+    workspaceId: string; operationId: string; serverName: string; attempts: number;
+    owner: { id: string; name: string; email: string } | null;
+  }) {
+    this.requireCloud();
+    const id = `SUP-${hash(`provisioning:${input.workspaceId}:${input.operationId}`).slice(0, 24).toUpperCase()}`;
+    const existing = await this.options.repo.find(id);
+    if (existing) {
+      if (existing.status !== "open") await this.options.repo.setStatus(id, "open");
+      return receipt(existing);
+    }
+    return receipt(await this.options.repo.create({
+      id, inputHash: hash(`provisioning:${input.workspaceId}:${input.operationId}`),
+      ownerUserId: input.owner?.id ?? null,
+      name: input.owner?.name || "OpenShip Cloud",
+      email: input.owner?.email || SUPPORT_EMAIL,
+      category: "deployment", source: "support",
+      subject: "We're resolving an issue with your OpenShip server",
+      message: `Initial provisioning needs support review.\nServer: ${input.serverName}\nWorkspace: ${input.workspaceId}\nOperation: ${input.operationId}\nAttempts: ${input.attempts}\nAutomatic provisioning attempts have stopped. The customer's subscription and existing resources remain recorded.`,
+    }, {
+      sendReceipt: !!input.owner,
+      receiptBody: `We couldn't finish setting up your OpenShip server, “${input.serverName}”.\n\nOur team has been notified and is working to resolve it. You don't need to submit another payment. We'll update you by email.`,
+    }));
+  }
+
   async list(input: { status?: CloudSupportTicket["status"]; before?: string; limit: number }) {
     this.requireCloud();
     const rows = await this.options.repo.list(input);
