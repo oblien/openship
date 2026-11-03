@@ -34,7 +34,6 @@
     "@actions/workflow-parser": "0.3.61",
     "@better-auth/core": "1.7.7",
     "@better-auth/drizzle-adapter": "1.7.7",
-    "@better-auth/mcp": "1.7.7",
     "@better-auth/oauth-provider": "1.7.7",
     "@better-auth/passkey": "1.7.7",
     "@octokit/auth-oauth-device": "^8.0.3",

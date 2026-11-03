@@ -4,7 +4,7 @@ import { betterAuth, type User } from "better-auth";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, jwt, emailOTP } from "better-auth/plugins";
-import { mcp } from "@better-auth/mcp";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { organization } from "better-auth/plugins/organization";
 import { db, getDriver, repos, schema, and, eq, gt, sql } from "@repo/db";
 import { env, runtimeTarget, runtimeTargetId, trustedOrigins, localDashboardUrl } from "../config/env";
@@ -537,10 +537,15 @@ export const auth = betterAuth({
       },
       jwks: { keyPairConfig: { alg: "RS256" } },
     }),
-    mcp({
-      resource: `${resolveAuthBaseUrl()}/api/mcp`,
-      resources: [`${resolveAuthBaseUrl()}/api/proxy/api/mcp`],
-      clientRegistrationDefaultResources: [`${resolveAuthBaseUrl()}/api/proxy/api/mcp`],
+    // Openship owns MCP transport, discovery and request-scoped resources. Use
+    // the provider directly so an HTTP public URL during setup cannot prevent
+    // the entire authentication service from starting.
+    oauthProvider({
+      resources: [`${resolveAuthBaseUrl()}/api/mcp`, `${resolveAuthBaseUrl()}/api/proxy/api/mcp`],
+      clientRegistrationDefaultResources: [
+        `${resolveAuthBaseUrl()}/api/mcp`,
+        `${resolveAuthBaseUrl()}/api/proxy/api/mcp`,
+      ],
       // Migrated 1.6 clients predate resource links. Both enabled resources name
       // this same server; per-user permissions remain enforced by Openship.
       enforcePerClientResources: false,

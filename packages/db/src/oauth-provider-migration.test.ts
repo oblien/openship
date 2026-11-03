@@ -1,36 +1,49 @@
 import { PGlite } from "@electric-sql/pglite";
-import { readFile } from "node:fs/promises";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 it("migrates client registrations without reusing old grants or changing account identities", async () => {
   const db = new PGlite();
+  const orm = drizzle(db);
+  const migrations = fileURLToPath(new URL("../drizzle/", import.meta.url));
+  const journal = JSON.parse(await readFile(join(migrations, "meta/_journal.json"), "utf8"));
+  const entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 218);
+  const prefix = await mkdtemp(join(tmpdir(), "oauth-provider-0218-"));
   try {
+    await mkdir(join(prefix, "meta"));
+    await writeFile(join(prefix, "meta/_journal.json"), JSON.stringify({ ...journal, entries }));
+    for (const entry of entries)
+      await copyFile(join(migrations, `${entry.tag}.sql`), join(prefix, `${entry.tag}.sql`));
+    await migrate(orm, { migrationsFolder: prefix });
     await db.exec(`
-      CREATE TABLE "user" (id text PRIMARY KEY);
-      CREATE TABLE "session" (id text PRIMARY KEY);
-      CREATE TABLE account (id text PRIMARY KEY, provider_id text, account_id text);
-      CREATE TABLE oauth_application (
-        id text PRIMARY KEY, client_id text UNIQUE, client_secret text, disabled boolean,
-        name text, icon text, metadata text, user_id text, redirect_urls text, type text,
-        created_at timestamp, updated_at timestamp
-      );
-      CREATE TABLE oauth_access_token (id text PRIMARY KEY, access_token text, refresh_token text,
-        access_token_expires_at timestamp DEFAULT (now() + interval '1 day'),
-        refresh_token_expires_at timestamp DEFAULT (now() + interval '30 days'));
-      INSERT INTO "user" VALUES ('user-1');
-      INSERT INTO account VALUES ('account-1', 'oidc', '["https://idp.example/", "subject-1"]');
-      INSERT INTO oauth_application VALUES
+      INSERT INTO "user" (id, name, email) VALUES ('user-1', 'Owner', 'owner@example.test');
+      INSERT INTO account (id, user_id, provider_id, account_id)
+        VALUES ('account-1', 'user-1', 'oidc', '["https://idp.example/", "subject-1"]');
+      INSERT INTO oauth_application (
+        id, client_id, client_secret, disabled, name, icon, metadata, user_id,
+        redirect_urls, type, created_at, updated_at
+      ) VALUES
         ('a', 'public-client', NULL, false, 'Native client', NULL, '{"label":"kept"}', 'user-1',
          'http://127.0.0.1:4321/callback,http://localhost:4321/callback', 'public', now(), now()),
         ('b', 'confidential-client', 'existing-sha256-hash', true, 'Web client', NULL, NULL, NULL,
          'https://client.example/callback', 'web', now(), now());
-      INSERT INTO oauth_access_token (id, access_token, refresh_token) VALUES ('old', 'legacy-access-token', 'legacy-refresh-token');
+      INSERT INTO oauth_access_token (
+        id, access_token, refresh_token, access_token_expires_at, refresh_token_expires_at,
+        client_id, user_id, scopes
+      ) VALUES ('old', 'legacy-access-token', 'legacy-refresh-token',
+        now() + interval '1 day', now() + interval '30 days', 'public-client', 'user-1', 'openid');
     `);
     const migration = await readFile(
       new URL("../drizzle/0219_oauth_provider.sql", import.meta.url),
       "utf8",
     );
-    await db.exec(migration);
+    await migrate(orm, { migrationsFolder: migrations });
+    await migrate(orm, { migrationsFolder: migrations });
     expect(
       (
         await db.query(`SELECT client_id, client_secret, disabled, redirect_uris,
@@ -70,7 +83,7 @@ it("migrates client registrations without reusing old grants or changing account
     ).toEqual([
       { id: "old", access_token: "legacy-access-token", refresh_token: "legacy-refresh-token" },
     ]);
-    expect((await db.query("SELECT * FROM account")).rows).toEqual([
+    expect((await db.query("SELECT id, provider_id, account_id FROM account")).rows).toEqual([
       { id: "account-1", provider_id: "oidc", account_id: '["https://idp.example/", "subject-1"]' },
     ]);
     expect(
@@ -89,5 +102,6 @@ it("migrates client registrations without reusing old grants or changing account
     ).toEqual([{ disabled: true, name: "Updated" }]);
   } finally {
     await db.close();
+    await rm(prefix, { recursive: true, force: true });
   }
 });
