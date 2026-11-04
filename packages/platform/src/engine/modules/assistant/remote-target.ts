@@ -275,7 +275,15 @@ export async function createRemoteAssistantClient(
             await access.run((ex) => ex.exec(`kill -TERM ${lease.pid}`));
           } catch (error) {
             // A reachable busy daemon must not be replaced. Only transport failure permits a fresh start.
-            if (error && typeof error === "object" && "status" in error) throw error;
+            // Managed gateways report a dead loopback endpoint as 502/503/504.
+            // Confirm it is unreachable inside the guest before rebuilding it.
+            if (
+              error &&
+              typeof error === "object" &&
+              "status" in error &&
+              ![502, 503, 504].includes(Number(error.status))
+            )
+              throw error;
             const output = await access.executor.exec(
               `curl -s --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:${record.port}/healthz || true`,
             );

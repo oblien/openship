@@ -39,6 +39,9 @@ export const authClient = createAuthClient({
 // behavior to OAuth actions so changing organizations cannot resume the grant.
 const oauthClient = createAuthClient({
   ...clientOptions,
+  // The consent form owns its continuation. An automatic redirect would race
+  // the inline completion and consume the same single-use callback twice.
+  disableDefaultFetchPlugins: true,
   plugins: [oauthProviderClient()],
 });
 

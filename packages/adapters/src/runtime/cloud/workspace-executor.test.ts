@@ -3,6 +3,11 @@ import type { Runtime } from "oblien";
 import { withManagedCommandTracking } from "./command-tracking";
 import type { ManagedCommandRef } from "@repo/core";
 import { CloudWorkspaceExecutor } from "./workspace-executor";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 
 let executor: CloudWorkspaceExecutor;
 let stream: ReturnType<typeof vi.fn>;
@@ -289,4 +294,35 @@ describe("workspace command transport", () => {
     expect(commands).toHaveBeenCalledTimes(1);
     expect(files.delete).toHaveBeenCalledOnce();
   });
+
+  it.each([undefined, 0o600, 0o700])(
+    "preserves mode %s when the provider atomically replaces an uploaded file",
+    async (mode) => {
+      const directory = await mkdtemp(join(tmpdir(), "openship-cloud-file-mode-"));
+      const run = promisify(execFile);
+      const path = join(directory, "launch");
+      vi.spyOn(executor, "exec").mockImplementation(
+        async (command) => (await run("/bin/sh", ["-c", command])).stdout,
+      );
+      files.write.mockImplementation(
+        async (input: { fullPath: string; content: string; mode?: string }) => {
+          // The provider writes a new inode, defaulting to 0644. A chmod on the
+          // placeholder cannot survive this replacement unless mode is supplied.
+          const upload = `${input.fullPath}.upload`;
+          await writeFile(upload, input.content, { mode: parseInt(input.mode ?? "644", 8) });
+          await rename(upload, input.fullPath);
+          return { success: true };
+        },
+      );
+      try {
+        const content = "#!/bin/sh\nprintf 'agent-started'\n";
+        await executor.writeFile(path, content, { mode });
+        expect((await stat(path)).mode & 0o777).toBe(mode ?? 0o600);
+        expect(await readFile(path, "utf8")).toBe(content);
+        if (mode === 0o700) expect((await run(path)).stdout).toBe("agent-started");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });

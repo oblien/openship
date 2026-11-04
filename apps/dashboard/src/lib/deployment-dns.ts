@@ -13,6 +13,33 @@ interface PersistedDomainIdentity {
   hostname?: unknown;
 }
 
+interface PersistedDeploymentForDns {
+  activeDeploymentId?: unknown;
+  deployTarget?: unknown;
+  serverId?: unknown;
+  workspaceId?: unknown;
+  domains?: readonly PersistedDomainIdentity[];
+}
+
+type DeploymentDnsConfig = Pick<DeploymentConfig, "publicEndpoints" | "services" | "monorepoApps"> &
+  Partial<
+    Pick<DeploymentConfig, "serviceDeploymentMode" | "deployTarget" | "serverId" | "workspaceId">
+  >;
+
+function sameDeploymentDestination(
+  config: DeploymentDnsConfig,
+  project: PersistedDeploymentForDns,
+) {
+  if (!project.activeDeploymentId || config.deployTarget !== project.deployTarget) return false;
+  if (config.deployTarget === "local") return true;
+  if (config.deployTarget !== "server" && config.deployTarget !== "cloud") return false;
+  return (
+    Boolean(config.serverId || (config.deployTarget === "cloud" && config.workspaceId)) &&
+    (config.serverId ?? null) === (project.serverId ?? null) &&
+    (config.workspaceId ?? null) === (project.workspaceId ?? null)
+  );
+}
+
 interface AppInstallRouteForDns {
   mode?: string;
   customDomain?: string | null;
@@ -103,8 +130,8 @@ function groupCustomHostnames(hostnames: readonly string[]): DeploymentDnsTarget
  * from accidentally supporting only one deployment shape (#663).
  */
 export function deploymentDnsTargets(
-  config: Pick<DeploymentConfig, "publicEndpoints" | "services" | "monorepoApps"> &
-    Partial<Pick<DeploymentConfig, "serviceDeploymentMode">>,
+  config: DeploymentDnsConfig,
+  project?: PersistedDeploymentForDns | null,
 ): DeploymentDnsTarget[] {
   const hostnames: string[] = [];
   const add = (hostname: string) => {
@@ -127,5 +154,15 @@ export function deploymentDnsTargets(
     if (service.domainType === "custom") add(normalizeCustomHostname(service.customDomain ?? ""));
   }
 
-  return groupCustomHostnames(hostnames);
+  // An existing route on the same serving destination needs no new DNS setup.
+  // Filter before grouping apex/www so adding only www still gets its own preview.
+  const existing =
+    project && sameDeploymentDestination(config, project)
+      ? new Set(
+          (project.domains ?? []).flatMap((domain) =>
+            typeof domain.hostname === "string" ? [normalizeCustomHostname(domain.hostname)] : [],
+          ),
+        )
+      : new Set<string>();
+  return groupCustomHostnames(hostnames.filter((hostname) => !existing.has(hostname)));
 }

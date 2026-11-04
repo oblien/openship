@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { createServer as createTlsServer, createSecureContext, TLSSocket } from 'node:tls';
 
-const [mode, dir] = process.argv.slice(2);
+const [mode, dir, allowedSender] = process.argv.slice(2);
 const key = readFileSync(join(dir, 'key.pem'));
 const cert = readFileSync(join(dir, 'cert.pem'));
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -14,6 +14,8 @@ function attach(socket, secure, greeting = true) {
   if (greeting) socket.write('220 localhost Test SMTP server\r\n');
   let buffer = '';
   let data = false;
+  let from = '';
+  let message = '';
   const read = (chunk) => {
     buffer += chunk.toString();
     let end;
@@ -23,9 +25,9 @@ function attach(socket, secure, greeting = true) {
       if (data) {
         if (line === '.') {
           data = false;
-          emit({ delivered: true, secure });
+          emit({ delivered: true, secure, ...(allowedSender ? { from, message } : {}) });
           socket.write('250 Message accepted\r\n');
-        }
+        } else if (allowedSender) message += line.replace(/^\.\./, '.') + '\r\n';
         continue;
       }
       const [command, method, credential] = line.split(' ');
@@ -53,10 +55,16 @@ function attach(socket, secure, greeting = true) {
       } else if (command === 'AUTH' && method === 'PLAIN' && credential) {
         emit({ credential: Buffer.from(credential, 'base64').toString(), secure });
         socket.write('235 Authenticated\r\n');
-      } else if (command === 'MAIL' || command === 'RCPT') {
+      } else if (command === 'MAIL') {
+        from = line.match(/^MAIL FROM:<([^>]+)>/i)?.[1] ?? '';
+        socket.write(allowedSender && from !== allowedSender
+          ? '550 Sender address rejected: not owned by authenticated user\r\n'
+          : '250 OK\r\n');
+      } else if (command === 'RCPT') {
         socket.write('250 OK\r\n');
       } else if (command === 'DATA') {
         data = true;
+        message = '';
         socket.write('354 Send message\r\n');
       } else if (command === 'QUIT') {
         socket.end('221 Goodbye\r\n');

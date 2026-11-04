@@ -401,6 +401,9 @@ wizard with the fresh source and saved settings/destination; cancel performs no
 synchronization. Show the change summary in the wizard and validate its source
 revision before deploying. Retire removed services through normal deployment
 cleanup while preserving their persistent data and deployment history.
+Deploy asks for DNS setup only for newly selected custom hostnames or a changed
+destination. Existing hostnames on the same deployed destination continue directly;
+adding only a www hostname asks for that hostname alone.
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
@@ -615,7 +618,10 @@ check retryable before starting the move.
   Keep the minimum beside available earnings. Show Request payout only for an enabled participant
   with enough available funds, opening the shared modal on demand. Public referral pages
   reuse the Cloud catalog, pricing cards and interval control; a chosen plan continues
-  through sign-in to the existing checkout with its referral intact.
+  through sign-in to the existing checkout with its referral intact. Verified referral
+  discounts lead each eligible card with the reduced price beside a struck-through
+  original. Show the discounted full annual charge and discount duration too.
+  Applying or removing a code in checkout updates these same cards.
   Link creation starts with a compact discount step, then expands to plan and billing
   interval selection with per-payment earnings. Use one card per plan with monthly and
   yearly choices inside; the whole choice is a keyboard-accessible checkbox. Keep link

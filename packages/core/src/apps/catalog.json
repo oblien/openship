@@ -8753,6 +8753,2195 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "id": "prometheus",
+      "name": "Prometheus",
+      "description": "Metrics collection and alerting toolkit: scrape your services, query time series and power Grafana dashboards.",
+      "kind": "template",
+      "logo": "prometheus",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "metrics",
+        "observability"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "prometheus",
+          "image": "prom/prometheus:v3.15.1",
+          "exposed": false,
+          "volumes": [
+            "prometheus_data:/prometheus",
+            "prometheus_config:/etc/prometheus"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 6,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "prometheus-access",
+          "image": "caddy:2.11.7-alpine",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "prometheus"
+          ],
+          "exposed": true,
+          "exposedPort": 8080,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "secretEnv": [
+            "OPENSHIP_ADMIN_PASSWORD"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/access.sh"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 128,
+            "diskMb": 512
+          }
+        }
+      ],
+      "connection": {
+        "title": "Connect to Prometheus",
+        "description": "Sign in with the generated credentials. Use the same HTTP Basic credentials for clients and integrations.",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Prometheus",
+            "source": "publicUrl:prometheus-access",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "user",
+            "label": "Username",
+            "source": "env:prometheus-access:OPENSHIP_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:prometheus-access:OPENSHIP_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "note": "The private backend is available to services in this project. Keep public access behind HTTPS."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Metrics collection",
+            "description": "Scrape metrics from your apps, servers and exporters."
+          },
+          {
+            "title": "PromQL queries",
+            "description": "Query and graph time series from the built-in UI."
+          },
+          {
+            "title": "Works with Grafana",
+            "description": "Add it as a data source in the Grafana app."
+          }
+        ]
+      },
+      "repository": "https://github.com/prometheus/prometheus",
+      "minEngine": "0.9.2",
+      "endpoints": [
+        {
+          "service": "prometheus-access",
+          "port": 8080,
+          "label": "Prometheus",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "service": "prometheus-access",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Username",
+          "default": "admin",
+          "required": true
+        },
+        {
+          "service": "prometheus-access",
+          "key": "OPENSHIP_ADMIN_PASSWORD",
+          "label": "Password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "files": [
+        {
+          "service": "prometheus-access",
+          "path": "/etc/openship/access.sh",
+          "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/access.Caddyfile --adapter caddyfile\n"
+        },
+        {
+          "service": "prometheus-access",
+          "path": "/etc/openship/access.Caddyfile",
+          "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy prometheus:9090\n}\n"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "loki",
+      "name": "Loki",
+      "description": "Log aggregation from Grafana Labs: collect logs from your apps and servers and query them in Grafana.",
+      "kind": "template",
+      "logo": "loki",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "logs",
+        "observability"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "loki",
+          "image": "grafana/loki:3.7.9",
+          "exposed": false,
+          "commandArgv": [
+            "-config.file=/etc/loki/local-config.yaml",
+            "-compactor.retention-enabled=true",
+            "-compactor.delete-request-store=filesystem",
+            "-store.retention=744h"
+          ],
+          "volumes": [
+            "loki_data:/loki"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "loki-access",
+          "image": "caddy:2.11.7-alpine",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "loki"
+          ],
+          "exposed": true,
+          "exposedPort": 8080,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "secretEnv": [
+            "OPENSHIP_ADMIN_PASSWORD"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/access.sh"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 128,
+            "diskMb": 512
+          }
+        }
+      ],
+      "connection": {
+        "title": "Connect to Loki",
+        "description": "Sign in with the generated credentials. Use the same HTTP Basic credentials for clients and integrations.",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Loki",
+            "source": "publicUrl:loki-access",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "user",
+            "label": "Username",
+            "source": "env:loki-access:OPENSHIP_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:loki-access:OPENSHIP_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "note": "The private backend is available to services in this project. Keep public access behind HTTPS."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Log aggregation",
+            "description": "Collect logs from apps, containers and servers in one place."
+          },
+          {
+            "title": "LogQL queries",
+            "description": "Search and filter logs by label from Grafana."
+          },
+          {
+            "title": "Bounded storage",
+            "description": "Old logs are deleted after 31 days."
+          }
+        ]
+      },
+      "repository": "https://github.com/grafana/loki",
+      "endpoints": [
+        {
+          "service": "loki-access",
+          "port": 8080,
+          "label": "Loki",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "service": "loki-access",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Username",
+          "default": "admin",
+          "required": true
+        },
+        {
+          "service": "loki-access",
+          "key": "OPENSHIP_ADMIN_PASSWORD",
+          "label": "Password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "files": [
+        {
+          "service": "loki-access",
+          "path": "/etc/openship/access.sh",
+          "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/access.Caddyfile --adapter caddyfile\n"
+        },
+        {
+          "service": "loki-access",
+          "path": "/etc/openship/access.Caddyfile",
+          "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy loki:3100\n}\n"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "victoriametrics",
+      "name": "VictoriaMetrics",
+      "description": "Fast, resource-efficient time series database for long-term metrics, compatible with Prometheus and Grafana.",
+      "kind": "template",
+      "logo": "victoriametrics",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "metrics",
+        "observability"
+      ],
+      "framework": "docker-compose",
+      "configFields": [
+        {
+          "key": "httpAuth_password",
+          "service": "victoriametrics",
+          "label": "Password",
+          "help": "Auto-generated. Every request except /health needs the username admin and this password.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "services": [
+        {
+          "name": "victoriametrics",
+          "image": "victoriametrics/victoria-metrics:v1.154.1",
+          "exposedPort": 8428,
+          "exposed": true,
+          "commandArgv": [
+            "-storageDataPath=/storage",
+            "-retentionPeriod=1y",
+            "-envflag.enable",
+            "-httpAuth.username=admin"
+          ],
+          "secretEnv": [
+            "httpAuth_password"
+          ],
+          "volumes": [
+            "victoriametrics_data:/storage"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8428/health || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 6,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "connection": {
+        "title": "Connect to VictoriaMetrics",
+        "description": "Use it as a Prometheus data source in Grafana, or as a remote_write target for Prometheus, with basic auth (username admin and the password below).",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "VictoriaMetrics",
+            "source": "publicUrl:victoriametrics",
+            "kind": "url",
+            "recommended": true,
+            "help": "The built-in vmui query page is at /vmui."
+          },
+          {
+            "id": "password",
+            "label": "Password (user: admin)",
+            "source": "env:victoriametrics:httpAuth_password",
+            "secret": true
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "note": "Metrics are kept for one year in the victoriametrics_data volume. Send Prometheus data to /api/v1/write."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Long-term metrics",
+            "description": "Store a year of metrics with high compression."
+          },
+          {
+            "title": "Prometheus compatible",
+            "description": "Accepts remote_write and answers PromQL queries."
+          },
+          {
+            "title": "Protected by default",
+            "description": "Basic auth with a generated password."
+          }
+        ]
+      },
+      "repository": "https://github.com/VictoriaMetrics/VictoriaMetrics",
+      "endpoints": [
+        {
+          "service": "victoriametrics",
+          "port": 8428,
+          "label": "VictoriaMetrics",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "id": "beszel",
+      "name": "Beszel",
+      "description": "Lightweight server monitoring with historical metrics, Docker stats, alerts, and a clean web dashboard.",
+      "repository": "https://github.com/henrygd/beszel",
+      "kind": "template",
+      "logo": "beszel",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "metrics",
+        "docker",
+        "alerts"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "beszel",
+          "image": "henrygd/beszel:0.19.0",
+          "exposedPort": 8090,
+          "exposed": true,
+          "environment": {
+            "APP_URL": "{{publicUrl:beszel}}"
+          },
+          "secretEnv": [
+            "USER_PASSWORD"
+          ],
+          "volumes": [
+            "beszel_data:/beszel_data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "/beszel",
+              "health",
+              "--url",
+              "http://127.0.0.1:8090"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "USER_EMAIL",
+          "service": "beszel",
+          "label": "Initial user email",
+          "help": "Email for the first Beszel account. Change it in Beszel after signing in if needed.",
+          "type": "text",
+          "default": "admin@openship.local",
+          "required": true
+        },
+        {
+          "key": "USER_PASSWORD",
+          "service": "beszel",
+          "label": "Initial user password",
+          "help": "Auto-generated password for the first Beszel account.",
+          "type": "password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Sign in to Beszel",
+        "description": "Open the monitoring hub, then install a Beszel agent on each system you want to monitor.",
+        "guide": {
+          "intro": "Beszel stores monitoring history in its persistent data volume. Agents connect back to this hub from each monitored system.",
+          "useHint": "Sign in first, add a system, then follow Beszel's generated agent installation instructions.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Beszel Hub",
+            "source": "publicUrl:beszel",
+            "kind": "url",
+            "recommended": true,
+            "help": "Open the monitoring dashboard in your browser."
+          },
+          {
+            "id": "email",
+            "label": "Initial email",
+            "source": "env:beszel:USER_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Initial password",
+            "source": "env:beszel:USER_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Use the generated credentials above, then change the email or password in Beszel if needed. Install agents from the Add System screen; the hub template does not mount the host Docker socket."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "beszel",
+          "port": 8090,
+          "label": "Beszel Hub",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "minEngine": "0.9.0"
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "id": "pgadmin4",
+      "name": "pgAdmin4",
+      "description": "Browser-based administration and SQL client for PostgreSQL — point it at any Postgres server, not only one deployed here.",
+      "kind": "template",
+      "logo": "pgadmin4",
+      "category": "database",
+      "repository": "https://github.com/pgadmin-org/pgadmin4",
+      "tags": [
+        "postgres",
+        "sql",
+        "admin",
+        "database"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "pgadmin4",
+          "image": "dpage/pgadmin4:9.18",
+          "exposed": true,
+          "exposedPort": 5050,
+          "routes": [
+            {
+              "port": 5050
+            }
+          ],
+          "restart": "unless-stopped",
+          "volumes": [
+            "pgadmin4_data:/var/lib/pgadmin"
+          ],
+          "environment": {
+            "PGADMIN_DISABLE_POSTFIX": "1",
+            "PGADMIN_LISTEN_PORT": "5050"
+          },
+          "secretEnv": [
+            "PGADMIN_DEFAULT_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:5050/misc/ping"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "60s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "PGADMIN_DEFAULT_EMAIL",
+          "service": "pgadmin4",
+          "label": "pgAdmin email",
+          "default": "admin@example.com",
+          "required": true
+        },
+        {
+          "key": "PGADMIN_DEFAULT_PASSWORD",
+          "service": "pgadmin4",
+          "label": "pgAdmin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "general",
+          "label": "Setup",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "PGADMIN_DEFAULT_EMAIL",
+              "service": "pgadmin4",
+              "label": "pgAdmin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app.",
+              "fullWidth": true
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "pgadmin4",
+          "port": 5050,
+          "label": "pgAdmin4",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to pgAdmin4",
+        "description": "Sign in with the email and generated password below, then add any PostgreSQL server (including another Openship-deployed database's private connection URL) from the app.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "pgAdmin4",
+            "source": "publicUrl:pgadmin4",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:pgadmin4:PGADMIN_DEFAULT_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:pgadmin4:PGADMIN_DEFAULT_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users, saved servers) are preserved on redeployment. These are the initial credentials."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Standalone administration",
+            "description": "Connect to any reachable PostgreSQL server, not just one deployed from this catalog."
+          },
+          {
+            "title": "Browser-based SQL client",
+            "description": "Browse schemas, run queries, and manage roles without installing a desktop client."
+          },
+          {
+            "title": "Persistent configuration",
+            "description": "Saved server connections and preferences stay on a project-scoped volume across deployments."
+          }
+        ]
+      },
+      "minEngine": "0.9.0"
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "listmonk",
+      "name": "Listmonk",
+      "description": "Self-hosted newsletter and mailing list manager, with a private PostgreSQL database and a preconfigured administrator.",
+      "kind": "template",
+      "logo": "listmonk",
+      "category": "other",
+      "repository": "https://github.com/knadh/listmonk",
+      "tags": [
+        "newsletter",
+        "mailing-list",
+        "email",
+        "marketing"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "listmonk-db",
+          "image": "postgres:16-alpine",
+          "restart": "unless-stopped",
+          "environment": {
+            "POSTGRES_USER": "listmonk",
+            "POSTGRES_DB": "listmonk"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "listmonk_db_data:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U listmonk -d listmonk"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          }
+        },
+        {
+          "name": "listmonk",
+          "image": "listmonk/listmonk:v6.2.0",
+          "exposed": true,
+          "exposedPort": 9000,
+          "routes": [
+            {
+              "port": 9000
+            }
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "listmonk-db"
+          ],
+          "commandArgv": [
+            "sh",
+            "-c",
+            "./listmonk --install --idempotent --yes && exec ./listmonk"
+          ],
+          "volumes": [
+            "listmonk_uploads:/listmonk/uploads"
+          ],
+          "environment": {
+            "LISTMONK_app__address": "0.0.0.0:9000",
+            "LISTMONK_db__host": "listmonk-db",
+            "LISTMONK_db__port": "5432",
+            "LISTMONK_db__user": "listmonk",
+            "LISTMONK_db__database": "listmonk",
+            "LISTMONK_db__ssl_mode": "disable",
+            "LISTMONK_ADMIN_USER": "admin"
+          },
+          "secretEnv": [
+            "LISTMONK_db__password",
+            "LISTMONK_ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:9000/health || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 10,
+            "startPeriod": "20s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "listmonk-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "listmonk-db"
+        },
+        {
+          "key": "LISTMONK_db__password",
+          "service": "listmonk",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "listmonk-db"
+        },
+        {
+          "key": "LISTMONK_ADMIN_USER",
+          "service": "listmonk",
+          "label": "Admin username",
+          "default": "admin"
+        },
+        {
+          "key": "LISTMONK_ADMIN_PASSWORD",
+          "service": "listmonk",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "listmonk",
+          "port": 9000,
+          "label": "Listmonk",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "listmonk-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "connection": {
+        "title": "Sign in to Listmonk",
+        "description": "Sign in with the username and generated password below. Listmonk's Super Admin account is created from these on first start.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Listmonk",
+            "source": "publicUrl:listmonk",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:listmonk:LISTMONK_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:listmonk:LISTMONK_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. These are the initial credentials."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Newsletters and campaigns",
+            "description": "Compose, schedule, and send to your own subscriber lists."
+          },
+          {
+            "title": "Private database",
+            "description": "Subscribers and campaign data live in a dedicated, project-scoped Postgres instance."
+          },
+          {
+            "title": "No per-subscriber fees",
+            "description": "Self-hosted — no monthly list-size pricing."
+          }
+        ]
+      }
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "otel-collector",
+      "name": "OpenTelemetry Collector",
+      "description": "Receive application traces, metrics, and logs over OTLP on the private project network. Configure exporters for your telemetry backend.",
+      "kind": "template",
+      "logo": "otel-collector",
+      "category": "analytics",
+      "tags": [
+        "observability",
+        "opentelemetry",
+        "otel",
+        "tracing",
+        "metrics",
+        "logs"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "otel-collector",
+          "image": "otel/opentelemetry-collector-contrib:0.164.0",
+          "restart": "unless-stopped",
+          "commandArgv": [
+            "--config=/etc/openship/collector.yaml"
+          ],
+          "volumes": [],
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          }
+        }
+      ],
+      "$schema": "https://openship.io/app.schema.json",
+      "minEngine": "0.9.0",
+      "repository": "https://github.com/open-telemetry/opentelemetry-collector-contrib",
+      "endpoints": [
+        {
+          "service": "otel-collector",
+          "port": 4317,
+          "label": "OTLP gRPC",
+          "kind": "tcp",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ],
+          "scope": "internal"
+        },
+        {
+          "service": "otel-collector",
+          "port": 4318,
+          "label": "OTLP HTTP",
+          "kind": "tcp",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ],
+          "scope": "internal"
+        }
+      ],
+      "connection": {
+        "title": "Connect your telemetry clients",
+        "description": "Use otel-collector:4317 for OTLP gRPC or http://otel-collector:4318 for OTLP HTTP from a service in the same project. Edit the mounted collector configuration in OpenShip service settings and redeploy to set your exporters. The default debug exporter writes received telemetry to service logs; the collector is a pipeline, not persistent storage.",
+        "outputs": []
+      },
+      "files": [
+        {
+          "service": "otel-collector",
+          "path": "/etc/openship/collector.yaml",
+          "content": "receivers:\n  otlp:\n    protocols:\n      grpc:\n        endpoint: 0.0.0.0:4317\n      http:\n        endpoint: 0.0.0.0:4318\nprocessors:\n  memory_limiter:\n    check_interval: 1s\n    limit_mib: 192\n    spike_limit_mib: 32\n  batch: {}\nexporters:\n  debug:\n    verbosity: basic\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [debug]\n    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [debug]\n    logs:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [debug]\n"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "id": "alertmanager",
+      "name": "Alertmanager",
+      "description": "Group, deduplicate, and route Prometheus alerts to your notification channels.",
+      "repository": "https://github.com/prometheus/alertmanager",
+      "kind": "template",
+      "logo": "alertmanager",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "alerts",
+        "observability"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "alertmanager",
+          "image": "prom/alertmanager:v0.34.2",
+          "restart": "unless-stopped",
+          "volumes": [
+            "alertmanager_data:/alertmanager",
+            "alertmanager_config:/etc/alertmanager"
+          ],
+          "entrypointArgv": [
+            "/bin/sh",
+            "-c"
+          ],
+          "commandArgv": [
+            "if [ ! -f /etc/alertmanager/openship.yml ]; then printf '%s\\n' 'route:' '  receiver: default' 'receivers:' '  - name: default' > /etc/alertmanager/openship.yml; fi\nexec /bin/alertmanager --config.file=/etc/alertmanager/openship.yml --storage.path=/alertmanager"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:9093/-/ready"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12
+          },
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          },
+          "exposed": false
+        },
+        {
+          "name": "alertmanager-access",
+          "image": "caddy:2.11.7-alpine",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "alertmanager"
+          ],
+          "exposed": true,
+          "exposedPort": 8080,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "secretEnv": [
+            "OPENSHIP_ADMIN_PASSWORD"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/access.sh"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 128,
+            "diskMb": 512
+          }
+        }
+      ],
+      "minEngine": "0.9.2",
+      "endpoints": [
+        {
+          "service": "alertmanager-access",
+          "port": 8080,
+          "label": "Alertmanager",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "service": "alertmanager-access",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Username",
+          "default": "admin",
+          "required": true
+        },
+        {
+          "service": "alertmanager-access",
+          "key": "OPENSHIP_ADMIN_PASSWORD",
+          "label": "Password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "files": [
+        {
+          "service": "alertmanager-access",
+          "path": "/etc/openship/access.sh",
+          "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/access.Caddyfile --adapter caddyfile\n"
+        },
+        {
+          "service": "alertmanager-access",
+          "path": "/etc/openship/access.Caddyfile",
+          "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy alertmanager:9093\n}\n"
+        }
+      ],
+      "connection": {
+        "title": "Connect to Alertmanager",
+        "description": "Sign in with the generated credentials. Use the same HTTP Basic credentials for clients and integrations.",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Alertmanager",
+            "source": "publicUrl:alertmanager-access",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "user",
+            "label": "Username",
+            "source": "env:alertmanager-access:OPENSHIP_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:alertmanager-access:OPENSHIP_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "note": "The private backend is available to services in this project. Keep public access behind HTTPS."
+        }
+      }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "appwrite",
+      "name": "Appwrite",
+      "description": "Open-source backend for authentication, databases, file storage, and realtime applications. Includes the Appwrite Console and a preconfigured owner.",
+      "kind": "template",
+      "logo": "appwrite",
+      "category": "backend",
+      "repository": "https://github.com/appwrite/appwrite",
+      "framework": "docker-compose",
+      "tags": [
+        "backend",
+        "auth",
+        "database",
+        "storage",
+        "realtime"
+      ],
+      "minResources": {
+        "cpuCores": 2,
+        "memoryMb": 4096,
+        "diskMb": 10240
+      },
+      "services": [
+        {
+          "name": "redis",
+          "image": "redis:7.4.7-alpine",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          },
+          "commandArgv": [
+            "redis-server",
+            "--maxmemory",
+            "192mb",
+            "--maxmemory-policy",
+            "allkeys-lru"
+          ],
+          "volumes": [
+            "appwrite_redis:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "redis-cli ping"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "20s"
+          }
+        },
+        {
+          "name": "postgresql",
+          "image": "appwrite/postgres:0.1.0",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 512,
+            "diskMb": 512
+          },
+          "volumes": [
+            "appwrite_postgres:/var/lib/postgresql"
+          ],
+          "environment": {
+            "POSTGRES_DB": "appwrite",
+            "POSTGRES_USER": "appwrite"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "shmSize": 268435456,
+          "commandArgv": [
+            "postgres",
+            "-c",
+            "max_connections=200"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U appwrite -d appwrite"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "20s"
+          }
+        },
+        {
+          "name": "appwrite-mongodb",
+          "image": "mongo:8.2.5",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 512,
+            "diskMb": 512
+          },
+          "volumes": [
+            "appwrite_mongodb:/data/db",
+            "appwrite_mongodb_key:/data/keyfile"
+          ],
+          "environment": {
+            "MONGO_INITDB_ROOT_USERNAME": "root",
+            "MONGO_INITDB_DATABASE": "appwrite",
+            "MONGO_INITDB_USERNAME": "appwrite"
+          },
+          "secretEnv": [
+            "MONGO_INITDB_ROOT_PASSWORD",
+            "MONGO_INITDB_PASSWORD"
+          ],
+          "entrypointArgv": [
+            "/bin/bash",
+            "/mongo-entrypoint.sh"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "mongosh -u root -p \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval 'try { const h = db.adminCommand({hello: 1}); if (h.isWritablePrimary) quit(0); rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"appwrite-mongodb:27017\"}]}); } catch(e) {} quit(1);' >/dev/null 2>&1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "60s"
+          }
+        },
+        {
+          "name": "clickhouse",
+          "image": "clickhouse/clickhouse-server:26.4.3-alpine",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 1024,
+            "diskMb": 512
+          },
+          "volumes": [
+            "appwrite_usage:/var/lib/clickhouse"
+          ],
+          "environment": {
+            "CLICKHOUSE_DB": "appwrite",
+            "CLICKHOUSE_USER": "appwrite",
+            "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1",
+            "CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS": "1"
+          },
+          "secretEnv": [
+            "CLICKHOUSE_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "clickhouse-client --user \"$CLICKHOUSE_USER\" --password \"$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\" >/dev/null"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "45s"
+          }
+        },
+        {
+          "name": "appwrite-geo",
+          "image": "appwrite/geo:0.3.2",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 192,
+            "diskMb": 512
+          },
+          "secretEnv": [
+            "GEO_SECRET"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "php -r \"exit(json_decode(file_get_contents('http://localhost/v1/health'))->status === 'ok' ? 0 : 1);\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "20s"
+          }
+        },
+        {
+          "name": "appwrite-autogravity",
+          "image": "ghcr.io/appwrite/autogravity:0.0.11",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          },
+          "environment": {
+            "MODEL_BACKEND": "focalnet"
+          }
+        },
+        {
+          "name": "appwrite-exiftool",
+          "image": "ghcr.io/appwrite/exiftool:0.1.1",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 128,
+            "diskMb": 512
+          }
+        },
+        {
+          "name": "appwrite",
+          "image": "appwrite/appwrite:2.7.0",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 1024,
+            "diskMb": 512
+          },
+          "environment": {
+            "_APP_ENV": "production",
+            "_APP_EDITION": "self-hosted",
+            "_APP_LOCALE": "en",
+            "_APP_MEMORY_LIMIT": "512M",
+            "_APP_WORKER_PER_CORE": "1",
+            "_APP_WORKERS_NUM": "1",
+            "_APP_WORKER_MAX_COROUTINES": "8",
+            "_APP_OPTIONS_ABUSE": "enabled",
+            "_APP_OPTIONS_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_PROTECTION": "enabled",
+            "_APP_ROUTER_AUTO_CERTIFICATES": "disabled",
+            "_APP_CONSOLE_WHITELIST_ROOT": "enabled",
+            "_APP_CONSOLE_SCHEMA": "appwrite",
+            "_APP_CONSOLE_SESSION_ALERTS": "disabled",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:appwrite-gateway}}",
+            "_APP_DB_ADAPTER": "postgresql",
+            "_APP_DB_HOST": "postgresql",
+            "_APP_DB_PORT": "5432",
+            "_APP_DB_SCHEMA": "appwrite",
+            "_APP_DB_USER": "appwrite",
+            "_APP_DB_PASS": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_DOCUMENTSDB": "mongodb",
+            "_APP_DB_HOST_DOCUMENTSDB": "appwrite-mongodb",
+            "_APP_DB_PORT_DOCUMENTSDB": "27017",
+            "_APP_DB_SCHEMA_DOCUMENTSDB": "appwrite",
+            "_APP_DB_USER_DOCUMENTSDB": "appwrite",
+            "_APP_DB_PASS_DOCUMENTSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_VECTORSDB": "postgresql",
+            "_APP_DB_HOST_VECTORSDB": "postgresql",
+            "_APP_DB_PORT_VECTORSDB": "5432",
+            "_APP_DB_SCHEMA_VECTORSDB": "appwrite",
+            "_APP_DB_USER_VECTORSDB": "appwrite",
+            "_APP_DB_PASS_VECTORSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_REDIS_HOST": "redis",
+            "_APP_REDIS_PORT": "6379",
+            "_APP_USAGE_STATS": "enabled",
+            "_APP_USAGE_PASS": "{{config:CLICKHOUSE_PASSWORD}}",
+            "_APP_CONNECTIONS_DB_USAGE": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_CONNECTIONS_DB_EXECUTIONS": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_OPENSSL_KEY_V1": "{{config:OPENSHIP_ENCRYPTION_KEY}}",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET": "{{config:OPENSHIP_TRACKING_SECRET}}",
+            "_APP_STORAGE_DEVICE": "Local",
+            "_APP_STORAGE_ANTIVIRUS": "disabled",
+            "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
+            "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
+            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
+            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_FUNCTIONS_RUNTIMES": "",
+            "_APP_SITES_RUNTIMES": "",
+            "_APP_EMBEDDING": "disabled",
+            "_APP_SMTP_HOST": "",
+            "_APP_COMPUTE_CPUS": "1",
+            "_APP_COMPUTE_MEMORY": "512",
+            "_APP_SYSTEM_EMAIL_NAME": "Appwrite",
+            "_APP_SYSTEM_EMAIL_ADDRESS": "noreply@example.com",
+            "_APP_SYSTEM_SECURITY_EMAIL_ADDRESS": "security@example.com",
+            "OPENSHIP_ADMIN_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}",
+            "OPENSHIP_ADMIN_PASSWORD": "{{config:OPENSHIP_ADMIN_PASSWORD}}",
+            "_APP_LOCKING_ENABLED": "enabled",
+            "_APP_OPENSSL_KEY_CURRENT": "1",
+            "_APP_OPENSSL_KEY_OLDEST": "1",
+            "_APP_DNS": "8.8.8.8",
+            "_APP_COMPRESSION_ENABLED": "enabled",
+            "_APP_COMPRESSION_MIN_SIZE_BYTES": "1024",
+            "_APP_TRUSTED_HEADERS": "x-forwarded-for",
+            "_APP_TRUSTED_PROXIES": "127.0.0.1,::1,10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16",
+            "_APP_PWNED_PASSWORDS_DSN": "none://localhost",
+            "_APP_LIMIT_REALTIME_SUBSCRIPTIONS": "100",
+            "_APP_LIMIT_REALTIME_CHANNELS": "100",
+            "_APP_LIMIT_REALTIME_QUERIES": "100",
+            "_APP_LIMIT_DATABASE_BATCH": "100",
+            "_APP_STORAGE_LIMIT": "30000000",
+            "_APP_STORAGE_PREVIEW_LIMIT": "20000000",
+            "_APP_POOL_SIZE_USAGE": "2",
+            "_APP_POOL_SIZE_EXECUTIONS": "2",
+            "_APP_STATS_USAGE_QUEUE_NAME": "v1-stats-usage",
+            "_APP_STATS_RESOURCES_QUEUE_NAME": "v1-stats-resources",
+            "_APP_STATS_RESOURCES_INTERVAL": "3600",
+            "_APP_ALERTS_INTERVAL": "60",
+            "_APP_ALERTS_USAGE_LAG": "120",
+            "_APP_MAINTENANCE_INTERVAL": "86400",
+            "_APP_MAINTENANCE_QUEUE_NAME": "v1-maintenance",
+            "_APP_MAINTENANCE_INACTIVE_INTERVAL": "604800",
+            "_APP_MAINTENANCE_DELAY": "0",
+            "_APP_MAINTENANCE_START_TIME": "00:00",
+            "_APP_MAINTENANCE_RETENTION_CACHE": "2592000",
+            "_APP_MAINTENANCE_RETENTION_EXECUTION": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT_CONSOLE": "15778800",
+            "_APP_MAINTENANCE_RETENTION_ABUSE": "86400",
+            "_APP_MAINTENANCE_RETENTION_SCHEDULES": "86400",
+            "_APP_MAINTENANCE_RETENTION_ALERTS": "7776000",
+            "_APP_MAINTENANCE_RETENTION_USAGE_TTL": "180",
+            "_APP_GRAPHQL_INTROSPECTION": "enabled",
+            "_APP_GRAPHQL_MAX_BATCH_SIZE": "10",
+            "_APP_GRAPHQL_MAX_COMPLEXITY": "250",
+            "_APP_GRAPHQL_MAX_DEPTH": "3",
+            "_APP_DB_MAX_CONNECTIONS": "200",
+            "_APP_DOCUMENTSDB": "enabled",
+            "_APP_VECTORSDB": "enabled",
+            "_APP_SYSTEM_TEAM_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}"
+          },
+          "secretEnv": [
+            "_APP_DB_PASS",
+            "_APP_DB_PASS_DOCUMENTSDB",
+            "_APP_DB_PASS_VECTORSDB",
+            "_APP_USAGE_PASS",
+            "_APP_CONNECTIONS_DB_USAGE",
+            "_APP_CONNECTIONS_DB_EXECUTIONS",
+            "_APP_OPENSSL_KEY_V1",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET",
+            "_APP_GEO_SECRET",
+            "OPENSHIP_ADMIN_PASSWORD"
+          ],
+          "volumes": [
+            "appwrite_uploads:/storage/uploads",
+            "appwrite_imports:/storage/imports",
+            "appwrite_cache:/storage/cache",
+            "appwrite_config:/storage/config",
+            "appwrite_certificates:/storage/certificates",
+            "appwrite_functions:/storage/functions",
+            "appwrite_sites:/storage/sites",
+            "appwrite_builds:/storage/builds"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/start.sh",
+            "api"
+          ],
+          "dependsOn": [
+            "postgresql",
+            "appwrite-mongodb",
+            "redis",
+            "clickhouse",
+            "appwrite-geo",
+            "appwrite-autogravity",
+            "appwrite-exiftool"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "test -f /tmp/.openship-owner-ready && host=\"${OPENSHIP_PUBLIC_URL#*://}\" && host=\"${host%%/*}\" && curl -fsS -o /dev/null -H \"Host: $host\" http://127.0.0.1/v1/health/version"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "120s"
+          }
+        },
+        {
+          "name": "appwrite-worker",
+          "image": "appwrite/appwrite:2.7.0",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 1024,
+            "diskMb": 512
+          },
+          "environment": {
+            "_APP_ENV": "production",
+            "_APP_EDITION": "self-hosted",
+            "_APP_LOCALE": "en",
+            "_APP_MEMORY_LIMIT": "512M",
+            "_APP_WORKER_PER_CORE": "1",
+            "_APP_WORKERS_NUM": "1",
+            "_APP_WORKER_MAX_COROUTINES": "8",
+            "_APP_OPTIONS_ABUSE": "enabled",
+            "_APP_OPTIONS_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_PROTECTION": "enabled",
+            "_APP_ROUTER_AUTO_CERTIFICATES": "disabled",
+            "_APP_CONSOLE_WHITELIST_ROOT": "enabled",
+            "_APP_CONSOLE_SCHEMA": "appwrite",
+            "_APP_CONSOLE_SESSION_ALERTS": "disabled",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:appwrite-gateway}}",
+            "_APP_DB_ADAPTER": "postgresql",
+            "_APP_DB_HOST": "postgresql",
+            "_APP_DB_PORT": "5432",
+            "_APP_DB_SCHEMA": "appwrite",
+            "_APP_DB_USER": "appwrite",
+            "_APP_DB_PASS": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_DOCUMENTSDB": "mongodb",
+            "_APP_DB_HOST_DOCUMENTSDB": "appwrite-mongodb",
+            "_APP_DB_PORT_DOCUMENTSDB": "27017",
+            "_APP_DB_SCHEMA_DOCUMENTSDB": "appwrite",
+            "_APP_DB_USER_DOCUMENTSDB": "appwrite",
+            "_APP_DB_PASS_DOCUMENTSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_VECTORSDB": "postgresql",
+            "_APP_DB_HOST_VECTORSDB": "postgresql",
+            "_APP_DB_PORT_VECTORSDB": "5432",
+            "_APP_DB_SCHEMA_VECTORSDB": "appwrite",
+            "_APP_DB_USER_VECTORSDB": "appwrite",
+            "_APP_DB_PASS_VECTORSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_REDIS_HOST": "redis",
+            "_APP_REDIS_PORT": "6379",
+            "_APP_USAGE_STATS": "enabled",
+            "_APP_USAGE_PASS": "{{config:CLICKHOUSE_PASSWORD}}",
+            "_APP_CONNECTIONS_DB_USAGE": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_CONNECTIONS_DB_EXECUTIONS": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_OPENSSL_KEY_V1": "{{config:OPENSHIP_ENCRYPTION_KEY}}",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET": "{{config:OPENSHIP_TRACKING_SECRET}}",
+            "_APP_STORAGE_DEVICE": "Local",
+            "_APP_STORAGE_ANTIVIRUS": "disabled",
+            "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
+            "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
+            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
+            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_FUNCTIONS_RUNTIMES": "",
+            "_APP_SITES_RUNTIMES": "",
+            "_APP_EMBEDDING": "disabled",
+            "_APP_SMTP_HOST": "",
+            "_APP_COMPUTE_CPUS": "1",
+            "_APP_COMPUTE_MEMORY": "512",
+            "_APP_SYSTEM_EMAIL_NAME": "Appwrite",
+            "_APP_SYSTEM_EMAIL_ADDRESS": "noreply@example.com",
+            "_APP_SYSTEM_SECURITY_EMAIL_ADDRESS": "security@example.com",
+            "_APP_LOCKING_ENABLED": "enabled",
+            "_APP_OPENSSL_KEY_CURRENT": "1",
+            "_APP_OPENSSL_KEY_OLDEST": "1",
+            "_APP_DNS": "8.8.8.8",
+            "_APP_COMPRESSION_ENABLED": "enabled",
+            "_APP_COMPRESSION_MIN_SIZE_BYTES": "1024",
+            "_APP_TRUSTED_HEADERS": "x-forwarded-for",
+            "_APP_TRUSTED_PROXIES": "127.0.0.1,::1,10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16",
+            "_APP_PWNED_PASSWORDS_DSN": "none://localhost",
+            "_APP_LIMIT_REALTIME_SUBSCRIPTIONS": "100",
+            "_APP_LIMIT_REALTIME_CHANNELS": "100",
+            "_APP_LIMIT_REALTIME_QUERIES": "100",
+            "_APP_LIMIT_DATABASE_BATCH": "100",
+            "_APP_STORAGE_LIMIT": "30000000",
+            "_APP_STORAGE_PREVIEW_LIMIT": "20000000",
+            "_APP_POOL_SIZE_USAGE": "2",
+            "_APP_POOL_SIZE_EXECUTIONS": "2",
+            "_APP_STATS_USAGE_QUEUE_NAME": "v1-stats-usage",
+            "_APP_STATS_RESOURCES_QUEUE_NAME": "v1-stats-resources",
+            "_APP_STATS_RESOURCES_INTERVAL": "3600",
+            "_APP_ALERTS_INTERVAL": "60",
+            "_APP_ALERTS_USAGE_LAG": "120",
+            "_APP_MAINTENANCE_INTERVAL": "86400",
+            "_APP_MAINTENANCE_QUEUE_NAME": "v1-maintenance",
+            "_APP_MAINTENANCE_INACTIVE_INTERVAL": "604800",
+            "_APP_MAINTENANCE_DELAY": "0",
+            "_APP_MAINTENANCE_START_TIME": "00:00",
+            "_APP_MAINTENANCE_RETENTION_CACHE": "2592000",
+            "_APP_MAINTENANCE_RETENTION_EXECUTION": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT_CONSOLE": "15778800",
+            "_APP_MAINTENANCE_RETENTION_ABUSE": "86400",
+            "_APP_MAINTENANCE_RETENTION_SCHEDULES": "86400",
+            "_APP_MAINTENANCE_RETENTION_ALERTS": "7776000",
+            "_APP_MAINTENANCE_RETENTION_USAGE_TTL": "180",
+            "_APP_GRAPHQL_INTROSPECTION": "enabled",
+            "_APP_GRAPHQL_MAX_BATCH_SIZE": "10",
+            "_APP_GRAPHQL_MAX_COMPLEXITY": "250",
+            "_APP_GRAPHQL_MAX_DEPTH": "3",
+            "_APP_DB_MAX_CONNECTIONS": "200",
+            "_APP_DOCUMENTSDB": "enabled",
+            "_APP_VECTORSDB": "enabled",
+            "_APP_SYSTEM_TEAM_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}"
+          },
+          "secretEnv": [
+            "_APP_DB_PASS",
+            "_APP_DB_PASS_DOCUMENTSDB",
+            "_APP_DB_PASS_VECTORSDB",
+            "_APP_USAGE_PASS",
+            "_APP_CONNECTIONS_DB_USAGE",
+            "_APP_CONNECTIONS_DB_EXECUTIONS",
+            "_APP_OPENSSL_KEY_V1",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET",
+            "_APP_GEO_SECRET"
+          ],
+          "volumes": [
+            "appwrite_uploads:/storage/uploads",
+            "appwrite_imports:/storage/imports",
+            "appwrite_cache:/storage/cache",
+            "appwrite_config:/storage/config",
+            "appwrite_certificates:/storage/certificates",
+            "appwrite_functions:/storage/functions",
+            "appwrite_sites:/storage/sites",
+            "appwrite_builds:/storage/builds"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/start.sh",
+            "worker"
+          ],
+          "dependsOn": [
+            "postgresql",
+            "appwrite-mongodb",
+            "redis",
+            "clickhouse",
+            "appwrite-geo",
+            "appwrite-autogravity",
+            "appwrite-exiftool"
+          ]
+        },
+        {
+          "name": "appwrite-scheduler",
+          "image": "appwrite/appwrite:2.7.0",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          },
+          "environment": {
+            "_APP_ENV": "production",
+            "_APP_EDITION": "self-hosted",
+            "_APP_LOCALE": "en",
+            "_APP_MEMORY_LIMIT": "512M",
+            "_APP_WORKER_PER_CORE": "1",
+            "_APP_WORKERS_NUM": "1",
+            "_APP_WORKER_MAX_COROUTINES": "8",
+            "_APP_OPTIONS_ABUSE": "enabled",
+            "_APP_OPTIONS_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_PROTECTION": "enabled",
+            "_APP_ROUTER_AUTO_CERTIFICATES": "disabled",
+            "_APP_CONSOLE_WHITELIST_ROOT": "enabled",
+            "_APP_CONSOLE_SCHEMA": "appwrite",
+            "_APP_CONSOLE_SESSION_ALERTS": "disabled",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:appwrite-gateway}}",
+            "_APP_DB_ADAPTER": "postgresql",
+            "_APP_DB_HOST": "postgresql",
+            "_APP_DB_PORT": "5432",
+            "_APP_DB_SCHEMA": "appwrite",
+            "_APP_DB_USER": "appwrite",
+            "_APP_DB_PASS": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_DOCUMENTSDB": "mongodb",
+            "_APP_DB_HOST_DOCUMENTSDB": "appwrite-mongodb",
+            "_APP_DB_PORT_DOCUMENTSDB": "27017",
+            "_APP_DB_SCHEMA_DOCUMENTSDB": "appwrite",
+            "_APP_DB_USER_DOCUMENTSDB": "appwrite",
+            "_APP_DB_PASS_DOCUMENTSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_VECTORSDB": "postgresql",
+            "_APP_DB_HOST_VECTORSDB": "postgresql",
+            "_APP_DB_PORT_VECTORSDB": "5432",
+            "_APP_DB_SCHEMA_VECTORSDB": "appwrite",
+            "_APP_DB_USER_VECTORSDB": "appwrite",
+            "_APP_DB_PASS_VECTORSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_REDIS_HOST": "redis",
+            "_APP_REDIS_PORT": "6379",
+            "_APP_USAGE_STATS": "enabled",
+            "_APP_USAGE_PASS": "{{config:CLICKHOUSE_PASSWORD}}",
+            "_APP_CONNECTIONS_DB_USAGE": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_CONNECTIONS_DB_EXECUTIONS": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_OPENSSL_KEY_V1": "{{config:OPENSHIP_ENCRYPTION_KEY}}",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET": "{{config:OPENSHIP_TRACKING_SECRET}}",
+            "_APP_STORAGE_DEVICE": "Local",
+            "_APP_STORAGE_ANTIVIRUS": "disabled",
+            "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
+            "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
+            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
+            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_FUNCTIONS_RUNTIMES": "",
+            "_APP_SITES_RUNTIMES": "",
+            "_APP_EMBEDDING": "disabled",
+            "_APP_SMTP_HOST": "",
+            "_APP_COMPUTE_CPUS": "1",
+            "_APP_COMPUTE_MEMORY": "512",
+            "_APP_SYSTEM_EMAIL_NAME": "Appwrite",
+            "_APP_SYSTEM_EMAIL_ADDRESS": "noreply@example.com",
+            "_APP_SYSTEM_SECURITY_EMAIL_ADDRESS": "security@example.com",
+            "_APP_LOCKING_ENABLED": "enabled",
+            "_APP_OPENSSL_KEY_CURRENT": "1",
+            "_APP_OPENSSL_KEY_OLDEST": "1",
+            "_APP_DNS": "8.8.8.8",
+            "_APP_COMPRESSION_ENABLED": "enabled",
+            "_APP_COMPRESSION_MIN_SIZE_BYTES": "1024",
+            "_APP_TRUSTED_HEADERS": "x-forwarded-for",
+            "_APP_TRUSTED_PROXIES": "127.0.0.1,::1,10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16",
+            "_APP_PWNED_PASSWORDS_DSN": "none://localhost",
+            "_APP_LIMIT_REALTIME_SUBSCRIPTIONS": "100",
+            "_APP_LIMIT_REALTIME_CHANNELS": "100",
+            "_APP_LIMIT_REALTIME_QUERIES": "100",
+            "_APP_LIMIT_DATABASE_BATCH": "100",
+            "_APP_STORAGE_LIMIT": "30000000",
+            "_APP_STORAGE_PREVIEW_LIMIT": "20000000",
+            "_APP_POOL_SIZE_USAGE": "2",
+            "_APP_POOL_SIZE_EXECUTIONS": "2",
+            "_APP_STATS_USAGE_QUEUE_NAME": "v1-stats-usage",
+            "_APP_STATS_RESOURCES_QUEUE_NAME": "v1-stats-resources",
+            "_APP_STATS_RESOURCES_INTERVAL": "3600",
+            "_APP_ALERTS_INTERVAL": "60",
+            "_APP_ALERTS_USAGE_LAG": "120",
+            "_APP_MAINTENANCE_INTERVAL": "86400",
+            "_APP_MAINTENANCE_QUEUE_NAME": "v1-maintenance",
+            "_APP_MAINTENANCE_INACTIVE_INTERVAL": "604800",
+            "_APP_MAINTENANCE_DELAY": "0",
+            "_APP_MAINTENANCE_START_TIME": "00:00",
+            "_APP_MAINTENANCE_RETENTION_CACHE": "2592000",
+            "_APP_MAINTENANCE_RETENTION_EXECUTION": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT_CONSOLE": "15778800",
+            "_APP_MAINTENANCE_RETENTION_ABUSE": "86400",
+            "_APP_MAINTENANCE_RETENTION_SCHEDULES": "86400",
+            "_APP_MAINTENANCE_RETENTION_ALERTS": "7776000",
+            "_APP_MAINTENANCE_RETENTION_USAGE_TTL": "180",
+            "_APP_GRAPHQL_INTROSPECTION": "enabled",
+            "_APP_GRAPHQL_MAX_BATCH_SIZE": "10",
+            "_APP_GRAPHQL_MAX_COMPLEXITY": "250",
+            "_APP_GRAPHQL_MAX_DEPTH": "3",
+            "_APP_DB_MAX_CONNECTIONS": "200",
+            "_APP_DOCUMENTSDB": "enabled",
+            "_APP_VECTORSDB": "enabled",
+            "_APP_SYSTEM_TEAM_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}"
+          },
+          "secretEnv": [
+            "_APP_DB_PASS",
+            "_APP_DB_PASS_DOCUMENTSDB",
+            "_APP_DB_PASS_VECTORSDB",
+            "_APP_USAGE_PASS",
+            "_APP_CONNECTIONS_DB_USAGE",
+            "_APP_CONNECTIONS_DB_EXECUTIONS",
+            "_APP_OPENSSL_KEY_V1",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET",
+            "_APP_GEO_SECRET"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/start.sh",
+            "schedule"
+          ],
+          "dependsOn": [
+            "postgresql",
+            "appwrite-mongodb",
+            "redis",
+            "clickhouse",
+            "appwrite-geo",
+            "appwrite-autogravity",
+            "appwrite-exiftool"
+          ]
+        },
+        {
+          "name": "appwrite-realtime",
+          "image": "appwrite/appwrite:2.7.0",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          },
+          "environment": {
+            "_APP_ENV": "production",
+            "_APP_EDITION": "self-hosted",
+            "_APP_LOCALE": "en",
+            "_APP_MEMORY_LIMIT": "512M",
+            "_APP_WORKER_PER_CORE": "1",
+            "_APP_WORKERS_NUM": "1",
+            "_APP_WORKER_MAX_COROUTINES": "8",
+            "_APP_OPTIONS_ABUSE": "enabled",
+            "_APP_OPTIONS_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_FORCE_HTTPS": "disabled",
+            "_APP_OPTIONS_ROUTER_PROTECTION": "enabled",
+            "_APP_ROUTER_AUTO_CERTIFICATES": "disabled",
+            "_APP_CONSOLE_WHITELIST_ROOT": "enabled",
+            "_APP_CONSOLE_SCHEMA": "appwrite",
+            "_APP_CONSOLE_SESSION_ALERTS": "disabled",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:appwrite-gateway}}",
+            "_APP_DB_ADAPTER": "postgresql",
+            "_APP_DB_HOST": "postgresql",
+            "_APP_DB_PORT": "5432",
+            "_APP_DB_SCHEMA": "appwrite",
+            "_APP_DB_USER": "appwrite",
+            "_APP_DB_PASS": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_DOCUMENTSDB": "mongodb",
+            "_APP_DB_HOST_DOCUMENTSDB": "appwrite-mongodb",
+            "_APP_DB_PORT_DOCUMENTSDB": "27017",
+            "_APP_DB_SCHEMA_DOCUMENTSDB": "appwrite",
+            "_APP_DB_USER_DOCUMENTSDB": "appwrite",
+            "_APP_DB_PASS_DOCUMENTSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_DB_ADAPTER_VECTORSDB": "postgresql",
+            "_APP_DB_HOST_VECTORSDB": "postgresql",
+            "_APP_DB_PORT_VECTORSDB": "5432",
+            "_APP_DB_SCHEMA_VECTORSDB": "appwrite",
+            "_APP_DB_USER_VECTORSDB": "appwrite",
+            "_APP_DB_PASS_VECTORSDB": "{{config:POSTGRES_PASSWORD}}",
+            "_APP_REDIS_HOST": "redis",
+            "_APP_REDIS_PORT": "6379",
+            "_APP_USAGE_STATS": "enabled",
+            "_APP_USAGE_PASS": "{{config:CLICKHOUSE_PASSWORD}}",
+            "_APP_CONNECTIONS_DB_USAGE": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_CONNECTIONS_DB_EXECUTIONS": "http://appwrite:{{config:CLICKHOUSE_PASSWORD}}@clickhouse:8123/appwrite",
+            "_APP_OPENSSL_KEY_V1": "{{config:OPENSHIP_ENCRYPTION_KEY}}",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET": "{{config:OPENSHIP_TRACKING_SECRET}}",
+            "_APP_STORAGE_DEVICE": "Local",
+            "_APP_STORAGE_ANTIVIRUS": "disabled",
+            "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
+            "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
+            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
+            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_FUNCTIONS_RUNTIMES": "",
+            "_APP_SITES_RUNTIMES": "",
+            "_APP_EMBEDDING": "disabled",
+            "_APP_SMTP_HOST": "",
+            "_APP_COMPUTE_CPUS": "1",
+            "_APP_COMPUTE_MEMORY": "512",
+            "_APP_SYSTEM_EMAIL_NAME": "Appwrite",
+            "_APP_SYSTEM_EMAIL_ADDRESS": "noreply@example.com",
+            "_APP_SYSTEM_SECURITY_EMAIL_ADDRESS": "security@example.com",
+            "_APP_LOCKING_ENABLED": "enabled",
+            "_APP_OPENSSL_KEY_CURRENT": "1",
+            "_APP_OPENSSL_KEY_OLDEST": "1",
+            "_APP_DNS": "8.8.8.8",
+            "_APP_COMPRESSION_ENABLED": "enabled",
+            "_APP_COMPRESSION_MIN_SIZE_BYTES": "1024",
+            "_APP_TRUSTED_HEADERS": "x-forwarded-for",
+            "_APP_TRUSTED_PROXIES": "127.0.0.1,::1,10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16",
+            "_APP_PWNED_PASSWORDS_DSN": "none://localhost",
+            "_APP_LIMIT_REALTIME_SUBSCRIPTIONS": "100",
+            "_APP_LIMIT_REALTIME_CHANNELS": "100",
+            "_APP_LIMIT_REALTIME_QUERIES": "100",
+            "_APP_LIMIT_DATABASE_BATCH": "100",
+            "_APP_STORAGE_LIMIT": "30000000",
+            "_APP_STORAGE_PREVIEW_LIMIT": "20000000",
+            "_APP_POOL_SIZE_USAGE": "2",
+            "_APP_POOL_SIZE_EXECUTIONS": "2",
+            "_APP_STATS_USAGE_QUEUE_NAME": "v1-stats-usage",
+            "_APP_STATS_RESOURCES_QUEUE_NAME": "v1-stats-resources",
+            "_APP_STATS_RESOURCES_INTERVAL": "3600",
+            "_APP_ALERTS_INTERVAL": "60",
+            "_APP_ALERTS_USAGE_LAG": "120",
+            "_APP_MAINTENANCE_INTERVAL": "86400",
+            "_APP_MAINTENANCE_QUEUE_NAME": "v1-maintenance",
+            "_APP_MAINTENANCE_INACTIVE_INTERVAL": "604800",
+            "_APP_MAINTENANCE_DELAY": "0",
+            "_APP_MAINTENANCE_START_TIME": "00:00",
+            "_APP_MAINTENANCE_RETENTION_CACHE": "2592000",
+            "_APP_MAINTENANCE_RETENTION_EXECUTION": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT": "1209600",
+            "_APP_MAINTENANCE_RETENTION_AUDIT_CONSOLE": "15778800",
+            "_APP_MAINTENANCE_RETENTION_ABUSE": "86400",
+            "_APP_MAINTENANCE_RETENTION_SCHEDULES": "86400",
+            "_APP_MAINTENANCE_RETENTION_ALERTS": "7776000",
+            "_APP_MAINTENANCE_RETENTION_USAGE_TTL": "180",
+            "_APP_GRAPHQL_INTROSPECTION": "enabled",
+            "_APP_GRAPHQL_MAX_BATCH_SIZE": "10",
+            "_APP_GRAPHQL_MAX_COMPLEXITY": "250",
+            "_APP_GRAPHQL_MAX_DEPTH": "3",
+            "_APP_DB_MAX_CONNECTIONS": "200",
+            "_APP_DOCUMENTSDB": "enabled",
+            "_APP_VECTORSDB": "enabled",
+            "_APP_SYSTEM_TEAM_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}"
+          },
+          "secretEnv": [
+            "_APP_DB_PASS",
+            "_APP_DB_PASS_DOCUMENTSDB",
+            "_APP_DB_PASS_VECTORSDB",
+            "_APP_USAGE_PASS",
+            "_APP_CONNECTIONS_DB_USAGE",
+            "_APP_CONNECTIONS_DB_EXECUTIONS",
+            "_APP_OPENSSL_KEY_V1",
+            "_APP_NOTIFICATIONS_TRACKING_SECRET",
+            "_APP_GEO_SECRET"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/start.sh",
+            "realtime"
+          ],
+          "dependsOn": [
+            "postgresql",
+            "appwrite-mongodb",
+            "redis",
+            "clickhouse",
+            "appwrite-geo",
+            "appwrite-autogravity",
+            "appwrite-exiftool"
+          ]
+        },
+        {
+          "name": "appwrite-console",
+          "image": "appwrite/new:1.2.138-self-hosted",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 256,
+            "diskMb": 512
+          },
+          "environment": {
+            "VITE_CONSOLE_PROFILE": "self-hosted",
+            "VITE_APPWRITE_VERSION": "2.7.0",
+            "APPWRITE_ENDPOINT_SAME_ORIGIN": "true"
+          }
+        },
+        {
+          "name": "appwrite-gateway",
+          "image": "caddy:2.11.7-alpine",
+          "restart": "unless-stopped",
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 128,
+            "diskMb": 512
+          },
+          "exposed": true,
+          "exposedPort": 8080,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "dependsOn": [
+            "appwrite",
+            "appwrite-console",
+            "appwrite-realtime"
+          ],
+          "volumes": [
+            "appwrite_config:/storage/config:ro"
+          ],
+          "commandArgv": [
+            "sh",
+            "/etc/openship/gateway.sh"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8080/"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 30,
+            "startPeriod": "120s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "postgresql",
+          "key": "POSTGRES_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "generateGroup": "appwrite-database-password",
+          "secret": true
+        },
+        {
+          "service": "appwrite-mongodb",
+          "key": "MONGO_INITDB_ROOT_PASSWORD",
+          "label": "Database root password",
+          "generate": "secret",
+          "generateGroup": "appwrite-database-root-password",
+          "secret": true
+        },
+        {
+          "service": "appwrite-mongodb",
+          "key": "MONGO_INITDB_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "generateGroup": "appwrite-database-password",
+          "secret": true
+        },
+        {
+          "service": "clickhouse",
+          "key": "CLICKHOUSE_PASSWORD",
+          "label": "Usage password",
+          "generate": "secret",
+          "generateGroup": "appwrite-usage-password",
+          "secret": true
+        },
+        {
+          "service": "appwrite-geo",
+          "key": "GEO_SECRET",
+          "label": "Geo secret",
+          "generate": "secret",
+          "generateGroup": "appwrite-geo-secret",
+          "secret": true
+        },
+        {
+          "service": "appwrite",
+          "key": "OPENSHIP_ENCRYPTION_KEY",
+          "label": "Encryption key",
+          "generate": "secret",
+          "generateGroup": "appwrite-encryption-key",
+          "secret": true
+        },
+        {
+          "service": "appwrite",
+          "key": "OPENSHIP_TRACKING_SECRET",
+          "label": "Tracking secret",
+          "generate": "secret",
+          "generateGroup": "appwrite-tracking-secret",
+          "secret": true
+        },
+        {
+          "service": "appwrite",
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "label": "Owner email",
+          "default": "admin@example.com",
+          "required": true
+        },
+        {
+          "service": "appwrite",
+          "key": "OPENSHIP_ADMIN_PASSWORD",
+          "label": "Owner password",
+          "generate": "secret",
+          "generateGroup": "appwrite-owner-password",
+          "secret": true
+        }
+      ],
+      "files": [
+        {
+          "service": "appwrite-mongodb",
+          "path": "/mongo-init.js",
+          "content": "// mongo-init.js\n\n// Switch to the admin database\nconst adminDb = db.getSiblingDB(\"admin\");\n\n// Get username and password from environment variables\nconst username = process.env.MONGO_INITDB_USERNAME;\nconst password = process.env.MONGO_INITDB_PASSWORD;\nconst database = process.env.MONGO_INITDB_DATABASE;\n\n// Create the user\nif (adminDb.getUser(username) === null) {\n  adminDb.createUser({\n    user: username,\n    pwd: password,\n    roles: [{ role: \"readWrite\", db: database }],\n  });\n}\n"
+        },
+        {
+          "service": "appwrite-mongodb",
+          "path": "/mongo-entrypoint.sh",
+          "content": "#!/bin/bash\nset -e\n\n# Fix keyfile permissions if mounted from volume\nKEYFILE_PATH=\"/data/keyfile/mongo-keyfile\"\n\nif [ ! -f \"$KEYFILE_PATH\" ]; then\n  echo \"Generating random MongoDB keyfile...\"\n  mkdir -p /data/keyfile\n  openssl rand -base64 756 > \"$KEYFILE_PATH\"\nfi\n\nchmod 400 \"$KEYFILE_PATH\"\nchown mongodb:mongodb \"$KEYFILE_PATH\" 2>/dev/null || chown 999:999 \"$KEYFILE_PATH\"\n\n# The standard entrypoint initialises an empty data directory with a second mongod\n# on 27017, stopped with `mongod --shutdown`. That returns once the server clears\n# <dbpath>/mongod.lock, several steps before it exits and releases the port, and\n# the real server binds a millisecond after it starts -- so a slow shutdown tail\n# leaves it exiting 48, \"Address already in use\", taking the container with it.\n# Initialise here instead, on a port the real server never binds, and hand over a\n# directory the standard entrypoint has nothing left to do to.\n#\n# The marker is written only once every user exists, because mongod creates the\n# data directory long before that: keying off the directory would let a first boot\n# interrupted midway come back up with authentication on and no one to authenticate\n# as. Each step below is skippable, so a resumed initialisation finishes the part\n# that did not happen.\nINIT_MARKER=/data/db/.appwrite-initialised\n\nif [ ! -e \"$INIT_MARKER\" ]; then\n  INIT_PORT=27018\n\n  echo \"Initialising MongoDB data directory...\"\n  find -L /data/db \\! -user mongodb -exec chown mongodb '{}' +\n  export MONGO_INITDB_DATABASE=\"${MONGO_INITDB_DATABASE:-test}\"\n\n  gosu mongodb mongod --dbpath /data/db --bind_ip 127.0.0.1 --port \"$INIT_PORT\" &\n  INIT_SERVER=$!\n\n  READY=\n  for _ in $(seq 1 30); do\n    if mongosh --host 127.0.0.1 --port \"$INIT_PORT\" --quiet --eval 'quit(0)' > /dev/null 2>&1; then\n      READY=1\n      break\n    fi\n    if ! kill -0 \"$INIT_SERVER\" 2>/dev/null; then\n      break\n    fi\n    sleep 1\n  done\n\n  if [ -z \"$READY\" ]; then\n    echo \"MongoDB did not accept connections for initialisation\" >&2\n    exit 1\n  fi\n\n  mongosh --host 127.0.0.1 --port \"$INIT_PORT\" --quiet admin --eval '\n    const username = process.env.MONGO_INITDB_ROOT_USERNAME;\n\n    if (db.getUser(username) === null) {\n      db.createUser({\n        user: username,\n        pwd: process.env.MONGO_INITDB_ROOT_PASSWORD,\n        roles: [{ role: \"root\", db: \"admin\" }]\n      });\n    }\n  '\n  mongosh --host 127.0.0.1 --port \"$INIT_PORT\" --quiet \"$MONGO_INITDB_DATABASE\" /mongo-init.js\n\n  touch \"$INIT_MARKER\"\n\n  kill -TERM \"$INIT_SERVER\"\n  wait \"$INIT_SERVER\"\n  echo \"MongoDB data directory initialised.\"\nfi\n\n# Use MongoDB's standard entrypoint with our command\nexec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile \"$KEYFILE_PATH\"\n"
+        },
+        {
+          "service": "clickhouse",
+          "path": "/etc/clickhouse-server/config.d/appwrite.xml",
+          "content": "<?xml version=\"1.0\"?>\n<!--\n    Retention for ClickHouse's own system log tables.\n\n    Every <ttl> in the image's config.xml sits inside an XML comment, so these\n    tables keep every row forever, and the metric ones add a row per second\n    whether or not the instance serves traffic. Left alone they outgrow the\n    usage data they sit next to and fill the volume.\n\n    When a window here changes, ClickHouse replaces the table on the next\n    restart and keeps the old one, rows and all, as <log>_<N>.\n    clickhouse-init.sh gives those old tables the same window.\n-->\n<clickhouse>\n    <!-- The metric, trace and profile logs sample the server every second whether\n         or not Appwrite serves traffic, and nothing reads them back, so their\n         writes and the merges behind them are pure overhead. -->\n    <asynchronous_metric_log remove=\"1\"/>\n    <metric_log remove=\"1\"/>\n    <histogram_metric_log remove=\"1\"/>\n    <query_metric_log remove=\"1\"/>\n    <processors_profile_log remove=\"1\"/>\n    <trace_log remove=\"1\"/>\n    <!-- text_log repeats the server log the container already writes. -->\n    <text_log remove=\"1\"/>\n\n    <!-- Kept for debugging, capped so they cannot fill the volume. -->\n    <asynchronous_insert_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></asynchronous_insert_log>\n    <query_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_log>\n    <query_views_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_views_log>\n    <query_thread_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_thread_log>\n    <part_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></part_log>\n    <background_schedule_pool_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></background_schedule_pool_log>\n\n    <!-- Longer, so it still covers a report that reaches us late. crash_log is\n         deliberately left alone: it is tiny and worth keeping. -->\n    <error_log><ttl>event_date + INTERVAL 14 DAY DELETE</ttl></error_log>\n</clickhouse>\n"
+        },
+        {
+          "service": "clickhouse",
+          "path": "/docker-entrypoint-initdb.d/clickhouse-init.sh",
+          "content": "#!/bin/bash\n# The ClickHouse entrypoint sources this file, so a subshell keeps these options out of it.\n(\n  set -euo pipefail\n\n  client() {\n    clickhouse-client --host 127.0.0.1 --user \"$CLICKHOUSE_USER\" --password \"$CLICKHOUSE_PASSWORD\" \"$@\"\n  }\n\n  # Flushing replaces log tables whose definition changed, keeping each old table as <log>_<N>.\n  client --query 'SYSTEM FLUSH LOGS'\n\n  # Tables left behind never expire on their own: take the TTL of the log that\n  # replaced this one, or a week when the log is no longer written at all.\n  # The named logs must match the ones clickhouse-config.xml removes: a log that\n  # is still written gets replaced on the next restart if its TTL is altered here.\n  client --format TSVRaw <<'SQL' | client --multiquery\nSELECT concat('ALTER TABLE system.', stale.name, ' MODIFY TTL ', if(active.name = '', 'event_date + INTERVAL 7 DAY DELETE', splitByString(' SETTINGS ', splitByString(' TTL ', active.engine_full)[2])[1]), ';')\nFROM (\n  SELECT name, splitByChar('_', name)[-1] AS suffix, arrayStringConcat(arrayPopBack(splitByChar('_', name)), '_') AS log\n  FROM system.tables\n  WHERE database = 'system'\n    AND position(engine_full, ' TTL ') = 0\n    AND endsWith(engine, 'MergeTree')\n    AND name IN (SELECT table FROM system.columns WHERE database = 'system' AND name = 'event_date' AND type = 'Date')\n) AS stale\nLEFT JOIN system.tables AS active\n  ON active.database = 'system'\n  AND active.name = stale.log\n  AND position(active.engine_full, ' TTL ') > 0\nWHERE (endsWith(stale.log, '_log') AND toUInt64OrNull(stale.suffix) IS NOT NULL)\n  OR stale.name IN ('asynchronous_metric_log', 'metric_log', 'histogram_metric_log', 'query_metric_log', 'processors_profile_log', 'trace_log', 'text_log')\nSQL\n)\n"
+        },
+        {
+          "service": "appwrite",
+          "path": "/etc/openship/start.sh",
+          "content": "#!/bin/sh\nset -eu\nhost=\"${OPENSHIP_PUBLIC_URL#*://}\"\nhost=\"${host%%/*}\"\nhost=\"${host%%:*}\"\nexport _APP_DOMAIN=\"$host\" _APP_CONSOLE_DOMAIN=\"$host\" _APP_CONSOLE_URL=\"$OPENSHIP_PUBLIC_URL\" _APP_CONSOLE_HOSTNAMES=\"$host\"\nif [ \"$1\" != api ]; then exec \"$@\"; fi\nrm -f /tmp/.openship-owner-ready\nphp app/http.php &\nserver=$!\ntrap 'kill -TERM \"$server\" 2>/dev/null || true' TERM INT\nif ! php /etc/openship/bootstrap.php; then kill -TERM \"$server\" 2>/dev/null || true; exit 1; fi\ntouch /tmp/.openship-owner-ready\nwait \"$server\"\n"
+        },
+        {
+          "service": "appwrite",
+          "path": "/etc/openship/bootstrap.php",
+          "content": "<?php\n// Bootstrap through Appwrite's public installer API before the gateway can serve traffic.\nfunction callApi(string $path, ?array $body = null): array {\n    $c = curl_init('http://127.0.0.1/v1/' . $path);\n    curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10,\n        CURLOPT_HTTPHEADER => ['Host: ' . getenv('_APP_DOMAIN'), 'X-Appwrite-Project: console', 'Content-Type: application/json']]);\n    if ($body !== null) curl_setopt_array($c, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($body, JSON_THROW_ON_ERROR)]);\n    $raw = curl_exec($c);\n    $status = curl_getinfo($c, CURLINFO_HTTP_CODE);\n    return [$status, json_decode($raw ?: '{}', true)];\n}\n$ready = false;\nfor ($i = 0; $i < 150; $i++) {\n    if (is_file('/tmp/.appwrite-ready') && callApi('health/version')[0] === 200) { $ready = true; break; }\n    sleep(2);\n}\nif (!$ready) { fwrite(STDERR, \"Appwrite did not become ready for owner setup\\n\"); exit(1); }\n$marker = '/storage/config/.openship-owner-created';\nif (is_file($marker)) exit(0); // Never reset an existing owner's credentials.\n[$status, $response] = callApi('account', ['userId' => 'unique()', 'email' => getenv('OPENSHIP_ADMIN_EMAIL'), 'password' => getenv('OPENSHIP_ADMIN_PASSWORD'), 'name' => 'Admin']);\nif ($status !== 201 && !($status === 409 && callApi('account/sessions/email', ['email' => getenv('OPENSHIP_ADMIN_EMAIL'), 'password' => getenv('OPENSHIP_ADMIN_PASSWORD')])[0] === 201)) { fwrite(STDERR, 'Owner setup failed (HTTP ' . $status . \")\\n\"); exit(1); }\nif (file_put_contents($marker, \"created\\n\", LOCK_EX) === false) exit(1);\nchmod($marker, 0600);\n"
+        },
+        {
+          "service": "appwrite-worker",
+          "path": "/etc/openship/start.sh",
+          "content": "#!/bin/sh\nset -eu\nhost=\"${OPENSHIP_PUBLIC_URL#*://}\"\nhost=\"${host%%/*}\"\nhost=\"${host%%:*}\"\nexport _APP_DOMAIN=\"$host\" _APP_CONSOLE_DOMAIN=\"$host\" _APP_CONSOLE_URL=\"$OPENSHIP_PUBLIC_URL\" _APP_CONSOLE_HOSTNAMES=\"$host\"\nif [ \"$1\" != api ]; then exec \"$@\"; fi\nrm -f /tmp/.openship-owner-ready\nphp app/http.php &\nserver=$!\ntrap 'kill -TERM \"$server\" 2>/dev/null || true' TERM INT\nif ! php /etc/openship/bootstrap.php; then kill -TERM \"$server\" 2>/dev/null || true; exit 1; fi\ntouch /tmp/.openship-owner-ready\nwait \"$server\"\n"
+        },
+        {
+          "service": "appwrite-scheduler",
+          "path": "/etc/openship/start.sh",
+          "content": "#!/bin/sh\nset -eu\nhost=\"${OPENSHIP_PUBLIC_URL#*://}\"\nhost=\"${host%%/*}\"\nhost=\"${host%%:*}\"\nexport _APP_DOMAIN=\"$host\" _APP_CONSOLE_DOMAIN=\"$host\" _APP_CONSOLE_URL=\"$OPENSHIP_PUBLIC_URL\" _APP_CONSOLE_HOSTNAMES=\"$host\"\nif [ \"$1\" != api ]; then exec \"$@\"; fi\nrm -f /tmp/.openship-owner-ready\nphp app/http.php &\nserver=$!\ntrap 'kill -TERM \"$server\" 2>/dev/null || true' TERM INT\nif ! php /etc/openship/bootstrap.php; then kill -TERM \"$server\" 2>/dev/null || true; exit 1; fi\ntouch /tmp/.openship-owner-ready\nwait \"$server\"\n"
+        },
+        {
+          "service": "appwrite-realtime",
+          "path": "/etc/openship/start.sh",
+          "content": "#!/bin/sh\nset -eu\nhost=\"${OPENSHIP_PUBLIC_URL#*://}\"\nhost=\"${host%%/*}\"\nhost=\"${host%%:*}\"\nexport _APP_DOMAIN=\"$host\" _APP_CONSOLE_DOMAIN=\"$host\" _APP_CONSOLE_URL=\"$OPENSHIP_PUBLIC_URL\" _APP_CONSOLE_HOSTNAMES=\"$host\"\nif [ \"$1\" != api ]; then exec \"$@\"; fi\nrm -f /tmp/.openship-owner-ready\nphp app/http.php &\nserver=$!\ntrap 'kill -TERM \"$server\" 2>/dev/null || true' TERM INT\nif ! php /etc/openship/bootstrap.php; then kill -TERM \"$server\" 2>/dev/null || true; exit 1; fi\ntouch /tmp/.openship-owner-ready\nwait \"$server\"\n"
+        },
+        {
+          "service": "appwrite-gateway",
+          "path": "/etc/openship/gateway.sh",
+          "content": "#!/bin/sh\nset -eu\nuntil [ -f /storage/config/.openship-owner-created ]; do sleep 2; done\nexec caddy run --config /etc/openship/Caddyfile --adapter caddyfile\n"
+        },
+        {
+          "service": "appwrite-gateway",
+          "path": "/etc/openship/Caddyfile",
+          "content": "{\n  auto_https off\n  admin off\n  servers {\n    trusted_proxies static private_ranges\n  }\n}\n:8080 {\n  handle /v1/realtime* {\n    reverse_proxy appwrite-realtime:80\n  }\n  handle /v1* {\n    reverse_proxy appwrite:80\n  }\n  handle {\n    reverse_proxy appwrite-console:3000\n  }\n}\n"
+        },
+        {
+          "service": "appwrite-mongodb",
+          "path": "/etc/openship/APPWRITE-LICENSE.txt",
+          "content": "Appwrite 2.7.0 MongoDB initialization and ClickHouse retention helpers\nSource: https://github.com/appwrite/appwrite/tree/2.7.0\n\nCopyright (c) 2019 Appwrite (https://appwrite.io) and individual contributors.\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\n    3. Neither the name Appwrite nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n"
+        },
+        {
+          "service": "clickhouse",
+          "path": "/etc/openship/APPWRITE-LICENSE.txt",
+          "content": "Appwrite 2.7.0 MongoDB initialization and ClickHouse retention helpers\nSource: https://github.com/appwrite/appwrite/tree/2.7.0\n\nCopyright (c) 2019 Appwrite (https://appwrite.io) and individual contributors.\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\n    3. Neither the name Appwrite nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n"
+        }
+      ],
+      "settings": [
+        {
+          "id": "owner",
+          "label": "Console owner",
+          "fields": [
+            {
+              "service": "appwrite",
+              "key": "OPENSHIP_ADMIN_EMAIL",
+              "label": "Owner email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "help": "Used to create the initial Console owner. Existing credentials are preserved on redeploy."
+            }
+          ]
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "appwrite-gateway",
+          "port": 8080,
+          "label": "Console and API",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "internal"
+          ]
+        }
+      ],
+      "connection": {
+        "title": "Open Appwrite",
+        "description": "Sign in to the Console with the generated owner credentials. The API is available at the same domain under /v1.",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Console",
+            "source": "publicUrl:appwrite-gateway",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Owner email",
+            "source": "env:appwrite:OPENSHIP_ADMIN_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Initial password",
+            "source": "env:appwrite:OPENSHIP_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Includes Auth, TablesDB, DocumentsDB, VectorsDB, Storage, and Realtime. Configure SMTP in the Appwrite services before sending transactional email. Functions, Sites, and embedding model execution need an additional runtime deployment and are not included in this recipe."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Application backend",
+            "description": "Authentication, databases, file storage, and realtime subscriptions."
+          },
+          {
+            "title": "Console ready",
+            "description": "Generated owner credentials and private persistent databases."
+          }
+        ],
+        "article": "# Appwrite\n\nDeploy an Appwrite 2.7.0 backend with the Console, API, combined worker, scheduler,\nand Realtime service. PostgreSQL, MongoDB, Redis, and ClickHouse stay private on\nthe project network. Storage and database state use project-scoped named volumes.\nThe gateway serves the Console and `/v1` API on one OpenShip domain.\n\n## First login\n\nChoose the owner's email during installation. OpenShip generates the initial\npassword and creates that owner before the public gateway starts. Sign in using\nthe connection panel, then create your organization and project in the Console.\nOnly the first Console owner can register; invite additional team members through\nAppwrite. Redeploying preserves accounts and passwords.\n\n## Included services\n\nAuth, TablesDB, DocumentsDB, VectorsDB, file Storage, Realtime, and usage statistics\nare included. Configure your own SMTP server in the Appwrite API and worker before\nusing password recovery, invitations, or email messaging. Keep the domain stable;\nupdate `OPENSHIP_PUBLIC_URL` across the Appwrite services if you change it.\n\nFunctions and Sites require Appwrite's Docker executor, runtime networks, and\nwildcard routing. Those runtime services are not included in this catalog recipe.\nEmbedding model execution also requires an additional model service. Use the\n[official installation guide](https://appwrite.io/docs/advanced/self-hosting/installation)\nfor those deployments; this recipe does not mount the host Docker socket or create\nunmanaged sibling workloads.\n\n## Resources and maintenance\n\nUse at least 2 CPU cores, 4 GB RAM, and 10 GB free disk; allow more for application\ntraffic and stored files. Back up the database and storage volumes together, and\nreview Appwrite's upgrade instructions before changing versions. The encryption\nkey is generated once and must be retained with your backups.\n\nMongoDB initialization and ClickHouse retention helpers are taken from the\n[Appwrite 2.7.0 distribution](https://github.com/appwrite/appwrite/tree/2.7.0)."
+      },
+      "schemaVersion": 2
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
       "available": false,
       "verified": true,
       "id": "fider",
