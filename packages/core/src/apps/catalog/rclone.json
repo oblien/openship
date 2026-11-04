@@ -16,6 +16,7 @@
       "name": "rclone",
       "image": "rclone/rclone:1.75.2",
       "exposed": true,
+      "ports": ["5572:5572"],
       "exposedPort": 5572,
       "routes": [{ "port": 5572 }],
       "command": "rcd --rc-addr=:5572 --rc-web-gui --rc-web-gui-no-open-browser",
