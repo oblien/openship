@@ -1298,7 +1298,11 @@
     "monitoring": "監視で表示",
     "persistent": "バナーを閉じても、未解決の検出結果はここに表示されます。",
     "otherApps": "その他のアプリ ({count})",
-    "details": "詳細と対処方法"
+    "details": "詳細と対処方法",
+    "refreshFailed": "セキュリティ更新に失敗しました。再試行する前にデプロイを確認してください。",
+    "refreshAwaitingActions": "保留中のデプロイ操作を確認して更新を続行してください。",
+    "refreshInProgress": "セキュリティ更新中です。警告を解消する前に実行環境を検証します。",
+    "viewRefresh": "更新を表示"
   },
   "hostSecurity": {
     "title": "サーバーのセキュリティ",

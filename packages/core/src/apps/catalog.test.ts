@@ -402,3 +402,34 @@ describe("app template — strict fields + referential integrity", () => {
     expect(isValidAppTemplate({ ...base, services: [{ name: "db" }] })).toBe(false);
   });
 });
+
+describe("Appwrite startup", () => {
+  it("requires owner setup before reporting success and avoids the unpatched optional Geo runtime", () => {
+    const app = getAppTemplate("appwrite")!;
+    expect(
+      app.services!.find((s) => s.name === "appwrite-geo"),
+    ).toBeUndefined();
+    for (const s of app.services!.filter(
+      (s) =>
+        s.name === "appwrite" ||
+        s.name.startsWith("appwrite-worker") ||
+        s.name === "appwrite-realtime" ||
+        s.name === "appwrite-scheduler",
+    )) {
+      expect(s.environment!._APP_GEO_ENDPOINT).toBe("");
+      expect(s.dependsOn).not.toContain("appwrite-geo");
+    }
+    expect(app.prepare).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          service: "appwrite",
+          phase: "post-ready",
+          mustSucceed: true,
+          readiness: expect.objectContaining({
+            test: "test -f /tmp/.openship-owner-ready",
+          }),
+        }),
+      ]),
+    );
+  });
+});

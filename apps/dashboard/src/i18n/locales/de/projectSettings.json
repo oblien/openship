@@ -1298,7 +1298,11 @@
     "monitoring": "In Monitoring anzeigen",
     "persistent": "Aktive Befunde bleiben hier sichtbar, auch wenn das Banner geschlossen wird.",
     "otherApps": "Weitere Apps ({count})",
-    "details": "Details und Hinweise"
+    "details": "Details und Hinweise",
+    "refreshFailed": "Das Sicherheitsupdate ist fehlgeschlagen. Prüfe die Bereitstellung vor einem erneuten Versuch.",
+    "refreshAwaitingActions": "Prüfe die ausstehenden Bereitstellungsaktionen, um das Sicherheitsupdate fortzusetzen.",
+    "refreshInProgress": "Sicherheitsupdate läuft. Die Laufzeit wird geprüft, bevor die Warnung als behoben gilt.",
+    "viewRefresh": "Update anzeigen"
   },
   "hostSecurity": {
     "title": "Serversicherheit",

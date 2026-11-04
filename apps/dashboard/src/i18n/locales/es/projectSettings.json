@@ -1298,7 +1298,11 @@
     "monitoring": "Ver en Monitorización",
     "persistent": "Los hallazgos activos permanecen aquí al cerrar el aviso.",
     "otherApps": "Otras apps ({count})",
-    "details": "Detalles y recomendaciones"
+    "details": "Detalles y recomendaciones",
+    "refreshFailed": "La actualización de seguridad falló. Revisa el despliegue antes de reintentar.",
+    "refreshAwaitingActions": "Revisa las acciones pendientes del despliegue para continuar la actualización.",
+    "refreshInProgress": "Actualización de seguridad en curso. Se comprobará el entorno antes de resolver el aviso.",
+    "viewRefresh": "Ver actualización"
   },
   "hostSecurity": {
     "title": "Seguridad del servidor",
