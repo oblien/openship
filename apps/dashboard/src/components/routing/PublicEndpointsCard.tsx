@@ -6,9 +6,7 @@ import { RouteProtectionButton } from "./RouteProtectionButton";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import React, { useState } from "react";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
-import { Switch } from "@/components/ui/Switch";
-import { CustomSelect } from "@/components/ui/CustomSelect";
-import type { WwwDomainMode } from "@/lib/www-domain-routing";
+import { WwwDomainControls } from "./WwwDomainControls";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { PublicEndpoint } from "@/context/deployment/types";
 import { createPublicEndpoint } from "@/context/deployment/types";
@@ -39,17 +37,8 @@ interface PublicEndpointsCardProps {
    *  deploy/migrate flows keep ≥1 route; the project domains tab opts in so a user
    *  can delete their only/last domain and re-add one. */
   allowRemoveAll?: boolean;
-  /** Optional "Include www." switch shown as the first row of the domain card,
-   *  for the apex custom domain. `apex` is the bare apex (null until one is typed);
-   *  `show` hides it for subdomains (where `www.<sub>` is nonsensical). Either hostname can be the primary. */
-  wwwToggle?: {
-    show: boolean;
-    included: boolean;
-    apex: string | null;
-    onToggle: (on: boolean) => void;
-    mode?: WwwDomainMode | null;
-    onModeChange?: (mode: WwwDomainMode) => void;
-  };
+  /** Offer the shared apex/www choice, including headerless service editors. */
+  allowWww?: boolean;
   /**
    * Offer the per-endpoint "Redirect to" control (a hostname answers a 30x to
    * another of the project's hostnames instead of serving). Off by default; the
@@ -71,7 +60,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   hideTypeToggle = false,
   preserveProxyPaths = false,
   allowRemoveAll = false,
-  wwwToggle,
+  allowWww = false,
   allowRedirects = false,
 }) => {
   const { t } = useI18n();
@@ -176,7 +165,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     commitEndpoints(
       nextEndpoints.map((endpoint) =>
         endpoint.redirectTo === host
-          ? { ...endpoint, redirectTo: undefined, redirectStatus: undefined }
+          ? { ...endpoint, redirectTo: "", redirectStatus: undefined }
           : endpoint,
       ),
       nextRuntimePort,
@@ -264,7 +253,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                 targets: redirectTargets,
                 onChange: ({ to, status }) =>
                   handleEndpointChange(endpoint.id, {
-                    redirectTo: to || undefined,
+                    redirectTo: to,
                     redirectStatus: to ? status : undefined,
                   }),
               }
@@ -329,6 +318,14 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     >
       <UiIcon name="trash" className="size-4" />
     </button>
+  );
+
+  const wwwControls = allowWww && (
+    <WwwDomainControls
+      endpoints={endpoints}
+      allowRedirects={allowRedirects}
+      onChange={(next) => commitEndpoints(next, next.find((endpoint) => !endpoint.redirectTo)?.port || runtimePort)}
+    />
   );
 
   // Headerless: no card chrome, no "Domain" header — the parent labels the
@@ -405,6 +402,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
             </>,
           )
         )}
+        {wwwControls}
       </div>
     );
   }
@@ -493,83 +491,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
               allowRemoveAll ? removeButton(endpoints[0].id) : undefined,
             )}
 
-        {/* Single compact row, kept UNDER the domain input so toggling it (or its
-            appearance once a domain is typed) never shifts the input above. */}
-        {wwwToggle?.show && (
-          <div className="space-y-3 rounded-xl bg-muted/30 px-4 py-3">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[13px] font-medium text-foreground">
-                {t.projectSettings.domains.add.includeWww}
-              </span>
-              <Switch
-                checked={wwwToggle.included}
-                onChange={(next) => wwwToggle.onToggle(next)}
-                ariaLabel={t.projectSettings.domains.add.includeWww}
-              />
-            </div>
-            {wwwToggle.included && wwwToggle.apex && wwwToggle.onModeChange && (
-              <div className="space-y-1.5">
-                <p className="text-sm font-medium text-foreground">{w.domainBehavior}</p>
-                {allowRedirects ? (
-                  <CustomSelect<WwwDomainMode | "">
-                    aria-label={w.domainBehavior}
-                    variant="filled"
-                    triggerClassName="bg-muted/60 hover:bg-muted"
-                    value={wwwToggle.mode ?? ""}
-                    placeholder={w.customRouting}
-                    onChange={(mode) => {
-                      if (mode) wwwToggle.onModeChange?.(mode);
-                    }}
-                    options={[
-                      {
-                        value: "apex",
-                        label: interpolate(w.primaryHost, { hostname: wwwToggle.apex }),
-                        description: interpolate(w.redirectHostDescription, {
-                          from: `www.${wwwToggle.apex}`,
-                          to: wwwToggle.apex,
-                        }),
-                      },
-                      {
-                        value: "www",
-                        label: interpolate(w.primaryHost, { hostname: `www.${wwwToggle.apex}` }),
-                        description: interpolate(w.redirectHostDescription, {
-                          from: wwwToggle.apex,
-                          to: `www.${wwwToggle.apex}`,
-                        }),
-                      },
-                      { value: "both", label: w.serveBoth, description: w.serveBothDescription },
-                    ]}
-                  />
-                ) : wwwToggle.mode === "both" ? (
-                  <p className="text-sm text-foreground">{w.serveBoth}</p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => wwwToggle.onModeChange?.("both")}
-                    className="rounded-xl bg-muted px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/80"
-                  >
-                    {w.serveBoth}
-                  </button>
-                )}
-                {!allowRedirects ? (
-                  <p className="text-xs text-muted-foreground">{w.serveBothDescription}</p>
-                ) : (
-                  wwwToggle.mode != null && (
-                    <p className="text-xs text-muted-foreground">
-                      {wwwToggle.mode === "both"
-                        ? w.serveBothDescription
-                        : interpolate(w.redirectHostDescription, {
-                            from:
-                              wwwToggle.mode === "www" ? wwwToggle.apex : `www.${wwwToggle.apex}`,
-                            to: wwwToggle.mode === "www" ? `www.${wwwToggle.apex}` : wwwToggle.apex,
-                          })}
-                    </p>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        {wwwControls}
       </div>
     </div>
   );

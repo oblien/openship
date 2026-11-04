@@ -1,0 +1,120 @@
+{
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "radicale",
+  "name": "Radicale",
+  "description": "Calendars and contacts for your mailboxes. Sync native CalDAV and CardDAV clients using your existing IMAP account, with data stored on your chosen server.",
+  "kind": "template",
+  "logo": "radicale",
+  "category": "mail",
+  "tags": ["calendar", "contacts", "caldav", "carddav", "mail"],
+  "framework": "docker-compose",
+  "repository": "https://github.com/Kozea/Radicale",
+  "services": [
+    {
+      "name": "radicale",
+      "image": "ghcr.io/kozea/radicale:3.9.0",
+      "exposedPort": 5232,
+      "exposed": true,
+      "entrypointArgv": ["/bin/sh", "-eu", "-c"],
+      "commandArgv": [
+        "exec /app/bin/python /app/bin/radicale --config '' --server-hosts 0.0.0.0:5232 --auth-type imap --auth-imap-host=\"${IMAP_HOST:?Set the IMAP hostname}:993\" --auth-imap-security tls --auth-lc-username --auth-urldecode-username --no-auth-cache-logins --rights-type owner_only --storage-filesystem-folder /var/lib/radicale/collections"
+      ],
+      "volumes": ["radicale_data:/var/lib/radicale"],
+      "restart": "unless-stopped",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://127.0.0.1:5232/.well-known/caldav"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "startPeriod": "10s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "IMAP_HOST",
+      "service": "radicale",
+      "label": "IMAP hostname",
+      "type": "text",
+      "required": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "mail",
+      "label": "Mailbox authentication",
+      "description": "Sign in with a full mailbox email address and its password. Radicale checks the account directly with your mail server over IMAPS (port 993), with certificate verification.",
+      "fields": [
+        {
+          "key": "IMAP_HOST",
+          "service": "radicale",
+          "label": "IMAP hostname",
+          "type": "text",
+          "placeholder": "mail.example.com",
+          "help": "Use the hostname shown in Mail → Overview. It must be reachable from this app and have a trusted TLS certificate. Use a separate hostname, such as dav.example.com, for this app's HTTPS address.",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "pattern": "^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$",
+          "patternError": "Enter a hostname without a scheme, port, or path."
+        }
+      ]
+    }
+  ],
+  "management": { "kind": "schema" },
+  "endpoints": [
+    {
+      "service": "radicale",
+      "port": 5232,
+      "kind": "http",
+      "label": "Calendars & contacts",
+      "help": "Connect clients over HTTPS using a mailbox email address and password.",
+      "defaultMode": "domain",
+      "allowedModes": ["domain"]
+    }
+  ],
+  "connection": {
+    "title": "Connect your calendar and contacts",
+    "description": "Open the HTTPS address to create a calendar or address book. Add that server to a CalDAV or CardDAV client using your full mailbox email address and mailbox password.",
+    "outputs": [
+      {
+        "id": "server",
+        "label": "CalDAV / CardDAV server",
+        "source": "publicUrl:radicale",
+        "kind": "url",
+        "recommended": true
+      }
+    ],
+    "guide": {
+      "intro": "Apple Calendar and Contacts, Thunderbird, Fantastical, and DAVx⁵ can connect to this server. Use HTTPS with port 443; the username is your full email address.",
+      "useHint": "The server provides /.well-known/caldav and /.well-known/carddav discovery. Manage the app and its persistent volume under Apps. Mailbox password changes apply to subsequent DAV requests."
+    }
+  },
+  "marketplace": {
+    "articleFile": "articles/radicale.md",
+    "features": [
+      {
+        "title": "Native client sync",
+        "description": "CalDAV calendars and CardDAV contacts with standard discovery endpoints."
+      },
+      {
+        "title": "Existing mailbox accounts",
+        "description": "Authenticate directly with your IMAP server over verified TLS."
+      },
+      {
+        "title": "Private, persistent collections",
+        "description": "Each mailbox owns its collections, stored in a persistent app volume."
+      }
+    ]
+  }
+}

@@ -1298,7 +1298,11 @@
     "monitoring": "Voir dans Surveillance",
     "persistent": "Les alertes actives restent ici après la fermeture de la bannière.",
     "otherApps": "Autres applications ({count})",
-    "details": "Détails et recommandations"
+    "details": "Détails et recommandations",
+    "refreshFailed": "La mise à jour de sécurité a échoué. Vérifiez le déploiement avant de réessayer.",
+    "refreshAwaitingActions": "Vérifiez les actions de déploiement en attente pour poursuivre la mise à jour.",
+    "refreshInProgress": "Mise à jour de sécurité en cours. L’environnement sera vérifié avant de résoudre cette alerte.",
+    "viewRefresh": "Voir la mise à jour"
   },
   "hostSecurity": {
     "title": "Sécurité du serveur",

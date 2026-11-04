@@ -165,7 +165,7 @@ describe("icon configuration and recovery", () => {
       probes[0].dispatchEvent(new Event("error"));
     });
     expect(imageSource()).toBe(iconAssetUrl(outlineModern[name]));
-    expect(host.querySelector("mask")).toBeNull();
+    expect(!!host.querySelector("mask")).toBe(outlineModern[name].mode === "mask");
     expect(probes[0].onerror).toBeNull();
     failImage();
     expect(probes).toHaveLength(1);
