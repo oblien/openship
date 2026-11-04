@@ -1094,7 +1094,8 @@ function ConversationWorkspace({
                                 ? investigationCopy.deploymentTitle
                                 : investigation.target.kind === "monitoring"
                                   ? investigationCopy.reportTitle
-                                  : investigation.target.intent === "fix"
+                                  : investigation.target.kind === "security" ||
+                                      investigation.target.intent === "fix"
                                     ? investigationCopy.fixTitle
                                     : investigationCopy.issueTitle
                               : "What are we working on?"}

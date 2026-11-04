@@ -138,6 +138,11 @@ in the shared review and Monitoring. Restore the warning with an explicit failur
 the deployment fails or the promoted runtime remains affected. An unchanged prebuilt
 image is not a remediation: explain that a patched version must be configured instead
 of redeploying the same digest. Opening review alone never resolves a finding.
+Manual advisories show their guidance immediately, grouped once per advisory with
+all affected services. Offer the existing saved configuration and a scoped **Fix
+with AI** handoff. The handoff prepares an editable request with project/advisory
+identifiers only; navigation never executes a repair or grants access. Keep these
+findings visible after an image update when no version-only fix is known.
 Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
 Host notices share that banner and review, linking to **Servers → Runs**. Monitoring's

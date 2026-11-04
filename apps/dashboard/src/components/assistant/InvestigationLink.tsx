@@ -25,7 +25,7 @@ export function InvestigationLink({
   const label =
     target.kind === "monitoring"
       ? copy.reportAction
-      : target.kind === "issue" && target.intent === "fix"
+      : target.kind === "security" || (target.kind === "issue" && target.intent === "fix")
         ? copy.fixAction
         : copy.action;
   const href = investigationHref(target, scope);

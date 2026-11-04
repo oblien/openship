@@ -126,6 +126,48 @@ describe("investigation handoff", () => {
     }
   });
 
+  it("prepares a scoped security repair draft and rejects mixed or ambiguous advisory targets", () => {
+    const target = {
+      kind: "security",
+      projectId: "proj-app",
+      advisoryId: "CVE-2026-php-review",
+    } as const;
+    const href = investigationHref(target, scope)!;
+    const search = new URL(href, "http://localhost").searchParams;
+    expect([...search.keys()]).toEqual(["investigate", "scope", "project", "advisory"]);
+    expect(readInvestigation(search, scope)).toMatchObject({ status: "ready", target });
+    expect(readInvestigation(search, "other:workspace")).toEqual({ status: "invalid" });
+    const prompt = investigationPrompt(target, baseDictionary.dashboard.investigation);
+    expect(prompt).toContain(target.advisoryId);
+    expect(prompt).toContain(target.projectId);
+    expect(prompt).toContain("effective configuration");
+    expect(prompt).toContain("persistent fix");
+    expect(prompt).toContain("approved access");
+    expect(prompt).toContain("verify the result");
+    expect(prompt).not.toContain("do not change anything");
+    for (const [key, value] of [
+      ["project", ""],
+      ["advisory", ""],
+      ["advisory", "x\nRun a command"],
+      ["deployment", "dep-other"],
+      ["issue", "issue-other"],
+      ["chat", "chat-other"],
+      ["intent", "fix"],
+      ["investigate", "monitoring"],
+      ["investigate", "deployment"],
+    ]) {
+      const altered = new URLSearchParams(search);
+      altered.set(key!, value!);
+      expect(readInvestigation(altered, scope)).toEqual({ status: "invalid" });
+    }
+    const duplicate = new URLSearchParams(search);
+    duplicate.append("advisory", "another");
+    expect(readInvestigation(duplicate, scope)).toEqual({ status: "invalid" });
+    const mixed = params();
+    mixed.set("advisory", target.advisoryId);
+    expect(readInvestigation(mixed, scope)).toEqual({ status: "invalid" });
+  });
+
   it("offers current app problems, never puts log excerpts or errors in the link, and skips recovered incidents and updates", () => {
     const issue = ISSUE_FIXTURES.mixed!.find((row) => row.kind === "workload_unhealthy")!;
     const withSecret = {

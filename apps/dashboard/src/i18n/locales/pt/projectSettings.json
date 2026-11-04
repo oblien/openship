@@ -1269,6 +1269,8 @@
     "hideBanners": "Ocultar banners de segurança",
     "showBanners": "Mostrar banners de segurança",
     "bannerDescription": "Mostrar avisos de segurança de aplicativos e servidores no topo do painel neste navegador e espaço. Verificações e canais de notificação são controlados separadamente.",
+    "manualReviewRequired": "Revisão necessária",
+    "manualReviewDescription": "Este aviso exige revisar a configuração ou a aplicação. Atualizar a imagem, por si só, não comprova a correção.",
     "openRuntimeConfiguration": "Revisar configuração de execução",
     "severity": {
       "critical": "Crítica",

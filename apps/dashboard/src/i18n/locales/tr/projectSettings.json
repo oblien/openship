@@ -1269,6 +1269,8 @@
     "hideBanners": "Güvenlik bannerlarını gizle",
     "showBanners": "Güvenlik bannerlarını göster",
     "bannerDescription": "Bu tarayıcı ve çalışma alanında uygulama ve sunucu güvenlik bildirimlerini panonun üstünde göster. Kontroller ve bildirim kanalları ayrı yönetilir.",
+    "manualReviewRequired": "İnceleme gerekli",
+    "manualReviewDescription": "Bu uyarı, yapılandırmanın veya uygulamanın incelenmesini gerektirir. Yalnızca imajı yenilemek doğrulanmış bir çözüm değildir.",
     "openRuntimeConfiguration": "Çalışma ortamı ayarlarını incele",
     "severity": {
       "critical": "Kritik",

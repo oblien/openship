@@ -1269,6 +1269,8 @@
     "hideBanners": "Ocultar avisos de seguridad",
     "showBanners": "Mostrar avisos de seguridad",
     "bannerDescription": "Mostrar avisos de seguridad de apps y servidores en la parte superior del panel de este navegador y espacio. Las comprobaciones y los canales de notificación se controlan por separado.",
+    "manualReviewRequired": "Revisión necesaria",
+    "manualReviewDescription": "Este aviso requiere revisar la configuración o la aplicación. Actualizar la imagen no demuestra por sí solo que el problema esté resuelto.",
     "openRuntimeConfiguration": "Revisar configuración de ejecución",
     "severity": {
       "critical": "Crítica",

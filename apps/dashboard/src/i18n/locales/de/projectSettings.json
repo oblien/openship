@@ -1269,6 +1269,8 @@
     "hideBanners": "Sicherheitsbanner ausblenden",
     "showBanners": "Sicherheitsbanner anzeigen",
     "bannerDescription": "Sicherheitshinweise für Apps und Server oben im Dashboard dieses Browsers und Arbeitsbereichs anzeigen. Prüfungen und Benachrichtigungskanäle werden separat gesteuert.",
+    "manualReviewRequired": "Überprüfung erforderlich",
+    "manualReviewDescription": "Dieser Hinweis erfordert eine Prüfung der Konfiguration oder Anwendung. Ein Image-Refresh allein ist keine verifizierte Behebung.",
     "openRuntimeConfiguration": "Laufzeitkonfiguration prüfen",
     "severity": {
       "critical": "Kritisch",

@@ -13,6 +13,25 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/Switch";
 import Link from "next/link";
 import { encodeProjectSlug } from "@/utils/repoSlug";
+import { InvestigationLink } from "@/components/assistant/InvestigationLink";
+
+type Finding = ProjectSecurityResult["findings"][number];
+
+/** Manual guidance applies to the advisory; refresh actions remain service-specific. */
+function groupReviewFindings(findings: Finding[]) {
+  const groups = new Map<string, { finding: Finding; services: Finding[] }>();
+  for (const finding of findings) {
+    const key = JSON.stringify([
+      finding.id,
+      finding.revision,
+      finding.manualReviewRequired ? "manual" : finding.serviceId,
+    ]);
+    const group = groups.get(key);
+    if (group) group.services.push(finding);
+    else groups.set(key, { finding, services: [finding] });
+  }
+  return [...groups.values()];
+}
 
 /** One affected app inside the global advisory review; actions stay resource-scoped. */
 export function SecurityProjectReview({
@@ -161,19 +180,24 @@ export function SecurityProjectReview({
         {!!data?.unknownServices.length && (
           <p className="text-xs text-muted-foreground">{copy.partial}</p>
         )}
-        {findings.map((finding) => (
+        {groupReviewFindings(findings).map(({ finding, services }) => (
           <div
             key={`${finding.id}:${finding.serviceId}`}
             className="space-y-2 rounded-xl bg-card p-4"
           >
             <p className="text-sm font-medium">{finding.title}</p>
-            {!serviceId && finding.serviceName && (
-              <p className="text-xs text-muted-foreground">{finding.serviceName}</p>
+            {!serviceId && services.some((item) => item.serviceName) && (
+              <p className="break-words text-xs text-muted-foreground">
+                {services
+                  .map((item) => item.serviceName)
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
             )}
             {finding.confidence === "possible" && (
               <p className="text-xs text-warning">{copy.possible}</p>
             )}
-            {finding.evidence.map((evidence) => (
+            {[...new Set(services.flatMap((item) => item.evidence))].map((evidence) => (
               <p key={evidence} className="break-all font-mono text-xs text-muted-foreground">
                 {evidence}
               </p>
@@ -208,14 +232,30 @@ export function SecurityProjectReview({
                   : finding.refreshBlockedReason}
               </p>
             )}
-            <details
-              className="text-sm text-muted-foreground"
-              open={finding.runtimeUpgradeRequired}
-            >
-              <summary className="cursor-pointer">{copy.details}</summary>
-              <p className="mt-2 leading-relaxed">{finding.message}</p>
-            </details>
+            {finding.manualReviewRequired ? (
+              <div className="space-y-2 text-sm">
+                <p className="font-medium text-warning">{copy.manualReviewRequired}</p>
+                <p className="text-muted-foreground">{copy.manualReviewDescription}</p>
+                <p className="whitespace-pre-line leading-relaxed text-muted-foreground">
+                  {finding.message}
+                </p>
+              </div>
+            ) : (
+              <details
+                className="text-sm text-muted-foreground"
+                open={finding.runtimeUpgradeRequired}
+              >
+                <summary className="cursor-pointer">{copy.details}</summary>
+                <p className="mt-2 leading-relaxed">{finding.message}</p>
+              </details>
+            )}
             <div className="flex flex-wrap items-center gap-3">
+              {finding.manualReviewRequired && (
+                <InvestigationLink
+                  target={{ kind: "security", projectId, advisoryId: finding.id }}
+                  size="sm"
+                />
+              )}
               <a
                 className="text-sm underline underline-offset-4"
                 href={finding.url}
@@ -252,7 +292,9 @@ export function SecurityProjectReview({
                   {copy.openSourceRedeploy}
                 </Button>
               )}
-              {(finding.runtimeUpgradeRequired || finding.imageChangeRequired) && (
+              {(finding.manualReviewRequired ||
+                finding.runtimeUpgradeRequired ||
+                finding.imageChangeRequired) && (
                 <Button
                   size="sm"
                   variant="secondary"

@@ -1269,6 +1269,8 @@
     "hideBanners": "Masquer les bannières de sécurité",
     "showBanners": "Afficher les bannières de sécurité",
     "bannerDescription": "Afficher les avis de sécurité des applications et serveurs en haut du tableau de bord dans ce navigateur et cet espace. Les vérifications et canaux de notification sont gérés séparément.",
+    "manualReviewRequired": "Vérification requise",
+    "manualReviewDescription": "Cet avis nécessite de vérifier la configuration ou l’application. Actualiser l’image ne suffit pas à prouver la résolution.",
     "openRuntimeConfiguration": "Configurer l’environnement",
     "severity": {
       "critical": "Critique",
