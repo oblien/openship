@@ -401,6 +401,9 @@ wizard with the fresh source and saved settings/destination; cancel performs no
 synchronization. Show the change summary in the wizard and validate its source
 revision before deploying. Retire removed services through normal deployment
 cleanup while preserving their persistent data and deployment history.
+Deploy asks for DNS setup only for newly selected custom hostnames or a changed
+destination. Existing hostnames on the same deployed destination continue directly;
+adding only a www hostname asks for that hostname alone.
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the

@@ -986,7 +986,10 @@ async function reconcileComposeSource(
       isEnoent &&
       !bootstrapping
     ) {
-      const composeRows = await listProjectComposeServices(project.id).catch(() => []);
+      const composeRows = await listProjectComposeServices(project.id).catch((error) => {
+        observeCaughtError(error, "platform/engine/modules/deployments/build.service");
+        return [];
+      });
       const isImageOnly =
         composeRows.length > 0 &&
         composeRows.every((s) => serviceKind(s) === "compose" && !s.build && Boolean(s.image));
@@ -1045,7 +1048,10 @@ async function resolveLifecycleSourceEnv(
   } catch (err) {
     const isEnoent = (err as NodeJS.ErrnoException)?.code === "ENOENT";
     if (localPath && isEnoent) {
-      const composeRows = await listProjectComposeServices(project.id).catch(() => []);
+      const composeRows = await listProjectComposeServices(project.id).catch((error) => {
+        observeCaughtError(error, "platform/engine/modules/deployments/build.service");
+        return [];
+      });
       const isImageOnly =
         composeRows.length > 0 &&
         composeRows.every((s) => serviceKind(s) === "compose" && !s.build && Boolean(s.image));

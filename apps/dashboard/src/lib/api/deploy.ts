@@ -104,10 +104,9 @@ export interface PrepareComposeService {
   domain?: string;
   customDomain?: string;
   domainType?: "free" | "custom";
-  /** Multi-route: additional public routes (one per port). Reuses the shared
-   *  PublicEndpoint shape so the routing card edits them directly; entry[0]
-   *  mirrors the scalar exposedPort/domain above. */
-  publicEndpoints?: PublicEndpoint[];
+  /** Source scans and saved rows may carry numeric ports. Normalize these to
+   * UI endpoints before editing or serializing a deployment request. */
+  publicEndpoints?: Array<Omit<Partial<PublicEndpoint>, "port"> & { port?: number | string | null }>;
 }
 
 export interface PrepareAppConfig {

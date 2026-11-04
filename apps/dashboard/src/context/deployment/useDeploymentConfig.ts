@@ -903,7 +903,10 @@ export function useDeploymentConfig() {
           branches,
           branchPage: branchPage ?? 0,
           branchesHasMore: branchesHasMore ?? false,
-          services: response.services || [],
+          services: (response.services ?? []).map(service => ({
+            ...service,
+            publicEndpoints: service.publicEndpoints?.map(createPublicEndpoint),
+          })),
           composeRevision: response.composeRevision,
           composeChanges: response.composeChanges,
           publicEndpoints: routingState.publicEndpoints,
