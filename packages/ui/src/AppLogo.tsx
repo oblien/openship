@@ -50,6 +50,7 @@ const BRAND_LOGO: Record<
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   prometheus: { slug: "prometheus" },
+  "otel-collector": { slug: "opentelemetry" },
   // simpleicons has no Loki mark, so the official logo is vendored.
   loki: { src: "/app-logos/loki.png" },
   victoriametrics: { slug: "victoriametrics" },
