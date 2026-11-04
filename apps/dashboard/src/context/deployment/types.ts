@@ -84,12 +84,11 @@ export interface Screenshot {
 
 /**
  * Compose-service shape as it travels through the dashboard's deployment
- * context. Aliased to PrepareComposeService (the API client's matching
- * type) so the two stay synchronized - same wire shape, one place to
- * change it. The dashboard's deployment context uses this name for
- * legacy reasons; new code should reach for PrepareComposeService.
+ * context. Source response fields stay synchronized with PrepareComposeService;
+ * endpoints are normalized to the UI shape with string ports and stable ids.
  */
-export type ComposeServiceInfo = PrepareComposeService & {
+export type ComposeServiceInfo = Omit<PrepareComposeService, "publicEndpoints"> & {
+  publicEndpoints?: PublicEndpoint[];
   /** UI-only draft of the same effective environment edited in the service panel. */
   environmentDraft?: import("@/lib/service-environment-editor").ServiceEnvironmentDraft;
 };
@@ -631,11 +630,14 @@ export function resolveBuildImageForDeploymentMode(
 // importers are unchanged and client + server share one definition.
 export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } from "@repo/core";
 
-export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): PublicEndpoint {
+/** Keep UI ports as strings, including endpoints returned by source scans. */
+export function createPublicEndpoint(
+  overrides: Omit<Partial<PublicEndpoint>, "port"> & { port?: number | string | null } = {},
+): PublicEndpoint {
   return {
     ...(overrides.protectionDraft ? { protectionDraft: overrides.protectionDraft } : {}),
     id: overrides.id ?? randomUUID(),
-    port: overrides.port ?? "",
+    port: overrides.port != null ? String(overrides.port) : "",
     targetPath: overrides.targetPath ?? "",
     ...(overrides.exact ? { exact: true } : {}),
     domain: overrides.domain ?? "",
