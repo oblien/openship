@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderableOAuthProviders } from "./auth-providers";
+import { renderableOAuthProviders, renderableOidcProvider } from "./auth-providers";
 
 /**
  * The login page used to decide which social buttons exist with `!selfHosted`,
@@ -62,5 +62,27 @@ describe("renderableOAuthProviders", () => {
     // different thing to render, so it must not fall through to the branded
     // "Continue with …" treatment just because its id happens to match.
     expect(renderableOAuthProviders([{ id: "github", kind: "sso" }])).toEqual([]);
+  });
+});
+
+describe("renderableOidcProvider", () => {
+  it("returns null when no oidc provider is advertised", () => {
+    expect(renderableOidcProvider(undefined)).toBeNull();
+    expect(renderableOidcProvider([])).toBeNull();
+    expect(renderableOidcProvider([{ id: "github", kind: "social" }])).toBeNull();
+  });
+
+  it("returns the advertised oidc provider with custom display name or SSO default", () => {
+    expect(
+      renderableOidcProvider([{ id: "oidc", kind: "oidc", name: "Authentik" }]),
+    ).toEqual({ id: "oidc", name: "Authentik" });
+
+    expect(
+      renderableOidcProvider([{ id: "oidc", kind: "oidc", name: "   " }]),
+    ).toEqual({ id: "oidc", name: "SSO" });
+
+    expect(
+      renderableOidcProvider([{ id: "oidc", kind: "oidc" }]),
+    ).toEqual({ id: "oidc", name: "SSO" });
   });
 });

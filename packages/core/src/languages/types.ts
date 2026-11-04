@@ -19,6 +19,9 @@ export interface PortDetectionContext {
   fileContents?: Record<string, string>;
 }
 
+/** Framework discovery can use development tools; role suggestions follow the managed install. */
+export type DependencyPurpose = "detection" | "roles";
+
 export interface LanguageDetector {
   /** Stable identifier - used in telemetry and detector lookups. */
   id: string;
@@ -37,8 +40,10 @@ export interface LanguageDetector {
    *
    * `filename` is provided so a single language module can handle multiple
    * manifests with a switch (Python's requirements.txt vs pyproject.toml vs Pipfile).
+   * `purpose` defaults to detection. A language whose managed install excludes
+   * development dependencies can filter those for role suggestions here.
    */
-  parseManifest(filename: string, content: string): Record<string, string>;
+  parseManifest(filename: string, content: string, purpose?: DependencyPurpose): Record<string, string>;
   /**
    * Recover a default port from contextual signals. Return null when this
    * language has nothing to say - the next detector in the registry runs.

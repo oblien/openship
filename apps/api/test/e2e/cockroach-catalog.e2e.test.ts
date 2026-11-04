@@ -162,7 +162,9 @@ describeDockerE2E("CockroachDB companion service (#1484)", () => {
       const replacement = await runtime.deployServiceWorkload(group, next);
       const replacementId = await remember(replacement.containerId!);
       await ready(replacementId);
-      expect(await runtime.inspectNamedVolumes(replacementId)).toEqual(firstVolumes);
+      expect((await runtime.inspectNamedVolumes(replacementId)).sort()).toEqual(
+        [...firstVolumes].sort(),
+      );
       expect(
         await (
           await runtime.inContainerExecutor(replacementId)

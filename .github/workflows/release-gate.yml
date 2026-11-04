@@ -34,6 +34,10 @@ permissions:
   actions: read
 
 jobs:
+  geoip:
+    name: GeoIP freshness
+    uses: ./.github/workflows/geoip.yml
+
   actions-runner:
     name: Actions execution
     uses: ./.github/workflows/actions-e2e.yml
@@ -135,6 +139,14 @@ jobs:
           bun run --cwd packages/sdk lint
           bun run --cwd apps/cli lint
 
+      - name: Verify scoped agents against the released Mindwire daemon
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          OPENSHIP_ASSISTANT_E2E: "1"
+        run: >-
+          bun run --cwd packages/platform test
+          test/assistant-agents.e2e.test.ts test/assistant-remote.test.ts
+
       # `turbo run test` across every package with a test script. Includes the two
       # migration suites in packages/db: migrate-chain (the chain applied to a
       # POPULATED database, plus a self-check proving it can fail) and
@@ -145,6 +157,12 @@ jobs:
         run: |
           bun run test
           bun run test:scripts
+
+      - name: Verify project manifests against a real Kubernetes API
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          RUN_KUBERNETES_E2E: "1"
+        run: bun run --cwd packages/adapters test test/project-manifests.e2e.test.ts
 
       - name: Verify Cloud build coordination on PostgreSQL
         if: steps.resume.outputs.reused != 'true'

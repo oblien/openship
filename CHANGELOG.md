@@ -6,6 +6,372 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+## 0.9.9
+
+Critical security update covering authentication, Cloud connection approvals,
+server isolation and encrypted email delivery. Includes all changes merged into
+main since 0.9.8, plus deployment, billing, assistant and dashboard improvements.
+
+### Security
+
+- **Authentication dependencies** — upgrade Better Auth and its plugins/adapters
+  to 1.7.15 and the Hono Node adapter to 2.1.3. Address OAuth state, proxy,
+  consent, rate-limit and static-path middleware advisories.
+- **OAuth and sign-in compatibility** — use the provider's supported APIs for
+  resources, signing, PKCE and refresh rotation. Preserve GET/POST authorization
+  parameters, silent-request validation, signed login/MFA continuation, OIDC
+  callbacks and existing MCP endpoint aliases. Register resources and token
+  issuers from trusted instance configuration, while retaining HTTP setup and
+  desktop loopback support.
+- **Cloud connection approval** — require explicit approval before connecting
+  Desktop to a Cloud account. Headless CLI connections require the code shown
+  in the terminal, bound to an expiring, single-use request and its PKCE proof.
+  Recheck the approving session against live state. Share Better Auth's cookie
+  and session handling across bridges and preserve issued bearer lifetimes.
+- **Client identity and limits** — apply auth rate limits to the client's IP,
+  using the existing trusted-proxy boundary. Normalize linked-instance IP
+  fingerprints without combining distinct IPv6 hosts.
+- **Server isolation** — resolve shared network/PID namespaces only through
+  services in the same stack; reject authored raw container references and host
+  namespaces. Restrict host bind mounts across HTTP, MCP, native SDK and background
+  deployment paths. Managed Docker repository mounts remain confined to prepared
+  project storage. Reading local source contents or environment values over HTTP
+  requires instance authority.
+- **Encrypted SMTP** — require TLS for authenticated mail delivery, including
+  verified STARTTLS on submission ports. Refuse a plaintext fallback when the
+  server cannot provide the required encryption.
+- **Umami catalog** — update the PostgreSQL image to 2.20.2 and verify the
+  catalog's configuration remains compatible.
+
+### Security advisories and host maintenance
+
+- **Reviewed host patches** — inspect supported Ubuntu hosts, review the exact
+  package changes, and apply scoped security fixes through the dashboard, CLI,
+  SDK or MCP. Verify signed advisory data, trusted package origins, current
+  permissions and server state before execution. A kernel reboot requires a
+  separate review; unsupported hosts retain manual guidance.
+- **Observable maintenance** — persist task steps and bounded logs, reconnect to
+  running jobs, and verify the resulting package/kernel state. Keep pending
+  reboots visible and expose maintenance runs from the server and Monitoring.
+- **Advisory preferences** — let workspace owners/admins pause advisory checks,
+  and save each user's banner visibility preference. Show scan freshness and
+  availability accurately, preserve upstream severity, and explain when an
+  application runtime must change before refreshing images can fix a finding.
+
+### Deployments and host support
+
+- **Compose source review** — show added, changed and removed source services
+  before redeploying. Reject a stale review, preserve saved settings when adopting
+  an older baseline, and retire removed services only after a successful cutover.
+  Preserve volumes and keep archived services available to rollback handling.
+- **Pinned Git builds** — fetch a requested commit even when it is outside the
+  cloned branch. Improve submodule preparation and credential handling across
+  local and remote build paths.
+- **Edge recovery** — preserve unreadable virtual-host configurations during
+  cleanup, and avoid identifying similarly named application containers as the
+  OpenShip edge.
+- **Arch-family hosts** — use pacman for Arch/Manjaro package preparation and
+  component version checks instead of Debian commands.
+- **Fresh GeoIP data** — refresh and validate the country database before creating
+  release tags, with a scheduled refresh workflow for ongoing updates.
+- **Release verification** — retain the published 0.9.8 Compose template for real
+  upgrade tests. Retry transient Apple ticket-validation failures while still
+  requiring a successfully validated installer before publication.
+
+### Cloud, billing and email
+
+- **Checkout recovery** — cancel unconfirmed purchases without manual cleanup,
+  and recover the billing workspace after removing a canceled checkout's server.
+  Preserve payment verification and scoped provider ownership.
+- **Provisioning escalation** — send exhausted provisioning failures to support
+  once, retaining the recovery context without duplicate escalation.
+- **Customer emails** — welcome verified Cloud signups and confirmed purchasers,
+  and send separate payment/renewal notices with scoped billing links. Queue mail
+  durably, deduplicate webhook events, recheck the recipient's verified ownership,
+  and retry delivery failures. The billing provider remains the invoice issuer.
+- **Cloud plan guidance** — update the public plan descriptions and Hobby plan
+  guidance, and make plan-selection hints more compact in the dashboard.
+
+### Assistants and dashboard
+
+- **Connected model discovery** — list models through the connected assistant
+  runtime and MCP, keeping connection setup and agent selection consistent.
+- **Agents on paid Cloud servers** — prepare and run agents on an existing paid
+  instance while preserving host access checks, profiles and sign-ins.
+- **Compact tool activity** — keep routine assistant lookups inline, with detailed
+  previews available when useful instead of expanding every tool result into a card.
+- **Domains and referrals** — simplify domain actions and plan guidance. Use
+  consistent referral wording across the dashboard and website, and place referral
+  code entry below the plan controls.
+
+### Upgrade notes
+
+- Deploy the API, dashboard and all API replicas together. The OAuth migration
+  preserves accounts and client registrations but expires legacy access/refresh
+  tokens: reconnect existing MCP clients, assistant connections and chat connectors.
+  Some older confidential clients may need to register again. Check for duplicate
+  `(provider_id, account_id)` account pairs before upgrading from Better Auth 1.6.
+- Replace authored `container:` namespace references with `service:<name>` for a
+  service in the same stack. Host bind mounts are disabled by default. Operators
+  of trusted self-hosted instances can explicitly enable
+  `OPENSHIP_ALLOW_HOST_BIND_MOUNTS=true`; Cloud host mounts remain restricted.
+- Authenticated SMTP must support verified TLS/STARTTLS. Configure a TLS-capable
+  submission endpoint if the previous endpoint only accepted plaintext delivery.
+
+## 0.9.8
+
+Recommended patch restoring scoped agent creation and agent-backed automations
+introduced in 0.9.7.
+
+- **Compatible assistant runtime** — update all Mindwire dependencies to 0.1.60,
+  which supports the required bot protocol 9 and application-managed tools.
+  OpenShip provisions the matching runtime on local and remote assistant hosts
+  while preserving existing profiles and sign-ins.
+- **Release verification** — create, edit and reopen scoped Codex and Claude
+  profiles against the actual released daemon, and verify scoped agent creation
+  and reuse over SSH before publishing. Keep the protocol and permission checks.
+
+## 0.9.7
+
+Recommended update introducing scoped AI agents, reviewed automations, and chat
+app integrations. Includes dependency security updates and all 0.9.6 fixes.
+
+- **Agent characters** — choose from 16 original flat bots with distinct silhouettes,
+  gazes and expressions. Give default specialists a stable individual look across
+  the switcher, automation setup and tool results, and preserve the chosen character
+  when saving a new agent. Keep the chat header to the agent's name and role.
+
+- **Monitoring AI shortcuts** — prepare scoped repairs from the shorter Fix with AI
+  action on app issues and a read-only workspace health report from the Monitoring
+  header. Keep status labels in a dedicated column and move actions below details
+  when the list is narrow.
+
+- **Assistant action handoffs** — offer a compact inline review when enabling saved
+  automations, approve the exact revisions together, and continue the task in the
+  same chat. Recheck existing permissions and reject stale batches atomically.
+  Clarify that authorized MCP actions should be executed and verified, not handed
+  back as manual instructions. Simplify the chat header and float the composer
+  above the transcript without reducing its scrolling area.
+
+- **AI Agents workspace** — switch between the general assistant, specialists and
+  automations in a collapsible 340px right column. Resume each agent's last valid chat,
+  browse conversations from the header’s history drawer, and inspect automation runs with
+  their existing investigation chats. Use a right drawer on mobile and keep agent
+  configuration in the shared drawer. Simplify the conversation header and preserve
+  scoped navigation, fresh requests and paused flow controls.
+
+- **Automation editing** — show Trigger, Investigate, Respond and Notify as compact
+  connected settings rows, with fields expanding in place and full-width hover/focus.
+  Keep saved summaries visible while fields load, and use matching skeletons across
+  the agents workspace, conversations and editors. Edit a selected automation inline
+  in AI Agents using the same forms, permissions and save checks as the dedicated
+  editor. Use one app/status line and Save/Cancel toolbar, and return to run history
+  after editing. Reuse the row summary in expanded chat previews. Chat-created flows
+  stay paused until reviewed.
+
+- **Investigate with AI** — open a prepared assistant request from failed deployment
+  headers, failed app setup pages and active app issues. Keep the original app and
+  deployment context through setup, use existing permissions, and scope the handoff
+  to its originating account and workspace. Logs and errors stay out of shortcut URLs.
+
+- **Scoped assistant agents** — create specialists with saved instructions, an AI
+  connection and named resource permissions. Assign tasks or select a specialist
+  in an automation. Each task uses one inspectable conversation, including live
+  follow-ups, through the existing Assistant and MCP execution path. Add agent and
+  automation tools to the normal API, inline task links, and paused flow drafts
+  for user review. Bound each task to its original authority; recheck scope changes,
+  deduplicate requests, and revoke temporary execution tokens on completion or agent edits.
+  Manage agents in an animated drawer, expand creation and editing across the screen,
+  choose a flat character avatar, and open scoped chats in the main assistant workspace.
+  The chat header identifies the active assistant or specialist and the current conversation.
+  Keep connection management in the overflow menu and Assistant settings.
+
+- **AI Agents introduction** — show what agents can do through selectable deployment,
+  investigation and automation examples. Keep one enable action, a compact host choice
+  and original Codex/Claude Code marks. Put setup first on mobile and show a
+  permissions-shaped skeleton while access setup loads.
+
+- **Native harness identity** — show Codex and Claude Code with their native marks
+  across the composer, connections, history and agent settings. Preserve the
+  harness’s original authentication prompts, including ChatGPT sign-in for Codex.
+
+- **Assistant live chat and composer** — smooth incoming text and scrolling, expand
+  live thinking, and show animated tool activity with reduced-motion support. Attach,
+  paste or drop images with removable previews, and switch models between replies
+  in the same conversation. Images use Mindwire's conversation-bound uploads on the
+  selected agent host; size/type validation and existing workspace permissions apply.
+  Show immediate send progress and keep activity visible between replies and tool steps;
+  use a solid stop icon.
+  Clear the composer on send and reset conversation input to a medium-height, two-line field;
+  restore failed submissions with their original attachments for retry.
+
+- **Assistant Markdown** — render streaming replies with Streamdown, syntax-highlighted
+  code, readable tables and nested lists across light, dim and dark themes. Keep copy
+  controls tied to completed text and retain safe links without loading model-supplied
+  images or executing raw HTML.
+
+- **Assistant access and tool results** — stop offering instance-only diagnostics
+  to workspace-scoped MCP connections. Keep the shared instance authorization gate
+  for direct calls, and refresh completed chats after permission edits. Retire stale
+  access requests and carry the last request into a new chat as an unsent draft.
+  Add expandable tool activity, per-call request/result inspection, and inline app,
+  server, deployment, service and repository cards using the existing view/import flows.
+
+- **Assistant in chat apps** — talk to your own Claude Code or Codex agent from Slack,
+  Discord, Telegram and Teams through the existing Assistant runtime and MCP grant.
+  Workspace allowance and personal opt-in start off. Conversations are isolated by
+  sender and chat; history, resume, new and stop reuse native conversations. Continue
+  chat-origin conversations in the dashboard with the same approved access. Choose
+  dedicated Assistant, deployment-command or combined bots.
+  Durable replies read the exact native turn, including after dashboard continuation,
+  and survive delivery retries without replaying turns. Access
+  changes stop further execution. Add settings and per-provider setup guidance;
+  preserve private command replies and assistant threads in the shared chat transport.
+
+- **Assistant automations** — add Assistant settings and an opt-in flow editor for
+  failed deployments and confirmed service incidents. Investigate and notify,
+  request approval, or explicitly choose app recovery and repository permissions.
+  Support custom API endpoints and models, code fixes on new branches and draft PRs.
+  Each flow stays within existing Assistant consent; exact patches are reviewed
+  before approval and published through shared GitHub operations. Results appear in
+  the agent conversation, with optional existing notification channels.
+  Reuses MCP, deployment, jobs and notification paths, with private investigations,
+  fresh health verification, run history, cooldowns and daily limits. Duplicate
+  incidents and action retries cannot execute twice; changing access or pausing
+  invalidates pending work. Cloud agents remain on the chosen customer server.
+
+- **Chat app commands** — connect Slack, Discord, Telegram or Microsoft Teams in Settings to
+  list projects, check deployments, open private logs, and confirm redeploys or restarts.
+  Each sender links their own account through the existing permission flow. Commands are
+  opt-in, use the normal deployment path without AI, and deduplicate provider retries.
+  Slack Socket Mode, Discord Gateway and Telegram polling work from Desktop or private
+  servers without a public URL. Connections report their status, reconnect and recover
+  durable cursors; Teams retains its public HTTPS webhook requirement. Bot connectivity
+  runs directly in OpenShip with encrypted credentials and a durable inbox, without
+  installing or requiring Mindwire. Only the optional assistant uses its agent runtime.
+  Add separate account-link instructions and URL messages, localized replies following each
+  user’s OpenShip language, and Telegram welcome, project and confirmation buttons. Share
+  project command syntax between CLI and chat through `@repo/commands`; preserve permission
+  checks and track individual reply messages through retries.
+
+- **Opt-in assistant** — use Claude Code or Codex through Mindwire in the
+  Assistant tab, with streaming conversations, structured questions, tool results,
+  agent connections and private history. Inline permission review reuses the existing
+  MCP consent form; operations use the normal MCP permissions, deployment flows and audit
+  rules. Native tools are restricted, retries reuse request receipts, and changing
+  access requires a new conversation. Disabled by default; available on macOS and
+  Linux hosts. Cloud uses a private Mindwire profile on the chosen customer server;
+  Desktop can reuse local sign-in, while self-hosted and Cloud keep separate agent
+  credentials. Tenant checks, durable consent and renewable turn leases protect
+  conversations across API replicas. Agents can request additional access in the
+  conversation; users review it in the shared permission editor. Requests grant
+  nothing, retain current permissions until saved, and never retry a task automatically.
+  Remote assistant hosts tolerate slow startup and retain their private
+  connection record so a retry can reconnect to the same daemon.
+
+- **Release hardening** — include the shared commands package in self-hosted source
+  distributions, keep repository changes explicitly classified as source writes,
+  report safe background failure summaries without logging native credentials,
+  and refresh the generated API and MCP references. Update compatible dependencies
+  for published security fixes while retaining the existing OAuth/MCP data model.
+  Implicit OAuth account linking now requires a verified local account as well
+  as a provider-verified email, preventing pre-registered account hijacking.
+  Migrate authenticator confirmation and lockout fields while preserving existing
+  active factors and unfinished enrollments, including older instance backups.
+  Preserve failed authenticator and recovery-code counters across denied requests,
+  so challenge attempt limits and account lockouts cannot be reset by transaction rollback.
+  Include the assistant type dependency in the public SDK and catalog new audit events.
+
+- **Deployment fixes** — redact long clone tokens from stored errors and skip the
+  workspace dependency crawl when checking changes for Compose projects (#1546, #1547).
+
+## 0.9.6
+
+Recommended update for database recovery, reliable builds and migrations, GitHub
+Actions scheduling, and managed infrastructure updates.
+
+- **Recover PGlite after a container crash** — hold a Linux kernel file lock so
+  reused PIDs cannot strand the database or admit an owner in another container.
+  Preserve conservative checks for older locks and other operating systems (#1524).
+
+- **Keep Docker build failures readable** — surface the cause before long generated
+  commands, preserve the full output in build logs, and retain Cloud recovery
+  guidance after reload. Exit 137 is reported as a killed process with possible
+  memory pressure, without claiming a confirmed out-of-memory event.
+
+- **Keep monorepo runtime images aligned with each service** — use the service's
+  framework and selected builder for its runtime instead of inheriting an
+  unrelated parent image. Fill missing builders from the stack registry, preserve
+  explicit runtime selections for unchanged apps, and use the same resolution
+  when checking whether runtime images can be refreshed.
+
+- **Add a scoped Kubernetes manifest foundation** — admit supported resources into
+  a project's namespace with ownership checks on objects, pod/job templates and
+  selectors. Validate the full change against Kubernetes before writing, reject
+  changed Job definitions, and preserve conflict checks when updating or pruning.
+  Exercise apply, update and cleanup against K3s in CI and the release gate. This
+  foundation does not yet expose a manifest upload UI or deployment route (#1039).
+
+- **Preserve live Docker logs** — decode stdout and stderr independently across
+  split frames and UTF-8 characters, keep TTY logs intact, and report malformed or
+  truncated streams so the existing reconnect flow can recover (#1482).
+
+- **Support verified self-hosted OIDC sign-in** — discover a configured identity provider and
+  verify signed ID tokens, issuer, audience, expiry and sign-in nonce before
+  creating sessions. Preserve invitation and two-factor checks, require matching
+  UserInfo subjects, and refuse insecure or redirected provider endpoints. Require
+  verified email, scope accounts to the issuer and exact subject, and keep instance
+  OIDC disabled on Openship Cloud and outside local-account auth mode (#1489).
+
+- **Keep BuildKit sessions alive** — answer Docker’s session health checks so
+  builds can use optional secret mounts after long install/build steps. Close
+  sessions on completion, cancellation, and transport errors (#1488).
+
+- **Move digest-referenced images between servers** — use the reference restored
+  by Docker load for migration's one-time deployment handover. Direct and relayed
+  transfers no longer try to create a Docker tag containing a digest (#1526).
+
+- **Move stateless single-app projects between servers** — deploy a project-owned
+  app with no service rows through its single-app pipeline using the transferred image.
+  Reject unsafe empty service scopes before copying data or stopping the source;
+  reused containers stay outside the deployment scope. Single apps with mounted
+  data remain unsupported and are refused before data movement (#1525).
+
+- **Keep queued GitHub jobs moving** — replace a registration that GitHub assigned
+  to another job, and only count spare registrations whose runners remain admitted
+  and capable for the waiting workflow. Excluded runners, stale approvals and
+  incompatible hosts no longer block dispatch (#1505, #1509, #1541).
+
+- **Keep Cloud diagnostics available during replica startup** — allow bounded
+  schema initialization to wait for another replica, while preserving the short
+  write deadlines and local-log fallback used during normal operation.
+
+- **Recover health after a service container is replaced** — refresh only the
+  stale service binding when the continuous watcher verifies a healthy successor
+  under the same active deployment. Preserve native and Compose service identity
+  through managed edge updates and rollback; leave unrelated services and
+  deployment history intact (#1496).
+
+- **Scan private repositories with server credentials** — repository preparation,
+  monorepo folder selection and branch rescans use the shared GitHub credential
+  chain, including the selected self-hosted server's saved token. Without a
+  selection, only the active organization's local server is eligible. Borrowing
+  requires repository access and server write permission; SSH provisioning,
+  GitHub mutations and Cloud authentication remain unchanged (#1500).
+
+- **Match Laravel worker suggestions to production dependencies** — suggest the
+  standard queue worker when Horizon is only in `require-dev`, matching the
+  default Composer `--no-dev` install. Explicit role choices remain available (#1171).
+
+- **Keep runtime roles available after removing attached services** — a single
+  source app retains its existing deployment and role configuration flow after
+  the last attached service is removed or disabled, preserving its service and
+  routing identity (#1308).
+
+- **Prevent false stale-role warnings after deployments** — background image
+  cleanup updates storage measurements without changing the project's configuration
+  revision. Real configuration edits still invalidate previously reviewed changes.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
@@ -19,7 +385,9 @@ Runtime security notices use the signed feed published from `security-advisories
 - **Recover storage from slow build-cache scans** — when free disk space or inodes
   already block deployment, allow up to two minutes to measure unused, owned build
   caches before reclaiming them. Healthy hosts retain the short best-effort scan;
-  active builders and application volumes remain protected.
+  defer timed-out SSH measurements during automatic retention without blocking
+  unrelated builds. Explicit cleanup still reports measurement failures; active
+  builders and application volumes remain protected (#1527).
 - **Reclaim images from interrupted first deployments** — include projects that
   have never reached a running release in managed image collection. Resolve the
   last attempt through the existing tenant checks and retain the same rollback,
@@ -45,6 +413,40 @@ Runtime security notices use the signed feed published from `security-advisories
 - **Clarify referral checkout and earnings** — retain unavailable referral codes
   through sign-in until the customer removes them, and show commission per
   confirmed payment with renewals limited to the program's reward period.
+
+- **Restore managed services after an interrupted image update** — attempt to
+  restore the previous edge or mail image when replacement startup throws,
+  including a lost SSH command channel after removal. Report unsuccessful
+  recovery instead of treating a connection failure as proof of an outage (#1540).
+- **Validate permission resource names at startup** — reject unknown permission
+  leaf types during route registration using the shared authorization validator,
+  so misspelled tags cannot reach request-time resource resolution (#1521).
+- **Load the selected app's source environment** — use the app folder's
+  `openship.json` when present and fall back to the repository root otherwise,
+  matching the configuration shown during setup (#1480).
+- **Authenticate private submodules with the selected GitHub token** — support
+  relative, HTTPS, SSH and recursive private dependencies through the shared
+  deployment credential helper, while preserving repository and namespace scope
+  and keeping credentials out of saved remote URLs (#1522).
+- **Preserve Docker restart retries and port mappings** — retain configured
+  `on-failure` retry limits and every published binding during container creation.
+- **Keep edge routes usable before a first deploy** — resolve domains through the
+  project's saved server binding, preserve the origin of password-form submissions,
+  and forward the visitor country to upstream applications. Document the scope
+  of edge password protection and direct-port access (#1498, #1515, #1506).
+- **Keep deployment source identity intact** — expose the selected revision as
+  `OPENSHIP_COMMIT_SHA`, retain carried Compose image digests, and apply configured
+  deployment paths consistently (#1499, #1475, #1472).
+- **Show the right dashboard feedback** — use custom apps' own logos, keep open
+  card menus above adjacent controls, and clarify expiring-domain notifications
+  (#1508, #1518, #1512).
+- **Retain update advisory scope** — keep installation-specific notices scoped in
+  Monitoring and recheck deployment eligibility before presenting update actions
+  (#1467).
+- **Align Cloud pricing with billing periods** — present management plans and
+  recurring compute charges using their actual billing periods (#1466).
+- **Keep desktop release builds available** — build and notarize macOS installers
+  on the supported macOS 15 runner.
 
 ## 0.9.5
 

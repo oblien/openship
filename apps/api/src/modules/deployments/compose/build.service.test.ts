@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 import { BuildLogger, CloudDockerRuntime, DEFAULT_RESOURCE_CONFIG, type BuildConfig } from "@repo/adapters";
+import { generateDockerfile } from "../../../../../../packages/adapters/src/runtime/docker-build-plan";
 import type { BuildConfigSnapshotLike } from "@repo/platform/engine/modules/deployments/build-config";
 import { describe, expect, it, vi } from "vitest";
 
@@ -344,6 +345,38 @@ describe("prebuilt registry images (#878)", () => {
     expect(captured).toHaveLength(1);
     expect(result.builtImageRefs.size).toBe(1);
     expect(result.externalCount).toBe(0);
+  });
+});
+
+describe.each([false, true])("monorepo runtime selection (cloud=%s)", (cloud) => {
+  it.each(["node", null])("builds a runnable Node image with framework %s", async (framework) => {
+    const { captured } = await run([{
+      ...repoService({
+        kind: "monorepo", build: null, dockerfile: null, framework,
+        buildCommand: "npm run build", startCommand: "node server.js",
+      }),
+      buildImage: "node:22-bookworm-slim", packageManager: "npm",
+    }], undefined, {
+      framework: "unknown", buildImage: "ubuntu:22.04", runtimeImage: "ubuntu:22.04",
+    }, {}, undefined, {}, { cloud });
+
+    const config = captured[0].config;
+    expect(config.buildImage).toBe("node:22-bookworm-slim");
+    expect(config.runtimeImage).toBe(config.buildImage);
+    const dockerfile = generateDockerfile(config);
+    expect(dockerfile).toContain("FROM node:22-bookworm-slim");
+    expect(dockerfile).not.toMatch(/FROM (?:ubuntu|undefined)/);
+    expect(dockerfile).toContain("node server.js");
+  });
+
+  it("fills an absent builder from the sub-app stack", async () => {
+    const { captured } = await run([repoService({
+      kind: "monorepo", build: null, dockerfile: null, framework: "node",
+      buildCommand: "npm run build", startCommand: "node server.js",
+    })], undefined, { framework: "unknown", buildImage: undefined, runtimeImage: "ubuntu:22.04" },
+    {}, undefined, {}, { cloud });
+    expect(captured[0].config).toMatchObject({ buildImage: "node:22", runtimeImage: "node:22" });
+    expect(generateDockerfile(captured[0].config)).not.toContain("FROM undefined");
   });
 });
 

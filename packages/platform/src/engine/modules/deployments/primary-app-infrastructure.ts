@@ -131,6 +131,9 @@ export async function prepareAttachedInfrastructure(phase: InfrastructurePhase) 
   ) {
     throw new Error("Project services changed while this app was building. Retry the deployment.");
   }
+  // The materialized app keeps its service identity after the last attached
+  // service is removed. There is no infrastructure scope to reconcile (#1308).
+  if (allIds.size === 0) return;
   const active = await findActiveDeployment(project);
   if (
     active &&

@@ -218,7 +218,7 @@ export function getPostAuthRedirect(searchParams: SearchParamsLike) {
 export function validateReturnTo(input: string | null): string | null {
   if (!input) return null;
   if (typeof input !== "string") return null;
-  if (input.length > 512) return null;
+  if (input.length > 8192) return null;
   // Must start with exactly one slash — `//evil.example` is a
   // protocol-relative URL that browsers resolve cross-origin.
   if (!input.startsWith("/")) return null;
@@ -231,6 +231,9 @@ export function validateReturnTo(input: string | null): string | null {
   // Split off any query/fragment for the prefix check, but keep them on
   // the returned value so the consent page reloads with its params.
   const pathOnly = input.split(/[?#]/)[0];
+  // Better Auth 1.7 carries the signed OAuth query through consent/login. Keep
+  // its bounded payload intact without widening other continuation limits.
+  if (input.length > 512 && pathOnly !== "/mcp/authorize") return null;
   const isInvitationClaim = isInvitationClaimPath(pathOnly);
   // `/mcp/authorize` is here for the same reason as `/cloud-authorize`: it's a
   // consent page for an ALREADY-authenticated visitor that sends the user to

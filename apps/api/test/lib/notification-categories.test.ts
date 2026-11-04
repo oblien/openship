@@ -53,6 +53,7 @@ describe("notification category registry", () => {
     // category (add it below) or a rename that needs a migration first — the
     // labels above them are free to change, which is the point of the split.
     expect(CATEGORIES.map((c) => c.id)).toEqual([
+      "assistant.automation",
       "security.advisory",
       "deploy.failed",
       "deploy.succeeded",

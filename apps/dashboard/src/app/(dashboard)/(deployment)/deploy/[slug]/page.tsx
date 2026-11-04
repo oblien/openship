@@ -1,5 +1,7 @@
 "use client";
 
+import { ComposeChangeSummary } from "@/hooks/useComposeReview";
+import WarningCallout from "@/components/shared/WarningCallout";
 import { hasComposeGpuRequest } from "@repo/core";
 import { DeployActions } from "@/components/actions/DeployActions";
 import { DeployGitHubChecks } from "@/components/import-project/DeployGitHubChecks";
@@ -74,6 +76,7 @@ const DeployRepository: React.FC = () => {
     const { t } = useI18n();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
+    const reviewCompose = searchParams.get("reviewCompose") === "1";
     const projectId = searchParams.get("projectId") || undefined;
     const branch = searchParams.get("branch") || undefined;
     // Folder-upload: the user picked the stack up front (no auto-detection);
@@ -202,7 +205,7 @@ const DeployRepository: React.FC = () => {
                 // Repo-less project (one-click app / saved services project): hydrate
                 // straight from its DB rows — services, env, exposed ports — in DEPLOY
                 // mode (no ?mode=config), so the sidebar stays "Deploy", not "Save".
-                result = await initializeFromProject(decoded.projectId, { branch });
+                result = await initializeFromProject(decoded.projectId, { branch, reviewCompose });
             } else if (decoded.kind === "local") {
                 result = await initializeFromLocal(decoded.path, { projectId });
             } else if (decoded.kind === "upload") {
@@ -261,7 +264,7 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, uploadStack, uploadName, toast, t]);
+    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, reviewCompose, uploadStack, uploadName, toast, t]);
 
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
@@ -345,6 +348,12 @@ const DeployRepository: React.FC = () => {
                 {step === "config" && (
                     <div className="grid lg:grid-cols-[1fr_340px] gap-6">
                         <div className="space-y-5">
+                            {config.composeChanges && Object.values(config.composeChanges).some(names => names.length > 0) && (
+                                <WarningCallout title={t.projects.redeploy.composeReview.title}
+                                    description={t.projects.redeploy.composeReview.reviewHint}>
+                                    <div className="mt-3"><ComposeChangeSummary changes={config.composeChanges} /></div>
+                                </WarningCallout>
+                            )}
                             {/* One destination summary and editor in Cloud and self-hosted. */}
                             <DeployTargetSummary
                                 deployTarget={config.deployTarget}

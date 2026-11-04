@@ -67,3 +67,26 @@ describe("parsePortBindings — protocol handling", () => {
     expect(portBindings["514/udp"]).toEqual([{ HostIp: "0.0.0.0", HostPort: "5514" }]);
   });
 });
+
+describe("parsePortBindings — several host ports for one container port", () => {
+  it("keeps every mapping instead of only the last one", () => {
+    // Compose `ports: ["8080:80", "8081:80"]` publishes the container port twice.
+    const { exposedPorts, portBindings } = parsePortBindings(["8080:80", "0.0.0.0:8081:80"]);
+    expect(exposedPorts).toEqual({ "80/tcp": {} });
+    expect(portBindings["80/tcp"]).toEqual([
+      { HostIp: "127.0.0.1", HostPort: "8080" },
+      { HostIp: "0.0.0.0", HostPort: "8081" },
+    ]);
+  });
+
+  it("keeps tcp and udp mappings of the same port number apart", () => {
+    const { portBindings } = parsePortBindings(["53:53", "53:53/udp"]);
+    expect(portBindings["53/tcp"]).toEqual([{ HostIp: "127.0.0.1", HostPort: "53" }]);
+    expect(portBindings["53/udp"]).toEqual([{ HostIp: "127.0.0.1", HostPort: "53" }]);
+  });
+
+  it("does not repeat an identical mapping listed twice", () => {
+    const { portBindings } = parsePortBindings(["8080:80", "8080:80"]);
+    expect(portBindings["80/tcp"]).toEqual([{ HostIp: "127.0.0.1", HostPort: "8080" }]);
+  });
+});

@@ -18,6 +18,10 @@ export const INSTANCE_ENVIRONMENT_KEYS = [
   "GITHUB_STATE_SECRET",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
+  "OIDC_ISSUER",
+  "OIDC_CLIENT_ID",
+  "OIDC_CLIENT_SECRET",
+  "OIDC_DISPLAY_NAME",
 ] as const;
 
 export function instanceEnvironment(values: Record<string, unknown>): Record<string, string> {

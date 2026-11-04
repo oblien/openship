@@ -25,6 +25,7 @@ import { isJsonMode, printJson, printJsonLine, printTable, ok, err, info } from 
 import { managedServerCommand } from "./server-managed";
 import { networkCommand, clusterCommand } from "./server-infrastructure";
 import { serverGitHubCommand, tunnelCommand, containerCommand } from "./server-integrations";
+import { serverSecurityCommand } from "./server-security";
 import { confirmOrExit, printResult, reportExecResult } from "../lib/cmd-helpers";
 import { positiveInteger, readJsonInput, readSecret } from "../lib/command-input";
 import { timeoutMilliseconds } from "../lib/command-input";
@@ -95,6 +96,7 @@ server.addCommand(clusterCommand);
 server.addCommand(serverGitHubCommand);
 server.addCommand(tunnelCommand);
 server.addCommand(containerCommand);
+server.addCommand(serverSecurityCommand);
 server.command("swarm")
   .description("Inspect an existing Docker Swarm without changing its services")
   .argument("<id>", "Connected server ID; use a Swarm manager for stack inventory")

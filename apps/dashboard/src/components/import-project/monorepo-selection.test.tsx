@@ -65,6 +65,7 @@ function Harness({
     owner: "acme",
     repo: "repo",
     branch: "main",
+    serverId: "server-pat-host",
     projectName: "repo",
     projectType: "monorepo",
     serviceDeploymentMode: "services",
@@ -176,12 +177,14 @@ describe("monorepo selection UI", () => {
     api.prepare.mockResolvedValue({ ...scan, projectType: "app", rootDirectory: "custom" });
     const add = vi.fn();
     await render(<RepositoryAppPicker onClose={() => {}} onAdd={add} />);
+    expect(api.tree).toHaveBeenCalledWith("acme", "repo", "main", "server-pat-host");
     await click("custom");
     await click("Inspect folder");
     expect(api.prepare).toHaveBeenCalledWith({
       owner: "acme",
       repo: "repo",
       branch: "main",
+      serverId: "server-pat-host",
       rootDirectory: "custom",
     });
     expect(add).not.toHaveBeenCalled();

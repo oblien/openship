@@ -4,7 +4,7 @@ import { PlanIcon } from "@/components/billing/PlanIcon";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { affiliateMoney } from "./affiliate-presentation";
+import { affiliateEstimate, affiliateMoney } from "./affiliate-presentation";
 import { referralPlanId, referralPlans } from "./referral-plans";
 
 type Interval = "monthly" | "annual";
@@ -31,15 +31,6 @@ export function selectionFromOptions(
     result.get(planId)!.intervals.push(interval);
   }
   return [...result.values()];
-}
-
-/** Illustrative earnings use the provider's per-invoice rounding; checkout remains authoritative. */
-export function affiliateEstimate(subtotal: number, commissionBps: number, discountBps: number) {
-  const discount = Math.round((subtotal * discountBps) / 10000);
-  return {
-    paid: subtotal - discount,
-    commission: Math.round((subtotal * commissionBps) / 10000) - discount,
-  };
 }
 
 export function AffiliatePlanPicker({

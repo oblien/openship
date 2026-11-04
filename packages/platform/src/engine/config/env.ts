@@ -2,6 +2,7 @@ import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostic
 import { z } from "zod";
 import { createPrivateKey } from "crypto";
 import { assertCloudBillingEnvironment } from "./cloud-billing-env";
+import { oidcEndpointAllowed } from "../lib/oidc-endpoint";
 import { DEFAULT_ENCRYPTION_SECRET as DEFAULT_BETTER_AUTH_SECRET } from "@repo/db/encryption";
 import {
   runtimeTarget,
@@ -276,6 +277,12 @@ const envSchema = z.object({
   GITHUB_DEVICE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /** Generic OIDC issuer. Registered only together with client id and secret. */
+  OIDC_ISSUER: z.string().optional(),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  /** Login button label. Defaults to "SSO" when the provider is registered. */
+  OIDC_DISPLAY_NAME: z.string().optional(),
 
   /* ---------- GitHub Auth Strategy ---------- */
   /**
@@ -314,6 +321,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Openship <noreply@openship.io>"),
+  /** Optional Cloud customer aliases authorized by the same SMTP credentials.
+   * Unset/blank aliases use the transport's configured sender. */
+  SMTP_SUPPORT_FROM: z.string().trim().optional(),
+  SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */
   /**
@@ -517,6 +528,9 @@ type Env = z.infer<typeof envSchema>;
 
 export const env: Env = envSchema.parse(process.env);
 assertCloudBillingEnvironment(env, runtimeTarget.api);
+
+/** Instance-wide OIDC is for self-hosted local accounts, never the Cloud SaaS. */
+export const selfHostedOidcAllowed = runtimeTarget.selfHosted && !env.CLOUD_MODE;
 
 /**
  * One configuration verdict shared by auth mode resolution, capabilities,
@@ -767,6 +781,37 @@ if (env.OPENSHIP_ADVERTISED_ORIGIN) {
     throw new Error(
       `OPENSHIP_ADVERTISED_ORIGIN must use http or https (got "${parsed.protocol}" in "${raw}").`,
     );
+  }
+}
+
+// ─── OIDC_ISSUER validation ───────────────────────────────────────────────
+// Validate that OIDC_ISSUER, when provided, is a valid URL so discovery
+// requests to `${OIDC_ISSUER}/.well-known/openid-configuration` fail fast at boot.
+// Production requires HTTPS. Development/test HTTP is limited to loopback.
+// Discovered endpoints are checked again at runtime.
+if (selfHostedOidcAllowed && env.OIDC_ISSUER) {
+  const raw = env.OIDC_ISSUER.trim();
+  if (raw) {
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/config/env");
+      throw new Error(
+        `OIDC_ISSUER="${raw}" is not a valid absolute URL (expected e.g. https://idp.example.com).`,
+      );
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(
+        `OIDC_ISSUER must use http or https (got "${parsed.protocol}" in "${raw}").`,
+      );
+    }
+    if (!oidcEndpointAllowed(parsed, env.NODE_ENV) || parsed.search) {
+      throw new Error(
+        "OIDC_ISSUER must use HTTPS without credentials, query or fragment. " +
+          "HTTP is allowed only on loopback during development or tests.",
+      );
+    }
   }
 }
 

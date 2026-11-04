@@ -52,7 +52,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "security" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "security" | "git" | "tokens" | "mcp" | "assistant" | "chat-apps" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -70,7 +70,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
   // Keep old DNS bookmarks working now that tokens live in Credentials.
-  const allowedTabs: SettingsTabId[] = ["general", "security", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  const allowedTabs: SettingsTabId[] = ["general", "security", "git", "tokens", "mcp", "assistant", "chat-apps", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
   const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
   // DNS credentials moved into Credentials — one screen for every third-party secret
   // instead of three. The old link lands on the screen that now owns them.
@@ -88,6 +88,8 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: "key", visible: true, requiresRole: "admin" },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: "terminal", visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: "mcp", visible: true },
+    { id: "assistant", label: "Assistant", icon: "assistant", visible: productView !== "mail" },
+    { id: "chat-apps", label: "Chat apps", icon: "message", visible: productView !== "mail" },
     { id: "team", label: t.settings.sidebar.tabs.team, icon: "users", visible: true },
     { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: "bell", visible: true },
     // Instance SMTP transport — self-hosted only (the SaaS uses its own mailer).

@@ -2,6 +2,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { cloudGitHubConnection, isHostedGitHubAttempt } from "./github-cloud-connection";
 import { instanceAuthorization } from "../../lib/instance-authorization";
 import { assertCloudTenantScope } from "../../lib/cloud/scope";
+export { publishChange } from "./repository-changes";
 /**
  * GitHub application operations, retained from the HTTP controller.
  *
@@ -675,6 +676,7 @@ export async function getRepo(ctx: ExecutionContext, input: NonNullable<Paramete
 
   const data = await githubService.getRepository(ctx, owner, repo, {
     withBranches,
+    serverId: input.serverId,
   });
   return data;
 }
@@ -797,6 +799,7 @@ export async function detectStack(ctx: ExecutionContext, input: NonNullable<Para
 
   const info = await resolveProjectInfo({
     source: "github",
+    serverId: input.serverId,
     owner,
     repo,
     ctx,
@@ -821,6 +824,7 @@ export async function listFiles(ctx: ExecutionContext, input: NonNullable<Parame
 
   const data = await githubService.listFiles(ctx, owner, repo, {
     branch: branch ?? undefined,
+    serverId: input.serverId,
     path: path || undefined,
   });
 
@@ -881,7 +885,7 @@ export async function listTree(ctx: ExecutionContext, input: NonNullable<Paramet
     ctx,
     owner,
     repo,
-    branch ? { branch } : {},
+    { branch, serverId: input.serverId },
   );
 
   const visible = filterTreeEntries(entries, readPaths, (entry) => ({
@@ -912,6 +916,7 @@ export async function getFile(ctx: ExecutionContext, input: NonNullable<Paramete
 
   const data = await githubService.getFileContent(ctx, owner, repo, file, {
     branch: branch ?? undefined,
+    serverId: input.serverId,
     json: file.endsWith(".json"),
   });
   return data;

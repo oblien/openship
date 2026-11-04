@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { serviceRepositorySource } from "@/app/(dashboard)/projects/[id]/components/services/repository-source";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
@@ -95,6 +96,7 @@ export default function ProjectTopology({
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
+  const showComposeReview = useComposeReview(id);
   const clusterTarget = project.deployTarget === "cluster" || !!project.clusterId;
   const resourcePicker = selfHosted && project.deployTarget !== "cloud";
   const databases = useClusterDatabases(id, resourcePicker);
@@ -529,7 +531,7 @@ export default function ProjectTopology({
       setChanges([]);
       setReviewing(false);
     } catch (error) {
-      if (!showCloudPricing(error))
+      if (!showComposeReview(error) && !showCloudPricing(error))
         setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
       invalidateProjectCaches(id);
       void runtime.refresh();

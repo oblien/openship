@@ -71,6 +71,41 @@ describeDockerE2E("Cloud error storage on real PostgreSQL", () => {
     expect(rows.rows).toEqual([{ event }]);
   });
 
+  it("waits for another replica's schema setup beyond the delivery lock deadline", async () => {
+    const locker = await connection.pool!.connect();
+    let startup: ReturnType<typeof createCloudErrorSink> | undefined;
+    try {
+      await locker.query("BEGIN");
+      await locker.query("SELECT pg_advisory_xact_lock($1)", [0x6f736865]);
+      startup = createCloudErrorSink(connection.db, "pg");
+      const ready = startup.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      // A competing replica can legitimately hold the DDL lock longer than
+      // the 250 ms allowed to a best-effort diagnostic INSERT.
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      await locker.query("COMMIT");
+      expect(await ready).toBeNull();
+      const sink = await startup;
+      await sink([event], new AbortController().signal);
+      expect(
+        (await connection.db.execute(sql`SELECT event_id FROM cloud_error_event`)).rows,
+      ).toHaveLength(1);
+      expect(
+        (
+          await connection.pool!.query(
+            "SELECT current_setting('lock_timeout') AS lock, current_setting('statement_timeout') AS statement",
+          )
+        ).rows,
+      ).toEqual([{ lock: "0", statement: "0" }]);
+    } finally {
+      await locker.query("ROLLBACK");
+      locker.release();
+      await startup?.catch(() => {});
+    }
+  });
+
   it("falls back on a database lock deadline and leaves pooled settings unchanged", async () => {
     const sink = await createCloudErrorSink(connection.db, "pg");
     const fallback: ErrorEvent[] = [];

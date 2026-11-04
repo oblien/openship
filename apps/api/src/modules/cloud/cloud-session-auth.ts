@@ -1,6 +1,7 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { normalizeIP } from "@better-auth/core/utils/ip";
 import type { Context, Next } from "hono";
-import { db, schema, eq } from "@repo/db";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { env } from "@repo/platform/engine/config/env";
 
 /**
@@ -24,17 +25,16 @@ export async function cloudSessionAuth(c: Context, next: Next) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const token = header.slice(7);
-
-  const [row] = await db
-    .select()
-    .from(schema.session)
-    .where(eq(schema.session.token, token))
-    .limit(1);
-
-  if (!row || row.expiresAt < new Date()) {
+  // Only the supplied bearer authenticates a linked instance. Keep browser
+  // cookies out of this lookup and preserve the connection's fixed lifetime.
+  const identity = await auth.api.getSession({
+    headers: new Headers({ authorization: header }),
+    query: { disableCookieCache: true, disableRefresh: true },
+  });
+  if (!identity) {
     return c.json({ error: "Unauthorized" }, 401);
   }
+  const { session: row, user } = identity;
 
   // IP / User-Agent fingerprint check.
   //
@@ -54,7 +54,11 @@ export async function cloudSessionAuth(c: Context, next: Next) {
     const storedIp = row.ipAddress ?? "";
     const storedUa = row.userAgent ?? "";
 
-    const ipMismatch = storedIp && incomingIp && storedIp !== incomingIp;
+    // Canonicalize spelling and IPv4-mapped IPv6 without merging IPv6 hosts.
+    const ipMismatch =
+      storedIp &&
+      incomingIp &&
+      normalizeIP(storedIp, { ipv6Subnet: 128 }) !== normalizeIP(incomingIp, { ipv6Subnet: 128 });
     const uaMismatch = storedUa && incomingUa && storedUa !== incomingUa;
 
     if (ipMismatch || uaMismatch) {
@@ -78,12 +82,6 @@ export async function cloudSessionAuth(c: Context, next: Next) {
       }
       // mode === "warn": warning logged above, continue.
     }
-  }
-
-  const [user] = await db.select().from(schema.user).where(eq(schema.user.id, row.userId)).limit(1);
-
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
   }
 
   c.set("user", user);

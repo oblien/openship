@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { valid, validRange, satisfies } from "semver";
+import { valid, validRange, satisfies, intersects, major } from "semver";
 import { INSPECTED_RUNTIMES, type InspectedRuntime } from "../stacks";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -19,6 +19,24 @@ const httpsUrl = z
 export const SECURITY_RUNTIMES = INSPECTED_RUNTIMES;
 export type SecurityRuntime = InspectedRuntime;
 
+const packageName = z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,127}$/);
+const debVersion = z.string().regex(/^[0-9][a-zA-Z0-9.+:~_-]{0,127}$/);
+export const SecurityHostTargetSchema = z
+  .object({
+    kind: z.literal("host-package"),
+    distribution: z.literal("ubuntu"),
+    release: z.string().regex(/^\d{2}\.\d{2}$/),
+    package: packageName,
+    fixedVersion: debVersion,
+    // Kernel fixes must verify the running image's source version after reboot.
+    runningKernel: z
+      .object({ sourcePackage: packageName, fixedVersion: debVersion })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type SecurityHostTarget = z.infer<typeof SecurityHostTargetSchema>;
+
 export const SecurityAdvisorySchema = z
   .object({
     id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/),
@@ -28,7 +46,12 @@ export const SecurityAdvisorySchema = z
     severity: z.enum(["critical", "high", "moderate", "low"]),
     url: httpsUrl,
     publishedAt: z.string().datetime(),
-    action: z.enum(["refresh-images", "manual"]),
+    action: z.enum(["refresh-images", "manual", "patch-host"]),
+    modes: z
+      .array(z.enum(["desktop", "selfhosted", "cloud"]))
+      .min(1)
+      .max(3)
+      .optional(),
     targets: z
       .array(
         z.discriminatedUnion("kind", [
@@ -55,6 +78,7 @@ export const SecurityAdvisorySchema = z
             })
             .strict(),
           z.object({ kind: z.literal("platform"), affected: range }).strict(),
+          SecurityHostTargetSchema,
         ]),
       )
       .min(1)
@@ -66,6 +90,26 @@ export const SecurityAdvisorySchema = z
       advisory.action === "manual" ||
       advisory.targets.every((target) => target.kind !== "runtime" || target.fixed !== null),
     "Runtime advisories without a known fixed range require manual review",
+  )
+  .refine(
+    (a) => a.action !== "patch-host" || a.targets.every((t) => t.kind === "host-package"),
+    "Host patches require only host-package targets",
+  )
+  .refine(
+    (a) => a.action !== "refresh-images" || a.targets.every((t) => t.kind !== "host-package"),
+    "Host packages cannot be refreshed through a project deployment",
+  )
+  .refine(
+    (a) =>
+      a.targets.every(
+        (t) =>
+          t.kind !== "host-package" ||
+          !/^linux-(?:image|modules|generic|virtual|aws|azure|gcp|oracle|oem|lowlatency|kvm|raspi|nvidia|hwe)(?:-|$)/.test(
+            t.package,
+          ) ||
+          !!t.runningKernel,
+      ),
+    "Kernel targets must verify the running kernel source version",
   );
 
 export const SecurityManifestSchema = z
@@ -79,6 +123,14 @@ export const SecurityManifestSchema = z
   .strict()
   .refine(
     (value) => new Set(value.advisories.map((item) => item.id)).size === value.advisories.length,
+  )
+  .refine(
+    (value) =>
+      value.advisories.reduce(
+        (n, a) => n + a.targets.filter((t) => t.kind === "host-package").length,
+        0,
+      ) <= 200,
+    "A feed supports at most 200 bounded host package rules",
   );
 export type SecurityManifest = z.infer<typeof SecurityManifestSchema>;
 export type SecurityAdvisory = z.infer<typeof SecurityAdvisorySchema>;
@@ -101,6 +153,7 @@ export interface SecurityMatch {
   evidence: string;
   confidence: "confirmed" | "possible";
   image: SecurityImageEvidence | null;
+  runtimeUpgradeRequired?: boolean;
 }
 
 /** Docker Hub aliases all describe the same repository. Tags are never versions. */
@@ -166,6 +219,9 @@ export function matchSecurityAdvisories(
               image: null,
               confidence: "confirmed",
               evidence: `${runtime.runtime} ${runtime.version}`,
+              ...(target.fixed && !intersects(`${major(runtime.version)}.x`, target.fixed)
+                ? { runtimeUpgradeRequired: true }
+                : {}),
             });
         }
     }
@@ -177,6 +233,13 @@ export function securitySigningBytes(payload: string): string {
 }
 
 export const SECURITY_FEED_API =
-  "https://api.github.com/repos/oblien/openship/contents/security-advisories.signed.json?ref=security-advisories";
+  "https://api.github.com/repos/oblien/openship/contents/security-advisories.v2.signed.json?ref=security-advisories";
 export const SECURITY_FEED_SOURCE =
   "https://github.com/oblien/openship/blob/main/security-advisories.json";
+
+export function securityAdvisoryAppliesToMode(
+  advisory: SecurityAdvisory,
+  mode: "desktop" | "selfhosted" | "cloud",
+): boolean {
+  return !advisory.modes || advisory.modes.includes(mode);
+}

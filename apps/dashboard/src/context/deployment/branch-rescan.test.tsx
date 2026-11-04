@@ -14,6 +14,9 @@ import { useDeploymentConfig } from "./useDeploymentConfig";
 import { useDeploymentBuild } from "./useDeploymentBuild";
 import { ApiError } from "@/lib/api/client";
 import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
+import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
+import { BuildServiceInput } from "@repo/contracts";
+import { Value } from "@sinclair/typebox/value";
 
 const api = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -531,9 +534,11 @@ describe("deploy branch detection", () => {
     await selectBranch("openship");
 
     expect(api.prepare).toHaveBeenCalledWith({
+      projectId: "project-1",
       owner: "example",
       repo: "demo",
       branch: "openship",
+      serverId: "server-1",
       env: { APP_MODE: "preview" },
       includeEnv: true,
     });
@@ -899,5 +904,127 @@ describe("Cloud pricing is offered only at deployment time", () => {
     expect(api.showModal).toHaveBeenCalledOnce();
     expect(api.showModal.mock.calls[0]![0].customContent.props.restriction.reason).toBe("build-minutes-exhausted");
     expect(build.state.isDeploying).toBe(false);
+  });
+});
+
+
+it("opens source review in the existing wizard with saved destination and the fresh service set", async () => {
+  const composeRevision = "a".repeat(64);
+  const composeChanges = { added: ["worker"], changed: [], removed: ["cache"] };
+  api.prepare.mockResolvedValueOnce(scan("main", {
+    stack: "docker-compose", projectType: "services", composePath: "infra/compose.yml",
+    services: [services[0]!, services[1]!, { ...services[0]!, name: "worker", image: "worker:1" }],
+    composeRevision, composeChanges,
+  }));
+  await act(async () => {
+    expect(await current.initializeFromProject("project-1", { reviewCompose: true })).toMatchObject({ success: true });
+  });
+  expect(api.prepare).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", branch: "main", composePath: "infra/compose.yml", rootDirectory: "old-root" }));
+  expect(current.config.services.map(service => service.name)).toEqual(["web", "db", "worker"]);
+  expect(current.config).toMatchObject({ composeRevision, composeChanges, serverId: "server-1", serverName: "Production", deployTarget: "server" });
+  expect(api.syncServices).not.toHaveBeenCalled();
+  expect(api.buildAccess).not.toHaveBeenCalled();
+  await act(async () => { await build.startDeployment(); });
+  expect(api.buildAccess).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", composeRevision }));
+});
+
+
+describe("Compose source review deployment", () => {
+  async function review(hostnames = ["api.example.com"]) {
+    api.query = "";
+    const saved = await api.getInfo();
+    api.getInfo.mockResolvedValue({
+      data: {
+        project: {
+          ...saved.data.project,
+          activeDeploymentId: "active-deployment",
+          domains: [{ id: "domain-api", hostname: "api.example.com" }],
+        },
+      },
+    });
+    api.prepare.mockResolvedValueOnce(
+      scan("main", {
+        stack: "docker-compose",
+        projectType: "services",
+        composeRevision: "b".repeat(64),
+        composeChanges: { added: [], changed: [], removed: ["cms"] },
+        services: [
+          {
+            ...services[0]!,
+            serviceId: "service-web",
+            exposed: true,
+            exposedPort: "3000",
+            environmentTemplates: { API_URL: "${API_URL}" },
+            publicEndpoints: hostnames.map((customDomain) => ({
+              port: 3000,
+              customDomain,
+              domainType: "custom",
+            })),
+          },
+        ],
+      }),
+    );
+    await act(async () => {
+      expect(
+        await current.initializeFromProject("project-1", { reviewCompose: true }),
+      ).toMatchObject({ success: true });
+    });
+  }
+
+  it("normalizes reviewed numeric ports and submits a valid service without editing its route", async () => {
+    await review();
+    expect(current.config.services[0]).toMatchObject({
+      serviceId: "service-web",
+      environmentTemplates: { API_URL: "${API_URL}" },
+      publicEndpoints: [{ port: "3000", customDomain: "api.example.com", domainType: "custom" }],
+    });
+    expect(current.config.services[0].publicEndpoints![0].id).toBeTruthy();
+    await act(async () => {
+      await build.startDeployment();
+    });
+    expect(api.buildAccess).toHaveBeenCalledOnce();
+    const service = api.buildAccess.mock.calls[0]![0].services[0];
+    expect(Value.Check(BuildServiceInput, service)).toBe(true);
+    expect(service.publicEndpoints[0].port).toBe("3000");
+  });
+
+  it("deploys reviewed removals without repeating DNS setup for unchanged routes", async () => {
+    await review();
+    await act(async () => button(baseDictionary.deploy.sidebar.deploy).click());
+    expect(api.showModal).not.toHaveBeenCalled();
+    expect(api.buildAccess).toHaveBeenCalledOnce();
+    expect(api.push).toHaveBeenCalledWith("/build/deployment-1");
+  });
+
+  it("shows only the new hostname and deploys after confirmation", async () => {
+    await review(["api.example.com", "admin.example.com"]);
+    await act(async () => button(baseDictionary.deploy.sidebar.deploy).click());
+    expect(api.buildAccess).not.toHaveBeenCalled();
+    expect(api.showModal).toHaveBeenCalledOnce();
+    const modal = api.showModal.mock.calls[0]![0].customContent;
+    expect(modal.type).toBe(DnsRecordsModal);
+    expect(modal.props.targets).toEqual([
+      { hostname: "admin.example.com", includeWww: false, domainId: null },
+    ]);
+    await act(async () => {
+      modal.props.onConfirm();
+    });
+    expect(api.buildAccess).toHaveBeenCalledOnce();
+    expect(Value.Check(BuildServiceInput, api.buildAccess.mock.calls[0]![0].services[0])).toBe(
+      true,
+    );
+  });
+
+  it("keeps DNS setup when an existing hostname moves to another server", async () => {
+    await review();
+    await act(async () => current.updateConfig({ serverId: "server-2" }));
+    await act(async () => button(baseDictionary.deploy.sidebar.deploy).click());
+    expect(api.buildAccess).not.toHaveBeenCalled();
+    const modal = api.showModal.mock.calls[0]![0].customContent;
+    expect(modal.type).toBe(DnsRecordsModal);
+    expect(modal.props.serverId).toBe("server-2");
+    expect(modal.props.targets).toEqual([
+      { hostname: "api.example.com", includeWww: false, domainId: "domain-api" },
+    ]);
   });
 });

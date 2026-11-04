@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { OwnerRepoParams, CreateRepoBody, WebhookDeleteBody, GitHubSourceManifestBody, GitHubSourceManifestConvertBody, GitHubSourceManualBody, GitHubSourceUpdateBody } from "./github-inputs";
 import { SourceScanSchema } from "./sources";
+import { PublishRepositoryChangeInput, PublishedRepositoryChange } from "./repository-changes";
 import type { ResourceOperationSchema, ScopedOperations, ResourceOperations } from "./resource-operations";
 import type { MappedRepository, MappedAccount, RepositoryDetail, GitHubBranch, GitHubFileContent, GitHubWebhook, GitHubConnectionState, GitHubRepository } from "./github-types";
 export * from "./github-inputs";
@@ -18,11 +19,12 @@ export const GitHubRepoListInput = Type.Object({
   visibility: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("public"), Type.Literal("private")])),
   sort: Type.Optional(Type.Union([Type.Literal("updated"), Type.Literal("name"), Type.Literal("stars")])),
 });
+const readTarget = { serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) };
 const branch = Type.Optional(Type.String({ minLength: 1, maxLength: 200 }));
-const RepoBranchInput = Type.Object({ ...OwnerRepoParams.properties, branch });
-const FileInput = Type.Object({ ...OwnerRepoParams.properties, branch, path: Type.Optional(Type.String({ maxLength: 4096 })) });
+const RepoBranchInput = Type.Object({ ...OwnerRepoParams.properties, ...readTarget, branch });
+const FileInput = Type.Object({ ...OwnerRepoParams.properties, ...readTarget, branch, path: Type.Optional(Type.String({ maxLength: 4096 })) });
 export const GitHubBranchSchema = Type.Unsafe<GitHubBranch>(Type.Object({ name: Type.String(), commit: Type.Object({ sha: Type.String(), url: Type.String() }), protected: bool }));
-export const BranchPageInput = Type.Object({ page: Type.Optional(Type.Integer({ minimum: 1 })) });
+export const BranchPageInput = Type.Object({ ...readTarget, page: Type.Optional(Type.Integer({ minimum: 1 })) });
 export const BranchPaginationSchema = Type.Object({
   page: Type.Integer({ minimum: 1 }),
   perPage: Type.Integer({ minimum: 1 }),
@@ -116,7 +118,7 @@ export const GitHubCollectionSchemas = {
   disconnect: { action: "write", input: GitHubDisconnectInput, optionalInput: true, output: Type.Object({ success: Type.Literal(true), source: Type.Union([Type.Literal("oauth"), Type.Literal("cli"), Type.Literal("all")]) }) },
   listRepos: { action: "read", input: GitHubRepoListInput, optionalInput: true, output: repoList },
   listOrgRepos: { action: "read", input: Type.Object({ ...GitHubRepoListInput.properties, org: OwnerRepoParams.properties.owner }), output: repoList },
-  getRepo: { action: "read", input: Type.Object({ ...OwnerRepoParams.properties, branches: Type.Optional(bool) }), output: RepoDetail },
+  getRepo: { action: "read", input: Type.Object({ ...OwnerRepoParams.properties, ...readTarget, branches: Type.Optional(bool) }), output: RepoDetail },
   createRepo: { action: "write", input: CreateRepoBody, output: CreatedRepository },
   deleteRepo: { action: "admin", input: OwnerRepoParams, output: success },
   listBranches: {
@@ -129,6 +131,7 @@ export const GitHubCollectionSchemas = {
   listFiles: { action: "read", input: FileInput, output: Type.Union([Type.Array(FileEntry), FileEntry]) },
   listTree: { action: "read", input: RepoBranchInput, output: Type.Array(Type.Object({ path: Type.String(), type: Type.Union([Type.Literal("file"), Type.Literal("dir")]) })) },
   getFile: { action: "read", input: Type.Object({ ...RepoBranchInput.properties, file: Type.String({ minLength: 1, maxLength: 4096 }) }), output: Type.Object({ sha: Type.String(), size: Type.Number(), content: Type.String(), download_url: nullableString }) },
+  publishChange: { action: "write", input: PublishRepositoryChangeInput, output: PublishedRepositoryChange },
   listWebhooks: { action: "read", input: OwnerRepoParams, output: Type.Array(Webhook) },
   registerWebhook: { action: "write", input: OwnerRepoParams, output: Webhook },
   deleteWebhook: { action: "admin", input: Type.Object({ ...OwnerRepoParams.properties, ...WebhookDeleteBody.properties }), output: success },

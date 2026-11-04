@@ -4,6 +4,7 @@ import { Icon, type IconName } from "@repo/ui/icons";
 import { createContext, useCallback, useContext, useState } from "react";
 import { randomUUID } from "@/lib/random-uuid";
 import { reportClientError } from "@/lib/error-reporting";
+import { copyText } from "@/lib/clipboard";
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -32,8 +33,15 @@ export function useToast() {
 
 const DURATION = 4500;
 
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+export function ToastProvider({
+  children,
+  initialToasts = [],
+}: {
+  children: React.ReactNode;
+  initialToasts?: Toast[];
+}) {
+  const [toasts, setToasts] = useState<Toast[]>(initialToasts);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const toast = useCallback((type: ToastType, message: string, title?: string) => {
     if (type === "error") reportClientError(message, { component: "toast", severity: "warn" });
@@ -57,6 +65,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const copyToastContent = useCallback((e: React.MouseEvent, t: Toast) => {
+    e.stopPropagation();
+    const textToCopy = t.title ? `${t.title}\n${t.message}` : t.message;
+    void copyText(textToCopy).then(() => {
+      setCopiedId(t.id);
+      setTimeout(() => {
+        setCopiedId((curr) => (curr === t.id ? null : curr));
+      }, 1500);
+    });
   }, []);
 
   return (
@@ -88,6 +107,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 )}
                 <p className="break-words leading-relaxed">{t.message}</p>
               </div>
+              {t.type === "error" && (
+                <button
+                  type="button"
+                  aria-label={copiedId === t.id ? "Copied" : "Copy error message"}
+                  title={copiedId === t.id ? "Copied" : "Copy error message"}
+                  onClick={(e) => copyToastContent(e, t)}
+                  className="mt-0.5 shrink-0 rounded p-1 opacity-70 transition-opacity hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  <Icon name={copiedId === t.id ? "check" : "copy"} size={14} />
+                </button>
+              )}
             </div>
           ))}
         </div>

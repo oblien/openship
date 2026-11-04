@@ -107,6 +107,15 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 ```
 
+For a Git source, Openship also passes `OPENSHIP_COMMIT_SHA`: the commit this deployment builds, on
+manual and automatic deploys alike. It takes precedence over a variable of the same name, so use it
+instead of a stored literal to stamp an image's revision:
+
+```dockerfile
+ARG OPENSHIP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$OPENSHIP_COMMIT_SHA
+```
+
 The project environment is the shared build/runtime layer. A multi-service project's `services[].env`
 is different: it belongs only to that service at runtime and is never leaked into an image build. In
 `openship.json`, add `services[].buildArgs` when an image needs an explicit build-only value or when you

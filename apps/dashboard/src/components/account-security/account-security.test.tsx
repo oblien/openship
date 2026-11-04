@@ -91,6 +91,7 @@ beforeEach(() => {
   h.refetch.mockResolvedValue(undefined);
   h.enable.mockResolvedValue({
     data: {
+      method: "totp",
       totpURI: "otpauth://totp/Openship:owner?secret=JBSWY3HPEHPK3VXP&issuer=Openship",
       backupCodes: codes,
     },
@@ -237,6 +238,7 @@ describe("account security settings", () => {
     await act(async () => {
       resolveSetup({
         data: {
+          method: "totp",
           totpURI: "otpauth://totp/Openship:owner?secret=JBSWY3HPEHPK3VXP&issuer=Openship",
           backupCodes: codes,
         },

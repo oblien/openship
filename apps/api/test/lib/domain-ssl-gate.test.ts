@@ -95,6 +95,8 @@ vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: false, DEPLOY_MODE: "selfhosted" },
 }));
 
+import { repos } from "@repo/db";
+import { resolveDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
 import {
   manageDomainSsl,
   resolveSslPatch,
@@ -266,6 +268,26 @@ describe("manageDomainSsl — refuses to issue what it doesn't own", () => {
     await manageDomainSsl("app.example.com", { action: "provision" });
 
     expect(order).toEqual(["provision", "dispose"]);
+  });
+});
+
+describe("manageDomainSsl — a never-deployed project issues on its bound server", () => {
+  it("resolves the provider from project.serverId, not the local host", async () => {
+    domain("app.example.com");
+    const findById = vi.mocked(repos.project.findById);
+    const deployed = findById.getMockImplementation();
+    findById.mockImplementation(async (id: string) => ({
+      id,
+      organizationId: "org_1",
+      activeDeploymentId: null,
+      serverId: "srv_bound",
+    }) as never);
+    vi.mocked(resolveDeploymentPlatform).mockClear();
+
+    await manageDomainSsl("app.example.com", { action: "provision" }).finally(() => findById.mockImplementation(deployed!));
+
+    expect(resolveDeploymentPlatform).toHaveBeenCalledWith({ serverId: "srv_bound" }, { organizationId: "org_1" });
+    expect(repos.server.findLocal).not.toHaveBeenCalled();
   });
 });
 

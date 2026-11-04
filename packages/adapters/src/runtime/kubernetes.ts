@@ -6,6 +6,7 @@ import {
   projectNamespaceManifest,
 } from "../cluster/namespace";
 import { kubernetesIdLabel } from "../cluster/kubernetes-label";
+import { PROJECT_MANIFEST_LABEL } from "../cluster/project-manifests";
 import { patchKubernetesObject } from "../cluster/kubernetes-mutation";
 import { clusterVolumeClaim, clusterVolumeMountName } from "../cluster/volumes";
 import { clusterDatabaseNamespace } from "../cluster/database";
@@ -909,9 +910,13 @@ export class KubernetesRuntime implements RuntimeAdapter {
         undefined,
         this.lifetime.signal,
       );
-      return list.items.map((object) => {
+      return list.items.flatMap((object) => {
         this.assertOwned(object);
-        return this.ref(object.metadata.name!);
+        // Manifests have arbitrary names, not native release references. Keep them
+        // out of the app/orphan sweep; cleanupProject checks ownership before
+        // deleting their namespace along with its other supported resources.
+        if (object.metadata.labels?.[PROJECT_MANIFEST_LABEL] === "true") return [];
+        return [this.ref(object.metadata.name!)];
       });
     } catch (error) {
       if (isMissing(error)) return [];
@@ -1135,6 +1140,11 @@ export class KubernetesRuntime implements RuntimeAdapter {
       "EndpointSlice",
       "Secret",
       "NetworkPolicy",
+      // Kinds that project manifests may create (cluster/project-manifests.ts).
+      // They still have to carry this project's ownership labels to be accepted.
+      "ConfigMap",
+      "Job",
+      "CronJob",
     ]);
     for (const object of objects) {
       if (object.kind === "PersistentVolumeClaim")

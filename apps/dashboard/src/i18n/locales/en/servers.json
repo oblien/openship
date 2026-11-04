@@ -310,7 +310,8 @@
       "ssh": "SSH access",
       "runtimeApi": "Runtime API",
       "workloads": "Workloads",
-      "settings": "Settings"
+      "settings": "Settings",
+      "runs": "Runs"
     },
     "healthy": "Healthy",
     "issues": "Issues",

@@ -10,9 +10,11 @@ import { githubApi } from "@/lib/api/github";
 import { projectsApi } from "@/lib/api/projects";
 
 interface Props {
+  id?: string;
   owner: string;
   repo: string;
   projectId?: string;
+  serverId?: string;
   value: string;
   onChange: (branch: string) => void;
   initialBranches?: string[];
@@ -24,13 +26,15 @@ interface Props {
 
 /** Repository identity owns the pending requests and pagination state. */
 export function RepositoryBranchSelect(props: Props) {
-  return <BranchSelect key={`${props.projectId ?? ""}/${props.owner}/${props.repo}`} {...props} />;
+  return <BranchSelect key={`${props.projectId ?? ""}/${props.owner}/${props.repo}/${props.serverId ?? ""}`} {...props} />;
 }
 
 function BranchSelect({
+  id,
   owner,
   repo,
   projectId,
+  serverId,
   value,
   onChange,
   initialBranches = [],
@@ -64,7 +68,7 @@ function BranchSelect({
     try {
       const result = projectId
         ? await projectsApi.getBranchPage(projectId, page.current + 1)
-        : await githubApi.listBranches(owner, repo, page.current + 1);
+        : await githubApi.listBranches(owner, repo, page.current + 1, serverId);
       if (!active.current) return;
       page.current = result.pagination.page;
       setBranches((previous) => [
@@ -78,7 +82,7 @@ function BranchSelect({
       pending.current = false;
       if (active.current) setLoading(false);
     }
-  }, [hasMore, owner, repo, projectId]);
+  }, [hasMore, owner, repo, projectId, serverId]);
 
   // Keep the selected/default branch available even when it is on a later page.
   const names = [...new Set([value, ...initialBranches, ...branches].filter(Boolean))];
@@ -87,6 +91,7 @@ function BranchSelect({
   return (
     <div className="space-y-1.5">
       <CustomSelect
+        id={id}
         variant="filled"
         triggerClassName="bg-muted/60 hover:bg-muted"
         value={value}

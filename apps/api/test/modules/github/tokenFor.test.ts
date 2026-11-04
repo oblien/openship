@@ -13,12 +13,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * must report the SAME source `tokenFor` would mint.
  */
 
-const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGitHubRepo, getLocalGhToken } =
+const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGitHubRepo, getLocalGhToken, serverCredential, serverProbe, serverAllowed, serverTarget } =
   vi.hoisted(() => ({
     envMock: { CLOUD_MODE: false, GITHUB_AUTH_MODE: undefined } as {
       CLOUD_MODE: boolean;
       GITHUB_AUTH_MODE?: string;
     },
+    serverCredential: vi.fn(), serverProbe: vi.fn(), serverAllowed: vi.fn(), serverTarget: vi.fn(),
     findProjectById: vi.fn(),
     findSettingsByUser: vi.fn(),
     decrypt: vi.fn((s: string) => s.replace(/^ENC:/, "")),
@@ -32,9 +33,15 @@ const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGit
     getLocalGhToken: vi.fn(),
   }));
 
+vi.mock("@repo/platform/engine/lib/authorization", () => ({ authorization: { checkPermissionOnResource: serverAllowed } }));
+vi.mock("@repo/platform/engine/lib/server-target", () => ({ requireOrgServer: serverTarget }));
+vi.mock("@repo/platform/engine/modules/github/server-github.service", () => ({
+  resolveServerGitCredential: serverCredential, canResolveServerGitCredential: serverProbe,
+}));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
+    server: { findLocal: async () => undefined },
     project: { findById: findProjectById },
     settings: { findByUser: findSettingsByUser },
   },
@@ -79,6 +86,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   envMock.CLOUD_MODE = false;
   envMock.GITHUB_AUTH_MODE = undefined;
+  serverCredential.mockResolvedValue(null);
+  serverProbe.mockResolvedValue(false);
+  serverAllowed.mockResolvedValue(true);
+  serverTarget.mockResolvedValue({ id: "s1", organizationId: "o1" });
   // Baseline: nothing resolves.
   setProjectPat(null);
   findSettingsByUser.mockResolvedValue(null);
@@ -308,4 +319,50 @@ describe("canResolveTokenFor — drift guard (same source tokenFor mints)", () =
       expect(minted?.source ?? null).toBe(row.expected);
     });
   }
+});
+
+
+describe("server credential repository reads (#1500)", () => {
+  const target = { ...withOwner, serverId: "s1" };
+  beforeEach(() => {
+    canUseGitHubRepo.mockResolvedValue(true);
+    serverCredential.mockResolvedValue({ token: "server-pat" });
+    serverProbe.mockResolvedValue(true);
+  });
+  it("uses the same server credential resolver as deployment, for both mint and preflight", async () => {
+    expect(await tokenFor(ctxOrg, "local", target)).toEqual({ token: "server-pat", source: "server-token" });
+    expect(await canResolveTokenFor(ctxOrg, "local", target)).toBe("server-token");
+    expect(serverCredential).toHaveBeenCalledWith({ ctx: ctxOrg, serverId: "s1", owner: "acme", repo: "app", tokenOnly: true });
+    expect(serverProbe).toHaveBeenCalledWith("s1", { tokenOnly: true });
+  });
+  it("keeps normal account credentials first", async () => {
+    setSettings({ userPat: "account-pat" });
+    expect(await tokenFor(ctxOrg, "local", target)).toEqual({ token: "account-pat", source: "user-pat" });
+    expect(serverCredential).not.toHaveBeenCalled();
+  });
+  it("refuses borrowing without both repository and server authority", async () => {
+    canUseGitHubRepo.mockResolvedValue(false);
+    expect(await tokenFor(ctxOrg, "local", target)).toBeNull();
+    canUseGitHubRepo.mockResolvedValue(true);
+    serverAllowed.mockResolvedValue(false);
+    expect(await tokenFor(ctxOrg, "local", target)).toBeNull();
+    expect(await canResolveTokenFor(ctxOrg, "local", target)).toBeNull();
+    expect(serverCredential).not.toHaveBeenCalled();
+    expect(serverProbe).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...target, op: "write" as const }, { ...target, repo: undefined },
+    { ...target, only: ["app-installation" as const] },
+    { ...target, exclude: ["server-token" as const] }, { ...target, serverId: undefined },
+  ])("does not widen authority or bypass pins: %j", async input => {
+    expect(await tokenFor(ctxOrg, "local", input)).toBeNull();
+    expect(await canResolveTokenFor(ctxOrg, "local", input)).toBeNull();
+    expect(serverCredential).not.toHaveBeenCalled();
+  });
+  it("never ships a server token through the generic remote chain or uses one in Cloud", async () => {
+    expect(await tokenFor(ctxOrg, "remote", target)).toBeNull();
+    envMock.CLOUD_MODE = true;
+    expect(await tokenFor(ctxOrg, "local", target)).toBeNull();
+    expect(serverCredential).not.toHaveBeenCalled();
+  });
 });

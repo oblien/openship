@@ -341,13 +341,18 @@ fi
 
   it.each([
     new Error("permission denied"),
+    new Error("Command timed out after 15000ms: du -sk -- '/cache/a'"),
     Object.assign(new Error("Command exit unconfirmed"), {
       code: "CLOUD_COMMAND_EXIT_UNCONFIRMED",
     }),
     new DOMException("Cancelled by operator", "AbortError"),
+    new DOMException("Command timed out after 15000ms: cancelled by operator", "AbortError"),
   ])("does not suppress unsafe or cancelled cache inspection: %s", async (error) => {
     const h = fixture();
-    h.exec.mockRejectedValue(error);
+    const original = h.exec.getMockImplementation()!;
+    h.exec.mockImplementation((command, options) =>
+      command.startsWith("du ") ? Promise.reject(error) : original(command, options),
+    );
     await expect(pruneManagedBuildCaches(h.docker as never, h.executor)).rejects.toBe(error);
     expect(h.removed).toEqual([]);
   });

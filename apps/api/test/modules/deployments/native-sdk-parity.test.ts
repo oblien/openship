@@ -178,6 +178,7 @@ vi.mock("@repo/db", () => ({
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({
   env: h.env,
+  get selfHostedOidcAllowed() { return !h.env.CLOUD_MODE; },
   trustedOrigins: [],
   runtimeTargetId: "local",
   cloudRuntimeTarget: { dashboard: "https://openship.test", api: "https://api.openship.test" },
@@ -463,7 +464,7 @@ describe("deployment preparation HTTP/native parity", () => {
   it.each(["owner", "admin", "member"])("retains scanner inputs and public output for a %s", async role => {
     h.members.set("org-a:alice", { id: "member-a", role });
     const original = structuredClone(info);
-    const input = { owner: "acme", repo: "app", branch: "preview", composePath: "  deploy/compose.yaml  ", env: { API_TOKEN: secret } };
+    const input = { owner: "acme", repo: "app", serverId: "server-a", branch: "preview", composePath: "  deploy/compose.yaml  ", env: { API_TOKEN: secret } };
     const local = await native();
     const result = await local.deployments.prepare(input);
     expect(await remote().deployments.prepare(input)).toEqual(result);
@@ -481,7 +482,7 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
       expect(source).toEqual({
-        source: "github", owner: "acme", repo: "app", branch: "preview",
+        source: "github", owner: "acme", repo: "app", serverId: "server-a", branch: "preview",
         composePath: "deploy/compose.yaml", env: { API_TOKEN: secret }, ctx: expect.any(Object),
       });
       expect(source.ctx).toMatchObject({ userId: "alice", organizationId: "org-a", membershipId: "member-a", role });
@@ -510,6 +511,20 @@ describe("deployment preparation HTTP/native parity", () => {
     }
     expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("requires project write access before preparing saved configuration in HTTP and native calls", async () => {
+    h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    h.grants.set("org-a:alice:deployment:*", { permissions: ["write"] });
+    h.grants.set("org-a:alice:project:project-a", { permissions: ["read"] });
+    const local = await native();
+    for (const deployments of [remote().deployments, local.deployments]) {
+      await deployments.prepare({ owner: "acme", repo: "app" });
+      h.localInfo.mockClear();
+      await expect(deployments.prepare({ projectId: "project-a", owner: "acme", repo: "app" }))
+        .rejects.toMatchObject({ statusCode: 404 });
+      expect(h.localInfo).not.toHaveBeenCalled();
+    }
   });
 
   it("retains empty-option defaults before calling the scanner", async () => {
@@ -654,6 +669,39 @@ describe("deployment preparation HTTP/native parity", () => {
     }
     expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("requires instance authority to reveal local source values outside the native runtime", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "prepare-local-env-"));
+    try {
+      const local = await native();
+      for (const deployments of [remote().deployments, local.deployments]) {
+        await expect(
+          deployments.prepare({ source: "local", path: directory, includeEnv: true }),
+        ).rejects.toMatchObject({ code: "FORBIDDEN", statusCode: 403 });
+      }
+      expect(h.localInfo).not.toHaveBeenCalled();
+      expect(h.audit).not.toHaveBeenCalled();
+
+      // Metadata-only preparation keeps the ordinary deployment-write contract.
+      for (const deployments of [remote().deployments, local.deployments]) {
+        await deployments.prepare({ source: "local", path: directory });
+      }
+      expect(h.localInfo).toHaveBeenCalledTimes(2);
+
+      h.instanceRoles.set("alice", "admin");
+      for (const deployments of [remote().deployments, local.deployments]) {
+        expect(
+          await deployments.prepare({ source: "local", path: directory, includeEnv: true }),
+        ).toMatchObject({
+          rootEnv: { ROOT_TOKEN: secret },
+          services: [{ environment: { API_TOKEN: secret } }],
+        });
+      }
+      expect(h.localInfo).toHaveBeenCalledTimes(4);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1445,6 +1493,7 @@ describe("deployment HTTP/native parity", () => {
 
 describe("project controls HTTP/native parity", () => {
   it("imports the scanner's Compose metadata through the shared create path and audits once", async () => {
+    h.instanceRoles.set("alice", "admin");
     const directory = await mkdtemp(join(tmpdir(), "openship-import-parity-"));
     try {
       const services = [{ name: "api", image: "node:22", environment: { TOKEN: secret } }];
@@ -1466,6 +1515,48 @@ describe("project controls HTTP/native parity", () => {
         expect(event).toMatchObject({ resourceId: "imported", eventType: "project.created", after: { source: "local", serviceCount: 1 } });
         expect(JSON.stringify(event)).not.toContain(secret);
       }
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("requires instance authority before local scan or import reads host source contents", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "openship-local-content-"));
+    try {
+      h.localInfo.mockResolvedValue({
+        name: "Local", stack: "static", projectType: "static", packageManager: "npm",
+        installCommand: "", buildCommand: "", startCommand: "", buildImage: "static",
+        outputDirectory: "", rootDirectory: "", productionPaths: [], services: [],
+      });
+      h.localScan.mockImplementation((_info, input) => ({
+        name: "Local", stack: "static", projectType: "static", packageManager: "npm",
+        installCommand: "", buildCommand: "", startCommand: "", buildImage: "static",
+        outputDirectory: "", rootDirectory: "",
+        ...(input.includeEnv ? { rootEnv: { TOKEN: secret } } : { rootEnv: { TOKEN: ENV_MASK } }),
+      }));
+      h.projectCreate.mockImplementation(async input => ({ ...projectFixture("imported", input.name), localPath: input.localPath, gitProvider: "local" }));
+      const local = await native();
+      for (const projects of [remote().projects, local.projects]) {
+        await expect(projects.scanLocal({ path: directory, includeEnv: true })).rejects.toMatchObject({ code: "FORBIDDEN", statusCode: 403 });
+        await expect(projects.importLocal({ name: "Blocked", localPath: directory })).rejects.toMatchObject({ code: "FORBIDDEN", statusCode: 403 });
+      }
+      expect(h.localInfo).not.toHaveBeenCalled();
+      expect(h.localScan).not.toHaveBeenCalled();
+      expect(h.projectCreate).not.toHaveBeenCalled();
+
+      // Metadata-only scans still use ordinary project write permission.
+      for (const projects of [remote().projects, local.projects]) {
+        expect(await projects.scanLocal({ path: directory })).toMatchObject({ path: directory, rootEnv: { TOKEN: ENV_MASK } });
+      }
+      expect(h.localInfo).toHaveBeenCalledTimes(2);
+      expect(h.localScan).toHaveBeenCalledTimes(2);
+
+      h.instanceRoles.set("alice", "admin");
+      for (const projects of [remote().projects, local.projects]) {
+        expect(await projects.scanLocal({ path: directory, includeEnv: true })).toMatchObject({ rootEnv: { TOKEN: secret } });
+        expect(await projects.importLocal({ name: "Allowed", localPath: directory })).toMatchObject({ localPath: directory, gitProvider: "local" });
+      }
+      expect(h.localInfo).toHaveBeenCalledTimes(6);
+      expect(h.localScan).toHaveBeenCalledTimes(4);
+      expect(h.projectCreate).toHaveBeenCalledTimes(2);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 
@@ -2403,9 +2494,15 @@ describe("HTTP/native system parity", () => {
     const local = await native();
     for (const system of [local.system, remote().system]) {
       expect(await system.getSettings()).toHaveProperty("configured");
-      await expect(system.updateSettings({ productMode: "mail" })).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(system.browse({ path: "/" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        system.updateSettings({ productMode: "mail" }),
+      ).rejects.toMatchObject({ code: "INSTANCE_SCOPE_REQUIRED" });
+      await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({
+        code: "INSTANCE_SCOPE_REQUIRED",
+      });
+      await expect(system.browse({ path: "/" })).rejects.toMatchObject({
+        code: "INSTANCE_SCOPE_REQUIRED",
+      });
     }
     expect(h.settingsUpsert).not.toHaveBeenCalled();
   });

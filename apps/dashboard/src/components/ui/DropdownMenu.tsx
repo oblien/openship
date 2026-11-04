@@ -78,7 +78,10 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
     <DismissiblePopover
       open={isOpen}
       onOpenChange={setIsOpen}
-      className={`relative ${className}`}
+      // While open, lift the wrapper above sibling menus that share its z-index
+      // (e.g. the next project card's trigger), which would otherwise paint
+      // over this menu because they come later in the DOM.
+      className={cn("relative", className, isOpen && "z-50")}
     >
       {/* Trigger Button */}
       <button

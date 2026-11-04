@@ -88,16 +88,17 @@ describe("a rollback preserves services added after the target release", () => {
     );
   });
 
-  it("still removes de-listed rows when a caller asks for it", async () => {
-    // The explicit reconcile / project-config paths keep the old behavior: the
-    // default is unchanged, so only the two deploy sites opted out.
+  it("archives de-listed rows without cascading deployment history", async () => {
+    // A full configuration sync changes the desired set, but runtime cleanup
+    // still needs the previous deployment rows.
     const gone = await seedService(projectId, { name: "gone", image: "busybox" });
 
     await repos.service.syncFromCompose(projectId, [
       { name: "web", image: "nginx", ports: [], dependsOn: [], environment: {}, volumes: [] },
     ]);
 
-    expect(await repos.service.findById(gone.id)).toBeFalsy();
+    expect((await repos.service.findById(gone.id))?.archivedAt).toBeInstanceOf(Date);
+    expect((await repos.service.listByProject(projectId)).map(s => s.name)).toEqual(["web"]);
   });
 });
 

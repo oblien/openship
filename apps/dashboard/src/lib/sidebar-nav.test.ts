@@ -62,23 +62,24 @@ describe("getNavSections (the platform rail)", () => {
       "home",
       "projects",
       "apps",
-      "actions",
       "issues",
+      "assistant",
     ]);
-    expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "emails", "jobs", "backups"]);
+    expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "emails", "jobs", "actions", "backups"]);
     expect(keysOf(find(s, "settings"))).toEqual(["settings", "audit"]);
   });
 
   it("includes Billing before Cloud infrastructure and links the generic email client", () => {
     const s = getNavSections(true, false);
+    expect(keysOf(find(s, "main"))).toContain("assistant");
     expect(sectionsOf(s)).toEqual(["main", "settings", "infrastructure", "help"]);
-    expect(find(s, "main")?.items.find((item) => item.key === "actions")).toMatchObject({
+    expect(find(s, "infrastructure")?.items.find((item) => item.key === "actions")).toMatchObject({
       href: "/actions",
     });
     expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
     expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
     expect(find(s, "settings")?.items.find((item) => item.key === "affiliates")).toMatchObject({ href: "/affiliates" });
-    expect(keysOf(find(s, "infrastructure"))).toEqual(["resources", "servers", "emails", "jobs", "backups"]);
+    expect(keysOf(find(s, "infrastructure"))).toEqual(["resources", "servers", "emails", "jobs", "actions", "backups"]);
     expect(find(s, "infrastructure")?.items[0]).toMatchObject({ href: "/resources" });
   });
 
@@ -87,7 +88,7 @@ describe("getNavSections (the platform rail)", () => {
     expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings", "help"]);
     const keys = s.flatMap((x) => keysOf(x));
     expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
-    for (const host of ["servers", "emails", "jobs", "backups"]) {
+    for (const host of ["servers", "emails", "jobs", "actions", "backups"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
     expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);

@@ -1,0 +1,113 @@
+---
+title: Chat apps
+description: Session-authorized chat connectors and sender linking, with deployment commands using normal OpenShip permissions.
+---
+
+Chat app changes use the signed-in user's session. Bearer tokens cannot create,
+enable or link a connector. MCP exposes only connection status and setup guidance,
+through the normal `settings:read` permission and workspace scope.
+Workspace admins install connectors; each chat sender approves their own access.
+See the [Chat apps guide](/docs/dashboard/chat-apps) for provider setup and commands.
+
+## Setup and linking
+
+`GET /api/chat-apps` returns workspace connections, the caller's linking status and
+the workspace ID, without credentials. `GET /api/chat-apps/setup?provider=slack&purpose=commands`
+prepares the existing connection form and returns its fields, steps and a workspace-bound
+settings link. Optional `transport` selects `outbound` or `webhook`; Teams requires
+`webhook`. Preparing setup creates nothing. The built-in assistant renders an inline
+**Connect** action that checks the current workspace and signed-in user's management
+access before opening the shared form.
+
+Create a paused connector with a supported `provider`,
+exact `channelIds` and the provider's credentials. Optional `purpose` is `assistant`,
+`commands` (the API default) or `both`. The role is enforced during command dispatch;
+selecting `assistant` or `both` also permits assistant conversations on the connector. Each sender must still connect their own agent with approved Assistant access. Credentials are write-only and
+encrypted in OpenShip’s database. Bot connectivity does not install or contact Mindwire; only an explicitly connected assistant uses the Assistant runtime. Update its enabled
+state or bot role with the current `revision`; a stale revision is rejected.
+`PATCH /:id/purpose` changes the role and invalidates prior chat bindings.
+
+`GET /:id/configuration` returns editable settings only to a workspace owner or admin.
+It never returns credentials. `PUT /:id/configuration` accepts the same settings as
+creation except `provider`, plus the current `revision` and required
+`purpose`. The provider stays fixed. Send an empty `credentials` object to retain
+saved credentials, or include only the values to replace. Name, roles, destination IDs
+and transport are saved through the same connector update path. The bot is paused
+before changing provider settings and stays paused if the update cannot be confirmed.
+Concurrent saves with the same revision cannot both succeed.
+
+`transport` defaults to `outbound` for Slack, Discord and Telegram, and `webhook`
+for Teams. Outbound receivers run in OpenShip and need no public API URL;
+webhooks require public HTTPS. Slack outbound uses `credentials.appToken` with
+`connections:write` as well as `botToken`; Discord and Telegram outbound use the
+bot token without a webhook secret or signing key. Teams rejects outbound mode.
+Outbound views expose a redacted `receiver` state and error; their `webhookUrl` is empty.
+
+A signed chat command creates a short-lived linking challenge. `POST /pairing`
+starts the shared MCP OAuth consent flow. `POST /pairing/complete` exchanges the
+authorization code with PKCE and checks the original session and workspace. It
+returns a verification command, which must be sent by the original chat sender
+in the same conversation. The browser callback alone does not link an account.
+
+## Native commands
+
+`POST /:id/commands/sync` accepts `{ revision }` and requires an owner/admin session for an enabled connector. It reuses the configuration update gate: OpenShip publishes the current role-filtered command catalog to Telegram or Discord. Enabled saves and enabling a bot perform the same synchronization. Provider failure keeps the local command gate paused. Pausing needs no provider or assistant connection.
+
+Slack aliases are prepared through the same update; their registration lives in the Slack app manifest. Native aliases and Discord subcommands normalize into existing command events. They retain sender allowlists, account consent, tenant isolation, grants, idempotency and deployment confirmation.
+
+## Delivery and execution
+
+OpenShip owns provider sockets, Telegram polling and webhook verification. Both
+transports use the same provider decoder, destination allowlist and encrypted inbox.
+The database elects one outbound receiver per connector across API replicas. A stale
+or paused receiver cannot enqueue messages, and each event is deduplicated before
+acknowledgment. Outbound connectors reject their webhook route.
+
+Webhook signatures are verified over the original bytes before parsing or queueing:
+Slack HMAC and timestamp, Discord Ed25519 and timestamp, Telegram's secret, and
+Microsoft Bot Framework JWTs with the configured tenant, application and service URL.
+Only verified, allowed events reach the existing command dispatcher.
+
+Commands use the linked user's ordinary OAuth grant and existing route dispatcher.
+Redeploy and restart require an expiring confirmation bound to the sender,
+conversation, connector revision and active deployment. Durable execution receipts
+prevent replay when delivery is retried. An uncertain execution is not automatically
+run again; check deployment history before issuing another command.
+
+## HTTP endpoints
+
+`PATCH /:id/assistant-policy` takes `{ enabled, revision }` and requires a workspace
+admin session. It permits assistant messages on the connector; it does not connect
+any sender's agent. `PUT /:id/assistant` takes the signed-in user's `identityId`,
+its `revision`, and `enabled`. Enabling also requires `provider` and optionally
+`model`, an enabled Assistant with approved access, and a connected native agent.
+Another user's identity cannot be configured. Stale revisions fail without changes.
+
+Assistant messages use the existing Assistant runtime and grant; command operations
+keep their own Chat grant. Conversations are bound to the current identity and
+connector revisions and the provider's workspace, sender, channel and thread. A
+durable receipt precedes execution and stores encrypted pending reply context so
+reclaimed provider leases observe the original turn instead of replaying it.
+
+{/* api-operations:start */}
+
+| Operation | REST API |
+| --- | --- |
+| Read workspace chat connectors without starting an assistant. | `GET /api/chat-apps`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Prepare the existing connection form for `provider`, optional `purpose` and `transport`. Returns workspace-bound setup guidance without creating a connector or granting access. | `GET /api/chat-apps/setup`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Save a paused connector with encrypted provider credentials; requires a workspace admin session. Outbound connections work locally; webhook connections require public HTTPS. | `POST /api/chat-apps`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Enable or pause commands with the current connector revision. Pausing closes the local command gate before stopping the receiver. | `PATCH /api/chat-apps/:id`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Read editable bot settings without provider credentials; requires an owner or admin session in the connector’s workspace. | `GET /api/chat-apps/:id/configuration`<br />`settings:read` · Desktop, self-hosted, Cloud |
+| Save name, bot roles, allowed destinations, transport and optional replacement credentials with the current revision. A provider update failure pauses the connector. | `PUT /api/chat-apps/:id/configuration`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Remove encrypted provider credentials and linked OpenShip grants. | `DELETE /api/chat-apps/:id`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Disconnect only the signed-in user’s chat identities and their OpenShip grants. | `POST /api/chat-apps/:id/unlink`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Allow or pause assistant chats with the current connector revision; requires a workspace admin session. | `PATCH /api/chat-apps/:id/assistant-policy`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Choose an Assistant, deployment-command or combined bot with the current connector revision; requires a workspace admin session. | `PATCH /api/chat-apps/:id/purpose`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Connect or disconnect the signed-in sender’s own assistant using its current identity revision and approved Assistant access. | `PUT /api/chat-apps/:id/assistant`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Start normal MCP consent for a sender-bound, expiring chat challenge. | `POST /api/chat-apps/pairing`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Exchange the consent code with session-bound PKCE and return a sender verification command. | `POST /api/chat-apps/pairing/complete`<br />`settings:write` · Desktop, self-hosted, Cloud |
+| Redirect only to OpenShip settings; code exchange and sender verification remain separate. | `GET /api/chat-apps/callback`<br />`Handler authentication` · Desktop, self-hosted, Cloud |
+| Verify raw provider signatures and destination allowlists before encrypted enqueueing. | `POST /api/chat-apps/webhooks/:id`<br />`Handler authentication` · Desktop, self-hosted, Cloud |
+| Refresh native command definitions for an enabled connector using its current revision. Telegram and Discord publish their menus; Slack requires the generated manifest entries. Requires a workspace admin session. | `POST /api/chat-apps/:id/commands/sync`<br />`settings:write` · Desktop, self-hosted, Cloud |
+
+{/* api-operations:end */}

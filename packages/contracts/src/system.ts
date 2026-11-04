@@ -7,7 +7,7 @@ const nullableBoolean = Type.Union([Type.Boolean(), Type.Null()]);
 const ok = Type.Object({ ok: Type.Literal(true) });
 /** Public login capabilities, without credential values. Unknown kinds are ignored by older clients. */
 export const AdvertisedAuthProviderSchema = Type.Object({
-  id: Type.String(), kind: Type.String(),
+  id: Type.String(), kind: Type.String(), name: Type.Optional(Type.String()),
 }, { additionalProperties: false });
 export type AdvertisedAuthProvider = Static<typeof AdvertisedAuthProviderSchema>;
 export const SystemInfoSchema = Type.Object({

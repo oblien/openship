@@ -243,6 +243,35 @@ describe("whole-instance dump → restore round trip", () => {
     await db.execute(sql`DELETE FROM ${sql.identifier(spec.sqlName)} WHERE id = ${created!.id}`);
   });
 
+  it.each([true, false])(
+    "restores legacy authenticator confirmation from the local account state (%s)",
+    async (enabled) => {
+      const original = await dumpSubgraph({ kind: "instance" });
+      const legacy = JSON.parse(JSON.stringify(original)) as typeof original;
+      const factor = legacy.tables.two_factor![0]!;
+      const user = legacy.tables.user!.find((row) => row.id === factor.userId)!;
+      user.twoFactorEnabled = enabled;
+      delete factor.verified;
+      delete factor.failedVerificationCount;
+      delete factor.lockedUntil;
+      try {
+        await restoreSubgraph(legacy, { mode: "wipe" });
+        const restored = (await dumpSubgraph({ kind: "instance" })).tables
+          .two_factor![0]!;
+        expect(restored).toMatchObject({
+          verified: enabled,
+          failedVerificationCount: 0,
+          lockedUntil: null,
+          secret: factor.secret,
+          backupCodes: factor.backupCodes,
+        });
+        expect(factor).not.toHaveProperty("verified");
+      } finally {
+        await restoreSubgraph(original, { mode: "wipe" });
+      }
+    },
+  );
+
   it("lets callers include follow-up work in the same atomic restore transaction", async () => {
     const projectSpec = topoOrderedTables().find((s) => s.sqlName === "project")!;
     const [before] = (await db.select().from(projectSpec.table)) as Array<Record<string, unknown>>;

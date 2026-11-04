@@ -1,0 +1,143 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "loki",
+  "name": "Loki",
+  "description": "Log aggregation from Grafana Labs: collect logs from your apps and servers and query them in Grafana.",
+  "kind": "template",
+  "logo": "loki",
+  "category": "analytics",
+  "tags": ["monitoring", "logs", "observability"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "loki",
+      "image": "grafana/loki:3.7.9",
+      "exposed": false,
+      "commandArgv": [
+        "-config.file=/etc/loki/local-config.yaml",
+        "-compactor.retention-enabled=true",
+        "-compactor.delete-request-store=filesystem",
+        "-store.retention=744h"
+      ],
+      "volumes": ["loki_data:/loki"],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "loki-access",
+      "image": "caddy:2.11.7-alpine",
+      "restart": "unless-stopped",
+      "dependsOn": ["loki"],
+      "exposed": true,
+      "exposedPort": 8080,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "secretEnv": ["OPENSHIP_ADMIN_PASSWORD"],
+      "commandArgv": ["sh", "/etc/openship/access.sh"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 512
+      }
+    }
+  ],
+  "connection": {
+    "title": "Connect to Loki",
+    "description": "Sign in with the generated credentials. Use the same HTTP Basic credentials for clients and integrations.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Loki",
+        "source": "publicUrl:loki-access",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "user",
+        "label": "Username",
+        "source": "env:loki-access:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:loki-access:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "username": "admin",
+      "note": "The private backend is available to services in this project. Keep public access behind HTTPS."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Log aggregation",
+        "description": "Collect logs from apps, containers and servers in one place."
+      },
+      {
+        "title": "LogQL queries",
+        "description": "Search and filter logs by label from Grafana."
+      },
+      {
+        "title": "Bounded storage",
+        "description": "Old logs are deleted after 31 days."
+      }
+    ]
+  },
+  "repository": "https://github.com/grafana/loki",
+  "endpoints": [
+    {
+      "service": "loki-access",
+      "port": 8080,
+      "label": "Loki",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    }
+  ],
+  "configFields": [
+    {
+      "service": "loki-access",
+      "key": "OPENSHIP_ADMIN_USER",
+      "label": "Username",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "service": "loki-access",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "files": [
+    {
+      "service": "loki-access",
+      "path": "/etc/openship/access.sh",
+      "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/access.Caddyfile --adapter caddyfile\n"
+    },
+    {
+      "service": "loki-access",
+      "path": "/etc/openship/access.Caddyfile",
+      "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy loki:3100\n}\n"
+    }
+  ]
+}
