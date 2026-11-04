@@ -16,6 +16,7 @@ const {
   requireCloudMock,
   draftMock,
   listServicesMock,
+  customTemplateMock,
 } = vi.hoisted(() => ({
   createProjectMock: vi.fn(),
   createServiceMock: vi.fn(),
@@ -24,6 +25,7 @@ const {
   requireCloudMock: vi.fn(),
   draftMock: vi.fn(),
   listServicesMock: vi.fn(),
+  customTemplateMock: vi.fn(),
 }));
 
 // Exercise the installer that introduces catalog entrypoint overrides.
@@ -42,7 +44,7 @@ vi.mock("@repo/db", () => ({
       seedDraftAppResourceDefaults: async () => [],
     },
     customAppTemplate: {
-      findByAppId: async () => undefined,
+      findByAppId: customTemplateMock,
       listByOrg: async () => [],
     },
   },
@@ -104,6 +106,7 @@ const install = (routes?: InstallAppRoute[]) =>
 beforeEach(() => {
   vi.clearAllMocks();
   draftMock.mockResolvedValue(undefined);
+  customTemplateMock.mockResolvedValue(undefined);
   listServicesMock.mockResolvedValue([
     { id: "svc-backend", name: "backend" },
     { id: "svc-dashboard", name: "dashboard" },
@@ -111,7 +114,10 @@ beforeEach(() => {
   createProjectMock.mockResolvedValue({ id: "p1", slug: "convex", name: "Convex" });
   createServiceMock.mockResolvedValue({ id: "svc" });
   updateServiceMock.mockResolvedValue(undefined);
-  setEnvMock.mockResolvedValue(undefined);
+  setEnvMock.mockImplementation(async (_ctx, _project, _service, data) => {
+    const keys = data.vars.map((v: { key: string }) => v.key);
+    if (new Set(keys).size !== keys.length) throw new Error("duplicate-env-key");
+  });
   requireCloudMock.mockResolvedValue(undefined);
   // The catalog overlay refresh is fire-and-forget; keep it off the network.
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
@@ -134,6 +140,35 @@ it("installs generic Cloud webmail with encrypted client secrets and no managed-
     expect(vars).toContainEqual({ key, isSecret: true, value: expect.stringMatching(/^[a-f0-9]{64}$/) });
   }
 });
+
+it.each(["self-hosted", "cloud"] as const)(
+  "installs Radicale through the shared app pipeline with mailbox auth and domain routing (%s)",
+  async (mode) => {
+    const template = getAppTemplate("radicale")!;
+    listServicesMock.mockResolvedValue([{ id: "svc-radicale", name: "radicale" }]);
+    await installApp(ctx, {
+      templateId: "radicale",
+      ...(mode === "cloud" ? { serverId: "cloud-server", deployTarget: "cloud" as const } : {}),
+      config: { IMAP_HOST: "mail.example.com" },
+      routes: [
+        { service: "radicale", port: 5232, mode: "custom", customDomain: "dav.example.com" },
+      ],
+    });
+    expect(createServiceMock).toHaveBeenCalledOnce();
+    expect(createServiceMock.mock.calls[0]?.[2]).toMatchObject({
+      name: "radicale",
+      image: template.services![0]!.image,
+      commandArgv: template.services![0]!.commandArgv,
+      advanced: { entrypoint: template.services![0]!.entrypointArgv },
+      volumes: ["radicale_data:/var/lib/radicale"],
+      ports: [],
+      publicEndpoints: [{ port: 5232, domainType: "custom", customDomain: "dav.example.com" }],
+    });
+    expect(setEnvMock.mock.calls.find((call) => call[2] === "svc-radicale")?.[3].vars).toEqual([
+      { key: "IMAP_HOST", value: "mail.example.com", isSecret: false },
+    ]);
+  },
+);
 
 it.each(["self-hosted", "cloud"] as const)(
   "installs WordPress from its official image with runtime setup and encrypted credentials (%s)",
@@ -612,4 +647,59 @@ it("installs PostgreSQL with a fixed pgAdmin port and no hostname or Cloud requi
   });
   expect(payloadFor("postgres")).toMatchObject({ exposed: false, publicEndpoints: [], ports: [] });
   expect(requireCloudMock).not.toHaveBeenCalled();
+});
+
+// Validate the real API's uniqueness rule, which a no-op env mock used to miss.
+it("installs Appwrite with every generated credential and matching encrypted copies", async () => {
+  const template = getAppTemplate("appwrite")!;
+  listServicesMock.mockResolvedValue(
+    template.services!.map((s) => ({ id: `svc-${s.name}`, name: s.name })),
+  );
+  await installApp(ctx, { templateId: "appwrite" });
+  const writes = new Map(
+    setEnvMock.mock.calls.map((c) => [
+      c[2],
+      c[3].vars as Array<{ key: string; value: string; isSecret: boolean }>,
+    ]),
+  );
+  const value = (service: string, key: string) =>
+    writes.get(`svc-${service}`)?.find((v) => v.key === key);
+  for (const field of template.configFields!.filter((f) => f.generate)) {
+    expect(value(field.service, field.key)?.value).toMatch(/^[a-f0-9]{64}$/);
+  }
+  const password = value("postgresql", "POSTGRES_PASSWORD")!.value;
+  for (const service of [
+    "appwrite",
+    "appwrite-worker",
+    "appwrite-scheduler",
+    "appwrite-realtime",
+  ]) {
+    expect(value(service, "_APP_DB_PASS")).toEqual({
+      key: "_APP_DB_PASS",
+      value: password,
+      isSecret: true,
+    });
+    expect(value(service, "_APP_OPENSSL_KEY_V1")?.value).toBe(
+      value("appwrite", "OPENSHIP_ENCRYPTION_KEY")!.value,
+    );
+  }
+});
+
+it("deduplicates an interpolated secret also declared as a generated config field", async () => {
+  const template = structuredClone(getAppTemplate("appwrite")!);
+  template.id = "test-secret-alias";
+  template.services!.find(
+    (s) => s.name === "appwrite",
+  )!.environment!.OPENSHIP_ADMIN_PASSWORD =
+    "{{config:OPENSHIP_ADMIN_PASSWORD}}";
+  customTemplateMock.mockResolvedValue({ template });
+  listServicesMock.mockResolvedValue(
+    template.services!.map((s) => ({ id: `svc-${s.name}`, name: s.name })),
+  );
+  await installApp(ctx, { templateId: template.id });
+  const vars = setEnvMock.mock.calls.find((c) => c[2] === "svc-appwrite")![3]
+    .vars;
+  expect(
+    vars.filter((v: { key: string }) => v.key === "OPENSHIP_ADMIN_PASSWORD"),
+  ).toHaveLength(1);
 });

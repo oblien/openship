@@ -130,9 +130,9 @@ export function RoutingSettingsCard({
   const visible = exposed ?? true;
   const actionsInline = portInline || hideTypeToggle;
   const hasPortOptions = (ports ?? []).length > 0;
-  const showsPortTarget = targetMode === "proxy" && typeof exposedPort !== "undefined" && onExposedPortChange;
-  const showsPathTarget = targetMode === "static" && onTargetPathChange;
-  const showsReadOnlyTarget = !showsPortTarget && !showsPathTarget && Boolean(readOnlyTarget?.value);
+  const showsPortTarget = !redirect?.to && targetMode === "proxy" && typeof exposedPort !== "undefined" && onExposedPortChange;
+  const showsPathTarget = !redirect?.to && targetMode === "static" && onTargetPathChange;
+  const showsReadOnlyTarget = !redirect?.to && !showsPortTarget && !showsPathTarget && Boolean(readOnlyTarget?.value);
   const portOptions = useMemo(
     () => (ports ?? []).map((value) => {
       const parts = value.split(":");
@@ -297,6 +297,7 @@ export function RoutingSettingsCard({
           <CustomSelect
             variant="filled"
             triggerClassName="bg-muted/60 hover:bg-muted"
+            aria-label={w.redirectTo}
             value={redirect.to}
             onChange={(next) => void redirect.onChange({ to: next, status: redirect.status || 301 })}
             options={[
@@ -396,6 +397,7 @@ export function RoutingSettingsCard({
                       // modal is closed without clicking the inline Save pill.
                       if (saveMode === "explicit" && draftDomain !== domain) commitFreeDomain();
                     }}
+                    aria-label={t.projectSettings.domains.add.domainName}
                     placeholder={projectName || "my-project"}
                     className="min-w-0 flex-1 bg-transparent pe-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
@@ -432,6 +434,7 @@ export function RoutingSettingsCard({
                       }
                     }}
                     onBlur={handleCustomDomainBlur}
+                    aria-label={t.projectSettings.domains.add.domainName}
                     placeholder="app.example.com"
                     className="min-w-0 flex-1"
                   />

@@ -39,10 +39,14 @@ export function setWwwDomainRouting(
     pair.www ??
     createPublicEndpoint({ ...source, id: undefined, customDomain: `www.${pair.apex}` });
   const servingHost = mode === "www" ? `www.${pair.apex}` : pair.apex;
+  const servingEndpoint = [pair.bare, pair.www].find((endpoint) => endpoint && !endpoint.redirectTo);
   const next = endpoints.filter((endpoint) => endpoint.id !== bare.id && endpoint.id !== www.id);
   const normal = (endpoint: PublicEndpoint): PublicEndpoint => ({
     ...endpoint,
-    redirectTo: undefined,
+    // API-created redirects may have no upstream. Reuse the pair's serving target.
+    port: endpoint.port || servingEndpoint?.port || "",
+    targetPath: endpoint.targetPath || servingEndpoint?.targetPath || "/",
+    redirectTo: "",
     redirectStatus: undefined,
   });
   const selectedBare =
@@ -75,7 +79,7 @@ export function toggleWwwDomainRouting(
     .filter((endpoint) => endpoint.id !== removed.id)
     .map((endpoint) =>
       endpoint.redirectTo === removedHost
-        ? { ...endpoint, redirectTo: undefined, redirectStatus: undefined }
+        ? { ...endpoint, redirectTo: "", redirectStatus: undefined }
         : endpoint,
     );
 }
