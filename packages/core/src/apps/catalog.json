@@ -8775,7 +8775,7 @@
           "image": "influxdb:2.7.12",
           "exposed": true,
           "ports": [
-            "8086:8086"
+            "8229:8086"
           ],
           "exposedPort": 8086,
           "restart": "unless-stopped",
