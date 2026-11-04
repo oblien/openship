@@ -437,6 +437,7 @@ function PlanPicker({
             ) : visiblePlans.length > 0 ? (
               <PricingCards
                 plans={visiblePlans}
+                referralOffer={canPurchase && referral.verified ? referral.state.data ?? undefined : undefined}
                 ui={payload.ui}
                 currentPlan={selectedCurrentPlan}
                 onSelectPlan={handleSelectPlan}

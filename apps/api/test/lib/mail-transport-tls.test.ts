@@ -96,7 +96,7 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(fixture.directory, { recursive: true, force: true }));
 
-async function localSmtp(mode: typeof fixture.mode) {
+async function localSmtp(mode: typeof fixture.mode, allowedSender?: string) {
   // Reuse the real SMTP fixture, including its per-command TLS observations.
   const child = spawn(
     "node",
@@ -106,12 +106,13 @@ async function localSmtp(mode: typeof fixture.mode) {
       ),
       mode,
       fixture.directory,
+      ...(allowedSender ? [allowedSender] : []),
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
   const commands: string[] = [];
   const credentials: Array<{ secure: boolean }> = [];
-  const deliveries: Array<{ secure: boolean }> = [];
+  const deliveries: Array<{ secure: boolean; from?: string; message?: string }> = [];
   let stderr = "";
   child.stderr.on("data", (chunk) => {
     stderr += chunk.toString();
@@ -188,6 +189,45 @@ describe("authenticated SMTP submission", () => {
         } finally {
           await smtp.close();
         }
+      }
+    },
+  );
+  it.each(["support", "billing"] as const)(
+    "delivers %s customer mail when SMTP only authorizes the configured no-reply sender",
+    async (customerSender) => {
+      const smtp = await localSmtp("tls", "noreply@example.test");
+      const previousEnv = { ...fixture.env };
+      try {
+        fixture.source = "env";
+        fixture.port = smtp.port;
+        Object.assign(fixture.env, {
+          CLOUD_MODE: true,
+          SMTP_HOST: "localhost",
+          SMTP_USER: "noreply@example.test",
+          SMTP_PASS: "fixture-password",
+          SMTP_PORT: 465,
+          SMTP_FROM: "OpenShip <noreply@example.test>",
+        });
+        vi.resetModules();
+        const { sendMail } = await import("@repo/platform/engine/lib/mail");
+        await expect(
+          sendMail({
+            to: "customer@example.test",
+            subject: "Customer mail",
+            html: "<p>Customer mail</p>",
+            customerSender,
+            replyTo: "support@openship.io",
+            messageId: "<customer-test@openship.io>",
+          }),
+        ).resolves.toBe(true);
+        await vi.waitFor(() => expect(smtp.deliveries).toHaveLength(1));
+        expect(smtp.deliveries[0]).toMatchObject({ secure: true, from: "noreply@example.test" });
+        expect(smtp.deliveries[0]!.message).toContain("From: OpenShip <noreply@example.test>");
+        expect(smtp.deliveries[0]!.message).toContain("Reply-To: support@openship.io");
+        expect(smtp.deliveries[0]!.message).toContain("Message-ID: <customer-test@openship.io>");
+      } finally {
+        Object.assign(fixture.env, previousEnv);
+        await smtp.close();
       }
     },
   );

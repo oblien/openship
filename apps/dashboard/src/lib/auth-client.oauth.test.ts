@@ -48,6 +48,38 @@ it("sends an embedded connection's signed consent through the provider client", 
   ]);
 });
 
+it.each([true, false])(
+  "returns accepted=%s consent to the form without automatically navigating to its single-use callback",
+  async (accept) => {
+    const callback = accept
+      ? "https://api.example.test/api/assistant/callback?code=issued&state=single-use"
+      : "https://api.example.test/api/assistant/callback?error=access_denied";
+    fetchMock.mockResolvedValueOnce(Response.json({ redirect: true, url: callback }));
+    const navigate = vi.spyOn(window.location, "href", "set").mockImplementation(() => {});
+    try {
+      expect(await submitMcpConsent(accept, "client_id=embedded-client&sig=signature")).toBe(
+        callback,
+      );
+      expect(navigate).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      navigate.mockRestore();
+    }
+  },
+);
+
+it("keeps automatic navigation enabled for ordinary social sign-in", async () => {
+  const authorizationUrl = "https://accounts.example.test/authorize";
+  fetchMock.mockResolvedValueOnce(Response.json({ redirect: true, url: authorizationUrl }));
+  const navigate = vi.spyOn(window.location, "href", "set").mockImplementation(() => {});
+  try {
+    await authClient.signIn.social({ provider: "google", callbackURL: "/projects" });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(authorizationUrl);
+  } finally {
+    navigate.mockRestore();
+  }
+});
+
 it("lets the provider carry only signed page parameters and preserve repeated resources", async () => {
   const query = new URLSearchParams([
     ["client_id", "page-client"],
