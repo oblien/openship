@@ -334,6 +334,21 @@ describe("NginxProvider path-only routes", () => {
     expect(JSON.parse(files.get(`${SITES}/app-example-com.route.json`)!)).toMatchObject({ notFound: true });
   });
 });
+describe("NginxProvider file permissions", () => {
+  test("writes 0o644 for public vhost configs and 0o600 for route state files", async () => {
+    const { nginx, writes } = setup();
+    await nginx.registerRoute(OURS);
+
+    const confWrite = writes.find((w) => w.path.includes("app-example-com.conf"));
+    const stateWrite = writes.find((w) => w.path.includes("app-example-com.route.json"));
+
+    expect(confWrite).toBeDefined();
+    expect(confWrite?.mode).toBe(0o644);
+    expect(stateWrite).toBeDefined();
+    expect(stateWrite?.mode).toBe(0o600);
+  });
+});
+
 
 /**
  * Openship Cloud's shared edge proves this box controls a routing target by fetching
@@ -2232,7 +2247,8 @@ describe("route protection rollback keeps credentials private", () => {
       ]) {
         expect(files.get(path)).toBe(content);
         const restored = writes.filter((write) => write.content === content).at(-1);
-        expect(restored).toMatchObject({ content, mode: 0o600 });
+        const expectedMode = path.endsWith(".conf") ? 0o644 : 0o600;
+        expect(restored).toMatchObject({ content, mode: expectedMode });
       }
     },
   );
