@@ -46,7 +46,7 @@ export const outlineModern = {
   "chevrons-up-down": mask("chevron expand verical-13-1696832403.png", [7.125, 4.125, 9.75, 15.75]),
   "circle": mask("circle-84-1658435395.png", [2.25, 2.25, 19.5, 19.5]),
   "circle-dashed": mask("circle-dashed.png", [1.125, 1.125, 21.75, 21.75]),
-  "codex": color("codex.png", [3.5625, 3.9375, 17.25, 16.6875]),
+  "codex": mask("openai.png", [0.0, 0.0, 24.0, 24.0]),
   "claude": color("claude-color.png", [0.0, 0.0, 24.0, 24.0]),
   "clipboard": mask("clipboard-30-1662364367.png", [3.75, 2.25, 16.5, 19.5]),
   "clipboard-list": mask("clipboard text-29-1662364367.png", [3.75, 2.25, 16.5, 19.5]),

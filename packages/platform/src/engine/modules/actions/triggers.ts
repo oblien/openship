@@ -12,6 +12,7 @@ import { triggerActionWorkflow, rerunActionWorkflow } from "./action.service";
 import { parseActionWorkflow, record } from "./workflow";
 import { matchesActionFilters } from "./trigger-pattern";
 import { ActionWebhookInbox } from "./webhook-inbox";
+import { actionPullRequest, resolvePullRequestRevision, type ActionPullRequest } from "./pull-request-revision";
 
 /** Called only after the delivering GitHub App signature has been verified. */
 export async function enqueueActionWebhook(
@@ -114,6 +115,7 @@ export async function dispatchActionWebhook(
       let ref: string;
       let revision: string;
       let workflowRevision: string | undefined;
+      let pullRequest: ActionPullRequest | undefined;
       let untrusted = false;
       if (eventName === "push") {
         if (
@@ -126,21 +128,13 @@ export async function dispatchActionWebhook(
         ref = event.ref;
         revision = event.after as string;
       } else {
-        const pr = record(event.pull_request);
-        const base = record(pr.base);
-        const head = record(pr.head);
-        if (
-          typeof pr.merge_commit_sha !== "string" ||
-          typeof base.sha !== "string" ||
-          !isFullCommitSha(pr.merge_commit_sha) ||
-          !isFullCommitSha(base.sha) ||
-          !Number.isSafeInteger(event.number)
-        )
-          continue;
-        revision = pr.merge_commit_sha as string;
-        workflowRevision = base.sha as string;
-        ref = `refs/pull/${event.number}/merge`;
-        untrusted = record(head.repo).full_name !== repository.full_name;
+        pullRequest = actionPullRequest(event, owner, repo);
+        // Source and filters use the trusted event base. Resolve the execution
+        // merge only after confirming that this workflow subscribes to the event.
+        revision = pullRequest.head.sha;
+        workflowRevision = pullRequest.base.sha;
+        ref = `refs/pull/${pullRequest.number}/merge`;
+        untrusted = pullRequest.head.repo.id !== pullRequest.repository.id;
         if (untrusted && !workflow.allowForks) continue;
       }
       const source =
@@ -229,6 +223,8 @@ export async function dispatchActionWebhook(
         )
           continue;
       }
+      if (pullRequest)
+        ({ ref, revision } = await resolvePullRequestRevision(ctx, owner, repo, pullRequest, event.action));
       await triggerActionWorkflow(ctx, workflow, {
         eventName: eventName === "push" ? "push" : "pull_request",
         key: delivery,

@@ -19,7 +19,7 @@
   "dependencies": {
     "@repo/core": "workspace:*",
     "@sinclair/typebox": "^0.34.48",
-    "mindwire": "0.1.60",
+    "mindwire": "0.1.61",
     "@repo/commands": "workspace:*"
   },
   "devDependencies": {

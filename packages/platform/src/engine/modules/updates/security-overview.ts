@@ -9,6 +9,7 @@ import { getAdvisoryFeed, type AdvisoryFeedState } from "./advisory-feed";
 import { securityProbeKey, type SecurityInventory } from "./security-inventory";
 import { securityObservationDue } from "./security-freshness";
 import { buildProjectSecurityResult } from "./security-status";
+import { annotateSecurityRefreshState } from "./security-refresh-state";
 import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
 
 /** Read current observations only. The existing scheduler owns bounded runtime inspection. */
@@ -88,7 +89,12 @@ export async function securityOverview(
     for (const finding of project.findings)
       finding.serviceName = finding.serviceId ? (names.get(finding.serviceId) ?? null) : null;
     if (project.findings.some((finding) => finding.canRefresh))
-      await annotateSecurityRefreshAvailability(ctx, project);
+      await annotateSecurityRefreshAvailability(
+        ctx,
+        project,
+        (stored.get(project.projectId)?.inventory as SecurityInventory | undefined)?.images,
+      );
+    await annotateSecurityRefreshState(project);
   }
   return overview;
 }
