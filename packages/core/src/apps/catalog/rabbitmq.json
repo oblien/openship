@@ -30,7 +30,14 @@
       ],
       "secretEnv": ["RABBITMQ_DEFAULT_PASS"],
       "healthcheck": {
-        "test": ["CMD", "rabbitmq-diagnostics", "-q", "ping"],
+        "test": [
+          "CMD",
+          "docker-entrypoint.sh",
+          "rabbitmq-diagnostics",
+          "-q",
+          "check_port_listener",
+          "15672"
+        ],
         "interval": "15s",
         "timeout": "10s",
         "retries": 12,
