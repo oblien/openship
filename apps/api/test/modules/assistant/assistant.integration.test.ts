@@ -25,6 +25,9 @@ const fixture = vi.hoisted(() => {
     failingProviders: new Set<string>(),
     imageInput: true,
     customCapability: true,
+    authMethods: [] as Array<{ id: string; label: string; interactive?: boolean }>,
+    authBegin: vi.fn(),
+    authStep: vi.fn(),
     startGate: undefined as Promise<void> | undefined,
     onStarting: undefined as (() => void) | undefined,
   };
@@ -138,9 +141,10 @@ beforeAll(() => {
             customProviderModels: fixture.customCapability,
             imageInput: fixture.imageInput,
           },
-          authMethods: [],
+          authMethods: fixture.authMethods,
         }),
         getConfig: async () => ({}),
+        auth: { begin: fixture.authBegin, step: fixture.authStep },
         models: async () => [
           { id: "test-model-a", label: "Model A" },
           { id: "test-model-b", label: "Model B" },
@@ -315,6 +319,161 @@ const rpc = async (options: any, method: string, params?: unknown) => {
 };
 
 describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
+  it.each(["desktop", "bare", "docker", "cloud"] as const)(
+    "uses the appropriate native sign-in flow for %s hosts",
+    async (mode) => {
+      const owner = await actor();
+      await connect(owner);
+      const previousMode = env.DEPLOY_MODE;
+      fixture.authMethods = [
+        { id: "login", label: "Continue with ChatGPT", interactive: true },
+        {
+          id: "loginDevice",
+          label: "Continue with ChatGPT using a device code",
+          interactive: true,
+        },
+        { id: "apiKey", label: "API key" },
+      ];
+      fixture.authBegin.mockImplementation(async (method: string) => ({
+        method,
+        status: "pending",
+        flowId: randomUUID(),
+        ...(method === "loginDevice"
+          ? { url: "https://auth.openai.com/codex/device", code: "ABCD-1234" }
+          : {
+              url: "https://auth.openai.com/authorize",
+              callbackUrl: "http://localhost:1455/auth/callback",
+            }),
+      }));
+      fixture.authStep.mockResolvedValue({ method: "loginDevice", status: "complete" });
+      try {
+        env.DEPLOY_MODE = mode;
+        const provider = await data(owner, "GET", "/providers/codex");
+        expect(provider.authMethods.some((m: { id: string }) => m.id === "login")).toBe(
+          mode === "desktop",
+        );
+        expect(provider.authMethods.some((m: { id: string }) => m.id === "loginDevice")).toBe(
+          mode !== "desktop",
+        );
+        const state = await data(owner, "POST", "/providers/codex/auth", { method: "login" });
+        expect(state.method).toBe(mode === "desktop" ? "login" : "loginDevice");
+        if (mode !== "desktop") {
+          expect(state).toMatchObject({
+            url: "https://auth.openai.com/codex/device",
+            code: "ABCD-1234",
+          });
+          expect(state.callbackUrl).toBeUndefined();
+        }
+        if (mode === "bare") {
+          const other = await actor();
+          await connect(other);
+          expect(
+            (
+              await request(other, "POST", "/providers/codex/auth/step", {
+                fields: { _flowId: state.flowId },
+              })
+            ).status,
+          ).toBe(409);
+          expect(
+            (
+              await request(owner, "POST", "/providers/codex/auth/step", {
+                fields: { _flowId: "stale-attempt" },
+              })
+            ).status,
+          ).toBe(400);
+          expect(
+            (
+              await request(owner, "POST", "/providers/codex/auth/step", {
+                fields: {
+                  _flowId: state.flowId,
+                  _callbackUrl: "http://localhost:1455/auth/callback?code=wrong",
+                },
+              })
+            ).status,
+          ).toBe(400);
+          expect(fixture.authStep).not.toHaveBeenCalled();
+        }
+        expect(
+          await data(owner, "POST", "/providers/codex/auth/step", {
+            fields: { _flowId: state.flowId },
+          }),
+        ).toMatchObject({ status: "complete" });
+      } finally {
+        env.DEPLOY_MODE = previousMode;
+        fixture.authMethods = [];
+        fixture.authBegin.mockReset();
+        fixture.authStep.mockReset();
+      }
+    },
+  );
+
+  it("uses native sign-in device codes for a remote target selected from Desktop", async () => {
+    const owner = await actor();
+    const serverId = randomUUID();
+    await db.insert(schema.servers).values({
+      id: serverId,
+      organizationId: owner.organizationId,
+      name: "Remote host",
+      sshHost: "203.0.113.42",
+    });
+    fixture.authMethods = [
+      { id: "login", label: "Continue with ChatGPT", interactive: true },
+      { id: "loginDevice", label: "Continue with ChatGPT using a device code", interactive: true },
+    ];
+    fixture.authBegin.mockImplementation(async (method: string) => ({
+      method,
+      status: "pending",
+      flowId: randomUUID(),
+      url: "https://auth.openai.com/codex/device",
+      code: "ABCD-1234",
+    }));
+    const previousOrigin = env.OPENSHIP_ADVERTISED_ORIGIN;
+    try {
+      env.OPENSHIP_ADVERTISED_ORIGIN = "https://assistant-remote.example.test";
+      await connect(owner, true, serverId);
+      const provider = await data(owner, "GET", "/providers/codex");
+      expect(provider.authMethods.map((method: { id: string }) => method.id)).toEqual([
+        "loginDevice",
+      ]);
+      expect(await data(owner, "POST", "/providers/codex/auth", { method: "login" })).toMatchObject(
+        { method: "loginDevice", code: "ABCD-1234" },
+      );
+      expect(fixture.factory.mock.calls.at(-1)?.[0].serverId).toBe(serverId);
+    } finally {
+      env.OPENSHIP_ADVERTISED_ORIGIN = previousOrigin;
+      fixture.authMethods = [];
+      fixture.authBegin.mockReset();
+    }
+  });
+
+  it("requires a native sign-in update rather than offering a broken browser callback on servers", async () => {
+    const owner = await actor();
+    await connect(owner);
+    const previousMode = env.DEPLOY_MODE;
+    const previousConfigured = fixture.nativeConfigured;
+    fixture.nativeConfigured = false;
+    fixture.authMethods = [
+      { id: "login", label: "Continue with ChatGPT", interactive: true },
+      { id: "apiKey", label: "API key" },
+    ];
+    try {
+      env.DEPLOY_MODE = "bare";
+      const provider = await data(owner, "GET", "/providers/codex");
+      expect(provider.authMethods.map((m: { id: string }) => m.id)).toEqual(["apiKey"]);
+      expect(provider.issue).toContain("Update Mindwire");
+      expect(
+        (await request(owner, "POST", "/providers/codex/auth", { method: "login" })).status,
+      ).toBe(400);
+      expect(fixture.authBegin).not.toHaveBeenCalled();
+      const claude = await data(owner, "GET", "/providers/claude");
+      expect(claude.authMethods.some((m: { id: string }) => m.id === "login")).toBe(true);
+    } finally {
+      env.DEPLOY_MODE = previousMode;
+      fixture.nativeConfigured = previousConfigured;
+      fixture.authMethods = [];
+    }
+  });
+
   it("prepares inline consent without enabling or starting an agent, and cancellation leaves it off", async () => {
     const owner = await actor(),
       before = fixture.factory.mock.calls.length;

@@ -174,13 +174,24 @@ export function AgentConnections({
 }
 
 function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refresh(): void }) {
-  const [method, setMethod] = useState("");
+  const [chosenMethod, setMethod] = useState<string | null>(null);
   const [state, setState] = useState<AuthState | null>(null),
     [values, setValues] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [pollError, setPollError] = useState<string | null>(null);
   const action = useScopedMutation();
+  const chatgptMethod =
+    info.id === "codex"
+      ? info.authMethods.find((m) => m.id === "login" || m.id === "loginDevice")
+      : undefined;
+  const method = chosenMethod ?? chatgptMethod?.id ?? "";
   const selectedMethod = info.authMethods.find((m) => m.id === method);
+  const signInHelp =
+    info.id === "codex" && selectedMethod?.id === "loginDevice"
+      ? "Cloud and remote servers use a one-time code. Open the sign-in page in your browser, enter the code, then return here. Enable device code login in your ChatGPT security settings if prompted."
+      : info.id === "codex" && selectedMethod?.id === "login"
+        ? "On this desktop, sign in with ChatGPT in your browser, then return here."
+        : selectedMethod?.help;
   useEffect(() => {
     if (state?.status !== "pending" || !state.flowId || pollError) return;
     let active = true,
@@ -323,7 +334,9 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
               />
               {!state && method && (
                 <>
-                  <p className="text-xs leading-5 text-muted-foreground">{selectedMethod?.help}</p>
+                  {signInHelp && (
+                    <p className="text-xs leading-5 text-muted-foreground">{signInHelp}</p>
+                  )}
                   <Button
                     variant="secondary"
                     disabled={action.busy}

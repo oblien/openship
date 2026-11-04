@@ -443,6 +443,8 @@ export function createAssistantRuntime(
     ctx: RequestContext,
     id: AssistantProvider,
   ): Promise<AssistantProviderInfo> {
+    const { connection } = await enabled(ctx);
+    const remoteCodex = id === "codex" && (env.DEPLOY_MODE !== "desktop" || !!connection.serverId);
     const native = await client(ctx),
       probe = await native.probe(id);
     const base = {
@@ -462,6 +464,18 @@ export function createAssistantRuntime(
     try {
       const mw = native.mindwire.withAgent(HARNESS[id].agent);
       const info = await mw.agent();
+      // A browser on another computer cannot reach the native loopback listener.
+      // The native device flow keeps account credentials on the selected host.
+      const authMethods =
+        id === "codex"
+          ? info.authMethods.filter(
+              (method) => method.id !== (remoteCodex ? "login" : "loginDevice"),
+            )
+          : info.authMethods;
+      const needsDeviceLogin =
+        remoteCodex &&
+        !info.authStatus.configured &&
+        !authMethods.some((method) => method.id === "loginDevice");
       const fields = info.schema.sections
         .flatMap((s) => s.fields)
         .filter((f) => f.type !== "secret" && SAFE_SETTINGS.has(f.canon ?? f.key));
@@ -480,6 +494,11 @@ export function createAssistantRuntime(
           : [];
       return {
         ...base,
+        issue:
+          base.issue ??
+          (needsDeviceLogin
+            ? "Update Mindwire on the assistant host to use ChatGPT device-code sign-in. API key and access token connections are still available."
+            : undefined),
         authStatus: info.authStatus,
         imageInput: info.capabilities?.imageInput === true,
         customProviders,
@@ -488,7 +507,7 @@ export function createAssistantRuntime(
           !!info.capabilities &&
           "customProviderModels" in info.capabilities &&
           info.capabilities.customProviderModels === true,
-        authMethods: info.authMethods,
+        authMethods,
         fields,
         models: info.authStatus.configured || customProviders.length ? await mw.models() : [],
         settings: Object.fromEntries(
@@ -572,13 +591,21 @@ export function createAssistantRuntime(
     },
     async authBegin(ctx: RequestContext, id: AssistantProvider, methodId: string) {
       return withAssistantLock(`auth:${ownerKey(ctx)}:${id}`, async () => {
-        const info = await provider(ctx, id),
-          method = info.authMethods.find((m) => m.id === methodId);
+        const info = await provider(ctx, id);
+        // Older dashboards may still submit the browser method after the host
+        // switches to a server. Resolve it through the same advertised methods.
+        const selectedId =
+          id === "codex" &&
+          methodId === "login" &&
+          !info.authMethods.some((method) => method.id === "login")
+            ? "loginDevice"
+            : methodId;
+        const method = info.authMethods.find((m) => m.id === selectedId);
         if (!method)
           throw assistantError("Choose one of this agent's available sign-in methods.", 400);
         const state = await (
           await client(ctx)
-        ).mindwire.auth.begin(methodId, { agent: HARNESS[id].agent });
+        ).mindwire.auth.begin(method.id, { agent: HARNESS[id].agent });
         await saveFlow(ctx, id, { state, method });
         return state;
       });
