@@ -136,6 +136,9 @@
     "dnsHint": "Die Sende-Hop-Einträge des Anbieters erscheinen nun auf dem DNS-Tab. Veröffentlichen + prüfen Sie diese für optimale Zustellbarkeit."
   },
   "overview": {
+    "calendarContacts": "Kalender & Kontakte",
+    "calendarContactsDesc": "Synchronisiere Kalender und Kontakte in deinen Apps mit Radicale. Verwende den IMAP-Hostnamen oben und deine bestehenden Postfachkonten.",
+    "calendarContactsSetup": "Radicale einrichten",
     "mailServer": "Mailserver",
     "protocolDetails": "Protokolldetails →",
     "hostname": "Hostname",

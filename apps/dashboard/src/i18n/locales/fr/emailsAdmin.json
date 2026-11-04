@@ -136,6 +136,9 @@
     "dnsHint": "Les enregistrements d'envoi du fournisseur apparaissent maintenant sur l'onglet DNS. Publiez et vérifiez-les pour une délivrabilité optimale."
   },
   "overview": {
+    "calendarContacts": "Calendriers et contacts",
+    "calendarContactsDesc": "Synchronisez vos calendriers et contacts dans vos applications avec Radicale. Utilisez le nom d’hôte IMAP ci-dessus et vos comptes de messagerie existants.",
+    "calendarContactsSetup": "Configurer Radicale",
     "mailServer": "Serveur de messagerie",
     "protocolDetails": "Détails du protocole →",
     "hostname": "Nom d'hôte",
