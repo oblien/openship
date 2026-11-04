@@ -34,7 +34,7 @@
       "image": "miniflux/miniflux:2.3.4",
       "exposed": true,
       "exposedPort": 8080,
-      "ports": ["8080"],
+      "ports": ["8232:8080"],
       "restart": "unless-stopped",
       "dependsOn": ["miniflux-db"],
       "environment": {
