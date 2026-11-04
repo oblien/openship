@@ -6,6 +6,69 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+## 0.9.10
+
+Recommended patch for Cloud assistant startup, recovery and OAuth consent
+failures in 0.9.9. Also fixes deployments, routing and restores, and includes every
+change merged into main since 0.9.9, with additional catalog applications and
+optional calendar/contact sync.
+
+### Cloud, agents and GitHub Actions
+
+- **Cloud assistant recovery** — preserve executable launcher permissions during
+  workspace uploads and recover dead assistant endpoints after checking health
+  inside the guest. Keep reachable busy daemons and existing profiles intact.
+- **Consent callbacks** — let the consent form own OAuth continuation so automatic
+  navigation cannot consume the same callback twice.
+- **Customer email senders** — use the SMTP transport's authorized sender by
+  default. Optional `SMTP_SUPPORT_FROM` and `SMTP_BILLING_FROM` aliases require
+  send-as permission on that SMTP account; aliases stay out of the Cloud relay.
+- **Referral pricing** — show referral discounts consistently in plan cards for
+  monthly and annual billing, using the existing shared pricing calculation.
+- **Pull request Actions** — verify the executed merge against the captured base
+  and head, and publish Checks on the pull request head. Preserve trusted workflow
+  selection, fork restrictions and per-attempt Check identity.
+
+### Deployments, domains and backups
+
+- **Compose reconfiguration** — retain existing DNS setup when redeploying to the
+  same destination; request setup only for new hostnames. Normalize saved endpoint
+  ports before submitting the deployment so source-review redeploys no longer fail
+  with `Expected string`.
+- **Stored image deployments** — retain stored image-only Compose services and
+  their environment when a containerized controller cannot read the original
+  local directory. Source-built services still require their build inputs.
+- **Service www redirects** — share the apex/www controls across the wizard and
+  Add domain form, and support editing existing service redirects. Preserve
+  portless redirect intent, reject missing targets and loops before service
+  writes, and commit domain API changes with their service endpoint atomically.
+- **Wildcard route rules** — enforce the configured wildcard virtual host's
+  policies when no exact-host policy exists, while preserving exact-host overrides.
+- **Volume restore safety** — finish and validate the incoming archive before
+  clearing destination contents. Failed, truncated or timed-out uploads preserve
+  existing data; temporary staging files are cleaned up on completion or failure.
+
+### Catalog, mail and dashboard
+
+- **Application catalog** — add Appwrite, Prometheus, Alertmanager, VictoriaMetrics,
+  Loki, OpenTelemetry Collector, Beszel, Listmonk and pgAdmin4, with setup guidance,
+  service icons and runtime smoke coverage.
+- **Catalog port routing** — publish Listmonk and pgAdmin4 on their own host ports
+  instead of accidentally reusing another service's port.
+- **Calendar and contacts** — add an optional Radicale template and setup guidance
+  for calendar/contact sync alongside the existing mail installation.
+- **Error details** — add a copy action to error toasts for sharing diagnostics.
+
+### Upgrade notes
+
+- Update the API, dashboard and all API replicas together. This patch adds no new
+  database migration. When upgrading from before 0.9.9, also follow that release's
+  authentication, connection and SMTP upgrade notes below.
+- Volume restores now require enough temporary disk space to stage the incoming
+  archive before extraction. Extraction after validation is not transactional.
+- Release verification retains the published 0.9.9 Compose template so the update
+  gate tests the actual previous installation, including stored data and routes.
+
 ## 0.9.9
 
 Critical security update covering authentication, Cloud connection approvals,

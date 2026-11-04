@@ -36,3 +36,5 @@ key is generated once and must be retained with your backups.
 
 MongoDB initialization and ClickHouse retention helpers are taken from the
 [Appwrite 2.7.0 distribution](https://github.com/appwrite/appwrite/tree/2.7.0).
+
+IP geolocation enrichment is disabled until Appwrite publishes a Geo image with the October 2026 PHP security fixes. Core API, Console, authentication, databases, storage and realtime do not require this optional service.

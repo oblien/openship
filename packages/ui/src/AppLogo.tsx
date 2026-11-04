@@ -113,6 +113,9 @@ const BRAND_LOGO: Record<
   "mail-webmail": { src: "/apple-touch-icon.png", fill: true },
   webmail: { src: "/apple-touch-icon.png", fill: true },
   mail: { src: "/apple-touch-icon.png", fill: true },
+  radicale: {
+    src: "https://raw.githubusercontent.com/Kozea/Radicale/v3.9.0/radicale/web/internal_data/css/logo.svg",
+  },
   // The control plane self-registered as an app (CLI self-deploy) — Openship's
   // own brand mark, a full-bleed square icon.
   openship: { src: "/apple-touch-icon.png", fill: true },

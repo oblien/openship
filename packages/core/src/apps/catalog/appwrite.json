@@ -119,27 +119,6 @@
       }
     },
     {
-      "name": "appwrite-geo",
-      "image": "appwrite/geo:0.3.2",
-      "restart": "unless-stopped",
-      "resources": {
-        "cpuCores": 0.5,
-        "memoryMb": 192,
-        "diskMb": 512
-      },
-      "secretEnv": ["GEO_SECRET"],
-      "healthcheck": {
-        "test": [
-          "CMD-SHELL",
-          "php -r \"exit(json_decode(file_get_contents('http://localhost/v1/health'))->status === 'ok' ? 0 : 1);\""
-        ],
-        "interval": "10s",
-        "timeout": "5s",
-        "retries": 30,
-        "startPeriod": "20s"
-      }
-    },
-    {
       "name": "appwrite-autogravity",
       "image": "ghcr.io/appwrite/autogravity:0.0.11",
       "restart": "unless-stopped",
@@ -218,8 +197,8 @@
         "_APP_STORAGE_ANTIVIRUS": "disabled",
         "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
         "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-        "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-        "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+        "_APP_GEO_ENDPOINT": "",
+        "_APP_GEO_SECRET": "",
         "_APP_FUNCTIONS_RUNTIMES": "",
         "_APP_SITES_RUNTIMES": "",
         "_APP_EMBEDDING": "disabled",
@@ -229,8 +208,6 @@
         "_APP_SYSTEM_EMAIL_NAME": "Appwrite",
         "_APP_SYSTEM_EMAIL_ADDRESS": "noreply@example.com",
         "_APP_SYSTEM_SECURITY_EMAIL_ADDRESS": "security@example.com",
-        "OPENSHIP_ADMIN_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}",
-        "OPENSHIP_ADMIN_PASSWORD": "{{config:OPENSHIP_ADMIN_PASSWORD}}",
         "_APP_LOCKING_ENABLED": "enabled",
         "_APP_OPENSSL_KEY_CURRENT": "1",
         "_APP_OPENSSL_KEY_OLDEST": "1",
@@ -284,7 +261,6 @@
         "_APP_CONNECTIONS_DB_EXECUTIONS",
         "_APP_OPENSSL_KEY_V1",
         "_APP_NOTIFICATIONS_TRACKING_SECRET",
-        "_APP_GEO_SECRET",
         "OPENSHIP_ADMIN_PASSWORD"
       ],
       "volumes": [
@@ -303,7 +279,6 @@
         "appwrite-mongodb",
         "redis",
         "clickhouse",
-        "appwrite-geo",
         "appwrite-autogravity",
         "appwrite-exiftool"
       ],
@@ -374,8 +349,8 @@
         "_APP_STORAGE_ANTIVIRUS": "disabled",
         "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
         "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-        "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-        "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+        "_APP_GEO_ENDPOINT": "",
+        "_APP_GEO_SECRET": "",
         "_APP_FUNCTIONS_RUNTIMES": "",
         "_APP_SITES_RUNTIMES": "",
         "_APP_EMBEDDING": "disabled",
@@ -437,8 +412,7 @@
         "_APP_CONNECTIONS_DB_USAGE",
         "_APP_CONNECTIONS_DB_EXECUTIONS",
         "_APP_OPENSSL_KEY_V1",
-        "_APP_NOTIFICATIONS_TRACKING_SECRET",
-        "_APP_GEO_SECRET"
+        "_APP_NOTIFICATIONS_TRACKING_SECRET"
       ],
       "volumes": [
         "appwrite_uploads:/storage/uploads",
@@ -456,7 +430,6 @@
         "appwrite-mongodb",
         "redis",
         "clickhouse",
-        "appwrite-geo",
         "appwrite-autogravity",
         "appwrite-exiftool"
       ]
@@ -517,8 +490,8 @@
         "_APP_STORAGE_ANTIVIRUS": "disabled",
         "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
         "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-        "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-        "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+        "_APP_GEO_ENDPOINT": "",
+        "_APP_GEO_SECRET": "",
         "_APP_FUNCTIONS_RUNTIMES": "",
         "_APP_SITES_RUNTIMES": "",
         "_APP_EMBEDDING": "disabled",
@@ -580,8 +553,7 @@
         "_APP_CONNECTIONS_DB_USAGE",
         "_APP_CONNECTIONS_DB_EXECUTIONS",
         "_APP_OPENSSL_KEY_V1",
-        "_APP_NOTIFICATIONS_TRACKING_SECRET",
-        "_APP_GEO_SECRET"
+        "_APP_NOTIFICATIONS_TRACKING_SECRET"
       ],
       "commandArgv": ["sh", "/etc/openship/start.sh", "schedule"],
       "dependsOn": [
@@ -589,7 +561,6 @@
         "appwrite-mongodb",
         "redis",
         "clickhouse",
-        "appwrite-geo",
         "appwrite-autogravity",
         "appwrite-exiftool"
       ]
@@ -650,8 +621,8 @@
         "_APP_STORAGE_ANTIVIRUS": "disabled",
         "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
         "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-        "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-        "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+        "_APP_GEO_ENDPOINT": "",
+        "_APP_GEO_SECRET": "",
         "_APP_FUNCTIONS_RUNTIMES": "",
         "_APP_SITES_RUNTIMES": "",
         "_APP_EMBEDDING": "disabled",
@@ -713,8 +684,7 @@
         "_APP_CONNECTIONS_DB_USAGE",
         "_APP_CONNECTIONS_DB_EXECUTIONS",
         "_APP_OPENSSL_KEY_V1",
-        "_APP_NOTIFICATIONS_TRACKING_SECRET",
-        "_APP_GEO_SECRET"
+        "_APP_NOTIFICATIONS_TRACKING_SECRET"
       ],
       "commandArgv": ["sh", "/etc/openship/start.sh", "realtime"],
       "dependsOn": [
@@ -722,7 +692,6 @@
         "appwrite-mongodb",
         "redis",
         "clickhouse",
-        "appwrite-geo",
         "appwrite-autogravity",
         "appwrite-exiftool"
       ]
@@ -801,14 +770,6 @@
       "label": "Usage password",
       "generate": "secret",
       "generateGroup": "appwrite-usage-password",
-      "secret": true
-    },
-    {
-      "service": "appwrite-geo",
-      "key": "GEO_SECRET",
-      "label": "Geo secret",
-      "generate": "secret",
-      "generateGroup": "appwrite-geo-secret",
       "secret": true
     },
     {
@@ -981,5 +942,19 @@
       }
     ]
   },
-  "schemaVersion": 2
+  "schemaVersion": 2,
+  "prepare": [
+    {
+      "service": "appwrite",
+      "phase": "post-ready",
+      "capture": "Appwrite owner setup verified",
+      "command": "test -f /tmp/.openship-owner-ready && printf \"Appwrite owner setup verified\\n\"",
+      "readiness": {
+        "test": "test -f /tmp/.openship-owner-ready",
+        "interval": 2000,
+        "retries": 150
+      },
+      "mustSucceed": true
+    }
+  ]
 }

@@ -136,6 +136,9 @@
     "dnsHint": "服务商的发送跃点记录现在显示在 DNS 标签页中。请发布并验证它们以确保最佳送达率。"
   },
   "overview": {
+    "calendarContacts": "日历和联系人",
+    "calendarContactsDesc": "使用 Radicale 在原生应用中同步日历和联系人。使用上方的 IMAP 主机名和现有邮箱账户。",
+    "calendarContactsSetup": "设置 Radicale",
     "mailServer": "邮件服务器",
     "protocolDetails": "协议详情 →",
     "hostname": "主机名",

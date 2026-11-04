@@ -5,7 +5,7 @@ import {
   inspectHostSecurity,
   serverSecurityStatus,
 } from "./host-security";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   AppError,
   ValidationError,
@@ -36,6 +36,7 @@ import { projectSecurityInventory } from "./security-inventory";
 import { updateProjectRuntime } from "./runtime-update";
 import { buildProjectSecurityResult, RUNTIME_UPGRADE_REQUIRED_MESSAGE } from "./security-status";
 import { approveSecurityUpdate } from "./security-refresh-guard";
+import { annotateSecurityRefreshState } from "./security-refresh-state";
 import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
 
 const key = (...parts: (string | number | null)[]) =>
@@ -117,7 +118,8 @@ export async function projectSecurityStatus(
       (await repos.service.listByProject(projectId)).map((service) => [service.id, service.name]),
     ),
   );
-  await annotateSecurityRefreshAvailability(ctx, result);
+  await annotateSecurityRefreshAvailability(ctx, result, inventory.images, refresh);
+  await annotateSecurityRefreshState(result);
   return result;
 }
 
@@ -231,6 +233,22 @@ export async function applySecurityAdvisory(
       );
     if (matches.some((item) => item.runtimeUpgradeRequired))
       throw new ValidationError(RUNTIME_UPGRADE_REQUIRED_MESSAGE);
+    if (!automatic) {
+      const eligibility = buildProjectSecurityResult(projectId, inventory, feed, false, new Map());
+      await annotateSecurityRefreshAvailability(ctx, eligibility, inventory.images, true);
+      const finding = eligibility.findings.find(
+        (f) => f.id === input.advisoryId && f.serviceId === (input.serviceId ?? null),
+      );
+      if (!finding?.canRefresh)
+        throw new ValidationError(
+          finding?.refreshBlockedReason ?? "This advisory cannot be refreshed. Check it again.",
+        );
+      await annotateSecurityRefreshState(eligibility);
+      if (finding.refresh && finding.refresh.status !== "failed")
+        throw new ValidationError(
+          "A security update is already in progress. Open its deployment to follow progress.",
+        );
+    }
     let verified:
       | { deploymentId: string; images: Record<string, string>; expiresAt: string }
       | undefined;
@@ -243,19 +261,20 @@ export async function applySecurityAdvisory(
         expiresAt: feed.security!.expiresAt,
       };
     }
-    const attempt = key(
-      projectId,
-      input.advisoryId,
-      match.advisory.revision,
-      input.serviceId ?? null,
-      input.deploymentId,
-    );
+    const attempt = automatic
+      ? key(
+          projectId,
+          input.advisoryId,
+          match.advisory.revision,
+          input.serviceId ?? null,
+          input.deploymentId,
+        )
+      : randomUUID();
     if (
-      automatic &&
       !(await repos.securityAdvisory.claimAttempt(attempt, projectId, {
         advisoryId: input.advisoryId,
-        serviceId: match.serviceId!,
-        image: verified!.images[match.serviceId!]!,
+        serviceId: match.serviceId,
+        ...(automatic && { image: verified!.images[match.serviceId!]! }),
       }))
     )
       return null;
@@ -274,12 +293,11 @@ export async function applySecurityAdvisory(
             })
           : undefined,
       );
-      if (automatic)
-        await repos.securityAdvisory.finishAttempt(attempt, {
-          status: result.awaiting_actions ? "awaiting_actions" : "queued",
-          deploymentId: result.deployment_id,
-          actionRequestId: result.action_request_id,
-        });
+      await repos.securityAdvisory.finishAttempt(attempt, {
+        status: result.awaiting_actions ? "awaiting_actions" : "queued",
+        deploymentId: result.deployment_id,
+        actionRequestId: result.action_request_id,
+      });
       audit.recordAsync(operationAuditContext(ctx), {
         eventType: "project:write",
         resourceType: "project",
@@ -293,11 +311,11 @@ export async function applySecurityAdvisory(
       });
       return result;
     } catch (error) {
+      await repos.securityAdvisory.finishAttempt(attempt, {
+        status: "failed",
+        error: "The security update could not start. Check the advisory and retry.",
+      });
       if (automatic) {
-        await repos.securityAdvisory.finishAttempt(attempt, {
-          status: "failed",
-          error: "Automatic refresh needs review. Open the service to retry manually.",
-        });
         await notification.emitSync({
           organizationId: ctx.organizationId,
           resourceType: "project",
@@ -486,7 +504,10 @@ async function scanSecurityAdvisoriesWork(
 
 /** Deployment success is not proof of a runtime patch: verify the promoted artifact. */
 export async function reconcileSecurityRefreshes() {
+  const deadline = Date.now() + 60_000;
+  const inspections = new Map<string, Promise<ProjectSecurityResult>>();
   for (const attempt of await repos.securityAdvisory.pendingAttempts()) {
+    if (Date.now() >= deadline) break;
     const project = await repos.project.findById(attempt.projectId);
     if (!project) continue;
     const deployment = attempt.deploymentId
@@ -539,12 +560,59 @@ export async function reconcileSecurityRefreshes() {
     }
     const rows =
       deployment?.status === "ready" ? await repos.service.listByDeployment(deployment.id) : [];
-    const verified = rows.some(
-      (row) =>
-        row.serviceId === attempt.serviceId &&
-        row.status === "success" &&
-        row.imageRef === attempt.image,
-    );
+    let runtimeVerified: boolean | undefined;
+    let manualError: string | undefined;
+    if (!attempt.image && deployment?.status === "ready") {
+      const actor = await resolveOrgOwner(project.organizationId);
+      if (actor) {
+        try {
+          let inspection = inspections.get(project.id);
+          if (!inspection) {
+            inspection = projectSecurityStatus(
+              buildBackgroundContext({
+                userId: actor.userId,
+                organizationId: project.organizationId,
+                label: "security:verify-refresh",
+              }),
+              project.id,
+              undefined,
+              true,
+            );
+            inspections.set(project.id, inspection);
+          }
+          const status = await inspection;
+          if (status.deploymentId !== deployment.id) {
+            await repos.securityAdvisory.finishAttempt(attempt.id, { status: "superseded" });
+            continue;
+          }
+          const unknown =
+            status.feedStale ||
+            !!status.feedError ||
+            !status.checkedAt ||
+            status.unknownServices.includes(attempt.serviceId);
+          if (unknown && Date.now() - attempt.createdAt.getTime() < 15 * 60_000) continue;
+          runtimeVerified =
+            !unknown &&
+            !status.findings.some(
+              (f) => f.id === attempt.advisoryId && f.serviceId === attempt.serviceId,
+            );
+          manualError = unknown
+            ? "The deployment completed, but its runtime could not be verified. Check again; the advisory remains active."
+            : "The deployment completed, but the running runtime is still affected. Select a patched image version or update the Dockerfile before redeploying; refreshing the same version is not a fix.";
+        } catch (error) {
+          reportCaughtError(error, "security-advisories.verify-refresh");
+          if (Date.now() - attempt.createdAt.getTime() < 15 * 60_000) continue;
+        }
+      }
+    }
+    const verified = attempt.image
+      ? rows.some(
+          (row) =>
+            row.serviceId === attempt.serviceId &&
+            row.status === "success" &&
+            row.imageRef === attempt.image,
+        )
+      : runtimeVerified === true;
     const failed = !verified;
     const save = await notification.prepare({
       organizationId: project.organizationId,
@@ -556,14 +624,21 @@ export async function reconcileSecurityRefreshes() {
         projectName: project.name,
         durable: true,
         advisoryId: attempt.advisoryId,
-        message: failed
-          ? "The automatic security refresh did not produce a verified active image. Open Deployments to review the result and retry manually."
-          : "The automatic security refresh completed. The active service uses the replacement image identified in the signed advisory. Other runtime notices may still require review.",
+        message: attempt.image
+          ? failed
+            ? "The automatic security refresh did not produce a verified active image. Open Deployments to review the result and retry manually."
+            : "The automatic security refresh completed. The active service uses the replacement image identified in the signed advisory. Other runtime notices may still require review."
+          : failed
+            ? (manualError ?? "The security update failed. Open Deployments for details.")
+            : "The security update completed and the inspected runtime no longer matches this advisory. Other runtime notices may still require review.",
       },
     });
     await db.transaction(save);
     await repos.securityAdvisory.finishAttempt(attempt.id, {
       status: verified ? "verified" : "failed",
+      ...(failed && {
+        error: manualError ?? "The security update failed. Open its deployment for details.",
+      }),
     });
   }
 }

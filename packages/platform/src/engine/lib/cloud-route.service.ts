@@ -29,3 +29,27 @@ export async function removeCloudProjectRoute(project: CloudRouteProject, input:
     lock: createProvisionLock(`cloud:server:${binding.workspaceId}`),
   }).removeRoute(input.hostname);
 }
+
+/** Provider receipts, not draft domain rows, prove ownership of an existing hostname. */
+export async function listCloudProjectRouteHostnames(
+  project: CloudRouteProject,
+): Promise<string[]> {
+  if (!project.workspaceId) return [];
+  const binding = await repos.cloudDockerWorkspace.find(
+    { ownerWorkspaceId: project.workspaceId },
+    project.organizationId,
+  );
+  if (!binding?.workspaceId) return [];
+  const { client, namespace, adminProxy } = await tenantClient(
+    project.organizationId,
+    project.workspaceId,
+  );
+  if (binding.namespace !== namespace)
+    throw new Error("Cloud workspace namespace changed");
+  return new CloudInfraProvider(client, {
+    namespace,
+    adminProxy,
+    workspaceId: binding.workspaceId,
+    routeRoot: cloudDockerProjectPaths(project.id).routes,
+  }).listProjectRouteHostnames();
+}
