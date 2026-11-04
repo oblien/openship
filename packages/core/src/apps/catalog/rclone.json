@@ -75,10 +75,17 @@
         "help": "Opens the rclone web GUI. Your browser asks for the username and password."
       },
       {
+        "id": "username",
+        "label": "Username",
+        "source": "env:rclone:RCLONE_RC_USER",
+        "width": "half"
+      },
+      {
         "id": "password",
         "label": "Login password",
         "source": "env:rclone:RCLONE_RC_PASS",
-        "secret": true
+        "secret": true,
+        "width": "half"
       }
     ]
   },
