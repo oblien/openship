@@ -199,7 +199,8 @@ export function createAssistantRuntime(
       touched.set(key, { at: Date.now(), owner: ownerKey(ctx) });
       let pending = profiles.get(key);
       if (!pending) {
-        pending = factory(connection).catch(() => {
+        pending = factory(connection).catch((error) => {
+          reportCaughtError(error, "api/assistant/client");
           profiles.delete(key);
           touched.delete(key);
           throw assistantError(
