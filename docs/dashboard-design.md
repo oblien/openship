@@ -1245,7 +1245,7 @@ Use the shared `assistant` AI icon for the platform. Identify harnesses as
 **Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
 in provider selection, connections, history and settings. Use the shared provider
 labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
-A native sign-in option may still say “Sign in with ChatGPT.” Use Codex’s blue mark with a transparent background, without the white app tile, and Claude Code’s original terracotta mark. Keep their colors across themes, without a current-color mask, inversion or added brand tints. Agent connections open in one dialog, with provider navigation and a single
+A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action. Agent connections open in one dialog, with provider navigation and a single
 visible detail panel. Preserve unfinished sign-in forms when switching providers
 or closing this dialog; hidden content must not capture keyboard focus. Show the
 host in that dialog. Keep permission review and the audit trail in the header menu.
