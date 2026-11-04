@@ -117,15 +117,20 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     id: "cockroachdb",
     name: "CockroachDB",
     image: "cockroachdb/cockroach:latest",
+    commandArgv: ["start-single-node", "--certs-dir=/cockroach/certs"],
     logo: gh("cockroachdb"),
     category: "database",
     description: "Distributed SQL database with PostgreSQL wire compatibility.",
     ports: [26257, 8080],
     defaultEnv: [
       { key: "COCKROACH_DATABASE", value: "app" },
-      { key: "COCKROACH_USER", value: "root" },
+      { key: "COCKROACH_USER", value: "app" },
+      { key: "COCKROACH_PASSWORD", generate: "secret" },
     ],
-    defaultVolumes: ["cockroach_data:/cockroach/cockroach-data"],
+    defaultVolumes: [
+      "cockroach_data:/cockroach/cockroach-data",
+      "cockroach_certs:/cockroach/certs",
+    ],
   },
 
   /* ── Caches ───────────────────────────────────────────────────────── */

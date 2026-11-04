@@ -48,6 +48,8 @@ import type { PlatformGitHubOperations } from "./github";
 import { NoticeCollectionSchemas } from "@repo/contracts";
 import type { PlatformNoticeOperations } from "./notices";
 import { BillingPublicSchemas, BillingOperationSchemas } from "@repo/contracts";
+import { AffiliateOperationSchemas } from "@repo/contracts";
+import type { PlatformAffiliateOperations } from "./affiliates";
 import type { PlatformBillingOperations } from "./billing";
 import type { PlatformBackupOperations } from "./backups";
 import { BackupProjectSchemas, BackupPolicySchemas, BackupRunSchemas, BackupRestoreSchemas } from "@repo/contracts";
@@ -317,6 +319,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     credentials: Object.freeze(credentials),
     servers: Object.freeze(servers),
     backups: Object.freeze(backups),
+    affiliates: Object.freeze(Object.fromEntries(Object.keys(AffiliateOperationSchemas).map(name => [name, (...args: unknown[]) => call(`affiliates.${name}`, ...args)]))) as PlatformAffiliateOperations,
     billing: Object.freeze(Object.fromEntries(Object.keys({ ...BillingPublicSchemas, ...BillingOperationSchemas }).map(name => [name, (...args: unknown[]) => call(`billing.${name}`, ...args)]))) as PlatformBillingOperations,
     notices: Object.freeze(Object.fromEntries(Object.keys({ ...NoticeCollectionSchemas }).map(name => [name, (...args: unknown[]) => call(`notices.${name}`, ...args)]))) as PlatformNoticeOperations,
     github: Object.freeze(Object.fromEntries(Object.keys({ ...GitHubCollectionSchemas, ...GitHubResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`github.${name}`, ...args)]))) as PlatformGitHubOperations,

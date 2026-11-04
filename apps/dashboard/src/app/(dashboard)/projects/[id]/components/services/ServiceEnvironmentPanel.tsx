@@ -4,7 +4,12 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { looksLikeSecretKey } from "@repo/core";
-import type { ServiceEnvironment } from "@repo/contracts";
+import type {
+  ServiceEnvironment,
+  ServiceEnvironmentReview,
+  MergeServiceEnvVarsInput,
+} from "@repo/contracts";
+import Link from "next/link";
 import EnvironmentVariables, {
   type EnvironmentVariableRow,
 } from "@/components/import-project/EnvironmentVariables";
@@ -19,6 +24,7 @@ import {
   serviceEnvironmentRows,
   serviceEnvironmentChanges,
 } from "@/lib/service-environment-editor";
+import { SharedEnvironmentReview } from "./SharedEnvironmentReview";
 
 type Props = {
   projectId: string;
@@ -31,7 +37,7 @@ type Props = {
   onDirtyChange: (dirty: boolean) => void;
 };
 
-/** The editor displays effective values but writes ONLY deliberately changed overrides. */
+/** Only deliberately changed values are saved; shared sources require review. */
 export function ServiceEnvironmentPanel({
   projectId,
   service,
@@ -54,6 +60,12 @@ export function ServiceEnvironmentPanel({
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [review, setReview] = useState<{
+    data: ServiceEnvironmentReview;
+    input: MergeServiceEnvVarsInput;
+  } | null>(null);
+  const [alsoSaved, setAlsoSaved] = useState<Array<{ id: string; name: string }>>([]);
   const [recovering, setRecovering] = useState(false);
   const [allowRuntimeRemoval, setAllowRuntimeRemoval] = useState(false);
   const deletedKeys = useRef(new Set<string>());
@@ -120,6 +132,8 @@ export function ServiceEnvironmentPanel({
 
   useEffect(() => {
     alive.current = true;
+    setReview(null);
+    setAlsoSaved([]);
     void load();
     return () => {
       alive.current = false;
@@ -131,34 +145,62 @@ export function ServiceEnvironmentPanel({
   useEffect(() => {
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
-  const busy = saving || recovering || operationBusy;
-  const save = async () => {
-    if (!state || mutation.current || busy || !dirty) return;
+  const busy = saving || reviewing || !!review || recovering || operationBusy;
+  const persist = async (input: MergeServiceEnvVarsInput) => {
+    if (mutation.current) return;
     mutation.current = true;
     setSaving(true);
     // Invalidate an inspection started before these edits were saved.
-    generation.current++;
+    const token = ++generation.current;
     setChecking(false);
     try {
-      const { upserts, deletes } = serviceEnvironmentChanges(baseline, rows);
-      const result = await servicesApi.mergeEnv(projectId, service.id, {
-        environment: state.environment,
-        upserts,
-        deletes,
-      });
+      const result = await servicesApi.mergeEnv(projectId, service.id, input);
       if (!result.success) throw new Error(copy.toast.envSaveFailed);
-      if (!alive.current) return;
-      deletedKeys.current = new Set(deletes.map((row) => row.key));
+      if (!alive.current || token !== generation.current) return;
+      setReview(null);
+      setAlsoSaved((result.affectedServices ?? []).filter((item) => item.id !== service.id));
+      deletedKeys.current = new Set(input.deletes.map((row) => row.key));
       setAllowRuntimeRemoval(false);
       showToast(copy.toast.envUpdated, "success", service.name);
       await load();
     } catch (cause) {
-      if (alive.current)
+      if (alive.current && token === generation.current) {
+        setReview(null);
         showToast(getApiErrorMessage(cause, copy.toast.envSaveFailed), "error", service.name);
+      }
     } finally {
       mutation.current = false;
       if (alive.current) setSaving(false);
     }
+  };
+
+  const save = async () => {
+    if (!state || mutation.current || busy || !dirty) return;
+    const input = { environment: state.environment, ...serviceEnvironmentChanges(baseline, rows) };
+    const inherited = input.upserts.some((edit) => state.variables.some((row) =>
+      row.key === edit.key && (row.source === "project" || row.source === "compose"),
+    ));
+    if (inherited) {
+      mutation.current = true;
+      setReviewing(true);
+      const token = generation.current;
+      try {
+        const data = await servicesApi.reviewEnv(projectId, service.id, input);
+        if (!alive.current || token !== generation.current) return;
+        if (data.changes.length) {
+          setReview({ data, input });
+          return;
+        }
+      } catch (cause) {
+        if (alive.current && token === generation.current)
+          showToast(getApiErrorMessage(cause, labels.shared.reviewFailed), "error", service.name);
+        return;
+      } finally {
+        mutation.current = false;
+        if (alive.current) setReviewing(false);
+      }
+    }
+    await persist(input);
   };
 
   const recover = async () => {
@@ -256,7 +298,7 @@ export function ServiceEnvironmentPanel({
             aria-label={copy.saveEnvironment}
             disabled={loading || !!error || busy || !dirty}
           >
-            {saving ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="save" />}
+            {saving || reviewing ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="save" />}
             {t.projectSettings.settingSection.save}
           </Button>
           {state?.status === "not-deployed" && onDeploy && (
@@ -297,6 +339,22 @@ export function ServiceEnvironmentPanel({
       </div>
       <div className="px-5 pt-4 text-xs text-muted-foreground space-y-2">
         <p id={helpId} hidden={!helpOpen}>{labels.description}</p>
+        {alsoSaved.length > 0 && (
+          <div role="status" className="space-y-1">
+            <p>{labels.shared.saved}</p>
+            <div className="flex flex-wrap gap-3">
+              {alsoSaved.map((item) => (
+                <Link
+                  key={item.id}
+                  className="text-foreground underline underline-offset-4"
+                  href={`/projects/${projectId}/services/${item.id}/env`}
+                >
+                  {item.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
         {loading ? (
           <p role="status">{labels.loading}</p>
         ) : error ? (
@@ -399,6 +457,18 @@ export function ServiceEnvironmentPanel({
             if (!response.success) throw new Error(labels.loadFailed);
             return response.environment;
           }}
+        />
+      )}
+      {review && (
+        <SharedEnvironmentReview
+          review={review.data}
+          serviceName={service.name}
+          saving={saving}
+          onClose={() => { if (!saving) setReview(null); }}
+          onSave={(keys) => void persist({
+            ...review.input,
+            ...(keys.length ? { shared: { keys, revision: review.data.revision } } : {}),
+          })}
         />
       )}
     </div>

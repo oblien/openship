@@ -31,6 +31,7 @@ export const CATEGORY_GROUPS = [
   { id: "app_health", label: "App health" },
   { id: "backups", label: "Backups" },
   { id: "jobs", label: "Jobs" },
+  { id: "assistant", label: "Assistant" },
   { id: "actions", label: "Actions" },
   { id: "domains", label: "Domains & SSL" },
   { id: "members", label: "Members" },
@@ -65,11 +66,12 @@ export interface NotificationCategory {
 }
 
 export const CATEGORIES: readonly NotificationCategory[] = [
+  { id: "assistant.automation", group: "assistant", label: "Assistant automations", description: "Investigation results, action approvals, and verified recovery from your enabled assistant automations.", defaultEnabled: false },
   {
     id: "security.advisory",
     group: "security",
     label: "Security advisory",
-    description: "A published security advisory affects Openship or one of your deployed services. Includes the cause and the available update.",
+    description: "A published security advisory affects Openship, a deployed service or a customer-operated server. Includes the cause and the available update.",
     defaultEnabled: true,
     defaultPerChannel: true,
     defaultChannelKinds: ["email", "webhook", "in_app", "slack", "discord", "msteams", "telegram"],
@@ -216,7 +218,7 @@ export const CATEGORIES: readonly NotificationCategory[] = [
     group: "domains",
     label: "SSL cert expiring",
     description:
-      "Daily check — fires when any of your custom domain certs has under 7 days left and the renewer can't reach the host.",
+      "Daily check — fires when any custom domain certificate renewal fails and has under 14 days left.",
     defaultEnabled: true,
   },
   {
@@ -304,6 +306,7 @@ export const CATEGORIES: readonly NotificationCategory[] = [
  * cares about).
  */
 const EVENT_TYPE_TO_CATEGORY: Record<string, string> = {
+  "assistant.automation": "assistant.automation",
   "security.advisory": "security.advisory",
   "security.refresh_failed": "security.advisory",
   // Deploy

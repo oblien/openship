@@ -26,8 +26,14 @@ const CREDS = vi.hoisted(() => {
     GITHUB_CLIENT_SECRET: "health-env-github-secret",
     GOOGLE_CLIENT_ID: "health-env-google-id.apps.googleusercontent.com",
     GOOGLE_CLIENT_SECRET: "health-env-google-secret",
+    OIDC_ISSUER: "https://idp.health-env.example.com/application/o/openship",
+    OIDC_CLIENT_ID: "health-env-oidc-client-id",
+    OIDC_CLIENT_SECRET: "health-env-oidc-client-secret",
   };
-  Object.assign(process.env, values);
+  Object.assign(process.env, {
+    ...values,
+    OIDC_DISPLAY_NAME: "Okta",
+  });
   return values;
 });
 
@@ -64,6 +70,7 @@ describe("GET /health/env authProviders — credentials configured", () => {
     expect(body.authProviders).toEqual([
       { id: "github", kind: "social" },
       { id: "google", kind: "social" },
+      { id: "oidc", kind: "oidc", name: "Okta" },
     ]);
     expect(Value.Check(SystemInfoSchema, body)).toBe(true);
     const { getSystemInfo } = await import("@repo/platform/engine/modules/system/system-info");

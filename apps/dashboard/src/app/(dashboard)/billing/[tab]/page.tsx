@@ -14,7 +14,7 @@ import { BillingContent } from "../_components/BillingContent";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { getSession } from "@/lib/server/session";
-import { billingTabHref } from "@/lib/billing-links";
+import { billingTabHref, newServerBillingHref } from "@/lib/billing-links";
 import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
@@ -53,13 +53,14 @@ export default async function BillingTabPage({
   };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
     return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer}
-      purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt } : undefined} embedded /></BillingPageView>;
+      purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt, referralCode: typeof query.ref === "string" ? query.ref : undefined } : undefined} embedded /></BillingPageView>;
   }
   // Buying another server is separate from inspecting an existing subscription.
   // The shared purchase component creates an explicitly scoped identity on selection.
   if (newServer) return <BillingPageView view={{ ...view, plansOnly: true }}>
     <BillingWorkspaceProvider>
       <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase
+        initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
         requestedPlanId={requestedPlanId}
         requestedInterval={requestedInterval}
         autoCheckout={autoCheckout}
@@ -78,6 +79,11 @@ export default async function BillingTabPage({
   }
 
   if (result.kind === "unavailable") {
+    // A removed draft may still be selected in a bookmark or checkout return.
+    // Drop its purchase parameters instead of retrying the deleted identity.
+    // A new-server view also avoids selecting the draft while removal finishes.
+    if (result.reason === "workspace-removed")
+      redirect(newServerBillingHref(organizationId));
     return <BillingPageView view={view}><BillingContent layout={activeTab === "plans" ? "plans" : "details"} sidebar={null}>
       <BillingUnavailable reason={result.reason} />
     </BillingContent></BillingPageView>;
@@ -101,6 +107,7 @@ export default async function BillingTabPage({
       case "plans":
         return (
           <BillingPlansRoute
+            initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
             billingState={plansOnly ? undefined : state}
             currentPlan={state.tier as PlanTierId}
             currentOffer={state.plan}

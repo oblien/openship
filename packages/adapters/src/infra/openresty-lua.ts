@@ -1084,6 +1084,8 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
           dnf: answered(["libmaxminddb", "libmaxminddb-devel"]),
           yum: answered(["libmaxminddb", "libmaxminddb-devel"]),
           apk: answered(["libmaxminddb"]),
+          // Arch does not split a -dev package; the library and the headers are this one.
+          pacman: answered(["libmaxminddb"]),
           brew: refused("the bare edge is Linux-only, so Openship has no macOS package for it."),
         });
 

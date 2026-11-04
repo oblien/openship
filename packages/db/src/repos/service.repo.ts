@@ -1,4 +1,4 @@
-import { eq, and, asc, inArray, or, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   commandToArgv,
   generateId,
@@ -14,7 +14,7 @@ import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { assertServiceSwapResources } from "./service-swap-resources";
 import { assertProjectConfigurationWritable, withProjectConfigurationWrite } from "./project-work-admission";
-import { deployment, envVar, project, service, serviceDeployment } from "../schema";
+import { deployment, project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 import { liveBuildExecutionCondition } from "./deployment.repo";
 import { serviceDeploymentFinishPatch } from "./service-deployment-timing";
@@ -35,6 +35,19 @@ export type Service = typeof service.$inferSelect;
 export type NewService = typeof service.$inferInsert;
 export type ServiceDeployment = typeof serviceDeployment.$inferSelect;
 export type NewServiceDeployment = typeof serviceDeployment.$inferInsert;
+
+/** Prefer a current definition if an operator reused a retired service name.
+ * Otherwise revive the most recently retired identity, preserving its history. */
+function composeRowsByName(rows: Service[]): Map<string, Service> {
+  const result = new Map<string, Service>();
+  for (const row of rows) {
+    const previous = result.get(row.name);
+    if (!previous || (previous.archivedAt && (!row.archivedAt || row.archivedAt > previous.archivedAt))) {
+      result.set(row.name, row);
+    }
+  }
+  return result;
+}
 
 // ─── Compose spec (drift 3-way merge) ──────────────────────────────────────────
 
@@ -687,9 +700,9 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       }));
     },
 
-    async listByProject(projectId: string) {
+    async listByProject(projectId: string, options?: { includeArchived?: boolean }) {
       return (await db.query.service.findMany({
-        where: eq(service.projectId, projectId),
+        where: and(eq(service.projectId, projectId), options?.includeArchived ? undefined : isNull(service.archivedAt)),
         orderBy: [asc(service.sortOrder), asc(service.name)],
       })).map(codec.openService);
     },
@@ -717,7 +730,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
               projectId: service.projectId,
               name: service.name,
               reserved: sql<boolean>`(
-                (${service.enabled} = true AND ${project.activeDeploymentId} IS NOT NULL
+                (${service.enabled} = true AND ${service.archivedAt} IS NULL AND ${project.activeDeploymentId} IS NOT NULL
                   AND NOT EXISTS (
                     SELECT 1 FROM ${serviceDeployment}
                     WHERE ${serviceDeployment.serviceId} = ${service.id}
@@ -838,7 +851,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     async listByProjects(projectIds: string[]): Promise<Map<string, Service[]>> {
       if (projectIds.length === 0) return new Map();
       const rows = (await db.query.service.findMany({
-        where: inArray(service.projectId, projectIds),
+        where: and(inArray(service.projectId, projectIds), isNull(service.archivedAt)),
         orderBy: [asc(service.sortOrder), asc(service.name)],
       })).map(codec.openService);
       const out = new Map<string, Service[]>();
@@ -902,7 +915,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     /** List only the rows of one kind under a project. */
     async listByProjectKind(projectId: string, kind: "compose" | "monorepo") {
       return (await db.query.service.findMany({
-        where: and(eq(service.projectId, projectId), eq(service.kind, kind)),
+        where: and(eq(service.projectId, projectId), eq(service.kind, kind), isNull(service.archivedAt)),
         orderBy: [asc(service.sortOrder), asc(service.name)],
       })).map(codec.openService);
     },
@@ -1022,21 +1035,14 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
      * the user disabled in the dashboard must keep it disabled.
      *
      * `removeMissing` (default true) controls whether compose rows absent from
-     * `parsed` are hard-deleted. Deploy-time callers pass FALSE, because the
+     * `parsed` are archived. Deploy-time callers pass FALSE, because the
      * list they hand over is not authoritative about what should exist:
      *
-     *   - On a ROLLBACK it is the TARGET release's frozen list, so a service
-     *     added after that release would be deleted - and `serviceDeployment
-     *     .serviceId` is ON DELETE CASCADE, so its entire deploy history across
-     *     every release goes with it while its container keeps running.
-     *   - On ANY compose deploy, `deployComposeServices` builds its de-listed
-     *     reaper input from the ACTIVE deployment's `service_deployment` rows,
-     *     and this sync runs first - so the cascade empties the reaper's input
-     *     and the removed service's container is orphaned instead of stopped.
-     *
-     * Removal keeps its home in the explicit compose-reconcile path
-     * (`reconcileFromCompose` below), which models a removal policy properly by
-     * 3-way merging against `importedSpec` before deleting anything.
+     * A rollback's frozen list cannot retire services added after that release.
+     * Explicit configuration/source syncs archive instead of deleting so the
+     * existing deploy reaper can still find old container references after
+     * cutover. Cascading deletes here would orphan those containers and erase
+     * deployment history, scoped environment, and rollback identities.
      */
     async syncFromCompose(
       projectId: string,
@@ -1056,9 +1062,9 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       // real monorepo sub-app. Belt-and-suspenders.
       const composeParsed = parsed.filter((p) => !p.kind || p.kind === "compose");
 
-      const all = await this.listByProject(projectId);
+      const all = await this.listByProject(projectId, { includeArchived: true });
       const composeExisting = all.filter((s) => s.kind === "compose" || s.kind === null);
-      const existingByName = new Map(composeExisting.map((s) => [s.name, s]));
+      const existingByName = composeRowsByName(composeExisting);
       const incomingNames = new Set(composeParsed.map((s) => s.name));
 
       // Create or update
@@ -1077,6 +1083,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
             await updateFromCompose(ex, {
               ...patch,
               ...routing,
+              archivedAt: null,
               ...(composeAuthoritative ? { importedSpec: toComposeSpec(p), driftSpec: null } : {}),
               // enabled + sortOrder left as-is (already on ex)
             }),
@@ -1103,8 +1110,8 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       // above; they survive untouched.
       if (removeMissing) {
         for (const ex of composeExisting) {
-          if (!incomingNames.has(ex.name)) {
-            await this.remove(ex.id);
+          if (!incomingNames.has(ex.name) && !ex.archivedAt) {
+            await updateFromCompose(ex, { archivedAt: new Date() });
           }
         }
       }
@@ -1121,7 +1128,8 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
      *   • repo omits env keys        → retain saved values as local overrides
      *   • repo changed, edited       → keep edited fields, update the others
      *   • new upstream service       → create (baseline = theirs)
-     *   • removed upstream, unedited → remove only if no environment is saved
+     *   • removed upstream          → archive, preserving env and deploy history
+     * Callers must validate source review before applying changed definitions.
      * Baseline bootstrap: rows with null `importedSpec` (pre-feature, or just
      * imported by the wizard) adopt theirs as baseline on first reconcile WITHOUT
      * overwriting the user's values. Never touches routing, `enabled`, or
@@ -1132,9 +1140,9 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
      */
     async reconcileFromCompose(projectId: string, parsed: ParsedComposeService[]) {
       const composeParsed = parsed.filter((p) => !p.kind || p.kind === "compose");
-      const all = await this.listByProject(projectId);
+      const all = await this.listByProject(projectId, { includeArchived: true });
       const composeExisting = all.filter((s) => s.kind === "compose" || s.kind === null);
-      const existingByName = new Map(composeExisting.map((s) => [s.name, s]));
+      const existingByName = composeRowsByName(composeExisting);
       const incomingNames = new Set(composeParsed.map((s) => s.name));
       const driftedNames: string[] = [];
       const unresolvedEnvironment: Array<{ name: string; keys: string[] }> = [];
@@ -1173,6 +1181,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         const merged = reconcileComposeSpec(ours, base, theirs, p);
         await updateFromCompose(ex, {
           ...merged,
+          archivedAt: null,
           ...normalizeRoutingFields({
             exposed: ex.exposed,
             exposedPort: ex.exposedPort,
@@ -1186,18 +1195,12 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         });
       }
 
-      // An env_var row is an operator edit too. Removing a service cascades to
-      // its environment, so source omission alone cannot delete saved values.
+      // Only source-owned services are retired. Keep their identity, env and
+      // service_deployment rows: the normal deploy reaper needs those container
+      // references, and a rollback can restore the same service without data loss.
       for (const ex of composeExisting) {
-        if (incomingNames.has(ex.name)) continue;
-        const base = ex.importedSpec ?? null;
-        const unedited = base !== null && composeSpecsEqual(toComposeSpec(ex), base);
-        if (unedited && Object.keys(ex.environment ?? {}).length === 0) {
-          const configured = await db.query.envVar.findFirst({
-            where: eq(envVar.serviceId, ex.id),
-            columns: { id: true },
-          });
-          if (!configured) await this.remove(ex.id);
+        if (!incomingNames.has(ex.name) && ex.importedSpec && !ex.archivedAt) {
+          await updateFromCompose(ex, { archivedAt: new Date() });
         }
       }
 
@@ -1433,6 +1436,101 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
           updatedAt: now,
         })
         .where(eq(serviceDeployment.id, id));
+    },
+
+    /** Heal one observed runtime identity without rewriting the release or its
+     * image, timings, ports or outcome. Serialize with activation and teardown;
+     * a stale observation must never overwrite a newer binding. */
+    async refreshContainerBinding(input: {
+      projectId: string;
+      organizationId: string;
+      deploymentId: string;
+      serviceId: string;
+      expectedContainerId: string;
+      containerId: string;
+      expectedProjectUpdatedAt: Date;
+      expectedServiceUpdatedAt: Date;
+    }): Promise<boolean> {
+      return db.transaction(async (tx) => {
+        const [owner] = await tx
+          .select({ id: project.id, updatedAt: project.updatedAt })
+          .from(project)
+          .where(
+            and(
+              eq(project.id, input.projectId),
+              eq(project.organizationId, input.organizationId),
+              eq(project.activeDeploymentId, input.deploymentId),
+              eq(project.deletionInProgress, false),
+              isNull(project.disabledAt),
+              isNull(project.deletedAt),
+            ),
+          )
+          .for("update");
+        if (!owner || owner.updatedAt.getTime() !== input.expectedProjectUpdatedAt.getTime())
+          return false;
+        const [target] = await tx
+          .select({ updatedAt: service.updatedAt })
+          .from(service)
+          .where(
+            and(
+              eq(service.id, input.serviceId),
+              eq(service.projectId, input.projectId),
+              eq(service.enabled, true),
+            ),
+          );
+        if (!target || target.updatedAt.getTime() !== input.expectedServiceUpdatedAt.getTime())
+          return false;
+        const [inFlight] = await tx
+          .select({ id: deployment.id })
+          .from(deployment)
+          .where(
+            and(
+              eq(deployment.projectId, input.projectId),
+              eq(deployment.organizationId, input.organizationId),
+              or(
+                inArray(deployment.status, ["queued", "building", "deploying", "reconciling"]),
+                liveBuildExecutionCondition(),
+              ),
+            ),
+          )
+          .limit(1);
+        if (inFlight) return false;
+        const [changed] = await tx
+          .update(serviceDeployment)
+          .set({
+            containerId: input.containerId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(serviceDeployment.deploymentId, input.deploymentId),
+              eq(serviceDeployment.serviceId, input.serviceId),
+              eq(serviceDeployment.containerId, input.expectedContainerId),
+              ne(serviceDeployment.status, "stopped"),
+              inArray(
+                serviceDeployment.serviceId,
+                tx
+                  .select({ id: service.id })
+                  .from(service)
+                  .where(and(eq(service.projectId, input.projectId), eq(service.enabled, true))),
+              ),
+              inArray(
+                serviceDeployment.deploymentId,
+                tx
+                  .select({ id: deployment.id })
+                  .from(deployment)
+                  .where(
+                    and(
+                      eq(deployment.projectId, input.projectId),
+                      eq(deployment.organizationId, input.organizationId),
+                    ),
+                  ),
+              ),
+            ),
+          )
+          .returning();
+        return Boolean(changed);
+      });
     },
 
     /** Commit a runtime-only env apply without creating a release/build session.

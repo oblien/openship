@@ -5,6 +5,7 @@ import type {
   ServiceEnvironment,
   ServiceEnvironmentInput,
   MergeServiceEnvVarsInput,
+  ServiceEnvironmentReview,
   TUpdateServiceBody,
 } from "@repo/contracts";
 
@@ -315,7 +316,10 @@ export const servicesApi = {
   },
 
   mergeEnv: (projectId: string | number, serviceId: string, input: MergeServiceEnvVarsInput) =>
-    api.patch<{ success: boolean }>(endpoints.services.envSet(projectId, serviceId), input),
+    api.patch<{ success: boolean; affectedServices?: Array<{ id: string; name: string }> }>(endpoints.services.envSet(projectId, serviceId), input),
+
+  reviewEnv: (projectId: string | number, serviceId: string, input: Omit<MergeServiceEnvVarsInput, "shared">) =>
+    api.post<ServiceEnvironmentReview>(`${endpoints.services.envSet(projectId, serviceId)}/review`, input),
 
   /** Real values for named keys only. Pass environment for service-scoped
    * env_var rows; omit it for compose-inline values. */

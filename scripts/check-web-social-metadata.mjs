@@ -140,6 +140,10 @@ try {
     /^\/download\/twitter-image/,
   );
   assert.equal(new URL(pages.get("/docs").get("og:image")).pathname, "/docs-og");
+  assert.match(pages.get("/affiliates").get("og:title"), /OpenShip Referral/);
+  for (const key of ["og:image", "twitter:image"]) {
+    assert.match(new URL(pages.get("/affiliates").get(key)).pathname, /^\/affiliates\/(opengraph|twitter)-image/);
+  }
 
   await each(images, async (path) => {
     const response = await request(origin, path);

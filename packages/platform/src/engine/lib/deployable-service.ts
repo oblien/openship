@@ -22,6 +22,9 @@
 
 import {
   categoryServesFiles,
+  getBuildImage,
+  getRuntimeImage,
+  normalizeFramework,
   normalizeServiceLabel,
   STACKS,
   type StackDefinition,
@@ -173,6 +176,43 @@ export function resolveSubAppRecipe(
     installCommand: service.installCommand ?? snapshot.installCommand ?? null,
     buildCommand: service.buildCommand ?? snapshot.buildCommand ?? null,
     startCommand: service.startCommand ?? snapshot.startCommand ?? null,
+  };
+}
+
+/** Resolve both stages from the same sub-app toolchain. A service that changes
+ * framework, package manager or builder must not inherit the parent's runtime.
+ * Unchanged/materialized app rows keep explicit project runtime selections. */
+export function resolveSubAppImages(
+  service: {
+    framework?: string | null;
+    packageManager?: string | null;
+    buildImage?: string | null;
+  },
+  snapshot: {
+    framework?: string | null;
+    packageManager?: string | null;
+    buildImage?: string | null;
+    runtimeImage?: string | null;
+    runtimeImageOverride?: boolean;
+    runtimeVersion?: string;
+  },
+) {
+  const framework = normalizeFramework(service.framework ?? snapshot.framework);
+  const stack = (Object.hasOwn(STACKS, framework) ? framework : "unknown") as StackId;
+  const packageManager = service.packageManager ?? snapshot.packageManager ?? undefined;
+  const sameToolchain = framework === normalizeFramework(snapshot.framework) &&
+    packageManager === (snapshot.packageManager ?? undefined);
+  const buildImage = service.buildImage?.trim() ||
+    (sameToolchain ? snapshot.buildImage?.trim() : undefined) ||
+    getBuildImage(stack, packageManager);
+  const inheritRuntime = sameToolchain && buildImage === snapshot.buildImage?.trim();
+
+  return {
+    buildImage,
+    runtimeImage: (inheritRuntime ? snapshot.runtimeImage?.trim() : undefined) ||
+      getRuntimeImage(stack, packageManager, buildImage),
+    runtimeImageOverride: inheritRuntime && snapshot.runtimeImageOverride === true,
+    runtimeVersion: inheritRuntime ? snapshot.runtimeVersion : undefined,
   };
 }
 

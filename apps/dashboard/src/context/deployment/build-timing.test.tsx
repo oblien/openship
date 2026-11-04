@@ -31,6 +31,7 @@ const api = vi.hoisted(() => ({
   stream: { isConnected: true, connect: vi.fn(), disconnect: vi.fn() },
 }));
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/api", () => ({
   deployApi: {
     getBuildStatus: api.status,

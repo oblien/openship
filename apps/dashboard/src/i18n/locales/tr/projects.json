@@ -411,7 +411,18 @@
     "suggestedFix": "Önerilen çözüm",
     "fixStep1": "Alan Adları sekmesini açın.",
     "fixStep2": "Servis portu için bir rota veya özel alan adı ekleyin.",
-    "fixStep3": "Alan adını doğrulayın ve dağıtın."
+    "fixStep3": "Alan adını doğrulayın ve dağıtın.",
+    "composeReview": {
+      "title": "Compose değişti",
+      "addedTitle": "Yeni hizmetlerin yapılandırılması gerekiyor",
+      "description": "Compose dosyası son yapılandırmadan bu yana değişti. Yeniden dağıtmadan önce güncel hizmetleri ve ayarları gözden geçirin.",
+      "configure": "Yapılandır",
+      "cancel": "İptal",
+      "added": "Eklenen",
+      "changed": "Değişen",
+      "removed": "Kaldırılan",
+      "reviewHint": "Bu Compose değişikliklerini gözden geçirin, ardından uygulamak için dağıtın. Kaldırılan hizmetler dağıtım sırasında durdurulur; kalıcı verileri korunur."
+    }
   },
   "incomingWebhooks": {
     "title": "Gelen webhook'lar",

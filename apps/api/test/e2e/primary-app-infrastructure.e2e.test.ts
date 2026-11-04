@@ -550,4 +550,50 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
       build.mockRestore();
     }
   });
+  it("can configure roles and deploy after deleting the last attached service (#1308)", async () => {
+    if (!live) live = await deploy([]);
+    const { deleteService } = await import("@repo/platform/engine/modules/services/service.service");
+    const { getRoleConfiguration, configureRuntimeRoles } =
+      await import("@repo/platform/engine/modules/projects/role-configuration.service");
+    const ctx = buildBackgroundContext(owner);
+    const previous = live;
+    await deleteService(ctx, project.id, dbId);
+    expect(await repos.service.findById(dbId)).toBeUndefined();
+    expect((await runtime.getContainerInfo(previous.containerId!)).status).toBe("running");
+    const config = await getRoleConfiguration(project.id, project.organizationId);
+    expect(config.supported, config.reason ?? "").toBe(true);
+    const nextRoles = [
+      {
+        ...roles[0]!,
+        kind: "worker" as const,
+        command: "trap 'exit 0' TERM; while :; do sleep 1 & wait $!; done",
+      },
+      { ...roles[1]!, kind: "scheduler" as const },
+    ];
+    const result = await configureRuntimeRoles(ctx, project.id, {
+      expectedDeploymentId: config.deploymentId!,
+      expectedUpdatedAt: config.updatedAt,
+      roles: nextRoles,
+    });
+    attempts.add(result.deploymentId);
+    live = await settle({ id: result.deploymentId });
+    expect(live.status, live.errorMessage ?? "").toBe("ready");
+    expect(live.containerId).toBe(previous.containerId);
+    expect(live.roleContainers!.find((role) => role.role === "scheduler")!.containerId).toBe(
+      previous.roleContainers!.find((role) => role.role === "scheduler")!.containerId,
+    );
+    const deployed = await deploy(["echo release-after-service-removal"], "manual", {
+      roles: nextRoles,
+    });
+    expect(deployed.status, deployed.errorMessage ?? "").toBe("ready");
+    expect((await repos.service.listByDeployment(deployed.id)).map((row) => row.serviceId)).toEqual([
+      appId,
+    ]);
+    expect((await repos.service.listByProject(project.id)).map((row) => row.id)).toEqual([appId]);
+    expect(await repos.domain.findByHostname(hostname)).toMatchObject({ serviceId: appId });
+    expect((await runtime.getContainerInfo(deployed.containerId!)).status).toBe("running");
+    const session = await repos.deployment.findBuildSessionByDeploymentId(deployed.id);
+    expect(JSON.stringify(session?.logs)).toContain("release-after-service-removal");
+    live = deployed;
+  });
 });

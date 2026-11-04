@@ -132,12 +132,26 @@ ID_LIKE="suse opensuse"
 VERSION_ID="15.6"
 PRETTY_NAME="openSUSE Leap 15.6"`,
 
-  /** Recognized and refused. No VERSION_ID at all — rolling release. */
+  /** Driven with pacman. Rolling release — no VERSION_ID. */
   arch: `NAME="Arch Linux"
 PRETTY_NAME="Arch Linux"
 ID=arch
 BUILD_ID=rolling
 HOME_URL="https://archlinux.org/"`,
+
+  /**
+   * Arch derivative. The ID is not `arch`; `ID_LIKE` is. This is the host 0.9.8
+   * refused with "no pacman provisioning path".
+   */
+  cachyos: `NAME="CachyOS Linux"
+PRETTY_NAME="CachyOS"
+ID=cachyos
+ID_LIKE=arch
+BUILD_ID=rolling
+HOME_URL="https://cachyos.org/"
+DOCUMENTATION_URL="https://wiki.cachyos.org/"
+BUG_REPORT_URL="https://github.com/CachyOS/distribution/issues"
+LOGO=cachyos`,
 
   /** Unknown ID, debian family via ID_LIKE — the same mechanism as Amazon Linux, other side. */
   mint213: `NAME="Linux Mint"

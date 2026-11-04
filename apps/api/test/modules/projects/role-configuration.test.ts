@@ -109,6 +109,17 @@ describe("runtime role configuration admission", () => {
       (await repos.deployment.listInFlightByProject(f.project.id)).map((row) => row.id),
     ).toEqual([dep.id]);
   });
+  it("keeps a reviewed role edit valid when background cleanup refreshes capacity", async () => {
+    const f = await fixture();
+    const { refreshRollbackCapacity } =
+      await import("@repo/platform/engine/modules/deployments/release-retention");
+    await refreshRollbackCapacity({ projectId: f.project.id, imageSizes: [100, 300] });
+    const project = (await repos.project.findById(f.project.id))!;
+    expect(project.snapshotSizeBytes).toBe(200);
+    expect(project.capacityMeasuredAt).toBeInstanceOf(Date);
+    expect(project.updatedAt.toISOString()).toBe(f.config.updatedAt);
+    expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+  });
   it("supports a headless Docker primary process using the same workload classification as deployment", async () => {
     const f = await fixture();
     await repos.deployment.updateStatus(f.active.id, "ready", {
@@ -223,6 +234,36 @@ describe("runtime role configuration admission", () => {
       .set({ enabled: false })
       .where(eq(schema.service.id, sidecar.id));
     expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+  });
+  it("keeps roles available after the last attached service is removed (#1308)", async () => {
+    const f = await fixture();
+    await repos.project.update(f.project.id, { framework: "node", startCommand: "exec app" });
+    const app = await seedService(f.project.id, {
+      name: f.project.slug,
+      kind: "monorepo",
+      sortOrder: -1,
+      enabled: true,
+    });
+    const sidecar = await seedService(f.project.id, {
+      name: "database",
+      kind: "compose",
+      image: "postgres:16-alpine",
+      enabled: true,
+      exposed: false,
+    });
+    expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(true);
+    await repos.service.remove(sidecar.id);
+    const config = await getRoleConfiguration(f.project.id, f.org.organizationId);
+    expect(config.supported, config.reason ?? "").toBe(true);
+    const result = await configureRuntimeRoles(f.ctx, f.project.id, {
+      ...f.input,
+      expectedUpdatedAt: config.updatedAt,
+    });
+    expect((await repos.deployment.findById(result.deploymentId))?.meta).toMatchObject({
+      handoverAppImage: imageId,
+      roles: f.input.roles,
+    });
+    expect(await repos.service.findById(app.id)).not.toBeNull();
   });
   it("rejects stale edits, unavailable images, unsupported Cloud and foreign organizations before creating work", async () => {
     const f = await fixture();

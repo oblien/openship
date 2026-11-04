@@ -24,8 +24,12 @@ import { resolveBearerIdentity } from "../../middleware/auth";
 import { recordToolCall } from "./mcp-audit";
 import { handleMcpMessage, jsonRpcError } from "./mcp-server";
 import type { McpPrincipal } from "./mcp-tools";
+import { instanceAuthorization } from "../../lib/instance-authorization";
+import { mcpGuideRoutes } from "./mcp-guide.routes";
 
 const r = secureRouter(new Hono(), { module: "mcp", basePath: "/api/mcp" });
+
+r.hono.route("/", mcpGuideRoutes);
 
 /**
  * The caller, as this endpoint needs them: their effective capability plus the
@@ -118,6 +122,11 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
 
   return {
     principal: {
+      instanceAdmin: await instanceAuthorization.allows({
+        userId: id.userId,
+        tokenScope: id.scoped ? { tokenId: id.tokenId } : null,
+        credential: { organizationId: id.organizationId, readOnly: id.readOnly },
+      }, "read"),
       role,
       readOnly: id.readOnly,
       grantedRootTypes,
@@ -160,8 +169,8 @@ function unauthorized(c: Context, message: string) {
  * RFC 8707 audience check. A token minted for a DIFFERENT resource must not be
  * accepted here — that's the resource server's half of the contract, and it's
  * what stops a token phished by another MCP server from being replayed against
- * this one. A token with no audience (opaque, issued before audience binding
- * existed) is unconstrained and passes, so existing clients keep working.
+ * this one. Opaque PATs pass this hint check and still require normal PAT
+ * authentication. Legacy OAuth tokens have no live receipt and are rejected.
  * Comparison is on canonicalized URLs, never raw strings.
  */
 function audienceAccepted(token: string, req: Request): boolean {

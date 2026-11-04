@@ -541,7 +541,7 @@ jobs:
   build-desktop-macos:
     name: Build desktop installers (macOS arm64 + x64)
     if: github.event_name == 'push'
-    runs-on: macos-14
+    runs-on: macos-15
     # Signing stays with the build; Apple's asynchronous processing has its own
     # jobs so a network failure cannot discard successfully built installers.
     env:
@@ -680,7 +680,7 @@ jobs:
     name: Submit macOS notarization (${{ matrix.arch }})
     if: github.event_name == 'push'
     needs: build-desktop-macos
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -718,7 +718,7 @@ jobs:
     name: Finish macOS notarization (${{ matrix.arch }})
     if: github.event_name == 'push'
     needs: submit-desktop-macos
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 70
     strategy:
       fail-fast: false

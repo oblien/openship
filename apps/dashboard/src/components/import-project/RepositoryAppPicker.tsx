@@ -43,7 +43,7 @@ export function RepositoryAppPicker({
     return () => {
       generation.current++;
     };
-  }, [config.owner, config.repo, config.branch, config.localPath, config.uploadSessionId]);
+  }, [config.owner, config.repo, config.branch, config.serverId, config.localPath, config.uploadSessionId]);
 
   const changePath = (next: string) => {
     generation.current++;
@@ -84,7 +84,7 @@ export function RepositoryAppPicker({
       const response = await deployApi.prepare(
         config.localPath
           ? { source: "local", path: config.localPath, rootDirectory: root }
-          : { owner: config.owner, repo: config.repo, branch: config.branch, rootDirectory: root },
+          : { owner: config.owner, repo: config.repo, branch: config.branch, serverId: config.serverId, rootDirectory: root },
       );
       if (request !== generation.current || scope.current !== getApiRequestScopeVersion()) return;
       if (response.error) throw new Error(response.error);
@@ -178,7 +178,7 @@ export function RepositoryAppPicker({
         </label>
         {canBrowse && !candidate && (
           <RepositoryPathBrowser
-            source={{ owner: config.owner, repo: config.repo, branch: config.branch }}
+            source={{ owner: config.owner, repo: config.repo, branch: config.branch, serverId: config.serverId }}
             kind="directory"
             value={path}
             onChange={changePath}

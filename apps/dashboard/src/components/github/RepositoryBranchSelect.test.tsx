@@ -86,7 +86,7 @@ describe("repository branch selection (#870)", () => {
     expect(options()[0]?.textContent).toBe("main");
     expect(options()).toHaveLength(101);
     await search("z-last");
-    expect(api.listBranches).toHaveBeenLastCalledWith("acme", "app", 2);
+    expect(api.listBranches).toHaveBeenLastCalledWith("acme", "app", 2, undefined);
     expect(options().map((option) => option.textContent)).toEqual(["z-last"]);
     await act(async () =>
       document

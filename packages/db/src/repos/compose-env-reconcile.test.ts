@@ -366,7 +366,7 @@ describe("independent Compose updates", () => {
       const h = harness(existingService({ ...base, importedSpec: base }), scope === "scoped");
       const result = await h.repo.reconcileFromCompose("proj_1", []);
       expect(result.services).toHaveLength(1);
-      expect(h.writes).toEqual([]);
+      expect(h.stored().archivedAt).toBeInstanceOf(Date);
       expect(h.stored().environment).toEqual(base.environment);
     },
   );

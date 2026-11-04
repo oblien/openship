@@ -1,3 +1,4 @@
+import { ServerSecuritySchemas } from "./server-security";
 import {
   NetworkCollectionSchemas,
   ComputeClusterCollectionSchemas,
@@ -514,6 +515,7 @@ export const ServerCollectionSchemas = {
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ServerResourceSchemas = {
+  ...ServerSecuritySchemas,
   ...ManagedServerResourceSchemas,
   usage: { action: "read", output: CloudWorkspaceUsageSchema },
   getNetworkSettings: {
@@ -702,5 +704,6 @@ export interface ServerOperations
     input?: ServerInstallSessionInput,
     options?: { signal?: AbortSignal },
   ): AsyncIterable<DeploymentEvent>;
+  securityRunEvents(id: string, runId: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   monitor(id: string, options?: ServerMonitorOptions): AsyncIterable<DeploymentEvent>;
 }

@@ -20,6 +20,7 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { timeAgo } from "@/lib/time";
 import type { Dictionary } from "@/i18n";
+import { InvestigationLink } from "@/components/assistant/InvestigationLink";
 
 type IncidentKind = ServiceIncidentRow["kind"];
 
@@ -151,7 +152,7 @@ export function HealthTab() {
           ) : (
             <ul className="space-y-2.5">
               {open.map((row) => (
-                <IncidentRow key={row.id} row={row} />
+                <IncidentRow key={row.id} row={row} projectId={projectId} />
               ))}
             </ul>
           )}
@@ -167,7 +168,7 @@ export function HealthTab() {
         ) : (
           <ul className="space-y-2.5">
             {resolved.map((row) => (
-              <IncidentRow key={row.id} row={row} />
+              <IncidentRow key={row.id} row={row} projectId={projectId} />
             ))}
           </ul>
         )}
@@ -178,7 +179,7 @@ export function HealthTab() {
 
 /* ── Row ─────────────────────────────────────────────────────────────────── */
 
-function IncidentRow({ row }: { row: ServiceIncidentRow }) {
+function IncidentRow({ row, projectId }: { row: ServiceIncidentRow; projectId: string }) {
   const { t } = useI18n();
   const c = t.projects.health;
   const [showLog, setShowLog] = useState(false);
@@ -232,6 +233,11 @@ function IncidentRow({ row }: { row: ServiceIncidentRow }) {
         </div>
       </div>
 
+      {isOpen && row.projectId === projectId && (
+        <div className="mt-3">
+          <InvestigationLink target={{ kind: "issue", projectId, issueId: `incident:${row.id}` }} size="sm" />
+        </div>
+      )}
       {row.logExcerpt && (
         <div className="mt-2">
           <button

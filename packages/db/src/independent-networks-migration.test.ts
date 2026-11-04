@@ -23,7 +23,8 @@ describe("independent network migration", () => {
     };
     for (const migration of journal.entries.filter((entry) => entry.idx < 139))
       await client.exec(readFileSync(`${directory}/${migration.tag}.sql`, "utf8"));
-    await db.insert(schema.organization).values({ id: "org", name: "Org" });
+    // Seed only columns present at this historical migration boundary.
+    await client.query("INSERT INTO organization (id, name) VALUES ($1, $2)", ["org", "Org"]);
     for (const id of ["native", "ready", "initial", "recovering"]) {
       const managed = id !== "native";
       await client.query(

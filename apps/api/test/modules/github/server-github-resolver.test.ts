@@ -115,3 +115,17 @@ describe("mutator cloud guard", () => {
     expect(listByServer).not.toHaveBeenCalled();
   });
 });
+
+
+describe("repository reads cannot acquire SSH credentials", () => {
+  it.each(["ssh-server-key", "ssh-deploy-key"])("%s is unavailable in token-only mode", async mode => {
+    getByServer.mockResolvedValue({ mode, organizationId: "o1", serverKeyPrivateEncrypted: "ENC:PRIVATE" });
+    expect(await resolveServerGitCredential({ serverId: "s1", ctx, owner: "acme", repo: "app", tokenOnly: true })).toBeNull();
+    expect(await canResolveServerGitCredential("s1", { tokenOnly: true })).toBe(false);
+  });
+  it("uses the unchanged stored token for repository reads", async () => {
+    getByServer.mockResolvedValue({ mode: "token", tokenEncrypted: "ENC:server-pat" });
+    expect(await resolveServerGitCredential({ serverId: "s1", ctx, owner: "acme", repo: "app", tokenOnly: true })).toEqual({ token: "server-pat" });
+    expect(await canResolveServerGitCredential("s1", { tokenOnly: true })).toBe(true);
+  });
+});

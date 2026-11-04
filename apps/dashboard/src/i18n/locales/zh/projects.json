@@ -411,7 +411,18 @@
     "suggestedFix": "建议的修复方法",
     "fixStep1": "打开“域名”标签页。",
     "fixStep2": "为服务端口添加路由或自定义域名。",
-    "fixStep3": "验证域名并部署。"
+    "fixStep3": "验证域名并部署。",
+    "composeReview": {
+      "title": "Compose 已更改",
+      "addedTitle": "新服务需要配置",
+      "description": "Compose 文件自上次配置以来已更改。请在重新部署前检查最新的服务和设置。",
+      "configure": "配置",
+      "cancel": "取消",
+      "added": "已添加",
+      "changed": "已更改",
+      "removed": "已移除",
+      "reviewHint": "检查这些 Compose 更改，然后部署以应用更改。已移除的服务将在部署时停止，其持久化数据将保留。"
+    }
   },
   "connections": {
     "nativeClusterHint": "选择与此数据库位于同一集群的项目。只有关联的项目才能获得私有访问权限。",

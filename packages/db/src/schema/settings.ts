@@ -247,6 +247,8 @@ export const userSettings = pgTable("user_settings", {
     .unique()
     .references(() => user.id, { onDelete: "cascade" }),
 
+  locale: text("locale").notNull().default("en"),
+
   /** Personal themes only; never applied to another member or to deployed apps. */
   appearance: jsonb("appearance").$type<AppearancePreferences>(),
 

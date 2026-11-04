@@ -9,6 +9,7 @@ import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
 import { RuntimeRedeployMenu } from "./RuntimeRedeployMenu";
 import { RuntimeImageUpdateNotice } from "./RuntimeImageUpdateNotice";
 import { SecurityProjectReview } from "../updates/SecurityProjectReview";
+import { decodeSlug } from "@/utils/repoSlug";
 
 const h = vi.hoisted(() => ({
   update: vi.fn(),
@@ -22,6 +23,7 @@ const h = vi.hoisted(() => ({
   pricing: vi.fn(),
   resourceKey: "account-one",
 }));
+vi.mock("@/context/ModalContext", () => ({ useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast }) }));
@@ -314,6 +316,33 @@ it("keeps security patches off by default and sends the reviewed advisory throug
   });
   expect(h.update).not.toHaveBeenCalled();
   expect(h.push).toHaveBeenCalledWith("/build/security-deployment");
+});
+
+it("explains a required runtime major upgrade and opens the existing configuration path", async () => {
+  const result = await h.security();
+  result.data.findings[0] = {
+    ...result.data.findings[0],
+    canRefresh: false,
+    runtimeUpgradeRequired: true,
+    refreshBlockedReason: "This advisory requires a newer runtime major version.",
+  };
+  h.security.mockResolvedValue(result);
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  expect(element.textContent).toContain("newer runtime major version");
+  expect(
+    [...element.querySelectorAll("button")].some((item) => item.textContent === c.refresh),
+  ).toBe(false);
+  expect(element.querySelector("details details[open]")).not.toBeNull();
+  await click(baseDictionary.projectSettings.securityAdvisories.openRuntimeConfiguration);
+  expect(h.push).toHaveBeenCalledOnce();
+  const destination = new URL(h.push.mock.calls[0][0], "http://localhost");
+  expect(decodeSlug(destination.pathname.slice("/deploy/".length))).toEqual({
+    kind: "project",
+    projectId: "project-a",
+  });
+  expect(destination.searchParams.get("projectId")).toBe("project-a");
+  expect(destination.searchParams.get("mode")).toBe("config");
+  expect(h.applySecurity).not.toHaveBeenCalled();
 });
 
 it("never shows another workspace's delayed security findings", async () => {

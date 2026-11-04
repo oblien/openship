@@ -80,6 +80,24 @@ describe("recorded edge targets cannot borrow another tenant's host", () => {
       expect(read).not.toHaveBeenCalled();
     },
   );
+  it("resolves a never-deployed project's own server binding", async () => {
+    const undeployed = {
+      ...project,
+      activeDeploymentId: null,
+      serverId: "bound-server",
+    } as Project;
+    h.owned.mockResolvedValue({ id: "bound-server", organizationId: "org-own", isLocal: false });
+    expect(await resolveServerIdForProject(undeployed)).toBe("bound-server");
+    expect(h.owned).toHaveBeenCalledWith("bound-server", "org-own");
+  });
+  it("does not trust a never-deployed project's binding to a foreign server", async () => {
+    const undeployed = {
+      ...project,
+      activeDeploymentId: null,
+      serverId: "bound-server",
+    } as Project;
+    expect(await resolveServerIdForProject(undeployed)).toBeNull();
+  });
   it("preserves an owned self-hosted server's host read", async () => {
     h.owned.mockResolvedValue({ id: "recorded-server", organizationId: "org-own", isLocal: false });
     expect(await withServerHostExecutor(project, async () => "owned result")).toBe("owned result");

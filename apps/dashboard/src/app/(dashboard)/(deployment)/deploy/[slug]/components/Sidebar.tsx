@@ -501,6 +501,7 @@ const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) 
               <RepositoryBranchSelect
                 owner={config.owner}
                 repo={config.repo}
+                serverId={config.serverId}
                 projectId={config.projectId}
                 value={config.branch}
                 onChange={(val) => void handleBranchChange(val)}

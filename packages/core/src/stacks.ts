@@ -892,9 +892,8 @@ export const STACKS = {
     // killed after the grace period (Laravel 13.33.0, see #935). Horizon's
     // shutdown was not measured separately.
     //
-    // `deps` merges `require` and `require-dev`, so a dev-only
-    // laravel/horizon still selects `horizon`. Callers that need
-    // production-only matching must read `require` from composer.json.
+    // Role suggestions use production Composer dependencies to match --no-dev;
+    // framework detection can still inspect both require and require-dev.
     //
     // Explicit shutdown budgets. The workers' 90s exceeds the default 60s queue
     // and Horizon supervisor timeouts, so size it to the application's own
@@ -1372,6 +1371,11 @@ export function getRuntimeImage(
   buildImage?: string | null,
 ): string {
   const stack = STACKS[stackId] as StackDefinition;
+  // An undetected/custom stack has no known runtime to switch to. Keep its
+  // selected toolchain instead of copying the app into a bare Ubuntu image.
+  if (stack.category === "generic" && buildImage && !validateImageReference(buildImage)) {
+    return buildImage;
+  }
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
     if (
       buildImage && !validateImageReference(buildImage) &&

@@ -35,6 +35,7 @@ import {
 } from "./resource-operations";
 
 export interface ServerDependencies {
+  securityRunEvents?(ctx: ExecutionContext, id: string, runId: string, signal?: AbortSignal): Promise<AsyncIterable<DeploymentEvent>>;
   collection: ScopedServices<typeof ServerCollectionSchemas>;
   resources: ResourceServices<typeof ServerResourceSchemas>;
   networks?: {
@@ -83,6 +84,7 @@ export interface ServerDependencies {
 }
 export type PlatformServerOperations = PlatformScopedOperations<typeof ServerCollectionSchemas> &
   PlatformResourceOperations<typeof ServerResourceSchemas> & {
+    openSecurityRunEvents(ctx: ExecutionContext, id: string, runId: string, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<DeploymentEvent>>>;
     openClusterStorageEvents(
       ctx: ExecutionContext,
       id: string,
@@ -242,6 +244,14 @@ export function createServerOperations(
   return Object.freeze({
     ...createScopedOperations(ServerCollectionSchemas, authorization, "server", deps?.collection),
     ...createResourceOperations(ServerResourceSchemas, authorization, "server", deps?.resources),
+    async openSecurityRunEvents(ctx, value, runValue, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      const runId = parseInput(ResourceIdSchema, runValue);
+      const context = await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action: "admin" });
+      if (!deps?.securityRunEvents) throw new AppError("Server run events are unavailable", 501, "CAPABILITY_UNAVAILABLE");
+      const source = await deps.securityRunEvents(context, id, runId, options.signal);
+      return { context, data: authorizedEvents(context, id, "admin", source) };
+    },
     openManagedNetworkPreparationEvents: (ctx, id, options = {}) =>
       networkStream(ctx, "preparation", id, options),
     openClusterStorageEvents: (ctx, id, options = {}) => networkStream(ctx, "storage", id, options),

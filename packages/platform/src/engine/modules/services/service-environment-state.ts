@@ -29,6 +29,11 @@ import {
 import { toDiscoveredService } from "../migration/docker-reconcile";
 import { assertServiceAccess } from "./service-access";
 import { containerIdForService, liveContainerIdWithRuntime } from "./service-container";
+import {
+  environmentReviewRevision,
+  reviewSharedServiceEnvironment,
+  sharedEnvironmentChanged,
+} from "./service-environment-sharing";
 
 const decryptMap = (values: Record<string, string>) =>
   decryptEnvMap(values, (key) => {
@@ -45,15 +50,25 @@ export async function loadServiceEnvironment(
   projectId: string,
   serviceId: string,
   environment?: Environment,
+  snapshot?: Awaited<ReturnType<typeof repos.project.environmentSnapshot>>,
 ) {
-  const { project, svc: service } = await assertServiceAccess(ctx, projectId, serviceId);
+  const { project, svc } = await assertServiceAccess(ctx, projectId, serviceId);
+  // A shared save must validate and encrypt the exact rows that were reviewed,
+  // rather than mix that snapshot with independently fetched configuration.
+  const service = snapshot ? snapshot.services.find((row) => row.id === serviceId) : svc;
+  if (!service) sharedEnvironmentChanged();
   const deployment = await findActiveDeployment(project);
   const scope =
     parseOptionalEnvironmentScope(environment ?? deployment?.environment) ?? "production";
-  const [projectRows, serviceRows] = await Promise.all([
-    repos.project.listEnvVars(projectId, scope, null),
-    repos.project.listEnvVars(projectId, scope, serviceId),
-  ]);
+  const [projectRows, serviceRows] = snapshot
+    ? [
+        snapshot.vars.filter((row) => !row.serviceId),
+        snapshot.vars.filter((row) => row.serviceId === serviceId),
+      ]
+    : await Promise.all([
+        repos.project.listEnvVars(projectId, scope, null),
+        repos.project.listEnvVars(projectId, scope, serviceId),
+      ]);
   const projectEnv = decryptMap(Object.fromEntries(projectRows.map((row) => [row.key, row.value])));
   const serviceEnv = decryptMap(Object.fromEntries(serviceRows.map((row) => [row.key, row.value])));
   const merged = mergeServiceDeployEnv(
@@ -317,9 +332,18 @@ export async function mergeServiceEnvVars(
   input: MergeServiceEnvVarsInput,
 ) {
   return withProjectRuntimeLock(projectId, async () => {
-    const saved = await loadServiceEnvironment(ctx, projectId, serviceId, input.environment);
+    const shared = input.shared;
+    const plan = shared ? await reviewSharedServiceEnvironment(ctx, projectId, serviceId, input) : null;
+    if (shared && (!plan?.snapshot || plan.review.revision !== shared.revision))
+      sharedEnvironmentChanged();
+    const saved = await loadServiceEnvironment(
+      ctx, projectId, serviceId, input.environment, plan?.snapshot ?? undefined,
+    );
     if (saved.project.deletionInProgress)
       throw new AppError("This project is being deleted.", 409, "PROJECT_DELETING");
+    const selected = (plan?.review.changes ?? []).filter((change) => shared?.keys.includes(change.key));
+    if (shared && selected.length !== shared.keys.length) sharedEnvironmentChanged();
+    const sharedByKey = new Map(selected.map((change) => [change.key, change]));
     const byId = new Map(saved.serviceRows.map((row) => [row.id, row]));
     const byKey = new Map(saved.serviceRows.map((row) => [row.key, row]));
     const inheritedSecrets = new Map(
@@ -376,23 +400,79 @@ export async function mergeServiceEnvVars(
           looksLikeSecretKey(row.key),
       };
     });
+    const sharedUpserts = new Map<string, (typeof upserts)[number]>();
+    const sourceValues = new Map<string, string>();
+    const localUpserts = upserts.filter((row) => {
+      const change = sharedByKey.get(row.key);
+      if (!change) return true;
+      const value = input.upserts.find((edit) => edit.key === row.key)!.value;
+      if (sourceValues.has(change.projectKey) && sourceValues.get(change.projectKey) !== value)
+        throw new AppError(
+          "Two edits assign different values to the same shared variable. Use one shared value or service overrides.",
+          400,
+          "ENVIRONMENT_SHARED_CONFLICT",
+        );
+      sourceValues.set(change.projectKey, value);
+      const original = saved.projectRows.find((item) => item.key === change.projectKey)!;
+      sharedUpserts.set(change.projectKey, {
+        ...row,
+        key: change.projectKey,
+        isSecret: original.isSecret || sharedUpserts.get(change.projectKey)?.isSecret || row.isSecret,
+      });
+      return false;
+    });
     const remainingKeys = new Set(
       saved.serviceRows.map((row) => row.key).filter((key) => !deletes.has(key)),
     );
-    for (const row of upserts) remainingKeys.add(row.key);
+    for (const row of localUpserts) remainingKeys.add(row.key);
     if (remainingKeys.size > 100)
       throw new AppError(
         "A service can have at most 100 environment overrides.",
         400,
         "ENVIRONMENT_LIMIT",
       );
-    await repos.project.mergeEnvVars(
-      projectId,
-      input.environment,
-      upserts,
-      [...deletes],
-      serviceId,
-    );
+    if (shared) {
+      // Selected sources and local overrides can interact through Compose
+      // aliases. Never save a value different from the one the user entered.
+      const final = mergeServiceDeployEnv(
+        {
+          project: decryptMap(Object.fromEntries(
+            [...saved.projectRows, ...sharedUpserts.values()].map((row) => [row.key, row.value]),
+          )),
+          service: decryptMap(Object.fromEntries([
+            ...saved.serviceRows.filter((row) => !deletes.has(row.key)),
+            ...localUpserts,
+          ].map((row) => [row.key, row.value]))),
+          frozen: {},
+          inline: saved.service.environment ?? {},
+          templateKeys: saved.service.advanced?.environmentTemplateKeys,
+        },
+        false,
+      );
+      if (selected.some((change) => final.env[change.key] !== input.upserts.find((row) => row.key === change.key)!.value))
+        throw new AppError(
+          "These shared values conflict with another edit. Use matching values or save only for this service.",
+          400,
+          "ENVIRONMENT_SHARED_CONFLICT",
+        );
+      await repos.project.mergeEnvVarScopes(
+        projectId,
+        input.environment,
+        [
+          { upserts: [...sharedUpserts.values()], deletes: [] },
+          { serviceId, upserts: localUpserts, deletes: [...deletes] },
+        ],
+        (snapshot) => {
+          if (environmentReviewRevision(projectId, serviceId, input, snapshot) !== shared.revision)
+            sharedEnvironmentChanged();
+        },
+      );
+      const affectedServices = [...new Map(
+        selected.flatMap((change) => change.services).map(({ id, name }) => [id, { id, name }]),
+      ).values()];
+      return { success: true as const, affectedServices };
+    }
+    await repos.project.mergeEnvVars(projectId, input.environment, localUpserts, [...deletes], serviceId);
     return { success: true as const };
   });
 }

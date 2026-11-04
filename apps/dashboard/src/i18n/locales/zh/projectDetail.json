@@ -189,8 +189,18 @@
       "startShellHint": "启动服务以打开 shell。",
       "saveEnvironment": "保存环境",
       "environmentState": {
+        "shared": {
+          "title": "更新共享配置？",
+          "description": "选择要为关联服务更新的值。未选中的值仅在 {name} 中更改。",
+          "source": "共享来源：{key}",
+          "repositoryHint": "共享值适用于整个项目及其应用。仓库文件保持不变。",
+          "onlyService": "仅此服务",
+          "updateSelected": "更新所选项",
+          "saved": "也已为这些服务保存。请应用其环境或重新部署以使用新值。",
+          "reviewFailed": "无法检查共享配置。您的更改尚未保存。"
+        },
         "helpTitle": "环境变量的工作方式",
-        "description": "已保存在 Openship 中。服务覆盖值优先于 Compose 和项目共享值。编辑继承的值会为此服务创建覆盖值。",
+        "description": "保存在 Openship 中。存在项目共享来源时，保存会让您检查共享更改。服务覆盖值优先于 Compose 和项目值。",
         "sources": {
           "service": "服务覆盖值",
           "compose": "Compose",

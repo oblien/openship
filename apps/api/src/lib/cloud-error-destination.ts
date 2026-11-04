@@ -16,11 +16,18 @@ const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 async function boundedTransaction<T>(
   db: Database,
   run: (tx: DatabaseTransaction) => Promise<T>,
+  phase: "startup" | "delivery" = "delivery",
 ): Promise<T> {
   return db.transaction(async (tx) => {
     // These never leak into application queries on the pooled connection.
-    await tx.execute(sql`SET LOCAL lock_timeout = '250ms'`);
-    await tx.execute(sql`SET LOCAL statement_timeout = '500ms'`);
+    // Schema setup also waits behind other replicas' DDL. The short best-effort
+    // delivery deadline must not permanently disable storage during a rollout.
+    await tx.execute(
+      sql`SELECT set_config('lock_timeout', ${phase === "startup" ? "5s" : "250ms"}, true)`,
+    );
+    await tx.execute(
+      sql`SELECT set_config('statement_timeout', ${phase === "startup" ? "10s" : "500ms"}, true)`,
+    );
     return run(tx);
   });
 }
@@ -35,11 +42,13 @@ function eventJson(event: ErrorEvent): string {
 
 /** Only installCloudErrorDestination calls this in product code. */
 export async function createCloudErrorSink(db: Database, driver: Driver): Promise<ErrorSink> {
-  await boundedTransaction(db, async (tx) => {
-    // IF NOT EXISTS alone does not serialize concurrent PostgreSQL DDL. PGlite
-    // has one connection and already serializes its transactions.
-    if (driver === "pg") await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x6f736865})`);
-    await tx.execute(sql`
+  await boundedTransaction(
+    db,
+    async (tx) => {
+      // IF NOT EXISTS alone does not serialize concurrent PostgreSQL DDL. PGlite
+      // has one connection and already serializes its transactions.
+      if (driver === "pg") await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x6f736865})`);
+      await tx.execute(sql`
       CREATE TABLE IF NOT EXISTS cloud_error_event (
         event_id text PRIMARY KEY,
         occurred_at timestamptz NOT NULL,
@@ -47,18 +56,20 @@ export async function createCloudErrorSink(db: Database, driver: Driver): Promis
         event jsonb NOT NULL
       )
     `);
-    await tx.execute(sql`
+      await tx.execute(sql`
       CREATE INDEX IF NOT EXISTS cloud_error_event_received_idx ON cloud_error_event (received_at)
     `);
-    await tx.execute(sql`
+      await tx.execute(sql`
       CREATE INDEX IF NOT EXISTS cloud_error_event_request_idx
         ON cloud_error_event ((event #>> '{context,requestId}'))
     `);
-    await tx.execute(sql`
+      await tx.execute(sql`
       CREATE INDEX IF NOT EXISTS cloud_error_event_org_idx
         ON cloud_error_event ((event #>> '{context,organizationId}'), received_at DESC)
     `);
-  });
+    },
+    "startup",
+  );
 
   let nextPruneAt = 0;
   return async (events, signal) => {

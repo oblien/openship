@@ -55,6 +55,7 @@ const CONTENT_PATH_MARKERS: RegExp[] = [
 
 /** The tier each content route must carry. Update deliberately, never casually. */
 const EXPECTED_TIERS: Record<string, string> = {
+  "POST /api/github/repos/:owner/:repo/changes": "write",
   "GET /api/github/repos/:owner/:repo/files": "content-tree",
   "GET /api/github/repos/:owner/:repo/tree": "content-tree",
   "GET /api/github/repos/:owner/:repo/file": "content",

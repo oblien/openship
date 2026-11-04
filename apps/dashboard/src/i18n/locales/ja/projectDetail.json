@@ -189,8 +189,18 @@
       "startShellHint": "シェルを開くにはサービスを起動してください。",
       "saveEnvironment": "環境を保存",
       "environmentState": {
+        "shared": {
+          "title": "共有設定を更新しますか？",
+          "description": "連携するサービスで更新する値を選択してください。未選択の値は {name} のみで変更されます。",
+          "source": "共有元: {key}",
+          "repositoryHint": "共有値は、このプロジェクトとそのアプリに適用されます。リポジトリのファイルは変更されません。",
+          "onlyService": "このサービスのみ",
+          "updateSelected": "選択した値を更新",
+          "saved": "これらのサービスにも保存しました。新しい値を使用するには、環境を適用するか再デプロイしてください。",
+          "reviewFailed": "共有設定を確認できませんでした。変更は保存されていません。"
+        },
         "helpTitle": "環境変数の仕組み",
-        "description": "Openship に保存されています。サービスの上書き設定は、Compose とプロジェクトの共有値より優先されます。継承した値を編集すると、このサービスの上書き設定が作成されます。",
+        "description": "Openship に保存されます。プロジェクトの共有元がある場合、保存時に共有する変更を確認します。サービスの上書き値は Compose とプロジェクトの値より優先されます。",
         "sources": {
           "service": "サービスの上書き設定",
           "compose": "Compose",

@@ -708,7 +708,7 @@ it("opens the persistent security review without polling the hidden incident fee
   window.history.replaceState(null, "", "/monitoring?tab=security");
   await render();
   expect(container.textContent).toContain("Security advisories");
-  expect(container.textContent).toContain("Findings for apps you can access in the current organization.");
+  expect(container.textContent).toContain("Findings for apps and servers you can access in this workspace.");
   expect(buttons("Refresh")).toHaveLength(1);
   expect(mocks.list).not.toHaveBeenCalled();
 });

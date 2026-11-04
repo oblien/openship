@@ -68,7 +68,18 @@ it.each([
 ] as const)("keeps %s in the existing service pipeline", (_name, rows) => {
   expect(primaryAppWithInfrastructure(project, [...rows] as Service[])).toBeNull();
 });
-it("rejects explicit Compose projects, absent infrastructure, image-only and ambiguous app identities", () => {
+it("retains a materialized app after infrastructure is removed or disabled", () => {
+  expect(primaryAppWithInfrastructure(project, [app])).toEqual({ app, infrastructure: [] });
+  expect(primaryAppWithInfrastructure(project, [app, { ...database, enabled: false }])).toEqual({
+    app,
+    infrastructure: [],
+  });
+  expect(primaryAppWithInfrastructure(project, [{ ...app, sortOrder: 0 }])).toBeNull();
+  expect(
+    primaryAppWithInfrastructure(project, [{ ...app, environment: { CUSTOM: "keep" } }]),
+  ).toBeNull();
+});
+it("rejects explicit Compose projects, image-only and ambiguous app identities", () => {
   expect(
     primaryAppWithInfrastructure({ ...project, composePath: "compose.yml" }, [app, database]),
   ).toBeNull();
@@ -97,6 +108,5 @@ it("rejects explicit Compose projects, absent infrastructure, image-only and amb
       [app, database],
     ),
   ).toBeNull();
-  expect(primaryAppWithInfrastructure(project, [app])).toBeNull();
   expect(primaryAppWithInfrastructure(project, [database])).toBeNull();
 });

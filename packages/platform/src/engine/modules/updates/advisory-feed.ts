@@ -1,4 +1,6 @@
+import { env } from "../../config/env";
 import {
+  securityAdvisoryAppliesToMode,
   RELEASES_LATEST_API,
   SECURITY_FEED_API,
   releaseDocuments,
@@ -14,6 +16,7 @@ import { tokenFor } from "../github/github.token";
 import { verifySecurityManifest } from "./security-signature";
 
 const MAX_BYTES = 1_000_000;
+const SECURITY_CACHE_ID = "security:v2";
 async function readText(response: Response): Promise<string> {
   if (Number(response.headers.get("content-length")) > MAX_BYTES)
     throw new Error("Advisory response is too large.");
@@ -44,7 +47,7 @@ const pending = new Map<string, Promise<CachedFeed | undefined>>();
 
 /** One cached request per feed and installation, shared across tenants/browsers/projects. Credentials stay on api.github.com. */
 async function poll(
-  id: "security" | "release",
+  id: typeof SECURITY_CACHE_ID | "release",
   token: string | null,
 ): Promise<CachedFeed | undefined> {
   const running = pending.get(id);
@@ -54,18 +57,28 @@ async function poll(
       leaseUntil = new Date(now.getTime() + 60_000);
     const row = await repos.securityAdvisory.claimFeed(id, now, leaseUntil);
     if (!row) return repos.securityAdvisory.feed(id);
+    // v1 and v2 intentionally have different signed payloads at the same
+    // publication revision. Keep their ETags/bodies separate, but preserve the
+    // old installation's anti-rollback floor when adopting v2.
+    const legacy =
+      id === SECURITY_CACHE_ID && !row.body
+        ? await repos.securityAdvisory.feed("security")
+        : undefined;
+    const minimumRevision = Math.max(row.revision, legacy?.revision ?? 0);
     let response: Response | undefined;
     let authenticated = !!token;
     try {
       const headers = new Headers({
         Accept:
-          id === "security" ? "application/vnd.github.raw+json" : "application/vnd.github+json",
+          id === SECURITY_CACHE_ID
+            ? "application/vnd.github.raw+json"
+            : "application/vnd.github+json",
         "User-Agent": "Openship-advisor",
         "X-GitHub-Api-Version": "2022-11-28",
       });
       if (token) headers.set("Authorization", `Bearer ${token}`);
       if (row.etag) headers.set("If-None-Match", row.etag);
-      const url = id === "security" ? SECURITY_FEED_API : RELEASES_LATEST_API;
+      const url = id === SECURITY_CACHE_ID ? SECURITY_FEED_API : RELEASES_LATEST_API;
       response = await fetch(url, {
         headers,
         redirect: "error",
@@ -81,12 +94,12 @@ async function poll(
         });
       }
       let body = row.body,
-        revision = row.revision;
+        revision = minimumRevision;
       if (response.status !== 304) {
         if (!response.ok) throw new Error(`GitHub advisory request failed (${response.status}).`);
         const raw = await readJson(response);
-        if (id === "security") {
-          const manifest = verifySecurityManifest(raw, { minimumRevision: row.revision });
+        if (id === SECURITY_CACHE_ID) {
+          const manifest = verifySecurityManifest(raw, { minimumRevision });
           if (
             manifest.revision === row.revision &&
             row.body &&
@@ -120,7 +133,7 @@ async function poll(
         }
       }
       if (!body) throw new Error("Conditional advisory response has no cached body.");
-      if (id === "security") verifySecurityManifest(body, { minimumRevision: revision });
+      if (id === SECURITY_CACHE_ID) verifySecurityManifest(body, { minimumRevision: revision });
       await repos.securityAdvisory.saveFeed(id, leaseUntil, {
         body,
         revision,
@@ -145,6 +158,7 @@ async function poll(
         now.getTime() + updatePollInterval(authenticated),
       );
       await repos.securityAdvisory.saveFeed(id, leaseUntil, {
+        revision: minimumRevision,
         failures,
         nextCheckAt: new Date(next),
         error: error instanceof Error ? error.message.slice(0, 300) : "Advisory check failed.",
@@ -178,22 +192,36 @@ export async function getAdvisoryFeed(ctx?: ExecutionContext): Promise<AdvisoryF
       })
     : null;
   const release = await poll("release", token?.token ?? null);
-  const security = await poll("security", token?.token ?? null);
+  const security = await poll(SECURITY_CACHE_ID, token?.token ?? null);
+  // An offline upgrade may keep old warnings visible, but cannot authorize
+  // changes until this client has fetched and verified its own feed version.
+  const legacy = !security?.body ? await repos.securityAdvisory.feed("security") : undefined;
+  const cached = security?.body ? security : legacy;
   let manifest: SecurityManifest | null = null;
   try {
-    if (security?.body)
-      manifest = verifySecurityManifest(security.body, {
-        minimumRevision: security.revision,
+    if (cached?.body)
+      manifest = verifySecurityManifest(cached.body, {
+        minimumRevision: Math.max(cached.revision, security?.revision ?? 0),
         allowExpired: true,
       });
   } catch (error) {
     reportCaughtError(error, "platform/updates/advisory-feed.verify-cache");
     /* Invalid cache never authorizes updates. */
   }
-  const stale = !manifest || Date.parse(manifest.expiresAt) <= Date.now();
+  const stale = !security?.body || !manifest || Date.parse(manifest.expiresAt) <= Date.now();
   return {
     release: (release?.body as ReleaseFeedSnapshot | null) ?? { latest: null, manifest: null },
-    security: manifest,
+    security: manifest
+      ? {
+          ...manifest,
+          advisories: manifest.advisories.filter((a) =>
+            securityAdvisoryAppliesToMode(
+              a,
+              env.CLOUD_MODE ? "cloud" : env.DEPLOY_MODE === "desktop" ? "desktop" : "selfhosted",
+            ),
+          ),
+        }
+      : null,
     stale,
     checkedAt: security?.checkedAt?.toISOString() ?? null,
     nextCheckAt: security?.nextCheckAt.toISOString() ?? null,

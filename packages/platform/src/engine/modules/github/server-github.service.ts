@@ -19,7 +19,7 @@
  *
  * Everything here is self-hosted-only and hard-guards CLOUD_MODE (mirror
  * github.local-auth.ts). Secrets use the same encrypt/decrypt as the existing
- * clone-token pipe; they are decrypted only at deploy time and never logged.
+ * clone-token pipe; they are decrypted only for authorized clones or repository reads and never logged.
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
@@ -217,10 +217,12 @@ export async function resolveServerGitCredential(opts: {
   ctx: RequestContext;
   owner: string | null;
   repo: string | null;
+  /** Repository inspection cannot mint deploy keys or expose SSH material. */
+  tokenOnly?: boolean;
 }): Promise<BuildGitCredential | null> {
   if (env.CLOUD_MODE) return null;
   const row = await repos.serverGithubAuth.getByServer(opts.serverId);
-  if (!row || !hasStoredCredential(row)) return null;
+  if (!row || (opts.tokenOnly && row.mode !== "token") || !hasStoredCredential(row)) return null;
 
   if (row.mode === "token") {
     if (!row.tokenEncrypted) return null;
@@ -268,10 +270,10 @@ export async function resolveServerGitCredential(opts: {
  * Same `hasStoredCredential` predicate the resolver gates on, without decrypting
  * or minting, so preflight reports the verdict the build will reach.
  */
-export async function canResolveServerGitCredential(serverId: string): Promise<boolean> {
+export async function canResolveServerGitCredential(serverId: string, opts: { tokenOnly?: boolean } = {}): Promise<boolean> {
   if (env.CLOUD_MODE) return false;
   const row = await repos.serverGithubAuth.getByServer(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/server-github.service"); return null; });
-  return !!row && hasStoredCredential(row);
+  return !!row && (!opts.tokenOnly || row.mode === "token") && hasStoredCredential(row);
 }
 
 // ─── Status + disconnect ──────────────────────────────────────────────────────

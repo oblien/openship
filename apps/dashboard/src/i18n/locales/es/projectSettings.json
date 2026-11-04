@@ -619,6 +619,12 @@
       "repository": "Repositorio",
       "open": "Abrir"
     },
+    "branch": {
+      "label": "Rama de despliegue",
+      "description": "Se usará en los próximos despliegues de este entorno. Guardar no vuelve a desplegar la aplicación.",
+      "saved": "Rama de despliegue guardada",
+      "saveFailed": "No se pudo guardar la rama de despliegue"
+    },
     "webhookEndpoint": {
       "title": "Endpoint de webhook",
       "descriptionSet": "GitHub entrega los eventos de push directamente a este dominio",
@@ -1254,6 +1260,22 @@
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   },
   "securityAdvisories": {
+    "checksEnabled": "Comprobar avisos de seguridad",
+    "checksDescription": "Al desactivarlo, se pausan las comprobaciones de runtimes y hosts, los avisos nuevos y las acciones de parcheo de este espacio. Se conservan los datos y el consentimiento de actualización de los proyectos.",
+    "checksDisabled": "Las comprobaciones de seguridad están desactivadas en este espacio.",
+    "manageChecks": "Gestionar comprobaciones de seguridad",
+    "retrySettings": "Reintentar",
+    "bannerSettings": "Ajustes de avisos de seguridad",
+    "hideBanners": "Ocultar avisos de seguridad",
+    "showBanners": "Mostrar avisos de seguridad",
+    "bannerDescription": "Mostrar avisos de seguridad de apps y servidores en la parte superior del panel de este navegador y espacio. Las comprobaciones y los canales de notificación se controlan por separado.",
+    "openRuntimeConfiguration": "Revisar configuración de ejecución",
+    "severity": {
+      "critical": "Crítica",
+      "high": "Alta",
+      "moderate": "Moderada",
+      "low": "Baja"
+    },
     "sourceRedeployRequired": "Vuelve a compilar esta aplicación desde su código fuente guardado antes de actualizar su entorno de ejecución. La imagen actual no tiene una revisión de código verificada. Una nueva implementación desde el código fuente puede incluir código más reciente; revísalo en Implementaciones y vuelve a comprobar este aviso.",
     "openSourceRedeploy": "Abrir implementación desde el código fuente",
     "reviewApps": "Revisar apps afectadas ({count})",
@@ -1262,7 +1284,7 @@
     "checking": "Comprobando…",
     "title": "Avisos de seguridad",
     "unavailable": "Las comprobaciones de seguridad no están disponibles o están desactualizadas. Los avisos anteriores siguen visibles.",
-    "affected": "Hallazgos de apps a las que tienes acceso en la organización actual.",
+    "affected": "Resultados de las apps y servidores a los que tienes acceso en este espacio.",
     "noMatches": "No hay avisos que coincidan con los datos comprobados. No es un análisis completo de vulnerabilidades.",
     "partial": "No se pudieron comprobar algunos entornos de ejecución.",
     "guidance": "Leer aviso",
@@ -1277,5 +1299,42 @@
     "persistent": "Los hallazgos activos permanecen aquí al cerrar el aviso.",
     "otherApps": "Otras apps ({count})",
     "details": "Detalles y recomendaciones"
+  },
+  "hostSecurity": {
+    "title": "Seguridad del servidor",
+    "reviewPatch": "Revisar parche",
+    "applyPatch": "Aplicar parche revisado",
+    "patchDetails": "Revisar parche del servidor",
+    "interruption": "Se instalarán los paquetes indicados y podrían reiniciarse servicios. Revisa todos los cambios. Los servicios en ejecución podrían necesitar un reinicio manual.",
+    "rebootRequired": "Se requiere reiniciar. Debe comprobarse el kernel en ejecución después del reinicio.",
+    "manual": "Revisión manual necesaria",
+    "runs": "Ejecuciones",
+    "noRuns": "Aún no hay ejecuciones de parches de seguridad.",
+    "scanTask": "Tarea de revisión de avisos",
+    "scanHint": "Se ejecuta según el horario guardado. Los resultados caducan y las comprobaciones fallidas se reintentan con intervalos crecientes.",
+    "schedulerPaused": "Las revisiones programadas están pausadas.",
+    "checkPending": "Hay una comprobación pendiente. Los datos en caché podrían estar desactualizados.",
+    "verified": "Comprobación de versión correcta",
+    "needsReview": "Requiere revisión",
+    "nextCheck": "Próxima revisión",
+    "notSupported": "Los parches del host están disponibles para servidores Ubuntu administrados por el cliente. La infraestructura administrada por el proveedor tiene su propio proceso de mantenimiento.",
+    "package": "Paquete",
+    "current": "Instalado",
+    "target": "Versión prevista",
+    "reviewResources": "Revisar recursos afectados ({count})",
+    "openRuns": "Abrir ejecuciones del servidor",
+    "lastRun": "Última revisión",
+    "appOpen": "Se ejecuta mientras Openship está abierto.",
+    "scanStates": {
+      "pending": "Pendiente",
+      "running": "En ejecución",
+      "completed": "Completado",
+      "partial": "Comprobado parcialmente",
+      "interrupted": "Interrumpido"
+    },
+    "reviewReboot": "Revisar reinicio",
+    "applyReboot": "Programar reinicio",
+    "rebooting": "Reinicio programado; pendiente de verificar el kernel",
+    "rebootInterruption": "El servidor se reiniciará en un minuto e interrumpirá todas sus cargas. Openship verificará el kernel en ejecución cuando el host vuelva a conectarse."
   }
 }

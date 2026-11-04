@@ -31,6 +31,7 @@ import {
 import { sq } from "../local-shell";
 import {
   containerImageRef,
+  containerIdentity,
   dockerAvailable,
   fromSourceImageMissingMessage,
   imageExistsLocally,
@@ -51,6 +52,7 @@ import {
 } from "./detect";
 import { completeEdgeTakeover, rollbackEdgeTakeover } from "./takeover-journal";
 import { ensureEdgeClear } from "./consent";
+import { OPENSHIP_LABEL } from "../port-owner";
 
 function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
   return { timestamp: new Date().toISOString(), message, level };
@@ -238,8 +240,8 @@ export interface ContainerEdgeOptions {
  * on every start by anyone. Guarding the callers instead of the start is how the
  * image-swap path and the compose path each shipped without it.
  *
- * `docker rm -f` first: a stopped/renamed leftover holds the name and `docker run`
- * would fail on it.
+ * Read ownership first and remove the exact predecessor: its name can be reused
+ * after Docker returns. Keep identity labels on upgrades and rollback.
  */
 async function startEdgeContainer(
   executor: CommandExecutor,
@@ -247,15 +249,16 @@ async function startEdgeContainer(
   image: string,
   onLog: SystemLogCallback,
   mounts: readonly EdgeContainerMount[],
+  predecessor: Awaited<ReturnType<typeof containerIdentity>>,
+  preservedLabels?: Record<string, string>,
 ): Promise<boolean> {
+  const labels = preservedLabels ?? predecessor?.labels ?? {};
   await sanitizeEdgeVhosts(executor, EDGE_HOST_PATHS.sitesDir, onLog).catch((diagnosticFailure) => {
     observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge");
   });
-  await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "adapters/system/proxy/ensure-container-edge");
-  });
+  if (predecessor) await executor.exec(`docker rm -f ${sq(predecessor.id)}`);
   const run = await executor.streamExec(
-    buildEdgeRunCommand(container, image, mounts),
+    buildEdgeRunCommand(container, image, mounts, labels),
     onLog as (l: LogEntry) => void,
   );
   // Identity just changed; nobody may keep answering from a pre-start memo.
@@ -329,6 +332,7 @@ export function buildEdgeRunCommand(
   container: string,
   image: string,
   edgeMounts: readonly EdgeContainerMount[] = EDGE_CONTAINER_MOUNTS,
+  identityLabels: Readonly<Record<string, string>> = {},
 ): string {
   const mounts = edgeMounts.map(
     // `:z` relabels for SELinux-enforcing hosts; a no-op elsewhere.
@@ -340,6 +344,11 @@ export function buildEdgeRunCommand(
     "--network host",
     "--restart unless-stopped",
     ...DEFAULT_CONTAINER_LOG_ARGS,
+    ...[
+      OPENSHIP_LABEL.project, OPENSHIP_LABEL.deployment, OPENSHIP_LABEL.service, OPENSHIP_LABEL.role,
+      "com.docker.compose.project", "com.docker.compose.service", "com.docker.compose.container-number",
+    ].filter(key => Object.hasOwn(identityLabels, key))
+      .map(key => `--label ${sq(`${key}=${identityLabels[key]}`)}`),
     mounts,
     sq(image),
   ].join(" ");
@@ -392,8 +401,13 @@ function makeEdgeStart(
   mounts: readonly EdgeContainerMount[],
 ): (image: string) => Promise<boolean> {
   const { onLog } = opts;
+  let preservedLabels: Record<string, string> | undefined;
   return async (image: string) => {
-    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) return false;
+    // Both attempts belong to one swap. If the new image fails before creating
+    // a container, rollback still needs the original service's identity.
+    const predecessor = await containerIdentity(executor, container);
+    preservedLabels ??= predecessor?.labels ?? {};
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts, predecessor, preservedLabels))) return false;
     const verdict = await verifyEdgeServing(executor, container, {
       timeoutMs: opts.verifyTimeoutMs ?? 30_000,
     });
@@ -565,6 +579,9 @@ export async function ensureContainerEdge(
         "Install the Docker component first, then set up the edge.",
     );
   }
+  // Capture identity outside the create/rollback block, before the consent gate
+  // stops anything. An unavailable identity is not an empty label map.
+  const predecessor = await containerIdentity(executor, existing ?? container);
 
   // 1. Pull, and make the host state dirs, BEFORE anything stops serving. A
   //    registry failure has to land here: past the consent gate the old proxy is
@@ -639,7 +656,7 @@ export async function ensureContainerEdge(
     // 3. Start. The ports are PROVABLY free by now, so failing to bind here is a real
     //    failure and not a race we should have waited out.
     onLog(log("Starting the edge container..."));
-    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) {
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts, predecessor))) {
       throw new Error("the edge container failed to start");
     }
 

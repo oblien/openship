@@ -193,8 +193,18 @@
       "startShellHint": "Start the service to open a shell.",
       "saveEnvironment": "Save environment",
       "environmentState": {
+        "shared": {
+          "title": "Update shared configuration?",
+          "description": "Select values to update for linked services. Unselected values change only for {name}.",
+          "source": "Shared source: {key}",
+          "repositoryHint": "Shared values apply across this project, including its apps. Repository files stay unchanged.",
+          "onlyService": "Only this service",
+          "updateSelected": "Update selected",
+          "saved": "Also saved for these services. Apply their environment or redeploy to use the new values.",
+          "reviewFailed": "Could not review shared configuration. Your changes have not been saved."
+        },
         "helpTitle": "How environment variables work",
-        "description": "Saved in Openship. Service overrides take precedence over Compose and shared project values. Editing an inherited value creates an override for this service.",
+        "description": "Saved in Openship. Save reviews shared changes when a project source is available. Service overrides take precedence over Compose and project values.",
         "sources": {
           "service": "Service override",
           "compose": "Compose",

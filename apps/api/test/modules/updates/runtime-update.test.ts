@@ -360,6 +360,30 @@ describe("runtime update shared SDK/HTTP operation", () => {
     );
   });
 
+  it("checks the sub-app's resolved images rather than an unused parent runtime", async () => {
+    const owner = await seedOwner(), p = await project(owner, "pinned-sub-app"), c = await clients(owner);
+    await repos.project.update(p.id, {
+      framework: "unknown", runtimeVersion: null, buildImage: "ubuntu:22.04",
+    });
+    const source = await repos.service.create({
+      projectId: p.id, kind: "monorepo", name: "web", framework: "node",
+      buildImage: `node:22-bookworm-slim@sha256:${"a".repeat(64)}`,
+      buildCommand: "npm run build", startCommand: "node server.js",
+    });
+    await repos.service.upsertServiceDeployment({
+      deploymentId: p.activeDeploymentId!, serviceId: source.id, status: "success",
+      imageRef: "openship/web:bld_current", containerId: "current-container",
+    });
+    for (const client of [c.native.updates, c.remote.updates]) {
+      await expect(client.updateRuntime(p.id, { serviceIds: [source.id] }))
+        .rejects.toThrow("No mutable runtime images");
+    }
+    expect(provider.deploy).not.toHaveBeenCalled();
+    await repos.service.update(source.id, { buildImage: "node:22-bookworm-slim" });
+    await c.native.updates.updateRuntime(p.id, { serviceIds: [source.id] });
+    expect(provider.deploy).toHaveBeenCalledTimes(1);
+  });
+
   it("updates an image sidecar belonging to a static project without deploying the site", async () => {
     const owner = await seedOwner(),
       p = await project(owner, "static-sidecar"),

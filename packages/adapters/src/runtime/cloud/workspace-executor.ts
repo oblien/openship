@@ -234,7 +234,13 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     const temp = `${path}.openship-${randomUUID()}`;
     await this.exec(`umask 077; mkdir -p ${sq(posix.dirname(path))} && : > ${sq(temp)} && chmod ${(opts?.mode ?? 0o600).toString(8)} ${sq(temp)}`);
     try {
-      const written = await runtime.files.write({ fullPath: temp, content });
+      // Uploads replace the placeholder inode. Carry the mode into that write;
+      // chmod on the old inode does not protect secrets or executable scripts.
+      const written = await runtime.files.write({
+        fullPath: temp,
+        content,
+        mode: (opts?.mode ?? 0o600).toString(8),
+      });
       if (!written.success) throw new Error("Could not write workspace file");
       await this.rename(temp, path);
     } catch (error) {

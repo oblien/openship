@@ -189,8 +189,18 @@
       "startShellHint": "Démarrez le service pour ouvrir un shell.",
       "saveEnvironment": "Enregistrer l'environnement",
       "environmentState": {
+        "shared": {
+          "title": "Mettre à jour la configuration partagée ?",
+          "description": "Sélectionnez les valeurs à modifier pour les services liés. Les autres ne changent que pour {name}.",
+          "source": "Source partagée : {key}",
+          "repositoryHint": "Les valeurs partagées s’appliquent à ce projet et à ses applications. Les fichiers du dépôt restent inchangés.",
+          "onlyService": "Ce service uniquement",
+          "updateSelected": "Mettre à jour la sélection",
+          "saved": "Également enregistré pour ces services. Appliquez leur environnement ou redéployez-les pour utiliser les nouvelles valeurs.",
+          "reviewFailed": "Impossible de vérifier la configuration partagée. Vos modifications n’ont pas été enregistrées."
+        },
         "helpTitle": "Fonctionnement des variables d’environnement",
-        "description": "Enregistrées dans Openship. Les valeurs personnalisées du service priment sur Compose et les valeurs partagées du projet. Modifier une valeur héritée crée une valeur personnalisée pour ce service.",
+        "description": "Enregistré dans Openship. L’enregistrement permet de vérifier les changements partagés lorsqu’une source du projet existe. Les valeurs propres au service priment sur Compose et le projet.",
         "sources": {
           "service": "Valeur personnalisée du service",
           "compose": "Compose",

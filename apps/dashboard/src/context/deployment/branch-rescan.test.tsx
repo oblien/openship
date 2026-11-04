@@ -531,9 +531,11 @@ describe("deploy branch detection", () => {
     await selectBranch("openship");
 
     expect(api.prepare).toHaveBeenCalledWith({
+      projectId: "project-1",
       owner: "example",
       repo: "demo",
       branch: "openship",
+      serverId: "server-1",
       env: { APP_MODE: "preview" },
       includeEnv: true,
     });
@@ -900,4 +902,25 @@ describe("Cloud pricing is offered only at deployment time", () => {
     expect(api.showModal.mock.calls[0]![0].customContent.props.restriction.reason).toBe("build-minutes-exhausted");
     expect(build.state.isDeploying).toBe(false);
   });
+});
+
+
+it("opens source review in the existing wizard with saved destination and the fresh service set", async () => {
+  const composeRevision = "a".repeat(64);
+  const composeChanges = { added: ["worker"], changed: [], removed: ["cache"] };
+  api.prepare.mockResolvedValueOnce(scan("main", {
+    stack: "docker-compose", projectType: "services", composePath: "infra/compose.yml",
+    services: [services[0]!, services[1]!, { ...services[0]!, name: "worker", image: "worker:1" }],
+    composeRevision, composeChanges,
+  }));
+  await act(async () => {
+    expect(await current.initializeFromProject("project-1", { reviewCompose: true })).toMatchObject({ success: true });
+  });
+  expect(api.prepare).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", branch: "main", composePath: "infra/compose.yml", rootDirectory: "old-root" }));
+  expect(current.config.services.map(service => service.name)).toEqual(["web", "db", "worker"]);
+  expect(current.config).toMatchObject({ composeRevision, composeChanges, serverId: "server-1", serverName: "Production", deployTarget: "server" });
+  expect(api.syncServices).not.toHaveBeenCalled();
+  expect(api.buildAccess).not.toHaveBeenCalled();
+  await act(async () => { await build.startDeployment(); });
+  expect(api.buildAccess).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", composeRevision }));
 });

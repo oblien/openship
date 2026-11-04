@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { newServerBillingHref } from "./billing-links";
 
 vi.mock("@/lib/api/urls", () => ({
   getCloudApiOrigin: () => "https://api.openship.io",
@@ -72,6 +73,18 @@ it("preserves a landing-page plan purchase through login without allowing arbitr
     expect(validateReturnTo(unsafe)).toBeNull();
 });
 
+it.each(["monthly", "annual"] as const)("keeps a referral and %s plan through signup, verification and organization selection", (interval) => {
+  const destination = newServerBillingHref("team", { planId: "starter", interval, startCheckout: true, referralCode: "AF-PARTNER" });
+  let href = authContinuationHref("/login", destination);
+  for (const route of ["/register", "/two-factor", "/select-organization"] as const) {
+    href = buildAuthPageHref(route, new URL(href, "https://app.openship.io").searchParams);
+    expect(getPostAuthRedirect(new URL(href, "https://app.openship.io").searchParams)).toBe(destination);
+  }
+  href = emailVerificationHref("customer@example.test", new URL(href, "https://app.openship.io").searchParams);
+  expect(getPostAuthRedirect(new URL(href, "https://app.openship.io").searchParams)).toBe(destination);
+  expect(new URL(destination, "https://app.openship.io").searchParams.get("ref")).toBe("AF-PARTNER");
+});
+
 describe("invitation post-auth return", () => {
   const params = (returnTo: string) => new URLSearchParams({ returnTo });
 
@@ -105,4 +118,27 @@ describe("invitation post-auth return", () => {
     for (const unsafe of ["//evil.test/cloud-billing", "/cloud-billing/../../settings", "/cloud-billing-extra", "/cloud-billing\\evil.test"])
       expect(validateReturnTo(unsafe)).toBeNull();
   });
+});
+
+it("preserves a signed MCP query through login and MFA without accepting oversized unrelated destinations", () => {
+  const query = new URLSearchParams({
+    client_id: "client",
+    redirect_uri: "https://client.example/callback",
+    scope: "openid profile email offline_access",
+    state: "s".repeat(400),
+    code_challenge: "c".repeat(43),
+    code_challenge_method: "S256",
+    resource: "https://ops.example/api/mcp",
+    sig: "signed-query",
+    exp: "2000000000",
+  });
+  const destination = `/mcp/authorize?${query}`;
+  expect(destination.length).toBeGreaterThan(512);
+  let href = authContinuationHref("/login", destination);
+  for (const route of ["/register", "/two-factor", "/login"] as const) {
+    href = buildAuthPageHref(route, new URL(href, "https://app.example").searchParams);
+    expect(getPostAuthRedirect(new URL(href, "https://app.example").searchParams)).toBe(destination);
+  }
+  expect(validateReturnTo(`/cloud-authorize?${query}`)).toBeNull();
+  expect(validateReturnTo(`/mcp/authorize?state=${"s".repeat(8192)}`)).toBeNull();
 });

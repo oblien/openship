@@ -336,6 +336,7 @@ from the dashboard.
 | Proxy Oblien analytics for a hostname in the caller's namespace. | `POST /api/cloud/analytics`<br />`cloud:write` |
 | Capture optional hosted dashboard product events with exact-origin and verified cookie identity checks. | `POST /api/cloud/telemetry`<br />`Handler authentication` |
 | Consent page mints a one-time handoff code (cookie session checked inline). | `POST /api/cloud/connect-authorize`<br />`Handler authentication` |
+| Start a pending device authorization with a user code and PKCE challenge; browser consent is required before credentials are issued. | `POST /api/cloud/device-authorize`<br />`Handler authentication` |
 | Complete the connect popup: exchange the PKCE code and store the cloud bearer. | `POST /api/cloud/connect-finalize`<br />`cloud:admin` · Self-hosted |
 | Validate connect params, then 302 to the dashboard consent page. | `GET /api/cloud/connect-handoff`<br />`Handler authentication` |
 | Poll the local Cloud connection handoff. | `GET /api/cloud/connect-poll`<br />`Handler authentication` |

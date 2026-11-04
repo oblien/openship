@@ -11,6 +11,38 @@ When Openship builds your app it has to **clone your repository first**. For a p
 On Openship Cloud, connecting the GitHub App is all you need. On the desktop app, your local `gh` login is used automatically. This page is for the cases where a build says it **can't authenticate the clone** — almost always a private repo deploying to your own server.
 </Callout>
 
+## Scanning a private repository before deployment
+
+Repository preparation uses the shared GitHub token resolver for metadata,
+branches, files and monorepo detection. If the normal account credentials are
+missing or GitHub rejects them, self-hosted installations can use the selected
+server's saved token. When no server is selected, only the active organization's
+canonical **This Server** is eligible; Openship never searches other connected
+servers for credentials.
+
+This requires both access to the repository and permission to deploy to the
+server. Existing source-content permissions still apply. Scanning cannot create
+SSH deploy keys, use an SSH private key as an API credential, or use the server
+token for GitHub mutations. Cloud continues using its account credentials.
+
+SDK callers can pass the same deployment server to preparation:
+
+```ts
+const scan = await ship.deployments.prepare({
+  source: "github",
+  owner: "your-org",
+  repo: "your-private-repo",
+  branch: "main",
+  serverId: "your-server-id",
+});
+```
+
+The CLI can call the same endpoint without a separate scanning implementation:
+
+```bash
+openship api /deployments/prepare --data '{"source":"github","owner":"your-org","repo":"your-private-repo","branch":"main","serverId":"your-server-id"}'
+```
+
 ## First, where does the clone run?
 
 The single most important thing to understand: **a credential that works on your laptop doesn't automatically work on a remote build server.** Openship can clone in two places:

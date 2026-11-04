@@ -3,6 +3,9 @@ import type { ProjectSecurityResult } from "@repo/contracts";
 import type { AdvisoryFeedState } from "./advisory-feed";
 import type { SecurityInventory } from "./security-inventory";
 
+export const RUNTIME_UPGRADE_REQUIRED_MESSAGE =
+  "This advisory requires a newer runtime major version. Update the configured image or Dockerfile, then redeploy. Refreshing images preserves the configured version.";
+
 /** The same matcher/result for the global banner, explicit inspection and scheduler. */
 export function buildProjectSecurityResult(
   projectId: string,
@@ -35,9 +38,16 @@ export function buildProjectSecurityResult(
         confidence: match.confidence,
         canRefresh:
           !upstream.stale &&
+          !inventory.unknownServices.includes(match.serviceId) &&
           match.advisory.action === "refresh-images" &&
           (!match.image || isMutableImageRef(match.image.ref)),
       });
+    if (match.runtimeUpgradeRequired) {
+      const finding = findings.get(id)!;
+      finding.canRefresh = false;
+      finding.runtimeUpgradeRequired = true;
+      finding.refreshBlockedReason = RUNTIME_UPGRADE_REQUIRED_MESSAGE;
+    }
   }
   return {
     projectId,

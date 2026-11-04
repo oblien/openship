@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { AffiliateCodeSchema } from "./affiliates";
 import { PLAN_IDS, PLANS, PRICING } from "@repo/core";
 
 export const BillingScopeSchema = Type.Object({
@@ -24,6 +25,7 @@ export type CustomSubscriptionSelection = Static<typeof CustomSubscriptionSelect
 export const CreateSubscriptionBody = Type.Object(
   {
     ...BillingScopeSchema.properties,
+    affiliateCode: Type.Optional(AffiliateCodeSchema),
     planTierId: Type.Union(purchasableTiers.map((id) => Type.Literal(id))),
     interval: Type.Union([Type.Literal("monthly"), Type.Literal("annual")]),
     custom: Type.Optional(CustomSubscriptionSelectionSchema),

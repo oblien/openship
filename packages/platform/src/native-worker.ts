@@ -18,7 +18,7 @@ import { TokenCollectionSchemas, TokenResourceSchemas } from "@repo/contracts";
 import { PermissionCollectionSchemas, PermissionResourceSchemas } from "@repo/contracts";
 import { GitHubCollectionSchemas, GitHubResourceSchemas } from "@repo/contracts";
 import { NoticeCollectionSchemas } from "@repo/contracts";
-import { BillingPublicSchemas, BillingOperationSchemas } from "@repo/contracts";
+import { AffiliateOperationSchemas, BillingPublicSchemas, BillingOperationSchemas } from "@repo/contracts";
 import { SystemOperationSchemas } from "@repo/contracts";
 import { BackupProjectSchemas, BackupPolicySchemas, BackupRunSchemas, BackupRestoreSchemas } from "@repo/contracts";
 import { AppCollectionSchemas, AppResourceSchemas, BackupDestinationCollectionSchemas, BackupDestinationResourceSchemas } from "@repo/contracts";
@@ -196,6 +196,7 @@ try {
       ...Object.entries({ ...PermissionCollectionSchemas, ...PermissionResourceSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `permissions.${name}`),
       ...Object.entries({ ...GitHubCollectionSchemas, ...GitHubResourceSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `github.${name}`),
       ...Object.entries({ ...NoticeCollectionSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `notices.${name}`),
+      ...Object.entries(AffiliateOperationSchemas).filter(([, spec]) => spec.action === "read").map(([name]) => `affiliates.${name}`),
       ...Object.entries({ ...BillingPublicSchemas, ...BillingOperationSchemas }).filter(([, spec]) => spec.action === "read").map(([name]) => `billing.${name}`),
       "backups.cancelRestore", "backups.listRuns", "backups.listPolicies",
     ].includes(operation))
@@ -342,7 +343,7 @@ try {
         return runWithOperationSource((args[0] as ExecutionContext).source ?? "api", () => fn(...args));
       }
     }
-    for (const [prefix, operations] of Object.entries({ domains: kernel.domains, dns: kernel.dns, credentials: kernel.credentials, servers: kernel.servers, system: kernel.system, apps: kernel.apps, backupDestinations: kernel.backupDestinations, backups: kernel.backups, billing: kernel.billing, notices: kernel.notices, github: kernel.github, permissions: kernel.permissions, tokens: kernel.tokens, webhooks: kernel.webhooks, updates: kernel.updates, audit: kernel.audit, settings: kernel.settings, notifications: kernel.notifications, issues: kernel.issues, analytics: kernel.analytics, jobs: kernel.jobs, actions: kernel.actions })) {
+    for (const [prefix, operations] of Object.entries({ domains: kernel.domains, dns: kernel.dns, credentials: kernel.credentials, servers: kernel.servers, system: kernel.system, apps: kernel.apps, backupDestinations: kernel.backupDestinations, backups: kernel.backups, billing: kernel.billing, affiliates: kernel.affiliates, notices: kernel.notices, github: kernel.github, permissions: kernel.permissions, tokens: kernel.tokens, webhooks: kernel.webhooks, updates: kernel.updates, audit: kernel.audit, settings: kernel.settings, notifications: kernel.notifications, issues: kernel.issues, analytics: kernel.analytics, jobs: kernel.jobs, actions: kernel.actions })) {
       if (!operation.startsWith(`${prefix}.`)) continue;
       const key = operation.slice(prefix.length + 1);
       if (key !== "verifyStream" && Object.hasOwn(operations, key)) {

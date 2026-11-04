@@ -14,10 +14,8 @@
  * version bump — no image-ID probe is needed, and `swapManagedImage` runs onto the
  * image `deliverManagedImage` already placed on the box.
  *
- * The ordering rule every path here obeys, inherited from the edge's bare→container
- * conversion: obtain the replacement image and start it BEFORE the old one is torn
- * down, and roll back to the old image if the new one doesn't come up — a failed
- * update must never leave the box without the thing it was serving.
+ * Obtain the replacement image before removing the old container, then restore
+ * the old image if replacement startup fails, including command/transport errors.
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
@@ -72,6 +70,30 @@ export function fromSourceImageMissingMessage(label: string, image: string): str
 }
 
 // ─── Inspection primitives ─────────────────────────────────────────────────────
+
+/** Read before replacement: a failed identity read must not become permission
+ * to remove the predecessor and recreate it without its ownership labels. */
+export async function containerIdentity(
+  executor: CommandExecutor,
+  container: string,
+): Promise<{ id: string; labels: Record<string, string> } | null> {
+  let raw: string;
+  try {
+    raw = await executor.exec(`docker inspect -f '{{.Id}}\t{{json .Config.Labels}}' ${sq(container)}`);
+  } catch (error) {
+    if (isRuntimeNotFoundError(error) || /no such object:/i.test(safeErrorMessage(error))) return null;
+    throw error;
+  }
+  const separator = raw.indexOf("\t");
+  const id = raw.slice(0, separator).trim();
+  if (separator < 0 || !/^[a-f0-9]{64}$/.test(id))
+    throw new Error("Docker did not return a valid container identity; replacement was not started.");
+  const labels: unknown = JSON.parse(raw.slice(separator + 1).trim());
+  if (labels !== null && (typeof labels !== "object" || Array.isArray(labels) ||
+      Object.values(labels).some(value => typeof value !== "string" || value.includes("\0"))))
+    throw new Error("Docker did not return valid container labels; replacement was not started.");
+  return { id, labels: (labels ?? {}) as Record<string, string> };
+}
 
 /** Is Docker usable on this box? A container edge/engine needs it; a bare one doesn't. */
 export async function dockerAvailable(executor: CommandExecutor): Promise<boolean> {
@@ -178,8 +200,9 @@ export async function buildImage(
 /**
  * Move a running managed container onto a new image (the pull path): pull unless the
  * target is already local, start it, and put the OLD image back if the new one
- * doesn't come up. Best-effort by design — a failed update must leave the box
- * serving, so it logs and reports rather than throwing.
+ * doesn't come up. Replacement startup exceptions also trigger rollback. Image
+ * acquisition and rollback exceptions propagate so the caller can probe liveness:
+ * an unavailable transport is not proof that the server stopped serving.
  *
  * `start(image)` is the component's own "start this image AND prove it's serving"
  * callback (the edge verifies :80; mail verifies :25/:993), so an update that leaves
@@ -221,7 +244,17 @@ export async function swapManagedImage(
     }
   }
 
-  if (await start(to)) {
+  // Startup may have removed the old container before an SSH or Docker command
+  // throws. A rejected promise needs the same recovery as a failed health check.
+  let started = false;
+  try {
+    started = await start(to);
+  } catch (error) {
+    observeCaughtError(error, "adapters/system/managed-image");
+    onLog(log(`Could not start the ${label} image ${to}: ${safeErrorMessage(error)}`, "error"));
+  }
+
+  if (started) {
     onLog(log(`${Label} updated to ${to}`));
     return { swapped: true, down: false };
   }

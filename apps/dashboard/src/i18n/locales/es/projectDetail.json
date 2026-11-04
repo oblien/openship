@@ -189,8 +189,18 @@
       "startShellHint": "Inicia el servicio para abrir una shell.",
       "saveEnvironment": "Guardar entorno",
       "environmentState": {
+        "shared": {
+          "title": "¿Actualizar la configuración compartida?",
+          "description": "Selecciona valores para actualizar en los servicios vinculados. Los demás solo cambian para {name}.",
+          "source": "Origen compartido: {key}",
+          "repositoryHint": "Los valores compartidos se aplican a este proyecto y sus aplicaciones. Los archivos del repositorio no cambian.",
+          "onlyService": "Solo este servicio",
+          "updateSelected": "Actualizar selección",
+          "saved": "También guardado para estos servicios. Aplica su entorno o vuelve a desplegarlos para usar los nuevos valores.",
+          "reviewFailed": "No se pudo revisar la configuración compartida. No se han guardado los cambios."
+        },
         "helpTitle": "Cómo funcionan las variables de entorno",
-        "description": "Guardadas en Openship. Las sobrescrituras del servicio tienen prioridad sobre Compose y los valores compartidos del proyecto. Editar un valor heredado crea una sobrescritura para este servicio.",
+        "description": "Se guarda en Openship. Al guardar se revisan los cambios compartidos si existe un origen en el proyecto. Las sobrescrituras del servicio prevalecen sobre Compose y el proyecto.",
         "sources": {
           "service": "Sobrescritura del servicio",
           "compose": "Compose",

@@ -194,10 +194,23 @@ r.patch(
     body: MergeServiceEnvVarsBody,
     mcp: {
       description:
-        "Save only the named service environment overrides. Preserve other variables; source IDs reject stale edits.",
+        "Save named service environment changes. By default edits are service overrides. To update inherited project values, review with env/review and supply its shared keys and revision. Project write access is required. Saving does not restart containers or edit repository files.",
     },
   },
   ctrl.mergeEnvVars,
+);
+r.post(
+  "/:serviceId/env/review",
+  {
+    tag: "project:service:write",
+    // A read-only review accepts secret edits; never audit the request body.
+    auditHandledByOperation: true,
+    body: ServiceResourceSchemas.reviewEnvVars.input,
+    mcp: {
+      description: "Review shared project values affected by service environment edits. Returns variable names, affected services and a revision for confirmation; no values are exposed or saved.",
+    },
+  },
+  ctrl.reviewEnvVars,
 );
 r.get(
   "/:serviceId/env",

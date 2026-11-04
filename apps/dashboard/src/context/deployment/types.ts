@@ -397,6 +397,8 @@ export interface DeploymentConfig {
    * redeploys re-read the same path.
    */
   composePath?: string;
+  composeRevision?: string;
+  composeChanges?: { added: string[]; changed: string[]; removed: string[] };
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
@@ -1006,7 +1008,7 @@ export interface DeploymentContextType {
   /** Config-edit hydration from SAVED project data — no repo re-detection. */
   initializeFromProject: (
     projectId: string,
-    context?: { branch?: string },
+    context?: { branch?: string; reviewCompose?: boolean },
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
 
   // Build lifecycle

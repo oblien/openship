@@ -1,5 +1,6 @@
 export * from "./deployments";
 export * from "./cloud-support";
+export * from "./cloud-auth";
 export * from "./deployment-resources";
 export * from "./deployment-controls";
 export * from "./validation";
@@ -87,6 +88,7 @@ export * from "./github";
 export * from "./notices";
 
 export * from "./billing";
+export * from "./affiliates";
 export * from "./cloud-workspaces";
 export * from "./server-managed";
 
@@ -108,3 +110,17 @@ export * from "./action-routes";
 export * from "./ingress";
 
 export * from "./management-billing";
+
+export * from "./assistant";
+export * from "./assistant-transcript";
+export * from "./assistant-questions";
+export * from "./assistant-fields";
+export * from "./chat-apps";
+export * from "./chat-app-setup";
+export * from "./chat-app-commands";
+export * from "./assistant-automations";
+export * from "./repository-changes";
+
+export * from "./assistant-agents";
+
+export * from "./server-security";

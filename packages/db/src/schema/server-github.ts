@@ -10,7 +10,7 @@ import { servers } from "./servers";
  * This is the per-server GitHub identity the token resolver was missing:
  * `tokenFor`/`resolveBuildGitToken` consult this row when a clone runs on this
  * server. One row per server (unique `serverId`). Secrets are encrypted at rest
- * (enc1: field helpers) and decrypted only at deploy time — never logged, never
+ * (enc1: field helpers) and decrypted only for authorized clones or repository reads — never logged, never
  * echoed by the API serializer. Cloud (CLOUD_MODE) never reads this table.
  *
  *   mode = "token"          → tokenEncrypted (from gh device-flow OR a pasted

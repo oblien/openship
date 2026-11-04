@@ -29,7 +29,7 @@ export type SystemArch = "amd64" | "arm64" | "unknown";
  * `workspaces/*.ts` and `stack-detector.ts` mean by the same word. Different axis,
  * same noun; renaming either would break more than it clarifies.
  */
-export type SystemPackageManager = "apt" | "dnf" | "yum" | "apk" | "brew" | "none";
+export type SystemPackageManager = "apt" | "dnf" | "yum" | "apk" | "pacman" | "brew" | "none";
 
 export type SystemServiceManager = "systemd" | "openrc" | "launchd" | "none";
 
@@ -53,12 +53,12 @@ export type SystemFirewall =
   | "unknown";
 
 /**
- * Every distro ID we recognize by name — including the ones we refuse to drive.
+ * Every distro ID we recognize by name — including openSUSE, which we refuse to drive.
  *
  * Naming a distro we won't provision is the point rather than an oversight: it turns
  * "unsupported host" into "Openship doesn't drive openSUSE's zypper", which an
  * operator can act on. A distro absent from this union resolves to `unknown` and is
- * refused with the observed ID quoted back.
+ * refused with the observed ID quoted back, unless `ID_LIKE` names a family we drive.
  */
 export type LinuxDistro =
   | "ubuntu"
@@ -71,7 +71,7 @@ export type LinuxDistro =
   | "oracle"
   | "amzn"
   | "alpine"
-  // Recognized so the refusal can be specific. No commands are wired for these.
+  // Recognized so the refusal can name zypper. No commands are wired for it.
   | "opensuse"
   | "arch"
   | "unknown";
@@ -210,6 +210,13 @@ const DISTRO_BY_ID: Readonly<Record<string, LinuxDistro>> = {
   sles: "opensuse",
   arch: "arch",
   archarm: "arch",
+  // Derivatives whose package names match Arch's extra/core. An unlisted one still
+  // reaches the family through ID_LIKE=arch and stays distro `unknown`.
+  cachyos: "arch",
+  manjaro: "arch",
+  endeavouros: "arch",
+  garuda: "arch",
+  artix: "arch",
 };
 
 /**
@@ -321,6 +328,10 @@ export interface HostSupportVerdict {
 
 const SUPPORTED = { supported: true, unsupportedReason: null } as const;
 
+/** Named in every refusal so the list of families cannot drift between sentences. */
+const SUPPORTED_FAMILIES =
+  "Debian/Ubuntu, the RHEL family (including Amazon Linux), Alpine and Arch are supported.";
+
 function refuse(reason: string): HostSupportVerdict {
   return { supported: false, unsupportedReason: reason };
 }
@@ -404,16 +415,12 @@ export function assessHostSupport(facts: HostSupportFacts): HostSupportVerdict {
     case "debian":
     case "rhel":
     case "alpine":
+    case "arch":
       break;
     case "suse":
       return refuse(
         `Openship doesn't drive openSUSE/SLES hosts${idSuffix(facts.distroId)} — it has no zypper ` +
-          `provisioning path. Debian/Ubuntu, the RHEL family (including Amazon Linux) and Alpine are supported.`,
-      );
-    case "arch":
-      return refuse(
-        `Openship doesn't drive Arch hosts${idSuffix(facts.distroId)} — it has no pacman ` +
-          `provisioning path. Debian/Ubuntu, the RHEL family (including Amazon Linux) and Alpine are supported.`,
+          `provisioning path. ${SUPPORTED_FAMILIES}`,
       );
     case "unknown":
       // A family we cannot NAME is not a host we cannot DRIVE, and refusing here was the
@@ -427,8 +434,7 @@ export function assessHostSupport(facts: HostSupportFacts): HostSupportVerdict {
         return refuse(
           `Unrecognized Linux distribution${idSuffix(facts.distroId)} with no usable package ` +
             `manager. Openship could not match it to a supported family from its os-release ID ` +
-            `or ID_LIKE, and found none of apt-get, dnf, yum or apk. Debian/Ubuntu, the RHEL ` +
-            `family (including Amazon Linux) and Alpine are supported.`,
+            `or ID_LIKE, and found none of apt-get, dnf, yum, apk or pacman. ${SUPPORTED_FAMILIES}`,
         );
       }
       return SUPPORTED;
@@ -444,16 +450,15 @@ export function assessHostSupport(facts: HostSupportFacts): HostSupportVerdict {
       const unwired: never = facts.distroFamily;
       return refuse(
         `Openship has no provisioning path for this host's Linux family ` +
-          `(${JSON.stringify(String(unwired))})${idSuffix(facts.distroId)}. Debian/Ubuntu, the ` +
-          `RHEL family (including Amazon Linux) and Alpine are supported.`,
+          `(${JSON.stringify(String(unwired))})${idSuffix(facts.distroId)}. ${SUPPORTED_FAMILIES}`,
       );
     }
   }
 
   if (facts.packageManager === "none") {
     return refuse(
-      `No usable package manager found on this host (expected one of apt-get, dnf, yum or apk ` +
-        `for a ${facts.distroFamily}-family system).`,
+      `No usable package manager found on this host${idSuffix(facts.distroId)} (expected one of ` +
+        `apt-get, dnf, yum, apk or pacman for a ${facts.distroFamily}-family system).`,
     );
   }
 

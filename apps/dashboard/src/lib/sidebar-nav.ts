@@ -59,7 +59,6 @@ const MAIN_ITEMS: NavItem[] = [
   { key: "home", href: "/", icon: "home" },
   { key: "projects", href: "/projects", icon: "project" },
   { key: "apps", href: "/apps", icon: "grid" },
-  { key: "actions", href: "/actions", icon: "play-circle" },
   // MAIN, not infrastructure: `/api/issues` reports project, domain and update items on
   // the SaaS too (only the server/container sources resolve empty there), and the
   // infrastructure section is `if (selfHosted)` — putting Issues in it would delete the
@@ -85,6 +84,7 @@ export function getNavSections(
   // Billing is available on Cloud and on installations linked to a Cloud account.
   if (isSaaS) {
     settingsItems.push({ key: "billing", href: "/billing", icon: "credit-card" });
+    settingsItems.push({ key: "affiliates", href: "/affiliates", icon: "gift" });
   }
   // Keep audit history alongside account settings and billing.
   settingsItems.push({ key: "audit", href: "/audit", icon: "clipboard-list" });
@@ -96,6 +96,7 @@ export function getNavSections(
     { key: "servers", href: "/servers", icon: "server" },
     { key: "emails", href: "/emails", icon: "mail" },
     { key: "jobs", href: "/jobs", icon: "clock" },
+    { key: "actions", href: "/actions", icon: "play-circle" },
     { key: "backups", href: "/backups", icon: "database-backup" },
   ];
   // infraItems.push(
@@ -107,7 +108,10 @@ export function getNavSections(
   const infrastructure: NavSection = { section: "infrastructure", items: infraItems };
   // Linked Cloud accounts keep the self-hosted navigation order.
   return [
-    { section: "main", items: MAIN_ITEMS },
+    {
+      section: "main",
+      items: [...MAIN_ITEMS, { key: "assistant", href: "/assistant", icon: "assistant" as const }],
+    },
     ...(selfHosted ? [infrastructure, settings] : [settings, infrastructure]),
     ...(supportAvailable ? [HELP_SECTION] : []),
   ].filter((s) => s.items.length > 0);

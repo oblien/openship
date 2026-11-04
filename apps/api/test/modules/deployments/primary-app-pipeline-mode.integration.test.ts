@@ -77,6 +77,15 @@ it("shares one bounded topology decision across full, service-scoped and explici
   expect(
     await resolveServicePipelineMode({ ...project, workspaceId: "managed" }, snapshot),
   ).not.toHaveProperty("primaryApp");
+
+  // Removing the last attached service must not strand the inherited app in
+  // the general service pipeline, which cannot run its release commands/roles.
+  await repos.service.remove(database.id);
+  expect(await resolveServicePipelineMode(project, snapshot)).toMatchObject({
+    useServicePipeline: false,
+    primaryApp: { app: { id: app.id }, infrastructure: [] },
+  });
+  expect(await repos.service.findById(app.id)).not.toBeNull();
 });
 
 it("uses one service topology per decision and observes later edits on the next decision", async () => {

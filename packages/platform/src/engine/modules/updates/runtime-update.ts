@@ -9,7 +9,7 @@ import type { CreateDeploymentResult, UpdateRuntimeInput } from "@repo/contracts
 import { repos } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { findActiveDeployment } from "../../lib/active-deployment";
-import { resolveSubAppRecipe, serviceKind } from "../../lib/deployable-service";
+import { resolveSubAppImages, resolveSubAppRecipe, serviceKind } from "../../lib/deployable-service";
 import { resolveSnapshotRuntimeMode } from "../../lib/deployment-runtime";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
 import {
@@ -155,9 +155,10 @@ export async function planProjectRuntimeUpdate(
     ? selected.some((service) => {
         if (serviceKind(service) === "monorepo" && !service.image) {
           const recipe = resolveSubAppRecipe(service, snapshot);
+          const images = resolveSubAppImages(service, snapshot);
           return (
             recipe.framework === "docker" ||
-            hasMutableImage(snapshot.runtimeImage, service.buildImage ?? snapshot.buildImage)
+            hasMutableImage(images.runtimeImage, images.buildImage)
           );
         }
         return !!service.build || !!service.dockerfile || hasMutableImage(service.image);

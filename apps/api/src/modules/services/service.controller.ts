@@ -114,6 +114,16 @@ export async function mergeEnvVars(c: Context) {
   return c.json(data);
 }
 
+export async function reviewEnvVars(c: Context) {
+  const data = await result(
+    c,
+    operations().reviewEnvVars(
+      operationContext(c), param(c, "id"), param(c, "serviceId"), await c.req.json(),
+    ),
+  );
+  return c.json(data);
+}
+
 export async function setEnvVars(c: Context) {
   const data = await result(
     c,

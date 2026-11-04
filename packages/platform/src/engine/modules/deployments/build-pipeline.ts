@@ -28,6 +28,7 @@ import {
   withProjectRuntimeTransition,
 } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
+import { assertDeployVolumePolicy } from "./host-mount-policy";
 import { deploymentResourceFailure } from "./resource-failure";
 import { recordRuntimeImageReceipts, runtimeImageTrackingRef } from "../../lib/runtime-image-receipts";
 import {
@@ -2086,8 +2087,9 @@ function buildDeployEnvironment(
 
 /** One candidate configuration for release commands and activation. Host-port
  * reservations and the previous release are assigned during activation preflight. */
-function createServerDeployConfig(phase: DeployPhaseInputs): DeployConfig {
+export function createServerDeployConfig(phase: DeployPhaseInputs): DeployConfig {
   const { dep, project, snapshot, buildSessionId, buildResult, envMap, prodResources, routeState } = phase;
+  assertDeployVolumePolicy(snapshot.volumes, phase.runtime);
   return {
     deploymentId: dep.id,
     projectId: project.id,

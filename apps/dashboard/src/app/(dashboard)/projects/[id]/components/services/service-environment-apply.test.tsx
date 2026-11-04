@@ -13,6 +13,7 @@ import { ServiceDetailPanel } from "./ServiceDetailPanel";
 const mocks = vi.hoisted(() => ({
   getEnvironment: vi.fn(),
   mergeEnv: vi.fn(),
+  reviewEnv: vi.fn(),
   restart: vi.fn(),
   post: vi.fn(),
   push: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("@/lib/api/services", async (original) => {
       ...actual.servicesApi,
       getEnvironment: mocks.getEnvironment,
       mergeEnv: mocks.mergeEnv,
+      reviewEnv: mocks.reviewEnv,
       restart: mocks.restart,
       update: mocks.update,
     },
@@ -116,6 +118,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.getEnvironment.mockResolvedValue(environmentState());
   mocks.mergeEnv.mockResolvedValue({ success: true });
+  mocks.reviewEnv.mockResolvedValue({ revision: "a".repeat(64), changes: [] });
   mocks.restart.mockResolvedValue({ success: true });
   mocks.post.mockResolvedValue(applied);
   mocks.pricing.mockReturnValue(false);
@@ -239,6 +242,90 @@ describe("service environment apply", () => {
     expect(host.textContent).not.toContain("No environment variables");
     expect(button(copy.saveEnvironment).disabled).toBe(true);
     expect(host.textContent).not.toContain(copy.environmentApply.title);
+    expect(mocks.mergeEnv).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("reviews inherited edits before saving (shared: %s)", async (shared) => {
+    mocks.getEnvironment.mockResolvedValue(environmentState([
+      { key: "BILLING_ENABLED", value: "false", source: "project", isSecret: false },
+    ], "synced"));
+    mocks.reviewEnv.mockResolvedValue({ revision: "a".repeat(64), changes: [{
+      key: "BILLING_ENABLED", projectKey: "BILLING_ENABLED",
+      services: [{ id: service.id, name: "api", keys: ["BILLING_ENABLED"] }, { id: "worker", name: "Worker", keys: ["BILLING_ENABLED"] }],
+    }] });
+    mocks.mergeEnv.mockResolvedValue({ success: true, ...(shared ? { affectedServices: [{ id: "worker", name: "Worker" }] } : {}) });
+    await render();
+    await editFlag("true");
+    await click(copy.saveEnvironment);
+    expect(mocks.mergeEnv).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Worker");
+    expect(document.body.textContent).toContain(copy.environmentState.shared.repositoryHint);
+    await click(shared ? copy.environmentState.shared.updateSelected : copy.environmentState.shared.onlyService);
+    expect(mocks.mergeEnv).toHaveBeenCalledExactlyOnceWith("project-stack", "svc-api", {
+      environment: "production", deletes: [],
+      upserts: [{ key: "BILLING_ENABLED", value: "true", isSecret: false, sourceId: null }],
+      ...(shared ? { shared: { keys: ["BILLING_ENABLED"], revision: "a".repeat(64) } } : {}),
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    if (shared) expect(host.querySelector('a[href="/projects/project-stack/services/worker/env"]')).not.toBeNull();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft when shared review fails, without silently saving an override", async () => {
+    mocks.getEnvironment.mockResolvedValue(environmentState([
+      { key: "BILLING_ENABLED", value: "false", source: "project", isSecret: false },
+    ], "synced"));
+    mocks.reviewEnv.mockRejectedValue(new Error("Review unavailable"));
+    await render();
+    await editFlag("true");
+    await click(copy.saveEnvironment);
+    expect(mocks.mergeEnv).not.toHaveBeenCalled();
+    expect(mocks.toast).toHaveBeenCalledWith("Review unavailable", "error", "api");
+    expect(button(copy.saveEnvironment).disabled).toBe(false);
+    expect([...host.querySelectorAll("input")].some((input) => input.value === "true")).toBe(true);
+  });
+
+  it("preserves per-variable choices and the draft after a stale shared save", async () => {
+    mocks.getEnvironment.mockResolvedValue(environmentState([
+      { key: "BILLING_ENABLED", value: "false", source: "project", isSecret: false },
+      { key: "FEATURE_ENABLED", value: "false", source: "project", isSecret: false },
+    ], "synced"));
+    mocks.reviewEnv.mockResolvedValue({ revision: "a".repeat(64), changes: ["BILLING_ENABLED", "FEATURE_ENABLED"].map(key => ({
+      key, projectKey: key, services: [{ id: "worker", name: "Worker", keys: [key] }],
+    })) });
+    mocks.mergeEnv.mockRejectedValue(new ApiError(409, "Conflict", {
+      code: "ENVIRONMENT_CHANGED", error: "Shared configuration changed. Review your changes again before saving.",
+    }));
+    await render();
+    await editFlag("true");
+    await editFlag("true");
+    await click(copy.saveEnvironment);
+    await click("FEATURE_ENABLED");
+    expect(button("FEATURE_ENABLED").getAttribute("aria-checked")).toBe("false");
+    await click(copy.environmentState.shared.updateSelected);
+    expect(mocks.mergeEnv).toHaveBeenCalledExactlyOnceWith("project-stack", "svc-api", {
+      environment: "production", deletes: [],
+      upserts: ["BILLING_ENABLED", "FEATURE_ENABLED"].map(key => ({ key, value: "true", isSecret: false, sourceId: null })),
+      shared: { keys: ["BILLING_ENABLED"], revision: "a".repeat(64) },
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect([...host.querySelectorAll("input")].filter(input => input.value === "true")).toHaveLength(2);
+    expect(button(copy.saveEnvironment).disabled).toBe(false);
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("discards a shared review that finishes after switching services", async () => {
+    mocks.getEnvironment.mockResolvedValue(environmentState([
+      { key: "BILLING_ENABLED", value: "false", source: "project", isSecret: false },
+    ], "synced"));
+    let finish!: (value: unknown) => void;
+    mocks.reviewEnv.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    await render();
+    await editFlag("true");
+    await click(copy.saveEnvironment);
+    await render("env", { service: { ...service, id: "other", name: "Other" } });
+    await act(async () => finish({ revision: "a".repeat(64), changes: [{ key: "BILLING_ENABLED", projectKey: "BILLING_ENABLED", services: [] }] }));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(mocks.mergeEnv).not.toHaveBeenCalled();
   });
 

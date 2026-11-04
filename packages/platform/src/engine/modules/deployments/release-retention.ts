@@ -83,7 +83,7 @@ export async function refreshRollbackCapacity(opts: {
 
   const snapshotSizeBytes = Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length);
   await repos.project
-    .update(
+    .updateRollbackCapacity(
       opts.projectId,
       { snapshotSizeBytes, capacityMeasuredAt: new Date() },
     )

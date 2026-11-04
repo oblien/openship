@@ -1,0 +1,42 @@
+{
+  "source": "synthetic intercepted API; actual dashboard components",
+  "writes": [
+    {
+      "path": "/api/system/servers/preview-host/security/plan",
+      "body": {
+        "advisoryId": "HOST-PREVIEW",
+        "operation": "install"
+      }
+    },
+    {
+      "path": "/api/system/servers/preview-host/security/apply",
+      "body": {
+        "token": "synthetic-reviewed-token"
+      }
+    },
+    {
+      "path": "/api/system/servers/preview-host/security/plan",
+      "body": {
+        "advisoryId": "HOST-PREVIEW",
+        "operation": "reboot"
+      }
+    }
+  ],
+  "streams": [
+    {
+      "path": "/api/system/servers/preview-host/security/runs/preview-run/stream",
+      "method": "GET"
+    }
+  ],
+  "pageErrors": [],
+  "checks": [
+    "read-only page load",
+    "review before apply",
+    "exact dependency versions",
+    "mobile overflow",
+    "server run output",
+    "shared live stream completes without another apply",
+    "separate reboot review",
+    "visible monitoring task"
+  ]
+}

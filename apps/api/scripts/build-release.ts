@@ -29,6 +29,7 @@
  *       package.json      ← workspace-free, file: refs to /packages/*
  *       src/              ← TS source (bun runs it directly)
  *       scripts/import-instance.ts ← headless sealed import
+ *       scripts/affiliate.ts + affiliate-accounts.ts ← trusted Cloud payout administration
  *     dashboard/
  *       server.js         ← Next standalone entry
  *       .next/            ← standalone build output (already minified)
@@ -69,7 +70,14 @@ const PACKAGES_DIR = join(REPO_ROOT, "packages");
  * (db-email, ui, onboarding) aren't included — they're either dashboard-
  * only or webmail-only.
  */
-const API_WORKSPACE_DEPS = ["core", "db", "adapters", "contracts", "platform"] as const;
+const API_WORKSPACE_DEPS = [
+  "core",
+  "db",
+  "adapters",
+  "contracts",
+  "platform",
+  "commands",
+] as const;
 
 /**
  * Output directory. Defaults to `apps/api/release-dist/` (the canonical
@@ -181,6 +189,7 @@ async function buildApiPackageJson(): Promise<Record<string, unknown>> {
     type: "module",
     scripts: {
       start: "bun run src/index.ts",
+      affiliate: "bun scripts/affiliate.ts",
     },
     // relPrefix ".." — api/ is one level deep, /packages is its sibling
     dependencies: rewriteDeps(source, ".."),
@@ -289,10 +298,12 @@ export async function writeReleaseRootPackage(dist: string, version: string): Pr
   });
 }
 
-/** Headless transfer commands use the same flat api/packages layout as start.ts. */
+/** Headless operator commands use the same flat api/packages layout as start.ts. */
 export async function copyReleaseTransferScripts(dist: string): Promise<void> {
   for (const [source, target] of [
     [join(API_DIR, "scripts/import-instance.ts"), join(dist, "api/scripts/import-instance.ts")],
+    [join(API_DIR, "scripts/affiliate.ts"), join(dist, "api/scripts/affiliate.ts")],
+    [join(API_DIR, "scripts/affiliate-accounts.ts"), join(dist, "api/scripts/affiliate-accounts.ts")],
     [join(PACKAGES_DIR, "db/scripts/dump.ts"), join(dist, "packages/db/scripts/dump.ts")],
     [join(PACKAGES_DIR, "db/scripts/restore.ts"), join(dist, "packages/db/scripts/restore.ts")],
   ] as const) {

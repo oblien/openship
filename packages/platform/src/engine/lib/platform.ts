@@ -1,3 +1,4 @@
+import { affiliateDependencies } from "../modules/affiliates/affiliate.operations";
 import { actionDependencies } from "../modules/actions/action.operations";
 /** Application composition shared by the HTTP process and each owned native worker. */
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
@@ -72,6 +73,7 @@ export function getPlatformKernel(): PlatformKernel {
     backupDestinations: backupDestinationDependencies,
     backups: backupDependencies,
     billing: billingDependencies,
+    affiliates: affiliateDependencies,
     notices: noticesDependencies,
     github: githubDependencies,
     permissions: permissionsDependencies,

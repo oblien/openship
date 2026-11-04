@@ -42,6 +42,11 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
   const tunnelPath = (id: string, input: unknown) =>
     path(id) + `/tunnels/${encodeURIComponent((input as { tunnelId: string }).tunnelId)}`;
   return Object.freeze({
+    async *securityRunEvents(id, runId, options = {}) {
+      parseInput(ResourceIdSchema, id);
+      parseInput(ResourceIdSchema, runId);
+      yield* http.events(path(id) + `/security/runs/${encodeURIComponent(runId)}/stream`, { signal: options.signal });
+    },
     ...createRemoteScopedOperations(http, ServerCollectionSchemas, {
       networkCapabilities: { method: "GET", path: () => "/system/networks/capabilities" },
       listNetworks: { method: "GET", path: () => "/system/networks" },
@@ -217,6 +222,11 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       },
     }),
     ...createRemoteResourceOperations(http, ServerResourceSchemas, {
+      security: { method: "GET", path: id => path(id) + "/security", envelope: "data" },
+      checkSecurity: { method: "POST", path: id => path(id) + "/security/check", envelope: "data" },
+      planSecurityPatch: { method: "POST", path: id => path(id) + "/security/plan", envelope: "data" },
+      applySecurityPatch: { method: "POST", path: id => path(id) + "/security/apply", envelope: "data" },
+      securityRuns: { method: "GET", path: id => path(id) + "/security/runs", envelope: "data" },
       infrastructure: { method: "GET", path: (id) => path(id) + "/infrastructure" },
       inspectSwarm: { method: "GET", path: (id) => path(id) + "/swarm", inputLocation: "query" },
       connectSwarm: { method: "POST", path: (id) => path(id) + "/swarm/connect" },

@@ -283,15 +283,46 @@ await ship.services.mergeEnvVars("proj_123", "svc_456", {
 ```
 
 `GET .../env` lists only service override rows (secret values masked).
+
+To update a shared project source from the service editor, call
+`POST .../env/review` (`services.reviewEnvVars`) with the same partial edit first.
+It returns `changes` with each editable `key`, its `projectKey`, affected service
+names and keys, and an opaque `revision`. Values are never returned. Present those
+changes for confirmation, then send the original edit to `PATCH .../env` with:
+
+```ts
+const edit = {
+  environment: "production" as const,
+  upserts: [{ key: "LOG_LEVEL", value: "info", sourceId: null }],
+  deletes: [],
+};
+const review = await ship.services.reviewEnvVars("proj_123", "svc_456", edit);
+// Display review.changes and let the user choose shared keys before saving.
+const selectedKeys = review.changes.map(change => change.key);
+await ship.services.mergeEnvVars("proj_123", "svc_456", {
+  ...edit,
+  ...(selectedKeys.length ? { shared: { keys: selectedKeys, revision: review.revision } } : {}),
+});
+```
+
+Omit `shared` to save service-only overrides. Selected keys update their existing
+project source once; unselected edits remain local to the service. Project write
+access is required. A stale review returns `ENVIRONMENT_CHANGED`, with no partial
+writes. The response lists `affectedServices`; use the existing apply/redeploy
+operations to update their running containers. Repository files remain unchanged.
+The change is project-scoped: project apps that inherit these values also receive
+them on their next deploy.
+
 `PUT .../env` **replaces** those overrides for one environment — send every
-override you want to keep. Neither endpoint represents the inherited Compose or
-shared project layers.
+override you want to keep. This replacement endpoint only writes the service
+override layer.
 
 ```
 GET /api/projects/:id/services/:serviceId/env
 PUT /api/projects/:id/services/:serviceId/env
 GET /api/projects/:id/services/:serviceId/environment
 PATCH /api/projects/:id/services/:serviceId/env
+POST /api/projects/:id/services/:serviceId/env/review
 ```
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
@@ -424,7 +455,8 @@ organization. List the project's services with `GET /api/projects/:id/services` 
 | Accept a legacy source review while preserving saved environment values. | `services.acceptDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/accept`<br />`project:service:write` |
 | Keep the current configuration when resolving drift. | `services.keepDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/keep`<br />`project:service:write` |
 | Read the effective saved service environment and optionally compare it with Docker. | `services.getEnvironment(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/environment`<br />`project:service:read` |
-| Save named service overrides without replacing unrelated values. | `services.mergeEnvVars(parentId, id, input)` | `PATCH /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
+| Save named environment edits, optionally updating reviewed shared project values. | `services.mergeEnvVars(parentId, id, input)` | `PATCH /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
+| Review affected services before updating a shared environment value. | `services.reviewEnvVars(parentId, id, input)` | `POST /api/projects/:id/services/:serviceId/env/review`<br />`project:service:write` |
 | Read service environment overrides with masked secrets. | `services.listEnvVars(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/env`<br />`project:service:read` |
 | Apply service environment variable changes. | `services.setEnvVars(parentId, id, input)` | `PUT /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
 | Reveal authorized service environment values. | `services.revealEnv(parentId, id, input)` | `POST /api/projects/:id/services/:serviceId/env-reveal`<br />`project:service:write` |

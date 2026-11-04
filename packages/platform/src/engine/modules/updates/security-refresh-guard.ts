@@ -8,6 +8,7 @@ import { buildBackgroundContext } from "../../lib/background-context";
 import { projectServicesToDeployableServices } from "../deployments/compose/project-services";
 import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 import { assertSyncedServiceEnvironment } from "../services/service-environment-state";
+import { assertSecurityChecksEnabled } from "./security-check-policy";
 
 /** A one-run precondition, not a configuration or environment snapshot. */
 export interface SecurityUpdateApproval {
@@ -68,6 +69,7 @@ async function verifyApproval(
     );
   if (!project || project.deletedAt || project.deletionInProgress)
     throw new ValidationError("The project is no longer available for automatic security updates.");
+  await assertSecurityChecksEnabled(project.organizationId);
   const policy = await repos.securityAdvisory.project(project.id);
   if (
     !policy?.autoRefresh ||

@@ -15,6 +15,7 @@ import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
 
 interface PurchaseProps {
   /** Marketing supplies a selection; the API supplies its actual terms. */
+  initialReferralCode?: string;
   requestedPlanId?: string;
   requestedInterval?: "monthly" | "annual";
   autoCheckout?: boolean;
@@ -73,6 +74,7 @@ function Purchase({
   onCheckoutStarted,
   onCancel,
   sessionPending,
+  initialReferralCode,
   requestedPlanId,
   requestedInterval,
   autoCheckout,
@@ -97,6 +99,7 @@ function Purchase({
     <div className="space-y-4">
       <CloudPlanPicker
         currentPlan="free"
+        initialReferralCode={initialReferralCode}
         requestedPlanId={requestedPlanId}
         requestedInterval={requestedInterval}
         autoCheckout={autoCheckout}
