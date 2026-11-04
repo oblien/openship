@@ -342,6 +342,36 @@ describe("runtime-only environment apply", () => {
     expect(h.replacement.remove).toHaveBeenCalledOnce();
   });
 
+  it("says why the replacement did not start (#1613)", async () => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before,
+      Id: "new-container",
+      State: { ...h.before.State, Running: false, ExitCode: 1, OOMKilled: false, Error: "" },
+      RestartCount: 2,
+    } as typeof h.before);
+    await expect(h.apply()).rejects.toThrow(
+      "The service did not start with the new environment: it exited with code 1 after 2 restarts. Check the service logs for details.",
+    );
+  });
+
+  it.each([
+    [{ OOMKilled: true, ExitCode: 137 }, "it ran out of memory"],
+    [
+      { Error: 'exec: "redis-server": not found' },
+      'Docker reported: exec: "redis-server": not found',
+    ],
+    [{ Running: true, Health: { Status: "unhealthy" } }, "its health check failed"],
+  ])("names the startup failure from container state: %j", async (state, reason) => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before,
+      Id: "new-container",
+      State: { ...h.before.State, Running: false, ...state },
+    } as typeof h.before);
+    await expect(h.apply()).rejects.toThrow(reason);
+  });
+
   it("does not roll back a successful apply when only old-container cleanup fails", async () => {
     const h = setup();
     h.original.remove.mockRejectedValue(new Error("cleanup failed"));

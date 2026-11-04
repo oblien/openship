@@ -182,7 +182,9 @@ export async function applyDockerEnvironment(
       after.RestartCount > 0 ||
       after.State.Health?.Status === "unhealthy"
     ) {
-      throw new Error("The service did not start with the new environment.");
+      throw new Error(
+        `The service did not start with the new environment: ${startupFailure(after)}. Check the service logs for details.`,
+      );
     }
     const result = containerIdentity(replacement.id, after);
     await options.onReplaced(result);
@@ -259,4 +261,20 @@ export async function applyDockerEnvironment(
       "SERVICE_ENVIRONMENT_APPLY_FAILED",
     );
   }
+}
+
+/** Docker's own account of a failed startup. Container logs are left out: they
+ * can echo environment values, and this message is shown and reported. */
+function startupFailure(info: Dockerode.ContainerInspectInfo): string {
+  const { State: state, RestartCount: restarts } = info;
+  const reason = state.OOMKilled
+    ? "it ran out of memory"
+    : state.Error
+      ? `Docker reported: ${state.Error}`
+      : state.Health?.Status === "unhealthy"
+        ? "its health check failed"
+        : state.Running
+          ? "it kept restarting"
+          : `it exited with code ${state.ExitCode}`;
+  return restarts > 0 ? `${reason} after ${restarts} restart${restarts === 1 ? "" : "s"}` : reason;
 }
