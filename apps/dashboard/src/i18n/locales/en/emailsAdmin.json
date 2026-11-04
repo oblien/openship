@@ -136,6 +136,9 @@
     "dnsHint": "The provider's send-hop records now appear on the DNS tab. Publish + verify them for full deliverability."
   },
   "overview": {
+    "calendarContacts": "Calendar & contacts",
+    "calendarContactsDesc": "Sync calendars and contacts in your native apps with Radicale, using the IMAP hostname above and your existing mailbox accounts.",
+    "calendarContactsSetup": "Set up Radicale",
     "mailServer": "Mail server",
     "protocolDetails": "Protocol details →",
     "hostname": "Hostname",

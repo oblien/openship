@@ -180,7 +180,7 @@
     },
     {
       "name": "storage",
-      "image": "supabase/storage-api:v1.60.4",
+      "image": "supabase/storage-api:v1.81.0",
       "resources": { "cpuCores": 0.5, "memoryMb": 512, "diskMb": 8192 },
       "dependsOn": [
         "db",
@@ -247,7 +247,7 @@
     },
     {
       "name": "meta",
-      "image": "supabase/postgres-meta:v0.96.6",
+      "image": "supabase/postgres-meta:v0.100.0",
       "resources": { "cpuCores": 0.25, "memoryMb": 256, "diskMb": 8192 },
       "dependsOn": [
         "db"
@@ -265,7 +265,7 @@
     },
     {
       "name": "studio",
-      "image": "supabase/studio:2026.07.07-sha-a6a04f2",
+      "image": "supabase/studio:2026.10.12-sha-3699278",
       "resources": { "cpuCores": 0.5, "memoryMb": 1024, "diskMb": 8192 },
       "dependsOn": [
         "meta"

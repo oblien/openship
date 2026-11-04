@@ -1,10 +1,21 @@
-import { actionFinished, safeErrorMessage, AppError } from "@repo/core";
+import {
+  actionFinished,
+  safeErrorMessage,
+  AppError,
+  ValidationError,
+  isFullCommitSha,
+} from "@repo/core";
 import type { ActionRun, ActionJob } from "@repo/db";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
 import { syncGitHubCheck, type GitHubCheckUpdate } from "../github/check-runs";
 import { localDashboardUrl } from "../../config/env";
 import { diagnostics } from "@repo/core/diagnostics";
 import { actionJobName } from "./job-name";
+import {
+  actionPullRequest,
+  closedPullRequestRevision,
+  pullRequestMergeMatches,
+} from "./pull-request-revision";
 
 /** Checks use the controller's App identity independently of the job credential. */
 export async function syncActionCheck(run: ActionRun, job: ActionJob) {
@@ -16,6 +27,16 @@ export async function syncActionCheck(run: ActionRun, job: ActionJob) {
   const externalId = `openship-action:${run.id}:${job.id}`;
   const id = job.checkRunId;
   try {
+    const pr = run.eventName === "pull_request" ? actionPullRequest(run.event, owner, repo) : null;
+    const closed = pr && run.event.action === "closed" ? closedPullRequestRevision(pr) : null;
+    if (
+      pr &&
+      (!isFullCommitSha(run.revision) ||
+        (closed
+          ? run.revision !== closed.revision || run.ref !== closed.ref
+          : pr.state !== "open" || pr.merged || run.ref !== `refs/pull/${pr.number}/merge`))
+    )
+      throw new ValidationError("The saved pull request revision cannot authorize a GitHub Check.");
     const ctx = await resolveExecutionAuthority(run.authority, `actions-check:${run.id}`);
     const finished = actionFinished(job.status);
     const status = finished
@@ -28,21 +49,49 @@ export async function syncActionCheck(run: ActionRun, job: ActionJob) {
     const update: GitHubCheckUpdate = {
       name,
       externalId,
-      headSha: run.revision,
+      headSha: pr && !closed ? pr.head.sha : run.revision,
       status,
       ...(base && { detailsUrl: `${base}/actions/runs/${run.id}` }),
       ...(job.startedAt && { startedAt: job.startedAt.toISOString() }),
       ...(finished && { conclusion, completedAt: (job.finishedAt ?? new Date()).toISOString() }),
       output: {
         title: `${run.plan.name} · ${jobName}`.slice(0, 255),
-        summary: job.error?.slice(0, 4096) || `Openship Actions: ${job.status}.`,
+        summary: [
+          ...(pr
+            ? [
+                `Pull request #${pr.number}; ${closed ? "commit" : "merge"} revision ${run.revision}.`,
+              ]
+            : []),
+          job.error?.slice(0, 4096) || `Openship Actions: ${job.status}.`,
+        ].join("\n\n"),
       },
     };
-    return await syncGitHubCheck(ctx, owner, repo, id, update);
+    return await syncGitHubCheck(
+      ctx,
+      owner,
+      repo,
+      id,
+      update,
+      pr
+        ? {
+            verifyIdentity: true,
+            beforeCreate: async () => {
+              if (!closed && !(await pullRequestMergeMatches(ctx, owner, repo, pr, run.revision)))
+                throw new AppError(
+                  "The executed merge does not contain the captured pull request base and head.",
+                  403,
+                  "ACTIONS_CHECK_REVISION_MISMATCH",
+                );
+            },
+          }
+        : undefined,
+    );
   } catch (error) {
     // Revocation cancels execution and must also terminate this delegation's
     // background writes. Retrying a removed actor forever would strand history.
-    const unavailable = error instanceof AppError && [401, 403, 404].includes(error.statusCode);
+    const unavailable =
+      error instanceof ValidationError ||
+      (error instanceof AppError && [401, 403, 404].includes(error.statusCode));
     diagnostics.warn(
       "actions/checks",
       unavailable ? "GitHub Check access is unavailable" : "GitHub Check update will be retried",
