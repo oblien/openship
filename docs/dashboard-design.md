@@ -110,8 +110,13 @@ Security advisories reuse those deployment actions and the existing root UpdateC
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app
 inside the dialog. The compact banner names only the apps and services affected by its
-advisory, with observed runtime versions. The banner displays the signed finding's
-severity; a High finding must not be labeled Critical. Monitoring → Security retains
+advisory, with observed runtime versions. Confirmed findings display the signed
+severity; a High finding must not be labeled Critical. Low-priority manual reviews
+with only possible applicability use an informational **Review required** notice,
+with applicability explicitly unverified. Preserve the signed severity in the
+underlying finding; do not treat the runtime version as proof of application behavior
+or let a review outrank a confirmed vulnerability. High and Critical advisories
+retain their warning priority even if they need manual review. Monitoring → Security retains
 active findings independently of banner dismissal and reuses the same review component
 and cached overview.
 The banner settings menu can hide runtime security banners, including critical ones,

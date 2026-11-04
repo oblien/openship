@@ -147,6 +147,44 @@ it("shares a visibility change from another browser tab", async () => {
   expect(button(copy.showBanners).getAttribute("aria-checked")).toBe("false");
 });
 
+it("labels an unverified manual review without presenting it as a high or critical finding", async () => {
+  const review = {
+    ...runtime,
+    title: "Conditional PHP configuration review",
+    severity: "info",
+    manualReview: true,
+    projects: [
+      {
+        ...project,
+        findings: [
+          {
+            ...project.findings[0],
+            severity: "low",
+            confidence: "possible",
+            manualReviewRequired: true,
+          },
+        ],
+      },
+    ],
+  };
+  h.updates.mockReturnValue({
+    ...h.updates(),
+    state: { advisories: [review] },
+    runtimeAdvisories: [review],
+  });
+  await act(async () => render());
+  expect(container.textContent).toContain(copy.manualReviewRequired);
+  expect(container.textContent).toContain(copy.manualReviewUnverified);
+  expect(container.querySelector('[class*="bg-danger-bg"]')).toBeNull();
+  expect(
+    [...container.querySelectorAll("span")].some(
+      (item) =>
+        item.textContent === copy.severity.high || item.textContent === copy.severity.critical,
+    ),
+  ).toBe(false);
+  expect(button(copy.reviewApps.replace("{count}", "1"))).toBeDefined();
+});
+
 it("opens a host-only advisory from the root banner and links to server runs", async () => {
   const server = {
     serverId: "host-one",

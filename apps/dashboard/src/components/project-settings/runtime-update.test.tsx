@@ -362,6 +362,7 @@ it("shows one actionable manual review for all affected services without startin
     message: guidance,
     canRefresh: false,
     manualReviewRequired: true,
+    confidence: "possible",
   }));
   h.security.mockResolvedValue(result);
   await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
@@ -369,6 +370,8 @@ it("shows one actionable manual review for all affected services without startin
   expect(element.textContent?.split("Review PHP configuration")).toHaveLength(2);
   expect(element.textContent).toContain("api · worker · scheduler · realtime");
   expect(element.textContent).toContain(copy.manualReviewDescription);
+  expect(element.textContent).toContain(copy.manualReviewUnverified);
+  expect(element.textContent).not.toContain(copy.possible);
   const instructions = [...element.querySelectorAll("p")].find(
     (item) => item.textContent === guidance,
   )!;

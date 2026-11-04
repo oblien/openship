@@ -195,7 +195,9 @@ export function SecurityProjectReview({
               </p>
             )}
             {finding.confidence === "possible" && (
-              <p className="text-xs text-warning">{copy.possible}</p>
+              <p className="text-xs text-muted-foreground">
+                {finding.manualReviewRequired ? copy.manualReviewUnverified : copy.possible}
+              </p>
             )}
             {[...new Set(services.flatMap((item) => item.evidence))].map((evidence) => (
               <p key={evidence} className="break-all font-mono text-xs text-muted-foreground">

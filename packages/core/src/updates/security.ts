@@ -217,7 +217,9 @@ export function matchSecurityAdvisories(
               advisory,
               serviceId: runtime.serviceId,
               image: null,
-              confidence: "confirmed",
+              // A manual rule without a known fixed range needs additional
+              // configuration/application review; the version alone is insufficient.
+              confidence: advisory.action === "manual" && !target.fixed ? "possible" : "confirmed",
               evidence: `${runtime.runtime} ${runtime.version}`,
               ...(target.fixed && !intersects(`${major(runtime.version)}.x`, target.fixed)
                 ? { runtimeUpgradeRequired: true }

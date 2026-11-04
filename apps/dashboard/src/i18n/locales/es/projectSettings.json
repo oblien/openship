@@ -1270,7 +1270,8 @@
     "showBanners": "Mostrar avisos de seguridad",
     "bannerDescription": "Mostrar avisos de seguridad de apps y servidores en la parte superior del panel de este navegador y espacio. Las comprobaciones y los canales de notificación se controlan por separado.",
     "manualReviewRequired": "Revisión necesaria",
-    "manualReviewDescription": "Este aviso requiere revisar la configuración o la aplicación. Actualizar la imagen no demuestra por sí solo que el problema esté resuelto.",
+    "manualReviewDescription": "Lee las recomendaciones para decidir si este aviso aplica. Realiza cambios solo si se cumplen sus condiciones.",
+    "manualReviewUnverified": "La aplicabilidad no está verificada. Hay que revisar la configuración o la aplicación para confirmar si está afectada.",
     "openRuntimeConfiguration": "Revisar configuración de ejecución",
     "severity": {
       "critical": "Crítica",

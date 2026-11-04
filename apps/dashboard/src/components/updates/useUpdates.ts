@@ -230,6 +230,7 @@ const EMPTY_OVERVIEW: SecurityOverview = { projects: [], pendingProjects: 0, unk
 interface RuntimeAdvisory extends Advisory {
   projects: SecurityOverview["projects"];
   servers?: SecurityOverview["servers"];
+  manualReview?: boolean;
 }
 function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvisory[] {
   const notices = new Map<string, RuntimeAdvisory>();
@@ -281,6 +282,25 @@ function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvis
         action: { kind: "open-url", label: "Read advisory", url: finding.url },
       });
     }
+  for (const notice of notices.values()) {
+    if (
+      !notice.servers?.length &&
+      notice.projects.length &&
+      notice.projects.every((project) =>
+        project.findings.every(
+          (finding) =>
+            finding.manualReviewRequired &&
+            finding.confidence === "possible" &&
+            finding.severity === "low",
+        ),
+      )
+    ) {
+      // Preserve the upstream risk severity in evidence, but do not rank an
+      // unverified configuration review above an observed vulnerable runtime.
+      notice.severity = "info";
+      notice.manualReview = true;
+    }
+  }
   return [...notices.values()];
 }
 

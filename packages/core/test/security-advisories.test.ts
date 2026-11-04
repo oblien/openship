@@ -177,21 +177,27 @@ describe("published October runtime guidance", () => {
     ["8.3.35", "8.3.36"],
     ["8.4.26", "8.4.27"],
     ["8.5.11", "8.5.12"],
-  ])("detects PHP %s and clears only the version patch at %s", (old, fixed) => {
-    const matches = (version: string) =>
-      matchSecurityAdvisories(feed, [], [{ runtime: "php", serviceId: "php", version }]);
-    expect(matches(old).map((m) => m.advisory.id)).toContain("PHP-2026-10-21-rce");
-    const patched = matches(fixed);
-    expect(patched.map((m) => m.advisory.id)).not.toContain("PHP-2026-10-21-rce");
-    expect(patched).toEqual([
-      expect.objectContaining({
-        advisory: expect.objectContaining({
-          id: "CVE-2026-115560-php-review",
-          action: "manual",
+  ])(
+    "detects PHP %s and retains only unverified configuration review at patched %s",
+    (old, fixed) => {
+      const matches = (version: string) =>
+        matchSecurityAdvisories(feed, [], [{ runtime: "php", serviceId: "php", version }]);
+      expect(matches(old).map((m) => m.advisory.id)).toContain("PHP-2026-10-21-rce");
+      const patched = matches(fixed);
+      expect(patched.map((m) => m.advisory.id)).not.toContain("PHP-2026-10-21-rce");
+      expect(patched).toEqual([
+        expect.objectContaining({
+          confidence: "possible",
+          advisory: expect.objectContaining({
+            id: "CVE-2026-115560-php-review",
+            revision: 2,
+            severity: "low",
+            action: "manual",
+          }),
         }),
-      }),
-    ]);
-  });
+      ]);
+    },
+  );
   it.each([
     ["22.23.3", "22.23.4"],
     ["24.22.0", "24.22.1"],

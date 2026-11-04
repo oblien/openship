@@ -142,6 +142,7 @@ describe("investigation handoff", () => {
     expect(prompt).toContain(target.projectId);
     expect(prompt).toContain("effective configuration");
     expect(prompt).toContain("persistent fix");
+    expect(prompt).toContain("make no changes to the services");
     expect(prompt).toContain("approved access");
     expect(prompt).toContain("verify the result");
     expect(prompt).not.toContain("do not change anything");

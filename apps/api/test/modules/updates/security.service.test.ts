@@ -215,6 +215,7 @@ describe("security operations", () => {
       id: notice.id,
       serviceId: f.service.id,
       evidence: ["php 8.5.12"],
+      confidence: "possible",
       manualReviewRequired: true,
       canRefresh: false,
     });

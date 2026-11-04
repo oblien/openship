@@ -1270,7 +1270,8 @@
     "showBanners": "セキュリティバナーを表示",
     "bannerDescription": "このブラウザーとワークスペースのダッシュボード上部にアプリとサーバーのセキュリティ通知を表示します。確認機能と通知チャネルは別途設定します。",
     "manualReviewRequired": "確認が必要です",
-    "manualReviewDescription": "この勧告では設定やアプリの確認が必要です。イメージの更新だけでは修正を検証できません。",
+    "manualReviewDescription": "ガイダンスを読んで、この勧告が該当するか判断してください。条件に当てはまる場合のみ変更してください。",
+    "manualReviewUnverified": "適用されるかは未確認です。影響の有無を確認するには設定またはアプリの調査が必要です。",
     "openRuntimeConfiguration": "ランタイム設定を確認",
     "severity": {
       "critical": "緊急",
