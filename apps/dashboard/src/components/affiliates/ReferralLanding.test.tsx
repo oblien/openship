@@ -183,3 +183,23 @@ it("limits public cards to the selected plan and billing combinations and choose
   await click("Choose Hobby");
   expect(target().searchParams.get("interval")).toBe("annual");
 });
+
+
+it.each([
+  ["annual", 1000, 12000, 1000, "$9", "$10", "$108 billed yearly"],
+  ["monthly", 1200, 12000, 1000, "$10.80", "$12", "billed monthly"],
+  ["monthly", 1231, 12000, 500, "$11.69", "$12.31", "billed monthly"],
+  ["annual", 1000, 12000, 0, "$10", null, "$120 billed yearly"],
+  ["monthly", 1200, 12000, 10000, "Free", "$12", "billed monthly"],
+] as const)("shows %s referral prices for %i/%i cents at %i basis points", async (interval, monthly, annual, discountBps, price, original, billing) => {
+  h.offer.mockResolvedValue({ ...offer, discountBps });
+  catalog([{ ...plans[0]!, price: { monthly, annual }, listPrice: { monthly }, effectivePrice: { monthly } }]);
+  await render();
+  if (interval === "monthly") await click("Monthly");
+  const card = host.querySelector('article[aria-label="Hobby"]')!;
+  expect(card.textContent).toContain(price);
+  expect(card.querySelector("s")?.textContent ?? null).toBe(original);
+  expect(card.textContent).toContain(billing);
+  if (discountBps) expect(card.textContent).toContain(`Save ${discountBps / 100}% for 12 months`);
+  expect(button("Choose Hobby").disabled).toBe(false);
+});

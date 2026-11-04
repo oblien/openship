@@ -4,6 +4,9 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
 import type { OblienLimits, PlanLimits, PlanTierId } from "@repo/core";
+import type { AffiliatePublicOffer } from "@repo/contracts";
+import { affiliateEstimate } from "@/components/affiliates/affiliate-presentation";
+import { referralPlans } from "@/components/affiliates/referral-plans";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { PlanResources } from "./PlanResources";
@@ -114,6 +117,7 @@ interface PricingCardsProps {
   interval?: "monthly" | "annual";
   workspaceScoped?: boolean;
   selectionLabel?: string;
+  referralOffer?: AffiliatePublicOffer;
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,22 +149,23 @@ function formatPrice(
 function resolveCardPrice(
   plan: ApiPlan,
   interval: "monthly" | "annual",
+  referral: AffiliatePublicOffer | null,
 ): {
   listCents: number | null;
   chargedCents: number | null;
   discounted: boolean;
 } {
-  if (interval === "annual")
-    return { listCents: plan.price.annual, chargedCents: plan.price.annual, discounted: false };
-  const listCents = plan.listPrice?.monthly ?? plan.price.monthly;
-  const chargedCents = plan.effectivePrice?.monthly ?? listCents;
+  const listCents = interval === "annual" ? plan.price.annual : plan.listPrice?.monthly ?? plan.price.monthly;
+  const chargedCents = referral
+    ? affiliateEstimate(listCents!, 0, referral.discountBps).paid
+    : interval === "annual" ? listCents : plan.effectivePrice?.monthly ?? listCents;
   return {
     listCents,
     chargedCents,
     // A campaign whose arithmetic didn't move the number (1% off a $0 tier) gets
     // no strike-through — there is nothing to compare.
     discounted:
-      plan.campaign != null &&
+      (referral != null || (interval === "monthly" && plan.campaign != null)) &&
       listCents != null &&
       chargedCents != null &&
       chargedCents !== listCents,
@@ -190,6 +195,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   interval = "monthly",
   workspaceScoped = false,
   selectionLabel,
+  referralOffer,
 }) => {
   const { t, locale } = useI18n();
   const comparisonId = React.useId();
@@ -209,7 +215,9 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
     pricedPlans.length > 0 ? (
       <div className={`grid gap-4 ${CARD_COLUMNS[Math.min(pricedPlans.length, 4)]}`}>
         {pricedPlans.map((plan) => {
-          const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval);
+          const referral = referralOffer && referralPlans([plan], referralOffer, interval).length
+            ? referralOffer : null;
+          const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval, referral);
           // Compare monthly equivalents; annual cards disclose the full charge below.
           const { label, suffix } = formatPrice(
             discounted ? chargedCents : listCents,
@@ -217,13 +225,14 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
             interval,
           );
           const listLabel = formatPrice(listCents, ui, interval).label;
-          const campaign = discounted ? plan.campaign : null;
+          const campaign = discounted && !referral ? plan.campaign : null;
+          const percentOff = referral ? referral.discountBps / 100 : campaign?.percentOff;
           // A missing `campaignBadge` still shows the magnitude: "-50%" is a number
           // and a glyph, so it reads the same in every language.
-          const badgeLabel = campaign
+          const badgeLabel = discounted
             ? ui.campaignBadge
-              ? interpolate(ui.campaignBadge, { percentOff: String(campaign.percentOff) })
-              : `-${campaign.percentOff}%`
+              ? interpolate(ui.campaignBadge, { percentOff: String(percentOff) })
+              : `-${percentOff}%`
             : null;
           // No fallback here on purpose: a bare date with no "offer ends" carrier
           // sentence is unreadable, so the line is dropped rather than guessed.
@@ -277,18 +286,18 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                 {suffix && (
                   <span className="text-sm font-medium text-muted-foreground">{suffix}</span>
                 )}
-                {campaign && (
+                {discounted && (
                   <>
                     {/* The strike-through carries the meaning visually; `wasPrice`
                       carries it for a screen reader, which cannot hear one. */}
-                    <span
-                      className="text-sm font-medium tabular-nums text-muted-foreground line-through"
+                    <s
+                      className="text-sm font-medium tabular-nums text-muted-foreground"
                       aria-label={
                         ui.wasPrice ? interpolate(ui.wasPrice, { price: listLabel }) : undefined
                       }
                     >
                       {listLabel}
-                    </span>
+                    </s>
                     <span className="inline-flex items-center rounded-full bg-success-bg px-2 py-0.5 text-xs font-semibold text-success">
                       {badgeLabel}
                     </span>
@@ -302,6 +311,14 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                     : ui.billedMonthly
                   : ""}
               </p>
+              {referral && discounted && (
+                <p className="mt-0.5 text-xs font-medium text-success">
+                  {interpolate(t.affiliates.referralDiscount, {
+                    percent: String(referral.discountBps / 100),
+                    months: String(referral.durationMonths),
+                  })}
+                </p>
+              )}
               {endsLabel && <p className="mt-0.5 text-xs font-medium text-success">{endsLabel}</p>}
               <p className="mb-4 mt-2 min-h-10 text-sm leading-5 text-muted-foreground">
                 {plan.description}

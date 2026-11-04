@@ -618,7 +618,10 @@ check retryable before starting the move.
   Keep the minimum beside available earnings. Show Request payout only for an enabled participant
   with enough available funds, opening the shared modal on demand. Public referral pages
   reuse the Cloud catalog, pricing cards and interval control; a chosen plan continues
-  through sign-in to the existing checkout with its referral intact.
+  through sign-in to the existing checkout with its referral intact. Verified referral
+  discounts lead each eligible card with the reduced price beside a struck-through
+  original. Show the discounted full annual charge and discount duration too.
+  Applying or removing a code in checkout updates these same cards.
   Link creation starts with a compact discount step, then expands to plan and billing
   interval selection with per-payment earnings. Use one card per plan with monthly and
   yearly choices inside; the whole choice is a keyboard-accessible checkbox. Keep link
