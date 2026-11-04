@@ -175,7 +175,7 @@ function fetchRemote(scope: string): Promise<AdvisoryFeedResult | null> {
 
 const refreshListeners = new Set<(resourceKey: string) => void>();
 const queuedRefreshes = new Set<string>();
-function refreshConsumers(resourceKey: string) {
+export function refreshConsumers(resourceKey: string) {
   if (queuedRefreshes.has(resourceKey)) return;
   queuedRefreshes.add(resourceKey);
   queueMicrotask(() => {
@@ -235,6 +235,7 @@ function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvis
   const notices = new Map<string, RuntimeAdvisory>();
   for (const project of overview.projects)
     for (const finding of project.findings) {
+      if (!project.feedStale && finding.refresh && finding.refresh.status !== "failed") continue;
       const id = `runtime:${scope}:${finding.id}:${finding.revision}`;
       const existing = notices.get(id);
       if (existing) {
@@ -483,6 +484,17 @@ export function useUpdates(): UseUpdates {
       clearInterval(timer);
     };
   }, [load, resourceKey]);
+
+  const securityUpdateRunning = securityOverview.projects.some((project) =>
+    project.findings.some((finding) => finding.refresh && finding.refresh.status !== "failed"),
+  );
+  useEffect(() => {
+    if (!securityUpdateRunning) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") refreshConsumers(resourceKey);
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [securityUpdateRunning, resourceKey]);
 
   const dismissAdvisory = useCallback(
     (id: string) => {

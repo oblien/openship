@@ -132,6 +132,12 @@ version probes inside isolated containers. Workspace owners and admins can pause
 runtime advisory checks with the separate saved setting in Settings → Notifications.
 Monitoring must show checks disabled rather than a clean result; banner visibility
 remains a separate browser preference. Pausing checks also pauses automatic security refreshes.
+Security refresh actions retain a durable deployment receipt. Hide only the finding's
+banner while its update is running or awaiting deployment actions; retain its progress
+in the shared review and Monitoring. Restore the warning with an explicit failure if
+the deployment fails or the promoted runtime remains affected. An unchanged prebuilt
+image is not a remediation: explain that a patched version must be configured instead
+of redeploying the same digest. Opening review alone never resolves a finding.
 Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
 Host notices share that banner and review, linking to **Servers → Runs**. Monitoring's

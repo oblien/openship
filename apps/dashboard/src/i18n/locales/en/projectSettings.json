@@ -1298,7 +1298,11 @@
     "monitoring": "View in Monitoring",
     "persistent": "Active findings stay here when the banner is dismissed.",
     "otherApps": "Other apps ({count})",
-    "details": "Details & guidance"
+    "details": "Details & guidance",
+    "refreshFailed": "The security update failed. Review its deployment before retrying.",
+    "refreshAwaitingActions": "Review the pending deployment actions to continue this security update.",
+    "refreshInProgress": "Security update in progress. The running runtime will be checked before this advisory is resolved.",
+    "viewRefresh": "View update"
   },
   "hostSecurity": {
     "title": "Server security",

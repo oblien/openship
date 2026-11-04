@@ -90,6 +90,10 @@ async function projectLiveHostnames(projectId: string | undefined): Promise<Set<
   try {
     const project = await repos.project.findById(projectId);
     if (!project?.activeDeploymentId) return new Set();
+    if (env.CLOUD_MODE && project.workspaceId) {
+      const { listCloudProjectRouteHostnames } = await import("../../lib/cloud-route.service");
+      return new Set((await listCloudProjectRouteHostnames(project)).map(hostname => hostname.toLowerCase()));
+    }
     const domains = await repos.domain.listByProject(projectId);
     return new Set(domains.map((d) => d.hostname.toLowerCase()));
   } catch (diagnosticFailure) {
@@ -708,9 +712,11 @@ async function checkComposeServiceDomains(
   projectSlug: string | undefined,
   cloud: CloudPreflightData | null,
   snapshot?: DeploymentConfigSnapshot,
+  projectId?: string,
 ): Promise<PreflightCheck[]> {
   const checks: PreflightCheck[] = [];
   const seen = new Set<string>();
+  const ownedLive = await projectLiveHostnames(projectId);
 
   for (const service of composeServices) {
     // ONE resolver drives the hostname the cloud gate (composeServicesNeedCloud)
@@ -745,7 +751,11 @@ async function checkComposeServiceDomains(
         label: `Service domain (${service.name})`,
       });
     } else {
-      const result = checkSlugFormat(route.label!);
+      const format = checkSlugFormat(route.label!);
+      const result = format.status === "pass" && snapshot && cloud?.runtime.ok &&
+        isCloudManagedHostname(route.hostname) && !ownedLive.has(route.hostname.toLowerCase())
+        ? await checkSlug(route.label!, await requestCloudPreflight(snapshot, { slug: route.label! }))
+        : format;
       checks.push({
         ...result,
         id: `service-domain-${service.name}`,
@@ -1703,6 +1713,7 @@ export async function runPreflightChecks(
         opts.slug,
         cloudPreflight,
         snapshot,
+        opts.projectId,
       )),
     );
   }

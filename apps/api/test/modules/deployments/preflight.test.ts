@@ -66,6 +66,42 @@ describe("runPreflightChecks", () => {
     );
   });
 
+  it("checks Compose service hostname availability before starting a deployment", async () => {
+    const result = await runPreflightChecks(
+      {
+        deployTarget: "cloud",
+        organizationId: "org-1",
+        framework: "docker-compose",
+        hasServer: true,
+        port: 8080,
+      } as any,
+      {
+        ctx: { userId: "user-1", organizationId: "org-1" } as any,
+        multiService: true,
+        slug: "appwrite",
+        composeServices: [
+          {
+            name: "gateway",
+            image: "caddy:2",
+            enabled: true,
+            exposed: true,
+            exposedPort: "8080",
+            domainType: "free",
+            domain: "taken-endpoint",
+            dependsOn: [],
+            ports: [],
+          },
+        ] as any,
+      },
+    );
+    expect(
+      result.checks.find((c) => c.id === "service-domain-gateway"),
+    ).toMatchObject({
+      status: "fail",
+      message: expect.stringContaining("already taken"),
+    });
+  });
+
   it.each(["services", "single"] as const)("uses shared Docker volume support for %s managed-server projects", async mode => {
     const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
       buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,
