@@ -15,7 +15,13 @@ import {
   notLike,
   sql,
 } from "drizzle-orm";
-import { ConflictError, generateId, DOMAIN_RETRY_DELAYS_MS } from "@repo/core";
+import {
+  ConflictError,
+  generateId,
+  DOMAIN_RETRY_DELAYS_MS,
+  normalizeCustomHostname,
+  resolveRedirectStatus,
+} from "@repo/core";
 import type { Database } from "../client";
 import { domain, orphanedResource, project, service, ingressConnection, ingressHostname } from "../schema";
 import { assertProjectConfigurationWritable, withProjectConfigurationWrite } from "./project-work-admission";
@@ -31,6 +37,42 @@ type RepoTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export function createDomainRepo(db: Database) {
   const ownerPredicate = (id: string) => inArray(project.id,
     db.select({ id: domain.projectId }).from(domain).where(eq(domain.id, id)));
+
+  /** Domain API writes and service endpoint intent describe the same redirect.
+   * Commit them together so a later service edit cannot restore an older choice. */
+  async function syncServiceRedirect(tx: RepoTransaction, row: Domain, patch: Partial<NewDomain>) {
+    if (
+      !row.projectId ||
+      !row.serviceId ||
+      (patch.redirectTo === undefined && patch.redirectStatus === undefined)
+    )
+      return;
+    const [owner] = await tx
+      .select({ publicEndpoints: service.publicEndpoints })
+      .from(service)
+      .where(and(eq(service.id, row.serviceId), eq(service.projectId, row.projectId)))
+      .for("update");
+    if (!owner?.publicEndpoints?.length) return;
+    const redirectTo = row.redirectTo ?? "";
+    const redirectStatus = redirectTo ? resolveRedirectStatus(row.redirectStatus) : undefined;
+    let changed = false;
+    const endpoints = owner.publicEndpoints.map((endpoint) => {
+      if (
+        endpoint.domainType !== "custom" ||
+        normalizeCustomHostname(endpoint.customDomain ?? "") !== row.hostname ||
+        (endpoint.redirectTo === redirectTo && endpoint.redirectStatus === redirectStatus)
+      )
+        return endpoint;
+      changed = true;
+      return { ...endpoint, redirectTo, redirectStatus };
+    });
+    if (changed)
+      await tx
+        .update(service)
+        .set({ publicEndpoints: endpoints, updatedAt: new Date() })
+        .where(and(eq(service.id, row.serviceId), eq(service.projectId, row.projectId)));
+  }
+
   // Filter before LIMIT so recent failures cannot starve older, eligible rows.
   // The same persisted counter/timestamp drives the next-check time in clients.
   function retryDue(now = new Date()) {
@@ -126,10 +168,12 @@ export function createDomainRepo(db: Database) {
       .where(
         and(eq(domain.projectId, projectId), eq(domain.isPrimary, true), ne(domain.id, domainId)),
       );
-    await tx
+    const [updated] = await tx
       .update(domain)
       .set({ ...patch, isPrimary: true, updatedAt: now })
-      .where(eq(domain.id, domainId));
+      .where(eq(domain.id, domainId))
+      .returning();
+    if (updated) await syncServiceRedirect(tx, updated, patch);
     return true;
   }
 
@@ -440,10 +484,14 @@ export function createDomainRepo(db: Database) {
         if (targetProjectId && (await promotePrimary(targetProjectId, id, data))) return;
       }
       const predicate = or(ownerPredicate(id), data.projectId ? eq(project.id, data.projectId) : undefined)!;
-      await withProjectConfigurationWrite(db, predicate, async (tx) => tx
-        .update(domain)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(domain.id, id)));
+      await withProjectConfigurationWrite(db, predicate, async (tx) => {
+        const [updated] = await tx
+          .update(domain)
+          .set({ ...data, updatedAt: new Date() })
+          .where(eq(domain.id, id))
+          .returning();
+        if (updated) await syncServiceRedirect(tx, updated, data);
+      });
     },
 
     /** Return the primary domain for a project (or first domain, or null). */

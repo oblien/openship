@@ -394,6 +394,20 @@ permissions. Stored personal credentials are not substituted for an unavailable
 App token. GitHub installation tokens normally expire after one hour; token refresh
 inside a running job is not currently supported.
 
+For independent `pull_request` workflows, Openship reads the workflow from the
+event's trusted base revision and resolves the current test merge through GitHub.
+The PR number, repositories, branches and base/head commits must still match the
+signed delivery, and the merge's parents must be exactly that base and head.
+Pending merge metadata retries through the durable webhook queue; changed PRs and
+merge conflicts are reported as workflow errors rather than running another revision.
+Job Checks attach to the captured PR head, with the execution merge named in the
+summary. Before creating a head Check, Openship verifies the merge again. Existing
+Check IDs are reused only when their attempt, name and head match.
+
+An explicitly subscribed `closed` event can run cleanup without a test merge:
+an unmerged PR uses its captured head, while a merged PR uses the captured merge
+commit. Cleanup Checks report on that execution commit.
+
 Independent scheduled workflows run while the controller is online, at intervals of at least
 five minutes. Missed schedules are not replayed after downtime. For Desktop, keep
 it running or [move the control plane to a server](/docs/guides/migrate-control-plane).

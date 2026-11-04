@@ -689,7 +689,10 @@ export async function installApp(
     for (const [svcName, vars] of varsByService) {
       const serviceId = idByName.get(svcName);
       if (serviceId) {
-        await setServiceEnvVars(ctx, project.id, serviceId, { environment: "production", vars });
+        // A generated config field may also be referenced by a secretEnv key
+        // of the same name. The environment API rejects duplicate keys.
+        const uniqueVars = [...new Map(vars.map((variable) => [variable.key, variable])).values()];
+        await setServiceEnvVars(ctx, project.id, serviceId, { environment: "production", vars: uniqueVars });
       }
     }
   }

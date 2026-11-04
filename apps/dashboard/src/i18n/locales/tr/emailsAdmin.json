@@ -136,6 +136,9 @@
     "guidanceSystem": "Sistem postaları (şifre sıfırlama, davetler, bildirimler) de bu aktarma üzerinden gönderilir — Ayarlar → E-posta bölümünde ayrı bir gönderici ayarlamadığınız sürece."
   },
   "overview": {
+    "calendarContacts": "Takvim ve kişiler",
+    "calendarContactsDesc": "Radicale ile takvimlerinizi ve kişilerinizi uygulamalarınızda eşitleyin. Yukarıdaki IMAP sunucu adını ve mevcut posta hesaplarınızı kullanın.",
+    "calendarContactsSetup": "Radicale kurulumu",
     "mailServer": "E-posta sunucusu",
     "protocolDetails": "Protokol detayları →",
     "hostname": "Sunucu Adı (Hostname)",

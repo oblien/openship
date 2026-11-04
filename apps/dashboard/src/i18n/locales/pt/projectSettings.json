@@ -1298,7 +1298,11 @@
     "monitoring": "Ver em Monitorização",
     "persistent": "Os resultados ativos permanecem aqui após fechar o aviso.",
     "otherApps": "Outras aplicações ({count})",
-    "details": "Detalhes e orientações"
+    "details": "Detalhes e orientações",
+    "refreshFailed": "A atualização de segurança falhou. Revise a implantação antes de tentar novamente.",
+    "refreshAwaitingActions": "Revise as ações pendentes da implantação para continuar a atualização.",
+    "refreshInProgress": "Atualização de segurança em andamento. O ambiente será verificado antes de resolver o aviso.",
+    "viewRefresh": "Ver atualização"
   },
   "hostSecurity": {
     "title": "Segurança do servidor",

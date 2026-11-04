@@ -6,7 +6,14 @@ import type { AssistantProviderInfo } from "@repo/contracts";
 import { AgentConnections } from "./AgentConnections";
 
 const setup = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/api/assistant", () => ({ assistantApi: { setupProvider: setup } }));
+const auth = vi.hoisted(() => ({ begin: vi.fn(), step: vi.fn() }));
+vi.mock("@/lib/api/assistant", () => ({
+  assistantApi: {
+    setupProvider: setup,
+    authBegin: auth.begin,
+    authStep: auth.step,
+  },
+}));
 vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 
 let root: Root, host: HTMLDivElement;
@@ -26,6 +33,8 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
   vi.useFakeTimers();
   setup.mockReset().mockResolvedValue({ accepted: true });
+  auth.begin.mockReset();
+  auth.step.mockReset();
   refresh.mockReset();
   host = document.createElement("div");
   document.body.append(host);
@@ -90,4 +99,52 @@ it("shows an installation request error and permits retry", async () => {
   await act(async () => button("Retry setup")!.click());
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("shows a device code and completes sign-in through the scoped polling flow", async () => {
+  auth.begin.mockResolvedValue({
+    method: "loginDevice",
+    status: "pending",
+    flowId: "device-attempt",
+    url: "https://auth.openai.com/codex/device",
+    code: "ABCD-1234",
+  });
+  auth.step.mockResolvedValue({ method: "loginDevice", status: "complete" });
+  await render({
+    available: true,
+    authMethods: [
+      { id: "loginDevice", label: "Continue with ChatGPT using a device code", interactive: true },
+    ],
+  });
+  expect(host.textContent).toContain("Cloud and remote servers use a one-time code.");
+  expect(auth.begin).not.toHaveBeenCalled();
+  await act(async () => button("Continue")!.click());
+  expect(auth.begin).toHaveBeenCalledExactlyOnceWith("codex", "loginDevice");
+  expect(host.textContent).toContain("ABCD-1234");
+  expect(
+    host.querySelector<HTMLAnchorElement>('a[href="https://auth.openai.com/codex/device"]'),
+  ).toBeTruthy();
+  await act(async () => vi.advanceTimersByTime(1500));
+  expect(auth.step).toHaveBeenCalledExactlyOnceWith("codex", { _flowId: "device-attempt" });
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(host.textContent).not.toContain("Waiting for sign-in…");
+});
+
+it("defaults to browser sign-in on Desktop and explains it before starting", async () => {
+  await render({ available: true });
+  await render({
+    available: true,
+    authMethods: [{ id: "login", label: "Continue with ChatGPT", interactive: true }],
+  });
+  expect(host.textContent).toContain("On this desktop, sign in with ChatGPT in your browser");
+  expect(host.textContent).not.toContain("Cloud and remote servers use a one-time code.");
+  expect(auth.begin).not.toHaveBeenCalled();
+  auth.begin.mockResolvedValue({
+    method: "login",
+    status: "pending",
+    flowId: "browser-attempt",
+    url: "https://auth.openai.com/authorize",
+  });
+  await act(async () => button("Continue")!.click());
+  expect(auth.begin).toHaveBeenCalledExactlyOnceWith("codex", "login");
 });
