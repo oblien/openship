@@ -64,6 +64,7 @@ import {
 } from "./openresty-lua";
 import { reloadBareOpenResty } from "./openresty-reload";
 import {
+  assertLocalHostExecutionAllowed,
   safeErrorMessage,
   withKeyedMutex,
   isLoopbackHost,
@@ -1320,6 +1321,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private nginxVersion: NginxVersion | undefined;
 
   constructor(opts: NginxProviderOptions) {
+    if (!opts.executor) assertLocalHostExecutionAllowed();
     assertValidAcmeOptions(opts);
     this.sitesDir = opts.paths.sitesDir;
     this.nginxVersion = opts.paths.nginxVersion;
@@ -1684,6 +1686,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       return this.executor.exec(full);
     }
     try {
+      assertLocalHostExecutionAllowed();
       const { stdout } = await execFileAsync(command, args);
       return stdout;
     } catch (err) {
@@ -3365,6 +3368,7 @@ ${serveLocation}
       return;
     }
 
+    assertLocalHostExecutionAllowed();
     if (this.containerEdge) {
       await execFileAsync("sh", ["-lc", this.reloadCommand], { timeout: 15_000 });
       return;
