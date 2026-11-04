@@ -1,10 +1,10 @@
 {
   "$schema": "https://openship.io/app.schema.json",
-  "available": false,
+  "available": true,
   "verified": true,
   "id": "pgadmin4",
   "name": "pgAdmin4",
-  "description": "Browser-based administration and SQL client for PostgreSQL — point it at any Postgres server, not only one deployed here.",
+  "description": "Browser-based administration and SQL client for PostgreSQL \u2014 point it at any Postgres server, not only one deployed here.",
   "kind": "template",
   "logo": "pgadmin4",
   "category": "database",
@@ -16,9 +16,12 @@
       "name": "pgadmin4",
       "image": "dpage/pgadmin4:9.18",
       "exposed": true,
-      "ports": ["8230:5050"],
       "exposedPort": 5050,
-      "routes": [{ "port": 5050 }],
+      "routes": [
+        {
+          "port": 5050
+        }
+      ],
       "restart": "unless-stopped",
       "volumes": ["pgadmin4_data:/var/lib/pgadmin"],
       "environment": {
@@ -133,5 +136,6 @@
         "description": "Saved server connections and preferences stay on a project-scoped volume across deployments."
       }
     ]
-  }
+  },
+  "minEngine": "0.9.0"
 }

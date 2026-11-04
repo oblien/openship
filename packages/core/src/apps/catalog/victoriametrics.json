@@ -9,11 +9,7 @@
   "kind": "template",
   "logo": "victoriametrics",
   "category": "analytics",
-  "tags": [
-    "monitoring",
-    "metrics",
-    "observability"
-  ],
+  "tags": ["monitoring", "metrics", "observability"],
   "framework": "docker-compose",
   "configFields": [
     {
@@ -29,9 +25,6 @@
     {
       "name": "victoriametrics",
       "image": "victoriametrics/victoria-metrics:v1.154.1",
-      "ports": [
-        "8223:8428"
-      ],
       "exposedPort": 8428,
       "exposed": true,
       "commandArgv": [
@@ -40,17 +33,10 @@
         "-envflag.enable",
         "-httpAuth.username=admin"
       ],
-      "secretEnv": [
-        "httpAuth_password"
-      ],
-      "volumes": [
-        "victoriametrics_data:/storage"
-      ],
+      "secretEnv": ["httpAuth_password"],
+      "volumes": ["victoriametrics_data:/storage"],
       "healthcheck": {
-        "test": [
-          "CMD-SHELL",
-          "wget -q -O /dev/null http://127.0.0.1:8428/health || exit 1"
-        ],
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8428/health || exit 1"],
         "interval": "15s",
         "timeout": "5s",
         "retries": 6,
@@ -98,5 +84,15 @@
         "description": "Basic auth with a generated password."
       }
     ]
-  }
+  },
+  "repository": "https://github.com/VictoriaMetrics/VictoriaMetrics",
+  "endpoints": [
+    {
+      "service": "victoriametrics",
+      "port": 8428,
+      "label": "VictoriaMetrics",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ]
 }

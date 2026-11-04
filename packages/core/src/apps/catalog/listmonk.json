@@ -1,8 +1,8 @@
 {
   "$schema": "https://openship.io/app.schema.json",
-  "available": false,
+  "available": true,
   "verified": true,
-  "minEngine": "0.6.6",
+  "minEngine": "0.9.0",
   "id": "listmonk",
   "name": "Listmonk",
   "description": "Self-hosted newsletter and mailing list manager, with a private PostgreSQL database and a preconfigured administrator.",
@@ -34,9 +34,12 @@
       "name": "listmonk",
       "image": "listmonk/listmonk:v6.2.0",
       "exposed": true,
-      "ports": ["8226:9000"],
       "exposedPort": 9000,
-      "routes": [{ "port": 9000 }],
+      "routes": [
+        {
+          "port": 9000
+        }
+      ],
       "restart": "unless-stopped",
       "dependsOn": ["listmonk-db"],
       "commandArgv": ["sh", "-c", "./listmonk --install --idempotent --yes && exec ./listmonk"],
@@ -153,7 +156,7 @@
       },
       {
         "title": "No per-subscriber fees",
-        "description": "Self-hosted — no monthly list-size pricing."
+        "description": "Self-hosted \u2014 no monthly list-size pricing."
       }
     ]
   }

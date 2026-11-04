@@ -29,8 +29,7 @@
         "retries": 12,
         "startPeriod": "10s"
       },
-      "restart": "unless-stopped",
-      "ports": ["8221:8090"]
+      "restart": "unless-stopped"
     }
   ],
   "configFields": [
@@ -99,5 +98,6 @@
       "kind": "http",
       "defaultMode": "domain"
     }
-  ]
+  ],
+  "minEngine": "0.9.0"
 }
