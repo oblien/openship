@@ -54,6 +54,18 @@ describe("shared GitHub Check transport", () => {
     h.request.mockImplementation(async ({ method }) => method === "GET" ? { check_runs: [] } : {});
     expect(await syncGitHubCheck(ctx, "acme", "app", null, update)).toMatchObject({ id: null, error: "GitHub did not confirm the created Check" });
   });
+  it("recovers a deleted saved Check before creating and verifying another", async () => {
+    const beforeCreate = vi.fn().mockResolvedValue(undefined);
+    h.request.mockImplementation(async ({ url, method }) => {
+      if (url.endsWith("/check-runs/17")) throw new GitHubApiError(404, "Not Found", new Headers());
+      if (method === "GET") return { check_runs: [] };
+      expect(beforeCreate).toHaveBeenCalledOnce();
+      return { id: 42 };
+    });
+    expect(await syncGitHubCheck(ctx, "acme", "app", "17", update, { verifyIdentity: true, beforeCreate }))
+      .toEqual({ id: "42", error: null });
+    expect(h.request.mock.calls.map(([request]) => request.method)).toEqual(["GET", "GET", "POST"]);
+  });
   it("redacts env values, tokens and authenticated URLs while retaining a useful error", () => {
     expect(checkFailureSummary("Build failed for secret-value at https://user:secret@host.test/log?token=hidden", ["secret-value"]))
       .toBe("Build failed for [REDACTED] at https://host.test/log");

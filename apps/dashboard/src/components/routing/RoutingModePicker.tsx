@@ -4,11 +4,7 @@ import React from "react";
 import { useI18n } from "@/components/i18n-provider";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import type { PublicEndpoint } from "@/context/deployment/types";
-import {
-  getWwwDomainRouting,
-  setWwwDomainRouting,
-  toggleWwwDomainRouting,
-} from "@/lib/www-domain-routing";
+
 
 /**
  * Free / Custom / None routing picker, rendered as a COMPACT segmented tab (the
@@ -69,12 +65,6 @@ export function RoutingModePicker({
   const { t } = useI18n();
   const w = t.widgets.routing.settingsCard;
 
-  const www = getWwwDomainRouting(endpoints);
-  const changeWwwEndpoints = (next: PublicEndpoint[]) =>
-    onEndpointsChange(
-      next,
-      hasServer ? next.find((endpoint) => !endpoint.redirectTo)?.port || runtimePort : undefined,
-    );
   const tabs: Array<{ value: RoutingMode; label: string }> = [
     { value: "free", label: w.free },
     { value: "custom", label: w.custom },
@@ -115,20 +105,7 @@ export function RoutingModePicker({
             hideTypeToggle
             allowRedirects={allowRedirects}
             onChange={onEndpointsChange}
-            wwwToggle={
-              mode === "custom"
-                ? {
-                    show: !!www,
-                    included: www?.included ?? false,
-                    apex: www?.apex ?? null,
-                    mode: www?.mode ?? null,
-                    onModeChange: (mode) =>
-                      changeWwwEndpoints(setWwwDomainRouting(endpoints, mode)),
-                    onToggle: (on) =>
-                      changeWwwEndpoints(toggleWwwDomainRouting(endpoints, on, allowRedirects)),
-                  }
-                : undefined
-            }
+            allowWww={mode === "custom"}
           />
         </div>
       )}

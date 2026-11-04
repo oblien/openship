@@ -190,7 +190,7 @@ it("clears incoming redirects when the serving hostname is removed", async () =>
     [
       expect.objectContaining({
         customDomain: "www.example.com",
-        redirectTo: undefined,
+        redirectTo: "",
         redirectStatus: undefined,
       }),
     ],
