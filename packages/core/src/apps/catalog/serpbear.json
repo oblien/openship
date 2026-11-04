@@ -16,6 +16,7 @@
       "name": "serpbear",
       "image": "towfiqi/serpbear:3.1.2",
       "exposed": true,
+      "ports": ["3000:3000"],
       "exposedPort": 3000,
       "routes": [{ "port": 3000 }],
       "restart": "unless-stopped",
