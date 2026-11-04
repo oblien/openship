@@ -8774,6 +8774,9 @@
           "name": "qbittorrent",
           "image": "qbittorrentofficial/qbittorrent-nox:5.2.4-1",
           "exposed": true,
+          "ports": [
+            "8080:8080"
+          ],
           "exposedPort": 8080,
           "routes": [
             {
