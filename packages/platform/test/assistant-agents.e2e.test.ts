@@ -17,6 +17,8 @@ it.skipIf(process.env.OPENSHIP_ASSISTANT_E2E !== "1")(
       const health = await client.mindwire.health();
       expect(health.version).toBe(SDK_VERSION);
       expect(health.botsVersion).toBeGreaterThanOrEqual(9);
+      const methods = await client.mindwire.withAgent("codex").auth.methods();
+      expect(methods.map((method) => method.id)).toContain("loginDevice");
       const agents = await nativeAgents(client);
       const saved = [];
       for (const provider of ["codex", "claude"] as const) {
