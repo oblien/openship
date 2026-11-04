@@ -26,7 +26,8 @@ import {
 } from "../../runtime/docker-exec-stream";
 import { ensureScopedVolumeName, isHostPathSource } from "../../runtime/volume-namespace";
 import { resolveCloudProjectVolumeName } from "../../runtime/cloud/docker-volume";
-import { safeDumpCommand, safeRestoreCommand, type DumpCodec } from "../common/dump-pipeline";
+import { safeDumpCommand, safePipelineFragment, safeRestoreCommand, type DumpCodec } from "../common/dump-pipeline";
+import { DEFAULT_CONTAINER_LOG_CONFIG } from "../../container-logging";
 import { matchBackupSource } from "../common/source-match";
 import { registerExecutor } from "../registry";
 import type {
@@ -721,10 +722,8 @@ export class DockerBackupExecutor implements BackupExecutor {
     body: Readable,
     opts?: ReceiveStreamOpts,
   ): Promise<{ bytesWritten: number }> {
-    // Restore path — re-uses the helper-container pattern but inverted:
-    // stdin is the tar stream, the helper extracts into /mnt.
-    // Checked before anything is created: past helper.start() the target is
-    // already being cleared, so this is the last free place to bail.
+    // Stage and validate on the destination daemon before mounting the target.
+    // A broken stdin transport must never turn EOF into permission to clear data.
     opts?.signal?.throwIfAborted();
     const sources = await this.listSources(service);
     const source = matchBackupSource(sources, targetSourceId);
@@ -740,50 +739,16 @@ export class DockerBackupExecutor implements BackupExecutor {
     await this.ensureImage(helperImage);
 
     const isFile = opts?.sourceIsFile ?? (source.type === "bind" && source.isDirectory === false);
-    if (isFile) {
-      if (source.type !== "bind") throw new Error("A file archive requires a bind-file destination");
-      // Docker creates a missing Binds source as a directory. Create only this
-      // file first, through the destination daemon, so its mount type is exact.
-      await this.withHelper({
-        Image: helperImage, NetworkDisabled: true,
-        HostConfig: { Binds: [`${posix.dirname(source.source)}:/destination`], AutoRemove: false },
-        Cmd: ["sh", "-ec", `path=${shellQuote(`/destination/${posix.basename(source.source)}`)}; [ ! -d "$path" ]; if [ ! -e "$path" ]; then touch "$path"; fi`],
-      }, async helper => {
-        await helper.start();
-        const exit = await helper.wait();
-        if (exit.StatusCode !== 0) throw new Error(`Cannot prepare file destination ${source.source}`);
-      });
-    }
 
-    // ORDER IS THE FIX HERE, and it is the difference between a failed restore and
-    // destroyed data.
-    //
-    // This used to be `apk add --no-cache zstd >/dev/null 2>&1; find /mnt -delete; zstd
-    // -d -c | tar -x`. Three defects compounding:
-    //   1. `apk add` joined with `;`, output discarded — a host with no egress (and
-    //      egress is required only on this codec, hence `NetworkDisabled` below) simply
-    //      has no zstd.
-    //   2. The target was CLEARED before anything checked that the decompressor exists.
-    //   3. The pipeline reports tar's status, and `tar -x` reading EOF exits 0.
-    // Verified locally: `sh -c 'find out -delete; nonexistent_zstd -d -c | tar -x -C out'`
-    // exits 0 with `out/` emptied. So a volume restore wiped the volume, extracted
-    // nothing, returned success — and `receiveStream` counts `bytesWritten` off `body`,
-    // not off tar, so the caller saw a healthy byte count. Upstream, the restore's own
-    // hasher never completes, and `digestIfComplete` treats that as "unverifiable, not a
-    // mismatch" (right in general), so nothing objected and the run went `succeeded`.
-    //
-    // Strictly worse than #611: that one failed to take a backup, this one deletes your
-    // data and reports a green restore.
-    //
-    // Now: install, PROVE the tool is there, and only then destroy anything — and the
-    // pipeline goes through `safeRestoreCommand`, so the decompressor's status can no
-    // longer hide behind tar's.
+    // Prove decompression and archive integrity before touching the destination.
+    // Staging stays on the destination daemon in the disposable helper, never
+    // on the API host. withHelper removes it on success, failure and cancellation.
     const restoreCodec: DumpCodec = compression === "none" ? "none" : compression;
     const prelude = [
       compression === "zstd" ? "apk add --no-cache zstd >/dev/null 2>&1 || true" : null,
       compression === "zstd"
         ? 'command -v zstd >/dev/null 2>&1 || { echo "openship: zstd is not available in the ' +
-          'restore helper and could not be installed (the host may have no egress). ' +
+          "restore helper and could not be installed (the host may have no egress). " +
           'Refusing to clear the target: nothing was written and your data is untouched." >&2; ' +
           "exit 90; }"
         : null,
@@ -791,8 +756,6 @@ export class DockerBackupExecutor implements BackupExecutor {
         ? 'command -v gzip >/dev/null 2>&1 || { echo "openship: gzip is not available in the ' +
           'restore helper. Refusing to clear the target; your data is untouched." >&2; exit 90; }'
         : null,
-      // Only now, with every tool proven present.
-      opts?.clearTarget && !isFile ? "find /mnt -mindepth 1 -delete 2>/dev/null || true" : null,
     ]
       .filter(Boolean)
       .join("\n");
@@ -800,13 +763,39 @@ export class DockerBackupExecutor implements BackupExecutor {
     return this.withHelper(
       {
         Image: helperImage,
-        Cmd: safeRestoreCommand(restoreCodec, "tar -x -C /mnt", prelude),
+        Cmd: [
+          "sh",
+          "-ec",
+          [
+            prelude,
+            "cat > /restore/archive.input",
+            "printf 'openship-restore-bytes: '; wc -c < /restore/archive.input",
+            compression === "none"
+              ? "mv /restore/archive.input /restore/archive.tar"
+              : `( ${safeRestoreCommand(restoreCodec, "cat > /restore/archive.tar")[2]} ) < /restore/archive.input`,
+            "rm -f /restore/archive.input",
+            // tar treats an empty stream as success on some implementations.
+            "test -s /restore/archive.tar",
+            // Read through a pipe so tar cannot seek past truncated file contents.
+            // Drain valid trailing padding too, without hiding an archive read error.
+            safePipelineFragment(
+              "cat /restore/archive.tar",
+              "tar -tf - >/dev/null && cat >/dev/null",
+              { left: "the staged archive read", right: "archive validation" },
+            ),
+          ].join("\n"),
+        ],
         // AutoRemove is OFF deliberately, and this is the fix for the `404 no such
         // container` in #434: with it on, the daemon could reap the helper before
         // /containers/{id}/wait answered, and the exit status was then unknowable.
         // withHelper reaps instead — which also plugs a leak AutoRemove never
         // covered, since it only fires for a container that actually started.
-        HostConfig: { Binds: [`${source.source}:/mnt${isFile ? "/file" : ""}`], AutoRemove: false },
+        Volumes: { "/restore": {} },
+        HostConfig: {
+          AutoRemove: false,
+          // The receipt must remain readable even when the daemon disables logs.
+          LogConfig: DEFAULT_CONTAINER_LOG_CONFIG,
+        },
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
@@ -830,10 +819,63 @@ export class DockerBackupExecutor implements BackupExecutor {
           ? createAbortWatch(
               opts.signal,
               `Restore of "${targetSourceId}" on service ${service.name} was cancelled ` +
-                `mid-extract. The target holds partial data.`,
+                `during restore. The target may hold partial data if extraction started.`,
             )
           : undefined;
 
+        let failTransfer!: (error: Error) => void;
+        const transferFailed = new Promise<never>((_, reject) => {
+          failTransfer = reject;
+        });
+        void transferFailed.catch(() => {
+          // diagnostics-ignore: Observe early rejection during helper startup; awaitSuccess propagates it below.
+        });
+        const onError = (error: Error) => failTransfer(error);
+        const onBodyClose = () => {
+          if (!body.readableEnded) failTransfer(new Error("Restore source closed before completing the archive"));
+        };
+        body.on("error", onError);
+        body.on("close", onBodyClose);
+        const timeoutMs = opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
+        const exitDeadline = timeoutMs === 0 ? Infinity : Date.now() + timeoutMs;
+        const cancelled = Promise.race([
+          transferFailed,
+          ...(abortWatch ? [abortWatch.promise] : []),
+        ]);
+        void cancelled.catch(() => {
+          // diagnostics-ignore: Observe early cancellation; awaitSuccess races and propagates this same promise.
+        });
+        const awaitSuccess = async (
+          container: Dockerode.Container,
+          ready: () => boolean,
+          errChunks: Buffer[] = [],
+        ) => {
+          const waitResult = await this.awaitHelperExit(container, watchdog, ready, {
+            timeoutMs: timeoutMs === 0 ? 0 : Math.max(1, exitDeadline - Date.now()),
+            label: `Restore of "${targetSourceId}" on service ${service.name}`,
+            note: "The target may hold partial data if extraction started.",
+            cancelled,
+          });
+          if (waitResult.StatusCode === 0) return;
+          const attached = Buffer.concat(
+            splitDockerFrames(Buffer.concat(errChunks)).map((frame) => frame.data),
+          );
+          const raw =
+            attached.length > 0
+              ? attached
+              : await helperLogText(container, exitDeadline - Date.now(), [
+                  watchdog.promise,
+                  cancelled,
+                ]);
+          const detail = raw
+            .toString("utf8")
+            .replace(/[^\x20-\x7e\n]+/g, " ")
+            .trim()
+            .slice(-500);
+          throw new Error(
+            `Restore helper exited with code ${waitResult.StatusCode}${detail ? `: ${detail}` : ""}`,
+          );
+        };
         try {
           // Hand-rolled upgrade instead of dockerode's `attach({hijack:true})`: this
           // attach exists to WRITE the archive to the helper's stdin, and dockerode has
@@ -846,6 +888,7 @@ export class DockerBackupExecutor implements BackupExecutor {
             stdout: true,
             stderr: true,
           });
+          stream.on("error", onError);
           await helper.start();
 
           let bytesWritten = 0;
@@ -863,40 +906,77 @@ export class DockerBackupExecutor implements BackupExecutor {
           });
           body.on("end", () => {
             bodyEnded = true;
-            watchdog.touch();
+            // Validation and extraction use local daemon I/O after upload, with
+            // no further network traffic. The overall deadline and abort watch
+            // still bound those phases; upload silence no longer indicates a stall.
+            watchdog.dispose();
           });
           body.pipe(stream);
 
-          const timeoutMs = opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
-          const exitDeadline = timeoutMs === 0 ? Infinity : Date.now() + timeoutMs;
-          const waitResult = await this.awaitHelperExit(helper, watchdog, () => bodyEnded, {
-            timeoutMs,
-            label: `Restore of "${targetSourceId}" on service ${service.name}`,
-            note: "The target may hold partial data.",
-            cancelled: abortWatch?.promise,
-          });
-          if (waitResult.StatusCode !== 0) {
-            // The attach stream can close before the helper's stderr reaches it, so
-            // fall back to the daemon's log of the (still existing) helper.
-            const attached = Buffer.concat(
-              splitDockerFrames(Buffer.concat(errChunks)).map((frame) => frame.data),
-            );
-            const raw =
-              attached.length > 0
-                ? attached
-                : await helperLogText(helper, exitDeadline - Date.now(), [
-                    watchdog.promise,
-                    ...(abortWatch ? [abortWatch.promise] : []),
-                  ]);
-            const detail = raw
-              .toString("utf8")
-              .replace(/[^\x20-\x7e\n]+/g, " ")
-              .trim()
-              .slice(-500);
-            throw new Error(
-              `Restore helper exited with code ${waitResult.StatusCode}${detail ? `: ${detail}` : ""}`,
+          await awaitSuccess(helper, () => bodyEnded, errChunks);
+          if (!bodyEnded)
+            throw new Error("Restore helper exited before receiving the complete archive");
+          // tar may accept EOF at a member boundary. Verify the destination's
+          // actual byte count too, rather than trusting a successful socket write.
+          const receipt = await helperLogText(helper, exitDeadline - Date.now(), [
+            watchdog.promise,
+            cancelled,
+          ]);
+          const received = /^openship-restore-bytes: (\d+)\s*$/m.exec(receipt.toString("utf8"));
+          if (!received || Number(received[1]) !== bytesWritten)
+            throw new Error("Restore transfer was incomplete; the target has not been changed");
+          opts?.signal?.throwIfAborted();
+          if (isFile) {
+            if (source.type !== "bind")
+              throw new Error("A file archive requires a bind-file destination");
+            // Docker creates a missing Binds source as a directory. Create only this
+            // file first, through the destination daemon, so its mount type is exact.
+            await this.withHelper(
+              {
+                Image: helperImage,
+                NetworkDisabled: true,
+                HostConfig: {
+                  Binds: [`${posix.dirname(source.source)}:/destination`],
+                  AutoRemove: false,
+                },
+                Cmd: [
+                  "sh",
+                  "-ec",
+                  `path=${shellQuote(`/destination/${posix.basename(source.source)}`)}; [ ! -d "$path" ]; if [ ! -e "$path" ]; then touch "$path"; fi`,
+                ],
+              },
+              async (helper) => {
+                await helper.start();
+                await awaitSuccess(helper, () => true);
+              },
             );
           }
+          // Only this second helper can write to the destination. The validated
+          // archive is inherited read-only from the stopped staging helper.
+          await this.withHelper(
+            {
+              Image: helperImage,
+              NetworkDisabled: true,
+              HostConfig: {
+                Binds: [`${source.source}:/mnt${isFile ? "/file" : ""}`],
+                VolumesFrom: [`${helper.id}:ro`],
+                AutoRemove: false,
+              },
+              Cmd: [
+                "sh",
+                "-ec",
+                [
+                  ...(opts?.clearTarget && !isFile ? ["find /mnt -mindepth 1 -delete"] : []),
+                  "tar -xf /restore/archive.tar -C /mnt",
+                ].join("\n"),
+              ],
+            },
+            async (apply) => {
+              opts?.signal?.throwIfAborted();
+              await apply.start();
+              await awaitSuccess(apply, () => true);
+            },
+          );
           return { bytesWritten };
         } finally {
           watchdog.dispose();
@@ -907,6 +987,9 @@ export class DockerBackupExecutor implements BackupExecutor {
           // INTO the helper, and by this point we have its exit status.
           destroyQuietly(stream);
           destroyQuietly(body);
+          body.off("error", onError);
+          body.off("close", onBodyClose);
+          stream?.off("error", onError);
         }
       },
     );
@@ -934,7 +1017,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     try {
       return await fn(helper);
     } finally {
-      await helper.remove({ force: true }).catch((diagnosticFailure) => {
+      await helper.remove({ force: true, ...(spec.Volumes ? { v: true } : {}) }).catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "adapters/backup/executors/docker");
       });
     }

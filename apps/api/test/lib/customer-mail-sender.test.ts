@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ send: vi.fn(), cloud: true, relay: vi.fn() }));
+const h = vi.hoisted(() => ({
+  send: vi.fn(),
+  cloud: true,
+  relay: vi.fn(),
+  supportFrom: undefined as string | undefined,
+  billingFrom: undefined as string | undefined,
+}));
 vi.mock("nodemailer", () => ({ default: { createTransport: () => ({ sendMail: h.send }) } }));
 vi.mock("@repo/db", () => ({
   repos: { mailServer: { list: async () => [] }, instanceSettings: { get: async () => null } },
@@ -15,6 +21,12 @@ vi.mock("@repo/platform/engine/config/env", () => ({
     SMTP_USER: "sender",
     SMTP_PASS: "test-password",
     SMTP_FROM: "Configured Sender <sender@example.test>",
+    get SMTP_SUPPORT_FROM() {
+      return h.supportFrom;
+    },
+    get SMTP_BILLING_FROM() {
+      return h.billingFrom;
+    },
   },
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: h.relay }));
@@ -23,6 +35,8 @@ import { sendMail } from "@repo/platform/engine/lib/mail";
 
 beforeEach(() => {
   h.cloud = true;
+  h.supportFrom = undefined;
+  h.billingFrom = undefined;
   h.send.mockReset().mockResolvedValue({ messageId: "accepted" });
   h.relay.mockReset();
 });
@@ -34,7 +48,7 @@ describe("Cloud customer mail sender identities", () => {
     html: "<p>Welcome</p>",
     text: "Welcome",
   };
-  it("sends welcome mail from Support with a working reply address", async () => {
+  it("uses the configured sender for welcome mail and keeps replies directed to Support", async () => {
     await sendMail({
       ...mail,
       customerSender: "support",
@@ -43,22 +57,49 @@ describe("Cloud customer mail sender identities", () => {
     });
     expect(h.send).toHaveBeenCalledExactlyOnceWith({
       ...mail,
-      from: "OpenShip Support <support@openship.io>",
+      from: "Configured Sender <sender@example.test>",
       replyTo: "support@openship.io",
       messageId: "<stable@openship.io>",
     });
   });
-  it("sends invoices from no-reply without changing ordinary system mail", async () => {
+  it("uses the configured sender for invoices without changing ordinary system mail", async () => {
     await sendMail({ ...mail, customerSender: "billing" });
     expect(h.send).toHaveBeenLastCalledWith({
       ...mail,
-      from: "OpenShip Billing <noreply@openship.io>",
+      from: "Configured Sender <sender@example.test>",
     });
     await sendMail(mail);
     expect(h.send).toHaveBeenLastCalledWith({
       ...mail,
       from: "Configured Sender <sender@example.test>",
     });
+  });
+  it("uses explicitly configured customer aliases without changing system mail", async () => {
+    h.supportFrom = "OpenShip Support <support@example.test>";
+    h.billingFrom = "OpenShip Billing <billing@example.test>";
+    for (const [customerSender, from] of [
+      ["support", h.supportFrom],
+      ["billing", h.billingFrom],
+    ] as const) {
+      await sendMail({ ...mail, customerSender });
+      expect(h.send).toHaveBeenLastCalledWith({ ...mail, from });
+    }
+    await sendMail(mail);
+    expect(h.send).toHaveBeenLastCalledWith({
+      ...mail,
+      from: "Configured Sender <sender@example.test>",
+    });
+  });
+  it("treats blank customer aliases as unconfigured", async () => {
+    h.supportFrom = " ";
+    h.billingFrom = "";
+    for (const customerSender of ["support", "billing"] as const) {
+      await sendMail({ ...mail, customerSender });
+      expect(h.send).toHaveBeenLastCalledWith({
+        ...mail,
+        from: "Configured Sender <sender@example.test>",
+      });
+    }
   });
   it("never lets a connected installation select a Cloud customer sender", async () => {
     h.cloud = false;

@@ -1768,6 +1768,33 @@ describe("triggerDeployment", () => {
     },
   );
 
+  it("falls back to stored image-only Compose services when localPath is unreadable with ENOENT (#1583)", async () => {
+    const enoent = Object.assign(new Error("ENOENT: no such file or directory, stat '/home/ubuntu/calrs'"), {
+      code: "ENOENT",
+    });
+    repos.project.findById.mockResolvedValue(baseProject({
+      composePath: "docker-compose.yml",
+      localPath: "/home/ubuntu/calrs",
+      gitOwner: null,
+      gitRepo: null,
+      gitProvider: "local",
+      gitUrl: null,
+    }));
+    repos.service.listByProject.mockResolvedValue([
+      {
+        ...composeServices[0],
+        build: undefined,
+        dockerfile: undefined,
+        image: "ghcr.io/olivierlambert/calrs:latest",
+      },
+    ]);
+    resolveProjectInfo.mockRejectedValueOnce(enoent);
+    await expect(triggerDeployment(ctx, { projectId: "project-1", branch: "main" }))
+      .resolves.toBeDefined();
+    expect(repos.deployment.create).toHaveBeenCalled();
+    expect(kickoffBuild).toHaveBeenCalled();
+  });
+
   it.each([null, "poisoned"])(
     "preserves a %s legacy Compose value without blocking code-only webhooks (#893)",
     async (baseline) => {

@@ -30,6 +30,9 @@ const BRAND_LOGO: Record<
   // account whose avatar is not the logo — resolve the docs site favicon (the
   // bear mark), like convex above.
   serpbear: { src: "https://www.google.com/s2/favicons?domain=docs.serpbear.com&sz=128" },
+  // simpleicons carries no pgAdmin mark (cdn.simpleicons.org/pgadmin4 404s) —
+  // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
+  pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
   pocketbase: { slug: "pocketbase" },
   mongodb: { slug: "mongodb" },
   n8n: { slug: "n8n" },
@@ -50,6 +53,14 @@ const BRAND_LOGO: Record<
   nocodb: { src: "/app-logos/nocodb.svg" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
+  appwrite: { slug: "appwrite" },
+  alertmanager: { slug: "prometheus" },
+  listmonk: { src: "/app-logos/listmonk.png" },
+  prometheus: { slug: "prometheus" },
+  "otel-collector": { slug: "opentelemetry" },
+  // simpleicons has no Loki mark, so the official logo is vendored.
+  loki: { src: "/app-logos/loki.png" },
+  victoriametrics: { slug: "victoriametrics" },
   gitea: { slug: "gitea" },
   "paperless-ngx": { src: "/app-logos/paperless-ngx.svg" },
   "wiki-js": { src: "/app-logos/wiki-js.png", fill: true },
@@ -108,6 +119,8 @@ const BRAND_LOGO: Record<
   // MindWire's own monochrome mark is vendored so the catalog works offline and
   // the brand stays legible on both dashboard themes.
   mindwire: { src: "/app-logos/mindwire.svg", fill: true },
+  // Beszel is not on simpleicons; vendor its official gradient B mark.
+  beszel: { src: "/app-logos/beszel.svg" },
 };
 
 // The Valkey app retains the historical "redis" template ID. Keep that alias

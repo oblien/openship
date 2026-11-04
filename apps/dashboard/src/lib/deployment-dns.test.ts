@@ -17,6 +17,82 @@ const endpoint = (customDomain: string) => ({
 });
 
 describe("deploymentDnsTargets", () => {
+  const destination = { deployTarget: "server" as const, serverId: "server-1" };
+  const deployed = {
+    ...destination,
+    activeDeploymentId: "active-deployment",
+    domains: [{ id: "domain-api", hostname: "API.EXAMPLE.COM" }],
+  };
+
+  it("skips existing hostnames on the same deployed destination", () => {
+    expect(
+      deploymentDnsTargets(
+        {
+          ...destination,
+          publicEndpoints: [endpoint("api.example.com")],
+          services: [],
+        },
+        deployed,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps only new hostnames, including a newly enabled www route", () => {
+    expect(
+      deploymentDnsTargets(
+        {
+          ...destination,
+          publicEndpoints: [
+            endpoint("api.example.com"),
+            endpoint("www.api.example.com"),
+            endpoint("new.example.com"),
+          ],
+          services: [],
+        },
+        deployed,
+      ),
+    ).toEqual([
+      { hostname: "www.api.example.com", includeWww: false },
+      { hostname: "new.example.com", includeWww: false },
+    ]);
+  });
+
+  it.each([
+    { ...deployed, activeDeploymentId: null },
+    { ...deployed, serverId: "another-server" },
+    { ...deployed, deployTarget: "local" },
+    { ...deployed, deployTarget: undefined },
+  ])("keeps DNS setup for a first deployment or changed/unknown destination (%j)", (project) => {
+    expect(
+      deploymentDnsTargets(
+        {
+          ...destination,
+          publicEndpoints: [endpoint("api.example.com")],
+          services: [],
+        },
+        project,
+      ),
+    ).toEqual([{ hostname: "api.example.com", includeWww: false }]);
+  });
+
+  it("recognizes an unchanged Cloud workspace and prompts when it changes", () => {
+    const config = {
+      deployTarget: "cloud" as const,
+      workspaceId: "workspace-1",
+      serverId: "execution-1",
+      publicEndpoints: [endpoint("api.example.com")],
+      services: [],
+    };
+    const project = {
+      ...deployed,
+      deployTarget: "cloud",
+      workspaceId: "workspace-1",
+      serverId: "execution-1",
+    };
+    expect(deploymentDnsTargets(config, project)).toEqual([]);
+    expect(deploymentDnsTargets({ ...config, workspaceId: "workspace-2" }, project)).toHaveLength(1);
+  });
+
   it("finds a Docker single-app custom domain", () => {
     expect(deploymentDnsTargets({ publicEndpoints: [endpoint("app.example.com")], services: [] }))
       .toEqual([{ hostname: "app.example.com", includeWww: false }]);

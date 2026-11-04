@@ -39,7 +39,8 @@ export type SendMailOptions = {
   replyTo?: string;
   /** Stable identity for durable deliveries retried after a process restart. */
   messageId?: string;
-  /** Internal SaaS-only identities; never forwarded through the Cloud mail relay. */
+  /** Cloud customer alias, falling back to the transport's configured sender.
+   * Never forwarded through the Cloud mail relay. */
   customerSender?: "support" | "billing";
   /**
    * Preferred transport source. Default "auto" — uses the platform
@@ -507,9 +508,14 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
   // Try each transport in priority order; fail over to the next on a send
   // error so one broken source (e.g. wrong instance-SMTP creds) doesn't block
   // delivery when another can carry it. Throw only when every source fails.
+  // A mailbox address alone does not grant SMTP send-as permission. Use an
+  // explicitly configured alias or retain the sender authorized for this source.
+  const customerFrom = opts.customerSender
+    ? { support: env.SMTP_SUPPORT_FROM, billing: env.SMTP_BILLING_FROM }[
+        opts.customerSender
+      ]?.trim() || undefined
+    : undefined;
   const message = {
-    ...(opts.customerSender ? { from: opts.customerSender === "support"
-      ? "OpenShip Support <support@openship.io>" : "OpenShip Billing <noreply@openship.io>" } : {}),
     to: opts.to,
     subject: opts.subject,
     html: opts.html,
@@ -522,7 +528,7 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     const active = chain[i];
     try {
       await active.transport.sendMail({
-        from: active.from,
+        from: active.source === "env" ? customerFrom ?? active.from : active.from,
         ...message,
       });
       return true;

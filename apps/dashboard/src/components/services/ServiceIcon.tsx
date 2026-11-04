@@ -52,7 +52,15 @@ const IMAGE_BRAND: Record<string, string> = {
   varnish: "varnish",
   grafana: "grafana",
   prometheus: "prometheus",
-  loki: "grafana",
+  loki: "loki",
+  alertmanager: "alertmanager",
+  "victoria-metrics": "victoriametrics",
+  beszel: "beszel",
+  listmonk: "listmonk",
+  appwrite: "appwrite",
+  pgadmin4: "pgadmin4",
+  "opentelemetry-collector-contrib": "opentelemetry",
+  "otel-collector": "opentelemetry",
   n8n: "n8n",
   supabase: "supabase",
   keycloak: "keycloak",
@@ -126,8 +134,8 @@ export function ServiceIcon({
   };
   className?: string;
 }) {
-  const roleIcon = NAME_ROLE.find((r) => r.re.test(service.name))?.icon ??
-    (service.exposed ? "globe" : "window");
+  const roleIcon =
+    NAME_ROLE.find((r) => r.re.test(service.name))?.icon ?? (service.exposed ? "globe" : "window");
   const brand = brandSlugForImage(service.image);
   if (brand) {
     return <AppLogo slug={brand} className={className} icon={roleIcon} />;
