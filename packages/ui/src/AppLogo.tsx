@@ -49,6 +49,7 @@ const BRAND_LOGO: Record<
   prometheus: { slug: "prometheus" },
   // simpleicons has no Loki mark, so the official logo is vendored.
   loki: { src: "/app-logos/loki.png" },
+  victoriametrics: { slug: "victoriametrics" },
   gitea: { slug: "gitea" },
   "paperless-ngx": { src: "/app-logos/paperless-ngx.svg" },
   "wiki-js": { src: "/app-logos/wiki-js.png", fill: true },
