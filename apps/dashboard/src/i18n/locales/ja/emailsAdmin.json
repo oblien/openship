@@ -136,6 +136,9 @@
     "dnsHint": "プロバイダーの送信ホップレコードが「DNS」タブに表示されるようになりました。完全な到達率を確保するために公開して検証してください。"
   },
   "overview": {
+    "calendarContacts": "カレンダーと連絡先",
+    "calendarContactsDesc": "Radicale でお使いのアプリのカレンダーと連絡先を同期できます。上記の IMAP ホスト名と既存のメールアカウントを使用します。",
+    "calendarContactsSetup": "Radicale を設定",
     "mailServer": "メールサーバー",
     "protocolDetails": "プロトコルの詳細 →",
     "hostname": "ホスト名",

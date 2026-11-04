@@ -136,6 +136,35 @@ it("installs generic Cloud webmail with encrypted client secrets and no managed-
 });
 
 it.each(["self-hosted", "cloud"] as const)(
+  "installs Radicale through the shared app pipeline with mailbox auth and domain routing (%s)",
+  async (mode) => {
+    const template = getAppTemplate("radicale")!;
+    listServicesMock.mockResolvedValue([{ id: "svc-radicale", name: "radicale" }]);
+    await installApp(ctx, {
+      templateId: "radicale",
+      ...(mode === "cloud" ? { serverId: "cloud-server", deployTarget: "cloud" as const } : {}),
+      config: { IMAP_HOST: "mail.example.com" },
+      routes: [
+        { service: "radicale", port: 5232, mode: "custom", customDomain: "dav.example.com" },
+      ],
+    });
+    expect(createServiceMock).toHaveBeenCalledOnce();
+    expect(createServiceMock.mock.calls[0]?.[2]).toMatchObject({
+      name: "radicale",
+      image: template.services![0]!.image,
+      commandArgv: template.services![0]!.commandArgv,
+      advanced: { entrypoint: template.services![0]!.entrypointArgv },
+      volumes: ["radicale_data:/var/lib/radicale"],
+      ports: [],
+      publicEndpoints: [{ port: 5232, domainType: "custom", customDomain: "dav.example.com" }],
+    });
+    expect(setEnvMock.mock.calls.find((call) => call[2] === "svc-radicale")?.[3].vars).toEqual([
+      { key: "IMAP_HOST", value: "mail.example.com", isSecret: false },
+    ]);
+  },
+);
+
+it.each(["self-hosted", "cloud"] as const)(
   "installs WordPress from its official image with runtime setup and encrypted credentials (%s)",
   async (mode) => {
     listServicesMock.mockResolvedValue([
