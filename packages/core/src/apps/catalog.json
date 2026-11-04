@@ -8775,7 +8775,7 @@
           "image": "towfiqi/serpbear:3.1.2",
           "exposed": true,
           "ports": [
-            "3000:3000"
+            "8221:3000"
           ],
           "exposedPort": 3000,
           "routes": [
