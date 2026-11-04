@@ -37,6 +37,7 @@ import {
   type AccessSelection,
   type ScopeAction,
   type TemplateContext,
+  type AccessTemplateId,
 } from "./mcp-access-templates";
 
 export interface AccessControlEditorProps {
@@ -76,7 +77,10 @@ export interface AccessControlEditorProps {
    * legitimate "All projects" row.
    */
   suppressWildcardTypes?: ResourceType[];
-  layout?: "two-column" | "stacked";
+  layout?: "two-column" | "stacked" | "dialog";
+  /** A surface can offer relevant presets while sharing the same grant editor. */
+  templates?: readonly AccessTemplateId[];
+  defaultTemplate?: AccessTemplateId;
   /** The caller's own action bar. Verbs differ per surface; the nouns above do not. */
   footer?: ReactNode;
   /** Rendered under the summary — 403 recovery, save errors, surface-specific notes. */
@@ -96,6 +100,8 @@ export function AccessControlEditor({
   show,
   suppressWildcardTypes = ["project"],
   layout = "two-column",
+  templates,
+  defaultTemplate = "agent",
   footer,
   notice,
   disabled,
@@ -112,8 +118,10 @@ export function AccessControlEditor({
           active={selection.template}
           orgName={orgName}
           disabled={disabled}
+          templates={templates}
+          recommended={defaultTemplate}
           onPick={(id) => dispatch({ type: "pickTemplate", id })}
-          onReset={() => dispatch({ type: "pickTemplate", id: "agent" })}
+          onReset={() => dispatch({ type: "pickTemplate", id: defaultTemplate })}
         />
       )}
       {/* An unscoped selection has nothing to edit — its whole meaning is "no
@@ -159,6 +167,19 @@ export function AccessControlEditor({
         {left}
         {right}
         {footer}
+      </div>
+    );
+  }
+
+  // Dialogs own their scroll area and pinned actions; avoid a second viewport-sized rail.
+  if (layout === "dialog") {
+    return (
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {left}
+        <div className="space-y-4">
+          {right}
+          {footer}
+        </div>
       </div>
     );
   }

@@ -393,7 +393,8 @@ describe("Oblien billing SDK and transport contract", () => {
         details: { providerCode: code },
       });
       expect(error.message).toContain(message);
-      expect(error.details).not.toHaveProperty("checkoutRejected");
+      if (code === "capacity_checkout_limit") expect(error.details.checkoutRejected).toBe(true);
+      else expect(error.details).not.toHaveProperty("checkoutRejected");
       expect(error.details).not.toHaveProperty("checkoutExpired");
       expect(JSON.stringify(error)).not.toMatch(/private|other-customer|test-secret/);
       expect(fetcher).toHaveBeenCalledOnce();

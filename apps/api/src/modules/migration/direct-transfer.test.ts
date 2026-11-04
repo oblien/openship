@@ -144,6 +144,53 @@ const bootstrapOk: Handler[] = [
 ];
 
 describe("establishDirectLink", () => {
+  test.each(["push", "pull"] as const)(
+    "%s returns the loaded ID for digest images without a docker tag",
+    async (direction) => {
+      const sourceExec = fakeExec([
+        ...bootstrapOk,
+        {
+          match: /OPENSHIP_LINK_OK/,
+          reply: direction === "push" ? "OPENSHIP_LINK_OK" : "",
+        },
+      ]);
+      const targetExec = fakeExec([
+        ...bootstrapOk,
+        { match: /OPENSHIP_LINK_OK/, reply: "OPENSHIP_LINK_OK" },
+      ]);
+      const loaded = `sha256:${"b".repeat(64)}`;
+      const initiator = direction === "push" ? sourceExec : targetExec;
+      initiator.streamExec = async () => ({
+        code: 0,
+        output: `Loaded image ID: ${loaded}\n`,
+      });
+      const link = await establishDirectLink({
+        sourceExec,
+        targetExec,
+        sourceConn: conn("10.0.0.1"),
+        targetConn: conn("10.0.0.2"),
+        runId: "digest",
+        log: () => {},
+      });
+      try {
+        expect(link?.direction).toBe(direction);
+        expect(
+          await link!.transferImage({
+            id: `sha256:${"c".repeat(64)}`,
+            tag: `openship/app@sha256:${"a".repeat(64)}`,
+          }),
+        ).toBe(loaded);
+        expect(
+          [...sourceExec.calls, ...targetExec.calls].some((command) =>
+            command.includes("docker tag"),
+          ),
+        ).toBe(false);
+      } finally {
+        await link?.cleanup();
+      }
+    },
+  );
+
   test("push: source reaches target → direction 'push'", async () => {
     const sourceExec = fakeExec([
       ...bootstrapOk,

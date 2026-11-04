@@ -411,7 +411,18 @@
     "suggestedFix": "Correction suggérée",
     "fixStep1": "Ouvrez l'onglet Domaines.",
     "fixStep2": "Ajoutez une route ou un domaine personnalisé pour le port du service.",
-    "fixStep3": "Vérifiez le domaine et déployez."
+    "fixStep3": "Vérifiez le domaine et déployez.",
+    "composeReview": {
+      "title": "Compose a changé",
+      "addedTitle": "De nouveaux services sont à configurer",
+      "description": "Le fichier Compose a changé depuis la dernière configuration. Vérifiez les services et paramètres actuels avant de redéployer.",
+      "configure": "Configurer",
+      "cancel": "Annuler",
+      "added": "Ajoutés",
+      "changed": "Modifiés",
+      "removed": "Supprimés",
+      "reviewHint": "Vérifiez ces changements Compose, puis déployez pour les appliquer. Les services supprimés seront arrêtés pendant le déploiement ; leurs données persistantes seront conservées."
+    }
   },
   "connections": {
     "nativeClusterHint": "Choisissez un projet sur le cluster de cette base de données. Seuls les projets liés disposent d’un accès privé.",

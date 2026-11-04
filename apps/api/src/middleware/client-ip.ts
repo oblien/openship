@@ -27,11 +27,6 @@ export async function clientIpMiddleware(c: Context, next: Next) {
   // has NO TCP peer; every external caller has one (the proxy/socket), so this
   // is unforgeable. Treat it as trusted loopback so self-calls resolve a client
   // IP — the outer request already authenticated + was rate-limited.
-  if (peer === null) {
-    c.set("clientIp", xri || "127.0.0.1");
-    return next();
-  }
-
   // Loopback peers normally get header trust (local dev / same-box proxy). But
   // when the instance is served PUBLICLY (openship up --public-url), the on-box
   // dashboard proxy makes EVERY request look loopback — so trusting x-real-ip
@@ -40,9 +35,11 @@ export async function clientIpMiddleware(c: Context, next: Next) {
   // front proxy (TRUST_PROXY=true) before believing the header; otherwise fall
   // back to the (loopback) peer, which keys rate limits to one safe bucket.
   const loopbackTrust = isLoopbackPeer(peer) && !env.OPENSHIP_PUBLIC_URL;
-  const trustHeader = loopbackTrust || env.TRUST_PROXY === true;
-  const ip = trustHeader ? xri || peer : peer;
+  const trustHeader = peer === null || loopbackTrust || env.TRUST_PROXY === true;
+  const ip = (trustHeader && xri) || peer || "127.0.0.1";
 
-  c.set("clientIp", ip && ip.length > 0 ? ip : null);
+  c.set("clientIp", ip);
+  // Better Auth reads the client IP from request headers, not the Hono context.
+  c.req.raw.headers.set("x-real-ip", ip);
   await next();
 }

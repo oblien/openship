@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { redactUrlCredentials } from "./url-credentials";
 import { safeErrorMessage } from "./errors";
+import { shellQuote } from "./shell-split";
 
 const APP = "ghs_" + "A".repeat(36);
 const PAT = "ghp_" + "B".repeat(36);
@@ -17,6 +18,12 @@ describe("redactUrlCredentials", () => {
     const out = redactUrlCredentials(`remote: https://${PAT}:x-oauth-basic@github.com/a/b.git and ${PAT}`);
     expect(out).not.toContain(PAT);
     expect(out).toBe("remote: https://***@github.com/a/b.git and ***");
+  });
+
+  it("strips a long JWT-style installation token from a clone URL (#979)", () => {
+    const token = `eyJ${"a".repeat(1000)}.${"b".repeat(500)}`;
+    const out = redactUrlCredentials(`fatal: unable to access 'https://x-access-token:${token}@github.com/a/b.git/'`);
+    expect(out).toBe("fatal: unable to access 'https://***@github.com/a/b.git/'");
   });
 
   it("leaves credential-free URLs, scp ssh and @ in paths alone", () => {
@@ -39,6 +46,22 @@ describe("redactUrlCredentials", () => {
 });
 
 describe("safeErrorMessage", () => {
+  it.each(["legacy-private-token", "quoted'private-token", "private token", "private\ntoken"])(
+    "omits command credentials regardless of token format: %j",
+    (token) => {
+      for (const key of ["USERNAME", "PASSWORD"]) {
+        const command = `OPENSHIP_GIT_${key}=${shellQuote(token)} git clone https://github.com/acme/app.git`;
+        for (const value of [command, shellQuote(command)]) {
+          const result = safeErrorMessage(new Error(`Clone failed: ${value}`));
+          expect(result).not.toContain(token);
+          expect(result).not.toContain("private");
+          expect(result).toContain("Clone failed:");
+          expect(result).toContain("[REDACTED GIT COMMAND]");
+        }
+      }
+    },
+  );
+
   it("redacts credentials in error messages", () => {
     const err = new Error(`git exited with code 128: fatal: unable to access 'https://x-access-token:${APP}@github.com/a/b.git/'`);
     expect(safeErrorMessage(err)).not.toContain(APP);

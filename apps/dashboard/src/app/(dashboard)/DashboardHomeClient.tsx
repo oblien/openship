@@ -187,13 +187,13 @@ export default function DashboardHomeClient({
                 rel="noopener noreferrer"
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
-                <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                  <UiIcon name="book" className="size-[18px] text-muted-foreground" />
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <UiIcon name="book" className="size-[18px] text-muted-foreground" />
+                  </div>
+                  <UiIcon name="arrow-up-right" className="size-4 shrink-0 text-muted-foreground/70 group-hover:text-foreground transition-colors" />
                 </div>
-                <p className="text-sm font-medium text-foreground flex items-center gap-1">
-                  {t.dashboard.home.docs}
-                  <UiIcon name="external-link" className="size-3 text-muted-foreground" />
-                </p>
+                <p className="text-sm font-medium text-foreground">{t.dashboard.home.docs}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{t.dashboard.home.docsDesc}</p>
               </a>
             </div>

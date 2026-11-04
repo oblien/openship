@@ -71,7 +71,7 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
       },
     ];
 
-    async function deploy() {
+    async function deploy(appName = "app") {
       // Exercise the real shared writes used by ensure, requestBuildAccess,
       // and the worker's frozen snapshot, including the sync AFTER dep creation.
       await repos.service.syncFromCompose(project.id, parsed, { composeAuthoritative: true });
@@ -113,7 +113,7 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
       const rows = await repos.service.listByDeployment(deployment.id);
       expect(rows).toHaveLength(2);
       const db = rows.find((row) => row.serviceName === "db")!;
-      const app = rows.find((row) => row.serviceName === "app")!;
+      const app = rows.find((row) => row.serviceName === appName)!;
       expect(db.containerId).toBeTruthy();
       expect(app.containerId).toBeTruthy();
       const exec = await runtime.inContainerExecutor(app.containerId!);
@@ -167,6 +167,28 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
       expect(await repos.service.listByProject(fixture.project.id)).toHaveLength(2);
       previousAppId = next.app.containerId;
     }
+  });
+
+  it("reaps a removed service after cutover and restores its saved data on reintroduction", async () => {
+    const fixture = await stack();
+    const first = await fixture.deploy();
+    await first.exec.exec("printf survives > /var/lib/postgresql/data/compose-review-marker");
+    const original = structuredClone(fixture.parsed[1]!);
+    fixture.parsed[1] = { ...original, name: "worker", volumes: [] };
+    const next = await fixture.deploy("worker");
+    expect(next.db.containerId).toBe(first.db.containerId);
+    expect(await runtime.listProjectContainerIds(fixture.project.id)).not.toContain(first.app.containerId);
+    expect((await repos.service.listByProject(fixture.project.id)).map(service => service.name).sort()).toEqual(["db", "worker"]);
+    expect(await repos.service.findById(first.app.serviceId)).toMatchObject({ archivedAt: expect.any(Date) });
+    expect(await repos.service.listByDeployment(first.app.deploymentId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ serviceId: first.app.serviceId, containerId: first.app.containerId }),
+    ]));
+    expect((await runtime.listAllVolumes()).map(volume => volume.name)).toContain(`openship-${fixture.project.slug}-appdata`);
+    fixture.parsed[1] = original;
+    const restored = await fixture.deploy();
+    expect(restored.app.serviceId).toBe(first.app.serviceId);
+    expect((await restored.exec.exec("cat /var/lib/postgresql/data/compose-review-marker")).trim()).toBe("survives");
+    expect(await runtime.listProjectContainerIds(fixture.project.id)).toHaveLength(2);
   });
 
   it("applies a real database configuration change with a clean shutdown and retained data", async () => {

@@ -914,12 +914,17 @@ export async function resolveSourceEnvFromReader(
   rootDirectory = "",
 ): Promise<ProjectSourceEnv> {
   const normalizedRoot = normalizeProjectRootDirectory(rootDirectory);
-  const rootFiles = await reader.listDirectory("");
-  const openshipName = rootFiles.find(
-    (file) => file.type !== "dir" && file.name.toLowerCase() === "openship.json",
-  )?.name;
+  const findOpenship = async (dir: string) =>
+    (await reader.listDirectory(dir)).find(
+      (file) => file.type !== "dir" && file.name.toLowerCase() === "openship.json",
+    )?.name;
+  // Same manifest choice as resolveFromReader: the app folder's openship.json by
+  // presence, else the repository root's, so the scan and the deploy agree.
+  const appOpenship = normalizedRoot ? await findOpenship(normalizedRoot) : undefined;
+  const openshipName = appOpenship ?? (await findOpenship(""));
+  const openshipDir = appOpenship ? normalizedRoot : "";
   const [openshipContent, envContent] = await Promise.all([
-    openshipName ? reader.readText(openshipName) : undefined,
+    openshipName ? readProjectText(reader, openshipDir, openshipName) : undefined,
     readProjectText(reader, normalizedRoot, ".env"),
   ]);
   const openship = extractOpenshipConfig(

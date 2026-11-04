@@ -1,6 +1,9 @@
 import "../mail/_setup-env";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// This suite isolates project repositories; no auth database is available.
+vi.mock("@repo/platform/engine/lib/auth", () => ({ auth: {} }));
+
 /**
  * projects/ensure must persist the compose services it is handed (#334).
  *

@@ -1,8 +1,8 @@
 # Client icons
 
 The dashboard, Openship Cloud UI, and desktop chrome use the same icon catalog
-from `@repo/ui/icons`. The default theme is `outline-modern`, with 199 bundled
-PNGs in `apps/dashboard/public/icons` (about 448 KiB total). Source files retain
+from `@repo/ui/icons`. The default theme is `outline-modern`, with 201 bundled
+PNGs in `apps/dashboard/public/icons` (about 454 KiB total). Source files retain
 their original square dimensions.
 
 The dashboard's `ThemeIcon` shares the current-theme symbols across the sidebar,
@@ -58,6 +58,8 @@ expand controls use the selected rounded-panel-and-chevron artwork at 16px.
 Source variants use complete outlines instead of decorative breaks; gaps in
 arrows, spinners, and dashed status symbols convey their normal meaning.
 The Earn sidebar entry uses the shared `gift` icon from the same outline library.
+The Assistant uses `assistant`, the library's outlined brain-and-circuit AI symbol
+(`artificial intelligence-9-1686045820.png`), in navigation, setup and chat.
 
 MCP links, settings, and authorization use the shared `mcp` ID and the supplied
 `mcp.png` logo. Platform components share `server-settings`, projects use
@@ -168,9 +170,20 @@ separate marketing site and `apps/email/client` are outside this pass.
   `circle-dashed`, `hard-drive`, `infinity`, `memory`, `more`, `pin-off`, and
   `webhook`. The original ISC/MIT notices are in
   `apps/dashboard/public/icons/LICENSE.lucide`.
-- 7 marks preserve existing application artwork as PNGs: `google`, `claude`,
+- 6 marks preserve existing application artwork as PNGs: `google`,
   `cursor`, `windsurf`, `zed`, `openai`, and `copilot`. Google's multicolor mark
   uses `color` mode.
+- `codex` uses the blue mark on a transparent background (`codex.png`),
+  extracted from `icon-codex-light.png` in the official
+  [Codex download](https://persistent.oaistatic.com/codex-app-prod/Codex.dmg),
+  app version 26.1027.30824. The white app tile and its shadow are removed with
+  the built-in image editor; the mark stays in color in every theme. The asset belongs to OpenAI; see its
+  [brand guidelines](https://openai.com/brand/).
+- `claude` uses Mindwire’s LobeHub mark, rasterized as `claude-color.png`, with
+  its original terracotta. The MIT notice is in
+  `apps/dashboard/public/icons/LICENSE.lobehub`. Both harness icons use `color`
+  mode, without masking, inversion or added tint. `openai` remains available
+  for OpenAI branding outside harness selection.
 - `redis` is the red Redis R from [Simple Icons](https://cdn.simpleicons.org/redis),
   rasterized to a transparent 128px PNG with its original brand color.
 

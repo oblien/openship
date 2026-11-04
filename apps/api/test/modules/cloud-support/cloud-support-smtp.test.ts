@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createServer as httpServer, type Server as HttpServer } from "node:http";
-import { createServer as smtpServer, type Server as SmtpServer, type Socket } from "node:net";
+import type { Socket } from "node:net";
+import { createServer as smtpServer, type Server as SmtpServer } from "node:tls";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Hono } from "hono";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -19,13 +23,15 @@ const state = vi.hoisted(() => ({
     DEPLOY_MODE: "docker",
     INTERNAL_TOKEN: "operator-test-token",
     SMTP_HOST: "127.0.0.1",
-    SMTP_PORT: 0,
+    SMTP_PORT: 465,
     SMTP_USER: "test",
     SMTP_PASS: "test",
     SMTP_FROM: "Openship Support <support@openship.io>",
   },
   service: null as CloudSupportService | null,
   localMail: vi.fn(),
+  ca: "",
+  port: 0,
 }));
 vi.mock("@repo/core", async (original) => ({
   ...(await original<object>()),
@@ -33,6 +39,22 @@ vi.mock("@repo/core", async (original) => ({
     return state.url;
   },
 }));
+vi.mock("nodemailer", async (original) => {
+  const real = await original<{ default: typeof import("nodemailer") }>();
+  return {
+    default: {
+      ...real.default,
+      // Authenticated SMTP requires verified TLS: map port 465 to the disposable listener and
+      // trust only this test's certificate.
+      createTransport: (options: { tls?: object }) =>
+        real.default.createTransport({
+          ...options,
+          port: state.port,
+          tls: { ...options.tls, ca: state.ca },
+        }),
+    },
+  };
+});
 vi.mock("@repo/platform/engine/config/env", () => ({ env: state.env }));
 vi.mock("@repo/platform/engine/config/index", () => ({ env: state.env }));
 vi.mock("@repo/db", () => ({ repos: { mailServer: { list: state.localMail } } }));
@@ -87,7 +109,30 @@ const submit = (body: unknown) =>
   );
 
 beforeAll(async () => {
-  smtp = smtpServer((socket) => {
+  const directory = mkdtempSync(join(tmpdir(), "openship-support-smtp-"));
+  const certificate = spawnSync("openssl", [
+    "req",
+    "-x509",
+    "-newkey",
+    "rsa:2048",
+    "-nodes",
+    "-days",
+    "1",
+    "-subj",
+    "/CN=127.0.0.1",
+    "-addext",
+    "subjectAltName=IP:127.0.0.1",
+    "-keyout",
+    join(directory, "key.pem"),
+    "-out",
+    join(directory, "cert.pem"),
+  ]);
+  if (certificate.status !== 0) throw new Error("Failed to generate SMTP fixture certificate");
+  const key = readFileSync(join(directory, "key.pem"));
+  const cert = readFileSync(join(directory, "cert.pem"));
+  rmSync(directory, { recursive: true, force: true });
+  state.ca = cert.toString();
+  smtp = smtpServer({ key, cert }, (socket: Socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
     socket.setEncoding("utf8");
@@ -128,7 +173,7 @@ beforeAll(async () => {
     });
   });
   await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve));
-  state.env.SMTP_PORT = (smtp.address() as { port: number }).port;
+  state.port = (smtp.address() as { port: number }).port;
   client = new PGlite("memory://");
   await client.exec(
     readFileSync(

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { lstat, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -133,6 +133,22 @@ describe("sanitizeEdgeVhosts (real shell, real files)", () => {
     expect(await readdir(dir)).not.toContain("dangling.conf");
     expect(said.join("\n")).toMatch(/Materialized linked edge vhost .*linked\.conf/);
     expect(said.join("\n")).toMatch(/Dropped dangling edge vhost link .*dangling\.conf/);
+  });
+
+  it("preserves unreadable files rather than misclassifying them as catch-alls", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "openship-vhosts-unreadable-"));
+    const unreadable = join(dir, "root-owned.conf");
+    await writeFile(unreadable, PLAIN_VHOST, { mode: 0o000 });
+
+    const said: string[] = [];
+    await sanitizeEdgeVhosts(new LocalExecutor(), dir, (l) => said.push(l.message));
+
+    const left = await readdir(dir);
+    expect(left).toContain("root-owned.conf");
+    expect(said.join("\n")).not.toMatch(/Dropped catch-all/);
+
+    // restore permissions so cleanup can delete temp dir
+    await chmod(unreadable, 0o644);
   });
 });
 

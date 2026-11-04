@@ -83,7 +83,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   h.cloudFetch.mockReset();
   h.kickoff.mockReset();
-  owner = await seedOwner();
+  owner = await seedOwner({ instanceAdmin: true });
   const identity = {
     apiUrl: cloudRuntimeTarget.api,
     userId: `cloud-${owner.userId}`,
@@ -124,24 +124,31 @@ afterAll(async () => {
   vi.unstubAllEnvs();
 });
 
-async function agent(withServer = true) {
+async function agent(withServer = true, access: "workspace" | "instance" = "workspace") {
   const token = mintPatToken();
   const pat = await repos.personalAccessToken.create({
     userId: owner.userId,
-    organizationId: owner.orgId,
+    organizationId: access === "instance" ? null : owner.orgId,
     name: "MCP own projects",
     tokenPrefix: token.tokenPrefix,
     tokenHash: token.tokenHash,
     readOnly: false,
-    scoped: true,
+    scoped: access !== "instance",
     expiresAt: null,
   });
-  await repos.patGrant.createMany(pat.id, [
-    { resourceType: "project", resourceId: "*", permissions: ["create"] },
-    ...(withServer
-      ? [{ resourceType: "server" as const, resourceId: serverId, permissions: ["write" as const] }]
-      : []),
-  ]);
+  if (access === "workspace")
+    await repos.patGrant.createMany(pat.id, [
+      { resourceType: "project", resourceId: "*", permissions: ["create"] },
+      ...(withServer
+        ? [
+            {
+              resourceType: "server" as const,
+              resourceId: serverId,
+              permissions: ["write" as const],
+            },
+          ]
+        : []),
+    ]);
   const client = mcpTestClient({
     request: (path, init) => app.request(path, init),
     token: token.token,
@@ -154,7 +161,7 @@ describe("desktop MCP Cloud workflow", () => {
   it.each([true, false])(
     "deploys a controller-local folder on the connected server (explicit org: %s)",
     async (explicit) => {
-      const client = await agent();
+      const client = await agent(true, "instance");
       const created = await client.call<{ data: { id: string } }>("post_projects_import", {
         ...(explicit ? {} : { organizationId: undefined }),
         body: { name: "Desktop site", localPath: folder, serverId, publicEndpoints: [] },
@@ -191,12 +198,22 @@ describe("desktop MCP Cloud workflow", () => {
     },
   );
 
-  it("requires destination server permission before creating a project", async () => {
+  it("requires destination server permission before creating an uploaded project", async () => {
     const client = await agent(false);
-    const result = await client.result("post_projects_import", {
-      body: { name: "Denied", localPath: folder, serverId },
+    const result = await client.result("post_projects", {
+      body: { name: "Denied", gitProvider: "upload", serverId },
     });
     expect(result.isError).toBe(true);
+    expect((await repos.project.listByOrganization(owner.orgId)).total).toBe(0);
+    expect(h.kickoff).not.toHaveBeenCalled();
+  });
+
+  it("refuses controller-local source access through a workspace-bound administrator token", async () => {
+    const client = await agent();
+    const result = await client.result("post_projects_import", {
+      body: { name: "Denied local source", localPath: folder, serverId },
+    });
+    expect(result).toMatchObject({ isError: true, data: { code: "INSTANCE_SCOPE_REQUIRED" } });
     expect((await repos.project.listByOrganization(owner.orgId)).total).toBe(0);
     expect(h.kickoff).not.toHaveBeenCalled();
   });
@@ -205,8 +222,8 @@ describe("desktop MCP Cloud workflow", () => {
     "cannot bypass Cloud record transfer restrictions by omitting organizationId (explicit: %s)",
     async (explicit) => {
       const client = await agent();
-      const created = await client.call<{ data: { id: string } }>("post_projects_import", {
-        body: { name: "Local", localPath: folder, publicEndpoints: [] },
+      const created = await client.call<{ data: { id: string } }>("post_projects", {
+        body: { name: "Local", gitProvider: "local", localPath: folder, publicEndpoints: [] },
       });
       const result = await client.result<{ code: string; error: string }>(
         "post_projects_by_id_transfer_to_cloud",
@@ -223,7 +240,7 @@ describe("desktop MCP Cloud workflow", () => {
   );
 
   it("explains missing placement and rejects a local build on a managed server before queueing", async () => {
-    const client = await agent();
+    const client = await agent(true, "instance");
     const local = await client.call<{ data: { id: string } }>("post_projects_import", {
       body: { name: "Unplaced", localPath: folder, publicEndpoints: [] },
     });

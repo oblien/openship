@@ -2,6 +2,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { cloudGitHubConnection, isHostedGitHubAttempt } from "./github-cloud-connection";
 import { instanceAuthorization } from "../../lib/instance-authorization";
 import { assertCloudTenantScope } from "../../lib/cloud/scope";
+export { publishChange } from "./repository-changes";
 /**
  * GitHub application operations, retained from the HTTP controller.
  *

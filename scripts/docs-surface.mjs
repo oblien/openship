@@ -150,7 +150,7 @@ export function httpSurface() {
   );
   // Browser callback and OAuth discovery routes are mounted at the origin root.
   // Resolve the two explicit MCP resource aliases without importing the app.
-  const resourceFile = join(root, "apps/api/src/lib/mcp-resource.ts");
+  const resourceFile = join(root, "packages/platform/src/engine/lib/mcp-resources.ts");
   const resources = ts.createSourceFile(
     resourceFile,
     readFileSync(resourceFile, "utf8"),

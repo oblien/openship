@@ -29,7 +29,7 @@ import { enrichErrorContext } from "@repo/core/diagnostics/node";
 import { repos, type Job, type JobRun } from "@repo/db";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
-import { AppError, NotFoundError, safeErrorMessage } from "@repo/core";
+import { AppError, NotFoundError, safeErrorMessage, shellQuote } from "@repo/core";
 import { OperationError } from "@repo/contracts";
 import type { LogEntry } from "@repo/adapters";
 import { withServerExecution } from "../../lib/server-execution";
@@ -37,7 +37,7 @@ import { env } from "../../config";
 import { assertManagedServerCanWork } from "../../lib/cloud-workspace-access";
 import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
-import { jobRunBus } from "./job-run.sse";
+import { createJobRunRecorder } from "./job-run-recorder";
 import { boundedStorableText } from "../deployments/build-log-sanitize";
 import {
   resolveServerIds,
@@ -47,15 +47,8 @@ import {
   type JobRunState,
 } from "./job.types";
 
-/** Cap stored output so a chatty command can't bloat the row. */
-const MAX_OUTPUT = 200_000;
 const MAX_ERROR = 4_096;
 const VALID_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/** Stand-in when the captured text is the reason the row won't write. */
-const OUTPUT_UNSTORABLE =
-  "[output omitted — the captured command output could not be stored; see server logs]";
-const ERROR_UNSTORABLE = "Command failed (details could not be stored; see server logs)";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -64,11 +57,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function primaryServerId(cfg: CommandConfig): string | null {
   const ids = resolveServerIds(cfg);
   return ids.length === 1 ? ids[0] : null;
-}
-
-/** Single-quote a value for a POSIX shell (escaping embedded quotes). */
-function shellQuote(v: string): string {
-  return `'${v.replace(/'/g, `'\\''`)}'`;
 }
 
 /** Prepend `export K='v';` for each (valid-identifier) env var. */
@@ -141,11 +129,9 @@ async function runOnServer(
  *  retry. Never throws. */
 async function executeAttempt(
   cfg: CommandConfig,
-  streamId: string,
+  publish: (line: string, level: LogEntry["level"]) => void,
   organizationId: string | null,
 ): Promise<{ status: JobRunState; output: string; error?: string; exitCode?: number }> {
-  const publish = (line: string, level: LogEntry["level"]) =>
-    jobRunBus.publish(streamId, { type: "log", line, level });
   try {
     const servers = resolveServerIds(cfg);
     if (!servers.length || !cfg.command?.trim()) {
@@ -217,15 +203,18 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
   let lastError: string | undefined;
   let attemptsUsed = 0;
   const chunks: string[] = [];
+  const recorder = createJobRunRecorder({ ...run, startedAt: run.startedAt ?? new Date(startedMs) });
+  const publish = (message: string, level: LogEntry["level"]) =>
+    recorder.onLog({ timestamp: new Date().toISOString(), message, level });
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     attemptsUsed = attempt;
     if (attempt > 1) {
       const marker = `── retry ${attempt}/${maxAttempts} ──`;
-      jobRunBus.publish(run.id, { type: "log", line: marker, level: "info" });
+      publish(marker, "info");
       chunks.push(marker);
     }
-    const res = await executeAttempt(cfg, run.id, organizationId);
+    const res = await executeAttempt(cfg, publish, organizationId);
     chunks.push(res.output);
     exitCode = res.exitCode;
     if (res.status === "success") {
@@ -243,23 +232,7 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
     kind: "background", component: "job-command", jobId: row.key, runId: run.id,
     organizationId: organizationId ?? undefined, durationMs, attempt: attemptsUsed, handled: true,
   });
-  await finishRunRow(run.id, row.key, {
-    status: finalStatus,
-    durationMs,
-    summary: { exitCode, attempts: attemptsUsed },
-    output: boundedStorableText(chunks.join("\n"), MAX_OUTPUT),
-    error:
-      finalStatus === "failed"
-        ? boundedStorableText(lastError ?? "Command failed", MAX_ERROR)
-        : undefined,
-  });
-  try {
-    jobRunBus.publish(run.id, { type: "complete", status: finalStatus, error: lastError });
-  } catch (err) {
-    errorDiagnostics.error("platform/engine/modules/jobs/job-command",
-      `[job] ${row.key} run ${run.id}: terminal SSE publish failed: ${safeErrorMessage(err)}`, err,
-    );
-  }
+  await recorder.finish(finalStatus, { exitCode, attempts: attemptsUsed }, lastError, chunks.join("\n"));
 
   await emitJobRun(row, run.id, finalStatus, organizationId, {
     durationMs,
@@ -268,51 +241,6 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
     output: chunks.join("\n"),
   });
   if (finalStatus === "success" && organizationId) await fireDependents(row.key, organizationId, run.id);
-}
-
-type FinishData = {
-  status: "success" | "failed";
-  durationMs: number;
-  summary: Record<string, unknown>;
-  output: string;
-  error?: string;
-};
-
-/**
- * Close the run row without ever letting its OUTPUT strand it at "running".
- *
- * `output`/`error` are raw remote command bytes and `job_run.output` is a text
- * column: a NUL makes the UPDATE throw, and that throw used to precede the
- * terminal `complete` SSE event, the notification, and the dependency fan-out —
- * so the row sat "running" forever, the stream never closed, and dependents
- * never fired. The outcome is therefore retried with progressively less payload
- * until the row is terminal; only a dead database can defeat all three.
- */
-async function finishRunRow(runId: string, jobKey: string, data: FinishData): Promise<void> {
-  const attempts: FinishData[] = [
-    data,
-    { ...data, output: OUTPUT_UNSTORABLE },
-    {
-      status: data.status,
-      durationMs: data.durationMs,
-      summary: data.summary,
-      output: OUTPUT_UNSTORABLE,
-      error: data.status === "failed" ? ERROR_UNSTORABLE : undefined,
-    },
-  ];
-  for (const attempt of attempts) {
-    try {
-      await repos.jobRun.finish(runId, attempt);
-      return;
-    } catch (err) {
-      errorDiagnostics.error("platform/engine/modules/jobs/job-command",
-        `[job] ${jobKey} run ${runId}: finish write rejected: ${safeErrorMessage(err)}`, err,
-      );
-    }
-  }
-  errorDiagnostics.error("platform/engine/modules/jobs/job-command",
-    `[job] ${jobKey} run ${runId}: could not record the terminal status — the row is left "running" for the boot sweep to reconcile`,
-  );
 }
 
 /** Scheduled tick — awaited (inside a runner timer). Reads the latest row so

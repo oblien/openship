@@ -1,3 +1,4 @@
+import type { JobRun } from "@repo/contracts";
 import { api, getApiBaseUrl } from "./client";
 import { endpoints } from "./endpoints";
 
@@ -130,7 +131,7 @@ export const jobsApi = {
     ),
 
   /** Fetch one run incl. its captured output (history detail). */
-  getRun: (runId: string) => api.get<{ data: JobRunSummary }>(endpoints.jobs.runDetail(runId)),
+  getRun: (runId: string) => api.get<{ data: JobRun }>(endpoints.jobs.runDetail(runId)),
 
   /** Absolute URL of a run's live-log SSE stream (for connectToSSE). */
   runStreamUrl: (runId: string) =>

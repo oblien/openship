@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, writeFile, readFile, access, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, access, rm, realpath, cp, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { commandToArgv } from "@repo/core";
@@ -726,4 +726,106 @@ it("removes failed static staging files while preserving application data and ne
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+describe("repository mount containment", () => {
+  let directory: string;
+  let repository: string;
+  let mounts: string;
+
+  beforeEach(async () => {
+    directory = await realpath(await mkdtemp(join(tmpdir(), "openship-mount-containment-")));
+    repository = join(directory, "repository");
+    mounts = join(directory, "project-mounts");
+    await mkdir(join(repository, "config"), { recursive: true });
+    await mkdir(mounts);
+    await writeFile(join(repository, "config/app.yml"), "first release");
+    await writeFile(join(directory, "outside"), "outside repository");
+    await symlink(join(directory, "outside"), join(repository, "escape"));
+    await symlink(join(directory, "outside"), join(mounts, "escape"));
+    Object.defineProperties(runtime, {
+      sourcePath: { value: repository, configurable: true },
+      sourceBase: { value: repository, configurable: true },
+      projectPaths: { get: () => ({ mounts }), configurable: true },
+    });
+    vi.spyOn(runtime.executor, "mkdir").mockImplementation(async (path) => {
+      await mkdir(path, { recursive: true });
+    });
+    vi.spyOn(runtime.executor, "exists").mockImplementation(async (path) => {
+      try {
+        await access(path);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const fallback = vi.mocked(runtime.executor.exec).getMockImplementation()!;
+    vi.mocked(runtime.executor.exec).mockImplementation(async (command, ...options) => {
+      const args = commandToArgv(command);
+      if (args?.slice(0, 3).join(" ") === "readlink -f --") {
+        expect(args[3]!.startsWith(`${directory}/`)).toBe(true);
+        return realpath(args[3]!);
+      }
+      if (args?.slice(0, 2).join(" ") === "cp -a") {
+        expect(args[2]!.startsWith(`${repository}/`)).toBe(true);
+        expect(args[3]!.startsWith(`${mounts}/`)).toBe(true);
+        await cp(args[2]!, args[3]!, { recursive: true, verbatimSymlinks: true });
+        return "";
+      }
+      return fallback(command, ...options);
+    });
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it.each(["ro", "rw"])(
+    "copies %s mounts into project storage and preserves the right data on redeploy",
+    async (mode) => {
+      const input = { ...config, volumes: ["data:/data", `./config/app.yml:/etc/app.yml:${mode}`] };
+      await runtime.deployServiceWorkload(group, input);
+      const first = captures[0]!.volumes
+        .find((volume) => volume.endsWith(`:/etc/app.yml:${mode}`))!
+        .split(":")[0]!;
+      expect(first.startsWith(`${mounts}/`)).toBe(true);
+      expect(await readFile(first, "utf8")).toBe("first release");
+      if (mode === "rw") await writeFile(first, "application data");
+      await writeFile(join(repository, "config/app.yml"), "second release");
+      await runtime.deployServiceWorkload(group, { ...input, deploymentId: "d2" });
+      const second = captures[1]!.volumes
+        .find((volume) => volume.endsWith(`:/etc/app.yml:${mode}`))!
+        .split(":")[0]!;
+      expect(await readFile(second, "utf8")).toBe(
+        mode === "ro" ? "second release" : "application data",
+      );
+      expect(await readFile(first, "utf8")).toBe(
+        mode === "ro" ? "first release" : "application data",
+      );
+      expect(second === first).toBe(mode === "rw");
+      expect(captures[1]!.volumes).toContain("openship-project-a-data:/data");
+    },
+  );
+
+  it.each([
+    ["../outside", "escapes its source repository"],
+    ["./escape", "symlink escapes its source repository"],
+    ["./missing", "source is missing"],
+    ["/var/run/docker.sock", "Host paths and the Docker socket are not available"],
+  ])("refuses %s before activating a workload", async (source, error) => {
+    await expect(
+      runtime.deployServiceWorkload(group, { ...config, volumes: [`${source}:/etc/app.yml:ro`] }),
+    ).rejects.toThrow(error);
+    expect(captures).toEqual([]);
+  });
+
+  it("refuses a managed mount that was replaced with a symlink outside its project", async () => {
+    await expect(
+      runtime.deployServiceWorkload(group, {
+        ...config,
+        volumes: [`${mounts}/escape:/etc/app.yml:ro`],
+      }),
+    ).rejects.toThrow("Persistent mount escapes this project's storage");
+    expect(captures).toEqual([]);
+  });
 });

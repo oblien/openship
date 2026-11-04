@@ -14,7 +14,9 @@ import { assembleGitClone, gitShellCommand, sq, type GitCloneInvocation } from "
 
 const exec = promisify(execFile);
 const TOKEN = "ghs_fixtureInstallationTokenNotReal0000001";
+const USER_TOKEN = "ghp_fixtureUserTokenNotReal0000002";
 const basic = `Basic ${Buffer.from(`x-access-token:${TOKEN}`).toString("base64")}`;
+const userBasic = `Basic ${Buffer.from(`x-access-token:${USER_TOKEN}`).toString("base64")}`;
 let directory: string;
 let server: Server;
 let origin: string;
@@ -91,7 +93,7 @@ function handle(request: IncomingMessage, response: ServerResponse) {
     response.end();
     return;
   }
-  if (request.headers.authorization !== basic) {
+  if (request.headers.authorization !== basic && request.headers.authorization !== userBasic) {
     response.writeHead(401, { "WWW-Authenticate": 'Basic realm="fixture"' });
     response.end();
     return;
@@ -189,6 +191,11 @@ beforeAll(async () => {
     "lib/scp": "git@127.0.0.1:Acme/Shared.git",
     "lib/ssh-url": "ssh://git@127.0.0.1/Acme/Shared.git",
   });
+  const nestedSha = await repository("nested", { "lib/deep": "../shared.git" });
+  const originalSharedSha = sharedSha;
+  sharedSha = nestedSha;
+  await repository("nested-parent", { "lib/nested": "../nested.git" });
+  sharedSha = originalSharedSha;
   await repository("unauthorized", { "lib/denied": `${origin}/Acme/denied.git` });
   await repository("foreign", { "lib/foreign": `${origin}/Other/secret.git` });
   await repository("redirect", { "lib/redirect": `${origin}/Acme/redirect.git` });
@@ -347,17 +354,81 @@ describe.each([false, true])("expanded App clone authentication (shell=%s)", (sh
   });
 });
 
-it.each(["pipeline", "server-docker", "orchestrator-docker"] as const)(
-  "preserves the exact repository grant through the %s clone path",
-  async (path) => {
+describe.each([false, true])("user token recursive clone authentication (shell=%s)", (shell) => {
+  it.each(["parent", "nested-parent"])(
+    "materializes private %s dependencies without API discovery",
+    async (parent) => {
+      const target = join(directory, `user-clone-${parent}-${shell}`);
+      const inv = assembleGitClone({
+        repoUrl: `${origin}/acme/${parent}.git`,
+        gitToken: USER_TOKEN,
+      });
+      await run(inv, directory, ["clone", "--depth", "1", inv.cloneUrl, target], shell);
+      await run(
+        inv,
+        target,
+        ["submodule", "update", "--init", "--recursive", "--checkout", "--depth", "1"],
+        shell,
+      );
+      const children =
+        parent === "parent"
+          ? ["lib/relative", "lib/absolute", "lib/scp", "lib/ssh-url"]
+          : ["lib/nested/lib/deep"];
+      for (const child of children)
+        expect(await readFile(join(target, child, "content"), "utf8")).toBe("shared\n");
+      const saved = await readFile(join(target, ".git/config"), "utf8");
+      expect(saved).not.toContain(USER_TOKEN);
+      expect(saved).not.toContain("credential.helper");
+    },
+  );
+
+  it("does not forward user credentials to another owner or follow repository redirects", async () => {
+    for (const parent of ["foreign", "redirect"]) {
+      const target = join(directory, `user-denied-${parent}-${shell}`);
+      const inv = assembleGitClone({
+        repoUrl: `${origin}/acme/${parent}.git`,
+        gitToken: USER_TOKEN,
+      });
+      const start = requests.length;
+      if (parent === "redirect") {
+        await expect(run(inv, directory, ["ls-remote", inv.cloneUrl], shell)).rejects.toThrow();
+      } else {
+        await run(inv, directory, ["clone", "--depth", "1", inv.cloneUrl, target], shell);
+        await expect(
+          run(
+            inv,
+            target,
+            ["submodule", "update", "--init", "--recursive", "--checkout", "--depth", "1"],
+            shell,
+          ),
+        ).rejects.toThrow();
+      }
+      expect(
+        requests
+          .slice(start)
+          .filter((request) => /^\/other\//i.test(request.path))
+          .every((request) => request.authorization === undefined),
+      ).toBe(true);
+    }
+  });
+});
+
+it.each(
+  (["pipeline", "server-docker", "orchestrator-docker"] as const).flatMap((path) =>
+    (["App", "user"] as const).map((scope) => ({ path, scope })),
+  ),
+)(
+  "preserves $scope credentials through the $path clone path",
+  async ({ path, scope }) => {
+    const isUser = scope === "user";
     const config: BuildConfig = {
       sessionId: "submodule-auth",
       projectId: "fixture",
       slug: "fixture",
-      repoUrl: `${origin}/Acme/Parent.git`,
+      repoUrl: `${origin}/Acme/${isUser ? "nested-parent" : "Parent"}.git`,
       branch: "main",
-      gitToken: TOKEN,
-      gitTokenRepositories: ["Parent", "Shared"],
+      gitToken: isUser ? USER_TOKEN : TOKEN,
+      gitTokenRepositories: isUser ? undefined : ["Parent", "Shared"],
       stack: "docker",
       buildImage: "",
       runtimeImage: "",
@@ -369,7 +440,7 @@ it.each(["pipeline", "server-docker", "orchestrator-docker"] as const)(
       envVars: {},
       resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
     };
-    let target = join(directory, `adapter-${path}`);
+    let target = join(directory, `adapter-${path}-${scope}`);
     let cleanup = async () => {};
     const messages: string[] = [];
     const logger = new BuildLogger((entry) => messages.push(entry.message));
@@ -408,9 +479,10 @@ it.each(["pipeline", "server-docker", "orchestrator-docker"] as const)(
         target = tree.contextDir;
         cleanup = tree.cleanup;
       }
-      for (const child of ["relative", "absolute", "scp", "ssh-url"])
+      const children = isUser ? ["nested/lib/deep"] : ["relative", "absolute", "scp", "ssh-url"];
+      for (const child of children)
         expect(await readFile(join(target, "lib", child, "content"), "utf8")).toBe("shared\n");
-      expect(messages.join("\n")).not.toContain(TOKEN);
+      expect(messages.join("\n")).not.toContain(config.gitToken);
     } finally {
       await cleanup();
     }

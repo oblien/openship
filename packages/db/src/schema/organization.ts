@@ -22,6 +22,8 @@ export const organization = pgTable("organization", {
   logo: text("logo"),
   metadata: text("metadata"), // JSON-stringified blob the plugin manages
   isTeam: boolean("is_team").notNull().default(false),
+  /** Workspace-owned runtime advisory inspection policy. */
+  securityAdvisoryChecksEnabled: boolean("security_advisory_checks_enabled").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 
   // ── Billing ───────────────────────────────────────────────────────────────

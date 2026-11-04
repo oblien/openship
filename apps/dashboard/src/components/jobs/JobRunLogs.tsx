@@ -7,93 +7,11 @@ import { ActionError, ActionStatus } from "@/components/actions/ActionStatus";
 import { useActionResource, useActionScope } from "@/components/actions/useActions";
 import type { ActionStatus as WorkflowStatus } from "@repo/core";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { jobsApi, getAuthToken } from "@/lib/api";
-import { getActiveOrganizationId } from "@/lib/api/client";
-import { connectToSSE } from "@/lib/sseClient";
+import { useCallback } from "react";
+import { JobRunOutput } from "./JobRunOutput";
+import { jobsApi } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
 import { useI18n } from "@/components/i18n-provider";
-
-type RunStatus = "running" | "success" | "failed";
-
-/** Live + stored log viewer for a job run. Tails the SSE stream; a finished run
- *  emits its stored output as the opening snapshot, so history views work too. */
-function CommandRunLogs({ runId }: { runId: string }) {
-  const { t } = useI18n();
-  const j = t.jobs;
-  const [lines, setLines] = useState<string[]>([]);
-  const [status, setStatus] = useState<RunStatus>("running");
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setLines([]);
-    setStatus("running");
-    let disconnect: (() => void) | undefined;
-    let cancelled = false;
-    (async () => {
-      const [token, orgId] = [await getAuthToken(), getActiveOrganizationId()];
-      const conn = await connectToSSE(jobsApi.runStreamUrl(runId), {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(orgId ? { "X-Organization-Id": orgId } : {}),
-        },
-        onMessage: (chunk: string) => {
-          for (const raw of chunk.split("\n")) {
-            if (!raw.startsWith("data:")) continue;
-            try {
-              const ev = JSON.parse(raw.slice(5).trim());
-              if (ev.type === "log" && typeof ev.line === "string") {
-                setLines((prev) => [...prev, ev.line]);
-              } else if (ev.type === "snapshot" && ev.run?.output) {
-                setLines([ev.run.output]);
-                if (ev.run.status === "success" || ev.run.status === "failed") setStatus(ev.run.status);
-              } else if (ev.type === "complete") {
-                setStatus(ev.status === "success" ? "success" : "failed");
-              }
-            } catch {
-              /* keepalive / non-JSON */
-            }
-          }
-        },
-        onError: () => {
-          if (!cancelled) setStatus("failed");
-        },
-      });
-      if (cancelled) conn.disconnect();
-      else disconnect = conn.disconnect;
-    })();
-    return () => {
-      cancelled = true;
-      disconnect?.();
-    };
-  }, [runId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-2">
-        {status === "running" ? (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-warning"><UiIcon name="spinner" className="size-3.5 animate-spin" />{j.logs.streaming}</span>
-        ) : status === "success" ? (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-success"><UiIcon name="check-circle" className="size-3.5" />{j.status.success}</span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-danger"><UiIcon name="x-circle" className="size-3.5" />{j.status.failed}</span>
-        )}
-      </div>
-      <div className="min-h-[240px] flex-1 overflow-y-auto rounded-xl bg-[#0b0b0c] px-4 py-3 font-mono text-[12px] leading-relaxed text-neutral-200">
-        {lines.length === 0 ? (
-          <span className="text-neutral-500">{j.logs.empty}</span>
-        ) : (
-          lines.map((line, i) => <div key={i} className="whitespace-pre-wrap break-all">{line}</div>)
-        )}
-        <div ref={bottomRef} />
-      </div>
-    </div>
-  );
-}
 
 /** Workflow jobs link to the original execution, including its resumable logs. */
 function RunViewer({ runId }: { runId: string }) {
@@ -103,7 +21,7 @@ function RunViewer({ runId }: { runId: string }) {
   const resource = useActionResource(fetcher, polling);
   const run = resource.data?.data;
   if (!run) return <><ActionError message={resource.error} onRetry={resource.refresh} />{resource.loading && <div className="h-32 animate-pulse rounded-xl bg-muted" />}</>;
-  if (run.kind !== "workflow") return <CommandRunLogs runId={runId} />;
+  if (run.kind !== "workflow") return <JobRunOutput run={run} path={`jobs/runs/${encodeURIComponent(runId)}/stream`} />;
   return <div className="space-y-4 rounded-xl bg-card p-5">
     <ActionError message={resource.error} onRetry={resource.refresh} />
     <ActionStatus status={run.summary?.status as WorkflowStatus} />

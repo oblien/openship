@@ -117,6 +117,33 @@ describe("billing page failure recovery", () => {
     expect((await unavailablePage()).props.reason).toBe("billing-unreachable");
   });
 
+  it.each(["overview", "usage", "plans", "payment", "topups", "invoices"])("recovers a deleted workspace URL on %s without replaying checkout", async tab => {
+    mocks.get.mockRejectedValue(new ServerApiError(404, "Not found", { code: "CLOUD_WORKSPACE_NOT_FOUND" }));
+    await expect(BillingTabPage({
+      params: Promise.resolve({ tab }),
+      searchParams: Promise.resolve({ workspaceId: "cws-deleted", organizationId: "org-a", checkout: "success", session_id: "old-checkout", startCheckout: "1", plan: "starter" }),
+    })).rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/billing/plans?newServer=1&organizationId=org-a;307;" });
+    expect(mocks.get).toHaveBeenCalledWith("billing/state?workspaceId=cws-deleted", expect.anything());
+  });
+
+  it("recovers while draft removal is still in progress without selecting it again", async () => {
+    mocks.get.mockRejectedValueOnce(new ServerApiError(409, "Unavailable", { code: "CLOUD_WORKSPACE_DELETING" }));
+    await expect(BillingTabPage({
+      params: Promise.resolve({ tab: "payment" }),
+      searchParams: Promise.resolve({ workspaceId: "cws-removing", startCheckout: "1" }),
+    })).rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/billing/plans?newServer=1;307;" });
+    mocks.get.mockClear();
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ newServer: "1" }) });
+    expect(findElement(page, ManagedServerPurchase)).toBeDefined();
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("keeps an untyped provider 404 distinct from a deleted workspace", async () => {
+    mocks.get.mockRejectedValueOnce(new ServerApiError(404, "Not found", { code: "OBLIEN_BILLING_ERROR" }));
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ workspaceId: "cws-selected" }) });
+    expect(findElement<{ reason: string }>(page, BillingUnavailable)?.props.reason).toBe("billing-unreachable");
+  });
+
   it("renders billing state when purchases are disabled", async () => {
     const state = { ...free, tier: "starter", billing: { enabled: false, status: "coming_soon" } };
     mocks.get.mockResolvedValue({ data: state });

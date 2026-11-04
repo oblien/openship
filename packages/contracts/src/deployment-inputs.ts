@@ -110,6 +110,9 @@ export const BuildServiceInput = Type.Object({
  */
 export const BuildAccessBody = Type.Object({
   projectId: Type.String({ description: "Target project id (from projects/ensure). Required." }),
+  composeRevision: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$",
+    description: "Reviewed Compose revision returned by prepare with projectId. Required when an existing source stack changes; a stale revision is rejected before synchronization.",
+  })),
   uploadSessionId: Type.Optional(
     Type.String({
       description: "Folder-upload session id — deploys the uploaded source instead of git.",
@@ -183,6 +186,9 @@ export const BuildAccessBody = Type.Object({
 // the controller resolves source from (owner,repo) vs path and enforces the
 // conditional requireds (owner+repo for github, path for local).
 export const PrepareDeployBody = Type.Object({
+  projectId: Type.Optional(Type.String({ minLength: 1, maxLength: 200,
+    description: "Review source changes for this existing project. Merges saved service settings into the preview and returns composeRevision; does not persist changes. Saved secrets remain masked.",
+  })),
   serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 200,
     description: "Deployment server whose stored GitHub token may be used for repository reads (self-hosted only). Defaults to this organization's local server.",
   })),

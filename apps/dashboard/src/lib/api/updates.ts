@@ -7,6 +7,7 @@ import type {
   ProjectSecurityResult,
   AdvisoryFeedResult,
   ApplySecurityInput,
+  SecurityCheckPolicy,
 } from "@repo/contracts";
 
 /** One entity's update status (project/app/self-app/webmail). */
@@ -33,6 +34,12 @@ export interface ScanSummary {
 }
 
 export const updatesApi = {
+  securityCheckPolicy: () =>
+    api.get<{ data: SecurityCheckPolicy }>("/updates/security/policy"),
+  setSecurityCheckPolicy: (checksEnabled: boolean) =>
+    api.put<{ data: SecurityCheckPolicy }>(
+      "/updates/security/policy", { checksEnabled },
+    ),
   checkSecurity: (projectId: string) =>
     api.post<{ data: ProjectSecurityResult }>(
       `/updates/${encodeURIComponent(projectId)}/security/check`,

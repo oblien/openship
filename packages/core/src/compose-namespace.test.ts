@@ -12,11 +12,6 @@ describe("parseComposeNamespace", () => {
       ref: { kind: "service", service: "gluetun" },
       value: "service:gluetun",
     });
-    expect(parseComposeNamespace("container:abc123", "pid")).toEqual({
-      ok: true,
-      ref: { kind: "container", container: "abc123" },
-      value: "container:abc123",
-    });
     expect(parseComposeNamespace("none", "network_mode")).toEqual({
       ok: true,
       ref: { kind: "none" },
@@ -45,6 +40,12 @@ describe("parseComposeNamespace", () => {
 
   it("`none` is a network concept only — as a pid mode it is not a valid value", () => {
     expect(parseComposeNamespace("none", "pid")?.ok).toBe(false);
+  });
+
+  it.each(["network_mode", "pid"] as const)("rejects direct container names and IDs in %s", (field) => {
+    for (const value of ["container:openship-edge", "container:openship-api-1", "container:" + "a".repeat(64)]) {
+      expect(parseComposeNamespace(value, field)).toMatchObject({ ok: false, reason: expect.stringContaining("service:<name>") });
+    }
   });
 
   it("rejects anything else rather than passing it to the daemon", () => {
