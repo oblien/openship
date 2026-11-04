@@ -16,7 +16,7 @@
       "name": "pgadmin4",
       "image": "dpage/pgadmin4:9.18",
       "exposed": true,
-      "ports": ["5050:5050"],
+      "ports": ["8230:5050"],
       "exposedPort": 5050,
       "routes": [{ "port": 5050 }],
       "restart": "unless-stopped",
