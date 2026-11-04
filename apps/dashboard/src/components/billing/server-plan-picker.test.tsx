@@ -227,6 +227,28 @@ describe("referral checkout handoff", () => {
     }));
   });
 
+  it("shows discounts only on eligible plans and intervals, then restores prices when the code is removed", async () => {
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === `referrals/${code}`
+      ? Promise.resolve({ data: { ...referral, discountBps: 1000,
+        eligiblePlans: [{ planId: "vm:1:4096:50", intervals: ["annual"] }] } })
+      : path === "billing/plans?locale=en" ? Promise.resolve({ data: { ...catalog.data, annual: { enabled: true, monthsFree: 0 } } })
+      : ordinary(path, options));
+    await render(<ManagedServerPurchase initialReferralCode={code} />);
+    const card = (name: string) => host.querySelector(`article[aria-label="${name}"]`)!;
+    expect(card("Hobby").textContent).toContain("$9");
+    expect(card("Hobby").querySelector("s")?.textContent).toBe("$10");
+    expect(card("Starter").querySelector("s")).toBeNull();
+    await click("Monthly");
+    expect(card("Hobby").querySelector("s")).toBeNull();
+    await click("Yearly");
+    expect(card("Hobby").querySelector("s")?.textContent).toBe("$10");
+    await click(baseDictionary.affiliates.remove);
+    expect(card("Hobby").querySelector("s")).toBeNull();
+    expect(card("Hobby").textContent).toContain("$10");
+    expect(h.post).not.toHaveBeenCalled();
+  });
+
   it("does not silently charge full price when the referral is unavailable", async () => {
     const ordinary = h.get.getMockImplementation()!;
     h.get.mockImplementation((path, options) => path === `referrals/${code}` ? Promise.reject(new Error("Referral expired")) : ordinary(path, options));

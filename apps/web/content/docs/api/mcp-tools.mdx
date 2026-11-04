@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **525 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **557 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -79,6 +79,36 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `post_apps`<br />`POST /api/apps` | Install an app from the catalog as a project (or return a flow route for wizard apps). Public hostnames come ONLY from `routes` — omit it and the app installs port-only (no domain is invented). | `project:write` |
 | `post_apps_custom`<br />`POST /api/apps/custom` | Add a custom app from an uploaded JSON definition (stored per-org, unverified). | `project:write` |
 
+### assistant-agents
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_assistant_agents`<br />`GET /api/assistant/agents` | List your saved specialist agents and their task conversations in this workspace. Agents perform specific scoped tasks and can be selected by automations. The general OpenShip assistant remains separate. Native provider credentials are never returned. | `settings:read` |
+| `get_assistant_agents_by_id`<br />`GET /api/assistant/agents/:id` | Read a specialist's saved instructions, resource scope and task history before using or editing it. | `settings:read` |
+| `get_assistant_agents_by_id_tasks_by_chatId`<br />`GET /api/assistant/agents/:id/tasks/:chatId` | Inspect one specialist task's conversation, tool activity and current state. Use this for the result; do not repeatedly poll a running task. | `settings:read` |
+| `get_assistant_agents_models`<br />`GET /api/assistant/agents/models` | Discover available AI connections and exact model IDs on this user's selected assistant host before creating or editing a specialist. Choose a ready provider and use its defaultModel or a listed model ID; "" selects the connected native default. Never guess model IDs or infer that all providers are disconnected from one failed choice. Returns no credentials or private connection settings. | `settings:read` |
+| `post_assistant_agents`<br />`POST /api/assistant/agents` | Create a saved scoped specialist using the normal agent API. First read get_assistant_agents_models; select a ready provider and its defaultModel or an exact listed model ID. model="" uses the connected native default. Set purpose, instructions, readOnly and concrete resource grants within your current access. Reuse requestId on retries. This creates no task or schedule; delegate a task or attach an automation separately. Agents cannot manage credentials, create other agents or expand their permissions. | `settings:write` |
+| `post_assistant_agents_by_id_archive`<br />`POST /api/assistant/agents/:id/archive` | Archive a specialist, pause its automations and stop active tasks. Preserve its conversations for inspection. | `settings:write` |
+| `post_assistant_agents_by_id_tasks`<br />`POST /api/assistant/agents/:id/tasks` | Give this specialist a scoped task. Reuse requestId for the identical retry. Creates one task conversation and starts it through the ordinary assistant pipeline. Returns actual status and a link to inspect the conversation; acceptance is not task completion. It cannot exceed the initiating caller's access. | `settings:write` |
+| `post_assistant_agents_by_id_tasks_by_chatId_messages`<br />`POST /api/assistant/agents/:id/tasks/:chatId/messages` | Continue this specialist's task in its existing chat. While running, delivers a follow-up to the same turn; after completion starts the next turn within the same resource scope. Reuse requestId for retries. | `settings:write` |
+| `post_assistant_agents_by_id_tasks_by_chatId_stop`<br />`POST /api/assistant/agents/:id/tasks/:chatId/stop` | Stop this specialist task through the normal conversation cancellation flow. Keeps its transcript. | `settings:write` |
+| `put_assistant_agents_by_id`<br />`PUT /api/assistant/agents/:id` | Update a specialist's identity, icon, instructions, model or scoped permissions using its current revision. Work-setting changes revoke old task access and pause attached automations for review. Changing only the icon preserves conversations and automations. Access cannot exceed yours or the connected assistant's approved scope. | `settings:write` |
+
+### assistant-automations
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_assistant_automations_by_id`<br />`DELETE /api/assistant/automations/:id` | Pause this automation and cancel unclaimed work. Keeps its run history and task chats. | `settings:write` |
+| `get_assistant_automation_permissions_by_projectId`<br />`GET /api/assistant/automation-permissions/:projectId` | Check the current assistant's allowed investigation, deployment and repository actions for an app before configuring a flow. This grants no permissions. | `settings:read` |
+| `get_assistant_automation_runs_by_id`<br />`GET /api/assistant/automation-runs/:id` | Inspect an automation run's actual state, result and task conversation ID. Never report action acceptance as verified recovery. | `settings:read` |
+| `get_assistant_automation_runs_by_id_proposal`<br />`GET /api/assistant/automation-runs/:id/proposal` | Read the exact saved remediation proposal for an automation run, including a proposed repository patch. Approval must be given by the user in OpenShip. | `settings:read` |
+| `get_assistant_automations`<br />`GET /api/assistant/automations` | List your workspace's assistant automations and recent runs. Flows react to deployment.failed or service.unhealthy and can use a saved scoped agent. Each run links to one inspectable task conversation. Includes paused state, notification channels, and approval status. | `settings:read` |
+| `patch_assistant_automation_settings`<br />`PATCH /api/assistant/automation-settings` | Pause all your assistant automations in this workspace with paused=true. Resuming requires the user in OpenShip. | `settings:write` |
+| `post_assistant_automation_activation_review`<br />`POST /api/assistant/automation-activation-review` | Offer inline activation of saved automations. When the user asks to enable or run flows, call this with their automationIds after preparing the paused configurations. Returns the exact apps, triggers, actions and limits for an Enable & continue review in chat. This read-only operation enables nothing and grants no access. Use this handoff instead of refusing or asking the user to toggle settings manually. After approval, inspect current state and continue the original task. reviewPath is a fallback for external MCP clients. | `settings:read` |
+| `post_assistant_automation_runs_by_id_decision`<br />`POST /api/assistant/automation-runs/:id/decision` | Cancel pending automation work with decision=cancel. decision=approve is reserved for the user's OpenShip session; an agent can never approve its own proposed fix. | `settings:write` |
+| `post_assistant_automations`<br />`POST /api/assistant/automations` | Create an assistant automation through the normal flow API. Choose a project, confirmed incident trigger, optional scoped agentId, response mode and existing channelIds. Agent callers save enabled=false and automaticConsent=false. If activation is part of the user's request, next call post_assistant_automation_activation_review with the saved automationIds to offer Enable & continue inside chat. Preparing a flow is not enabling it. No extra scheduler or bot connection is created. | `settings:write` |
+| `put_assistant_automations_by_id`<br />`PUT /api/assistant/automations/:id` | Update a paused automation using the same validations as its editor. Pause an enabled flow before editing it. Save enabled=false and automaticConsent=false, then use post_assistant_automation_activation_review when the user wants it enabled. Changes invalidate pending runs; the inline review approves the exact saved revision. | `settings:write` |
+
 ### audit
 
 | Tool and HTTP route | Description | Access |
@@ -142,6 +172,13 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `get_billing_subscription_quote`<br />`GET /api/billing/subscription/quote` | Quote a Custom Cloud server's retail price for the selected monthly or annual interval for its CPU, memory in MiB, and disk in GiB. Compute and storage are covered for the paid period, without a compute-credit allowance. This read does not create a server or start a purchase. Complete checkout in Billing. | `billing:read` |
 | `get_billing_topup_packs`<br />`GET /api/billing/topup-packs` | List metered Cloud credit packs and prices. Monthly servers need no compute-credit top-ups. Reading this does not buy credits. | `billing:read` |
 | `get_billing_usage`<br />`GET /api/billing/usage` | Read metered Cloud usage over the requested date range, grouped by hour or day. This is billing data, not live workload metrics. | `billing:read` |
+
+### chat-apps
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_chat_apps`<br />`GET /api/chat-apps` | List this workspace's chat-app connections: Slack, Discord, Telegram and Teams. Returns bot roles (assistant, deployment commands, or both), connection status and this user's account-link status, without credentials. Use for chat control-plane setup and troubleshooting; these are separate from outbound notification channels. Requires settings read access. To connect a new bot, use get_chat_apps_setup. | `settings:read` |
+| `get_chat_apps_setup`<br />`GET /api/chat-apps/setup` | Prepare the existing chat-app connection form for Slack, Discord, Telegram or Teams. Supply query.provider, and purpose='commands' for the deployment control plane, 'assistant' for AI chat, or 'both'. Returns setup guidance and an inline Connect button; creates nothing and grants no access. Bot tokens are entered privately in that form, never in chat. Slack/Discord/Telegram default to outbound (no public URL); Teams requires webhook HTTPS. Deployment commands need no Mindwire or AI. Each sender must complete their own normal account consent. | `settings:read` |
 
 ### cloud-local
 
@@ -249,6 +286,7 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `get_github_sources`<br />`GET /api/github/sources` | List configured self-hosted GitHub App sources and their connection status without private keys. Requires workspace-owner access. | `github:admin`<br />Self-hosted |
 | `get_github_status`<br />`GET /api/github/status` | GitHub connection status for the org. | `github:read` |
 | `post_github_connect`<br />`POST /api/github/connect` | Start GitHub connection and return a redirect, installation selection, device code, or token instructions. Let the user complete approval in Openship or GitHub. For redirects with completion=attempt, poll using the returned state; existing connection status does not confirm a new installation. | `github:write` |
+| `post_github_repos_by_owner_by_repo_changes`<br />`POST /api/github/repos/:owner/:repo/changes` | Publish a reviewed patch as one commit on a NEW openship branch, optionally opening a draft pull request. Requires exact base branch/SHA and source write access to every file. Never merges, forces, deletes files, or updates existing branches. Use a unique requestId; ambiguous failures must be reviewed before retrying. Branch pushes may trigger the repository's CI. | `github:write` |
 | `post_github_repos_by_owner_by_repo_webhooks`<br />`POST /api/github/repos/:owner/:repo/webhooks` | Register Openship’s deployment webhook for this repository. Prefer the project auto-deploy tool when configuring an existing project; it chooses the correct delivery strategy. | `github:write` |
 | `post_github_sources_by_id_verify`<br />`POST /api/github/sources/:id/verify` | Verify a configured self-hosted GitHub App source and refresh its health status. Does not create an installation or return its credentials. | `github:admin`<br />Self-hosted |
 
@@ -332,6 +370,12 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `post_mail_scan`<br />`POST /api/mail/scan` | Inspect an existing mail installation on body.serverId without reinstalling it. Returns adoptable state; use adopt to register an existing stack. | `mail_server:write`<br />Self-hosted |
 | `post_mail_webmail_deploy_project`<br />`POST /api/mail/webmail/deploy-project` | Deploy webmail for an existing mail server to a permitted target. Both self and cloud targets need target.serverId; use the local ID of a connected managed server for Cloud. Returns projectId and deploymentId for normal deployment monitoring. reconnectProjectId explicitly reuses an unlinked webmail on its existing mail server and hostname. replaceLegacy=true explicitly replaces an older unmanaged webmail installation. | `mail_server:write`<br />Self-hosted |
 
+### mcp-guide
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_mcp_guide`<br />`GET /api/mcp/guide` | Discover how OpenShip features work and the tools for each workflow. With no arguments, list available guides; with query.name, read that guide. Start with openship-overview or chat-apps for Slack/Discord/Telegram/Teams control-plane setup. Reuses the MCP prompt catalog; guidance does not grant permissions. Read one relevant guide, then discover only the tools needed and carry out the user's authorized task. | `permissions:read` |
+
 ### migration
 
 | Tool and HTTP route | Description | Access |
@@ -380,6 +424,7 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
+| `get_permissions_access_request`<br />`GET /api/permissions/access-request` | Ask the user to review this connection's access when a task needs unavailable permissions. Supply query.reason and query.access describing the minimum actions and resources needed. Returns an informational request only, with granted=false; it never changes permissions or authorizes a retry. The built-in Assistant shows a Review permissions button. External clients should direct the user to reviewPath in Openship Settings. Wait for the user; never ask for credentials or use another route around denied access. | `permissions:read` |
 | `get_permissions_grants`<br />`GET /api/permissions/grants` | Read workspace resource grants for query.userId. Requires permission to inspect that member; does not widen this credential’s access. | `permissions:read` |
 | `get_permissions_invitations`<br />`GET /api/permissions/invitations` | List pending workspace invitations and their proposed grants. Accepting or sending invitations remains an account-owner workflow. | `permissions:read` |
 | `get_permissions_members`<br />`GET /api/permissions/members` | List workspace members and their current roles. | `permissions:read` |
@@ -582,6 +627,8 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `get_system_servers_by_id_rate_limit`<br />`GET /api/system/servers/:id/rate-limit` | Read this server’s OpenResty request-rate limit, burst allowance and whitelist. | `server:read` |
 | `get_system_servers_by_id_reachability`<br />`GET /api/system/servers/:id/reachability` | Probe whether the Openship controller can reach this server now. A controller connection failure is not evidence that deployed applications are down. | `server:read` |
 | `get_system_servers_by_id_resize`<br />`GET /api/system/servers/:id/resize` | Preview applying a managed server's purchased capacity. Returns a revision and the projects that may restart; no billing or runtime changes. Review before resize. Disk shrinking requires migration. | `server:read` |
+| `get_system_servers_by_id_security`<br />`GET /api/system/servers/:id/security` | Read this customer's host advisory findings and inspection freshness. Provider-managed hosts are excluded. | `server:read` |
+| `get_system_servers_by_id_security_runs`<br />`GET /api/system/servers/:id/security/runs` | Read this server's security patch runs, bounded output and verified or reboot-required outcomes. | `server:admin` |
 | `get_system_servers_by_id_swarm`<br />`GET /api/system/servers/:id/swarm` | Inspect Docker Swarm membership on a self-hosted server. Set details=true to read stacks, service replica counts, ports, mounts and nodes from a manager. Requires server administration because inventory spans the cluster. Read-only: does not join nodes, adopt stacks or change services. Workers require a manager connection for inventory. No environment values, join tokens or credentials are returned. | `server:admin`<br />Self-hosted |
 | `get_system_servers_by_id_tunnels`<br />`GET /api/system/servers/:id/tunnels` | List saved SSH port-forwarding tunnels for this server and their current state. Tunnels run from this Openship controller, not from the MCP client. | `server:read`<br />Self-hosted |
 | `get_system_servers_by_id_usage`<br />`GET /api/system/servers/:id/usage` | Read measured CPU, memory and disk usage plus accessible projects on this server. Purchased disk is capacity, not bytes used. Unavailable measurements are null. This never provisions or resumes a server. | `server:read` |
@@ -634,6 +681,9 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `post_system_servers_by_id_ports_scan`<br />`POST /api/system/servers/:id/ports/scan` | Inspect listening ports through this server's execution connection. Returns protocol, bound address and process without changing listeners. Managed Cloud listeners are inside the server; public access is controlled by provider networking and project routes. | `server:read` |
 | `post_system_servers_by_id_resize`<br />`POST /api/system/servers/:id/resize` | Apply a reviewed managed server resize with its preview revision, idempotency key and restart confirmation. Preserves container recovery checkpoints and waits for deployments. Poll server get for completion. | `server:admin` |
 | `post_system_servers_by_id_retry`<br />`POST /api/system/servers/:id/retry` | Retry this managed server's failed lifecycle operation. Reuses its provider identity and saved recovery checkpoint. Inspect the error first, then poll server get for progress. | `server:admin` |
+| `post_system_servers_by_id_security_apply`<br />`POST /api/system/servers/:id/security/apply` | Apply an explicitly reviewed host patch token. Revalidates the exact plan and returns a server run ID; kernel installation may still require a reboot. | `server:admin` |
+| `post_system_servers_by_id_security_check`<br />`POST /api/system/servers/:id/security/check` | Inspect this customer's Ubuntu host against signed advisory rules using bounded commands. Does not install packages. | `server:admin` |
+| `post_system_servers_by_id_security_plan`<br />`POST /api/system/servers/:id/security/plan` | Refresh package indexes and prepare an expiring host security patch plan. Review all package changes and service interruption before applying its token. | `server:admin` |
 | `post_system_servers_by_id_swarm_connect`<br />`POST /api/system/servers/:id/swarm/connect` | Connect an existing Swarm manager as a project deployment target. Verifies cluster identity without creating, joining, upgrading or adopting nodes or stacks. Requires fleet administration. | `server:admin`<br />Self-hosted |
 | `post_system_servers_by_id_tunnels`<br />`POST /api/system/servers/:id/tunnels` | Save an SSH port-forwarding tunnel configuration. Start it separately; its local bind address belongs to the Openship controller. | `server:write`<br />Self-hosted |
 | `post_system_servers_by_id_tunnels_by_tunnelId_start`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/start` | Start this saved tunnel on the Openship controller and return its local address. Read the tunnel list to inspect state. | `server:write`<br />Self-hosted |
@@ -651,6 +701,7 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `get_updates`<br />`GET /api/updates` | List update statuses for the org (apps, projects, self-app, webmail). ?behind=1 filters to those with an update available. | `updates:read` |
 | `get_updates_advisories`<br />`GET /api/updates/advisories` | Read the shared release/security feeds and authorized workspace findings from current cached observations. Does not execute container commands; respects feed polling and backoff. | `updates:read` |
 | `get_updates_by_projectId_security`<br />`GET /api/updates/:projectId/security` | Match verified security notices against deployed image receipts and bounded, isolated runtime version checks. Does not deploy. | `project:read` |
+| `get_updates_security_policy`<br />`GET /api/updates/security/policy` | Read the workspace runtime security advisory check setting and whether this account can change it. | `updates:read` |
 | `post_updates_by_projectId_apply`<br />`POST /api/updates/:projectId/apply` | Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup). | `project:write` |
 | `post_updates_by_projectId_runtime`<br />`POST /api/updates/:projectId/runtime` | Refresh published runtime images and rebuild selected services at the active commit, without upgrading application code. Omit serviceIds to update the project. | `project:write` |
 | `post_updates_by_projectId_runtime_check`<br />`POST /api/updates/:projectId/runtime/check` | Check configured image tags and recorded build bases against their current registry digests. Does not deploy. | `project:read` |
@@ -658,6 +709,7 @@ The current API has **525 unique tools**. Permission tags below describe the rou
 | `post_updates_by_projectId_security_check`<br />`POST /api/updates/:projectId/security/check` | Refresh this project's isolated runtime observations and compare them with verified advisories. Does not deploy or bypass GitHub feed backoff. | `project:read` |
 | `post_updates_scan`<br />`POST /api/updates/scan` | Trigger a fresh update scan across the org's projects/apps. | `updates:write` |
 | `put_updates_by_projectId_security_policy`<br />`PUT /api/updates/:projectId/security/policy` | Opt in or out of automatic, signed, verified image security refreshes for this project. Off by default. | `project:write` |
+| `put_updates_security_policy`<br />`PUT /api/updates/security/policy` | Enable or disable runtime security advisory checks for this workspace. Only owners and admins can change this setting. | `updates:write` |
 
 ## HTTP-only routes
 
@@ -690,18 +742,41 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `POST /api/actions/runtime/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
-| `GET /api/affiliates` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `POST /api/affiliates/enroll` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `GET /api/affiliates/offers` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `POST /api/affiliates/offers` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `POST /api/affiliates/offers/revoke` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `POST /api/affiliates/payout-destination` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `GET /api/affiliates/payouts` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `POST /api/affiliates/payouts` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `POST /api/affiliates/payouts/cancel` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `GET /api/affiliates/referrals` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
-| `GET /api/affiliates/referrals/payments` | Personal affiliate earnings and cash payout requests are managed in the Affiliates page. |
+| `GET /api/affiliates` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/affiliates/enroll` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/affiliates/offers` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/affiliates/offers` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/affiliates/offers/revoke` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/affiliates/payout-destination` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/affiliates/payouts` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/affiliates/payouts` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/affiliates/payouts/cancel` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/affiliates/referrals` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/affiliates/referrals/payments` | Personal referral earnings and cash payout requests are managed in the Referral page. |
 | `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `POST /api/assistant/automation-activation` | User approval of saved automation revisions. Agents offer the read-only activation review. |
+| `GET /api/assistant/callback` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `GET /api/assistant/conversations` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/conversations` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `DELETE /api/assistant/conversations/:id` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `GET /api/assistant/conversations/:id` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/conversations/:id/activity` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `GET /api/assistant/conversations/:id/history` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/conversations/:id/messages` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/conversations/:id/respond` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/conversations/:id/stop` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/conversations/:id/turns` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/custom-api` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/disable` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/enable` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `GET /api/assistant/providers` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `GET /api/assistant/providers/:provider` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `PATCH /api/assistant/providers/:provider` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/providers/:provider/auth` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/providers/:provider/auth/step` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/providers/:provider/logout` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `POST /api/assistant/providers/:provider/setup` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
+| `GET /api/assistant/status` | User-session assistant controls and native agent authentication. Agents use the ordinary /api/mcp endpoint, not recursive assistant tools. |
 | `GET /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /api/auth/callback/github` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
@@ -748,6 +823,20 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/billing/subscription/change/cancel` | Cancel a pending financial change in Billing; MCP exposes its resulting status. |
 | `POST /api/billing/topup` | Starts a paid browser checkout. Buy credits in Settings → Billing; MCP can list pack prices and current balance. |
 | `POST /api/billing/webhook/stripe` | Retired Stripe endpoint — always 410, no billing mutations |
+| `POST /api/chat-apps` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `DELETE /api/chat-apps/:id` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `PATCH /api/chat-apps/:id` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `PUT /api/chat-apps/:id/assistant` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `PATCH /api/chat-apps/:id/assistant-policy` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `POST /api/chat-apps/:id/commands/sync` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `GET /api/chat-apps/:id/configuration` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `PUT /api/chat-apps/:id/configuration` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `PATCH /api/chat-apps/:id/purpose` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `POST /api/chat-apps/:id/unlink` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `GET /api/chat-apps/callback` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `POST /api/chat-apps/pairing` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `POST /api/chat-apps/pairing/complete` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
+| `POST /api/chat-apps/webhooks/:id` | Bot credentials, connector changes and account consent require the user's session. Agents may inspect scoped connection status and prepare setup guidance. |
 | `GET /api/cloud/account` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/analytics` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/connect-authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
@@ -755,6 +844,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/cloud/connect-handoff` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `GET /api/cloud/connect-poll` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `GET /api/cloud/desktop-handoff` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/device-authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/disconnect` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/edge-proxy` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/edge-proxy/delete` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
@@ -878,6 +968,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/services/terminal/ws/:serviceId` | WebSocket upgrade — auth happens inside upgradeWebSocket via ticket subprotocol or session-cookie fallback (HTTP middleware blocks the handshake) |
 | `PUT /api/settings` | Compatibility settings update; use the dedicated build-mode tool for this preference. |
 | `PATCH /api/settings/clone-credentials` | User-global Git clone credentials are configured in the authenticated dashboard; MCP deploys using those saved credentials. |
+| `PATCH /api/settings/locale` | Personal language follows the authenticated user's dashboard preference. |
 | `POST /api/system/bootstrap-admin` | CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup) |
 | `POST /api/system/cli-session` | CLI on the installation host — requires the private internal token, refuses Cloud and browser callers, and creates a temporary session for the existing instance administrator |
 | `POST /api/system/cloud-connect` | CLI setup — finalize Openship Cloud PKCE handshake for a free domain; internal-token gated |
@@ -967,6 +1058,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `PUT /api/system/servers/:id/github/deploy-key-mode` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
 | `POST /api/system/servers/:id/github/ssh-key` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
 | `PUT /api/system/servers/:id/github/token` | Changes a deployment server’s GitHub credential mode. Configure tokens and deploy keys in the server’s GitHub settings. |
+| `GET /api/system/servers/:id/security/runs/:runId/stream` | SSE transport for live progress. Read securityRuns for saved status and logs over MCP. |
 | `DELETE /api/system/settings` | Instance reset/recovery is an operator workflow in Settings, not a tenant automation operation. |
 | `PATCH /api/system/settings` | Instance identity and authentication settings are operator-controlled through Settings; workspace deployment preferences have dedicated MCP tools. |
 | `PUT /api/system/settings/email` | Instance-wide email identity and credentials are configured by the instance administrator in Settings. |

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useScopedResource } from "@/hooks/use-scoped-resource";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ export function ReferralCode({
   const { t } = useI18n(),
     copy = t.affiliates;
   const [draft, setDraft] = useState(referral.code);
+  const inputId = useId();
   if (referral.code)
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-card p-4 text-sm">
@@ -61,6 +62,7 @@ export function ReferralCode({
           </p>
         </div>
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           disabled={disabled}
@@ -74,11 +76,15 @@ export function ReferralCode({
       </div>
     );
   return (
-    <details className="text-sm text-muted-foreground">
-      <summary className="w-fit cursor-pointer py-2">{copy.code}</summary>
-      <div className="mt-2 flex max-w-md gap-2">
+    <div className="max-w-sm space-y-2">
+      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
+        {copy.code}
+      </label>
+      <div className="flex items-center gap-2">
         <Input
+          id={inputId}
           variant="filled"
+          className="h-10 min-w-0 flex-1"
           aria-label={copy.code}
           value={draft}
           disabled={disabled}
@@ -86,13 +92,15 @@ export function ReferralCode({
           onChange={(e) => setDraft(e.target.value.toUpperCase().trim())}
         />
         <Button
+          type="button"
           variant="secondary"
+          className="shrink-0"
           disabled={disabled || !/^AF-[A-Z0-9][A-Z0-9-]{5,59}$/.test(draft)}
           onClick={() => referral.setCode(draft)}
         >
           {copy.apply}
         </Button>
       </div>
-    </details>
+    </div>
   );
 }

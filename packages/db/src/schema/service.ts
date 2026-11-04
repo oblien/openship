@@ -203,6 +203,8 @@ export const service = pgTable(
     /* ── State ──────────────────────────────────────────────────────────── */
     /** Whether this service should be deployed (allows disabling individual services) */
     enabled: boolean("enabled").notNull().default(true),
+    /** Removed from the desired stack; retain history/env until runtime cleanup and for rollback. */
+    archivedAt: timestamp("archived_at"),
     /** Display / dependency order (lower = deployed first) */
     sortOrder: integer("sort_order").notNull().default(0),
 

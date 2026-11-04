@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { APIError } from "better-auth/api";
 
-const { getAccessToken } = vi.hoisted(() => ({
+const { getAccessToken, findAccount } = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
+  findAccount: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
+    account: { findByProvider: findAccount },
     gitInstallation: {
       findByOwner: vi.fn(),
     },
@@ -34,6 +36,7 @@ import { getUserToken } from "@repo/platform/engine/modules/github/github.auth";
 describe("getUserToken", () => {
   beforeEach(() => {
     getAccessToken.mockReset();
+    findAccount.mockReset().mockResolvedValue({ id: "local-account-1", accountId: "github-user-42" });
   });
 
   it("uses Better Auth to resolve the GitHub OAuth token", async () => {
@@ -42,13 +45,20 @@ describe("getUserToken", () => {
     await expect(getUserToken("user-1")).resolves.toBe("github-user-token");
     expect(getAccessToken).toHaveBeenCalledWith({
       body: {
-        providerId: "github",
+        accountId: "local-account-1",
         userId: "user-1",
       },
     });
   });
 
   it("returns null when the GitHub account is not linked", async () => {
+    findAccount.mockResolvedValue(null);
+
+    await expect(getUserToken("user-1")).resolves.toBeNull();
+    expect(getAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("returns null if the linked account disappears before token lookup", async () => {
     getAccessToken.mockRejectedValue(
       new APIError("BAD_REQUEST", {
         message: "Account not found",

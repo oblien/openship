@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
@@ -118,6 +119,7 @@ export function ServiceDetailPanel({
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
   const showCloudPricing = useCloudDeployPricing(workspaceId);
+  const showComposeReview = useComposeReview(projectId);
   const environmentApply = useServiceEnvironmentApply(projectId, onRefresh, workspaceId);
   const runtimeUpdate = useRuntimeUpdate(projectId, service.id, workspaceId,
     JSON.stringify([activeDeploymentId, service.image, service.build, service.buildImage]));
@@ -418,7 +420,7 @@ export function ServiceDetailPanel({
       onRefresh();
     } catch (err) {
       setDeploying(false);
-      if (showCloudPricing(err)) return;
+      if (showComposeReview(err) || showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -458,7 +460,7 @@ export function ServiceDetailPanel({
       return true;
     } catch (err) {
       setRedeploying(false);
-      if (showCloudPricing(err)) return false;
+      if (showComposeReview(err) || showCloudPricing(err)) return false;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",

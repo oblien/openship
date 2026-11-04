@@ -171,3 +171,72 @@ describe("swapManagedImage — from-source backstop", () => {
     expect(res.swapped).toBe(true);
   });
 });
+
+describe("swapManagedImage — recovery after startup exceptions", () => {
+  const executor = {
+    exec: async () => "sha256:available",
+  } as unknown as CommandExecutor;
+
+  it("restores the old image when replacement startup throws after removing it", async () => {
+    let servingImage: string | null = "img:old";
+    const messages: string[] = [];
+
+    const result = await swapManagedImage(executor, {
+      kind: "edge",
+      from: "img:old",
+      to: "img:new",
+      label: "edge",
+      onLog: (entry) => messages.push(entry.message),
+      start: async (image) => {
+        servingImage = null;
+        if (image === "img:new") throw new Error("SSH channel closed during docker run");
+        servingImage = image;
+        return true;
+      },
+    });
+
+    expect(servingImage).toBe("img:old");
+    expect(result).toEqual({ swapped: false, down: false });
+    expect(messages.join("\n")).toContain("SSH channel closed during docker run");
+  });
+
+  it("reports a failed rollback after replacement startup throws", async () => {
+    const messages: string[] = [];
+    const result = await swapManagedImage(executor, {
+      kind: "mail",
+      from: "img:old",
+      to: "img:new",
+      label: "mail engine",
+      onLog: (entry) => messages.push(entry.message),
+      start: async (image) => {
+        if (image === "img:new") throw new Error("SSH channel closed during docker run");
+        return false;
+      },
+    });
+
+    expect(result).toEqual({ swapped: false, down: true });
+    expect(messages.join("\n")).toContain("SSH channel closed during docker run");
+    expect(messages.join("\n")).toContain("Rollback to img:old ALSO failed");
+  });
+
+  it("propagates an inconclusive rollback so the caller can probe server liveness", async () => {
+    const rollbackError = new Error("SSH connection unavailable during rollback");
+    const messages: string[] = [];
+    await expect(
+      swapManagedImage(executor, {
+        kind: "edge",
+        from: "img:old",
+        to: "img:new",
+        label: "edge",
+        onLog: (entry) => messages.push(entry.message),
+        start: async (image) => {
+          if (image === "img:new") throw new Error("SSH channel closed during docker run");
+          throw rollbackError;
+        },
+      }),
+    ).rejects.toBe(rollbackError);
+
+    expect(messages.join("\n")).toContain("SSH channel closed during docker run");
+    expect(messages.join("\n")).not.toContain("is down on this server");
+  });
+});

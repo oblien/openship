@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import Dockerode from "dockerode";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deploymentResourceIssue, safeErrorMessage } from "@repo/core";
 
 import { statusResponse } from "../../test/fixtures/docker-buildkit";
 import type { BuildConfig, CommandExecutor } from "../types";
@@ -20,7 +21,43 @@ import {
 import { stubProtectedBuildWorker } from "../../test/fixtures/remote-build-worker";
 import { DockerRuntime } from "./docker";
 
+// Generated package-manager bootstrap commands can exceed the error-message limit.
+const longBuildCommand = `node -e '${"var bootstrap = true;".repeat(400)}' && yarn build`;
+const longBuildFailure = `#10 ERROR: process \"/bin/sh -c ${longBuildCommand}\" did not complete successfully: exit code: 137`;
+
 describe("Docker build diagnostics", () => {
+  it.each([
+    [longBuildFailure, "process-killed", "SIGKILL (exit code 137)"],
+    [
+      `${longBuildFailure}\nfailed to write layer: no space left on device`,
+      "storage-full",
+      "disk space",
+    ],
+  ])("keeps the cause readable after a long error is saved", (output, issue, explanation) => {
+    const saved = safeErrorMessage(new Error(extractDockerBuildFailureHint(output)!));
+    expect(saved.slice(0, 500)).toContain(explanation);
+    expect(deploymentResourceIssue(saved)).toBe(issue);
+  });
+
+  it("selects the failing line without including unrelated output from the same chunk", () => {
+    const output = `${longBuildCommand}\n#10 135.6 Compiled successfully\n#10 149.8 error Command failed with exit code 137.\n`;
+    const hint = extractDockerBuildFailureHint(output)!;
+    expect(hint).toContain("error Command failed with exit code 137.");
+    expect(hint).not.toContain(longBuildCommand);
+    expect(hint.length).toBeLessThan(2000);
+  });
+
+  it("redacts credentials before shortening the quoted command", () => {
+    const credential = "ghp_" + "a".repeat(300);
+    const output = `process \"git clone https://x-access-token:${credential}@github.com/example/app && ${longBuildCommand}\" returned a non-zero code: 1`;
+    const hint = extractDockerBuildFailureHint(output)!;
+    expect(hint.slice(0, 100)).toContain("exited with code 1");
+    expect(hint).not.toContain("ghp_");
+    expect(hint).not.toContain("a".repeat(16));
+    expect(hint).toContain("https://***@github.com/example/app");
+    expect(hint).toContain("returned a non-zero code: 1");
+  });
+
   it.each([
     "ERROR: failed to solve: ResourceExhausted: copying of parent failed: copy_file_range failed: no space left on device",
     "npm ERR! code ENOSPC",
@@ -226,6 +263,7 @@ describe("DockerRuntime build failure paths", () => {
         completionError?: Error;
         expectedError: string | null;
         expectedHint?: string;
+        expectedSavedHint?: string;
       }> = [
         { name: "successful build", lines: [success], expectedError: null },
         { name: "cached build without command output", lines: [], expectedError: null },
@@ -293,6 +331,20 @@ describe("DockerRuntime build failure paths", () => {
           expectedHint: "could not allocate memory (ENOMEM)",
         },
         {
+          name: "long Docker wrapper with an ordinary nonzero exit",
+          lines: [],
+          errorEvent: { error: longBuildFailure.replace(/137$/, "1") },
+          expectedError: "The build process exited with code 1.",
+          expectedSavedHint: "The build process exited with code 1.",
+        },
+        {
+          name: "long Docker wrapper after a killed build",
+          lines: ["#10 149.8 error Command failed with exit code 137."],
+          errorEvent: { error: longBuildFailure },
+          expectedError: "SIGKILL (exit code 137)",
+          expectedSavedHint: "SIGKILL (exit code 137)",
+        },
+        {
           name: "real Docker failure after unrelated failure-looking output",
           lines: [failure, success],
           errorEvent: { error: "Image export failed" },
@@ -356,11 +408,20 @@ describe("DockerRuntime build failure paths", () => {
           await expect(result).resolves.toBeUndefined();
         }
         if (scenario.expectedHint) await expect(result).rejects.toThrow(scenario.expectedHint);
+        if (scenario.expectedSavedHint) {
+          expect(
+            safeErrorMessage(await result.catch((error: unknown) => error)).slice(0, 500),
+          ).toContain(scenario.expectedSavedHint);
+        }
         if (scenario.completionError) await expect(result).rejects.toBe(scenario.completionError);
         for (const line of scenario.lines) {
           expect(onLog).toHaveBeenCalledWith(
             expect.objectContaining({ message: expect.stringContaining(line) }),
           );
+        }
+        const rawError = scenario.errorEvent?.errorDetail?.message || scenario.errorEvent?.error;
+        if (rawError) {
+          expect(onLog).toHaveBeenCalledWith(expect.objectContaining({ message: rawError }));
         }
         expect(vi.getTimerCount()).toBe(0);
       });
@@ -707,4 +768,57 @@ describe("DockerRuntime build failure paths", () => {
     expect(error.message).toContain("killed by SIGKILL (exit code 137)");
     expect(error.message).toContain("capped at 512 MB RAM");
   });
+
+  it.each(["lines", "one chunk"])(
+    "saves the build cause from remote %s without dropping raw logs",
+    async (framing) => {
+      const lines = [
+        longBuildCommand,
+        "#10 149.8 error Command failed with exit code 137.",
+        longBuildFailure,
+      ];
+      const chunks = framing === "lines" ? lines.map((line) => `${line}\n`) : [lines.join("\n")];
+      const executor = {
+        exec: vi.fn(async () => ""),
+        streamExec: vi.fn(
+          async (_command: string, onLog: Parameters<CommandExecutor["streamExec"]>[1]) => {
+            for (const message of chunks) {
+              onLog({
+                timestamp: "",
+                level: "error",
+                message,
+                rawData: Buffer.from(message).toString("base64"),
+              });
+            }
+            return { code: 1, output: chunks.join("") };
+          },
+        ),
+      } as unknown as CommandExecutor;
+      const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
+      Object.assign(runtime, { connectionOptions: { executor } });
+      stubProtectedBuildWorker(runtime);
+      const onLog = vi.fn();
+      const config = { ...buildConfig(), resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 } };
+      const error = await (runtime as any)
+        .buildImageOnRemote(
+          config,
+          "/tmp/diagnostic-build",
+          "Dockerfile",
+          "openship/diagnostic:bld_test",
+          new BuildLogger(onLog),
+        )
+        .catch((caught: Error) => caught);
+
+      const saved = safeErrorMessage(error);
+      expect(saved.slice(0, 500)).toContain("SIGKILL (exit code 137)");
+      expect(saved).toContain("does not prove OOM");
+      expect(saved).not.toContain("capped at");
+      expect(deploymentResourceIssue(saved)).toBe("process-killed");
+      for (const message of chunks) {
+        expect(onLog).toHaveBeenCalledWith(
+          expect.objectContaining({ message, rawData: Buffer.from(message).toString("base64") }),
+        );
+      }
+    },
+  );
 });

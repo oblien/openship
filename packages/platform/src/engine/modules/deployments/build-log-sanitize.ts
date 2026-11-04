@@ -65,9 +65,10 @@ export const MAX_TOTAL_CHARS = 4_000_000;
  * line of such characters shows up, and this function runs on the persist path, so
  * the unbounded form turned a big log into a hang (the oversized-payload case in
  * build-log-sanitize.test.ts went from milliseconds to >280s). Real schemes are
- * under 16 characters and real userinfo is far under 512.
+ * under 16 characters. Userinfo allows 2048 because a GitHub App installation token
+ * can pass 512, and a URL that doesn't match is stored with its token (#979).
  */
-const URL_USERINFO = /([a-z][a-z0-9+.-]{0,15}:\/\/)[^\s/@]{1,512}@/gi;
+const URL_USERINFO = /([a-z][a-z0-9+.-]{0,15}:\/\/)[^\s/@]{1,2048}@/gi;
 
 /**
  * Bare GitHub tokens, for the paths that log a token without a URL around it

@@ -377,7 +377,6 @@ function PlanPicker({
           className={`min-w-0 space-y-5 ${summaryAside ? "@min-[64rem]/plans:col-start-1 @min-[64rem]/plans:row-start-1" : ""}`}
         >
           {canChooseMode && purchase.tabs === "inline" && !purchase.management && <CloudPurchaseTabs />}
-          {canPurchase && !payg && !managing && <ReferralCode referral={referral} disabled={busy} />}
           {canChooseMode ? (
             <CloudPurchaseHeaderContent details={details} controls={controls} />
           ) : (
@@ -438,6 +437,7 @@ function PlanPicker({
             ) : visiblePlans.length > 0 ? (
               <PricingCards
                 plans={visiblePlans}
+                referralOffer={canPurchase && referral.verified ? referral.state.data ?? undefined : undefined}
                 ui={payload.ui}
                 currentPlan={selectedCurrentPlan}
                 onSelectPlan={handleSelectPlan}
@@ -469,6 +469,11 @@ function PlanPicker({
           )}
           {contactPlans.length > 0 && (
             <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
+          )}
+          {canPurchase && !payg && !managing && (
+            <div className="border-t border-border/50 pt-5">
+              <ReferralCode referral={referral} disabled={busy} />
+            </div>
           )}
           <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
           <CloudCheckoutFeedback failure={unavailable} plans={payload.plans} onClose={dismissUnavailable}

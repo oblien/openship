@@ -619,6 +619,12 @@
       "repository": "仓库",
       "open": "打开"
     },
+    "branch": {
+      "label": "部署分支",
+      "description": "用于此环境的后续部署。保存不会重新部署应用。",
+      "saved": "部署分支已保存",
+      "saveFailed": "无法保存部署分支"
+    },
     "webhookEndpoint": {
       "title": "Webhook 端点",
       "descriptionSet": "GitHub 将推送事件直接投递到此域名",
@@ -1254,6 +1260,22 @@
     "pinned": "镜像已通过摘要固定。请编辑配置的引用以更新镜像。"
   },
   "securityAdvisories": {
+    "checksEnabled": "检查安全公告",
+    "checksDescription": "关闭后，将暂停此工作区的运行时和主机检查、新公告提醒及安全补丁操作。保留现有信息和项目更新授权。",
+    "checksDisabled": "此工作区已禁用安全公告检查。",
+    "manageChecks": "管理安全公告检查",
+    "retrySettings": "重试",
+    "bannerSettings": "安全横幅设置",
+    "hideBanners": "隐藏安全横幅",
+    "showBanners": "显示安全横幅",
+    "bannerDescription": "在此浏览器和工作区的仪表板顶部显示应用和服务器的安全通知。检查与通知渠道单独控制。",
+    "openRuntimeConfiguration": "检查运行时配置",
+    "severity": {
+      "critical": "严重",
+      "high": "高",
+      "moderate": "中等",
+      "low": "低"
+    },
     "sourceRedeployRequired": "刷新运行时之前，请从已保存的源代码重新构建此应用。当前镜像没有经过验证的源代码修订版本。从源代码重新部署可能会包含更新的代码；请先在“部署”中查看，然后再次检查此安全公告。",
     "openSourceRedeploy": "打开源代码重新部署",
     "reviewApps": "查看受影响的应用（{count}）",
@@ -1262,7 +1284,7 @@
     "checking": "检查中…",
     "title": "安全公告",
     "unavailable": "安全检查不可用或已过期。已有公告仍会显示。",
-    "affected": "当前组织中你有权访问的应用的发现。",
+    "affected": "此工作区中你有权访问的应用和服务器的检查结果。",
     "noMatches": "在已检查的数据中没有匹配公告。这不是完整的漏洞扫描。",
     "partial": "部分运行时无法检查。",
     "guidance": "阅读公告",
@@ -1277,5 +1299,42 @@
     "persistent": "关闭横幅后，未解决的发现仍会保留在此处。",
     "otherApps": "其他应用 ({count})",
     "details": "详情与建议"
+  },
+  "hostSecurity": {
+    "title": "服务器安全",
+    "reviewPatch": "检查补丁",
+    "applyPatch": "应用已检查的补丁",
+    "patchDetails": "检查服务器补丁",
+    "interruption": "将安装列出的软件包，并可能重启服务。请检查所有更改。已运行的服务可能仍需要管理员手动重启。",
+    "rebootRequired": "需要重启。重启后必须检查正在运行的内核。",
+    "manual": "需要手动检查",
+    "runs": "运行记录",
+    "noRuns": "暂无安全补丁运行记录。",
+    "scanTask": "安全公告检查任务",
+    "scanHint": "按保存的计划运行。检查结果会过期，失败的检查将以逐步延长的间隔重试。",
+    "schedulerPaused": "定期检查已暂停。",
+    "checkPending": "检查待处理。缓存的信息可能已过期。",
+    "verified": "版本检查通过",
+    "needsReview": "需要检查",
+    "nextCheck": "下次检查",
+    "notSupported": "主机补丁适用于客户自行管理的 Ubuntu 服务器。提供商管理的基础设施使用其自身的维护流程。",
+    "package": "软件包",
+    "current": "已安装",
+    "target": "计划版本",
+    "reviewResources": "查看受影响的资源 ({count})",
+    "openRuns": "打开服务器运行记录",
+    "lastRun": "上次检查",
+    "appOpen": "在 Openship 打开时运行。",
+    "scanStates": {
+      "pending": "待处理",
+      "running": "运行中",
+      "completed": "已完成",
+      "partial": "部分已检查",
+      "interrupted": "已中断"
+    },
+    "reviewReboot": "审核重启",
+    "applyReboot": "安排重启",
+    "rebooting": "已安排重启，等待内核验证",
+    "rebootInterruption": "服务器将在一分钟后重启，中断其所有工作负载。主机重新连接后，Openship 将验证正在运行的内核。"
   }
 }

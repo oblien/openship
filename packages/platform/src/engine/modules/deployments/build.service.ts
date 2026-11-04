@@ -80,6 +80,7 @@ import {
   type ProjectInfo,
   type ProjectSourceEnv,
 } from "./prepare.service";
+import { assertComposeReviewed } from "./compose-review";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 import { getFolderSession } from "../projects/folder/session-store";
 import {
@@ -888,6 +889,7 @@ async function reconcileComposeSource(
   branch: string,
   options: {
     changedPaths?: string[] | null;
+    composeRevision?: string;
     interpolationEnv?: Record<string, string>;
   } = {},
 ): Promise<ProjectInfo | undefined> {
@@ -969,10 +971,36 @@ async function reconcileComposeSource(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );
     }
+    assertComposeReviewed(project.id, composeRows, services, options.composeRevision);
     await repos.service.reconcileFromCompose(project.id, services);
     return info;
   } catch (err) {
     if (err instanceof AppError) throw err;
+    // If localPath is inaccessible (e.g. controller runs containerized where the
+    // host directory isn't mounted) but the project's existing Compose services
+    // are already stored and image-only (no build context), warn and keep the
+    // stored service definitions instead of failing closed (#1583).
+    const isEnoent = (err as NodeJS.ErrnoException)?.code === "ENOENT";
+    if (
+      isLocalSource &&
+      isEnoent &&
+      !bootstrapping
+    ) {
+      const composeRows = await listProjectComposeServices(project.id).catch((error) => {
+        observeCaughtError(error, "platform/engine/modules/deployments/build.service");
+        return [];
+      });
+      const isImageOnly =
+        composeRows.length > 0 &&
+        composeRows.every((s) => serviceKind(s) === "compose" && !s.build && Boolean(s.image));
+      if (isImageOnly) {
+        errorDiagnostics.warn(
+          "platform/engine/modules/deployments/build.service",
+          `[compose-source] localPath "${localPath}" is inaccessible (${safeErrorMessage(err)}); keeping stored image-only services for ${project.id}.`,
+        );
+        return undefined;
+      }
+    }
     const action = bootstrapping ? "initialize" : "refresh";
     // Once a source refresh is required, running a cached definition after a
     // failed read cannot claim to deploy the requested configuration (#893).
@@ -1018,6 +1046,23 @@ async function resolveLifecycleSourceEnv(
           project.rootDirectory ?? "",
         );
   } catch (err) {
+    const isEnoent = (err as NodeJS.ErrnoException)?.code === "ENOENT";
+    if (localPath && isEnoent) {
+      const composeRows = await listProjectComposeServices(project.id).catch((error) => {
+        observeCaughtError(error, "platform/engine/modules/deployments/build.service");
+        return [];
+      });
+      const isImageOnly =
+        composeRows.length > 0 &&
+        composeRows.every((s) => serviceKind(s) === "compose" && !s.build && Boolean(s.image));
+      if (isImageOnly) {
+        errorDiagnostics.warn(
+          "platform/engine/modules/deployments/build.service",
+          `[source-env] localPath "${localPath}" is inaccessible (${safeErrorMessage(err)}); keeping stored environment for ${project.id}.`,
+        );
+        return undefined;
+      }
+    }
     if (localPath) {
       throw new AppError(`Could not read project environment: ${safeErrorMessage(err)}`, 400);
     }
@@ -1784,6 +1829,9 @@ export async function requestBuildAccess(
   }
 
   const resolvedBranch = await resolveProjectBranch(ctx, project, branch);
+  // Pin the source checked by the review gate and the source built by the worker
+  // to the same commit, even if the branch moves while this request is running.
+  const { commitSha, commitMessage } = await resolveLatestCommitInfo(ctx, project, resolvedBranch);
 
   // Reconcile the repo's compose BEFORE resolving the service set — the third
   // deploy entry point (alongside redeployBuildSession + triggerDeployment) that
@@ -1797,7 +1845,8 @@ export async function requestBuildAccess(
   // authoritative topology choice: do not parse, materialize, or validate the
   // declared compose file behind the caller's back.
   if (serviceDeploymentMode !== "single") {
-    const reconciled = await reconcileComposeSource(ctx, project, resolvedBranch, {
+    const reconciled = await reconcileComposeSource(ctx, project, commitSha ?? resolvedBranch, {
+      composeRevision: input.composeRevision,
       interpolationEnv: composeInterpolationEnv,
     });
     sourceInfo ??= reconciled;
@@ -2185,9 +2234,6 @@ export async function requestBuildAccess(
     // Catalog apps receive an advisory host-capacity check.
     appTemplateId: project.appTemplateId,
   });
-
-  // ── Resolve commit info from the branch HEAD ────
-  const { commitSha, commitMessage } = await resolveLatestCommitInfo(ctx, project, snapshot.branch);
 
   // ── Resolve rollback context (shared helper — single default) ─────────
   const { rollbackStrategy, commitShaBefore } = await resolveRollbackContext(

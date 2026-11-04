@@ -121,6 +121,31 @@ afterAll(async () => {
 });
 
 describe("Cloud support tickets", () => {
+  it("queues one customer update and one support flag for repeated provisioning failure reports", async () => {
+    const failure = { workspaceId: "server-a", operationId: "initial-setup-a", serverName: "Production", attempts: 3,
+      owner: { id: "customer-a", name: "Alex", email: "customer@example.com" } };
+    const receipts = await Promise.all(Array.from({ length: 4 }, () => state.service!.reportProvisioningFailure(failure)));
+    expect(new Set(receipts.map(r => r.id)).size).toBe(1);
+    const id = receipts[0]!.id;
+    expect(await repo.find(id)).toMatchObject({ status: "open", ownerUserId: "customer-a", category: "deployment" });
+    expect(await repo.messages(id)).toHaveLength(2);
+    await state.service!.flush();
+    const customerMail = send.mock.calls.map(([mail]) => mail).filter(mail => mail.to === "customer@example.com");
+    expect(customerMail).toHaveLength(1);
+    expect(customerMail[0]!.subject).toContain("resolving an issue");
+    expect(customerMail[0]!.text).toContain("You don't need to submit another payment");
+    expect(customerMail[0]!.text).not.toContain("Your support request has been saved");
+    await state.service!.reportProvisioningFailure(failure);
+    await state.service!.flush();
+    expect(send.mock.calls.map(([mail]) => mail).filter(mail => mail.to === "customer@example.com")).toHaveLength(1);
+  });
+
+  it("flags support without guessing a customer address when a server has no owner contact", async () => {
+    const result = await state.service!.reportProvisioningFailure({ workspaceId: "server-b", operationId: "setup-b",
+      serverName: "Production", attempts: 3, owner: null });
+    expect((await repo.messages(result.id)).map(message => message.kind)).toEqual(["notification"]);
+  });
+
   it("commits the ticket and both email jobs before acknowledging receipt", async () => {
     const response = await call("", "POST", input());
     expect(response.status).toBe(201);

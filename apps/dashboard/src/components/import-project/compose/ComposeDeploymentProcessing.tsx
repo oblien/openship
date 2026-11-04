@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -49,6 +50,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
   const { config, state, onTerminalReady, respondToPrompt, resolvePortCheck, deploymentStatus } =
     useDeployment();
   const showCloudPricing = useCloudDeployPricing(config.workspaceId);
+  const showComposeReview = useComposeReview(state.projectId);
   const { showToast } = useToast();
   const { resolvedTheme } = useTheme();
   const { t } = useI18n();
@@ -238,7 +240,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
       router.push(newId ? `/build/${newId}` : `/projects/${state.projectId}`);
     } catch (err) {
       observeCaughtError(err, "dashboard/components/import-project/compose/ComposeDeploymentProcessing");
-      if (showCloudPricing(err)) {
+      if (showComposeReview(err) || showCloudPricing(err)) {
         // A quota refusal created no build. Keep the failed-service retry available.
         setDecisionResolved(false);
         return;
@@ -250,7 +252,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
     } finally {
       retryInFlightRef.current = false;
     }
-  }, [state.serviceStatuses, state.decisionFailedServiceIds, state.projectId, router, showToast, showCloudPricing, cd]);
+  }, [state.serviceStatuses, state.decisionFailedServiceIds, state.projectId, router, showToast, showCloudPricing, showComposeReview, cd]);
 
   // Auto-open the decision dialog once per deployment when a partial failure is
   // awaiting a decision. Closing it leaves the persistent banner in place, so the

@@ -19,6 +19,7 @@ import { getProjectHome } from "./project-home.operations";
 import { subscribeProjectLogs, openProjectServerLogs } from "./project-logs.operations";
 import { subscribeRoutingRetry } from "./project-routing-retry.operations";
 import { maybeCloudProjectRequest } from "../../lib/cloud/project-creation";
+import { assertHostMountWriteAccess } from "../deployments/host-mount-policy";
 
 async function checkSource(input: Partial<CreateProjectInput>) {
   if (input.localPath && process.env.OPENSHIP_NATIVE === "true")
@@ -50,6 +51,7 @@ const create = async (ctx: ExecutionContext, input: EnsureProjectInput) => {
     envelope: "data",
   });
   if (cloud) return { ...cloud, source: "cloud" as const };
+  await assertHostMountWriteAccess(ctx, input);
   const service = await import("./project.service");
   await checkSource(input);
   if (input.routeStrategy === undefined) {
@@ -78,6 +80,7 @@ export const projectDependencies: ProjectDependencies = {
       isEnsureProjectResult,
     );
     if (cloud) return cloud;
+    await assertHostMountWriteAccess(ctx, input);
     const service = await import("./project.service");
     await checkSource(input);
     return service.ensureProject(input, ctx.organizationId, ctx);
@@ -89,6 +92,7 @@ export const projectDependencies: ProjectDependencies = {
     return project;
   },
   async update(ctx, id, input) {
+    await assertHostMountWriteAccess(ctx, input);
     const service = await import("./project.service");
     await checkSource(input);
     return service.updateProject(id, input, ctx.organizationId);

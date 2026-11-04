@@ -9,6 +9,8 @@ export function createRemoteUpdateOperations(http: HttpClient): UpdateOperations
   return Object.freeze({
     ...createRemoteScopedOperations(http, UpdateCollectionSchemas, {
       advisories: { method: "GET", path: () => "/updates/advisories", envelope: "data" },
+      securityCheckPolicy: { method: "GET", path: () => "/updates/security/policy", envelope: "data" },
+      setSecurityCheckPolicy: { method: "PUT", path: () => "/updates/security/policy", envelope: "data" },
       list: {
         method: "GET",
         path: (input) =>

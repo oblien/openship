@@ -5,6 +5,11 @@ import type { ResourceOperationSchema, ResourceOperations, ScopedOperations } fr
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const object = Type.Record(Type.String(), Type.Unknown());
+export const JobRunStepSchema = Type.Object({
+  id: Type.String(), label: Type.String(),
+  status: Type.Union((["pending", "running", "completed", "failed", "skipped"] as const).map(status => Type.Literal(status))),
+}, { additionalProperties: false });
+export type JobRunStep = Static<typeof JobRunStepSchema>;
 export const JobRunSchema = Type.Object({
   id: Type.String(), jobId: Type.String(), kind: Type.String(), trigger: Type.String(), status: Type.String(), serverId: nullableString,
   serverIds: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),

@@ -16,7 +16,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 const app = new Hono().onError(handleApiError)
   .route("/api/health", healthRoutes).route("/api/projects", projectRoutes);
 async function clients() {
-  const owner = await seedOwner();
+  const owner = await seedOwner({ instanceAdmin: true });
   const user = (await repos.user.findById(owner.userId))!;
   const ship = createShip({
     platform: getPlatformKernel(),

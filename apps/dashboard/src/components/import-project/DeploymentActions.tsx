@@ -6,6 +6,7 @@ import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { InvestigationLink } from "@/components/assistant/InvestigationLink";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { useI18n } from "@/components/i18n-provider";
 import { useDeployment } from "@/context/DeploymentContext";
@@ -157,6 +158,12 @@ export function DeploymentActions({
         </Button>
       ) : (
         <>
+          {deploymentStatus === "failed" && state.deploymentId && (
+            <InvestigationLink
+              target={{ kind: "deployment", deploymentId: state.deploymentId, ...(projectId ? { projectId } : {}) }}
+              className="grow sm:grow-0"
+            />
+          )}
           <Button
             type="button"
             variant={deploymentStatus === "ready" && sites.length === 0 ? "default" : "secondary"}

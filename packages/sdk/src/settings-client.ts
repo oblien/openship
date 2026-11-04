@@ -3,6 +3,7 @@ import type { HttpClient } from "./http";
 import { createRemoteScopedOperations } from "./resource-client";
 export function createRemoteUserSettingsOperations(http: HttpClient): UserSettingsOperations {
   return createRemoteScopedOperations(http, UserSettingsSchemas, {
+    setLocale: { method: "PATCH", path: () => "/settings/locale" },
     getAppearance: { method: "GET", path: () => "/settings/appearance" },
     setAppearance: { method: "PUT", path: () => "/settings/appearance" },
     get: { method: "GET", path: () => "/settings" },

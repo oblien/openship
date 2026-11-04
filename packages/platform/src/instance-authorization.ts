@@ -11,7 +11,7 @@ export interface InstanceAuthorizationDependencies {
 export function createInstanceAuthorization(deps: InstanceAuthorizationDependencies) {
   const now = deps.now ?? Date.now;
 
-  async function allows(ctx: ExecutionContext, action: "read" | "write" = "write") {
+  async function allows(ctx: Pick<ExecutionContext, "userId" | "tokenScope" | "credential">, action: "read" | "write" = "write") {
     if (action !== "read" && action !== "write") return false;
     const expiresAt = ctx.credential?.expiresAt;
     if (expiresAt != null && (!Number.isFinite(expiresAt) || expiresAt <= now())) return false;
@@ -28,6 +28,12 @@ export function createInstanceAuthorization(deps: InstanceAuthorizationDependenc
       throw new UnauthorizedError("Identity has expired");
     if (ctx.credential?.readOnly && action !== "read")
       throw new AppError("This access token is read-only", 403, "TOKEN_READ_ONLY");
+    if (ctx.tokenScope || ctx.credential?.organizationId)
+      throw new AppError(
+        "Requires instance-wide administrator access. Workspace permissions cannot grant it; use the tools available within this workspace.",
+        403,
+        "INSTANCE_SCOPE_REQUIRED",
+      );
     if (!(await allows(ctx, action)))
       throw new ForbiddenError("Requires an instance administrator");
   }

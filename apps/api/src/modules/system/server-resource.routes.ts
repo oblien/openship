@@ -16,6 +16,18 @@ import * as managedCtrl from "./server-managed.controller";
 import * as serverCheck from "./server-check.controller";
 
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system" });
+r.get("/servers/:id/security", { tag: "server:read", mcp: { description: "Read this customer's host advisory findings and inspection freshness. Provider-managed hosts are excluded." } }, serversCtrl.serverSecurity);
+r.post("/servers/:id/security/check", { tag: "server:admin", readOnly: true, mcp: { description: "Inspect this customer's Ubuntu host against signed advisory rules using bounded commands. Does not install packages." } }, serversCtrl.checkServerSecurity);
+r.post("/servers/:id/security/plan", { tag: "server:admin", body: ServerResourceSchemas.planSecurityPatch.input, auditHandledByOperation: true,
+  mcp: { description: "Refresh package indexes and prepare an expiring host security patch plan. Review all package changes and service interruption before applying its token." } }, serversCtrl.planServerSecurity);
+r.post("/servers/:id/security/apply", { tag: "server:admin", body: ServerResourceSchemas.applySecurityPatch.input, auditHandledByOperation: true,
+  mcp: { description: "Apply an explicitly reviewed host patch token. Revalidates the exact plan and returns a server run ID; kernel installation may still require a reboot." } }, serversCtrl.applyServerSecurity);
+r.get("/servers/:id/security/runs/:runId/stream", {
+  tag: "server:admin", authorizationHandledByOperation: true,
+  mcpExcluded: "SSE transport for live progress. Read securityRuns for saved status and logs over MCP.",
+}, serversCtrl.serverSecurityRunEvents);
+r.get("/servers/:id/security/runs", { tag: "server:admin", mcp: { description: "Read this server's security patch runs, bounded output and verified or reboot-required outcomes." } }, serversCtrl.serverSecurityRuns);
+
 
 r.get(
   "/servers/destinations",

@@ -470,7 +470,18 @@
     "suggestedFix": "Suggested fix",
     "fixStep1": "Open the Domains tab.",
     "fixStep2": "Add a route or custom domain for the service port.",
-    "fixStep3": "Verify the domain and deploy."
+    "fixStep3": "Verify the domain and deploy.",
+    "composeReview": {
+      "title": "Compose changed",
+      "addedTitle": "New services need configuration",
+      "description": "The Compose file has changed since your last configuration. Review the latest services and settings before redeploying.",
+      "configure": "Configure",
+      "cancel": "Cancel",
+      "added": "Added",
+      "changed": "Changed",
+      "removed": "Removed",
+      "reviewHint": "Review these Compose changes, then deploy to apply them. Removed services stop during deployment; their persistent data is kept."
+    }
   },
   "incomingWebhooks": {
     "title": "Incoming webhooks",

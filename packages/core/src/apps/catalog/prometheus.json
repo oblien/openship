@@ -1,0 +1,144 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "id": "prometheus",
+  "name": "Prometheus",
+  "description": "Metrics collection and alerting toolkit: scrape your services, query time series and power Grafana dashboards.",
+  "kind": "template",
+  "logo": "prometheus",
+  "category": "analytics",
+  "tags": ["monitoring", "metrics", "observability"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "prometheus",
+      "image": "prom/prometheus:v3.15.1",
+      "exposed": false,
+      "volumes": ["prometheus_data:/prometheus", "prometheus_config:/etc/prometheus"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy || exit 1"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 6,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "prometheus-access",
+      "image": "caddy:2.11.7-alpine",
+      "restart": "unless-stopped",
+      "dependsOn": ["prometheus"],
+      "exposed": true,
+      "exposedPort": 8080,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "secretEnv": ["OPENSHIP_ADMIN_PASSWORD"],
+      "commandArgv": ["sh", "/etc/openship/access.sh"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 512
+      }
+    }
+  ],
+  "connection": {
+    "title": "Connect to Prometheus",
+    "description": "Sign in with the generated credentials. Use the same HTTP Basic credentials for clients and integrations.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Prometheus",
+        "source": "publicUrl:prometheus-access",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "user",
+        "label": "Username",
+        "source": "env:prometheus-access:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:prometheus-access:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "username": "admin",
+      "note": "The private backend is available to services in this project. Keep public access behind HTTPS."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Metrics collection",
+        "description": "Scrape metrics from your apps, servers and exporters."
+      },
+      {
+        "title": "PromQL queries",
+        "description": "Query and graph time series from the built-in UI."
+      },
+      {
+        "title": "Works with Grafana",
+        "description": "Add it as a data source in the Grafana app."
+      }
+    ]
+  },
+  "repository": "https://github.com/prometheus/prometheus",
+  "minEngine": "0.9.2",
+  "endpoints": [
+    {
+      "service": "prometheus-access",
+      "port": 8080,
+      "label": "Prometheus",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    }
+  ],
+  "configFields": [
+    {
+      "service": "prometheus-access",
+      "key": "OPENSHIP_ADMIN_USER",
+      "label": "Username",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "service": "prometheus-access",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "files": [
+    {
+      "service": "prometheus-access",
+      "path": "/etc/openship/access.sh",
+      "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/access.Caddyfile --adapter caddyfile\n"
+    },
+    {
+      "service": "prometheus-access",
+      "path": "/etc/openship/access.Caddyfile",
+      "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy prometheus:9090\n}\n"
+    }
+  ]
+}

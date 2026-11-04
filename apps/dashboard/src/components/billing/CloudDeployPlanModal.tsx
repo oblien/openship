@@ -162,7 +162,6 @@ export function CloudDeployPlanModal({
         <p id={descriptionId} className="mb-5 text-sm text-muted-foreground">
           {description}
         </p>
-        {!ready && restriction.message && <p className="mb-4 rounded-xl bg-muted/40 p-3 text-sm">{restriction.message}</p>}
         {retryError && <p role="alert" className="mb-4 text-sm text-danger">{retryError}</p>}
         {loading && !state ? (
           <div

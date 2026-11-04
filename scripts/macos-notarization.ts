@@ -143,10 +143,21 @@ export async function finishNotarization(
     if (attempt === 3) throw new Error(`Could not staple ${basename(path)}: ${diagnostic(result, context)}`);
     await runner.sleep(10_000);
   }
-  const validation = await runner.run(["stapler", "validate", path]);
-  if (validation.code !== 0)
-    throw new Error(`The notarization ticket is invalid: ${diagnostic(validation, context)}`);
-  runner.log(`Notarized and validated ${basename(path)} (${receipt.id}).`);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const validation = await runner.run(["stapler", "validate", path]);
+    if (validation.code === 0) {
+      runner.log(`Notarized and validated ${basename(path)} (${receipt.id}).`);
+      return;
+    }
+    if (!transient(validation))
+      throw new Error(`The notarization ticket is invalid: ${diagnostic(validation, context)}`);
+    if (attempt === 3)
+      throw new Error(
+        `Could not validate ${basename(path)} after network retries. Retry this notarization job to resume. ${diagnostic(validation, context)}`,
+      );
+    runner.log(`Apple ticket validation interrupted; retrying ${basename(path)} (${attempt}/3).`);
+    await runner.sleep(10_000);
+  }
 }
 
 if (import.meta.main) {

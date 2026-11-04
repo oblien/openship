@@ -39,6 +39,9 @@ export type SendMailOptions = {
   replyTo?: string;
   /** Stable identity for durable deliveries retried after a process restart. */
   messageId?: string;
+  /** Cloud customer alias, falling back to the transport's configured sender.
+   * Never forwarded through the Cloud mail relay. */
+  customerSender?: "support" | "billing";
   /**
    * Preferred transport source. Default "auto" — uses the platform
    * mailbox when provisioned, otherwise falls back to env-configured
@@ -67,6 +70,7 @@ const envTransport: Transporter | null = envSmtpConfigured
       host: env.SMTP_HOST,
       port: env.SMTP_PORT ?? 587,
       secure: (env.SMTP_PORT ?? 587) === 465,
+      requireTLS: (env.SMTP_PORT ?? 587) !== 465,
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 30_000,
@@ -208,6 +212,7 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
       host: smtpHost,
       port: creds.smtpPort,
       secure: creds.secure,
+      requireTLS: !creds.secure,
       auth: {
         user: creds.email,
         pass: creds.password,
@@ -321,6 +326,7 @@ async function getInstanceTransport(): Promise<{
     host,
     port,
     secure: port === 465,
+    requireTLS: port !== 465,
     auth: { user, pass },
   });
   const resolved = { transport, from: settings?.smtpFrom?.trim() || user };
@@ -455,6 +461,7 @@ async function getTransportChain(
  * throw here would have changed behaviour for all eight call sites at once.
  */
 export async function sendMail(opts: SendMailOptions): Promise<boolean> {
+  if (opts.customerSender && !env.CLOUD_MODE) throw new Error("Customer mail is Cloud-only");
   const preferSource = opts.preferSource ?? "auto";
 
   // Cloud relay branch — only meaningful on a local self-hosted instance.
@@ -501,6 +508,13 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
   // Try each transport in priority order; fail over to the next on a send
   // error so one broken source (e.g. wrong instance-SMTP creds) doesn't block
   // delivery when another can carry it. Throw only when every source fails.
+  // A mailbox address alone does not grant SMTP send-as permission. Use an
+  // explicitly configured alias or retain the sender authorized for this source.
+  const customerFrom = opts.customerSender
+    ? { support: env.SMTP_SUPPORT_FROM, billing: env.SMTP_BILLING_FROM }[
+        opts.customerSender
+      ]?.trim() || undefined
+    : undefined;
   const message = {
     to: opts.to,
     subject: opts.subject,
@@ -514,7 +528,7 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     const active = chain[i];
     try {
       await active.transport.sendMail({
-        from: active.from,
+        from: active.source === "env" ? customerFrom ?? active.from : active.from,
         ...message,
       });
       return true;

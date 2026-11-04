@@ -22,6 +22,7 @@ import { useServerTunnels } from "@/hooks/useServerTunnels";
 import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
 import { PromptDetails } from "@/components/import-project/PromptDetails";
 import { ServerForm } from "@/components/servers/server-form";
+import { ServerSecurityRuns } from "@/components/updates/ServerSecurityRuns";
 import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
 import { ServerModuleUpdates } from "./_components/module-updates";
@@ -118,7 +119,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
     return tab.key === "overview" || hostConfiguration;
   });
   const activeTab = visibleTabs.some(tab => tab.key === requestedTab) ? requestedTab : "overview";
-  const fullWidth = activeTab === "migrations";
+  const fullWidth = activeTab === "migrations" || activeTab === "runs";
   // Follow real tab links and browser navigation as well as the initial URL.
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -734,6 +735,8 @@ function ServerDetail({ serverId }: { serverId: string }) {
               {canInspect && components.some(component => component.name === "docker" && component.installed) && <ServerSwarm serverId={serverId} />}
               <ServerUsage serverId={serverId} showProjects metrics={!canMonitor} />
             </>}
+
+            {activeTab === "runs" && <ServerSecurityRuns serverId={serverId} />}
 
             {activeTab === "components" && (
               <>

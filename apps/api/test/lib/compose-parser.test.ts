@@ -1137,11 +1137,17 @@ describe("parseComposeFile — shared namespaces (network_mode / pid)", () => {
 
   it("stores the sharing forms on advanced, keyed the way the runtime reads them", () => {
     const parsed = parseComposeFile(
-      svc("    network_mode: service:gluetun\n    pid: container:abc123\n"),
+      svc("    network_mode: service:gluetun\n    pid: service:gluetun\n"),
     );
     expect(parsed.services[0]?.advanced?.networkMode).toBe("service:gluetun");
-    expect(parsed.services[0]?.advanced?.pidMode).toBe("container:abc123");
+    expect(parsed.services[0]?.advanced?.pidMode).toBe("service:gluetun");
     expect(parsed.unsupported).toEqual([]);
+  });
+
+  it.each(["network_mode", "pid"])("reports direct container references in %s as blocking", (field) => {
+    const parsed = parseComposeFile(svc(`    ${field}: container:openship-edge\n`));
+    expect(parsed.unsupported).toEqual([expect.objectContaining({ field, blocking: true })]);
+    expect(parsed.services[0]?.advanced?.[field === "pid" ? "pidMode" : "networkMode"]).toBeUndefined();
   });
 
   it("stores network_mode: none", () => {

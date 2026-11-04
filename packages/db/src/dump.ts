@@ -320,6 +320,12 @@ const TABLES: ReadonlyArray<TableSpec> = [
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
+  {
+    sqlName: "oauth_client",
+    table: schema.oauthClient,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
   // OAuth 2.1 authorization-server state for MCP connections (Better Auth
   // oidc-provider). The client REGISTRATION and the user's CONSENT travel so an
   // already-connected MCP client can re-authenticate itself on the receiver;
@@ -333,7 +339,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
   {
     sqlName: "oauth_consent",
-    table: schema.oauthConsent,
+    table: schema.legacyOauthConsent,
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
@@ -899,6 +905,21 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  assistant_agent: "Private host profiles and saved execution authority must be reauthorized on the destination.",
+  assistant_authorization: "Single-use OAuth consent and native authentication state cannot travel.",
+  assistant_connection: "Private host and OAuth-client bindings must be reauthorized on the destination.",
+  assistant_conversation: "Conversation metadata refers to private Mindwire profiles on the original host.",
+  assistant_request: "Execution receipts are meaningful only with the originating private conversation.",
+  assistant_automation_settings: "Assistant automation opt-in must be reviewed on the destination.",
+  assistant_automation: "Background authority and host access must be reauthorized on the destination.",
+  assistant_automation_run: "Automation receipts and temporary credentials belong to the originating instance.",
+  chat_app_connection: "Instance-bound private connector hosts; configure again after migration.",
+  chat_app_identity: "Chat actor bindings must never travel to another instance.",
+  chat_app_thread: "Private assistant threads belong to the original sender and connector.",
+  chat_app_challenge: "Ephemeral consent and confirmation capabilities.",
+  chat_app_command: "Private command receipts, specific to the original installation.",
+  chat_app_transport_state: "Encrypted bot credentials and installation-specific receiver leases.",
+  chat_app_inbox: "Private provider deliveries, specific to the original installation.",
   instance_controller:
     "installation-local control-plane authority and device connection; never copied or wiped",
   instance_handoff: "durable installation-local handoff journal; never copied or wiped",
@@ -907,6 +928,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_support_ticket:
     "Private Cloud support requests; never export one customer's correspondence to another installation",
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
+  cloud_customer_email: "Private Cloud onboarding and invoice delivery state; never transfer or replay on another installation",
   cloud_analytics_event:
     "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
   cloud_analytics_checkout: "Cloud-only analytics checkout correlation",
@@ -928,6 +950,14 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_handoff_code: "60s one-time cloud-connect codes",
   data_transfer_session: "short-lived whole-instance transfer capability and upload lease",
   data_transfer_chunk: "short-lived chunk staging for a whole-instance transfer",
+  oauth_jwks: "OAuth signing keys belong to this installation; the destination generates its own",
+  oauth_resource: "OAuth resource identifiers and policy belong to the destination origin",
+  oauth_client_resource: "Resource links are rebuilt for the destination's resource identifiers",
+  oauth_refresh_token: "Live OAuth grants must be re-authorized after an instance transfer",
+  oauth_provider_access_token: "Live OAuth bearer credentials must never travel in an export",
+  oauth_provider_consent: "Re-authorize OAuth permissions against the destination resources",
+  oauth_client_assertion: "Short-lived OAuth assertion replay protection",
+  mcp_oauth_token: "Encrypted host-side OAuth credentials; reconnect on the destination",
   oauth_access_token:
     "live MCP bearer/refresh tokens; the client re-authenticates against the " +
     "oauth_application + oauth_consent rows that DO travel, so shipping them adds " +
@@ -942,6 +972,8 @@ export const EXCLUDED_TABLES: Record<string, string> = {
 
   // Caches / host-derived — the host, not the DB, is the source of truth.
   advisory_feed: "public feed cache and polling leases; re-fetch and verify on the destination",
+  server_security: "host observations and retry state; re-inspect after instance restore",
+  security_scan_state: "workspace inspection task status; regenerated by the destination scheduler",
   update_status: "cached upstream scan result; the next `updates:scan` refills it",
   server_container_status: "cached container drift; re-probed from the host",
   server_module_status: "cached module drift; re-probed from the host",
@@ -1146,6 +1178,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   // bundle instead of shipping an MCP client secret in plaintext — the same reason
   // instance_settings.tunnelToken is registered with the `plaintext` scheme.
   { table: "oauth_application", column: "clientSecret" },
+  { table: "oauth_client", column: "clientSecret" },
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },
@@ -1792,6 +1825,13 @@ export async function restoreSubgraphInTransaction(
     const prepared = rows.map((r) => {
       const { row: next, dropped } = filterRowToKnownColumns(r, knownCols);
       for (const d of dropped) droppedCols.add(d);
+      // Older instance dumps predate per-factor confirmation. Preserve active
+      // authenticators while keeping unfinished enrollments unconfirmed.
+      if (spec.sqlName === "two_factor" && !Object.hasOwn(r, "verified")) {
+        next.verified = (dump.tables.user ?? []).some(
+          (user) => user.id === next.userId && user.twoFactorEnabled === true,
+        );
+      }
       if (opts.remapOrgId && spec.hasOrganizationId) {
         next.organizationId = opts.remapOrgId;
       }
