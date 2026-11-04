@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it } from "vitest";
+import { RESOURCE_TYPES, isGrantableResourceType, type ResourceType } from "@repo/core";
 import {
+  CHECKED_RESOURCE_TYPES,
   createAuthorization,
+  isCheckedResourceType,
   permitsAction,
   type Authorization,
+  type CheckedResourceType,
   type ExecutionContext,
 } from "../src";
 import { alice, authorizationFixture } from "./fixtures";
@@ -27,6 +31,21 @@ beforeEach(async () => {
 });
 
 describe("shared authorization", () => {
+  it("derives checked resources from core without widening the existing type", () => {
+    expectTypeOf<CheckedResourceType>().toEqualTypeOf<ResourceType | "env_var" | "build_session">();
+    expect(new Set(CHECKED_RESOURCE_TYPES).size).toBe(CHECKED_RESOURCE_TYPES.length);
+    for (const type of RESOURCE_TYPES) expect(isCheckedResourceType(type)).toBe(true);
+    for (const type of ["env_var", "build_session"]) {
+      expect(isCheckedResourceType(type)).toBe(true);
+      expect(isGrantableResourceType(type)).toBe(false);
+    }
+  });
+
+  it.each(["servcie", "unknown", "constructor", "__proto__", ""])(
+    "does not recognize an unknown checked resource: %s",
+    (type) => expect(isCheckedResourceType(type)).toBe(false),
+  );
+
   it("fails closed for an unknown action supplied by an untyped integration", () => {
     expect(permitsAction(["admin"], "unknown-action" as never)).toBe(false);
   });

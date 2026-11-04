@@ -591,10 +591,28 @@ async function reconcileLinkedOperation(id: string): Promise<void> {
 }
 
 /** One durable worker for HTTP, signed billing events and scheduled recovery. */
+async function escalateInitialProvisioning(row: CloudWorkspace, op: CloudWorkspaceOperation) {
+  const members = await repos.member.listByOrganization(row.organizationId);
+  const member = members.find(member => member.role.split(",").includes("owner"));
+  const { cloudSupport } = await import("../cloud-support");
+  const ticket = await cloudSupport.reportProvisioningFailure({
+    workspaceId: row.id, operationId: op.id, serverName: row.name, attempts: op.attempts,
+    owner: member ? { id: member.user.id, name: member.user.name, email: member.user.email } : null,
+  });
+  await repos.cloudWorkspace.updateOperation(row.id, {
+    ...op, support: { status: "created", ticketId: ticket.id },
+    logs: [...op.logs, `Our support team is reviewing this setup. Reference: ${ticket.id}`].slice(-40),
+  }, op.id);
+}
+
 export async function processWorkspaceOperation(id: string): Promise<void> {
   if (!env.CLOUD_MODE) return reconcileLinkedOperation(id);
   return createProvisionLock(`cloud:workspace-worker:${id}`).run(async () => {
     const pending = await repos.cloudWorkspace.findById(id);
+    if (pending?.operation?.status === "failed" && pending.operation.kind === "ensure" && pending.operation.support?.status === "pending") {
+      await escalateInitialProvisioning(pending, pending.operation);
+      return;
+    }
     // Provisioning never stops/replaces a host and is independently idempotent.
     // It can prepare the host while a linked deployment holds activity admission.
     return withCloudWorkspaceActivity(pending?.operation?.kind === "ensure" ? null : id, async () => {
@@ -716,7 +734,8 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
         );
       } catch (error) {
         observeCaughtError(error, "platform/engine/modules/cloud-workspaces/cloud-workspace.service");
-        const terminal = op.attempts >= 3 || (error instanceof AppError && error.statusCode < 500);
+        const transient = !(error instanceof AppError) || error.statusCode >= 500 || error.statusCode === 429;
+        const terminal = !transient || op.attempts >= 3;
         op = {
           ...op,
           status: terminal ? "failed" : "queued",
@@ -724,8 +743,15 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
           nextAttemptAt: terminal
             ? null
             : new Date(Date.now() + op.attempts * 60_000).toISOString(),
+          ...(terminal && transient && op.kind === "ensure" ? { support: { status: "pending" as const } } : {}),
         };
         await save(op.error!);
+        if (op.support?.status === "pending") {
+          try { await escalateInitialProvisioning(row, op); }
+          catch (supportError) {
+            observeCaughtError(supportError, "platform/engine/modules/cloud-workspaces/provisioning-support");
+          }
+        }
       }
     }, undefined, { lifecycle: true, scope: "lifecycle" });
   });

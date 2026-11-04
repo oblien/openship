@@ -7,7 +7,7 @@ import type { Context } from "hono";
 export function webhookSubject(c: Context, clientIp: string): string {
   const route = c.req.routePath || c.req.path;
   let identity = "";
-  if (/\/incoming\/:id$/.test(route)) {
+  if (/\/incoming\/:id$/.test(route) || /\/chat-apps\/webhooks\/:id$/.test(route)) {
     identity = c.req.param("id") ?? "";
   } else if (/\/backup$/.test(route)) {
     identity = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1]?.trim() ?? "";

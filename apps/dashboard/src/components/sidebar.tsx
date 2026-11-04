@@ -294,7 +294,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   const sectionLabel = (key: string) =>
     (t.dashboard.nav.sections as unknown as Record<string, string>)[key] ?? key;
 
-  // The gradient CTA. Mail view swaps New Project for Add mailbox, but only once
+  // The primary CTA. Mail view swaps New Project for Add mailbox, but only once
   // there's an installed server to add one to — before that the rail's own "Set
   // up mail" entry IS the primary action, and a second button just repeats it.
   const cta: { href: string; labelKey: string } | null = mailView

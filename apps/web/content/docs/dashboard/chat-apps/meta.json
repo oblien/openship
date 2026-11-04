@@ -1,0 +1,4 @@
+{
+  "title": "Chat apps",
+  "pages": ["index", "slack", "discord", "telegram", "teams"]
+}

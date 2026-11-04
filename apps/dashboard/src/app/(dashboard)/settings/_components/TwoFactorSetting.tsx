@@ -105,6 +105,7 @@ function TwoFactorControls({ account }: { account: ReturnType<typeof authClient.
         if (step.action === "enable") {
           const result = await authClient.twoFactor.enable({ password });
           if (result.error) throw new Error(result.error.message || copy.failed);
+          if (result.data.method !== "totp") throw new Error(copy.failed);
           setStep({ kind: "verify", uri: result.data.totpURI, codes: result.data.backupCodes });
         } else if (step.action === "regenerate") {
           const result = await authClient.twoFactor.generateBackupCodes({ password });

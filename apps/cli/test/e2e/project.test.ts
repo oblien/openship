@@ -11,10 +11,67 @@ vi.mock("../../src/lib/caps", () => ({
 
 import { projectCommand, releaseImageSourceFromOptions } from "../../src/commands/project";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
-import { projectFixture } from "../../../../packages/contracts/test/fixtures";
+import { projectFixture, deploymentFixture } from "../../../../packages/contracts/test/fixtures";
+import { PROJECT_COMMANDS, parseChatCommand } from "@repo/commands";
 
 let fetchStub: FetchStub;
 afterEach(() => fetchStub?.restore());
+
+describe("shared project commands", () => {
+  it("registers the shared names and arguments on the real Commander tree", () => {
+    for (const definition of Object.values(PROJECT_COMMANDS)) {
+      const command = projectCommand.commands.find((c) => c.name() === definition.name)!;
+      expect(command).toBeDefined();
+      expect(command.registeredArguments.map((a) => a.name())).toEqual(
+        definition.argument ? ["id"] : [],
+      );
+      expect(
+        parseChatCommand(`project ${definition.name}${definition.argument ? " p1" : ""}`).verb,
+      ).toBe(definition.chat);
+    }
+  });
+
+  for (const verb of ["restart", "redeploy"]) {
+    it(`${verb} resolves a project, confirms, and calls the existing deployment operation`, async () => {
+      fetchStub = stubFetch((req) =>
+        req.method === "GET"
+          ? { json: { data: { ...projectFixture("p1", "shop"), activeDeploymentId: "dep1" } } }
+          : {
+              json:
+                verb === "restart"
+                  ? { data: deploymentFixture() }
+                  : { success: true, deployment_id: "dep2", project_id: "p1" },
+            },
+      );
+      const result = await runCommand(projectCommand, [verb, "p1", "--yes"]);
+      expect(result.code, result.err).toBe(0);
+      expect(fetchStub.calls.map((r) => [r.method, r.url])).toEqual([
+        ["GET", "http://api.test/api/projects/p1"],
+        ["GET", "http://api.test/api/projects/p1"],
+        ["POST", `http://api.test/api/deployments/dep1/${verb}`],
+      ]);
+    });
+  }
+  it("does not mutate without confirmation or after the active deployment changes", async () => {
+    let reads = 0;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: {
+          ...projectFixture("p1", "shop"),
+          activeDeploymentId: ++reads === 1 ? "dep1" : "dep2",
+        },
+      },
+    }));
+    const noConsent = await runCommand(projectCommand, ["restart", "p1"]);
+    expect(noConsent.code).toBe(1);
+    expect(fetchStub.calls.every((r) => r.method === "GET")).toBe(true);
+    reads = 0;
+    const changed = await runCommand(projectCommand, ["restart", "p1", "--yes"]);
+    expect(changed.code).toBe(1);
+    expect(changed.err).toContain("active deployment changed");
+    expect(fetchStub.calls.every((r) => r.method === "GET")).toBe(true);
+  });
+});
 
 describe("openship project list", () => {
   it("paginates /projects and tabulates the rows", async () => {
@@ -55,10 +112,16 @@ describe("openship project rename", () => {
       expect(req.url).toBe("http://api.test/api/projects/project%2Fone");
       expect(req.method).toBe("PATCH");
       expect(req.body).toEqual({ name: "New Store" });
-      return { json: { data: { ...projectFixture("project/one", "old-store"), name: "New Store" } } };
+      return {
+        json: { data: { ...projectFixture("project/one", "old-store"), name: "New Store" } },
+      };
     });
 
-    const { out, code } = await runCommand(projectCommand, ["rename", "project/one", "  New Store  "]);
+    const { out, code } = await runCommand(projectCommand, [
+      "rename",
+      "project/one",
+      "  New Store  ",
+    ]);
 
     expect(code).toBe(0);
     expect(fetchStub.calls).toHaveLength(1);
@@ -77,7 +140,10 @@ describe("openship project rename", () => {
   });
 
   it("reports a rejected rename without printing a successful project update", async () => {
-    fetchStub = stubFetch(() => ({ status: 409, json: { error: 'Project "Taken" already exists' } }));
+    fetchStub = stubFetch(() => ({
+      status: 409,
+      json: { error: 'Project "Taken" already exists' },
+    }));
 
     const { out, err, code } = await runCommand(projectCommand, ["rename", "p1", "Taken"]);
 
@@ -261,11 +327,23 @@ describe("openship project release-image", () => {
   });
 });
 
-
 describe("openship project env set (#844)", () => {
   it("prints override warnings after a successful write without printing the submitted secret", async () => {
-    fetchStub = stubFetch(() => ({ json: { upserted: 1, deleted: 0, warnings: ['Service "worker" overrides project environment for: TOKEN.'] } }));
-    const { err: output, code } = await runCommand(projectCommand, ["env", "set", "p1", "--set", "TOKEN=new-secret", "--secret"]);
+    fetchStub = stubFetch(() => ({
+      json: {
+        upserted: 1,
+        deleted: 0,
+        warnings: ['Service "worker" overrides project environment for: TOKEN.'],
+      },
+    }));
+    const { err: output, code } = await runCommand(projectCommand, [
+      "env",
+      "set",
+      "p1",
+      "--set",
+      "TOKEN=new-secret",
+      "--secret",
+    ]);
     expect(code).toBe(0);
     expect(output).toContain("Updated env");
     expect(output).toContain('Service "worker" overrides');
@@ -279,7 +357,16 @@ describe("openship project env set (#844)", () => {
     expect(positional.code).toBe(0);
     expect(fetchStub.calls[1].body).toEqual(fetchStub.calls[0].body);
 
-    const mixed = await runCommand(projectCommand, ["env", "set", "p1", "A=1", "--set", "B=x=y", "--unset", "OLD"]);
+    const mixed = await runCommand(projectCommand, [
+      "env",
+      "set",
+      "p1",
+      "A=1",
+      "--set",
+      "B=x=y",
+      "--unset",
+      "OLD",
+    ]);
     expect(mixed.code).toBe(0);
     expect(fetchStub.calls[2]).toMatchObject({
       method: "PATCH",

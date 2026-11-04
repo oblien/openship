@@ -1,8 +1,17 @@
-# Security advisories and runtime patches
+# Security advisories and server maintenance
 
-Openship checks public advisory metadata and matches it against locally recorded
-image digests and observed runtime versions. Security notifications are enabled by
-default. **Automatic deployment changes are off by default.**
+Openship checks public advisory metadata against recorded image digests, observed
+runtime versions and specifically targeted Ubuntu host packages. Security notifications
+are enabled by default. **Automatic deployment changes are off by default.** Host
+package installs and kernel reboots always require explicit review.
+
+Workspace owners and admins can turn off **Check security advisories** in
+**Settings → Notifications**. This saved workspace policy pauses runtime and host inspections,
+new advisory alerts, host patch actions and automatic security refreshes, including refreshes
+that have not passed their worker's final check. Work already executing can finish.
+Monitoring shows that checks are disabled; it does not report a clean scan. Existing
+observations and project refresh consent are retained and used again when checks
+resume. Public feed polling, platform updates and other workspaces remain independent.
 
 ## What users see
 
@@ -17,6 +26,12 @@ Configured versions and digest pins remain unchanged. A pinned vulnerable image
 requires an explicit configuration change; rebuilding a pinned vulnerable
 Dockerfile does not fix it automatically.
 
+If the advisory has no patched release in the observed runtime's major version, the
+review explains the required major upgrade and opens the existing saved deployment
+configuration. For example, refreshing a Node 20 image cannot supply a patched Node
+22 runtime. Review the version/image or Dockerfile change and redeploy explicitly;
+the advisory action never silently upgrades application runtime majors.
+
 The review distinguishes confirmed matches, possible tag matches, unavailable
 checks and incomplete runtime coverage. No matches is not an assurance that an
 application has no vulnerabilities. Runtime probes report installed versions;
@@ -26,14 +41,19 @@ application exposes a vulnerable code path.
 **Monitoring → Security** keeps the same app/service review and per-app automatic-refresh
 controls accessible after the banner is dismissed. Dismissal only hides the banner;
 active findings remain in Monitoring until new evidence no longer matches the advisory.
+The banner's settings menu can also hide runtime security banners in the current
+browser and account/workspace, including critical notices. Restore them with
+**Settings → Notifications → Show security banners**. This does not disable inspection,
+notification delivery or any project's automatic-refresh policy. Cloud operational
+notices remain independent.
 After the dashboard observes a successful deployment of an affected app, it rereads that
 app's deployment-keyed security inventory and refreshes the shared overview. Starting a
 redeploy, a failed deploy, or a successful build that still contains the affected runtime
 does not resolve a finding. Unavailable or incomplete checks remain marked as such.
 The Open tab links to these findings. Settings → Notifications also opens the shared review.
-The public advisory feed is global, but findings belong to projects in the current
-organization and are filtered by the viewer's project access. They are not host-wide
-alerts and are not private to the person who first saw them. Banner dismissal is a
+The public advisory feed is global. Findings belong to projects or customer-operated
+servers in the current organization and are filtered by the viewer's resource access.
+They are not private to the person who first saw them. Banner dismissal is a
 browser/app preference, scoped to that account and organization for runtime advisories.
 Each enabled, verified notification channel inherits these alerts, including channels added later.
 Users can turn individual channels off; administrators can change workspace
@@ -87,10 +107,13 @@ containers, unsupported formats and Bare processes remain unknown; there is no
 fallback to executing commands on a shared host. Only runtime families named in
 current advisory rules are probed. With no runtime advisories, there are no
 container exec calls. Observations occupy one current cache per project, keyed
-by the active deployment and advisory rules; elapsed time alone does not trigger
-another probe. New or changed runtime rules, a different active deployment,
-**Check again**, and pre-patch verification request fresh observations. Unknown
-observations can be retried with **Check again**; they are never reported safe.
+by the active deployment and advisory rules. Healthy observations expire after six
+hours with deterministic jitter. Unavailable checks retry after five minutes, backing
+off to one hour with jitter. Changed rules or deployments, **Check again**, and
+pre-patch verification request fresh observations. A per-project lock coalesces
+concurrent work across workers. Failed probes preserve previous matching warnings
+for the same rules and deployment, mark coverage unknown and block refresh actions.
+Expiry does not silently clear a warning. Unknown observations are never reported safe.
 Each inspection and background sweep has a work budget, so large installations can require multiple sweeps. New deployments invalidate inventory.
 
 ### How a new announcement becomes a finding
@@ -129,7 +152,94 @@ For example, `node:22-alpine` can still have the same tag after a patch. Openshi
 compares the recorded digest and observed `node --version`, then inspects the new
 deployment again after refresh. It does not infer protection from “latest” or from
 an unchanged tag. This is curated advisory matching, not an image filesystem,
-operating-system package or application dependency vulnerability scanner.
+or application dependency vulnerability scanner. Host rules below inspect only
+the specific packages named in the signed feed, rather than every installed package.
+
+## Customer-operated server maintenance
+
+Monitoring → Security shows the workspace's advisory inspection task, last completion,
+schedule, pending/partial/interrupted state, and the link to its default-on policy.
+Cloud gets workspace-local task status, without exposing other tenants' system jobs.
+The background sweep has separate bounded project and host budgets. Host cache reads
+are batched; no host advisory rules means no host enumeration or execution from the
+root banner. Host observations share the six-hour expiry and bounded failure backoff.
+Changed server connections invalidate review and make the host eligible for inspection.
+Unsupported/offline hosts back off instead of monopolizing every sweep.
+
+A host finding opens **Servers → Runs**. **Check again** only inspects. **Review patch**
+refreshes APT metadata and shows every exact package/version change, including dependencies.
+**Apply reviewed patch** creates a persistent server run with bounded output and a verified,
+reboot-required or needs-review outcome. It never redirects to a project deployment.
+Runs uses the existing Jobs recorder and event bus, deployment pipeline logger and
+log sanitizer, and the shared terminal. There is one persisted run per approval:
+preflight → reviewed install → independent package verification and component checks.
+Setup's Docker/Edge checks run before and after maintenance; only previously healthy
+components are required to stay healthy. Missing patch prerequisites stop the operation.
+Preparation and execution take the same provisioning lock as deployments and component
+setup. APT download/install progress follows the shared bounded log pipe, with durable
+checkpoints and sequence-aware replay. Opening the run stream never replays Apply.
+The final observation is saved before success is published, so the finding and run agree.
+
+Host patching is always explicit; workspace alerts do not authorize installs or reboots.
+The initial implementation supports Ubuntu hosts with `/usr/bin/python3` and `python3-apt`.
+Installation needs root or noninteractive sudo; Openship does not install prerequisites
+or alter SSH privileges automatically. Container connections are refused.
+
+The signed feed contains data only. Host execution uses a compiled Python APT operation:
+
+- Exact Ubuntu release, package name and Debian fixed version; no shell strings or URLs.
+- Trusted Ubuntu base, `-updates` and `-security` candidates only. No enabling `-proposed`,
+  PPAs or new sources. Unavailable stable fixes require manual guidance.
+- At most 100 package changes; reject held packages, downgrades, removals and broken APT state.
+- A ten-minute authenticated approval bound to the actor, organization, server connection,
+  advisory content, operation and exact plan. Expired or changed plans require review.
+- Recheck permissions, workspace policy and the signed advisory before worker execution;
+  hold the server lock and APT frontend lock, then recompute and compare the exact plan.
+- Persist run identity before execution; retries of the same token reuse its run. Interrupted
+  or unverifiable runs require review and never automatically repeat host side effects.
+
+Provider-managed servers, the Cloud control plane and migration-only connections are
+excluded. Customer-owned SSH hosts on Cloud retain the existing management entitlement
+and server-admin checks. Local host control and Desktop execution policy still apply.
+
+Kernel rules must include `runningKernel: { sourcePackage, fixedVersion }` with the
+Ubuntu source package/version for the actual kernel flavour. Installed packages alone
+cannot clear that notice: the running image's source version must also match the fix.
+After installation, **Review reboot** shows the workload interruption and creates a
+separate approval. Scheduling it reboots the host in one minute. The run remains pending
+until a new boot reports a fixed running kernel; offline, old-kernel or interrupted
+verification requires review. An acknowledged reboot survives an engine restart as
+verification-only work. The existing advisory scheduler closes interrupted or overdue
+runs even with checks paused or an unavailable feed; it never retries their commands.
+No automatic reboot is implied by installing a patch.
+Other package checks verify installed versions; running processes may still need an
+operator restart. Version evidence is not application-health or exploit verification.
+
+Example target shape (illustrative package versions, not a published vulnerability):
+
+```json
+{
+  "action": "patch-host",
+  "modes": ["selfhosted", "desktop"],
+  "targets": [
+    {
+      "kind": "host-package",
+      "distribution": "ubuntu",
+      "release": "24.04",
+      "package": "openssl",
+      "fixedVersion": "3.0.13-0ubuntu3.16"
+    }
+  ]
+}
+```
+
+Supply the normal advisory ID, revision, title, message, severity, URL and publication
+time as well. The feed supports at most 200 host targets. `patch-host` accepts only
+host targets; `refresh-images` cannot contain them. A host `manual` notice supplies
+guidance without enabling patch/reboot actions. Migration `0222_host_security_advisories.sql`
+adds expiring observations and workspace task state; it preserves project consent.
+Host caches and task state are re-created after an instance move. Existing job-run
+history remains local under the normal history retention policy.
 
 ## Optional automatic refresh
 
@@ -178,8 +288,10 @@ clear a runtime warning.
 Edit the public [security-advisories.json](../security-advisories.json). The strict
 schema is in [security.ts](../packages/core/src/updates/security.ts). Every advisory
 has a stable ID, its own revision, severity, publication time, HTTPS reference,
-explanation, declarative targets and either `manual` or `refresh-images` as its
-action. Increment the advisory revision when its substance changes. Image
+explanation, declarative targets and `manual`, `refresh-images` or `patch-host` as
+its action. Optional `modes: ["selfhosted"]` limits a notice to that controller mode;
+`desktop` and `cloud` are also supported. Omission means all modes. These are
+controller modes, not permission to access provider-managed infrastructure. Increment the advisory revision when its substance changes. Image
 repositories match exactly after Docker Hub alias normalization. Runtime targets
 use semver ranges with explicit fixed ranges. A manual notice can use `fixed: null`
 when upstream has no published fixed range; it cannot authorize an image refresh.
@@ -196,7 +308,11 @@ relevant main-branch changes, daily, or on manual dispatch. It validates the
 source and signs the exact manifest with `OPENSHIP_DESKTOP_SIGNING_KEY`, matching
 the existing public update trust root. The signature has a separate advisory
 domain prefix, a monotonic feed revision and a fourteen-day expiry. The workflow
-publishes the envelope on the public `security-advisories` branch. Client caches
+publishes `security-advisories.v2.signed.json` on the public `security-advisories`
+branch. It also publishes the legacy filename with only unscoped project/platform
+notices: old strict-schema clients cannot parse host targets or mode restrictions.
+The legacy view excludes scoped notices rather than broadening their audience.
+Both files are committed atomically. Client caches
 reject invalid signatures, stale revisions, altered equal revisions, oversized
 responses and expired update instructions. Last verified, expired notices remain
 readable but cannot authorize an update.
@@ -214,16 +330,39 @@ HTTP, native SDK and desktop use the same operations and permissions:
 | SDK operation                                                               | HTTP endpoint                             | Permission    |
 | --------------------------------------------------------------------------- | ----------------------------------------- | ------------- |
 | `updates.advisories()`                                                      | `GET /updates/advisories`                 | Updates read  |
-| `updates.checkSecurity(projectId)`                                        | `POST /updates/:projectId/security/check` | Project read  |
+| `updates.checkSecurity(projectId)`                                          | `POST /updates/:projectId/security/check` | Project read  |
 | `updates.security(projectId)`                                               | `GET /updates/:projectId/security`        | Project read  |
 | `updates.securityPolicy(projectId, { autoRefresh })`                        | `PUT /updates/:projectId/security/policy` | Project write |
 | `updates.applySecurity(projectId, { advisoryId, deploymentId, serviceId })` | `POST /updates/:projectId/security/apply` | Project write |
+| `servers.security(id)`                                                      | `GET /system/servers/:id/security`        | Server read   |
+| `servers.checkSecurity(id)`                                                 | `POST /system/servers/:id/security/check` | Server admin  |
+| `servers.planSecurityPatch(id, { advisoryId, operation })`                  | `POST /system/servers/:id/security/plan`  | Server admin  |
+| `servers.applySecurityPatch(id, { token })`                                 | `POST /system/servers/:id/security/apply` | Server admin  |
+| `servers.securityRunEvents(id, runId)` | `GET /system/servers/:id/security/runs/:runId/stream` | Server admin |
+| `servers.securityRuns(id)`                                                  | `GET /system/servers/:id/security/runs`   | Server admin  |
 
-Apply requests carry the reviewed deployment ID. A changed active deployment
+The CLI exposes `openship server security get|check|plan|apply|runs`. Plan and apply
+accept JSON files (or stdin), and `--schema` prints their input. A plan operation is
+`install` (default) or `reboot`. Apply accepts only the reviewed token and prompts
+before mutation (`--yes` for explicitly authorized automation). The SDK/native and
+HTTP operations share the same schemas and authorization.
+
+Project apply requests carry the reviewed deployment ID. A changed active deployment
 requires checking the notice again. Remote inputs cannot provide replacement
 images, commands or the internal automatic-deployment instruction.
 
 ## Validation and rollout
+
+Host coverage includes token tampering/expiry/scope, changed connections/advisories,
+revoked permissions, queued policy opt-out, Cloud/provider exclusions, cache expiry,
+retained warnings, migration retry, replay admission and kernel reboot verification.
+Dashboard tests cover review before apply, duplicate clicks, workspace changes,
+failed plans, explicit reboot consent and disabled checks. A disposable Ubuntu 24.04
+VM validation on November 3, 2026 exercised the compiled Python operation with real
+APT: OpenSSL 3.0.13-0ubuntu3.9 → 3.0.13-0ubuntu3.16 plus its library dependency,
+held-package rejection, changed-plan rejection and post-install version inspection.
+It did not patch a customer server or publish an advisory. Reboot orchestration is
+covered with transport fixtures; this is not a fleet benchmark or penetration test.
 
 The implementation includes signature/tampering/replay tests, persistent feed
 cache and credential-backoff tests, native/HTTP authorization parity, isolated

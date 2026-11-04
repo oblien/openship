@@ -15,12 +15,12 @@ export const BUILD_STEPS: readonly BuildStep[] = [
   "deploy",
 ] as const;
 
-export interface LogEntry {
+export interface LogEntry<Step extends string = BuildStep> {
   timestamp: string;
   message: string;
   level: "info" | "warn" | "error";
   /** When present, this entry is a step event for the stepper UI */
-  step?: BuildStep;
+  step?: Step;
   /** Step lifecycle status */
   stepStatus?: "running" | "completed" | "failed" | "skipped";
   /** Compose service name when this log belongs to one service. */

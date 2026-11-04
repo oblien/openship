@@ -591,9 +591,11 @@ export async function getUserToken(userId: string): Promise<string | null> {
     if (token !== undefined) return token;
   }
   try {
+    const account = await repos.account.findByProvider(userId, "github");
+    if (!account) return null;
     const tokens = await auth.api.getAccessToken({
       body: {
-        providerId: "github",
+        accountId: account.id,
         userId,
       },
     });

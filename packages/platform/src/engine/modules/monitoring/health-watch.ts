@@ -313,6 +313,7 @@ const SERVER_MISSES = new Map<string, ServerMiss>();
 export interface WorkloadHealthSnapshot {
   organizationId: string;
   projectId: string;
+  deploymentId: string;
   projectName: string;
   projectSlug: string;
   serviceId: string | null;
@@ -1832,6 +1833,7 @@ function publishHealthSnapshot(
   HEALTH_SNAPSHOTS.set(memoryKey(candidate.project.id, workload.serviceKey), {
     organizationId: candidate.project.organizationId,
     projectId: candidate.project.id,
+    deploymentId: candidate.dep.id,
     projectName: candidate.project.name,
     projectSlug: candidate.project.slug,
     serviceId: workload.serviceId,

@@ -19,23 +19,18 @@
  */
 
 import { requestPublicOrigin } from "@repo/platform/engine/lib/public-url";
+import {
+  MCP_RESOURCE_PATH,
+  MCP_RESOURCE_PATHS,
+  allowedMcpResources,
+} from "@repo/platform/engine/lib/mcp-resources";
 
-/** Path the MCP JSON-RPC endpoint is mounted at (`app.route("/api/mcp", …)`). */
-export const MCP_RESOURCE_PATH = "/api/mcp";
-
-/**
- * The same endpoint reached through the dashboard's same-origin proxy. On a
- * self-hosted box the public host serves the dashboard and the API lives under
- * `/api/proxy` (see lib/public-url.ts), so a client configured with that URL is
- * talking to the same resource.
- */
-export const MCP_PROXY_RESOURCE_PATH = "/api/proxy/api/mcp";
-
-/** Every path that addresses this instance's MCP endpoint. Canonical first. */
-export const MCP_RESOURCE_PATHS: readonly string[] = [
+export {
   MCP_RESOURCE_PATH,
   MCP_PROXY_RESOURCE_PATH,
-];
+  MCP_RESOURCE_PATHS,
+  allowedMcpResources,
+} from "@repo/platform/engine/lib/mcp-resources";
 
 /**
  * Canonical form of a resource identifier, per RFC 8707 §2: lowercase scheme
@@ -152,17 +147,6 @@ export function rewriteMetadataOrigin<T extends Record<string, unknown>>(
   origin: string,
 ): T {
   return rewriteNode(metadata, origin.replace(/\/+$/, "")) as T;
-}
-
-/**
- * Every resource identifier that names this instance's MCP endpoint, canonical
- * first. The bare origin is included as a LEGACY value: it is what the root
- * Protected Resource Metadata document has always advertised, so tokens already
- * issued to clients that echoed it back must keep working.
- */
-export function allowedMcpResources(origin: string): readonly string[] {
-  const base = origin.replace(/\/+$/, "");
-  return [...MCP_RESOURCE_PATHS.map((p) => `${base}${p}`), base];
 }
 
 /**

@@ -27,6 +27,17 @@ export function isHostPathSource(source: string): boolean {
   );
 }
 
+/** Only Docker volume names are safe authored sources; paths, interpolation and
+ * ambiguous spellings must never become host binds through a later resolver. */
+export function isHostMountSource(source: string): boolean {
+  return source !== "" && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(source);
+}
+
+/** Target-only mounts (including app-relative paths) have no host source. */
+export function findHostMountVolumes(volumes?: readonly string[] | null): string[] {
+  return (volumes ?? []).filter((volume) => isHostMountSource(parseVolumeMount(volume).source));
+}
+
 /** Keep every mount option when editing the source or destination independently. */
 export function parseVolumeMount(raw: string): VolumeMount {
   const parts = raw.trim().split(":");

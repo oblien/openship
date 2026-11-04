@@ -67,6 +67,10 @@ async function fetchBillingState(workspaceId?: string): Promise<BillingFetchResu
         ? body.code : "BILLING_API_ERROR";
       logBillingFailure(err.status, code);
       if (code === "CLOUD_WORKSPACE_REQUIRED") return { kind: "unavailable", reason: "workspace-required" };
+      if (workspaceId && (
+        (err.status === 404 && code === "CLOUD_WORKSPACE_NOT_FOUND") ||
+        (err.status === 409 && code === "CLOUD_WORKSPACE_DELETING")
+      )) return { kind: "unavailable", reason: "workspace-removed" };
 
       if (err.status === 401) {
         return {

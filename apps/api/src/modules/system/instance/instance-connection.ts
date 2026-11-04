@@ -1,5 +1,5 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db, eq, and, gt, schema, withAdvisoryLock } from "@repo/db";
 import { AppError, instanceOrigin, type InstanceConnection } from "@repo/core";
@@ -20,6 +20,7 @@ import { remoteSessionHeaders } from "./relay-session";
 import { connectionSchema, deviceConnection } from "./device-session";
 import { closeInstanceRelays } from "./desktop-relay";
 import { discoverInstance } from "./instance-discovery";
+import { mintSession } from "../../../lib/cloud-auth-proxy";
 
 const token = () => randomBytes(32).toString("base64url");
 const key = (value: string) => `instance-pair:${createHash("sha256").update(value).digest("hex")}`;
@@ -85,16 +86,13 @@ export async function claimPairingCode(value: string, origin: string): Promise<I
         ),
       );
     if (!membership) throw new AppError("The user no longer has access to this workspace.", 403);
-    const sessionToken = token();
-    await tx.insert(schema.session).values({
-      id: randomUUID(),
-      token: sessionToken,
+    const session = await mintSession({
+      purpose: "local-cookie",
       userId: identity.userId,
       activeOrganizationId: identity.organizationId,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000),
       userAgent: "Openship Desktop (paired instance)",
-    });
-    return deviceConnection(origin, state.installationId, sessionToken);
+    }, tx);
+    return deviceConnection(origin, state.installationId, session.token);
   });
 }
 

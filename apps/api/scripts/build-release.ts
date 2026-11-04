@@ -70,7 +70,14 @@ const PACKAGES_DIR = join(REPO_ROOT, "packages");
  * (db-email, ui, onboarding) aren't included — they're either dashboard-
  * only or webmail-only.
  */
-const API_WORKSPACE_DEPS = ["core", "db", "adapters", "contracts", "platform"] as const;
+const API_WORKSPACE_DEPS = [
+  "core",
+  "db",
+  "adapters",
+  "contracts",
+  "platform",
+  "commands",
+] as const;
 
 /**
  * Output directory. Defaults to `apps/api/release-dist/` (the canonical

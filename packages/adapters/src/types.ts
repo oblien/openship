@@ -753,7 +753,7 @@ export interface SslResult {
 
 // ─── Log streaming callback ──────────────────────────────────────────────────
 
-export type LogCallback = (entry: LogEntry) => void;
+export type LogCallback<Step extends string = BuildStep> = (entry: LogEntry<Step>) => void;
 
 export interface RuntimeLogStreamOptions {
   tail?: number;

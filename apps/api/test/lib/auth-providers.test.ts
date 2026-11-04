@@ -30,6 +30,10 @@ vi.mock("@repo/core/diagnostics", () => ({
 const env: Record<string, string | undefined> = {};
 const deployment = { selfHostedOidcAllowed: true };
 
+vi.mock("@repo/platform/engine/lib/public-url", () => ({
+  resolveAuthBaseUrl: () => "https://openship.example.test",
+}));
+
 vi.mock("@repo/platform/engine/config/env", () => ({
   get env() {
     return env;
@@ -187,7 +191,7 @@ describe("oidcProviderConfig", () => {
     expect(config).toBeDefined();
     expect(config).toMatchObject({
       providerId: "oidc",
-      issuer: "https://idp.example.com/application/o/openship/",
+      redirectURI: "https://openship.example.test/api/auth/oauth2/callback/oidc",
       clientId: "oidc-client-id",
       clientSecret: "oidc-client-secret",
       scopes: ["openid", "email", "profile"],

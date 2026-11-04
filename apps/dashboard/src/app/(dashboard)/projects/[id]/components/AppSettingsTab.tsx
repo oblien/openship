@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useEffect, useState } from "react";
@@ -25,6 +26,7 @@ export function AppSettingsTab() {
   const ps = t.projectSettings.appSettings;
   const { showToast } = useToast();
   const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
+  const showComposeReview = useComposeReview(id);
 
   const s = useAppSettings(id);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -60,7 +62,7 @@ export function AppSettingsTab() {
       showToast(ps.applied, "success");
       setPendingApply(false);
     } catch (err) {
-      if (!showCloudPricing(err)) showToast(getApiErrorMessage(err, ps.applyFailed), "error");
+      if (!showComposeReview(err) && !showCloudPricing(err)) showToast(getApiErrorMessage(err, ps.applyFailed), "error");
     } finally {
       setApplying(false);
     }

@@ -59,6 +59,13 @@ const click = (label: string) =>
     expect(node, label).toBeDefined();
     node!.click();
   });
+const typeUserCode = (value: string) =>
+  act(async () => {
+    const input = host.querySelector<HTMLInputElement>("#device-user-code");
+    expect(input).not.toBeNull();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 const render = (desktop = false) =>
   act(async () =>
     root.render(
@@ -144,14 +151,38 @@ describe("Cloud consent identity and switching", () => {
 
   it("keeps the Desktop handoff state and challenge after explicit consent", async () => {
     desktopParams();
+    h.authorize.mockResolvedValueOnce({
+      callbackUrl: "http://localhost:4500/api/auth/cloud-callback?code=approved&state=opaque-state",
+    });
     await render(true);
     await click(m.authorize);
     const url = new URL(window.location.href);
-    expect(url.pathname).toBe("/api/cloud/desktop-handoff");
-    expect(url.searchParams.get("redirect")).toBe(h.params.get("callback"));
+    expect(url.pathname).toBe("/api/auth/cloud-callback");
     expect(url.searchParams.get("state")).toBe("opaque-state");
-    expect(url.searchParams.get("code_challenge")).toBe(challenge);
-    expect(h.authorize).not.toHaveBeenCalled();
+    expect(url.searchParams.get("code")).toBe("approved");
+    expect(h.authorize).toHaveBeenCalledExactlyOnceWith({
+      redirect: h.params.get("callback"),
+      state: "opaque-state",
+      codeChallenge: challenge,
+      mode: "desktop",
+    });
+  });
+
+  it("does not submit Desktop approval twice and allows retry after a failed POST", async () => {
+    desktopParams();
+    let fail!: (error: Error) => void;
+    h.authorize.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    await render(true);
+    await click(m.authorize);
+    expect(h.authorize).toHaveBeenCalledTimes(1);
+    expect(button(m.authorizing)?.disabled).toBe(true);
+    await act(async () => fail(new Error("Approval failed")));
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Approval failed");
+    expect(button(m.authorize)?.disabled).toBe(false);
   });
 
   it("blocks authorization while loading, then retries a failed organization read", async () => {
@@ -304,6 +335,9 @@ describe("Cloud consent identity and switching", () => {
       }),
     );
     await render();
+    expect(button(m.authorize)?.disabled).toBe(true);
+    await typeUserCode("ABCD-EFGH");
+    expect(button(m.authorize)?.disabled).toBe(false);
     await act(async () => {
       button(m.authorize)!.click();
       button(m.authorize)!.click();
@@ -312,6 +346,7 @@ describe("Cloud consent identity and switching", () => {
       state: "opaque-state",
       codeChallenge: challenge,
       mode: "device",
+      userCode: "ABCD-EFGH",
     });
     await act(async () => finish({ authorized: true }));
     expect(host.textContent).toContain(m.deviceDoneTitle);
@@ -325,11 +360,30 @@ describe("Cloud consent identity and switching", () => {
     });
     h.authorize.mockRejectedValueOnce(new ApiError(401, "Expired", {}));
     await render();
+    await typeUserCode("ABCD-EFGH");
     await click(m.authorize);
     const destination = h.replace.mock.calls.at(-1)?.[0];
     expect(new URL(destination, "http://localhost").searchParams.get("returnTo")).toBe(
       `/cloud-authorize?${h.params}`,
     );
+  });
+  it("shows a localized error when the terminal code is rejected", async () => {
+    h.params = new URLSearchParams({
+      mode: "device",
+      state: "opaque-state",
+      code_challenge: challenge,
+    });
+    h.authorize.mockRejectedValueOnce(
+      new ApiError(400, "Bad Request", {
+        error: "Invalid or expired device authorization code",
+        code: "INVALID_USER_CODE",
+      }),
+    );
+    await render();
+    await typeUserCode("ABCD-EFGH");
+    await click(m.authorize);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(m.userCodeInvalid);
+    expect(button(m.authorize)?.disabled).toBe(false);
   });
   it("does not query identities or authorize a malformed request", async () => {
     h.params.delete("code_challenge");

@@ -266,7 +266,7 @@ it("keeps nested workspace files in the build context of a required parent packa
   });
 });
 
-it.each([{ framework: "docker" }, { buildKind: "dockerfile" }])(
+it.each([{ framework: "docker" }, { framework: "docker-compose" }, { buildKind: "dockerfile" }])(
   "does not infer a custom Docker build context from package dependencies: %j",
   async (custom) => {
     expect(
@@ -278,5 +278,6 @@ it.each([{ framework: "docker" }, { buildKind: "dockerfile" }])(
       ),
     ).toEqual({ affected: true, reason: "custom-build-context" });
     expect(h.tree).not.toHaveBeenCalled();
+    expect(h.read).toHaveBeenCalledTimes(2);
   },
 );

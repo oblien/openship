@@ -1,3 +1,4 @@
+import { serverSecurityResources } from "./server-security.operations";
 import { assertManagementAccess } from "../billing/management.service";
 import { verifyCustomerSshConnection } from "../../lib/customer-ssh";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
@@ -857,6 +858,7 @@ export const serverDependencies: ServerDependencies = {
     ...networkSetupMemberCollection,
   },
   resources: {
+    ...serverSecurityResources,
     ...serverLifecycleResources,
     ...serverNetworkSettings,
     ...serverManagedControls,
@@ -874,6 +876,9 @@ export const serverDependencies: ServerDependencies = {
     ...serverTunnelResources,
     ...serverClusterResources,
     ...serverGitHubResources,
+  },
+  async securityRunEvents(ctx, id, runId, signal) {
+    return (await import("../updates/host-security")).hostPatchRunEvents(ctx, id, runId, signal);
   },
   installations: serverInstallationDependencies,
   containers: serverContainerStreams,

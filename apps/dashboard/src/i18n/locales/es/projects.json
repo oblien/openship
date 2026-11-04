@@ -411,7 +411,18 @@
     "suggestedFix": "Solución sugerida",
     "fixStep1": "Abre la pestaña Dominios.",
     "fixStep2": "Añade una ruta o dominio personalizado para el puerto del servicio.",
-    "fixStep3": "Verifica el dominio y despliega."
+    "fixStep3": "Verifica el dominio y despliega.",
+    "composeReview": {
+      "title": "Compose ha cambiado",
+      "addedTitle": "Hay nuevos servicios por configurar",
+      "description": "El archivo Compose ha cambiado desde la última configuración. Revisa los servicios y ajustes actuales antes de volver a desplegar.",
+      "configure": "Configurar",
+      "cancel": "Cancelar",
+      "added": "Añadidos",
+      "changed": "Modificados",
+      "removed": "Eliminados",
+      "reviewHint": "Revisa estos cambios de Compose y despliega para aplicarlos. Los servicios eliminados se detendrán durante el despliegue; sus datos persistentes se conservarán."
+    }
   },
   "connections": {
     "nativeClusterHint": "Elige un proyecto en el clúster de esta base de datos. Solo los proyectos vinculados reciben acceso privado.",

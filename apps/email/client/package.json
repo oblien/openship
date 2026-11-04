@@ -49,7 +49,7 @@
     "@zero/server": "file:../server",
     "accept-language-parser": "^1.5.0",
     "babel-plugin-react-compiler": "19.1.0-rc.2",
-    "better-auth": "^1.5.4",
+    "better-auth": "1.7.15",
     "canvas-confetti": "1.9.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

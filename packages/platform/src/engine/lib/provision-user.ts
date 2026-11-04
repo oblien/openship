@@ -44,6 +44,8 @@ export interface ProvisionUserInput {
   role?: "admin" | "user";
   autoProvisioned?: boolean;
   image?: string | null;
+  /** Only the SaaS signup hook opts in; desktop/cloud mirrors never enqueue. */
+  welcomeEmail?: boolean;
 }
 
 export interface ProvisionCredentialInput {
@@ -99,6 +101,11 @@ export async function provisionUserInTransaction(
     })
     .onConflictDoNothing();
 
+  if (input.welcomeEmail && !input.autoProvisioned) {
+    await tx.insert(schema.cloudCustomerEmail).values({
+      id: `signup:${input.id}`, kind: "signup", userId: input.id, organizationId: personalOrgId,
+    }).onConflictDoNothing();
+  }
   return personalOrgId;
 }
 

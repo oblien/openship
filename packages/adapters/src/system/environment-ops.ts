@@ -217,6 +217,23 @@ function joinPackages(packages: readonly string[]): Answer<string> {
 
 type PkgRule = (names: string, installRecommends?: boolean) => Op;
 
+/**
+ * Install named packages with pacman.
+ *
+ * `-Sy` refreshes the sync database first. A rolling release's local database goes
+ * stale, and `pacman -S` then fails with "target not found" for a package that
+ * exists — the same failure `apt-get install` has against a stale index.
+ *
+ * Not `-Syu`. That upgrades every installed package, including the kernel, which is
+ * not what installing one package means. Arch documents `-Sy package` as a partial
+ * upgrade and does not support it; `--needed` limits the transaction to packages
+ * that are missing or older than the repo, which is the same trade
+ * `apt-get update && apt-get install` makes on Debian.
+ */
+function pacmanInstall(names: string): string {
+  return `pacman -Sy --needed --noconfirm ${names}`;
+}
+
 const INSTALL: Readonly<Record<SystemPackageManager, PkgRule>> = {
   // `update` first because an install against a stale index fails on a
   // just-provisioned box; `-qq` because this output streams into the UI.
@@ -229,11 +246,12 @@ const INSTALL: Readonly<Record<SystemPackageManager, PkgRule>> = {
     answered([`dnf install -y ${recommends ? "" : "--setopt=install_weak_deps=False "}${names}`]),
   yum: (names) => answered([`yum install -y ${names}`]),
   apk: (names) => answered([`apk add --no-cache ${names}`]),
+  pacman: (names) => answered([pacmanInstall(names)]),
   brew: (names) => answered([`brew install ${names}`]),
   none: (names) =>
     refused(
       `No package manager is available to install ${names} — Openship looked for ` +
-        `apt-get, dnf, yum, apk and brew and found none.`,
+        `apt-get, dnf, yum, apk, pacman and brew and found none.`,
     ),
 };
 
@@ -244,6 +262,9 @@ const REMOVE: Readonly<Record<SystemPackageManager, PkgRule>> = {
   dnf: (names) => answered([`dnf remove -y ${names}`]),
   yum: (names) => answered([`yum remove -y ${names}`]),
   apk: (names) => answered([`apk del ${names}`]),
+  // `-R` removes, `-n` drops config backups (apt purge), `-s` drops dependencies
+  // nothing else needs (apt autoremove). One transaction is how pacman spells those two.
+  pacman: (names) => answered([`pacman -Rns --noconfirm ${names}`]),
   brew: (names) => answered([`brew uninstall --force ${names}`]),
   none: (names) => refused(`No package manager is available to remove ${names}.`),
 };
@@ -260,6 +281,9 @@ const AVAILABLE_VERSION: Readonly<Record<SystemPackageManager, PkgRule>> = {
   dnf: (names) => answered([`dnf -q --cacheonly list available ${names} 2>/dev/null | tail -n1`]),
   yum: (names) => answered([`yum -q --cacheonly list available ${names} 2>/dev/null | tail -n1`]),
   apk: (names) => answered([`apk policy ${names} 2>/dev/null`]),
+  // `-Si` reads the local sync database and does not refresh it, matching the other
+  // managers' cache-only probes. A stale database under-reports, which is the contract.
+  pacman: (names) => answered([`pacman -Si ${names} 2>/dev/null`]),
   brew: (names) =>
     refused(
       `Openship does not read Homebrew's available version for ${names} — it reports the ` +
@@ -507,8 +531,17 @@ function dockerInstallSteps(profile: EnvironmentProfile): Op {
       // OpenRC is present, and is what supplies `rc-service docker`.
       return answered(["apk add --no-cache docker docker-cli docker-cli-compose"]);
 
-    case "suse":
     case "arch":
+      // extra ships both halves, and CachyOS (ID_LIKE=arch) carries the same names.
+      // `docker` is the engine; containerd and runc come in as dependencies.
+      // `docker-compose` is Compose v2 and installs
+      // /usr/lib/docker/cli-plugins/docker-compose (extra's file list), so this arm
+      // does not fetch the manual plugin binary the Debian fallback needs.
+      // `docker-buildx` is an optional dependency of `docker`. Docker 23+ runs
+      // `docker build` through it, and a host without the plugin fails the first build.
+      return answered([pacmanInstall("docker docker-compose docker-buildx")]);
+
+    case "suse":
     case "unknown":
       return refused(
         `Openship has no Docker install path for this host (os-release ID=` +
