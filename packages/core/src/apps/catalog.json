@@ -8775,7 +8775,7 @@
           "image": "archivebox/archivebox:0.9.78rc48",
           "exposed": true,
           "ports": [
-            "5797:5797"
+            "8231:5797"
           ],
           "exposedPort": 5797,
           "routes": [
