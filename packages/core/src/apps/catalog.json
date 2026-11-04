@@ -6560,9 +6560,11 @@
           "healthcheck": {
             "test": [
               "CMD",
+              "docker-entrypoint.sh",
               "rabbitmq-diagnostics",
               "-q",
-              "ping"
+              "check_port_listener",
+              "15672"
             ],
             "interval": "15s",
             "timeout": "10s",

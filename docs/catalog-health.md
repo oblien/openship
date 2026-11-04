@@ -40,6 +40,13 @@ credentials, write data, replace all containers, and verify persistence. Authent
 checks the stored administrator password through its authentication backend and
 the public login page; it does not drive a browser SSO integration.
 
+RabbitMQ's readiness probe invokes the official image entrypoint so diagnostics
+run as the broker user. Running the first probe directly as root can create an
+unreadable Erlang cookie while the broker is starting. Readiness also requires
+the management listener, since an Erlang ping can pass before it opens. The smoke
+test exercises this early readiness check, authenticated management, and a
+persistent message surviving container replacement.
+
 ```sh
 # Use a disposable test daemon. No customer API or Cloud purchase is involved.
 DOCKER_CONTEXT=your-test-context bun scripts/smoke-catalog-apps.ts
