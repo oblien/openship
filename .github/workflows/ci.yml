@@ -132,6 +132,7 @@ jobs:
               test/e2e/migration-direct-transfer.e2e.test.ts
               test/e2e/migration-takeover.e2e.test.ts
               test/e2e/backup-volume-roundtrip.e2e.test.ts
+              test/e2e/volume-restore-integrity.e2e.test.ts
               test/e2e/backup-project-app.e2e.test.ts
               test/e2e/docker-exec-watchdog.e2e.test.ts
           # Inventory identity, atomic cutover and role handover use real Docker.
@@ -277,6 +278,10 @@ jobs:
         run: bun run docs:check
 
       - name: Build documentation website
+        env:
+          # The changelog reads GitHub tags and dates during prerendering.
+          # Use the existing read token instead of the runner's shared public quota.
+          GITHUB_TOKEN: ${{ github.token }}
         run: bun run --cwd apps/web build
 
       - name: Verify social preview images on public pages

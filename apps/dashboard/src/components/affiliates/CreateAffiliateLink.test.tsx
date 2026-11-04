@@ -6,8 +6,7 @@ import type { AffiliateOverview } from "@repo/contracts";
 import { resolvePlan } from "@repo/core";
 import { baseDictionary } from "@/i18n";
 import { CreateAffiliateLink } from "./CreateAffiliateLink";
-import { discountBasisPoints } from "./affiliate-presentation";
-import { affiliateEstimate } from "./AffiliatePlanPicker";
+import { affiliateEstimate, discountBasisPoints } from "./affiliate-presentation";
 const h = vi.hoisted(() => ({ request: vi.fn(), catalog: vi.fn(), created: vi.fn() }));
 vi.mock("@/lib/api/affiliates", () => ({ affiliateRequest: h.request }));
 vi.mock("@/components/i18n-provider", () => ({

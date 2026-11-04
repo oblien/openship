@@ -132,6 +132,12 @@ version probes inside isolated containers. Workspace owners and admins can pause
 runtime advisory checks with the separate saved setting in Settings → Notifications.
 Monitoring must show checks disabled rather than a clean result; banner visibility
 remains a separate browser preference. Pausing checks also pauses automatic security refreshes.
+Security refresh actions retain a durable deployment receipt. Hide only the finding's
+banner while its update is running or awaiting deployment actions; retain its progress
+in the shared review and Monitoring. Restore the warning with an explicit failure if
+the deployment fails or the promoted runtime remains affected. An unchanged prebuilt
+image is not a remediation: explain that a patched version must be configured instead
+of redeploying the same digest. Opening review alone never resolves a finding.
 Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
 Host notices share that banner and review, linking to **Servers → Runs**. Monitoring's
@@ -401,6 +407,9 @@ wizard with the fresh source and saved settings/destination; cancel performs no
 synchronization. Show the change summary in the wizard and validate its source
 revision before deploying. Retire removed services through normal deployment
 cleanup while preserving their persistent data and deployment history.
+Deploy asks for DNS setup only for newly selected custom hostnames or a changed
+destination. Existing hostnames on the same deployed destination continue directly;
+adding only a www hostname asks for that hostname alone.
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
@@ -615,7 +624,10 @@ check retryable before starting the move.
   Keep the minimum beside available earnings. Show Request payout only for an enabled participant
   with enough available funds, opening the shared modal on demand. Public referral pages
   reuse the Cloud catalog, pricing cards and interval control; a chosen plan continues
-  through sign-in to the existing checkout with its referral intact.
+  through sign-in to the existing checkout with its referral intact. Verified referral
+  discounts lead each eligible card with the reduced price beside a struck-through
+  original. Show the discounted full annual charge and discount duration too.
+  Applying or removing a code in checkout updates these same cards.
   Link creation starts with a compact discount step, then expands to plan and billing
   interval selection with per-payment earnings. Use one card per plan with monthly and
   yearly choices inside; the whole choice is a keyboard-accessible checkbox. Keep link
@@ -1118,6 +1130,11 @@ Explain that these settings live in Openship and do not edit repository files.
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
 
+Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls` for the
+wizard and Add domain form. Edit route reuses `RoutingSettingsCard` for the
+canonical target/status. Saving a service route continues through the shared
+DNS, verification, SSL and route-apply flow; a redirect hides its unused port.
+
 ## Assistant workspace and consent
 
 Failed deployment headers and failed app setup pages offer
@@ -1234,7 +1251,7 @@ Use the shared `assistant` AI icon for the platform. Identify harnesses as
 **Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
 in provider selection, connections, history and settings. Use the shared provider
 labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
-A native sign-in option may still say “Sign in with ChatGPT.” Use Codex’s blue mark with a transparent background, without the white app tile, and Claude Code’s original terracotta mark. Keep their colors across themes, without a current-color mask, inversion or added brand tints. Agent connections open in one dialog, with provider navigation and a single
+A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action. Agent connections open in one dialog, with provider navigation and a single
 visible detail panel. Preserve unfinished sign-in forms when switching providers
 or closing this dialog; hidden content must not capture keyboard focus. Show the
 host in that dialog. Keep permission review and the audit trail in the header menu.

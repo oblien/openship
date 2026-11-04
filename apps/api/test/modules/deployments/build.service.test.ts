@@ -34,6 +34,7 @@ const {
   kickoffBuild: vi.fn(),
   queueActionDeployment: vi.fn(),
   repos: {
+    domain: { listByProject: vi.fn(async (): Promise<unknown[]> => []) },
     routeProtection: { list: vi.fn(async () => []) },
     actions: { deploymentForActionRequest: vi.fn() },
     projectConnection: { listByTarget: vi.fn(async () => []) },
@@ -1768,6 +1769,33 @@ describe("triggerDeployment", () => {
     },
   );
 
+  it("falls back to stored image-only Compose services when localPath is unreadable with ENOENT (#1583)", async () => {
+    const enoent = Object.assign(new Error("ENOENT: no such file or directory, stat '/home/ubuntu/calrs'"), {
+      code: "ENOENT",
+    });
+    repos.project.findById.mockResolvedValue(baseProject({
+      composePath: "docker-compose.yml",
+      localPath: "/home/ubuntu/calrs",
+      gitOwner: null,
+      gitRepo: null,
+      gitProvider: "local",
+      gitUrl: null,
+    }));
+    repos.service.listByProject.mockResolvedValue([
+      {
+        ...composeServices[0],
+        build: undefined,
+        dockerfile: undefined,
+        image: "ghcr.io/olivierlambert/calrs:latest",
+      },
+    ]);
+    resolveProjectInfo.mockRejectedValueOnce(enoent);
+    await expect(triggerDeployment(ctx, { projectId: "project-1", branch: "main" }))
+      .resolves.toBeDefined();
+    expect(repos.deployment.create).toHaveBeenCalled();
+    expect(kickoffBuild).toHaveBeenCalled();
+  });
+
   it.each([null, "poisoned"])(
     "preserves a %s legacy Compose value without blocking code-only webhooks (#893)",
     async (baseline) => {
@@ -2554,6 +2582,41 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     ).rejects.toMatchObject({ statusCode: 404, code: "SERVER_TARGET_UNAVAILABLE" });
 
     expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+    expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects removing another service's redirect target before deployment writes", async () => {
+    const uploadSessionId = seedSession();
+    repos.service.listByProject.mockResolvedValue([
+      {
+        ...scannedServices[0],
+        id: "svc-api",
+        exposed: true,
+        customDomain: "old.example.com",
+        domainType: "custom",
+      },
+    ]);
+    repos.domain.listByProject.mockResolvedValueOnce([
+      { hostname: "old.example.com", serviceId: "svc-api", redirectTo: null },
+      { hostname: "www.old.example.com", serviceId: "svc-alias", redirectTo: "old.example.com" },
+    ]);
+
+    await expect(
+      requestBuildAccess(ctx, {
+        projectId: "project-1",
+        uploadSessionId,
+        services: [
+          {
+            ...scannedServices[0],
+            exposed: true,
+            publicEndpoints: [
+              { port: "8080", domainType: "custom", customDomain: "new.example.com" },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow("can only redirect to another domain");
     expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
     expect(repos.deployment.create).not.toHaveBeenCalled();
   });

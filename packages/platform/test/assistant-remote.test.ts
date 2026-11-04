@@ -16,6 +16,7 @@ const host = vi.hoisted(() => ({
   proxyCalls: 0,
   forceRefreshes: 0,
   startupDelay: false,
+  proxyFailure: 0,
 }));
 vi.mock("../src/engine/modules/assistant/target-access", () => ({
   revalidateAssistantTarget: async () => host.server,
@@ -52,7 +53,15 @@ vi.mock("../src/engine/lib/cloud-workspace-host", () => ({
                     expect(headers.has("Authorization")).toBe(false);
                     expect(headers.get("X-Mindwire-Token")).toMatch(/^[a-f0-9]{64}$/);
                     if (++host.proxyCalls === 1) return new Response(null, { status: 401 });
-                    return fetch(`http://127.0.0.1:${port}${path}`, init);
+                    if (host.proxyFailure) return new Response(null, { status: host.proxyFailure });
+                    try {
+                      return await fetch(`http://127.0.0.1:${port}${path}`, init);
+                    } catch (error) {
+                      if ((error as { cause?: { code?: string } }).cause?.code !== "ECONNREFUSED")
+                        throw error;
+                      // Managed VM gateways expose a stopped loopback service as HTTP 502.
+                      return Response.json({ error: "Upstream connection refused" }, { status: 502 });
+                    }
                   },
                 }),
               };
@@ -350,6 +359,61 @@ describe.skipIf(process.env.OPENSHIP_ASSISTANT_E2E !== "1")(
       expect(host.forceRefreshes).toBe(1);
       await expect(client.mindwire.service.updateStatus()).resolves.toMatchObject({ idle: true });
     }, 120000);
+
+    it("recovers a stopped managed daemon when its saved endpoint returns gateway 502", async () => {
+      host.server.workspaceId = "owned-workspace";
+      const row = connection("stopped-managed-daemon");
+      rows.push(row);
+      const client = await createRemoteAssistantClient(row);
+      clients.push(client);
+      const root = join(directory, ".openship/assistants", assistantProfileKey(row));
+      const previous = JSON.parse(await readFile(join(root, "service.json"), "utf8"));
+      const workspace = await client.workspace("retained-chat");
+      await writeFile(join(workspace, "fixture.txt"), "retained");
+      const lease = await client.mindwire.service.acquireUpdate();
+      process.kill(lease.pid, "SIGTERM");
+      await vi.waitFor(async () => {
+        await expect(client.mindwire.health()).rejects.toMatchObject({ status: 502 });
+      });
+      await client.close();
+      const recovered = await createRemoteAssistantClient(row);
+      clients.push(recovered);
+      expect((await recovered.mindwire.health()).version).toBeTruthy();
+      expect(
+        await readFile(join(await recovered.workspace("retained-chat"), "fixture.txt"), "utf8"),
+      ).toBe("retained");
+      const next = JSON.parse(await readFile(join(root, "service.json"), "utf8"));
+      expect(next.token).not.toBe(previous.token);
+    }, 120000);
+
+    it.each([502, 503, 504, 409])(
+      "preserves a reachable daemon when its proxy returns HTTP %s",
+      async (status) => {
+        host.server.workspaceId = "owned-workspace";
+        const row = connection(`reachable-managed-${status}`);
+        rows.push(row);
+        const client = await createRemoteAssistantClient(row);
+        clients.push(client);
+        const path = join(
+          directory,
+          ".openship/assistants",
+          assistantProfileKey(row),
+          "service.json",
+        );
+        const before = await readFile(path, "utf8");
+        host.proxyFailure = status;
+        try {
+          await expect(createRemoteAssistantClient(row)).rejects.toThrow(
+            status === 409 ? "409" : "could not be safely updated",
+          );
+        } finally {
+          host.proxyFailure = 0;
+        }
+        expect((await client.mindwire.health()).version).toBeTruthy();
+        expect(await readFile(path, "utf8")).toBe(before);
+      },
+      120000,
+    );
 
     it("keeps a managed CLI installation separate from scoped execution and uses the installed binary through its wrapper", async () => {
       host.server.workspaceId = "owned-workspace";

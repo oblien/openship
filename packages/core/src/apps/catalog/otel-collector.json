@@ -1,0 +1,61 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "otel-collector",
+  "name": "OpenTelemetry Collector",
+  "description": "Receive application traces, metrics, and logs over OTLP on the private project network. Configure exporters for your telemetry backend.",
+  "kind": "template",
+  "logo": "otel-collector",
+  "category": "analytics",
+  "tags": ["observability", "opentelemetry", "otel", "tracing", "metrics", "logs"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "otel-collector",
+      "image": "otel/opentelemetry-collector-contrib:0.164.0",
+      "restart": "unless-stopped",
+      "commandArgv": ["--config=/etc/openship/collector.yaml"],
+      "volumes": [],
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 256,
+        "diskMb": 512
+      }
+    }
+  ],
+  "$schema": "https://openship.io/app.schema.json",
+  "minEngine": "0.9.0",
+  "repository": "https://github.com/open-telemetry/opentelemetry-collector-contrib",
+  "endpoints": [
+    {
+      "service": "otel-collector",
+      "port": 4317,
+      "label": "OTLP gRPC",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"],
+      "scope": "internal"
+    },
+    {
+      "service": "otel-collector",
+      "port": 4318,
+      "label": "OTLP HTTP",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"],
+      "scope": "internal"
+    }
+  ],
+  "connection": {
+    "title": "Connect your telemetry clients",
+    "description": "Use otel-collector:4317 for OTLP gRPC or http://otel-collector:4318 for OTLP HTTP from a service in the same project. Edit the mounted collector configuration in OpenShip service settings and redeploy to set your exporters. The default debug exporter writes received telemetry to service logs; the collector is a pipeline, not persistent storage.",
+    "outputs": []
+  },
+  "files": [
+    {
+      "service": "otel-collector",
+      "path": "/etc/openship/collector.yaml",
+      "content": "receivers:\n  otlp:\n    protocols:\n      grpc:\n        endpoint: 0.0.0.0:4317\n      http:\n        endpoint: 0.0.0.0:4318\nprocessors:\n  memory_limiter:\n    check_interval: 1s\n    limit_mib: 192\n    spike_limit_mib: 32\n  batch: {}\nexporters:\n  debug:\n    verbosity: basic\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [debug]\n    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [debug]\n    logs:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [debug]\n"
+    }
+  ]
+}

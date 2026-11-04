@@ -15,6 +15,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { PublicEndpointInput } from "./deployment-inputs";
 import { EnvironmentScopeSchema } from "./environment-scope";
 import {
   MAX_GENERATED_CONFIG_FILES,
@@ -250,6 +251,8 @@ const ComposeFieldsBlock = {
         domain: Type.Optional(Type.String({ maxLength: 255 })),
         customDomain: Type.Optional(Type.String({ maxLength: 255 })),
         domainType: Type.Optional(Type.Union([Type.Literal("free"), Type.Literal("custom")])),
+        redirectTo: PublicEndpointInput.properties.redirectTo,
+        redirectStatus: PublicEndpointInput.properties.redirectStatus,
       }),
       { maxItems: 20 },
     ),
@@ -427,6 +430,8 @@ export const SyncServicesBody = Type.Object({
                 customDomain: Type.Optional(Type.String()),
                 domainType: Type.Optional(Type.String()),
                 targetPath: Type.Optional(Type.String()),
+                redirectTo: PublicEndpointInput.properties.redirectTo,
+                redirectStatus: PublicEndpointInput.properties.redirectStatus,
               },
               { additionalProperties: true },
             ),

@@ -110,7 +110,9 @@ export function validatedPublicEndpointPayload(
 
   if (hasServer) {
     const port = Number(endpoint.port.trim());
-    if (!Number.isFinite(port) || port < 1 || port > 65535) return null;
+    if (!Number.isFinite(port) || port < 1 || port > 65535) {
+      return endpoint.redirectTo && !endpoint.port.trim() ? { domainType, ...host, ...redirectPayloadFields(endpoint) } : null;
+    }
     return { port, domainType, ...host, ...redirectPayloadFields(endpoint) };
   }
 

@@ -18,7 +18,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -34,7 +34,28 @@ vi.mock("../src/runtime/docker-exec-stream", () => ({
 
 import { DockerRuntime } from "../src/runtime/docker";
 import type { ServiceHandle } from "../src/backup/types";
-import { dockerFrame, drive, FakeAttachStream, harness } from "./helpers/docker-helper-harness";
+import {
+  dockerFrame,
+  drive,
+  FakeAttachStream,
+  harness as helperHarness,
+} from "./helpers/docker-helper-harness";
+
+function harness(
+  script: Parameters<typeof helperHarness>[0],
+  extras: Parameters<typeof helperHarness>[1] = () => ({}),
+) {
+  return helperHarness(script, (context) => ({
+    logs: async () => {
+      const bytes = (attach.current as FakeAttachStream).written.reduce(
+        (n, chunk) => n + chunk.length,
+        0,
+      );
+      return Readable.from([dockerFrame(1, `openship-restore-bytes: ${bytes}\n`)]);
+    },
+    ...extras(context),
+  }));
+}
 
 const SERVICE: ServiceHandle = {
   id: "svc_1",
@@ -79,8 +100,8 @@ describe("receiveStream no longer depends on wait() answering", () => {
 
     expect(result.bytesWritten).toBe("archive-bytes".length);
     expect(h.started()).toBe(true);
-    // And the helper did not survive.
-    expect(h.removals).toEqual([{ force: true }]);
+    // Extraction is reaped before the staging volume.
+    expect(h.removals).toEqual([{ force: true }, { force: true, v: true }]);
   });
 
   it("does not poll before the archive has finished being written", async () => {
@@ -139,7 +160,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
     stream.emitStderr("tar: can't create directory: Read-only file system\n");
 
     await expect(drive(p, 10_000)).rejects.toThrow(/Read-only file system/);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("reads the helper's log when the attach stream closed before any stderr arrived (#1417)", async () => {
@@ -158,7 +179,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
     p.catch(() => {});
 
     await expect(drive(p, 10_000)).rejects.toThrow(/premature end[\s\S]*tar: short read/);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("falls back when attach delivered a frame header without its stderr payload", async () => {
@@ -174,7 +195,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
     await expect(drive(p, 5_000)).rejects.toThrow(
       /Restore helper exited with code 1: tar: short read/,
     );
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it.each([
@@ -193,7 +214,13 @@ describe("receiveStream no longer depends on wait() answering", () => {
     const exec = await h.executor();
     const controller = new AbortController();
     let failure: Error | undefined;
-    const p = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+    // Upload-idle cancellation applies while the source is still open. Once
+    // EOF arrives, the log request has its own bound and the overall deadline.
+    const body = stop === "restore idle"
+      ? new Readable({ read() {} })
+      : Readable.from([Buffer.from("x")]);
+    if (stop === "restore idle") body.push(Buffer.from("x"));
+    const p = exec.receiveStream(SERVICE, SOURCE_ID, body, {
       compression: "none",
       idleTimeoutMs: stop === "restore idle" ? 1_000 : 60_000,
       timeoutMs: stop === "restore ceiling" ? 1_000 : stop === "disabled ceiling" ? 0 : 60_000,
@@ -210,7 +237,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
     );
     expect(failure?.message).toMatch(/Restore helper exited with code 1/);
     expect(requestSignal?.aborted).toBe(true);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
     expect((attach.current as FakeAttachStream).destroyed_).toBe(true);
   });
 
@@ -227,7 +254,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
       ),
     ).rejects.toThrow(/Restore helper exited with code 1/);
     expect(output.destroyed).toBe(true);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("closes a diagnostic stream that arrives after the request has timed out", async () => {
@@ -252,7 +279,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
     reply(output);
     await vi.advanceTimersByTimeAsync(0);
     expect(output.destroyed).toBe(true);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("stops reading oversized diagnostics without buffering the entire response", async () => {
@@ -281,7 +308,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
     expect(produced).toBeGreaterThan(0);
     expect(produced).toBeLessThan(100);
     expect(output.destroyed).toBe(true);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("preserves the exit code when the daemon cannot provide helper logs", async () => {
@@ -299,7 +326,7 @@ describe("receiveStream no longer depends on wait() answering", () => {
         5_000,
       ),
     ).rejects.toThrow(/^Restore helper exited with code 1$/);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 });
 
@@ -319,7 +346,7 @@ describe("silence is bounded, traffic is not", () => {
       ),
     ).rejects.toThrow(/moved no data for 5s/);
     // Named so an operator knows which restore and which volume.
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("lets a slow but live transfer run far past the idle window", async () => {
@@ -390,6 +417,57 @@ describe("silence is bounded, traffic is not", () => {
 
     await expect(drive(p, 30_000)).rejects.toThrow(/exceeded its 10s ceiling/);
   });
+
+  it.each(["validation", "extraction"])(
+    "allows local %s to outlast the upload idle window",
+    async (phase) => {
+      let waits = 0;
+      const h = harness({ inspect: [{ Running: true }] }, () => ({
+        wait: () => {
+          const validating = waits++ === 0;
+          const delay = validating === (phase === "validation") ? 8_000 : 500;
+          return new Promise((resolve) => setTimeout(() => resolve({ StatusCode: 0 }), delay));
+        },
+      }));
+      const exec = await h.executor();
+      await expect(
+        drive(
+          exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("archive")]), {
+            compression: "none",
+            idleTimeoutMs: 5_000,
+            timeoutMs: 20_000,
+          }),
+          25_000,
+        ),
+      ).resolves.toEqual({ bytesWritten: 7 });
+      expect(h.removals).toEqual([{ force: true }, { force: true, v: true }]);
+    },
+  );
+
+  it.each(["ceiling", "cancellation"])(
+    "still stops a stalled local extraction on %s",
+    async (stop) => {
+      let waits = 0;
+      const h = harness({ inspect: [{ Running: true }] }, () => ({
+        wait: () => waits++ === 0
+          ? new Promise((resolve) => setTimeout(() => resolve({ StatusCode: 0 }), 500))
+          : new Promise(() => {}),
+      }));
+      const exec = await h.executor();
+      const controller = new AbortController();
+      const restoring = exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("archive")]), {
+        compression: "none",
+        idleTimeoutMs: 5_000,
+        timeoutMs: 10_000,
+        signal: controller.signal,
+      });
+      if (stop === "cancellation") setTimeout(() => controller.abort(), 6_000);
+      await expect(drive(restoring, 15_000)).rejects.toThrow(
+        stop === "cancellation" ? /cancelled/ : /exceeded.*ceiling/,
+      );
+      expect(h.removals).toEqual([{ force: true }, { force: true, v: true }]);
+    },
+  );
 });
 
 describe("the helper is always reaped", () => {
@@ -406,7 +484,7 @@ describe("the helper is always reaped", () => {
 
     // AutoRemove is what raced wait() and produced the issue's 404.
     expect((h.created[0]!.HostConfig as { AutoRemove?: boolean }).AutoRemove).toBe(false);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true }, { force: true, v: true }]);
   });
 
   it("removes it even when the container never starts", async () => {
@@ -432,7 +510,7 @@ describe("the helper is always reaped", () => {
         10_000,
       ),
     ).rejects.toThrow(/driver failed to mount volume/);
-    expect(h.removals).toEqual([{ force: true }]);
+    expect(h.removals).toEqual([{ force: true, v: true }]);
   });
 
   it("drops the attach socket before removing the container", async () => {
@@ -487,7 +565,7 @@ describe("a volume restore never destroys the target before it can write", () =>
     const bin = mkdtempSync(join(tmpdir(), "openship-restore-bin-"));
     writeFileSync(join(target, "precious.txt"), "PRECIOUS");
 
-    const res = spawnSync("/bin/sh", ["-c", script], {
+    const res = spawnSync("/bin/sh", ["-ec", script], {
       input: Buffer.from("not-a-real-archive"),
       env: { PATH: bin, TARGET: target },
     });
@@ -498,15 +576,129 @@ describe("a volume restore never destroys the target before it can write", () =>
     expect(readdirSync(target)).toEqual(["precious.txt"]);
   });
 
-  it("puts the tool check BEFORE the destructive clear, in the script itself", async () => {
-    // Ordering is the invariant, and it is invisible at runtime until the day the tool is
-    // missing. A future edit that moves the clear earlier passes every other test.
-    const script = await helperScript("zstd");
-    expect(script.indexOf("command -v zstd")).toBeGreaterThan(-1);
-    expect(script.indexOf("find /mnt -mindepth 1 -delete")).toBeGreaterThan(-1);
-    expect(script.indexOf("command -v zstd")).toBeLessThan(
-      script.indexOf("find /mnt -mindepth 1 -delete"),
+  it("never mounts the target while receiving or validating the archive", async () => {
+    const h = harness({ wait: 0 });
+    const exec = await h.executor();
+    await drive(
+      exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.from("x")]), {
+        compression: "none",
+        clearTarget: true,
+      }),
+      10_000,
     );
+    expect(h.created).toHaveLength(2);
+    expect(h.created[0]!.HostConfig).not.toHaveProperty("Binds");
+    expect(h.created[0]!.Volumes).toEqual({ "/restore": {} });
+    expect(h.created[1]!.HostConfig).toMatchObject({
+      Binds: ["pgdata:/mnt"],
+      VolumesFrom: ["helper_1:ro"],
+    });
+  });
+
+  it("rejects a failed staged archive read even if tar accepts its output", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-restore-read-failure-"));
+    try {
+      const input = join(dir, "input");
+      const stage = join(dir, "stage");
+      const bin = join(dir, "bin");
+      for (const path of [input, stage, bin]) mkdirSync(path);
+      writeFileSync(join(input, "file"), "valid archive contents");
+      const archive = spawnSync("tar", ["-cf", "-", "-C", input, "file"]);
+      expect(archive.status).toBe(0);
+      // Upload succeeds. Reading the staged file emits valid tar data, then
+      // fails: tar's exit status alone cannot establish a successful read.
+      writeFileSync(join(bin, "cat"), '#!/bin/sh\n/bin/cat "$@"\nif [ "$#" -gt 0 ]; then exit 23; fi\n', { mode: 0o755 });
+      const script = (await helperScript("none")).replaceAll("/restore", stage);
+      const result = spawnSync("/bin/sh", ["-ec", script], {
+        input: archive.stdout,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      });
+      expect(result.status).toBe(23);
+      expect(result.stderr.toString()).toContain("staged archive read failed with status 23");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts valid tar padding larger than the validation pipe buffer", async () => {
+    const stage = mkdtempSync(join(tmpdir(), "openship-restore-padding-"));
+    try {
+      const script = (await helperScript("none")).replaceAll("/restore", stage);
+      const result = spawnSync("/bin/sh", ["-ec", script], {
+        // An empty tar followed by zero padding remains a valid archive.
+        input: Buffer.alloc(1024 * 1024),
+      });
+      expect(result.status, result.stderr.toString()).toBe(0);
+    } finally {
+      rmSync(stage, { recursive: true, force: true });
+    }
+  });
+
+  it("fails promptly on source failure without creating an extraction helper", async () => {
+    const h = harness({ wait: "hang" });
+    const exec = await h.executor();
+    const body = Readable.from(
+      (async function* () {
+        yield Buffer.from("partial tar");
+        throw new Error("source disconnected");
+      })(),
+    );
+    await expect(
+      drive(
+        exec.receiveStream(SERVICE, SOURCE_ID, body, {
+          compression: "none",
+          clearTarget: true,
+        }),
+        5_000,
+      ),
+    ).rejects.toThrow("source disconnected");
+    expect(h.created).toHaveLength(1);
+    expect(h.created[0]!.HostConfig).not.toHaveProperty("Binds");
+    expect(h.removals).toEqual([{ force: true, v: true }]);
+  });
+
+  it("refuses a successful tar receipt when the transport lost complete archive members", async () => {
+    const h = harness({ wait: 0 }, () => ({
+      logs: async () => Readable.from([dockerFrame(1, "openship-restore-bytes: 1024\n")]),
+    }));
+    const exec = await h.executor();
+    await expect(
+      drive(
+        exec.receiveStream(SERVICE, SOURCE_ID, Readable.from([Buffer.alloc(2048)]), {
+          compression: "none",
+          clearTarget: true,
+        }),
+        10_000,
+      ),
+    ).rejects.toThrow("transfer was incomplete");
+    expect(h.created).toHaveLength(1);
+    expect(h.created[0]!.HostConfig).not.toHaveProperty("Binds");
+  });
+
+  it("also bounds preparation of a bind-file target when Docker wait does not answer", async () => {
+    const h = harness({ wait: "hang", inspect: [{ Running: false, ExitCode: 0 }] });
+    const exec = await h.executor();
+    const service = { ...SERVICE, volumes: ["/tmp/openship-test-settings:/app/settings"] };
+    vi.spyOn(exec, "listSources").mockResolvedValue([
+      {
+        id: "settings",
+        type: "bind",
+        source: "/tmp/openship-test-settings",
+        target: "/app/settings",
+        isDirectory: false,
+      },
+    ]);
+    await expect(
+      drive(
+        exec.receiveStream(service, "settings", Readable.from([Buffer.from("x")]), {
+          compression: "none",
+          sourceIsFile: true,
+        }),
+        30_000,
+      ),
+    ).resolves.toMatchObject({ bytesWritten: 1 });
+    expect(h.created).toHaveLength(3);
+    expect(h.removals).toHaveLength(3);
   });
 
   it("reports the decompressor's failure rather than tar's success", async () => {

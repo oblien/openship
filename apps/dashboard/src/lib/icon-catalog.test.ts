@@ -25,11 +25,14 @@ describe("icon catalog", () => {
 
   it("ships every catalog asset as a PNG with no orphan or duplicate copies", () => {
     const directory = resolve(import.meta.dirname, "../../public/icons");
-    const files = Object.values(outlineModern).map((asset) => asset.file);
-    expect(new Set(files).size).toBe(files.length);
+    // Stable IDs can share artwork, without shipping duplicate PNG copies.
+    const assets = [
+      ...new Map(Object.values(outlineModern).map((asset) => [asset.file, asset])).values(),
+    ];
+    const files = assets.map((asset) => asset.file);
     expect(readdirSync(directory).filter((file) => file.endsWith(".png")).sort()).toEqual([...files].sort());
     const hashes = new Set<string>();
-    for (const { file, bounds, inset } of Object.values(outlineModern)) {
+    for (const { file, bounds, inset } of assets) {
       const png = readFileSync(resolve(directory, file));
       expect(png.subarray(0, 8).toString("hex"), file).toBe("89504e470d0a1a0a");
       // Keep source resolutions intact; bounds normalize each square canvas.

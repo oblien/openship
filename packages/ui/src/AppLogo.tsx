@@ -26,6 +26,9 @@ const BRAND_LOGO: Record<
   ollama: { src: "https://github.com/ollama.png?size=80" },
   vllm: { src: "https://github.com/vllm-project.png?size=80" },
   "open-webui": { src: "https://github.com/open-webui.png?size=80" },
+  // simpleicons carries no pgAdmin mark (cdn.simpleicons.org/pgadmin4 404s) —
+  // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
+  pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
   pocketbase: { slug: "pocketbase" },
   mongodb: { slug: "mongodb" },
   n8n: { slug: "n8n" },
@@ -46,6 +49,14 @@ const BRAND_LOGO: Record<
   nocodb: { src: "/app-logos/nocodb.svg" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
+  appwrite: { slug: "appwrite" },
+  alertmanager: { slug: "prometheus" },
+  listmonk: { src: "/app-logos/listmonk.png" },
+  prometheus: { slug: "prometheus" },
+  "otel-collector": { slug: "opentelemetry" },
+  // simpleicons has no Loki mark, so the official logo is vendored.
+  loki: { src: "/app-logos/loki.png" },
+  victoriametrics: { slug: "victoriametrics" },
   gitea: { slug: "gitea" },
   "paperless-ngx": { src: "/app-logos/paperless-ngx.svg" },
   "wiki-js": { src: "/app-logos/wiki-js.png", fill: true },
@@ -98,12 +109,17 @@ const BRAND_LOGO: Record<
   "mail-webmail": { src: "/apple-touch-icon.png", fill: true },
   webmail: { src: "/apple-touch-icon.png", fill: true },
   mail: { src: "/apple-touch-icon.png", fill: true },
+  radicale: {
+    src: "https://raw.githubusercontent.com/Kozea/Radicale/v3.9.0/radicale/web/internal_data/css/logo.svg",
+  },
   // The control plane self-registered as an app (CLI self-deploy) — Openship's
   // own brand mark, a full-bleed square icon.
   openship: { src: "/apple-touch-icon.png", fill: true },
   // MindWire's own monochrome mark is vendored so the catalog works offline and
   // the brand stays legible on both dashboard themes.
   mindwire: { src: "/app-logos/mindwire.svg", fill: true },
+  // Beszel is not on simpleicons; vendor its official gradient B mark.
+  beszel: { src: "/app-logos/beszel.svg" },
 };
 
 // The Valkey app retains the historical "redis" template ID. Keep that alias
