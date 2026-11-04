@@ -34,6 +34,7 @@
       "name": "listmonk",
       "image": "listmonk/listmonk:v6.2.0",
       "exposed": true,
+      "ports": ["9000:9000"],
       "exposedPort": 9000,
       "routes": [{ "port": 9000 }],
       "restart": "unless-stopped",
