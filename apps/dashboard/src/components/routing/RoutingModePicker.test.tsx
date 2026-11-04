@@ -81,7 +81,7 @@ it("adds a default redirect, displays its role and switches primary or serves bo
   expect(container.textContent).toContain("www.example.com → example.com");
   expect(container.textContent).toContain("Redirect domain");
   await select("www.example.com as primary");
-  expect(endpoints[0]).toMatchObject({ customDomain: "www.example.com", redirectTo: undefined });
+  expect(endpoints[0]).toMatchObject({ customDomain: "www.example.com", redirectTo: "" });
   expect(endpoints[1].redirectTo).toBe("www.example.com");
   await select("Serve both");
   expect(endpoints.every((e) => !e.redirectTo && !e.redirectStatus)).toBe(true);
@@ -104,7 +104,7 @@ it("retains www when it was chosen as primary and Include www is turned off", as
   await select("www.example.com as primary");
   await click('[role="switch"][aria-label="Include www"]');
   expect(endpoints).toHaveLength(1);
-  expect(endpoints[0]).toMatchObject({ customDomain: "www.example.com", redirectTo: undefined });
+  expect(endpoints[0]).toMatchObject({ customDomain: "www.example.com", redirectTo: "" });
 });
 
 it("updates the runtime port to the selected serving hostname in the same change", async () => {
@@ -119,7 +119,7 @@ it("updates the runtime port to the selected serving hostname in the same change
       expect.objectContaining({
         customDomain: "www.example.com",
         port: "8080",
-        redirectTo: undefined,
+        redirectTo: "",
       }),
       expect.objectContaining({
         customDomain: "example.com",

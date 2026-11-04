@@ -1298,7 +1298,11 @@
     "monitoring": "İzlemede görüntüle",
     "persistent": "Etkin bulgular, bildirim kapatıldıktan sonra da burada kalır.",
     "otherApps": "Diğer uygulamalar ({count})",
-    "details": "Ayrıntılar ve öneriler"
+    "details": "Ayrıntılar ve öneriler",
+    "refreshFailed": "Güvenlik güncellemesi başarısız oldu. Yeniden denemeden önce dağıtımı inceleyin.",
+    "refreshAwaitingActions": "Güncellemeye devam etmek için bekleyen dağıtım işlemlerini inceleyin.",
+    "refreshInProgress": "Güvenlik güncellemesi sürüyor. Uyarı çözülmüş sayılmadan önce çalışma ortamı doğrulanacak.",
+    "viewRefresh": "Güncellemeyi görüntüle"
   },
   "hostSecurity": {
     "title": "Sunucu güvenliği",

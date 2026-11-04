@@ -278,6 +278,10 @@ jobs:
         run: bun run docs:check
 
       - name: Build documentation website
+        env:
+          # The changelog reads GitHub tags and dates during prerendering.
+          # Use the existing read token instead of the runner's shared public quota.
+          GITHUB_TOKEN: ${{ github.token }}
         run: bun run --cwd apps/web build
 
       - name: Verify social preview images on public pages

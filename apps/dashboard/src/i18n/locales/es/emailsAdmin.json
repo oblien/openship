@@ -136,6 +136,9 @@
     "dnsHint": "Los registros de envío del proveedor ahora aparecen en la pestaña DNS. Publica y verifícalos para una entregabilidad completa."
   },
   "overview": {
+    "calendarContacts": "Calendarios y contactos",
+    "calendarContactsDesc": "Sincroniza calendarios y contactos en tus aplicaciones con Radicale. Usa el servidor IMAP indicado arriba y tus cuentas de correo actuales.",
+    "calendarContactsSetup": "Configurar Radicale",
     "mailServer": "Servidor de correo",
     "protocolDetails": "Detalles del protocolo →",
     "hostname": "Nombre de host",

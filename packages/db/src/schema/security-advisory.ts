@@ -51,7 +51,8 @@ export const projectSecurity = pgTable(
   (t) => [index("idx_project_security_org").on(t.organizationId), index("project_security_due_idx").on(t.nextInspectionAt)],
 );
 
-/** One admission per advisory revision + deployed artifact. Failed work requires review. */
+/** Automatic admissions deduplicate by advisory revision + artifact.
+ * Manual attempts retain progress and verification results too. */
 export const securityRefreshAttempt = pgTable("security_refresh_attempt", {
   id: text("id").primaryKey(),
   projectId: text("project_id")

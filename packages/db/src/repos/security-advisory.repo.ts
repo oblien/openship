@@ -169,7 +169,7 @@ export function createSecurityAdvisoryRepo(db: Database) {
     async claimAttempt(
       id: string,
       projectId: string,
-      verification?: { advisoryId: string; serviceId: string; image: string },
+      verification?: { advisoryId: string; serviceId: string | null; image?: string },
     ) {
       const rows = await db
         .insert(securityRefreshAttempt)
@@ -177,6 +177,12 @@ export function createSecurityAdvisoryRepo(db: Database) {
         .onConflictDoNothing()
         .returning();
       return rows.length === 1;
+    },
+    async attemptsForProject(projectId: string) {
+      return db.select().from(securityRefreshAttempt)
+        .where(eq(securityRefreshAttempt.projectId, projectId))
+        .orderBy(sql`${securityRefreshAttempt.createdAt} DESC`)
+        .limit(100);
     },
     async pendingAttempts() {
       return db

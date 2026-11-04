@@ -12,7 +12,8 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
  *                            details →" link to the Advanced tab. Webmail
  *                            is bundled with openship, so it's always
  *                            available - no deploy gate needed.
- *   2. Setup guides       - 4-up banner that deep-links to the public
+ *   2. Calendar & contacts - optional Radicale app using mailbox accounts.
+ *   3. Setup guides       - 4-up banner that deep-links to the public
  *                            walkthroughs on /mail/setup-guide/<client> in
  *                            a new tab. Server settings stay in this tab
  *                            (Postmaster credentials / Advanced); the
@@ -65,6 +66,7 @@ export function OverviewTab({ status, serverId }: OverviewTabProps) {
           serverId={serverId}
           webmail={status.webmail}
         />
+        <CalendarContactsCard />
         <SetupGuidesBanner />
       </div>
 
@@ -72,6 +74,27 @@ export function OverviewTab({ status, serverId }: OverviewTabProps) {
         <MailStatsCard serverId={serverId} />
         <QuickActionsCard />
       </div>
+    </div>
+  );
+}
+
+function CalendarContactsCard() {
+  const { t } = useI18n();
+  const copy = t.emailsAdmin.overview;
+  return (
+    <div className="bg-card rounded-2xl border border-border/50 p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <UiIcon name="calendar" className="size-4 text-muted-foreground" />
+        <h3 className="font-semibold text-foreground text-sm">{copy.calendarContacts}</h3>
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">{copy.calendarContactsDesc}</p>
+      <Link
+        href="/apps/new?app=radicale"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+      >
+        {copy.calendarContactsSetup}
+        <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
+      </Link>
     </div>
   );
 }
