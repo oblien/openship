@@ -1,0 +1,315 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "penpot",
+  "name": "Penpot",
+  "description": "Open-source design and prototyping for teams: vector design, components, prototypes and developer handoff, with a private PostgreSQL database and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "penpot",
+  "category": "other",
+  "repository": "https://github.com/penpot/penpot",
+  "tags": [
+    "design",
+    "prototyping",
+    "figma-alternative",
+    "collaboration"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "penpot-postgres",
+      "image": "postgres:15-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "penpot",
+        "POSTGRES_DB": "penpot",
+        "POSTGRES_INITDB_ARGS": "--data-checksums"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "penpot_postgres_data:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "20s"
+      }
+    },
+    {
+      "name": "penpot-valkey",
+      "image": "valkey/valkey:8.1",
+      "restart": "unless-stopped",
+      "environment": {
+        "VALKEY_EXTRA_FLAGS": "--maxmemory 128mb --maxmemory-policy volatile-lfu"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "valkey-cli ping | grep PONG"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 6,
+        "startPeriod": "5s"
+      }
+    },
+    {
+      "name": "penpot-backend",
+      "image": "penpotapp/backend:2.18.5",
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "penpot-postgres",
+        "penpot-valkey"
+      ],
+      "volumes": [
+        "penpot_assets:/opt/data/assets"
+      ],
+      "environment": {
+        "PENPOT_HTTP_SERVER_MAX_BODY_SIZE": "367001600",
+        "PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE": "367001600",
+        "PENPOT_FLAGS": "disable-email-verification enable-prepl-server disable-secure-session-cookies",
+        "PENPOT_PUBLIC_URI": "{{publicUrl:penpot-frontend}}",
+        "PENPOT_DATABASE_URI": "postgresql://penpot-postgres/penpot",
+        "PENPOT_DATABASE_USERNAME": "penpot",
+        "PENPOT_REDIS_URI": "redis://penpot-valkey/0",
+        "PENPOT_OBJECTS_STORAGE_BACKEND": "fs",
+        "PENPOT_OBJECTS_STORAGE_FS_DIRECTORY": "/opt/data/assets",
+        "PENPOT_TELEMETRY_ENABLED": "false"
+      },
+      "secretEnv": [
+        "PENPOT_SECRET_KEY",
+        "PENPOT_DATABASE_PASSWORD",
+        "PENPOT_ADMIN_PASSWORD"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -o /dev/null http://127.0.0.1:6060/readyz || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 20,
+        "startPeriod": "60s"
+      }
+    },
+    {
+      "name": "penpot-exporter",
+      "image": "penpotapp/exporter:2.18.5",
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "penpot-valkey"
+      ],
+      "environment": {
+        "PENPOT_PUBLIC_URI": "{{publicUrl:penpot-frontend}}",
+        "PENPOT_INTERNAL_URI": "http://penpot-frontend:8080",
+        "PENPOT_REDIS_URI": "redis://penpot-valkey/0"
+      },
+      "secretEnv": [
+        "PENPOT_SECRET_KEY"
+      ]
+    },
+    {
+      "name": "penpot-frontend",
+      "image": "penpotapp/frontend:2.18.5",
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "penpot-backend",
+        "penpot-exporter"
+      ],
+      "ports": [
+        "8234:8080"
+      ],
+      "exposed": true,
+      "exposedPort": 8080,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "volumes": [
+        "penpot_assets:/opt/data/assets"
+      ],
+      "environment": {
+        "PENPOT_HTTP_SERVER_MAX_BODY_SIZE": "367001600",
+        "PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE": "367001600",
+        "PENPOT_FLAGS": "disable-email-verification enable-prepl-server disable-secure-session-cookies",
+        "PENPOT_PUBLIC_URI": "{{publicUrl:penpot-frontend}}"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\n\\r\\n\" >&3 && head -n1 <&3 | grep -q \" 200 \"'"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 20,
+        "startPeriod": "30s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "penpot-postgres",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "penpot-db"
+    },
+    {
+      "key": "PENPOT_DATABASE_PASSWORD",
+      "service": "penpot-backend",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "penpot-db"
+    },
+    {
+      "key": "PENPOT_SECRET_KEY",
+      "service": "penpot-backend",
+      "label": "Application secret",
+      "help": "Auto-generated. Signs tokens shared by the backend and the exporter; changing it invalidates sessions.",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "penpot-secret"
+    },
+    {
+      "key": "PENPOT_SECRET_KEY",
+      "service": "penpot-exporter",
+      "label": "Application secret (exporter)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "penpot-secret"
+    },
+    {
+      "key": "PENPOT_ADMIN_PASSWORD",
+      "service": "penpot-backend",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "PENPOT_ADMIN_EMAIL",
+          "service": "penpot-backend",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used to sign in. Manage accounts in the app."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "endpoints": [
+    {
+      "service": "penpot-frontend",
+      "port": 8080,
+      "label": "Penpot",
+      "kind": "http",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "penpot-postgres",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ],
+  "prepare": [
+    {
+      "service": "penpot-backend",
+      "title": "Create the administrator",
+      "description": "Creates the administrator through Penpot's own command line and marks the tutorial as viewed.",
+      "command": "cd /opt/penpot/backend && python3 manage.py create-profile --fullname 'Admin' --email \"$PENPOT_ADMIN_EMAIL\" --password \"$PENPOT_ADMIN_PASSWORD\" --skip-tutorial --skip-walkthrough",
+      "capture": "penpot_admin_setup",
+      "once": true,
+      "mustSucceed": true,
+      "phase": "post-ready",
+      "readiness": {
+        "test": "bash -c '</dev/tcp/127.0.0.1/6063'",
+        "interval": 3000,
+        "retries": 60
+      }
+    }
+  ],
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 4096
+  },
+  "connection": {
+    "title": "Sign in to Penpot",
+    "description": "Sign in with the email and generated password below. The account is created on first start, so no confirmation email is needed.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Penpot",
+        "source": "publicUrl:penpot-frontend",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "email",
+        "label": "Email",
+        "source": "env:penpot-backend:PENPOT_ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:penpot-backend:PENPOT_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. Public sign-ups are open until you disable registration. Outgoing email is not configured, so password-reset and invitation emails are not sent; add an SMTP server through the backend's PENPOT_SMTP_* variables. Session cookies are not marked secure so the app also works over plain HTTP. Anonymous usage statistics are turned off."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Design and prototype",
+        "description": "Vector design, components, flex and grid layout, and interactive prototypes in the browser."
+      },
+      {
+        "title": "Private database",
+        "description": "Your files live in a dedicated, project-scoped PostgreSQL instance with an asset volume."
+      },
+      {
+        "title": "Exports included",
+        "description": "The exporter service renders PNG, SVG and PDF exports."
+      }
+    ]
+  }
+}
