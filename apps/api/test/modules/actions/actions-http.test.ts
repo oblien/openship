@@ -24,6 +24,7 @@ const traffic = vi.hoisted(() => ({
   commands: [] as string[],
   docker: false,
   emulated: false,
+  pullRequest: null as (ReturnType<typeof pullRequestEvent>["pull_request"] & { mergeable: boolean | null }) | null,
 }));
 vi.mock("@repo/platform/engine/modules/github/github.http", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.http")>()),
@@ -109,6 +110,14 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
       );
     }
     if (url.endsWith("/actions/permissions")) return { enabled: true };
+    if (url.endsWith("/pulls/42")) {
+      if (!traffic.pullRequest) throw new Error("Missing pull request fixture");
+      return traffic.pullRequest;
+    }
+    if (url.includes("/git/commits/")) return {
+      sha: url.split("/").at(-1),
+      parents: [{ sha: traffic.pullRequest?.base.sha }, { sha: traffic.pullRequest?.head.sha }],
+    };
     if (url.endsWith("/actions/runners")) return { total_count: 0, runners: [] };
     if (url.includes("/actions/workflows/"))
       return {
@@ -224,6 +233,7 @@ async function clients(owner: SeededOwner) {
   };
 }
 async function fixture() {
+  traffic.pullRequest = null;
   const owner = await seedOwner();
   const serverId = await seedServer(owner.orgId);
   const c = await clients(owner);
@@ -240,6 +250,20 @@ async function fixture() {
   };
   const workflow = await c.remote.create(input);
   return { ...c, owner, serverId, runner, workflow, input };
+}
+
+function pullRequestEvent(installationId: number, fork = false) {
+  return {
+    installation: { id: installationId }, action: "opened", number: 42,
+    repository: { id: 10, full_name: "acme/app" },
+    sender: fork ? { id: 77, login: "contributor" } : { id: 42, login: "owner" },
+    pull_request: {
+      number: 42, state: "open", merged: false, merge_commit_sha: null as string | null,
+      base: { sha: "e".repeat(40), ref: "main", repo: { id: 10, full_name: "acme/app" } },
+      head: { sha: "f".repeat(40), ref: "feature", repo: fork
+        ? { id: 20, full_name: "fork/app" } : { id: 10, full_name: "acme/app" } },
+    },
+  };
 }
 
 describe("Actions HTTP, native SDK and authorization", () => {
@@ -1046,6 +1070,43 @@ describe("Actions HTTP, native SDK and authorization", () => {
     expect((await repos.actions.runs(f.owner.orgId)).length).toBe(1);
   });
 
+  it("retries a signed pending PR delivery durably, then creates exactly one verified merge run", async () => {
+    const f = await fixture();
+    const installationId = 912348;
+    await db.insert(schema.gitInstallation).values({
+      id: generateId("git"), userId: f.owner.userId, organizationId: f.owner.orgId,
+      owner: "acme", installationId,
+    });
+    await f.remote.update(f.workflow.id, { ...f.input, source: source.replace("on: workflow_dispatch", "on: pull_request") });
+    const event = pullRequestEvent(installationId);
+    traffic.pullRequest = { ...structuredClone(event.pull_request), mergeable: null };
+    try {
+      const deliveryId = generateId("github"), body = JSON.stringify(event);
+      const send = () => app.request("/api/webhooks/github", {
+        method: "POST", body, headers: {
+          "content-type": "application/json", "x-github-event": "pull_request", "x-github-delivery": deliveryId,
+          "x-hub-signature-256": `sha256=${createHmac("sha256", "actions-app-webhook-test-secret").update(body).digest("hex")}`,
+        },
+      });
+      expect((await send()).status).toBe(200);
+      expect((await send()).status).toBe(200);
+      await actionWebhookInbox.tick(new Date(Date.now() + 1));
+      expect(await repos.actions.runs(f.owner.orgId)).toEqual([]);
+      const deliveries = () => db.select().from(schema.actionDelivery).where(eq(schema.actionDelivery.workflowId, f.workflow.id));
+      const pending = await deliveries();
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toMatchObject({ attempts: 1, finishedAt: null, error: expect.stringContaining("test merge is not ready") });
+      Object.assign(traffic.pullRequest, { mergeable: true, merge_commit_sha: "d".repeat(40) });
+      await actionWebhookInbox.tick(new Date(Date.now() + 30_000));
+      const runs = await repos.actions.runs(f.owner.orgId);
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ revision: "d".repeat(40), ref: "refs/pull/42/merge", event: { pull_request: { head: event.pull_request.head } } });
+      expect((await deliveries())[0]).toMatchObject({ attempts: 2, error: null, finishedAt: expect.any(Date) });
+      await actionWebhookInbox.tick(new Date(Date.now() + 60_000));
+      expect(await repos.actions.runs(f.owner.orgId)).toHaveLength(1);
+    } finally { traffic.pullRequest = null; }
+  });
+
   it.each([{ id: 99, login: "outsider" }, null])(
     "never borrows the workflow owner's identity for a signed check re-run (%j)",
     async (sender) => {
@@ -1152,18 +1213,8 @@ describe("Actions HTTP, native SDK and authorization", () => {
         .replace("on: workflow_dispatch", "on: pull_request")
         .replace("[self-hosted, macos]", "ubuntu-latest"),
     });
-    const event = {
-      installation: { id: installationId },
-      action: "opened",
-      number: 42,
-      repository: { full_name: "acme/app" },
-      sender: { id: 77, login: "contributor" },
-      pull_request: {
-        merge_commit_sha: "d".repeat(40),
-        base: { sha: "e".repeat(40), ref: "main" },
-        head: { repo: { full_name: "fork/app" } },
-      },
-    };
+    const event = pullRequestEvent(installationId, true);
+    traffic.pullRequest = { ...structuredClone(event.pull_request), mergeable: true, merge_commit_sha: "d".repeat(40) };
     await dispatchActionWebhook("pull_request", event, "fork-delivery", {
       organizationId: f.owner.orgId,
       workflowId: f.workflow.id,
