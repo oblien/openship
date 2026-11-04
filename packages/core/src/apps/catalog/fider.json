@@ -41,6 +41,7 @@
       "environment": {
         "BASE_URL": "{{publicUrl:fider}}",
         "HOST_MODE": "single",
+        "EMAIL_SMTP_PORT": "587",
         "DATABASE_URL": "postgres://fider:{{config:DB_PASSWORD}}@fider-db:5432/fider?sslmode=disable"
       },
       "secretEnv": ["DATABASE_URL", "JWT_SECRET", "EMAIL_SMTP_PASSWORD"],
