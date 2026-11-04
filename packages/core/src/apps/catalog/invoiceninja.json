@@ -90,7 +90,7 @@
       "name": "invoiceninja-web",
       "image": "nginx:1.31.8-alpine",
       "exposed": true,
-      "ports": ["80:80"],
+      "ports": ["8224:80"],
       "exposedPort": 80,
       "routes": [{ "port": 80 }],
       "restart": "unless-stopped",
