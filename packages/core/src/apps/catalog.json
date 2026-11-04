@@ -8797,6 +8797,9 @@
         {
           "name": "fider",
           "image": "getfider/fider:v0.38.2",
+          "ports": [
+            "3000:3000"
+          ],
           "exposed": true,
           "exposedPort": 3000,
           "routes": [
