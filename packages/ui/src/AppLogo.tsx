@@ -47,6 +47,8 @@ const BRAND_LOGO: Record<
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   prometheus: { slug: "prometheus" },
+  // simpleicons has no Loki mark, so the official logo is vendored.
+  loki: { src: "/app-logos/loki.png" },
   gitea: { slug: "gitea" },
   "paperless-ngx": { src: "/app-logos/paperless-ngx.svg" },
   "wiki-js": { src: "/app-logos/wiki-js.png", fill: true },
