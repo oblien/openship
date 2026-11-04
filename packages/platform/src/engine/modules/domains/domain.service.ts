@@ -235,8 +235,11 @@ export async function addDomain(
     if (data.externalIngress !== undefined && existing.externalIngress !== data.externalIngress) {
       patch.externalIngress = data.externalIngress;
     }
-    // a plain re-save) must not clear one the operator configured separately.
-    if (redirect.redirectTo && existing.redirectTo !== redirect.redirectTo) {
+    // A plain re-save must not clear a separately configured redirect.
+    if (
+      redirect.redirectTo &&
+      (existing.redirectTo !== redirect.redirectTo || existing.redirectStatus !== redirect.redirectStatus)
+    ) {
       patch.redirectTo = redirect.redirectTo;
       patch.redirectStatus = redirect.redirectStatus;
     }

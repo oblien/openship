@@ -12,6 +12,7 @@ import {
 import { getRoutingBaseDomain } from "./routing-domains";
 import { resolveServicePort, serviceKind } from "./deployable-service";
 import { env } from "../config/env";
+import { normalizeRedirect } from "./domain-redirect";
 
 // OpenResty management port (packages/adapters openresty-lua.ts OPENRESTY_MGMT_PORT).
 // Hardcoded here so this leaf module doesn't pull the adapters barrel or the
@@ -761,7 +762,10 @@ export function mergeServiceRoutingPatch(opts: {
 
   if (patch.publicEndpoints !== undefined) {
     const routes = (patch.publicEndpoints ?? [])
-      .map((endpoint) => normalizeServiceRoute(endpoint))
+      .map((endpoint) => {
+        normalizeRedirect(endpoint);
+        return normalizeServiceRoute(endpoint);
+      })
       .filter((route): route is ServicePublicEndpoint => route !== null);
     // An explicit array wins outright, so the scalars are PROJECTED from its
     // primary — not resolved a second time from the patch/stored chain, which

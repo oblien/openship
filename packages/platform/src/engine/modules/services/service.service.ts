@@ -615,7 +615,7 @@ export async function createService(
     }),
   );
 
-  await assertServiceRedirects(project, [{ ...routing, ...data }]);
+  await assertServiceRedirects(project, [{ ...data, ...routing, name }]);
 
   // Atomic gate, same rule and placement as updateService: a free (*.opsh.io)
   // route only resolves behind the Openship Cloud edge, so refuse BEFORE the
@@ -900,9 +900,6 @@ export async function updateService(
     // mergeServiceRoutingPatch. Before this, an array on the row shadowed the
     // scalars outright: the user's chosen custom domain was dropped and the gate
     // below then judged the stored "free" primary instead.
-    if (patch.publicEndpoints !== undefined) {
-      await assertServiceRedirects(project, [{ ...svc, ...patch }]);
-    }
     const normalized = normalizeRoutingPatch(mergeServiceRoutingPatch({ patch, stored: svc }));
 
     // Write the merged routing through VERBATIM, nulls included. `normalized` is
@@ -917,7 +914,13 @@ export async function updateService(
     patch.customDomain = normalized.customDomain;
     patch.domainType = normalized.domainType;
     patch.publicEndpoints = normalized.publicEndpoints;
+  }
 
+  if (touchesRouting || nameChanged) {
+    await assertServiceRedirects(project, [{ ...svc, ...patch }]);
+  }
+
+  if (touchesRouting) {
     const nextEndpoints = resolveServicePublicEndpoints({
       exposed: patch.exposed,
       exposedPort: patch.exposedPort,
