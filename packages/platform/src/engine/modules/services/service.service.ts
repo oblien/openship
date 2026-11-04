@@ -26,6 +26,7 @@ import {
   mergeAdvanced,
   parseContainerHosts,
   validateComposeGpuConfig,
+  validateComposeNamespaces,
   normalizeServiceLabel,
   normalizeAliasStrict,
   resolveCommandArgv,
@@ -633,6 +634,7 @@ export async function createService(
   // caller can send one payload shape to both.
   const advanced = mergeAdvanced(null, data.advanced);
   validateComposeGpuConfig(advanced);
+  validateComposeNamespaces(advanced);
   if (advanced.extraHosts !== undefined) {
     advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
   }
@@ -769,6 +771,7 @@ export async function updateService(
   if ("advanced" in patch) {
     patch.advanced = mergeAdvanced(svc.advanced as ComposeAdvanced | null, patch.advanced);
     validateComposeGpuConfig(patch.advanced as ComposeAdvanced);
+    validateComposeNamespaces(patch.advanced as ComposeAdvanced);
     const extraHosts = (patch.advanced as ComposeAdvanced).extraHosts;
     if (extraHosts !== undefined) {
       (patch.advanced as ComposeAdvanced).extraHosts = parseContainerHosts(extraHosts);
@@ -1462,6 +1465,7 @@ export async function syncComposeServices(
       : svc.environment;
     const advanced = svc.advanced as ComposeAdvanced | undefined;
     validateComposeGpuConfig(advanced);
+    validateComposeNamespaces(advanced);
     if (advanced?.extraHosts !== undefined) {
       advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
     }

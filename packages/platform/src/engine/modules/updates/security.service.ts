@@ -1,3 +1,10 @@
+import {
+  recoverHostPatchRuns,
+  hostTargets,
+  hostProbeKey,
+  inspectHostSecurity,
+  serverSecurityStatus,
+} from "./host-security";
 import { createHash } from "node:crypto";
 import {
   AppError,
@@ -11,7 +18,7 @@ import {
   type SecurityMatch,
 } from "@repo/core";
 import type { ApplySecurityInput, ProjectSecurityResult } from "@repo/contracts";
-import { repos, db } from "@repo/db";
+import { repos, db, tryAcquireAdvisoryLock } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
 import { withProjectStateLock } from "../../lib/project-runtime-lock";
@@ -27,7 +34,7 @@ import { reportCaughtError } from "@repo/core/diagnostics";
 import { getAdvisoryFeed, type AdvisoryFeedState } from "./advisory-feed";
 import { projectSecurityInventory } from "./security-inventory";
 import { updateProjectRuntime } from "./runtime-update";
-import { buildProjectSecurityResult } from "./security-status";
+import { buildProjectSecurityResult, RUNTIME_UPGRADE_REQUIRED_MESSAGE } from "./security-status";
 import { approveSecurityUpdate } from "./security-refresh-guard";
 import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
 
@@ -199,6 +206,16 @@ export async function applySecurityAdvisory(
       feed.security!.advisories,
       true,
     );
+    // Retained evidence keeps warnings visible after a failed probe; it must
+    // never authorize a manual or automatic refresh through the API.
+    if (
+      inventory.deploymentId !== input.deploymentId ||
+      !inventory.checkedAt ||
+      inventory.unknownServices.includes(input.serviceId ?? null)
+    )
+      throw new ValidationError(
+        "Current security evidence is unavailable for this service. Run Check again before applying an advisory.",
+      );
     const matches = matchSecurityAdvisories(
       feed.security!,
       inventory.images,
@@ -212,6 +229,8 @@ export async function applySecurityAdvisory(
       throw new ValidationError(
         "This advisory has no applicable runtime refresh. Review its guidance.",
       );
+    if (matches.some((item) => item.runtimeUpgradeRequired))
+      throw new ValidationError(RUNTIME_UPGRADE_REQUIRED_MESSAGE);
     let verified:
       | { deploymentId: string; images: Record<string, string>; expiresAt: string }
       | undefined;
@@ -299,6 +318,35 @@ export async function applySecurityAdvisory(
 
 /** Scheduler-owned, bounded sweep. Durable notification keys survive retries and restarts. */
 export async function scanSecurityAdvisories() {
+  const lock = await tryAcquireAdvisoryLock("security:advisories:sweep");
+  if (!lock) return { checked: 0, notices: 0, busy: true };
+  const started = new Date();
+  const organizations = new Map<string, boolean>();
+  const mark = async (id: string) => {
+    if (!organizations.has(id)) {
+      await repos.securityAdvisory.startScan(id, started);
+      organizations.set(id, false);
+    }
+  };
+  try {
+    return await scanSecurityAdvisoriesWork(mark, organizations);
+  } catch (error) {
+    for (const id of organizations.keys()) organizations.set(id, true);
+    throw error;
+  } finally {
+    try {
+      for (const [id, failed] of organizations)
+        await repos.securityAdvisory.finishScan(id, started, failed ? "partial" : "completed");
+    } finally {
+      await lock.release();
+    }
+  }
+}
+async function scanSecurityAdvisoriesWork(
+  mark: (id: string) => Promise<void>,
+  organizations: Map<string, boolean>,
+) {
+  await recoverHostPatchRuns();
   await reconcileSecurityRefreshes();
   const first = (await repos.project.listAllForScan(1))[0];
   const owner = first ? await resolveOrgOwner(first.organizationId) : null;
@@ -327,7 +375,10 @@ export async function scanSecurityAdvisories() {
         organizationId: project.organizationId,
         label: "security:scan",
       });
+      await mark(project.organizationId);
       const status = await projectSecurityStatus(ctx, project.id, feed);
+      if (!(await repos.securityAdvisory.checksEnabled(project.organizationId))) continue;
+      if (status.unknownServices.length) organizations.set(project.organizationId, true);
       for (const finding of status.findings) {
         const save = await notification.prepare({
           organizationId: project.organizationId,
@@ -379,10 +430,58 @@ export async function scanSecurityAdvisories() {
       );
       checked++;
     } catch (error) {
+      organizations.set(project.organizationId, true);
       reportCaughtError(error, "security-advisories.scan");
     }
   }
-  return { checked, notices, stale: feed.stale, source: SECURITY_FEED_SOURCE };
+  let hostsChecked = 0;
+  if (hostTargets(feed.security.advisories).length) {
+    const hosts = await repos.securityAdvisory.hostCandidates(
+      hostProbeKey(feed.security.advisories),
+    );
+    const hostDeadline = Date.now() + 60_000;
+    for (const { server } of hosts) {
+      if (Date.now() >= hostDeadline) break;
+      if (!server.organizationId) continue;
+      await mark(server.organizationId);
+      try {
+        const actor = await resolveOrgOwner(server.organizationId);
+        if (!actor) continue;
+        const ctx = buildBackgroundContext({
+          userId: actor.userId,
+          organizationId: server.organizationId,
+          label: "security:host-scan",
+        });
+        await inspectHostSecurity(ctx, server.id, feed);
+        const status = await serverSecurityStatus(ctx, server.id, feed);
+        if (!(await repos.securityAdvisory.checksEnabled(server.organizationId))) continue;
+        hostsChecked++;
+        if (status.error || status.pending || status.findings.some((f) => f.state === "unknown"))
+          organizations.set(server.organizationId, true);
+        for (const finding of status.findings) {
+          const save = await notification.prepare({
+            organizationId: server.organizationId,
+            resourceType: "server",
+            resourceId: server.id,
+            eventType: "security.advisory",
+            idempotencyKey: `security:host:${key(server.id, finding.id, finding.revision)}`,
+            payload: {
+              message: `${status.name}: ${finding.title}\n${finding.message}\n${finding.evidence.join(", ")}\nReview this server's Runs in Openship.`,
+              url: finding.url,
+              advisoryId: finding.id,
+              durable: true,
+            },
+          });
+          await db.transaction(save);
+          notices++;
+        }
+      } catch (error) {
+        organizations.set(server.organizationId, true);
+        reportCaughtError(error, "security-advisories.host-scan");
+      }
+    }
+  }
+  return { checked, hostsChecked, notices, stale: feed.stale, source: SECURITY_FEED_SOURCE };
 }
 
 /** Deployment success is not proof of a runtime patch: verify the promoted artifact. */

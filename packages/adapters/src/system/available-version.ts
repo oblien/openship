@@ -64,6 +64,9 @@ const READ_CANDIDATE: Readonly<Record<SystemPackageManager, ((out: string) => st
       const versions = [...out.matchAll(/^\s+([\w.+~-]+):\s*$/gm)].map((m) => m[1]!);
       return versions.length ? versions[versions.length - 1]! : null;
     },
+    // `pacman -Si` prints `Version         : 2.51.0-1`. The revision after `-` is
+    // dropped by normalizePkgVersion, the same way an rpm revision is.
+    pacman: (out) => out.match(/^Version\s*:\s*(\S+)/m)?.[1]?.trim() ?? null,
     // Both refuse the probe itself, so there is no output to read. Stated rather than
     // omitted — `null` here is paired with a refusal, not with a missing branch.
     brew: null,

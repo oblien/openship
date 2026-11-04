@@ -110,7 +110,7 @@ export async function getSession(c: Context) {
     if (realSession) {
       // activeOrganizationId is NOT NULL at the schema level — set by
       // the session.create.before hook in lib/auth.ts and by the
-      // local-cookie mintSession path's explicit insert. No reactive
+      // local-cookie mintSession path's Better Auth hook. No reactive
       // backfill needed; the migration handled any legacy rows.
       return c.json(realSession);
     }
@@ -139,7 +139,7 @@ export async function getSession(c: Context) {
     userAgent: "desktop",
   });
 
-  await setSessionCookie(c, session.token, session.expiresAt);
+  await setSessionCookie(c, session.token);
 
   const now = new Date().toISOString();
   return c.json({
@@ -198,7 +198,7 @@ export async function desktopLogin(c: Context) {
     ipAddress: "127.0.0.1",
     userAgent: "desktop",
   });
-  await setSessionCookie(c, session.token, session.expiresAt);
+  await setSessionCookie(c, session.token);
 
   return c.redirect(dashboardUrl);
 }
@@ -249,7 +249,7 @@ export async function cloudCallback(c: Context) {
         ipAddress: "127.0.0.1",
         userAgent: "desktop",
       });
-      await setSessionCookie(c, session.token, session.expiresAt);
+      await setSessionCookie(c, session.token);
 
       return c.redirect(localDashboardUrl);
     }
@@ -375,6 +375,6 @@ export async function desktopClaim(c: Context) {
     return c.text("Claim expired", 400);
   }
 
-  await setSessionCookie(c, result.token, result.expiresAt);
+  await setSessionCookie(c, result.token);
   return c.redirect(localDashboardUrl);
 }

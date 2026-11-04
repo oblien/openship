@@ -247,3 +247,23 @@ it("keeps the warning for another service's route and sends the operator to Doma
   expect(mocks.setActiveTab).toHaveBeenCalledWith("domains");
   expect(mocks.hideModal).toHaveBeenCalledWith("warning");
 });
+
+
+it.each(["cancel", "configure"] as const)("reviews new Compose services before redeploy: %s", async (action) => {
+  context.hasMultipleServices = false;
+  mocks.trigger.mockRejectedValueOnce({ body: {
+    code: "COMPOSE_REVIEW_REQUIRED", projectId: "project",
+    composeChanges: { added: ["worker"], changed: ["db"], removed: ["old-worker"] },
+  } });
+  await redeploy();
+  expect(mocks.openBuild).not.toHaveBeenCalled();
+  const modal = mocks.showModal.mock.calls.at(-1)![0];
+  await act(async () => root.render(modal.customContent));
+  const copy = baseDictionary.projects.redeploy.composeReview;
+  expect(container.textContent).toContain(copy.addedTitle);
+  expect(container.textContent).toContain("old-worker");
+  await act(async () => button(copy[action]).click());
+  expect(mocks.trigger).toHaveBeenCalledTimes(1);
+  if (action === "cancel") expect(mocks.push).not.toHaveBeenCalled();
+  else expect(mocks.push).toHaveBeenCalledWith(expect.stringMatching(/^\/deploy\/.+\?reviewCompose=1$/));
+});

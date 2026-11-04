@@ -395,7 +395,8 @@ export function createCloudWorkspaceRepo(db: Database) {
         .where(
           and(
             isNotNull(cloudWorkspace.operation),
-            sql`${cloudWorkspace.operation}->>'status' IN ('queued', 'running')`,
+            sql`(${cloudWorkspace.operation}->>'status' IN ('queued', 'running') OR
+              (${cloudWorkspace.operation}->>'status' = 'failed' AND ${cloudWorkspace.operation}->'support'->>'status' = 'pending'))`,
           ),
         )
         .orderBy(asc(cloudWorkspace.updatedAt))

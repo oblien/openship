@@ -164,7 +164,11 @@ export async function resolveProjectChangeImpact(
     }
     if (serviceMatchesChanges(root, remaining)) return { affected: true, reason: "project-files" };
 
-    if (project.framework === "docker" || project.buildKind === "dockerfile")
+    if (
+      project.framework === "docker" ||
+      project.framework === "docker-compose" ||
+      project.buildKind === "dockerfile"
+    )
       return { affected: true, reason: "custom-build-context" };
 
     const catalog = await requestMemo(`impact:workspace:${key}`, async () => {

@@ -52,36 +52,40 @@ export type GrantPermission = Permission | Capability;
 /**
  * Every value a grant row's `resource_type` may hold. Wider than the grantable
  * set: the nested leaves are here because a permission tag names them, not
- * because a grant can key on them.
+ * because a grant can key on them. Runtime validators and the TypeScript union
+ * derive from this same list.
  */
-export type ResourceType =
-  | "project"
-  | "server"
-  | "mail_server"
-  | "backup_destination"
-  | "billing"
-  | "audit"
-  | "analytics"
-  | "github"
+export const RESOURCE_TYPES = [
+  "project",
+  "server",
+  "mail_server",
+  "backup_destination",
+  "billing",
+  "audit",
+  "analytics",
+  "github",
   // GitHub access control is default-deny and owner-granted. "github"
   // (resourceId "*") = all GitHub; "github_installation" (resourceId = the
   // account LOGIN, not an installation id) = every repo under one account;
   // "github_repository" (resourceId = "owner/repo") = a single repo.
-  | "github_installation"
-  | "github_repository"
-  | "permissions"
-  | "domain"
-  | "settings"
-  | "job"
-  | "terminal"
-  | "cloud"
-  | "notifications"
-  | "updates"
-  | "service"
-  | "deployment"
-  | "backup_policy"
-  | "backup_run"
-  | "backup_restore";
+  "github_installation",
+  "github_repository",
+  "permissions",
+  "domain",
+  "settings",
+  "job",
+  "terminal",
+  "cloud",
+  "notifications",
+  "updates",
+  "service",
+  "deployment",
+  "backup_policy",
+  "backup_run",
+  "backup_restore",
+] as const;
+
+export type ResourceType = (typeof RESOURCE_TYPES)[number];
 
 /**
  * Types whose only resourceId is "*" — they name a FEATURE, not a row, so a

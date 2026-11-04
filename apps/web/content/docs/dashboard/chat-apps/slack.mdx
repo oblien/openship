@@ -1,0 +1,90 @@
+---
+title: Slack
+description: Create a Slack bot and use OpenShip deployment commands in allowed channels.
+---
+
+Connect a workspace bot, then let each teammate link their own OpenShip account. OpenShip replies privately to the person who sent the command.
+
+## Before you start
+
+You need permission to install a Slack app and manage OpenShip settings. The default direct connection uses **Socket Mode** and works from Desktop or a private server without exposing OpenShip. Keep OpenShip running. Use a separate Slack app for this connector so you do not change another bot’s delivery mode.
+
+## 1. Create the Slack app
+
+1. Open [Slack's app dashboard](https://api.slack.com/apps) and create an app for your workspace.
+2. In **OAuth & Permissions**, add the bot scopes `commands` and `chat:write`. Install the app to your workspace and copy the **Bot User OAuth Token** beginning with `xoxb-`.
+3. Turn on **Socket Mode**. In **Basic Information → App-Level Tokens**, generate an app token with `connections:write` and copy the `xapp-…` value. This is separate from the bot token.
+4. Open Slack in a browser. Its workspace URL contains your workspace ID, such as `T01234567`. Open the intended channel's details to copy its channel ID, such as `C01234567`.
+5. Invite the bot to each channel you will allow.
+
+The connector uses slash commands and `chat.postEphemeral`; it does not need message-history scopes for commands. Slack documents [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/), [slash-command setup](https://docs.slack.dev/interactivity/implementing-slash-commands/) and the [message scope](https://docs.slack.dev/reference/scopes/chat.write).
+
+## 2. Save the connector in OpenShip
+
+Open **Settings → Chat apps → Slack**. Choose a name and bot role, then fill in:
+
+| Field | Value |
+| --- | --- |
+| Slack workspace ID | The `T…` workspace ID. |
+| Bot token | The app's `xoxb-…` token. |
+| Socket Mode app token | The `xapp-…` token with `connections:write`. |
+| Allowed channel IDs | Exact IDs of channels where commands are permitted, separated by commas. |
+
+Keep **Direct connection** selected. Select **Save connector**, then **Enable bot**. Wait for **Connected**. No request URL or inbound port is needed.
+
+## 3. Register the command
+
+In the Slack app's **Slash Commands**, create a command with:
+
+| Field | Value |
+| --- | --- |
+| Command | `/openship` |
+| Request URL | Not required with Socket Mode enabled. |
+| Short description | `Check and control OpenShip deployments` |
+| Usage hint | `help` |
+
+Save and reinstall the app if Slack asks you to accept changed scopes. Event subscriptions and an Incoming Webhook are not needed for this command connection.
+
+## 4. Link and test
+
+In an allowed channel, send `/openship help`, then `/openship link`. Follow the browser consent flow and send its verification command back in that channel. Send `/openship projects` to confirm access. Follow the [deployment example](/docs/dashboard/chat-apps#your-first-deployment-command) when ready to test a write action.
+
+## Native command suggestions
+
+Slack lists registered slash commands when you type `/`. It treats everything after the command name as text, so OpenShip offers separate entries such as `/openship-projects`, `/openship-status` and `/openship-ask` with descriptions and argument hints. `/openship projects` and the other existing commands still work.
+
+1. In OpenShip, open your connection's actions menu → **Native commands**.
+2. Select **Update connector**, then **Copy definitions**.
+3. In Slack's app settings, open **App Manifest** in JSON mode. Merge the copied entries into `features.slash_commands`, keeping your other settings and unrelated commands. Replace older entries with the same names instead of duplicating them.
+4. Save the manifest and reinstall the app if Slack asks. Type `/openship-` in an allowed channel to see the commands.
+
+The definitions come from the bot's saved roles. Repeat this step after changing those roles. The bot token cannot update Slack's app configuration; [manifest updates require a separate configuration token](https://docs.slack.dev/reference/methods/apps.manifest.update/). OpenShip does not need that additional credential. Read Slack's [manifest reference](https://docs.slack.dev/reference/app-manifest/) for the command fields.
+
+## Talk to your assistant
+
+Select **Assistant** for conversations. Also select **Control plane** to use the same bot for deployment commands. Use a separate provider bot/application if you also want a dedicated deployment-command bot. After opt-in, `/openship chats` lists your earlier conversations here, `/openship resume <conversation-id>` continues one, and `/openship chat` opens the same conversation in OpenShip. You can continue it in either place.
+
+Complete the [assistant opt-in](/docs/dashboard/chat-apps#talk-to-your-assistant), then send `/openship ask Check my latest deployment`. Use the same command for follow-up messages, and `/openship new` or `/openship stop` to manage your conversation. Slash commands need no additional scopes.
+
+For mentions and direct messages:
+
+1. In **OAuth & Permissions**, add `app_mentions:read` for mentions. If you want direct messages, also add `im:history`.
+2. Turn on **Event Subscriptions**. With Socket Mode enabled, no request URL is needed. Add the bot event `app_mention`; optionally add `message.im` for direct messages. Reinstall the app after changing scopes.
+3. Include the exact destination IDs in the connector's allowed channels, including the `D…` ID for a direct conversation. To change allowed IDs, open the connection’s **Settings**, update **Allowed channel IDs**, and save.
+4. Mention the bot with your question. Mention it again in thread replies so Slack forwards the follow-up. Replies remain private to you in that thread. Direct messages can use plain text.
+
+No all-channel history subscription is needed. See Slack's [app mention event](https://docs.slack.dev/reference/events/app_mention/) and [direct-message event](https://docs.slack.dev/reference/events/message.im/) documentation.
+
+## Optional webhook connection
+
+For an existing public HTTPS installation, choose **Webhook** instead. Enter the app’s **Signing Secret** from Basic Information. Save and enable the connector, then configure its **Bot webhook URL** as the slash command’s Request URL and the optional Event Subscriptions URL. Turn off Socket Mode for this app; Slack uses one delivery mode at a time. Incoming signatures are checked against the raw request.
+
+## Troubleshooting
+
+- **Unknown command:** check the app is installed and the slash command is named `/openship`. Use the channel composer; Slack's custom slash commands do not work inside message threads.
+- **No command result:** enable the OpenShip connector, check its workspace/channel IDs, and make sure the bot and sender are channel members.
+- **Reconnecting:** check Socket Mode is enabled, the app token has `connections:write`, and OpenShip can reach Slack over HTTPS/WebSockets. Use only one connector for this app.
+- **Webhook request rejected:** confirm the signing secret belongs to the same app and your proxy preserves the request body and Slack signature headers.
+- **Acknowledgement but no final reply:** stay active in Slack. [Ephemeral replies](https://docs.slack.dev/reference/methods/chat.postEphemeral/) are not persistent and may not reach inactive users. Check OpenShip's deployment history before repeating a write action.
+
+See [all commands and permissions](/docs/dashboard/chat-apps#commands).

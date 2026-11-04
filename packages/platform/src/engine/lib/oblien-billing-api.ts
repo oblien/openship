@@ -33,6 +33,7 @@ const REJECTED_CHECKOUT_CODES = new Set([
   "invalid_plan", "invalid_pack", "invalid_offer", "invalid_redirect_url",
   "billing_redirect_not_allowed", "reseller_enterprise_required", "billing_offer_underfunded",
   "capacity_price_below_cost", "insufficient_redeemable_balance",
+  "capacity_checkout_limit",
 ]);
 const EXPIRED_CHECKOUT_CODES = new Set(["checkout_expired", "capacity_checkout_expired"]);
 
@@ -439,7 +440,8 @@ export class OblienBillingApi {
           : checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
           ...(Object.hasOwn(known, code) ? { providerCode: code } : {}),
           ...(checkoutExpired ? { checkoutExpired: true } : {}),
-          ...(path === "/billing/checkout" && [400, 402, 403, 409, 422].includes(response.status) && REJECTED_CHECKOUT_CODES.has(code)
+          ...(path === "/billing/checkout" && ([400, 402, 403, 409, 422].includes(response.status) ||
+            response.status === 429 && code === "capacity_checkout_limit") && REJECTED_CHECKOUT_CODES.has(code)
             ? { checkoutRejected: true } : {}),
           ...(Object.keys(diagnostic).length ? { details: diagnostic } : {}),
         });

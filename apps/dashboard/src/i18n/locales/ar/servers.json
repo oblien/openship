@@ -260,7 +260,8 @@
       "ssh": "وصول SSH",
       "runtimeApi": "واجهة التشغيل",
       "workloads": "أحمال العمل",
-      "settings": "الإعدادات"
+      "settings": "الإعدادات",
+      "runs": "عمليات التشغيل"
     },
     "healthy": "سليم",
     "issues": "مشكلات",

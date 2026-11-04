@@ -292,6 +292,22 @@ does not exist). Confirm the repo appears in `GET /api/github/home` first.
 
 ## Operations
 
+## Publish a repository change
+
+`github.publishChange(input)` and `POST /api/github/repos/:owner/:repo/changes`
+share one operation. Supply a unique `requestId`, `pullRequest` boolean, and a
+`patch` with `baseBranch`, exact `baseSha`, `title`, `description`, and `files`
+(`path` and complete replacement `content`). Up to 10 regular text files and
+256 KB total are supported. Source read and write access must cover every file.
+
+The operation builds one Git tree and commit, rechecks the base branch, then
+creates `openship/changes/<requestId>`. It never updates an existing branch or
+merges a PR. When requested, it opens a draft PR and returns `branch`, `commitSha`,
+`url` and `pullRequestUrl`. A changed base, restricted source path, symlink,
+submodule or directory replacement fails closed. Branch creation and PR creation
+are separate GitHub operations: if the PR response is lost, the branch may already
+exist. Inspect GitHub before retrying; the existing branch is never overwritten.
+
 {/* api-operations:start */}
 
 ### Connect
@@ -344,6 +360,12 @@ does not exist). Confirm the repo appears in `GET /api/github/home` first.
 | Select the default GitHub App source. | `github.setDefaultSource(id)` | `POST /api/github/sources/:id/default`<br />`github:admin` · Self-hosted |
 | Create an installation URL for a GitHub App source. | `github.createInstallUrl(id)` | `POST /api/github/sources/:id/install`<br />`github:admin` · Self-hosted |
 | Remove a GitHub App source. | `github.deleteSource(id)` | `DELETE /api/github/sources/:id`<br />`github:admin` · Self-hosted |
+
+### Repositories
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Publish an exact patch as one commit on a new branch, optionally opening a draft PR. Requires live repository write access and approved source paths. | `github.publishChange(input)` | `POST /api/github/repos/:owner/:repo/changes`<br />`github:write` |
 
 ### HTTP endpoints
 

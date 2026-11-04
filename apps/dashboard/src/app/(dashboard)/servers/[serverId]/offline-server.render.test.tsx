@@ -171,7 +171,15 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (root) act(() => root!.unmount());
+  // Auth stores defer their last-subscriber cleanup. Run those unmount timers
+  // while this fixture still owns its window and network stubs.
+  vi.useFakeTimers();
+  try {
+    if (root) act(() => root!.unmount());
+    act(() => vi.runOnlyPendingTimers());
+  } finally {
+    vi.useRealTimers();
+  }
   root = undefined;
   container.remove();
   vi.unstubAllGlobals();

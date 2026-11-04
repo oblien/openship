@@ -140,6 +140,7 @@ export function ReferralLanding({ code }: { code: string }) {
             ui={catalog.payload.ui}
             currentPlan={null}
             interval={interval}
+            referralOffer={state.offer}
             workspaceScoped
             onSelectPlan={(planId) => {
               if (!plans.some((plan) => plan.id === planId)) return;

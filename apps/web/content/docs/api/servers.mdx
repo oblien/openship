@@ -830,6 +830,17 @@ shared storage before removing the cluster runtime.
 | Create a stopped manual native process on this server. Reuse the same idempotency key after an uncertain response. Commands and environment are admin-only and not audited. Start it explicitly after creation. | `servers.createManagedWorkload(id, input)` | `POST /api/system/servers/:id/managed/workloads`<br />`server:admin` |
 | Start, stop or delete a manual process created by the server controls. Requires confirmation. Project and platform processes must use their own lifecycle controls. | `servers.controlManagedWorkload(id, input)` | `POST /api/system/servers/:id/managed/workloads/control`<br />`server:admin` |
 
+### Security maintenance
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read cached host advisory findings, permissions and inspection freshness. | `servers.security(id)` | `GET /api/system/servers/:id/security`<br />`server:read` |
+| Inspect a customer-operated Ubuntu host with bounded commands; installs nothing. Requires server admin. | `servers.checkSecurity(id)` | `POST /api/system/servers/:id/security/check`<br />`server:admin` |
+| Review exact stable Ubuntu package changes or a separate kernel reboot. Returns an expiring approval bound to this server and actor; requires server admin. | `servers.planSecurityPatch(id, input)` | `POST /api/system/servers/:id/security/plan`<br />`server:admin` |
+| Execute the reviewed token after rechecking permissions, advisory and exact host plan. Returns a server run ID; requires server admin. | `servers.applySecurityPatch(id, input)` | `POST /api/system/servers/:id/security/apply`<br />`server:admin` |
+| Read this server’s patch and reboot run output and verification state. Requires server admin. | `servers.securityRuns(id)` | `GET /api/system/servers/:id/security/runs`<br />`server:admin` |
+| Subscribe to this server run’s saved steps, live logs and final verification. Reconnect only reads the existing run; requires server admin. | `servers.securityRunEvents(id, runId, options?)` | `GET /api/system/servers/:id/security/runs/:runId/stream`<br />`server:admin` |
+
 ### Legacy network URLs
 
 | Operation | SDK | REST API |

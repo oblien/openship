@@ -411,7 +411,18 @@
     "suggestedFix": "Vorgeschlagene Lösung",
     "fixStep1": "Öffne den Tab „Domains“.",
     "fixStep2": "Füge eine Route oder Custom-Domain für den Service-Port hinzu.",
-    "fixStep3": "Verifiziere die Domain und stelle bereit."
+    "fixStep3": "Verifiziere die Domain und stelle bereit.",
+    "composeReview": {
+      "title": "Compose wurde geändert",
+      "addedTitle": "Neue Dienste müssen konfiguriert werden",
+      "description": "Die Compose-Datei wurde seit der letzten Konfiguration geändert. Prüfe die aktuellen Dienste und Einstellungen vor der erneuten Bereitstellung.",
+      "configure": "Konfigurieren",
+      "cancel": "Abbrechen",
+      "added": "Hinzugefügt",
+      "changed": "Geändert",
+      "removed": "Entfernt",
+      "reviewHint": "Prüfe diese Compose-Änderungen und stelle sie dann bereit. Entfernte Dienste werden während der Bereitstellung gestoppt; ihre persistenten Daten bleiben erhalten."
+    }
   },
   "connections": {
     "nativeClusterHint": "Wähle ein Projekt im Cluster dieser Datenbank. Nur verknüpfte Projekte erhalten privaten Zugriff.",

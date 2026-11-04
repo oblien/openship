@@ -160,6 +160,26 @@ describe("resolveEnvironment distro classification", () => {
     expect(profile.supported).toBe(true);
   });
 
+  it("drives CachyOS as Arch with pacman", async () => {
+    const profile = await resolveEnvironment(
+      hostFake({
+        osRelease: OS_RELEASE.cachyos,
+        pm: "pacman",
+        fw: "ufw",
+        sudo: "y",
+        uid: "1000",
+        user: "mike",
+        home: "/home/mike",
+      }),
+    );
+    expect(profile.distro).toBe("arch");
+    expect(profile.distroId).toBe("cachyos");
+    expect(profile.distroFamily).toBe("arch");
+    expect(profile.packageManager).toBe("pacman");
+    expect(profile.supported).toBe(true);
+    expect(profile.unsupportedReason).toBeNull();
+  });
+
   it("reads Alpine as apk / openrc / musl", async () => {
     const profile = await resolveEnvironment(
       hostFake({ osRelease: OS_RELEASE.alpine320, pm: "apk", sm: "openrc", libc: "musl" }),

@@ -179,7 +179,7 @@ export interface ResolvedBearer {
 /**
  * Resolve a bearer token to its identity — or null if it isn't a recognized /
  * valid credential (the caller decides 401-vs-fall-through by kind). A PAT
- * resolves via its hashed row; an OAuth MCP token via `getMcpSession` + its
+ * resolves via its hashed row; an OAuth MCP token via the issued-token receipt + its
  * consent binding (no binding → deny-all posture). Pure lookup, no side effects.
  */
 export async function resolveBearerIdentity(
@@ -201,9 +201,9 @@ export async function resolveBearerIdentity(
     };
   }
 
-  let session: Awaited<ReturnType<typeof auth.api.getMcpSession>>;
+  let session: Awaited<ReturnType<typeof repos.oauth.findAccessToken>>;
   try {
-    session = await auth.api.getMcpSession({ headers });
+    session = await repos.oauth.findAccessToken(token);
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "api/middleware/auth");
     return null; // not an OAuth token (or introspection failed)

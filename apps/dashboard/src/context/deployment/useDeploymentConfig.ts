@@ -903,7 +903,12 @@ export function useDeploymentConfig() {
           branches,
           branchPage: branchPage ?? 0,
           branchesHasMore: branchesHasMore ?? false,
-          services: response.services || [],
+          services: (response.services ?? []).map(service => ({
+            ...service,
+            publicEndpoints: service.publicEndpoints?.map(createPublicEndpoint),
+          })),
+          composeRevision: response.composeRevision,
+          composeChanges: response.composeChanges,
           publicEndpoints: routingState.publicEndpoints,
           // openship.json is an explicit deploy contract, so its env is already
           // active. A generic adjacent `.env` remains opt-in through Import .env.
@@ -982,7 +987,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, changesSavedBranch ? null : project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
+        const response = await deployApi.prepare({ ...preparedSource, projectId: context?.projectId, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1093,6 +1098,7 @@ export function useDeploymentConfig() {
       setIsRescanning(true);
       try {
         const response = await deployApi.prepare({
+          projectId: config.projectId,
           owner: config.owner,
           repo: config.repo,
           serverId: config.serverId,
@@ -1204,7 +1210,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
+        const response = await deployApi.prepare({ ...preparedSource, projectId: context?.projectId, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1447,7 +1453,7 @@ export function useDeploymentConfig() {
   const initializeFromProject = useCallback(
     async (
       projectId: string,
-      context?: { branch?: string },
+      context?: { branch?: string; reviewCompose?: boolean },
     ): Promise<{
       success: boolean;
       error?: string;
@@ -1474,10 +1480,25 @@ export function useDeploymentConfig() {
         // env read fails initialization rather than masquerading as an empty env.
         const envState = loaded.envState!;
 
-        const response = buildSavedProjectResponse(project, serviceRows);
+        let response = buildSavedProjectResponse(project, serviceRows);
         const repoName = project.gitRepo || project.name || "project";
-        const branch =
-          typeof project.gitBranch === "string" ? project.gitBranch : (context?.branch ?? "");
+        const branch = context?.branch || (typeof project.gitBranch === "string" ? project.gitBranch : "");
+        if (context?.reviewCompose) {
+          const source: PrepareProjectSource = project.localPath
+            ? { source: "local", path: project.localPath }
+            : { source: "github", owner: project.gitOwner, repo: project.gitRepo, branch,
+                serverId: project.serverId ?? undefined };
+          response = await deployApi.prepare({
+            ...source,
+            projectId,
+            rootDirectory: project.rootDirectory || undefined,
+            ...scanComposePath(undefined, project),
+          });
+          if (response.error) throw new Error(response.error);
+          if (!response.composeRevision || !response.services?.length) {
+            throw new Error("The Compose configuration could not be loaded. Try again before deploying.");
+          }
+        }
 
         // Re-validated rather than trusted: an older API build omits the field entirely,
         // and anything but the three members means "no saved target", which is the same
@@ -1514,7 +1535,7 @@ export function useDeploymentConfig() {
             prev.projectId === projectId &&
             (prev.projectType === "services" || prev.projectType === "monorepo") &&
             ((prev.services?.length ?? 0) > 0 || (prev.monorepoApps?.length ?? 0) > 0);
-          if (serviceRows.length === 0 && prevHoldsThisMultiProject) {
+          if (!context?.reviewCompose && serviceRows.length === 0 && prevHoldsThisMultiProject) {
             return {
               ...prev,
               projectId,

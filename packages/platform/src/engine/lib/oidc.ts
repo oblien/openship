@@ -2,6 +2,7 @@ import { oidcEndpointAllowed } from "./oidc-endpoint";
 import { createHash } from "node:crypto";
 import {
   authorizationCodeRequest,
+  createAuthorizationURL,
   getOAuth2Tokens,
   refreshAccessTokenRequest,
   type OAuth2UserInfo,
@@ -74,9 +75,11 @@ export function isOidcRequest(ctx: OidcRequest): boolean {
   );
 }
 
+export type OidcProfile = Omit<OAuth2UserInfo, "id"> & { id: string };
+
 export function createOidcProvider(
-  options: { issuer: string; clientId: string; clientSecret: string; nodeEnv: string },
-  toUser: (profile: Record<string, unknown>) => OAuth2UserInfo | null,
+  options: { issuer: string; clientId: string; clientSecret: string; nodeEnv: string; redirectURI?: string },
+  toUser: (profile: Record<string, unknown>) => OidcProfile | null,
 ) {
   const { issuer, clientId, clientSecret, nodeEnv } = options;
   const issuerUrl = oidcUrl(issuer, nodeEnv);
@@ -109,7 +112,7 @@ export function createOidcProvider(
 
   const config: GenericOAuthConfig = {
     providerId: "oidc",
-    issuer,
+    redirectURI: options.redirectURI,
     clientId,
     clientSecret,
     scopes: ["openid", "email", "profile"],
@@ -121,6 +124,7 @@ export function createOidcProvider(
       const doc = await discovery();
       const request = await authorizationCodeRequest({
         ...data,
+        redirectURI: options.redirectURI ?? data.redirectURI,
         options: { clientId, clientSecret },
       });
       return getOAuth2Tokens(await readJson(doc.token, { method: "POST", ...request }));
@@ -182,10 +186,15 @@ export function createOidcProvider(
 
   return {
     ...config,
-    async prepare() {
-      const doc = await discovery();
-      this.authorizationUrl = doc.authorization.href;
-      this.tokenUrl = doc.token.href;
+    async getAuthorizationEndpoint() {
+      try {
+        return (await discovery()).authorization.href;
+      } catch (error) {
+        reportCaughtError(error, "platform/engine/lib/oidc");
+        throw new APIError("BAD_REQUEST", {
+          message: "The OIDC provider configuration could not be verified.",
+        });
+      }
     },
     async refresh(refreshToken: string) {
       const doc = await discovery();
@@ -204,28 +213,67 @@ export function oidcOAuthPlugin(provider?: ReturnType<typeof createOidcProvider>
   const isStart = (ctx: OidcRequest) => !!provider && isOidcStart(ctx);
   return {
     ...plugin,
-    init: ((ctx) => {
-      const result = plugin.init(ctx);
+    // Keep already-configured IdP callback URLs working after generic OAuth's
+    // move to the social-provider endpoint.
+    onRequest: async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/oauth2/callback/oidc")) {
+        url.pathname = url.pathname.replace("/oauth2/callback/oidc", "/callback/oidc");
+        return { request: new Request(url, request) };
+      }
+      const oldSignIn = url.pathname.endsWith("/sign-in/oauth2");
+      const oldLink = url.pathname.endsWith("/oauth2/link");
+      if (request.method !== "POST" || (!oldSignIn && !oldLink)) return;
+      const body = (await request
+        .clone()
+        .json()
+        .catch(() => {
+          // diagnostics-ignore: Invalid JSON bypasses this alias and reaches Better Auth's validation.
+          return null;
+        })) as Record<string, unknown> | null;
+      if (body?.providerId !== "oidc") return;
+      url.pathname = url.pathname.replace(
+        oldSignIn ? "/sign-in/oauth2" : "/oauth2/link",
+        oldSignIn ? "/sign-in/social" : "/link-social",
+      );
+      const headers = new Headers(request.headers);
+      headers.delete("content-length");
+      return {
+        request: new Request(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...body, provider: "oidc" }),
+        }),
+      };
+    },
+    init: (async (ctx) => {
+      const result = await plugin.init(ctx);
       const oidc = result.context.socialProviders.find((p) => p.id === "oidc");
-      if (oidc && provider) oidc.refreshAccessToken = provider.refresh;
+      if (oidc && provider) {
+        oidc.refreshAccessToken = provider.refresh;
+        // 1.7 captures configured URLs during init. Discovery must remain lazy
+        // and validated so an unavailable IdP cannot prevent API startup.
+        oidc.createAuthorizationURL = async (data) => {
+          return createAuthorizationURL({
+            id: "oidc",
+            options: {
+              clientId: provider.clientId,
+              clientSecret: provider.clientSecret,
+              redirectURI: provider.redirectURI,
+            },
+            authorizationEndpoint: await provider.getAuthorizationEndpoint(),
+            state: data.state,
+            codeVerifier: data.codeVerifier,
+            scopes: [...new Set([...(provider.scopes ?? []), ...(data.scopes ?? [])])],
+            redirectURI: data.redirectURI,
+            loginHint: data.loginHint,
+            additionalParams: data.additionalParams,
+          });
+        };
+      }
       return result;
     }) as typeof plugin.init,
     hooks: {
-      before: [
-        {
-          matcher: isStart,
-          handler: createAuthMiddleware(async () => {
-            try {
-              await provider!.prepare();
-            } catch (error) {
-              reportCaughtError(error, "platform/engine/lib/oidc");
-              throw new APIError("BAD_REQUEST", {
-                message: "The OIDC provider configuration could not be verified.",
-              });
-            }
-          }),
-        },
-      ],
       after: [
         {
           matcher: isStart,

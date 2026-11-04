@@ -4,6 +4,7 @@ import { db, schema, seedOwner } from "../jobs/_harness";
 import { securitySigningBytes } from "@repo/core";
 import { getAdvisoryFeed } from "@repo/platform/engine/modules/updates/advisory-feed";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
+import { env } from "@repo/platform/engine/config/env";
 
 const h = vi.hoisted(() => ({ key: "", token: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/github/github.token", () => ({ tokenFor: h.token }));
@@ -18,13 +19,13 @@ vi.mock("@repo/platform/engine/modules/updates/security-signature", async (origi
 const keys = generateKeyPairSync("ed25519");
 const revision = Date.now();
 h.key = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
-const signed = () => {
+const signed = (advisories: unknown[] = [], feedRevision = revision) => {
   const payload = JSON.stringify({
     format: 1,
-    revision,
+    revision: feedRevision,
     issuedAt: new Date(Date.now() - 1000).toISOString(),
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    advisories: [],
+    advisories,
   });
   return {
     payload,
@@ -56,6 +57,122 @@ const due = () =>
   db.update(schema.advisoryFeed).set({ nextCheckAt: new Date(0), checkedAt: new Date(0) });
 
 describe("shared GitHub advisory transport", () => {
+  const notice = {
+    id: "upgrade-notice",
+    revision: 1,
+    title: "Fixture",
+    message: "Fixture",
+    severity: "high",
+    url: "https://ubuntu.com/security",
+    publishedAt: "2026-01-01T00:00:00Z",
+    action: "manual",
+    modes: ["selfhosted"],
+    targets: [{ kind: "platform", affected: "*" }],
+  };
+  it("adopts a different v2 payload at the legacy revision without reusing its ETag or poll delay", async () => {
+    const legacy = signed();
+    await db.insert(schema.advisoryFeed).values({
+      id: "security",
+      body: legacy,
+      revision,
+      etag: '"legacy"',
+      nextCheckAt: new Date(Date.now() + 3_600_000),
+    });
+    const proof = signed([notice]);
+    const normal = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation((url, options) =>
+      String(url).includes("contents/security")
+        ? Promise.resolve(Response.json(proof, { headers: { etag: '"v2"' } }))
+        : normal(url, options),
+    );
+    const result = await getAdvisoryFeed();
+    expect(result.error).toBeNull();
+    expect(result.stale).toBe(false);
+    expect(result.security?.advisories).toEqual([notice]);
+    const [, request] = fetcher.mock.calls.find(([url]) =>
+      String(url).includes("contents/security"),
+    )!;
+    expect(new Headers(request.headers).has("if-none-match")).toBe(false);
+    const rows = await db.select().from(schema.advisoryFeed);
+    expect(rows.find((row) => row.id === "security")).toMatchObject({
+      body: legacy,
+      etag: '"legacy"',
+    });
+    expect(rows.find((row) => row.id === "security:v2")).toMatchObject({
+      body: proof,
+      etag: '"v2"',
+    });
+  });
+  it("retains legacy warnings as stale while refusing a v2 revision older than the installed cache", async () => {
+    await db.insert(schema.advisoryFeed).values({
+      id: "security",
+      body: signed([notice], revision + 1),
+      revision: revision + 1,
+    });
+    const result = await getAdvisoryFeed();
+    expect(result.stale).toBe(true);
+    expect(result.security?.advisories).toEqual([notice]);
+    expect(result.error).toBeTruthy();
+    const current = (await db.select().from(schema.advisoryFeed)).find(
+      (row) => row.id === "security:v2",
+    );
+    expect(current).toMatchObject({ body: null, revision: revision + 1 });
+  });
+  it("still rejects a reused v2 revision with different signed content", async () => {
+    await getAdvisoryFeed();
+    await due();
+    const normal = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation((url, options) =>
+      String(url).includes("contents/security")
+        ? Promise.resolve(Response.json(signed([notice])))
+        : normal(url, options),
+    );
+    const result = await getAdvisoryFeed();
+    expect(result.error).toContain("reused with different content");
+    expect(result.security?.advisories).toEqual([]);
+  });
+  it("filters signed self-hosted notices from Cloud without mutating the shared signed cache", async () => {
+    const notice = {
+      id: "self-only",
+      revision: 1,
+      title: "Fixture",
+      message: "Fixture",
+      severity: "high",
+      url: "https://ubuntu.com/security",
+      publishedAt: "2026-01-01T00:00:00Z",
+      action: "patch-host",
+      modes: ["selfhosted"],
+      targets: [
+        {
+          kind: "host-package",
+          distribution: "ubuntu",
+          release: "24.04",
+          package: "openssl",
+          fixedVersion: "3.0.13-0ubuntu3.16",
+        },
+      ],
+    };
+    const proof = signed([notice]);
+    const normal = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation((url, options) =>
+      String(url).includes("contents/security")
+        ? Promise.resolve(Response.json(proof))
+        : normal(url, options),
+    );
+    const old = env.CLOUD_MODE;
+    try {
+      env.CLOUD_MODE = true;
+      expect((await getAdvisoryFeed()).security?.advisories).toEqual([]);
+      const cached = (await db.select().from(schema.advisoryFeed)).find(
+        (r) => r.id === "security:v2",
+      )!.body as { payload: string };
+      expect(JSON.parse(cached.payload).advisories).toEqual([notice]);
+      env.CLOUD_MODE = false;
+      expect((await getAdvisoryFeed()).security?.advisories).toEqual([notice]);
+    } finally {
+      env.CLOUD_MODE = old;
+    }
+  });
   it("coalesces browsers and scheduler reads and sends no credential to raw content", async () => {
     const owner = await seedOwner();
     const ctx = buildBackgroundContext({ userId: owner.userId, organizationId: owner.orgId });
@@ -143,12 +260,16 @@ describe("shared GitHub advisory transport", () => {
   });
   it("accepts the same signed payload after envelope key ordering changes", async () => {
     await getAdvisoryFeed();
-    const stored = (await db.select().from(schema.advisoryFeed)).find((row) => row.id === "security")!.body as { payload: string; signature: string };
+    const stored = (await db.select().from(schema.advisoryFeed)).find(
+      (row) => row.id === "security:v2",
+    )!.body as { payload: string; signature: string };
     await due();
     const normal = fetcher.getMockImplementation()!;
-    fetcher.mockImplementation((url, options) => String(url).includes("contents/security")
-      ? Promise.resolve(Response.json({ signature: stored.signature, payload: stored.payload }))
-      : normal(url, options));
+    fetcher.mockImplementation((url, options) =>
+      String(url).includes("contents/security")
+        ? Promise.resolve(Response.json({ signature: stored.signature, payload: stored.payload }))
+        : normal(url, options),
+    );
     const result = await getAdvisoryFeed();
     expect(result.error).toBeNull();
     expect(result.security?.revision).toBe(revision);

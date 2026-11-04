@@ -247,7 +247,8 @@
       "ssh": "Accès SSH",
       "runtimeApi": "API d’exécution",
       "workloads": "Charges de travail",
-      "settings": "Paramètres"
+      "settings": "Paramètres",
+      "runs": "Exécutions"
     },
     "healthy": "En bon état",
     "issues": "Problèmes",

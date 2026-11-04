@@ -41,12 +41,12 @@ const GHOST = "oauth:cli_gone";
 
 /** Register an OAuth application so its clientId resolves to a display name. */
 async function seedOauthApp(clientId: string, name: string, userId: string) {
-  await db.insert(schema.oauthApplication).values({
+  await db.insert(schema.oauthClient).values({
     id: `app_${clientId}`,
     name,
     clientId,
-    redirectUrls: "http://localhost/callback",
-    type: "public",
+    redirectUris: ["http://localhost/callback"],
+    tokenEndpointAuthMethod: "none",
     userId,
   });
 }

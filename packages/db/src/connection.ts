@@ -211,8 +211,8 @@ export async function createDatabase(input: DatabaseOptions): Promise<DatabaseCo
     // 30s) so a hot-reload / restart handoff — where the previous process is
     // still draining + releasing the DB — reliably succeeds instead of racing a
     // 5s window (the recurring "already using the database" reload failure). A
-    // crashed predecessor is reclaimed instantly (dead pid), so this only ever
-    // waits while a LIVE predecessor is actively shutting down.
+    // crashed Linux predecessors release their kernel lock; legacy records use
+    // PID liveness. A live owner retains the wait/error path.
     await lock.acquire(dataDir, { waitMs: options.lockWaitMs ?? 30_000, pollMs: 250, takeover: options.takeover ?? false });
     clearStalePgliteControlFile(dataDir);
 

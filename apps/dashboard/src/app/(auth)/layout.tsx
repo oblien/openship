@@ -75,15 +75,9 @@ export default async function AuthLayout({
       if (params.get("flow") === DESKTOP_CLOUD_FLOW) {
         redirect(buildAuthPageHref("/authorize", params));
       }
-      // PKCE: prefer the state+challenge already stamped on the incoming
-      // URL by the SaaS `buildAuthHandoff` upstream — those values are
-      // bound to a verifier the originating browser still holds, so the
-      // callback can finish the exchange. We deliberately do NOT mint
-      // fresh PKCE here: this layout runs server-side, can't reach
-      // window.localStorage, and would just produce a verifier nobody
-      // can later read. If the incoming URL has no PKCE the handoff
-      // falls back to a bearer code — that gap stays until the upstream
-      // login URL is guaranteed to carry PKCE in every flow.
+      // Preserve the originating client's state and PKCE challenge through
+      // login. This server-side layout cannot create a verifier for that client
+      // to retain; the handoff endpoint validates the supplied parameters.
       const incomingState = params.get("state");
       const incomingChallenge = params.get("code_challenge");
       redirect(

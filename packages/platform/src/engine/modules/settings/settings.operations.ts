@@ -1,3 +1,4 @@
+import { repos } from "@repo/db";
 import type { UserSettingsDependencies } from "../../../settings";
 import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
@@ -19,6 +20,10 @@ async function visibleDefault<
 }
 export const settingsDependencies: UserSettingsDependencies = {
   collection: {
+    async setLocale(ctx, input) {
+      await repos.settings.setLocale(ctx.userId, input.locale);
+      return { locale: input.locale };
+    },
     getAppearance: appearance.getAppearance,
     setAppearance: appearance.setAppearance,
     get: async (ctx) => visibleDefault(ctx, await service.get(ctx)),

@@ -1,5 +1,5 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { openSync, writeSync, closeSync, readFileSync, unlinkSync, statSync } from "fs";
+import { openSync, writeSync, closeSync, readFileSync, readlinkSync, unlinkSync, statSync } from "fs";
 import { dirname, basename, join } from "path";
 import { hostname } from "os";
 import { spawnSync } from "child_process";
@@ -16,11 +16,10 @@ import { randomUUID } from "node:crypto";
  *
  *   - acquisition is atomic (`open(..., "wx")` / O_EXCL) so exactly one process
  *     can ever hold the dir — no concurrent-open corruption is possible;
- *   - it self-heals a crashed previous run (dead pid → reclaim) so a SIGKILL
- *     never wedges the dir shut;
- *   - it only ever creates/removes its own `<dir>.lock` file (a sibling of the
- *     data dir) and never reads, writes, moves, or deletes cluster data — so it
- *     can never lose data.
+ *   - on Linux a kernel file lock preserves exclusion across PID namespaces
+ *     and releases automatically after a crash;
+ *   - lock files are siblings of the data dir; acquisition never modifies
+ *     cluster data.
  */
 
 /**
@@ -99,6 +98,12 @@ interface LockRecord {
   /** Stable machine UUID — the real identity check. Absent in pre-fix locks. */
   machineId?: string;
   ownerId?: string;
+  /** Linux boot ID + kernel start ticks. Absent in legacy/non-Linux locks. */
+  processStart?: string;
+  /** Written only while this owner holds the Linux kernel guard. */
+  kernelLock?: true;
+  /** PIDs are comparable only within the same Linux PID namespace. */
+  pidNamespace?: string;
 }
 
 // Path of the lock this process currently holds (null when unheld). Module-
@@ -166,6 +171,9 @@ function readLock(lockPath: string): LockRecord | "unreadable" | "initializing" 
         host: parsed.host,
         machineId: typeof parsed.machineId === "string" ? parsed.machineId : undefined,
         ownerId: typeof parsed.ownerId === "string" ? parsed.ownerId : undefined,
+        processStart: typeof parsed.processStart === "string" ? parsed.processStart : undefined,
+        kernelLock: parsed.kernelLock === true ? true : undefined,
+        pidNamespace: typeof parsed.pidNamespace === "string" ? parsed.pidNamespace : undefined,
       };
     }
     return "invalid";
@@ -188,6 +196,78 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+function readProcessStart(pid: number): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const bootId = readFileSync(
+      "/proc/sys/kernel/random/boot_id",
+      "utf8",
+    ).trim();
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // comm (field 2) may contain spaces and parentheses. The remaining fields
+    // start after its final ')'; starttime (field 22) is then at index 19.
+    const commEnd = stat.lastIndexOf(")");
+    if (commEnd < 0) return undefined;
+    const ticks = stat
+      .slice(commEnd + 1)
+      .trim()
+      .split(/\s+/)[19];
+    return bootId && ticks && /^\d+$/.test(ticks)
+      ? `${bootId}:${ticks}`
+      : undefined;
+  } catch (error) {
+    observeCaughtError(error, "db/pglite-lock");
+    // Missing/inaccessible procfs is not proof of a dead owner.
+    return undefined;
+  }
+}
+
+function isLockHolderAlive(holder: LockRecord): boolean {
+  if (!isProcessAlive(holder.pid)) return false;
+  if (!holder.processStart) return true;
+  const currentStart = readProcessStart(holder.pid);
+  // Legacy locks and unavailable process identity retain PID-only protection.
+  return currentStart === undefined || currentStart === holder.processStart;
+}
+
+function pidNamespace(): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    return readlinkSync("/proc/self/ns/pid");
+  } catch (error) {
+    observeCaughtError(error, "db/pglite-lock");
+    return undefined;
+  }
+}
+
+/**
+ * flock locks an inherited duplicate of OUR descriptor, so the kernel retains
+ * the lock after the short-lived utility exits and until our descriptor closes.
+ * Keep this sidecar inode forever: unlinking it could give peers different locks.
+ */
+function tryKernelLock(lockPath: string): number | "busy" | undefined {
+  if (process.platform !== "linux") return undefined;
+  const fd = openSync(`${lockPath}.guard`, "a", 0o600);
+  let acquired = false;
+  try {
+    const result = spawnSync("flock", ["-n", "-E", "73", "3"], {
+      stdio: ["ignore", "pipe", "pipe", fd],
+      timeout: 2000,
+    });
+    if (!result.error && result.status === 0) {
+      acquired = true;
+      return fd;
+    }
+    if (!result.error && result.status === 73) return "busy";
+    throw new Error(
+      "Cannot acquire the Linux database kernel lock. Ensure util-linux (flock) is installed and the filesystem supports file locking.",
+      { cause: result.error ?? new Error(`flock exited with status ${result.status}`) },
+    );
+  } finally {
+    if (!acquired) closeSync(fd);
+  }
+}
+
 function tryRemove(lockPath: string): void {
   try {
     unlinkSync(lockPath);
@@ -202,7 +282,24 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
   const ownerId = options.ownerId ?? randomUUID();
   let heldLockPath: string | null = null;
   let exitHookRegistered = false;
+  let kernelFd: number | undefined;
+  let kernelBusy = false;
+  let acquiring = false;
+
+  function releaseKernelLock(): void {
+    if (kernelFd === undefined) return;
+    const fd = kernelFd;
+    kernelFd = undefined;
+    closeSync(fd);
+  }
+
   function claim(lockPath: string): void {
+    if (kernelFd === undefined) {
+      const guard = tryKernelLock(lockPath);
+      kernelBusy = guard === "busy";
+      if (guard === "busy") throw Object.assign(new Error("Database kernel lock is held"), { code: "EEXIST" });
+      kernelFd = guard;
+    }
     const m = machineId();
     // O_EXCL: create-or-fail atomically. The kernel guarantees exactly one caller
     // wins even under a concurrent race — this is the exclusion primitive.
@@ -213,6 +310,8 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
         startedAt: Date.now(),
         host: hostname(),
         ownerId,
+        processStart: readProcessStart(process.pid),
+        ...(kernelFd !== undefined ? { kernelLock: true as const, pidNamespace: pidNamespace() } : {}),
         // Only persist a STABLE machine UUID. If we couldn't read one, omit it —
         // the lock then reads as "pre-fix" and gets same-machine pid-liveness
         // treatment instead of a volatile hostname masquerading as identity.
@@ -229,10 +328,12 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
   function registerExitHook(): void {
     if (!options.registerExitHook || exitHookRegistered) return;
     exitHookRegistered = true;
-    // Best-effort synchronous release on normal exit / process.exit(). Crash and
-    // SIGKILL can't run this — those are covered by stale-pid reclamation on the
-    // next boot.
-    process.once("exit", () => release());
+    // Linux keeps its descriptor until the kernel closes it at actual process
+    // exit: later exit listeners may still touch the database. Explicit close
+    // releases it normally; an unclosed owner leaves a reclaimable marked record.
+    process.once("exit", () => {
+      if (kernelFd === undefined) release();
+    });
   }
 
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -242,11 +343,23 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
    * holder to release. Throws with an actionable message if a live instance
    * still holds it after the wait, or if the lock belongs to another host.
    */
-  async function acquire(
+  async function acquire(dataDir: string, options: AcquireLockOptions = {}): Promise<void> {
+    if (heldLockPath || acquiring) throw new Error("This lock owner already holds or is acquiring a database lock");
+    acquiring = true;
+    try {
+      await acquireFileLock(dataDir, options);
+    } catch (error) {
+      releaseKernelLock();
+      throw error;
+    } finally {
+      acquiring = false;
+    }
+  }
+
+  async function acquireFileLock(
     dataDir: string,
-    { waitMs = 5000, pollMs = 100, takeover }: AcquireLockOptions = {},
+    { waitMs = 5000, pollMs = 100, takeover }: AcquireLockOptions,
   ): Promise<void> {
-    if (heldLockPath) throw new Error("This lock owner already holds a database lock");
     const lockPath = lockPathFor(dataDir);
     const deadline = Date.now() + Math.max(0, waitMs);
     // Dev hot-reload takes over a lingering predecessor; production/desktop never
@@ -265,6 +378,14 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
 
       // A lock file exists — classify it: stale (reclaim) or live (wait/fail).
       const holder = readLock(lockPath);
+
+      // The kernel owner may still be publishing its JSON record. Never remove
+      // that record (even if invalid/old) while its descriptor remains locked.
+      if (kernelBusy && typeof holder !== "object") {
+        if (Date.now() >= deadline) throw new Error("Another process is already using this database (kernel lock held)");
+        await sleep(Math.max(1, pollMs));
+        continue;
+      }
 
       if (holder === "invalid") {
         tryRemove(lockPath);
@@ -318,8 +439,10 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
         );
       }
 
-      if (!isProcessAlive(holder.pid)) {
-        // Previous holder crashed without releasing — safe to reclaim.
+      if (!kernelBusy && (holder.kernelLock ? kernelFd !== undefined : !isProcessAlive(holder.pid))) {
+        // A marked owner held this same guard for its entire lifetime. Acquiring
+        // it proves the old owner released it, regardless of PID reuse/namespaces.
+        // Unmarked/legacy owners retain conservative PID-only protection.
         tryRemove(lockPath);
         continue;
       }
@@ -329,9 +452,11 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
       // on its own — so waiting only stalls then fails on every save. Take over:
       // terminate the stale holder (SIGTERM → brief grace → SIGKILL) and reclaim.
       // Done ONCE; if it can't be killed (e.g. pid not ours) we fall through to
-      // the wait/error path. NOTE: pid-based — a reused pid is a theoretical risk,
-      // acceptably bounded to the dev `--watch` flow this is gated to.
-      if (canTakeover && holder.pid !== process.pid && !takeoverAttempted) {
+      // the wait/error path. Linux process identity also stops escalation if the
+      // PID is reused while waiting; legacy/non-Linux locks use PID liveness.
+      const samePidNamespace = process.platform !== "linux" ||
+        (holder.pidNamespace !== undefined && holder.pidNamespace === pidNamespace());
+      if (canTakeover && samePidNamespace && holder.pid !== process.pid && !takeoverAttempted && isLockHolderAlive(holder)) {
         takeoverAttempted = true;
         errorDiagnostics.warn("db/pglite-lock",
           `[db] lock held by pid ${holder.pid}; taking over (dev --watch reload) — ` +
@@ -344,8 +469,8 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
           /* already gone / not ours — the loop below re-evaluates */
         }
         const graceUntil = Date.now() + DEV_LOCK_TAKEOVER_GRACE_MS;
-        while (isProcessAlive(holder.pid) && Date.now() < graceUntil) await sleep(150);
-        if (isProcessAlive(holder.pid)) {
+        while (isLockHolderAlive(holder) && Date.now() < graceUntil) await sleep(150);
+        if (isLockHolderAlive(holder)) {
           try {
             process.kill(holder.pid, "SIGKILL");
           } catch (diagnosticFailure) {
@@ -353,7 +478,7 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
             /* already gone */
           }
           const hardUntil = Date.now() + DEV_LOCK_HARD_KILL_MS;
-          while (isProcessAlive(holder.pid) && Date.now() < hardUntil) await sleep(100);
+          while (isLockHolderAlive(holder) && Date.now() < hardUntil) await sleep(100);
         }
         // Re-loop: a clean SIGTERM exit already removed the lock (its exit hook),
         // and a SIGKILL leaves a dead-pid lock the next iteration reclaims.
@@ -389,19 +514,23 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
    */
   function release(): void {
     if (!heldLockPath) return;
-    const lockPath = heldLockPath;
-    heldLockPath = null;
-    const holder = readLock(lockPath);
-    // We own it iff our pid wrote it on this machine. pid is the real check; the
-    // machineId guard just avoids clobbering a taken-over lock (legacy locks
-    // without machineId still pass on a pid match, matching prior behavior).
-    if (
-      typeof holder === "object" &&
-      holder.pid === process.pid &&
-      holder.ownerId === ownerId &&
-      (holder.machineId == null || holder.machineId === machineId().id)
-    ) {
-      tryRemove(lockPath);
+    try {
+      const lockPath = heldLockPath;
+      heldLockPath = null;
+      const holder = readLock(lockPath);
+      // We own it iff our pid wrote it on this machine. pid is the real check; the
+      // machineId guard just avoids clobbering a taken-over lock (legacy locks
+      // without machineId still pass on a pid match, matching prior behavior).
+      if (
+        typeof holder === "object" &&
+        holder.pid === process.pid &&
+        holder.ownerId === ownerId &&
+        (holder.machineId == null || holder.machineId === machineId().id)
+      ) {
+        tryRemove(lockPath);
+      }
+    } finally {
+      releaseKernelLock();
     }
   }
   return Object.freeze({ acquire, release });
@@ -410,9 +539,16 @@ export function createPgliteLock(options: { registerExitHook?: boolean; ownerId?
 /** Called only after an owned worker has exited; a sibling thread's lock is never removed. */
 export function releaseExitedWorkerLock(dataDir: string, ownerId: string): void {
   const lockPath = lockPathFor(dataDir);
-  const holder = readLock(lockPath);
-  if (typeof holder === "object" && holder.pid === process.pid && holder.ownerId === ownerId &&
-      (holder.machineId == null || holder.machineId === machineId().id)) tryRemove(lockPath);
+  if (typeof readLock(lockPath) !== "object") return;
+  const guard = tryKernelLock(lockPath);
+  if (guard === "busy") return;
+  try {
+    const holder = readLock(lockPath);
+    if (typeof holder === "object" && holder.pid === process.pid && holder.ownerId === ownerId &&
+        (holder.machineId == null || holder.machineId === machineId().id)) tryRemove(lockPath);
+  } finally {
+    if (guard !== undefined) closeSync(guard);
+  }
 }
 
 const processLock = createPgliteLock({ registerExitHook: true });
