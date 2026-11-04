@@ -259,7 +259,8 @@
       "ssh": "SSH erişimi",
       "runtimeApi": "Çalışma zamanı API’si",
       "workloads": "İş yükleri",
-      "settings": "Ayarlar"
+      "settings": "Ayarlar",
+      "runs": "Çalıştırmalar"
     },
     "healthy": "Sağlıklı",
     "issues": "Sorunlar var",

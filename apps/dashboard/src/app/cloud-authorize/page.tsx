@@ -33,17 +33,13 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { cloudApi } from "@/lib/api";
-import { ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { CloudAuthorizationIdentity } from "@/components/cloud/CloudAuthorizationIdentity";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/components/i18n-provider";
-
-/** RFC 7636 — code_challenge is 43-128 url-safe chars. We accept the
- *  same 40-128 window the API uses so any URL valid server-side renders. */
-const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{40,128}$/;
-/** State is opaque to us; we just cap its length and keep it url-safe-ish. */
-const STATE_RE = /^[A-Za-z0-9_\-.~]{1,256}$/;
+import { isCloudCodeChallenge, isCloudHandoffState, isCloudDeviceUserCode } from "@repo/contracts";
 
 type ValidatedParams =
   | { ok: true; redirect?: string; redirectHost?: string; state: string; codeChallenge: string; isDevice: boolean }
@@ -67,8 +63,8 @@ function validateParams(
   if (!state) return { ok: false, error: msgs.missingState };
   if (!codeChallenge) return { ok: false, error: msgs.missingCodeChallenge };
 
-  if (!STATE_RE.test(state)) return { ok: false, error: msgs.invalidState };
-  if (!CODE_CHALLENGE_RE.test(codeChallenge)) {
+  if (!isCloudHandoffState(state)) return { ok: false, error: msgs.invalidState };
+  if (!isCloudCodeChallenge(codeChallenge)) {
     return { ok: false, error: msgs.invalidCodeChallenge };
   }
 
@@ -130,9 +126,15 @@ function CloudAuthorizeInner() {
   const authorizationInFlight = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [deviceDone, setDeviceDone] = useState(false);
+  const [userCode, setUserCode] = useState("");
+  const userCodeReady = !isDevice || isCloudDeviceUserCode(userCode);
 
   const handleAuthorize = useCallback(async () => {
     if (!validated.ok || authorizationInFlight.current) return;
+    if (!userCodeReady) {
+      setSubmitError(m.userCodeRequired);
+      return;
+    }
     authorizationInFlight.current = true;
     setSubmitError(null);
     setSubmitting(true);
@@ -141,7 +143,7 @@ function CloudAuthorizeInner() {
         ...(validated.redirect ? { redirect: validated.redirect } : {}),
         state: validated.state,
         codeChallenge: validated.codeChallenge,
-        ...(isDevice ? { mode: "device" as const } : {}),
+        ...(isDevice ? { mode: "device" as const, userCode } : {}),
       });
       if (isDevice) {
         // The code is now stored keyed by `state`; the CLI's poll will pick it
@@ -169,11 +171,17 @@ function CloudAuthorizeInner() {
         router.replace(`/login?returnTo=${encodeURIComponent(buildReturnTo(new URLSearchParams(searchParams.toString())))}`);
         return;
       }
+      if (getApiErrorCode(err) === "INVALID_USER_CODE" || getApiErrorCode(err) === "MISSING_USER_CODE") {
+        setSubmitError(m.userCodeInvalid);
+        setSubmitting(false);
+        authorizationInFlight.current = false;
+        return;
+      }
       setSubmitError(getApiErrorMessage(err, m.authorizeError));
       setSubmitting(false);
       authorizationInFlight.current = false;
     }
-  }, [validated, router, searchParams, m]);
+  }, [validated, router, searchParams, m, isDevice, userCodeReady, userCode]);
 
   const handleCancel = useCallback(() => {
     if (typeof window !== "undefined" && window.opener) {
@@ -270,11 +278,36 @@ function CloudAuthorizeInner() {
               </div>
             )}
 
+            {isDevice && (
+              <div className="mb-4 rounded-xl border border-input bg-card p-3">
+                <label
+                  htmlFor="device-user-code"
+                  className="mb-1.5 block text-sm font-medium text-foreground"
+                >
+                  {m.userCodeLabel}
+                </label>
+                <Input
+                  id="device-user-code"
+                  value={userCode}
+                  onChange={(event) => setUserCode(event.target.value)}
+                  placeholder="XXXX-XXXX"
+                  autoComplete="one-time-code"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  maxLength={9}
+                  disabled={submitting}
+                />
+                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                  {m.userCodeHint}
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Button
                 className="w-full"
                 size="lg"
-                disabled={submitting || !ready}
+                disabled={submitting || !ready || !userCodeReady}
                 onClick={() => {
                   void handleAuthorize();
                 }}

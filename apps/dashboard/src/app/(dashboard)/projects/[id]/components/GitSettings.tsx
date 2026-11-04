@@ -20,6 +20,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { RepositoryList } from "../../../library/components/RepositoryList";
 import { AppSource } from "./AppSource";
 import { GitSettingsSkeleton } from "./GitSettingsSkeleton";
+import { DeploymentBranchSettings } from "./DeploymentBranchSettings";
 import { ReleaseImageSourceSettings } from "./ReleaseImageSourceSettings";
 import {
   canConfigureReleaseImageSource,
@@ -27,7 +28,7 @@ import {
 } from "@/lib/release-image-source";
 
 export const GitSettings = () => {
-  const { projectData } = useProjectSettings();
+  const { id, projectData } = useProjectSettings();
   const { t } = useI18n();
   const [sourceOverride, setSourceOverride] = useState<"image" | "git" | null>(null);
 
@@ -66,6 +67,7 @@ export const GitSettings = () => {
 
   return (
     <GitProjectSettings
+      key={id}
       onUseReleaseImage={
         canUseReleaseImage && !usesImage ? () => setSourceOverride("image") : undefined
       }
@@ -460,12 +462,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                   </span>
                   <UiIcon name="arrow-up-right" className="size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                 </a>
-                {/* Branch + latest commit at a glance — what's actually connected. */}
+                {/* Latest commit on the configured branch. */}
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
-                    <UiIcon name="git-branch" className="size-3.5 shrink-0" />
-                    <span className="truncate" title={gitData.branch || "main"}>{gitData.branch || "main"}</span>
-                  </span>
                   {gitData.recentCommits?.[0] && (
                     <span className="inline-flex min-w-0 items-center gap-1.5">
                       <UiIcon name="git-commit" className="size-3.5 shrink-0" />
@@ -524,6 +522,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                 })()}
             </div>
           </div>
+
+          <DeploymentBranchSettings />
 
           <div className="mt-4 flex items-center justify-between gap-4 rounded-xl bg-card p-4">
             <div className="min-w-0 space-y-1">

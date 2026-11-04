@@ -25,14 +25,32 @@ export interface ImageTransferOptions {
 
 export interface ImageTransferResult {
   bytesMoved: number;
+  /** Reference that resolves on the target daemon, suitable for artifact handover. */
+  imageRef: string;
+}
+
+/** Digest references cannot be Docker tag targets, and save/load may restore a
+ * different (config) ID. Both transfer transports use the loader's actual ref. */
+export function resolveTransferredImageRef(
+  requested: string,
+  loaded?: string,
+): string {
+  if (!requested.includes("@") && !/^sha256:[a-f0-9]+$/i.test(requested))
+    return requested;
+  if (!loaded?.trim())
+    throw new Error(
+      "Docker load did not report a usable image reference for the transferred digest",
+    );
+  return loaded.trim();
 }
 
 /**
  * Stream an image from `src` daemon to `dst` daemon. Saved BY ID (`image.id`)
  * — reliable even when the tag has drifted — then the original `image.tag` is
  * re-applied on `dst` (a save-by-id load is untagged, and the deploy adopts the
- * tag as its `imageRef`). Throws if the save or load ends non-zero (so a
- * truncated/failed move never looks like success). Returns the byte count.
+ * tag as its `imageRef`). Digest inputs instead return the loaded reference;
+ * Docker cannot recreate a repository digest with `tag`. Throws if the save or
+ * load ends non-zero. Returns the byte count and usable target reference.
  */
 export async function transferImage(
   src: DockerRuntime,
@@ -85,10 +103,11 @@ export async function transferImage(
       `Image transfer failed (${image.tag}): ${exit.stderr || `docker save exit ${exit.code}`}`,
     );
   }
-  // Re-apply the tag on the target (loaded untagged when saved by id).
-  await dst.tagImage(loadedRef ?? image.id, image.tag);
+  const imageRef = resolveTransferredImageRef(image.tag, loadedRef);
+  // Re-apply names, but never try to manufacture a repository digest with tag.
+  if ((loadedRef ?? image.id) !== imageRef) await dst.tagImage(loadedRef ?? image.id, imageRef);
   opts?.log?.(`loaded ${image.tag} — ${bytesMoved} bytes`);
-  return { bytesMoved };
+  return { bytesMoved, imageRef };
   } finally {
     opts?.signal?.removeEventListener("abort", abort);
     counter.destroy();

@@ -14,6 +14,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 import { DeletionModal } from "./DeletionModal";
+import { InvestigationLink } from "@/components/assistant/InvestigationLink";
 
 interface DraftProjectViewProps {
   /** Deletes this environment using the page's normal cleanup policy. */
@@ -138,15 +139,22 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             {projectData.name || t.projects.detail.projectFallback}
           </h1>
         </div>
-        <Button
-          variant="ghost"
-          disabled={busy}
-          className="shrink-0 text-danger hover:bg-danger-bg hover:text-danger"
-          onClick={() => setShowDeleteDialog(true)}
-        >
-          <UiIcon name={deletingNow ? "spinner" : "trash"} className={`size-4 ${deletingNow ? "animate-spin" : ""}`} />
-          {t.projects.draft.delete}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {status === "failed" && projectData.latestDeploymentId && !busy && (
+            <InvestigationLink
+              target={{ kind: "deployment", deploymentId: projectData.latestDeploymentId, projectId: id }}
+            />
+          )}
+          <Button
+            variant="ghost"
+            disabled={busy}
+            className="shrink-0 text-danger hover:bg-danger-bg hover:text-danger"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            <UiIcon name={deletingNow ? "spinner" : "trash"} className={`size-4 ${deletingNow ? "animate-spin" : ""}`} />
+            {t.projects.draft.delete}
+          </Button>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 items-start gap-6 @min-[60rem]/project-draft:grid-cols-[minmax(0,1fr)_340px]">

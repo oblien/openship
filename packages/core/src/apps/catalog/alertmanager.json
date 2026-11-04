@@ -1,0 +1,136 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "id": "alertmanager",
+  "name": "Alertmanager",
+  "description": "Group, deduplicate, and route Prometheus alerts to your notification channels.",
+  "repository": "https://github.com/prometheus/alertmanager",
+  "kind": "template",
+  "logo": "alertmanager",
+  "category": "analytics",
+  "tags": ["monitoring", "alerts", "observability"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "alertmanager",
+      "image": "prom/alertmanager:v0.34.2",
+      "restart": "unless-stopped",
+      "volumes": ["alertmanager_data:/alertmanager", "alertmanager_config:/etc/alertmanager"],
+      "entrypointArgv": ["/bin/sh", "-c"],
+      "commandArgv": [
+        "if [ ! -f /etc/alertmanager/openship.yml ]; then printf '%s\\n' 'route:' '  receiver: default' 'receivers:' '  - name: default' > /etc/alertmanager/openship.yml; fi\nexec /bin/alertmanager --config.file=/etc/alertmanager/openship.yml --storage.path=/alertmanager"
+      ],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9093/-/ready"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
+      "resources": {
+        "cpuCores": 0.5,
+        "memoryMb": 256,
+        "diskMb": 512
+      },
+      "exposed": false
+    },
+    {
+      "name": "alertmanager-access",
+      "image": "caddy:2.11.7-alpine",
+      "restart": "unless-stopped",
+      "dependsOn": ["alertmanager"],
+      "exposed": true,
+      "exposedPort": 8080,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "secretEnv": ["OPENSHIP_ADMIN_PASSWORD"],
+      "commandArgv": ["sh", "/etc/openship/access.sh"],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q '401 Unauthorized'"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 128,
+        "diskMb": 512
+      }
+    }
+  ],
+  "minEngine": "0.9.2",
+  "endpoints": [
+    {
+      "service": "alertmanager-access",
+      "port": 8080,
+      "label": "Alertmanager",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    }
+  ],
+  "configFields": [
+    {
+      "service": "alertmanager-access",
+      "key": "OPENSHIP_ADMIN_USER",
+      "label": "Username",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "service": "alertmanager-access",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "files": [
+    {
+      "service": "alertmanager-access",
+      "path": "/etc/openship/access.sh",
+      "content": "#!/bin/sh\nset -eu\nexport OPENSHIP_PASSWORD_HASH=\"$(caddy hash-password --plaintext \"$OPENSHIP_ADMIN_PASSWORD\")\"\nunset OPENSHIP_ADMIN_PASSWORD\nexec caddy run --config /etc/openship/access.Caddyfile --adapter caddyfile\n"
+    },
+    {
+      "service": "alertmanager-access",
+      "path": "/etc/openship/access.Caddyfile",
+      "content": "{\n  auto_https off\n  admin off\n}\n:8080 {\n  basic_auth {\n    {$OPENSHIP_ADMIN_USER} {$OPENSHIP_PASSWORD_HASH}\n  }\n  reverse_proxy alertmanager:9093\n}\n"
+    }
+  ],
+  "connection": {
+    "title": "Connect to Alertmanager",
+    "description": "Sign in with the generated credentials. Use the same HTTP Basic credentials for clients and integrations.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Alertmanager",
+        "source": "publicUrl:alertmanager-access",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "user",
+        "label": "Username",
+        "source": "env:alertmanager-access:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:alertmanager-access:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "username": "admin",
+      "note": "The private backend is available to services in this project. Keep public access behind HTTPS."
+    }
+  }
+}

@@ -4,20 +4,23 @@
  * Used by:
  *   - Desktop mode: cloud-callback exchanges a one-time code for a local session
  *   - Self-hosted settings: connect-callback stores cloud token for deploys
- *   - Cloud mode (SaaS): desktop-handoff generates one-time codes
+ *   - Cloud mode (SaaS): explicit consent generates one-time codes
  *
  * All external auth happens on app.openship.io - this module only handles
  * the local side (mirroring users, creating sessions, managing codes).
  */
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { db, schema, repos, eq } from "@repo/db";
 import { storeCloudSession } from "@repo/platform/engine/lib/cloud/session";
 import { fetchCloudConnection } from "@repo/platform/engine/lib/cloud/connection";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
 import { cloudRuntimeTarget, env } from "@repo/platform/engine/config/env";
 import { safeErrorMessage } from "@repo/core";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { runWithTransaction } from "@better-auth/core/context";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
 export interface CloudUser {
   id: string;
@@ -67,74 +70,49 @@ async function mirrorCloudUser(cloudUser: CloudUser): Promise<string> {
 }
 
 /**
- * Create a local Better Auth session directly in the DB.
- *
- * This is used for desktop/cloud-proxy auth where we don't have a local password.
- * The session is created for the mirrored user so that `auth.api.getSession()`
- * recognizes it from the cookie.
- *
- * Returns the session token (to be set as a cookie).
+ * Create a session after the caller has authenticated the local operator or
+ * Cloud handoff and provisioned its identity. Better Auth owns token generation,
+ * persistence, expiry defaults and session hooks. Linked instances get their own
+ * session; disconnect revokes that credential without touching the browser's.
+ * The CLI can set a shorter lifetime for an abandoned command.
  */
-/**
- * Mint a session row directly via Drizzle. Bypasses Better Auth's
- * `session.create.before` hook because the caller has already done
- * the equivalent work (user provisioning, org resolution).
- *
- * Three `purpose` values exist:
- *   - `"local-cookie"` — the row backing the browser cookie session
- *     created by desktop / cloud-callback / upgrade-to-auth flows.
- *     `id` is a UUID, no prefix. `activeOrganizationId` defaults to
- *     the user's deterministic personal org `org_<userId>`.
- *   - `"linked-instance"` — the bearer-only row created at
- *     connect-authorize for a remote local instance. `id` is prefixed
- *     `sess_link_` so audit / forensics can tell linked-instance
- *     sessions apart from browser sessions. Caller MUST pass
- *     `activeOrganizationId` (the linked org context).
- *   - `"local-cli"` — temporary session for a command authenticated with the
- *     installation's private operator credential. No cookie is issued; the CLI
- *     signs out after the command. A short explicit TTL bounds abandoned runs.
- *
- * Distinguishing the two purposes by id-prefix means
- * `POST /api/cloud/disconnect` deletes ONLY the linked row by its
- * session.id, never touching the cookie row even though both live in
- * the same `session` table.
- */
-export async function mintSession(opts: {
-  purpose: "local-cookie" | "linked-instance" | "local-cli";
-  userId: string;
-  activeOrganizationId?: string;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  ttlSeconds?: number;
-}): Promise<{ id: string; token: string; expiresAt: Date }> {
-  const id =
-    opts.purpose === "linked-instance"
-      ? `sess_link_${randomBytes(12).toString("hex")}`
-      : opts.purpose === "local-cli"
-        ? `sess_cli_${randomBytes(12).toString("hex")}`
-      : randomUUID();
-  const token = randomBytes(32).toString("hex");
-  const now = new Date();
-  const expiresAt = new Date(
-    now.getTime() + (opts.ttlSeconds ?? 60 * 60 * 24 * 30) * 1000,
-  );
-  const defaultUserAgent =
-    opts.purpose === "linked-instance" ? "openship-local-link" : null;
-
-  await db.insert(schema.session).values({
-    id,
-    token,
-    userId: opts.userId,
-    expiresAt,
-    ipAddress: opts.ipAddress ?? null,
-    userAgent: opts.userAgent ?? defaultUserAgent,
-    activeOrganizationId:
-      opts.activeOrganizationId ?? `org_${opts.userId}`,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  return { id, token, expiresAt };
+export async function mintSession(
+  opts: {
+    purpose: "local-cookie" | "linked-instance" | "local-cli";
+    userId: string;
+    activeOrganizationId?: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    ttlSeconds?: number;
+  },
+  transaction?: Parameters<Parameters<typeof db.transaction>[0]>[0],
+): Promise<{ id: string; token: string; expiresAt: Date }> {
+  const context = await auth.$context;
+  const create = () =>
+    context.internalAdapter.createSession(
+      opts.userId,
+      false,
+      {
+        ipAddress: opts.ipAddress ?? null,
+        userAgent:
+          opts.userAgent ?? (opts.purpose === "linked-instance" ? "openship-local-link" : null),
+        ...(opts.activeOrganizationId ? { activeOrganizationId: opts.activeOrganizationId } : {}),
+        ...(opts.ttlSeconds !== undefined
+          ? { expiresAt: new Date(Date.now() + opts.ttlSeconds * 1000) }
+          : {}),
+      },
+      true,
+    );
+  // Pairing and instance moves consume their authorization and create the
+  // session in one transaction. Join it through Better Auth's adapter context.
+  const session = transaction
+    ? await runWithTransaction(
+        drizzleAdapter(transaction, { provider: "pg", schema })(context.options),
+        create,
+      )
+    : await create();
+  if (!session) throw new Error("Session creation was rejected");
+  return { id: session.id, token: session.token, expiresAt: session.expiresAt };
 }
 
 // ─── One-time handoff codes (cloud-side generates, desktop-side consumes) ────
@@ -509,72 +487,6 @@ export function validateConnectRedirect(redirect: string | undefined): Validatio
   return { ok: true, url };
 }
 
-interface HandoffSession {
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    emailVerified: boolean;
-    image?: string | null;
-  };
-  session: { token: string };
-}
-
-/**
- * Unified handoff builder for both desktop (localhost callback) and
- * connect (self-hosted callback) flows.
- *
- *   - When `session` is null, redirects the browser to the SaaS /login
- *     page with `?callback=<redirect>` so post-auth routing can resume
- *     the handoff. `loginFlow` (when provided) becomes `?flow=` on the
- *     login URL — desktop callers pass "desktop-cloud" so the SaaS
- *     post-auth router knows to route to /authorize; connect callers
- *     omit it.
- *   - When `session` is present, generates a one-time handoff code
- *     (PKCE-bound when `codeChallenge` is supplied) and redirects the
- *     browser to the final callback URL with `?code=<code>` (and
- *     `?state=<state>` if state was supplied).
- *
- * Both `state` and `codeChallenge` are accepted in both flows — the
- * connect flow used to ignore them, which made connect codes
- * unprotected bearer tokens exfiltratable via CSRF on the
- * /connect-handoff GET endpoint.
- */
-export async function buildAuthHandoff(opts: {
-  session: HandoffSession | null;
-  redirect: URL;
-  state?: string;
-  codeChallenge?: string;
-  dashboardOrigin: string;
-  loginFlow?: string;
-}): Promise<{ kind: "login"; url: string } | { kind: "handoff"; url: string }> {
-  if (!opts.session) {
-    const loginUrl = new URL("/login", opts.dashboardOrigin);
-    loginUrl.searchParams.set("callback", opts.redirect.toString());
-    if (opts.loginFlow) loginUrl.searchParams.set("flow", opts.loginFlow);
-    if (opts.state) loginUrl.searchParams.set("state", opts.state);
-    if (opts.codeChallenge) loginUrl.searchParams.set("code_challenge", opts.codeChallenge);
-    return { kind: "login", url: loginUrl.toString() };
-  }
-
-  const code = await generateHandoffCode(
-    {
-      id: opts.session.user.id,
-      name: opts.session.user.name,
-      email: opts.session.user.email,
-      emailVerified: opts.session.user.emailVerified,
-      image: opts.session.user.image ?? null,
-    },
-    opts.session.session.token,
-    opts.codeChallenge || undefined,
-    opts.state || undefined,
-  );
-
-  const url = new URL(opts.redirect.toString());
-  url.searchParams.set("code", code);
-  if (opts.state) url.searchParams.set("state", opts.state);
-  return { kind: "handoff", url: url.toString() };
-}
 
 export {
   mirrorCloudUser,

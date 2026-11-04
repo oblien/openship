@@ -1,14 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/auth-client";
-import { useCloudResourceKey } from "@/context/CloudResourceContext";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { useCloudResourceKey, useCloudResourceReady } from "@/context/CloudResourceContext";
+import {
+  getApiErrorMessage,
+  getActiveOrganizationId,
+  subscribeActiveOrganization,
+} from "@/lib/api/client";
 
 export function useResourceScope() {
   const { data: session } = useSession();
   const cloud = useCloudResourceKey();
-  return `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}:${cloud}`;
+  // Follow the same workspace header as api.*. It can settle after the session
+  // loads, or differ from its default when another browser tab switches workspace.
+  const organizationId = useSyncExternalStore(
+    subscribeActiveOrganization,
+    getActiveOrganizationId,
+    () => null,
+  );
+  return `${session?.user.id ?? "local"}:${organizationId ?? session?.session.activeOrganizationId ?? ""}:${cloud}`;
+}
+
+/** A scoped handoff must wait for both identities instead of capturing a loading key. */
+export function useResourceScopeReady() {
+  const { data: session, isPending } = useSession();
+  const cloudReady = useCloudResourceReady();
+  return !!session && !isPending && cloudReady;
 }
 
 /** A single in-flight refresh; stale results can never populate another account. */

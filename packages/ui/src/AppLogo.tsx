@@ -29,6 +29,9 @@ const BRAND_LOGO: Record<
   // simpleicons carries no ArchiveBox mark (cdn.simpleicons.org/archivebox 404s) —
   // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
   archivebox: { src: "https://github.com/ArchiveBox.png?size=80" },
+  // simpleicons carries no pgAdmin mark (cdn.simpleicons.org/pgadmin4 404s) —
+  // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
+  pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
   pocketbase: { slug: "pocketbase" },
   mongodb: { slug: "mongodb" },
   n8n: { slug: "n8n" },
@@ -49,6 +52,14 @@ const BRAND_LOGO: Record<
   nocodb: { src: "/app-logos/nocodb.svg" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
+  appwrite: { slug: "appwrite" },
+  alertmanager: { slug: "prometheus" },
+  listmonk: { src: "/app-logos/listmonk.png" },
+  prometheus: { slug: "prometheus" },
+  "otel-collector": { slug: "opentelemetry" },
+  // simpleicons has no Loki mark, so the official logo is vendored.
+  loki: { src: "/app-logos/loki.png" },
+  victoriametrics: { slug: "victoriametrics" },
   gitea: { slug: "gitea" },
   "paperless-ngx": { src: "/app-logos/paperless-ngx.svg" },
   "wiki-js": { src: "/app-logos/wiki-js.png", fill: true },
@@ -107,6 +118,8 @@ const BRAND_LOGO: Record<
   // MindWire's own monochrome mark is vendored so the catalog works offline and
   // the brand stays legible on both dashboard themes.
   mindwire: { src: "/app-logos/mindwire.svg", fill: true },
+  // Beszel is not on simpleicons; vendor its official gradient B mark.
+  beszel: { src: "/app-logos/beszel.svg" },
 };
 
 // The Valkey app retains the historical "redis" template ID. Keep that alias
@@ -121,6 +134,17 @@ export const APP_LOGO: typeof BRAND_LOGO = {
  * gracefully falls back to a monochrome catalog icon (offline / air-gapped /
  * unknown app). Keeps the UI clean while adding a touch of real color.
  */
+/**
+ * The image address a logo value names directly: an `https:` URL or an image data
+ * URI. Brand slugs and every other scheme return undefined.
+ */
+export function logoImageSource(logo: string | undefined): string | undefined {
+  if (!logo) return undefined;
+  if (/^https:\/\/\S+$/i.test(logo)) return logo;
+  if (/^data:image\/(?:png|jpeg|gif|webp|svg\+xml)[;,]/i.test(logo)) return logo;
+  return undefined;
+}
+
 export function AppLogo({
   appId,
   slug,
@@ -145,9 +169,16 @@ export function AppLogo({
   // only a `slug` (e.g. the migrate-sources brand row) can still pick up a
   // vendored src override for brands simpleicons doesn't carry.
   const cfg = APP_LOGO[appId ?? ""] ?? BRAND_LOGO[slug ?? ""];
-  const resolvedSlug = slug ?? cfg?.slug;
+  // A custom app's `logo` can be an image address instead of a brand slug (#1507).
+  // Anything else that looks like an address is not a slug either: show the fallback
+  // rather than asking simpleicons for a path it cannot serve.
+  const slugImage = logoImageSource(slug);
+  const resolvedSlug = slug && /[:/]/.test(slug) ? undefined : (slug ?? cfg?.slug);
   const url =
-    src ?? cfg?.src ?? (resolvedSlug ? `https://cdn.simpleicons.org/${resolvedSlug}` : undefined);
+    src ??
+    slugImage ??
+    cfg?.src ??
+    (resolvedSlug ? `https://cdn.simpleicons.org/${resolvedSlug}` : undefined);
 
   useEffect(() => {
     // Detect images that failed before hydration attached the error handler.

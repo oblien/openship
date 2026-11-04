@@ -7,6 +7,7 @@ import { param } from "../../lib/controller-helpers";
 import { INVITATION_DELIVERY_HEADER, INVITATION_DELIVERY_LINK_ONLY } from "@repo/core";
 const operations = () => getPlatformKernel().permissions;
 export async function listWorkspaces(c: Context) { return c.json({ data: await operationData(c, operations().listWorkspaces(operationContext(c))) }); }
+export async function requestAccess(c: Context) { return c.json({ data: await operationData(c, operations().requestAccess(operationContext(c), { reason: c.req.query("reason") ?? "", access: c.req.query("access") ?? "" })) }); }
 export async function orgMeta(c: Context) { return c.json({ data: await operationData(c, operations().orgMeta(operationContext(c))) }); }
 export async function listResources(c: Context) { return c.json({ data: await operationData(c, operations().listResources(operationContext(c), { type: c.req.query("type") ?? "", ...(c.req.query("owner") ? { owner: c.req.query("owner") } : {}) })) }); }
 export async function createTeamOrg(c: Context) { return c.json({ data: await operationData(c, operations().createTeamOrg(operationContext(c), await c.req.json())) }, 201); }

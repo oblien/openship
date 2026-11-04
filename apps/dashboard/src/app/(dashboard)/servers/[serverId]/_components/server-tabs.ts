@@ -1,5 +1,6 @@
 import type { IconName } from "@repo/ui/icons";
 export type ServerTab =
+  | "runs"
   | "overview"
   | "migrations"
   | "components"
@@ -10,6 +11,7 @@ export type ServerTab =
 /** Connected self-hosted server tools. Managed pools use Resources instead. */
 export const SERVER_TABS: { key: ServerTab; icon: IconName; desktopOnly?: boolean }[] = [
   { key: "overview", icon: "grid" },
+  { key: "runs", icon: "terminal" },
   { key: "migrations", icon: "migration" },
   { key: "components", icon: "server-settings" },
   { key: "github", icon: "git-branch" },

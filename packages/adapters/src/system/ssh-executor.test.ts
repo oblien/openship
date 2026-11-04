@@ -129,6 +129,7 @@ describe("exec timeout", () => {
   it("closes the remote channel before rejecting", async () => {
     vi.useFakeTimers();
     const channel = new FakeChannel();
+    channel.close.mockImplementation(() => {});
     const client = fakeClient((_cmd, cb) => cb(null, channel));
     connectSshClient.mockResolvedValue(client);
     const executor = new SshExecutor(CONFIG);
@@ -138,11 +139,25 @@ describe("exec timeout", () => {
       await Promise.resolve();
     }
     expect(client.exec).toHaveBeenCalledTimes(1);
-    const rejection = expect(pending).rejects.toThrow("Command timed out after 100ms");
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const rejection = expect(pending).rejects.toMatchObject({
+      name: "TimeoutError",
+      message: "Command timed out after 100ms: sleep 999",
+    });
     await vi.advanceTimersByTimeAsync(100);
 
-    await rejection;
     expect(channel.close).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    channel.emit("close", null);
+    await rejection;
   });
 });
 

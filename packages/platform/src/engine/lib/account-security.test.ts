@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { createHash, createPrivateKey, randomBytes, sign } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createOTP } from "@better-auth/utils/otp";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { createDatabase, schema, type DatabaseConnection } from "@repo/db/factory";
@@ -108,8 +109,21 @@ function createAuth() {
         clientSecret: "test-google-secret",
         verifyIdToken: async () => true,
         getUserInfo: async () => ({
-          user: { id: oauthEmail, email: oauthEmail, name: "Test user", emailVerified: true },
-          data: {},
+          user: { email: oauthEmail, name: "Test user", emailVerified: true },
+          data: {
+            sub: oauthEmail,
+            email: oauthEmail,
+            email_verified: true,
+            name: "Test user",
+            aud: "test-google-client",
+            azp: "test-google-client",
+            iss: "https://accounts.google.com",
+            exp: Math.floor(Date.now() / 1000) + 300,
+            iat: Math.floor(Date.now() / 1000),
+            family_name: "user",
+            given_name: "Test",
+            picture: "",
+          },
         }),
       },
     },
@@ -179,7 +193,7 @@ async function totp(id: string) {
     .from(schema.twoFactor)
     .where(eq(schema.twoFactor.userId, id));
   const secret = await symmetricDecrypt({ key: SECRET, data: factor!.secret });
-  return (await auth.api.generateTOTP({ body: { secret } })).code;
+  return createOTP(secret).totp();
 }
 
 async function enroll() {
@@ -246,7 +260,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
       email: user.email,
       password: PASSWORD,
     });
-    expect(first.data).toEqual({ twoFactorRedirect: true });
+    expect(first.data).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect(first.headers.has("set-auth-token")).toBe(false);
     expect((await browser.request("/get-session")).data).toBeNull();
     expect((await browser.request("/passkey/list-user-passkeys")).status).toBe(401);
@@ -256,6 +270,48 @@ describe("account security through real Better Auth HTTP endpoints", () => {
       (await browser.request("/two-factor/verify-totp", { code: await totp(user.id) })).status,
     ).toBe(200);
     expect((await browser.request("/get-session")).data.user.id).toBe(user.id);
+  });
+
+  it.each(["/two-factor/verify-totp", "/two-factor/verify-backup-code"])(
+    "persists failed verification counters and locks the account across fresh challenges (%s)",
+    async (path) => {
+      const user = await enroll();
+      const browser = new Browser();
+      await browser.request("/sign-in/email", { email: user.email, password: PASSWORD });
+      const denied = await browser.request(path, { code: "invalid" });
+      expect(denied.status).toBe(401);
+      expect(denied.headers.has("set-auth-token")).toBe(false);
+      const [factor] = await connection.db.select().from(schema.twoFactor).where(eq(schema.twoFactor.userId, user.id));
+      expect(factor!.failedVerificationCount).toBe(1);
+      await connection.db.update(schema.twoFactor).set({ failedVerificationCount: 9 }).where(eq(schema.twoFactor.userId, user.id));
+      const retry = new Browser(createAuth());
+      await retry.request("/sign-in/email", { email: user.email, password: PASSWORD });
+      expect((await retry.request(path, { code: "invalid" })).status).toBe(401);
+      const [locked] = await connection.db.select().from(schema.twoFactor).where(eq(schema.twoFactor.userId, user.id));
+      expect(locked!.failedVerificationCount).toBe(10);
+      expect(locked!.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
+      const fresh = new Browser(createAuth());
+      await fresh.request("/sign-in/email", { email: user.email, password: PASSWORD });
+      expect((await fresh.request("/two-factor/verify-totp", { code: await totp(user.id) })).status).toBe(429);
+      expect((await fresh.request("/get-session")).data).toBeNull();
+    },
+  );
+
+  it("expires a challenge after repeated failures and accepts a new challenge without bypassing 2FA", async () => {
+    const user = await enroll();
+    const browser = new Browser();
+    await browser.request("/sign-in/email", { email: user.email, password: PASSWORD });
+    for (let i = 0; i < 5; i++)
+      expect((await browser.request("/two-factor/verify-totp", { code: "invalid" })).status).toBe(401);
+    const exhausted = await browser.request("/two-factor/verify-totp", { code: "invalid" });
+    expect(exhausted.status).toBe(400);
+    expect(exhausted.data.code).toBe("TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE");
+    expect((await browser.request("/two-factor/verify-totp", { code: await totp(user.id) })).status).toBe(401);
+    expect((await browser.request("/get-session")).data).toBeNull();
+    await browser.request("/sign-in/email", { email: user.email, password: PASSWORD });
+    expect((await browser.request("/two-factor/verify-totp", { code: await totp(user.id) })).status).toBe(200);
+    const [factor] = await connection.db.select().from(schema.twoFactor).where(eq(schema.twoFactor.userId, user.id));
+    expect(factor!.failedVerificationCount).toBe(0);
   });
 
   it("keeps 2FA enabled if removing its secret fails", async () => {
@@ -286,7 +342,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     const browser = new Browser();
     expect(
       (await browser.request("/sign-in/email", { email: user.email, password: PASSWORD })).data,
-    ).toEqual({ twoFactorRedirect: true });
+    ).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
   });
 
   it("does not expose a cached authenticated session if creating the 2FA challenge fails", async () => {
@@ -430,13 +486,14 @@ describe("account security through real Better Auth HTTP endpoints", () => {
 
   it("does not let social ID-token or email-OTP sign-in bypass the second factor", async () => {
     const user = await enroll();
+    await connection.db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, user.id));
     oauthEmail = user.email;
     const social = new Browser();
     const result = await social.request("/sign-in/social", {
       provider: "google",
       idToken: { token: "verified-by-test-provider" },
     });
-    expect(result.data).toEqual({ twoFactorRedirect: true });
+    expect(result.data).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect((await social.request("/get-session")).data).toBeNull();
     const email = new Browser();
     expect(
@@ -449,12 +506,13 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     ).toBe(200);
     expect(
       (await email.request("/sign-in/email-otp", { email: user.email, otp: emailCode })).data,
-    ).toEqual({ twoFactorRedirect: true });
+    ).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect((await email.request("/get-session")).data).toBeNull();
   });
 
   it("preserves an OAuth continuation only after the second factor", async () => {
     const user = await enroll();
+    await connection.db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, user.id));
     oauthEmail = user.email;
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
@@ -546,7 +604,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     const login = await browser.request("/passkey/generate-authenticate-options");
     const assertion = authenticateCredential(credential.response.id, login.data.challenge);
     const result = await browser.request("/passkey/verify-authentication", assertion);
-    expect(result.data).toEqual({ twoFactorRedirect: true });
+    expect(result.data).toEqual({ twoFactorRedirect: true, twoFactorMethods: ["totp"] });
     expect(result.headers.has("set-auth-token")).toBe(false);
     expect((await browser.request("/get-session")).data).toBeNull();
     expect((await browser.request("/passkey/verify-authentication", assertion)).status).toBe(400);
@@ -704,7 +762,7 @@ describe("account security through real Better Auth HTTP endpoints", () => {
     ).toBe(200);
     expect((await browser.request("/get-session")).data).toBeNull();
     expect((await browser.request("/sign-in/email", { email: user.email, password })).data).toEqual(
-      { twoFactorRedirect: true },
+      { twoFactorRedirect: true, twoFactorMethods: ["totp"] },
     );
     expect((await browser.request("/get-session")).data).toBeNull();
     expect(

@@ -4,6 +4,7 @@ import * as service from "./updates.service";
 import { updateProjectRuntime } from "./runtime-update";
 import { checkProjectRuntimeImages } from "./runtime-image-check";
 import { organizationAdvisories } from "./security-overview";
+import { securityCheckPolicy, setSecurityCheckPolicy } from "./security-check-policy";
 import {
   projectSecurityStatus,
   setProjectSecurityPolicy,
@@ -11,6 +12,8 @@ import {
 } from "./security.service";
 export const updatesDependencies: UpdateDependencies = {
   collection: {
+    securityCheckPolicy,
+    setSecurityCheckPolicy: setSecurityCheckPolicy,
     advisories: organizationAdvisories,
     list: service.listOrganizationUpdates,
     async scan(ctx) {

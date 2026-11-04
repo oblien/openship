@@ -14,6 +14,7 @@ const exec = promisify(execFile);
 let fixture: string;
 let parent: string;
 let pinned: string;
+let mergeCommit: string;
 
 async function git(directory: string, ...args: string[]) {
   const { stdout } = await exec("git", ["-C", directory, ...args]);
@@ -72,6 +73,13 @@ beforeAll(async () => {
   await git(parent, "checkout", "-qb", "broken");
   await git(parent, "config", "-f", ".gitmodules", "submodule.lib/auth.url", "../missing");
   await commit(parent);
+  // Like a PR merge commit: only a pull ref reaches it, never the cloned branch.
+  await git(parent, "checkout", "-qb", "merge", "main");
+  await writeFile(join(parent, "merge.txt"), "tested merge\n");
+  mergeCommit = await commit(parent);
+  await git(parent, "update-ref", "refs/pull/1/merge", mergeCommit);
+  await git(parent, "checkout", "-q", "main");
+  await git(parent, "branch", "-qD", "merge");
 }, 30_000);
 
 afterAll(async () => {
@@ -174,4 +182,74 @@ it("fails the clone step for an unavailable submodule before executing a build",
   );
   expect(result).toMatchObject({ status: "failed", failedStep: "clone" });
   expect(build.mock.calls.every(([command]) => !command.includes("must-not-build"))).toBe(true);
+});
+
+describe("a pinned commit outside the cloned branch (#1544)", () => {
+  const pinnedTo = (commitSha: string) => ({ ...config(false), commitSha });
+  const serverRuntime = () => {
+    const runtime = Object.create(DockerRuntime.prototype);
+    Object.assign(runtime, {
+      connectionOptions: {
+        executor: {
+          exec: shell,
+          streamExec: async (command: string) => {
+            try {
+              return { code: 0, output: await shell(command) };
+            } catch {
+              return { code: 1, output: "" };
+            }
+          },
+        } as unknown as CommandExecutor,
+      },
+    });
+    return runtime;
+  };
+  const pipeline = (target: string, commitSha: string) =>
+    runBuildPipeline(
+      {
+        projectDir: target,
+        exec: async (command) => {
+          await shell(command);
+        },
+      },
+      pinnedTo(commitSha),
+      new BuildLogger(),
+    );
+
+  it("checks it out in the orchestrator source tree", async () => {
+    const tree = await prepareSourceTree(pinnedTo(mergeCommit));
+    try {
+      expect(await readFile(join(tree.contextDir, "merge.txt"), "utf8")).toBe("tested merge\n");
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it("checks it out in the server source tree", async () => {
+    const target = join(fixture, "merge-server");
+    await serverRuntime().cloneSourceOnRemote(pinnedTo(mergeCommit), target, new BuildLogger());
+    expect(await readFile(join(target, "merge.txt"), "utf8")).toBe("tested merge\n");
+  });
+
+  it("checks it out in the shared pipeline", async () => {
+    const target = join(fixture, "merge-pipeline");
+    expect((await pipeline(target, mergeCommit)).status).toBe("deploying");
+    expect(await readFile(join(target, "merge.txt"), "utf8")).toBe("tested merge\n");
+  });
+
+  it("fails rather than building branch HEAD when the commit does not exist", async () => {
+    const missing = "1".repeat(40);
+    await expect(prepareSourceTree(pinnedTo(missing))).rejects.toThrow();
+    await expect(
+      serverRuntime().cloneSourceOnRemote(
+        pinnedTo(missing),
+        join(fixture, "missing-server"),
+        new BuildLogger(),
+      ),
+    ).rejects.toThrow();
+    expect(await pipeline(join(fixture, "missing-pipeline"), missing)).toMatchObject({
+      status: "failed",
+      failedStep: "clone",
+    });
+  });
 });

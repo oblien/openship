@@ -81,7 +81,7 @@ export interface PrivilegeOptions {
    * What a host Openship has REFUSED means here — the one axis on which real callers
    * legitimately differ, so it is stated rather than defaulted silently. Covers both a
    * box we could not measure (a banner, a forced command) and one we measured and won't
-   * drive (zypper, pacman, an unknown arch).
+   * drive (zypper, an unknown arch).
    *
    * `"refuse"` for work that must not be attempted blind: an install writes under /etc
    * and a wrong guess leaves a half-provisioned box.

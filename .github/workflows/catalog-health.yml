@@ -113,6 +113,15 @@ jobs:
             jellyfin,
             ollama,
             open-webui,
+            appwrite,
+            prometheus,
+            loki,
+            alertmanager,
+            victoriametrics,
+            beszel,
+            pgadmin4,
+            listmonk,
+            otel-collector,
           ]
         arch: [amd64, arm64]
         include:

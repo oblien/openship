@@ -104,6 +104,26 @@ describe("enrichAvailableVersions", () => {
     expect(s[0]!.updateAvailable).toBeUndefined();
   });
 
+  it("pacman: reads Version and ignores the package revision", async () => {
+    const arch = profileFixture({
+      distro: "arch",
+      distroFamily: "arch",
+      distroId: "arch",
+      versionId: null,
+      prettyName: "Arch Linux",
+      packageManager: "pacman",
+    });
+    const exec = vi.fn(async (cmd: string) => {
+      const name = cmd.match(/pacman -Si (\S+)/)?.[1];
+      if (name !== "git") throw new Error(cmd);
+      return "Name            : git\nVersion         : 2.51.0-1\nDescription     : the fast distributed version control system\n";
+    });
+    const s = [status("git", "2.47.0")];
+    await enrichAvailableVersions({ exec } as unknown as CommandExecutor, arch, s);
+    expect(s[0]!.availableVersion).toBe("2.51.0");
+    expect(s[0]!.updateAvailable).toBe(true);
+  });
+
   it("apk: reads the newest version line, not the repo URL that follows it", async () => {
     const policy = [
       "git policy:",

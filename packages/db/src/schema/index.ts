@@ -27,7 +27,7 @@ export {
 } from "./incoming-webhook";
 export { systemNotice } from "./system-notice";
 export { updateStatus } from "./update-status";
-export { advisoryFeed, projectSecurity, securityRefreshAttempt } from "./security-advisory";
+export { advisoryFeed, projectSecurity, securityRefreshAttempt, serverSecurity, securityScanState } from "./security-advisory";
 export { serverModuleStatus } from "./server-module-status";
 export { serverContainerStatus, type ServerContainerDetail } from "./server-container-status";
 export { edgeTargetVerification } from "./edge-target-verification";
@@ -68,7 +68,7 @@ export { cloudHandoffCode } from "./cloud-handoff-code";
 export { dataTransferSession, dataTransferChunk } from "./data-transfer";
 export { personalAccessToken } from "./personal-access-token";
 export { personalAccessTokenGrant } from "./personal-access-token-grant";
-export { oauthApplication, oauthAccessToken, oauthConsent } from "./oauth";
+export { oauthApplication, legacyOauthAccessToken, legacyOauthConsent } from "./oauth";
 export { backupDestination, backupPolicy, backupRun, backupRestore } from "./backup";
 export { dockerMigrationRun } from "./docker-migration";
 export {
@@ -102,6 +102,7 @@ export {
   cloudAnalyticsWorkspace,
 } from "./cloud-analytics";
 export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
+export { cloudCustomerEmail } from "./cloud-customer-email";
 export { instanceController, instanceHandoff } from "./instance-controller";
 export {
   actionRunner,
@@ -127,3 +128,12 @@ export * from "./ingress-hostname";
 export * from "./pull-request-preview";
 
 export * from "./management-billing";
+
+export { assistantConnection, assistantConversation, assistantRequest, assistantAuthorization } from "./assistant";
+
+export * from "./chat-apps";
+export * from "./assistant-automations";
+
+export * from "./assistant-agents";
+
+export * from "./oauth-provider";

@@ -28,7 +28,7 @@ export function createCloudSupportRepo(db: Database) {
   return {
     find,
     findForUser,
-    async create(input: TicketInput) {
+    async create(input: TicketInput, delivery: { receiptBody?: string; sendReceipt?: boolean } = {}) {
       return db.transaction(async (tx) => {
         const [inserted] = await tx.insert(tickets).values(input).onConflictDoNothing().returning();
         if (!inserted) {
@@ -45,7 +45,8 @@ export function createCloudSupportRepo(db: Database) {
         }
         // Both deliveries commit with the ticket. A process crash cannot lose them.
         await tx.insert(messages).values([
-          { id: `${input.id}:receipt`, ticketId: input.id, kind: "receipt" },
+          ...(delivery.sendReceipt === false ? [] : [{ id: `${input.id}:receipt`, ticketId: input.id,
+            kind: "receipt" as const, body: delivery.receiptBody ?? null }]),
           { id: `${input.id}:notification`, ticketId: input.id, kind: "notification" },
         ]);
         return inserted;

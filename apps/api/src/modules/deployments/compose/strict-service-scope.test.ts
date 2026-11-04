@@ -22,6 +22,8 @@ import { describe, expect, it } from "vitest";
  * pins the WIRING as a source contract — the same approach `proxy-settings-wiring.test.ts`
  * takes for this file. `service-scope.test.ts` covers the pure predicates; it cannot cover
  * this case, because `isUntargetedAndUndeployable` is FALSE here (the row has an image).
+ * The migration caller's strict scope and empty-scope refusal are exercised in
+ * `migration-target-deploy.test.ts`.
  */
 const src = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
@@ -29,7 +31,6 @@ const buildService = src("../../../../../../packages/platform/src/engine/modules
 const buildConfig = src("../../../../../../packages/platform/src/engine/modules/deployments/build-config.ts");
 const pipeline = src("../../../../../../packages/platform/src/engine/modules/deployments/compose/pipeline.ts");
 const deployService = src("../../../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts");
-const orchestrator = src("../../../../../../packages/platform/src/engine/modules/migration/migration.orchestrator.ts");
 
 describe("strictScope reaches the compose deploy from the snapshot", () => {
   it("is persisted onto the snapshot, and only alongside a scope", () => {
@@ -65,14 +66,5 @@ describe("strictScope reaches the compose deploy from the snapshot", () => {
     expect(deployService).toContain(
       "if (opts?.strictScope && opts.targetServiceIds && !opts.targetServiceIds.has(svc.id)) {",
     );
-  });
-
-  it("the migration asks for it, so its reuse set is untouchable", () => {
-    const handover = orchestrator.indexOf("handoverImages: adopt.handover");
-    const strictScope = orchestrator.lastIndexOf("strictServiceScope: true", handover);
-    expect(strictScope).toBeGreaterThan(-1);
-    expect(handover - strictScope).toBeLessThan(2_000);
-    // And still refuses an empty scope, which requestBuildAccess would drop → deploy all.
-    expect(orchestrator).toContain("if (deployRowIds.length === 0)");
   });
 });

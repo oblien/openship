@@ -31,6 +31,25 @@ async function project(owner: SeededOwner, name: string) {
 }
 
 describe("permissions and invitations shared by native SDK and HTTP", () => {
+  it("allows restricted readers to request access without changing authority in either SDK", async () => {
+    const owner = await seedOwner(), member = await seedOwner({ bound: false });
+    await addMember(owner, member);
+    const c = await clients(member, owner.orgId, { credential: { organizationId: owner.orgId, readOnly: true } });
+    const input = { reason: "The requested task needs project creation.", access: "Create projects in this workspace." };
+    for (const client of [c.native, c.remote]) {
+      expect(await client.requestAccess(input)).toEqual({
+        ...input, kind: "permission_request", granted: false, organizationId: owner.orgId,
+        clientId: null, reviewPath: client === c.remote ? "/settings?tab=tokens" : "/settings?tab=mcp",
+      });
+      await expect(client.requestAccess({ ...input, reason: " " })).rejects.toBeDefined();
+      await expect(client.requestAccess({ ...input, access: "x".repeat(2001) })).rejects.toBeDefined();
+      await expect(client.upsertGrant({ userId: member.userId, resourceType: "settings", resourceId: "*", permissions: ["admin"] })).rejects.toBeDefined();
+    }
+    expect(await repos.resourceGrant.listByMember(owner.orgId, member.userId)).toEqual([]);
+    expect((await repos.member.find(owner.orgId, member.userId))?.role).toBe("restricted");
+    await flushAudit();
+    expect(await db.select().from(schema.auditEvent).where(eq(schema.auditEvent.organizationId, owner.orgId))).toEqual([]);
+  });
   it("keeps the dashboard's legacy lifecycle URLs on the same authorized implementation", async () => {
     const owner = await seedOwner(), invitee = await seedOwner({ bound: false }), c = await clients(owner);
     const send = (actor: SeededOwner, route: string, body: unknown) => app.request(`/api/auth/organization/${route}`, {

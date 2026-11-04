@@ -25,6 +25,7 @@ import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
 import { observeVerifiedBillingEvent } from "../cloud-analytics/billing";
 import { creditAlertNotification } from "./billing-credit-alert";
 import { findBillingOwnerByNamespace } from "./billing-namespace-owner";
+import { prepareCustomerPaymentEmails } from "../customer-email/payment";
 
 const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
@@ -174,7 +175,12 @@ export async function handleOblienWebhook(
     if (owner.kind === "management") {
       const { syncManagementBilling } = await import("./management.service");
       await syncManagementBilling(organizationId);
-      await upsertWebhookEventProcessed(db, eventId, eventType);
+      const enqueue = await prepareCustomerPaymentEmails({ organizationId, namespace, scope: "management", eventType, data: payload.data });
+      await db.transaction(async transaction => {
+        const tx = transaction as unknown as Database;
+        if (enqueue) await enqueue(tx);
+        await upsertWebhookEventProcessed(tx, eventId, eventType);
+      });
       return { status: 200, payload: { received: true } };
     }
     if (owner.kind === "actions") {
@@ -215,11 +221,14 @@ export async function handleOblienWebhook(
         timestamp: payload.timestamp, organizationId, workspaceId: owner.workspaceId ?? undefined, entitlement, dashboardUrl: localDashboardUrl });
       await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
       const enqueue = alert ? await notification.prepare(alert) : null;
+      const enqueueEmail = await prepareCustomerPaymentEmails({ organizationId, namespace, scope: "hosting",
+        workspaceId: owner.workspaceId, eventType, data: payload.data });
       // No email is sent while holding this transaction. The receiver only ACKs
       // once notifications, the exhaustion activity, and its checkpoint commit together.
       await db.transaction(async transaction => {
         const tx = transaction as unknown as Database;
         if (enqueue) await enqueue(tx);
+        if (enqueueEmail) await enqueueEmail(tx);
         if (alert?.eventType === "billing.credit_exhausted") {
           await createAuditEventRepo(tx, createAuditSettingsRepo(tx)).create({
             organizationId,

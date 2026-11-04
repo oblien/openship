@@ -11,6 +11,10 @@ import type { RepoListParams } from "@repo/platform/engine/modules/github/repo-l
 const ops = () => getPlatformKernel().github;
 const call = (c: Context) => operationContext(c);
 const repo = (c: Context) => ({ owner: c.req.param("owner")!, repo: c.req.param("repo")! });
+export async function publishChange(c: Context) {
+  const data = await operationData(c, ops().publishChange(call(c), { ...await c.req.json(), ...repo(c) }));
+  return c.json({ data }, 200);
+}
 export async function getStatus(c: Context) {
   const data = await operationData(
     c,

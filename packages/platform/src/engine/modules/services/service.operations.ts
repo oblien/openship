@@ -8,6 +8,7 @@ import { audit } from "../../lib/audit-emitter";
 import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
 import { sshManager } from "../../lib/ssh-manager";
 import * as service from "./service.service";
+import { assertHostMountWriteAccess } from "../deployments/host-mount-policy";
 import { applyServiceEnvironment } from "./service-environment";
 import { reviewSharedServiceEnvironment } from "./service-environment-sharing";
 import {
@@ -77,11 +78,13 @@ export const serviceDependencies: ServiceDependencies = {
     list: (ctx, id) =>
       run(async () => visible(ctx, await service.listServices(ctx, id), (row) => row.id)),
     async create(ctx, id, input) {
+      await assertHostMountWriteAccess(ctx, input);
       const result = await run(() => service.createService(ctx, id, input));
       record(ctx, result.id, "write", { operation: "create", projectId: id, name: result.name });
       return result;
     },
     async sync(ctx, id, input) {
+      await assertHostMountWriteAccess(ctx, input);
       if (input.services.length === 0)
         throw new OperationError(
           "Refusing to sync an empty compose service list",
@@ -113,6 +116,7 @@ export const serviceDependencies: ServiceDependencies = {
   resources: {
     get: (ctx, projectId, id) => run(() => service.getService(ctx, projectId, id)),
     async update(ctx, projectId, id, input) {
+      await assertHostMountWriteAccess(ctx, input);
       const result = await run(() => service.updateService(ctx, projectId, id, input));
       record(ctx, id, "write", { operation: "update", projectId, fields: Object.keys(input) });
       return result;

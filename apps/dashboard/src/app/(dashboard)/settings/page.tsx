@@ -1,4 +1,6 @@
 "use client";
+import { AssistantSettings } from "@/components/assistant/AssistantSettings";
+import { ChatAppsSettings } from "@/components/chat-apps/ChatAppsSettings";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -179,6 +181,8 @@ function SettingsPageInner() {
           {activeTab === "tokens" && <PersonalAccessTokens />}
 
           {activeTab === "mcp" && <McpConnection />}
+          {activeTab === "assistant" && !mailOnly && <AssistantSettings />}
+          {activeTab === "chat-apps" && <ChatAppsSettings />}
 
           {activeTab === "team" && <TeamTab />}
 

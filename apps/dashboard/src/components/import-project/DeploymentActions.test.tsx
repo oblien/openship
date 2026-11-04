@@ -9,10 +9,11 @@ import { DeploymentActions, DeploymentConfigurationAction } from "./DeploymentAc
 import { DeploymentHeader } from "./DeploymentHeader";
 import { getDeploymentSites } from "./deployment-sites";
 
-const mocks = vi.hoisted(() => ({ push: vi.fn(), invalidate: vi.fn(), stop: vi.fn(), baseDomain: "apps.example.test" }));
+const mocks = vi.hoisted(() => ({ push: vi.fn(), invalidate: vi.fn(), stop: vi.fn(), baseDomain: "apps.example.test", scopeReady: true }));
 let deployment: Pick<DeploymentContextType, "config" | "state" | "deploymentStatus" | "stopDeployment">;
 vi.mock("@/context/DeploymentContext", () => ({ useDeployment: () => deployment }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: mocks.baseDomain }) }));
+vi.mock("@/hooks/use-scoped-resource", () => ({ useResourceScope: () => "user:org:cloud", useResourceScopeReady: () => mocks.scopeReady }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: mocks.invalidate }));
 vi.mock("@/components/i18n-provider", () => ({
@@ -30,6 +31,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.baseDomain = "apps.example.test";
+  mocks.scopeReady = true;
   redeploy.mockResolvedValue(null);
   deployment = {
     config: { ...structuredClone(DEFAULT_CONFIG), projectId: "project", projectName: "Example", publicEndpoints: [] },
@@ -62,6 +64,36 @@ function compose() {
 }
 
 describe("deployment destinations", () => {
+  it("waits for the account and Cloud identity before making a navigable investigation link", async () => {
+    deployment.deploymentStatus = "failed";
+    mocks.scopeReady = false;
+    await render(true);
+    expect(button("Investigate with AI").disabled).toBe(true);
+    expect(host.querySelector('a[aria-label="Investigate with AI"]')).toBeNull();
+    mocks.scopeReady = true;
+    await render(true);
+    expect(host.querySelector('a[aria-label="Investigate with AI"]')).not.toBeNull();
+  });
+
+  it.each([false, true])("offers the exact failed deployment to investigate from the shared header (Compose: %s)", async isCompose => {
+    if (isCompose) compose();
+    deployment.deploymentStatus = "failed";
+    await render(true);
+    const link = host.querySelector<HTMLAnchorElement>('a[aria-label="Investigate with AI"]')!;
+    const search = new URL(link.href).searchParams;
+    expect(search.get("deployment")).toBe("deployment");
+    expect(search.get("project")).toBe("project");
+    expect(search.get("scope")).toMatch(/^[a-f0-9]{64}$/);
+    expect(redeploy).not.toHaveBeenCalled();
+    expect(mocks.stop).not.toHaveBeenCalled();
+  });
+
+  it.each(["ready", "building", "deploying", "cancelled"] as const)("does not offer a failed-deploy investigation for %s", async status => {
+    deployment.deploymentStatus = status;
+    await render(true);
+    expect(host.querySelector('a[aria-label="Investigate with AI"]')).toBeNull();
+  });
+
   it("opens the sole public hostname directly", async () => {
     deployment.config.publicEndpoints = [endpoint("  WWW.Example.com  ")];
     await render();

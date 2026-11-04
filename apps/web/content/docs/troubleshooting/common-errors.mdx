@@ -112,6 +112,36 @@ reverse proxy that sets the forwarded-IP header. Route traffic through your prox
 topology) rather than hitting the API port directly.
 </Callout>
 
+## PGlite API restart loop after a crash
+
+On a self-hosted Docker installation using PGlite, API logs may repeatedly say
+`database at /data is held by pid 1` after an abnormal exit. The dashboard can
+remain reachable while API requests return `502`.
+
+Linux database owners hold a kernel file lock alongside the existing lock
+record. The kernel releases it after a crash, allowing the next start to recover
+even when Docker reuses PID 1. An active owner in another container still blocks
+access. Linux requires `flock` from `util-linux`, which the API image includes;
+if locking is unavailable, startup fails rather than risking concurrent writes.
+Older records without kernel ownership retain conservative PID-only checks.
+Other operating systems retain their existing lock behavior.
+
+The `.lock.guard` sidecar is intentionally retained after shutdown. Never remove
+or replace it while any process could be opening or using this database. When
+sharing a database mount, the sibling lock files must share the same filesystem
+location too; PGlite still supports only one active owner.
+
+For an installation already stuck with an older lock, update to an image with
+this fix and recreate only the API container, keeping its existing data volume.
+When `/data` is the mounted volume, `/data.lock` belongs to the old container's
+writable layer; recreating that container clears the lock while retaining the
+database. Restarting the same container leaves that lock in place.
+
+If the lock itself is on a persistent mount, stop every process that could use
+that database before removing the specific `.lock` file named in the error.
+Keep the database directory and volume intact. Investigate the original crash
+separately; recovering the lock does not fix memory exhaustion.
+
 ## Build and deploy failures
 
 The codes above are about the API request itself. If a **deployment** failed — the build screen went red, the

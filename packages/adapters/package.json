@@ -37,7 +37,7 @@
     "@aws-sdk/client-s3": "^3.668.0",
     "@aws-sdk/lib-storage": "^3.668.0",
     "@aws-sdk/s3-request-presigner": "^3.668.0",
-    "@grpc/grpc-js": "1.14.3",
+    "@grpc/grpc-js": "1.14.5",
     "@grpc/proto-loader": "0.7.15",
     "@repo/core": "workspace:*",
     "@smithy/node-http-handler": "^4.7.7",
@@ -58,6 +58,6 @@
     "@types/ssh2": "^1.15.5",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.12"
   }
 }
