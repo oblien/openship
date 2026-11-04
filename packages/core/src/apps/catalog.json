@@ -8800,7 +8800,7 @@
           "image": "listmonk/listmonk:v6.2.0",
           "exposed": true,
           "ports": [
-            "9000:9000"
+            "8226:9000"
           ],
           "exposedPort": 9000,
           "routes": [
