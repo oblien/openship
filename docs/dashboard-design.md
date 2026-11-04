@@ -411,6 +411,11 @@ Deploy asks for DNS setup only for newly selected custom hostnames or a changed
 destination. Existing hostnames on the same deployed destination continue directly;
 adding only a www hostname asks for that hostname alone.
 
+External Docker migration cutover distinguishes finishing without touching originals,
+keeping and restarting originals, and removing originals. Never infer a retention
+decision from a project deletion request. Parked migrations explain how to finish
+or resume them before deletion; they are not presented as cancellation timeouts.
+
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress

@@ -197,10 +197,12 @@
   },
   "cutover": {
     "warning": "O destino está ativo. Você pode remover os containers originais ou mantê-los parados. Os volumes de origem são mantidos.",
-    "warningRestart": "O destino está ativo. Manter originais reinicia os containers de origem que estavam ativos como cópias independentes. Remover originais os exclui. Os volumes de origem são mantidos.",
+    "warningRestart": "O destino está ativo. Conclua sem alterar os originais, reinicie-os como cópias independentes ou remova-os. Os volumes de origem são preservados.",
     "title": "Finalizar migração",
     "stopRemove": "Parar e remover originais",
     "keep": "Manter originais",
+    "keepAsIs": "Concluir sem reiniciar os originais",
+    "keepRestart": "Manter e reiniciar os originais",
     "working": "Processando…"
   },
   "discover": {
