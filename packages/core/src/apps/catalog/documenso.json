@@ -34,6 +34,7 @@
       "name": "documenso",
       "image": "documenso/documenso:v2.21.1",
       "exposed": true,
+      "ports": ["3000:3000"],
       "exposedPort": 3000,
       "routes": [{ "port": 3000 }],
       "restart": "unless-stopped",
