@@ -8775,7 +8775,7 @@
           "image": "rclone/rclone:1.75.2",
           "exposed": true,
           "ports": [
-            "5572:5572"
+            "8228:5572"
           ],
           "exposedPort": 5572,
           "routes": [
