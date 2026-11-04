@@ -10,6 +10,7 @@ import {
   writeFile as fsWriteFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { Readable } from "node:stream";
 
 import type { CommandExecutor, LogEntry } from "../types";
 import {
@@ -131,6 +132,90 @@ export class LocalExecutor implements CommandExecutor {
         onLog(logEntry(`Process error: ${err.message}`, "error"));
         resolve({ code: 1, output: err.message });
       });
+    });
+  }
+
+  /**
+   * Untouched stdout/stderr byte streams for the local command. Bare backups of
+   * host-level sources (the built-in mail server on "This Server") capture
+   * through this, so without it a local host could not run any backup at all.
+   */
+  async rawExec(command: string): Promise<{
+    stdout: Readable;
+    stderr: Readable;
+    onClose: Promise<number>;
+    kill: () => void;
+  }> {
+    const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: getLocalExecEnv(),
+    });
+    const onClose = new Promise<number>((resolve) => {
+      child.on("close", (code) => resolve(code ?? 1));
+      // A failed spawn may never emit close. Surface the cause on stdout so a
+      // capture fails with it instead of reading an empty, "successful" dump.
+      child.on("error", (err) => {
+        observeCaughtError(err, "adapters/system/local-executor");
+        child.stdout.destroy(err);
+        resolve(1);
+      });
+    });
+    return {
+      stdout: child.stdout,
+      stderr: child.stderr,
+      onClose,
+      kill: () => {
+        try { child.kill("SIGTERM"); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/local-executor"); /* process already exited */ }
+      },
+    };
+  }
+
+  /**
+   * Pipe `body` into a local command's stdin, closing it at EOF. Lets a bare
+   * restore stream straight into its loader instead of staging a copy first.
+   * A failing source kills the command so a half-fed loader cannot block.
+   */
+  execWithInput(command: string, body: Readable): Promise<{ code: number; stderr: string; stdout: string }> {
+    return new Promise((resolve, reject) => {
+      if (body.errored) {
+        reject(body.errored);
+        return;
+      }
+      const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: getLocalExecEnv(),
+      });
+      let settled = false;
+      let stderr = "";
+      let stdout = "";
+      const finish = (act: () => void) => {
+        if (settled) return;
+        settled = true;
+        body.off("error", abort);
+        body.unpipe(child.stdin);
+        act();
+      };
+      const abort = (error: Error) => finish(() => {
+        try { child.kill("SIGTERM"); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/system/local-executor"); /* process already exited */ }
+        reject(error);
+      });
+      body.on("error", abort);
+      child.on("error", abort);
+      // EPIPE when the command exits before draining its input; the exit code
+      // below is the meaningful result, not the write failure.
+      child.stdin.on("error", (err) => observeCaughtError(err, "adapters/system/local-executor"));
+      child.stderr.on("data", (data: Buffer) => {
+        stderr = (stderr + data.toString()).slice(-16 * 1024);
+      });
+      child.stdout.on("data", (data: Buffer) => {
+        stdout = (stdout + data.toString()).slice(-16 * 1024);
+      });
+      child.on("close", (code) => finish(() => {
+        resolve({ code: code ?? 1, stderr: stderr.trim(), stdout: stdout.trim() });
+      }));
+      body.pipe(child.stdin);
     });
   }
 

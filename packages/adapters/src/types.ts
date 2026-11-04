@@ -963,7 +963,7 @@ export interface CommandExecutor extends ExecOnly {
    * Run a command and return the raw stdout/stderr streams without
    * line splitting.  Enables byte-for-byte piping of command output.
    *
-   * Only available on SshExecutor - local executors do not implement this.
+   * Implemented by SshExecutor, LocalExecutor and the cloud workspace executor.
    */
   rawExec?(command: string): Promise<{
     stdout: Readable;
@@ -979,7 +979,7 @@ export interface CommandExecutor extends ExecOnly {
    * rawExec (stdout) — lets a Readable move INTO a remote command byte-for-byte
    * without staging to a temp file first.
    *
-   * Only available on SshExecutor — local executors do not implement this.
+   * Implemented by SshExecutor and LocalExecutor.
    */
   execWithInput?(
     command: string,
