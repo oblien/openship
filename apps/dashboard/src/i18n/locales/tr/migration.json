@@ -139,8 +139,10 @@
     "warning": "Hedef yayında. Orijinal konteynerleri kaldırabilir veya durdurulmuş olarak tutabilirsiniz. Kaynak birimler korunur.",
     "stopRemove": "Kaynak konteynerleri durdur ve kaldır",
     "keep": "Kaynak konteynerleri tut",
+    "keepAsIs": "Orijinalleri yeniden başlatmadan tamamla",
+    "keepRestart": "Orijinalleri tut ve yeniden başlat",
     "working": "İşleniyor…",
-    "warningRestart": "Hedef yayında. Orijinalleri tut, önceden çalışan kaynak konteynerleri bağımsız kopyalar olarak yeniden başlatır. Orijinalleri kaldır, bunları siler. Kaynak birimler korunur."
+    "warningRestart": "Hedef yayında. Orijinalleri değiştirmeden tamamlayın, bağımsız kopyalar olarak yeniden başlatın veya kaldırın. Kaynak birimler korunur."
   },
   "discover": {
     "buildBlocked": "Kaynaktan derlenmiş — henüz taşınamıyor (önce bir imaj yayınlayın)",

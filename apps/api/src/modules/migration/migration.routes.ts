@@ -47,7 +47,20 @@ r.post("/project", { tag: "server:write", collection: true, mcp: { description: 
 // Migration run status, live progress, and the opt-in destructive cutover.
 r.get("/migrations/:id", { tag: "server:read", collection: true, mcp: { description: "Read migration state, saved progress, logs and pendingPrompt. When awaiting_cutover, review target health/routing before confirmation. A partial run can be resumed; polling never starts another migration." } }, migration.getMigration);
 r.get("/migrations/:id/stream", { tag: "server:read", collection: true, mcpExcluded: "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming." }, migration.streamMigration);
-r.post("/migrations/:id/cutover", { tag: "server:write", collection: true, mcp: { description: "Confirm migration cutover using the returned confirmationToken. kill:true destroys original containers. False retains them: external cross-server imports restart previously running sources; existing project moves and same-server imports leave them stopped. Source volumes remain. Failed destructive cutover can only resume that same choice.", destructive: true }, body: MigrationRequestSchemas.cutover }, migration.confirmCutover);
+r.post(
+  "/migrations/:id/cutover",
+  {
+    tag: "server:write",
+    collection: true,
+    mcp: {
+      description:
+        "Confirm migration cutover using the returned confirmationToken. kill:true destroys original containers. False retains them: external cross-server imports restart previously running sources; existing project moves and same-server imports leave them stopped. For external cross-server imports, kill:false with restartOriginals:false explicitly finishes without contacting either host or changing containers/volumes; pending transfer/recovery work must be resolved first. Source volumes remain. Failed destructive cutover can only resume that same choice.",
+      destructive: true,
+    },
+    body: MigrationRequestSchemas.cutover,
+  },
+  migration.confirmCutover,
+);
 // Abort an in-flight migration (kills the transfer + rolls back).
 r.post("/migrations/:id/cancel", { tag: "server:write", collection: true, mcp: { description: "Cancel an in-flight migration and request rollback of target changes. Poll until rollback finishes. Not available after awaiting_cutover or terminal completion; use explicit cutover at that point." } }, migration.cancelMigration);
 r.post("/migrations/:id/respond", { tag: "server:write", collection: true, mcp: { description: "Answer the migration’s current pendingPrompt with its promptId and an offered action ID. Use the run’s actual options and expiry; do not invent takeover decisions." }, body: MigrationRequestSchemas.respond }, migration.respondMigration);

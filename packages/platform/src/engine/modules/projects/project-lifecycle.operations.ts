@@ -79,7 +79,10 @@ export function createProjectLifecycleOperations(
           {
             ok: false,
             code: "PROJECT_HAS_ACTIVE_WORK",
-            error: active.summary,
+            error:
+              result.steps.find(
+                (step) => step.step === "cancel_in_flight" && step.status === "failed",
+              )?.error ?? active.summary,
             active: activePayload,
           },
           409,
