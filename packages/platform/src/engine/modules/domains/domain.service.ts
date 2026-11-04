@@ -235,8 +235,11 @@ export async function addDomain(
     if (data.externalIngress !== undefined && existing.externalIngress !== data.externalIngress) {
       patch.externalIngress = data.externalIngress;
     }
-    // a plain re-save) must not clear one the operator configured separately.
-    if (redirect.redirectTo && existing.redirectTo !== redirect.redirectTo) {
+    // A plain re-save must not clear a separately configured redirect.
+    if (
+      redirect.redirectTo &&
+      (existing.redirectTo !== redirect.redirectTo || existing.redirectStatus !== redirect.redirectStatus)
+    ) {
       patch.redirectTo = redirect.redirectTo;
       patch.redirectStatus = redirect.redirectStatus;
     }
@@ -455,10 +458,13 @@ export async function ensurePendingServiceDomain(opts: {
   serviceId: string;
   hostname: string;
   targetPort?: number;
+  redirectTo?: string;
+  redirectStatus?: number;
 }): Promise<{ created: boolean; domainId: string | null }> {
   const { hostname, existing, mayOwn } = await resolveServiceDomainOwnership(opts);
   if (existing) {
     const patch: Record<string, unknown> = {};
+    if (opts.redirectTo !== undefined) Object.assign(patch, normalizeRedirect(opts));
     if ((existing.serviceId ?? null) !== opts.serviceId) patch.serviceId = opts.serviceId;
     if (opts.targetPort != null && (existing.targetPort ?? null) !== opts.targetPort) {
       patch.targetPort = opts.targetPort;
@@ -478,6 +484,7 @@ export async function ensurePendingServiceDomain(opts: {
     hostname,
     domainType: "custom",
     targetPort: opts.targetPort,
+    ...(opts.redirectTo !== undefined ? normalizeRedirect(opts) : {}),
     verified: false,
     status: "pending",
     isPrimary: false,
