@@ -9326,6 +9326,9 @@
           "name": "pgadmin4",
           "image": "dpage/pgadmin4:9.18",
           "exposed": true,
+          "ports": [
+            "8230:5050"
+          ],
           "exposedPort": 5050,
           "routes": [
             {
@@ -9504,6 +9507,9 @@
           "name": "listmonk",
           "image": "listmonk/listmonk:v6.2.0",
           "exposed": true,
+          "ports": [
+            "8226:9000"
+          ],
           "exposedPort": 9000,
           "routes": [
             {
