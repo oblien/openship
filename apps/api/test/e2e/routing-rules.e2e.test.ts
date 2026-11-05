@@ -79,6 +79,8 @@ const SITES_DIR = OPENRESTY_DEFAULT_PATHS.sitesDir;
 const CONF_PATH = `${OPENRESTY_DEFAULT_PATHS.confDir}/nginx.conf`;
 /** Must be under /opt/openship — `assertValidStaticRoot` refuses anything else. */
 const WWW = "/opt/openship/www";
+/** A multi-page site that ships its own top-level 404.html. */
+const WWW_404 = "/opt/openship/www-404";
 
 /** `cat > path <<'EOF'` — quoted delimiter, so nothing in the body is expanded. */
 function heredoc(path: string, content: string): string {
@@ -146,14 +148,14 @@ async function renderVhost(route: RouteConfig): Promise<string> {
 }
 
 /** A static route on `<name>.test`, with the compiled rules of a real vercel.json. */
-async function staticSite(name: string, routing: RoutingConfig): Promise<string> {
+async function staticSite(name: string, routing: RoutingConfig, staticRoot = WWW): Promise<string> {
   const c = compileVercelRouting(routing);
   // A rule silently dropped instead of applied would make the assertions below lie.
   expect(c.skipped, `unexpected skipped rules for ${name}: ${c.skipped.join("; ")}`).toEqual([]);
   return renderVhost({
     domain: `${name}.test`,
     tls: false,
-    staticRoot: WWW,
+    staticRoot,
     ...(c.redirects.length ? { redirects: c.redirects } : {}),
     ...(c.headerRules.length ? { headerRules: c.headerRules } : {}),
     ...(c.cleanUrls ? { cleanUrls: true } : {}),
@@ -353,6 +355,10 @@ http {
     out["strip"] = await staticSite("strip", { trailingSlash: false });
     out["enforce"] = await staticSite("enforce", { trailingSlash: true });
     out["clean"] = await staticSite("clean", { cleanUrls: true });
+    out["nf"] = await staticSite("nf", {}, WWW_404);
+    out["nf-clean"] = await staticSite("nf-clean", { cleanUrls: true }, WWW_404);
+    out["nf-strip"] = await staticSite("nf-strip", { trailingSlash: false }, WWW_404);
+    out["nf-enforce"] = await staticSite("nf-enforce", { trailingSlash: true }, WWW_404);
 
     // Two rules on the SAME source, plus two paths that used to squash to one variable.
     out["hdrs"] = await staticSite("hdrs", {
@@ -463,7 +469,7 @@ http {
     const confs = await vhosts();
     const script =
       `set -e\n` +
-      `mkdir -p ${SITES_DIR} ${LUA_DEST} ${WWW}/docs ${WWW}/dir-no-index /var/www/acme/oblien\n` +
+      `mkdir -p ${SITES_DIR} ${LUA_DEST} ${WWW}/docs ${WWW}/dir-no-index ${WWW_404} /var/www/acme/oblien\n` +
       heredoc(CONF_PATH, ENVELOPE) +
       heredoc(
         "/tmp/visitor-country.lua",
@@ -480,6 +486,9 @@ http {
       heredoc(`${WWW}/dir-no-index/post.html`, "POST") +
       // Extension-less REAL file: what slash-enforcement used to shadow.
       heredoc(`${WWW}/LICENSE`, "LICENSE-TEXT") +
+      heredoc(`${WWW_404}/index.html`, "MPA-INDEX") +
+      heredoc(`${WWW_404}/about.html`, "MPA-ABOUT") +
+      heredoc(`${WWW_404}/404.html`, "MPA-NOT-FOUND") +
       Object.entries(confs)
         .map(([name, body]) => heredoc(join(SITES_DIR, `${name}.conf`), body))
         .join("") +
@@ -649,6 +658,38 @@ http {
     const { hops, final } = await follow(port, "/", "clean.test");
     expect(hops).toEqual([]);
     expect(final.body.trim()).toBe("ROOT-INDEX");
+  });
+
+  it("serves a top-level 404.html with a 404 and keeps the SPA index without one", async () => {
+    // The bug: every unknown path answered 200 with the home page, so the site's own
+    // 404.html never showed and a missing JSON file was "found" as HTML (#1624).
+    for (const path of ["/missing", "/a/b/c", "/x.json", "/.well-known/ai-catalog.json"]) {
+      const answer = await ask(port, path, "nf.test");
+      expect({ path, status: answer.status, body: answer.body.trim() }).toEqual({
+        path,
+        status: 404,
+        body: "MPA-NOT-FOUND",
+      });
+    }
+    expect((await ask(port, "/", "nf.test")).body.trim()).toBe("MPA-INDEX");
+    expect((await ask(port, "/about", "nf-clean.test")).body.trim()).toBe("MPA-ABOUT");
+    expect((await ask(port, "/missing", "nf-clean.test")).status).toBe(404);
+    // URL shaping still runs first, then the missing path gets the 404 page.
+    for (const [host, path, hop] of [
+      ["nf-strip.test", "/missing/", "http://nf-strip.test/missing"],
+      ["nf-enforce.test", "/missing", "http://nf-enforce.test/missing/"],
+    ] as const) {
+      const { hops, final } = await follow(port, path, host);
+      expect({ hops, status: final.status, body: final.body.trim() }).toEqual({
+        hops: [hop],
+        status: 404,
+        body: "MPA-NOT-FOUND",
+      });
+    }
+    // A root without 404.html keeps the SPA fallback.
+    const spa = await ask(port, "/missing", "clean.test");
+    expect(spa.status).toBe(200);
+    expect(spa.body.trim()).toBe("ROOT-INDEX");
   });
 
   it.each([

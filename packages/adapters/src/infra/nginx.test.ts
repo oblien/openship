@@ -989,7 +989,7 @@ describe("NginxProvider config generation", () => {
     });
     const c = conf("site-example-com")!;
     expect(c).toContain("root /opt/openship/static/site/dist;");
-    expect(c).toContain("try_files $uri $uri/ /index.html;");
+    expect(c).toContain("try_files $uri $uri/ @osh_fallback;");
     // The ONLY proxy_pass allowed on a static vhost is the ACME-challenge
     // location (→ certbot's standalone server); the app itself is served, not
     // proxied. Assert no UPSTREAM/app proxy, rather than a blanket absence.
@@ -3080,7 +3080,7 @@ describe("vercel.json path headers and URL shape", () => {
     const c = appConf(conf);
     expect(c).toContain('if ($request_uri ~ "^([^?]*)[.]html([?].*)?$") {');
     expect(c).toContain("return 308 $1$2;");
-    expect(c).toContain("try_files $uri $uri.html $uri/ /index.html;");
+    expect(c).toContain("try_files $uri $uri.html $uri/ @osh_fallback;");
     // Inside `location /`, so an ACME challenge (its own location) can never reach it.
     const serve = c.indexOf("location / {");
     expect(c.indexOf("if ($request_uri")).toBeGreaterThan(serve);
@@ -3094,8 +3094,8 @@ describe("vercel.json path headers and URL shape", () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute({ ...STATIC, trailingSlash: false });
     const c = appConf(conf);
-    expect(c).toContain("try_files $uri $uri/index.html /index.html;");
-    expect(c).not.toContain("$uri/ /index.html");
+    expect(c).toContain("try_files $uri $uri/index.html @osh_fallback;");
+    expect(c).not.toContain("$uri/ @osh_fallback");
     expect(c).toContain('if ($request_uri ~ "^([^?]+)/([?].*)?$") {');
   });
 
@@ -3108,11 +3108,13 @@ describe("vercel.json path headers and URL shape", () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute({ ...STATIC, trailingSlash: true });
     const c = appConf(conf);
-    expect(c).toContain("try_files $uri $uri/ @osh_add_slash;");
-    expect(c).toContain("location @osh_add_slash {");
+    expect(c).toContain("try_files $uri $uri/ @osh_fallback;");
+    expect(c).toContain("location @osh_fallback {");
     // A named location inherits nothing, so it must repeat `root` — without it
     // `try_files /index.html` serves OpenResty's stock welcome page, not the site.
-    expect(c).toMatch(/location @osh_add_slash \{\n\s+root \/opt\/openship\/site;/);
+    expect(c).toMatch(/location @osh_fallback \{\n\s+root \/opt\/openship\/site;/);
+    // The slash is added before a missing path can be answered with the 404 page.
+    expect(c.indexOf("return 308 $1/$2;")).toBeLessThan(c.indexOf("return 404;"));
     // Declines a path that already ends in `/`, so the retry falls through to the index
     // instead of bouncing again.
     expect(c).toContain('if ($request_uri ~ "^([^?]*[^/?])([?].*)?$") {');
@@ -3127,7 +3129,7 @@ describe("vercel.json path headers and URL shape", () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute({ ...STATIC, cleanUrls: true, trailingSlash: true });
     const c = appConf(conf);
-    expect(c).toContain("try_files $uri $uri.html $uri/ @osh_add_slash;");
+    expect(c).toContain("try_files $uri $uri.html $uri/ @osh_fallback;");
     expect(c).toContain("[.]html"); // cleanUrls kept
   });
 
@@ -3204,9 +3206,24 @@ describe("vercel.json path headers and URL shape", () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute(STATIC);
     const c = appConf(conf);
-    expect(c).toContain("try_files $uri $uri/ /index.html;");
+    expect(c).toContain("try_files $uri $uri/ @osh_fallback;");
     expect(c).not.toContain("$request_uri ~");
     expect(c).not.toContain("map ");
+  });
+
+  // Every unknown path used to answer 200 with the home page, so a multi-page site's own
+  // 404.html never showed and `/.well-known/x.json` was "found" as HTML (#1624).
+  test("answers a missing path with the site's 404.html when the root has one", async () => {
+    const { nginx, conf } = setup();
+    await nginx.registerRoute(STATIC);
+    const c = appConf(conf);
+    const fallback = c.match(/location @osh_fallback \{[^]*?\n {4}\}/)![0];
+    expect(fallback).toContain("error_page 404 /404.html;");
+    expect(fallback).toContain("if (-f $document_root/404.html) {\n            return 404;");
+    // Without a 404.html the SPA index is still served.
+    expect(fallback).toContain("try_files /index.html =404;");
+    // Only inside the fallback, so ACME, proxied and path-only 404s keep their own answers.
+    expect(c.match(/error_page 404/g)).toHaveLength(c.match(/location @osh_fallback \{/g)!.length);
   });
 });
 
