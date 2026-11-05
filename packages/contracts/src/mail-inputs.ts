@@ -46,6 +46,14 @@ export const MailRequestSchemas = {
   acknowledgeDns: Type.Object({ serverId: ResourceIdSchema, domain: optionalText }),
   requiredDomain: Type.Object({ domain: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   componentAction: Type.Object({ action: Type.Union([Type.Literal("start"), Type.Literal("stop"), Type.Literal("restart")]) }, { additionalProperties: false }),
+  fail2banBan: Type.Object({
+    ip: Type.String({ minLength: 1, maxLength: 64 }),
+    jail: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  }, { additionalProperties: false }),
+  fail2banUnban: Type.Object({
+    ip: Type.String({ minLength: 1, maxLength: 64 }),
+    jail: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  }, { additionalProperties: false }),
   configureRelay: Type.Object({
     provider, scope: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("selected")])),
     domains: Type.Optional(Type.Array(Type.String())), addresses: Type.Optional(Type.Array(Type.String())),

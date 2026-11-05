@@ -58,9 +58,12 @@ import { sendTestEmail, TestEmailError } from "./test-email.service";
 import { AppError, isRelayProviderId, safeErrorMessage } from "@repo/core";
 import { handleApiError, requestTag } from "../../../middleware/error-handler";
 import {
+  banFail2banIp,
   getComponentLogs,
+  getFail2banStatus,
   restartAllComponents,
   runComponentAction,
+  unbanFail2banIp,
   UnknownComponentError,
   type ComponentAction,
 } from "./components.service";
@@ -920,6 +923,69 @@ export async function getComponentLogsHandler(c: Context) {
     if (err instanceof UnknownComponentError) {
       return c.json({ error: err.message }, 400);
     }
+    return errorJson(c, err);
+  }
+}
+
+export async function getFail2banStatusHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "read" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const jail = c.req.query("jail");
+  try {
+    const result = await getFail2banStatus(serverId, jail);
+    return c.json(result);
+  } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
+    return errorJson(c, err);
+  }
+}
+
+export async function banFail2banIpHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const body = await c.req.json<{ ip: string; jail?: string }>().catch(() => null);
+  if (!body || !body.ip) {
+    return c.json({ error: "ip is required" }, 400);
+  }
+  try {
+    const result = await banFail2banIp(serverId, body.ip, body.jail);
+    return c.json(result);
+  } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
+    return errorJson(c, err);
+  }
+}
+
+export async function unbanFail2banIpHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const body = await c.req.json<{ ip: string; jail?: string }>().catch(() => null);
+  if (!body || !body.ip) {
+    return c.json({ error: "ip is required" }, 400);
+  }
+  try {
+    const result = await unbanFail2banIp(serverId, body.ip, body.jail);
+    return c.json(result);
+  } catch (err) {
+    observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
   }
 }

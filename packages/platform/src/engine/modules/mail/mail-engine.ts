@@ -786,6 +786,23 @@ export function mailUnitActionCommand(
 }
 
 /**
+ * Build fail2ban-client command for inspecting or mutating banned IPs.
+ */
+export function mailFail2banStatusCommand(flavor: MailEngineFlavor, jail?: string): string {
+  const subcmd = jail ? `status ${sq(jail)}` : "status";
+  return mailEngineCommand(flavor, `fail2ban-client ${subcmd}`);
+}
+
+export function mailFail2banBanCommand(flavor: MailEngineFlavor, ip: string, jail = "postfix"): string {
+  return mailEngineCommand(flavor, `fail2ban-client set ${sq(jail)} banip ${sq(ip)}`);
+}
+
+export function mailFail2banUnbanCommand(flavor: MailEngineFlavor, ip: string, jail?: string): string {
+  const subcmd = jail ? `set ${sq(jail)} unbanip ${sq(ip)}` : `unban ${sq(ip)}`;
+  return mailEngineCommand(flavor, `fail2ban-client ${subcmd}`);
+}
+
+/**
  * The outbound queue, as `postqueue -p` prints it.
  *
  * Only `postqueue` itself has to run inside the engine — the pipeline is the OUTER

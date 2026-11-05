@@ -22,8 +22,11 @@ vi.mock("@repo/platform/engine/modules/mail/mail-engine", async (importOriginal)
 }));
 
 import {
+  banFail2banIp,
   getComponentLogs,
+  getFail2banStatus,
   runComponentAction,
+  unbanFail2banIp,
   MailComponentActionError,
 } from "../../../src/modules/mail/admin/components.service";
 
@@ -138,5 +141,35 @@ describe("runComponentAction", () => {
     const res = await act("srv_1", "iredapd", "restart");
 
     expect(res.settled?.status).toBe("missing");
+  });
+});
+
+describe("fail2ban operations", () => {
+  it("parses overall status and individual jail stats", async () => {
+    replies(
+      "Status\n|- Number of jail:\t2\n`- Jail list:\tdovecot, postfix\n",
+      "Status for the jail: dovecot\n|- Filter\n|  |- Currently failed:\t0\n|  |- Total failed:\t1\n`- Actions\n   |- Currently banned:\t0\n   |- Total banned:\t0\n   `- Banned IP list:\t\n",
+      "Status for the jail: postfix\n|- Filter\n|  |- Currently failed:\t2\n|  |- Total failed:\t10\n`- Actions\n   |- Currently banned:\t1\n   |- Total banned:\t3\n   `- Banned IP list:\t89.168.41.226\n",
+    );
+
+    const res = await getFail2banStatus("srv_1");
+    expect(res.jails).toEqual(["dovecot", "postfix"]);
+    expect(res.details?.postfix.currentlyBanned).toBe(1);
+    expect(res.details?.postfix.bannedIps).toEqual(["89.168.41.226"]);
+    expect(res.details?.dovecot.currentlyBanned).toBe(0);
+  });
+
+  it("executes banip command on specified or default jail", async () => {
+    replies("1");
+    const res = await banFail2banIp("srv_1", "1.2.3.4", "postfix");
+    expect(res.success).toBe(true);
+    expect(res.output).toBe("1");
+  });
+
+  it("executes unbanip command across all jails or in specific jail", async () => {
+    replies("1");
+    const res = await unbanFail2banIp("srv_1", "89.168.41.226");
+    expect(res.success).toBe(true);
+    expect(res.output).toBe("1");
   });
 });

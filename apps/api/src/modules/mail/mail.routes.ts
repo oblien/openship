@@ -236,6 +236,23 @@ r.get(
   admin.getComponentLogsHandler,
 );
 
+/* ── Admin panel - security / fail2ban ────────────────────────────── */
+r.get(
+  "/admin/:serverId/fail2ban/status",
+  { tag: "mail_server:read", mcp: { description: "Read fail2ban jail status and currently banned IP addresses on this mail server." } },
+  admin.getFail2banStatusHandler,
+);
+r.post(
+  "/admin/:serverId/fail2ban/ban",
+  { tag: "mail_server:admin", mcp: { description: "Ban an IP address in fail2ban on this mail server. Defaults to postfix jail." }, body: MailRequestSchemas.fail2banBan },
+  admin.banFail2banIpHandler,
+);
+r.post(
+  "/admin/:serverId/fail2ban/unban",
+  { tag: "mail_server:admin", mcp: { description: "Unban a previously banned IP address in fail2ban across all jails or in a specific jail on this mail server." }, body: MailRequestSchemas.fail2banUnban },
+  admin.unbanFail2banIpHandler,
+);
+
 /* ── Webmail deploy (creates a standard project + deployment) ─────── */
 r.get(
   "/webmail/targets",
