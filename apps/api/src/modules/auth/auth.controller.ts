@@ -27,7 +27,8 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { auth, isSaasDeployment } from "@repo/platform/engine/lib/auth";
-import { repos } from "@repo/db";
+import { and, db, desc, eq, gt, ne, repos, schema } from "@repo/db";
+import type { LocalUser } from "../../lib/local-user";
 import {
   invitationAccountCreationMode,
   resolveInvitationClaim,
@@ -94,6 +95,35 @@ export async function invitationPreview(c: Context) {
 }
 
 /**
+ * #1612 — pick the identity for the zero-auth bootstrap below. That path mints
+ * a session when the browser has no session cookie (e.g. an auto-update wiped
+ * the cookie store). If this installation already has other users with
+ * unexpired sessions, the operator was signed in as one of them: keep that
+ * identity instead of silently switching to the Local User. Otherwise fall
+ * back to the Local User exactly as before.
+ */
+async function resolveBootstrapUser(localUser: LocalUser, localEmail: string): Promise<LocalUser> {
+  const [recent] = await db
+    .select({ userId: schema.session.userId })
+    .from(schema.session)
+    .innerJoin(schema.user, eq(schema.session.userId, schema.user.id))
+    .where(and(gt(schema.session.expiresAt, new Date()), ne(schema.user.email, localEmail)))
+    .orderBy(desc(schema.session.createdAt))
+    .limit(1);
+  if (!recent) return localUser;
+  const row = await repos.user.findById(recent.userId);
+  if (!row) return localUser;
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    emailVerified: row.emailVerified,
+    role: row.role,
+    autoProvisioned: row.autoProvisioned,
+  };
+}
+
+/**
  * GET /api/auth/get-session
  *
  * Try a real Better Auth session first. On miss in zero-auth desktop
@@ -129,9 +159,11 @@ export async function getSession(c: Context) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const { ensureLocalUser } = await import("../../lib/local-user");
+  const { ensureLocalUser, LOCAL_EMAIL } = await import("../../lib/local-user");
   const { mintSession } = await import("../../lib/cloud-auth-proxy");
-  const user = await ensureLocalUser();
+  // #1612: the cookie is gone but the operator's other sessions may still be
+  // valid — keep that identity instead of silently becoming the Local User.
+  const user = await resolveBootstrapUser(await ensureLocalUser(), LOCAL_EMAIL);
   const session = await mintSession({
     purpose: "local-cookie",
     userId: user.id,
