@@ -1,6 +1,6 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { execFile } from "node:child_process";
-import { shellQuote, assertLocalHostExecutionAllowed } from "@repo/core";
+import { shellQuote } from "@repo/core";
 import { basename } from "node:path";
 
 import type { LogEntry } from "../types";
@@ -79,7 +79,8 @@ async function execFileText(
 }
 
 export async function hasLocalCommand(command: string): Promise<boolean> {
-  assertLocalHostExecutionAllowed();
+  // SSH transports also need this lookup in Cloud. The name is data, and the
+  // probe never invokes the executable it finds.
   try {
     await execFileText(
       "sh",

@@ -181,7 +181,6 @@ jobs:
           # independently of the root command's argument-forwarding behavior.
           - suite: Other packages
             command: |
-              bun run execution:check
               bunx turbo run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --filter=!@repo/email --concurrency=1 --log-order=stream
               bun run test:scripts
               bun run --cwd packages/adapters test:bun

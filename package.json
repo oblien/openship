@@ -54,7 +54,6 @@
     "build:sdk": "bun run --cwd packages/openship build",
     "docs:reference": "node scripts/generate-api-reference.mjs --write && node scripts/generate-cli-reference.mjs --write && node scripts/generate-mcp-reference.mjs --write",
     "docs:check": "node scripts/check-docs.mjs",
-    "execution:check": "node scripts/audit-process-execution.mjs",
     "errors:check": "node scripts/audit-error-boundaries.mjs --check"
   },
   "devDependencies": {

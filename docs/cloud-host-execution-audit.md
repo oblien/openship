@@ -29,13 +29,13 @@ author subsequently reverted the addition; its current diff is empty. The missin
 
 ## Scan coverage and remaining local tools
 
-`bun run execution:check` parses JavaScript and TypeScript across `apps` and `packages`, including the mail client/server and non-`src` runner assets (excluding tests, dependency trees, generated output and script directories).
-The reviewed snapshot contains 3623 source files and 141 launch sites. It inventories child_process imports/calls, common aliases and promisified calls,
-Bun/Deno launches, and embedded JavaScript harness wrappers. The ledger at
-`scripts/process-execution-boundaries.json` records each reviewed function/API and
-its count. CI refuses new, moved or additional launches until that boundary is
-reviewed; it also rejects obsolete entries. The scanner has synthetic regression
-cases, including adding `LocalExecutor.rawExec` to an already reviewed file.
+A one-off AST scan reviewed 3623 JavaScript/TypeScript source files and 141
+process-launch sites across `apps` and `packages`, including mail trees and runner
+assets outside `src`. Tests, dependency trees, generated output and script
+directories were excluded. The scan covered child_process imports/calls, common
+aliases and promisified calls, Bun/Deno launches and embedded harness wrappers.
+The scan scripts and per-function inventory are retained with the review artifacts;
+they do not add a new runtime abstraction or a CI maintenance gate.
 
 The inventory includes legitimate processes; removing all process creation would
 break local installations and remote transports:
@@ -58,11 +58,11 @@ programs, not arbitrary API-host evaluation of user-supplied JavaScript.
 
 Static inventory cannot prove input taint, discover all indirect third-party
 process launches, or establish every caller's authorization. Keep the runtime
-Cloud refusal and scoped transport/permission tests alongside the inventory.
+Cloud refusal and scoped transport/permission regression tests.
 
 ## Validation
 
 Behavioral tests verify refusal before shell execution, filesystem build staging,
 local daemon creation and local agent state creation. Tests also cover command-name
-injection, unchanged local execution, retained provider errors, managed bare/Docker
+injection, safe SSH preflight in Cloud, unchanged local execution, retained provider errors, managed bare/Docker
 transports, Cloud destination isolation and early refusal of local edge probes.

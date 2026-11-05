@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { LocalExecutor } from "./local-executor";
 import { hasLocalCommand, sq } from "./local-shell";
 import { createExecutor } from "./executor";
@@ -10,6 +10,7 @@ import { resolveDockerTransport } from "../runtime/docker-transport";
 import { runLocalBuild } from "../runtime/local-build";
 import { CloudWorkspaceExecutor } from "../runtime/cloud/workspace-executor";
 import { NginxProvider } from "../infra/nginx";
+import { canUseRemoteRsync } from "./remote-transfer";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -38,7 +39,6 @@ describe("Cloud cannot execute on the API host", () => {
         () => executor.streamExec(command, onLog),
         () => executor.streamExec(command, onLog, { signal: AbortSignal.abort() }),
         () => executor.transferIn!("/does-not-exist", path),
-        () => hasLocalCommand(`sh; ${command}`),
       ]) {
         await expect(operation()).rejects.toMatchObject({
           statusCode: 403,
@@ -120,12 +120,36 @@ describe("self-hosted and Desktop keep their explicit local transport", () => {
     ).toBe(0);
     expect(logs.join("")).toBe("streamed-ok");
   });
+});
 
-  it("treats a command-probe argument as data instead of shell source", async () => {
-    vi.stubEnv("CLOUD_MODE", "false");
+describe("safe local transport probes", () => {
+  it.each(["false", "true", "1"])(
+    "treats probe arguments as data with CLOUD_MODE=%s",
+    async (mode) => {
+      vi.stubEnv("CLOUD_MODE", mode);
+      const { path, command } = await marker();
+      expect(await hasLocalCommand(`sh; ${command}`)).toBe(false);
+      await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await hasLocalCommand("sh")).toBe(true);
+    },
+  );
+
+  it.each(["true", "1"])("preserves SSH transfer preflight with CLOUD_MODE=%s", async (mode) => {
+    vi.stubEnv("CLOUD_MODE", mode);
     const { path, command } = await marker();
-    expect(await hasLocalCommand(`sh; ${command}`)).toBe(false);
+    const binDir = dirname(path);
+    for (const name of ["rsync", "ssh", "sshpass"]) {
+      await writeFile(join(binDir, name), `#!/bin/sh\n${command}\n`, { mode: 0o700 });
+    }
+    vi.stubEnv("PATH", `${binDir}:/usr/bin:/bin`);
+    const hasRemoteCommand = vi.fn().mockResolvedValue(true);
+    await expect(
+      canUseRemoteRsync({
+        config: { host: "fixture.invalid", username: "fixture", password: "fixture" },
+        hasRemoteCommand,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(hasRemoteCommand).toHaveBeenCalledWith("rsync");
     await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await hasLocalCommand("sh")).toBe(true);
   });
 });
