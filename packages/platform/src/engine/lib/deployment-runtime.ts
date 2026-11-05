@@ -854,20 +854,6 @@ export function hostChannelDeployNotice(executor?: CommandExecutor | null): stri
 }
 
 /**
- * Whether this executor is one we demoted because the box has no usable host
- * channel (#509). Callers that must NOT treat an unreadable host as a hard
- * failure — the loopback-port preflights, which read the strict edge inventory
- * through the host executor — use this to degrade the same way `allocateHostPort`
- * already does for live occupancy: proceed on durable claims alone, and let a
- * real conflict fail loudly at the Docker bind instead (#1625).
- */
-export function isHostChannelUnavailableExecutor(
-  executor?: CommandExecutor | null,
-): boolean {
-  return !!executor && hostChannelRefusals.has(executor);
-}
-
-/**
  * This box's host executor, with "this box has no host channel" demoted from a
  * resolve-time throw to a use-time one.
  *

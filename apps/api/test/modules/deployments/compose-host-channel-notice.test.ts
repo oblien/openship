@@ -2299,36 +2299,46 @@ describe("compose deploy — host channel unavailable", () => {
     }
   });
 
-  it("does not fail the loopback-port preflight when the host channel is unavailable (#1625)", async () => {
-    // A raw compose install with no host channel promises ordinary deploys keep
-    // working over the socket — but the loopback-port preflight read the strict
-    // edge inventory through the demoted host executor, so every deploy died on
-    // "Cannot read Openship edge routes" after the image build. The preflight
-    // must get an inventory it can read: an empty one, so allocation rests on
-    // durable claims alone like the unscanned live-port pick.
-    vi.stubEnv("OPENSHIP_HOST_CONTROL", "false");
-    const executor = await demotedExecutor();
-    const f = imageRefreshFixture();
-    // A port-only publish makes the preflight run: without it the deploy
-    // allocates nothing and never touches the edge inventory.
-    h.services[1]!.ports = ["8080"];
-
-    const result = await f.run(
-      { executor, hostPortTarget: localHostPortTarget },
-      "manual",
-      { routeStrategy: "loopback-port" },
-    );
-
-    expect(result.status).toBe("ready");
-    expect(h.prepareTargetPinnedHostPorts).toHaveBeenCalled();
-    const [input] = h.prepareTargetPinnedHostPorts.mock.calls[0]!;
-    const edgeProxy = (
-      input as {
-        edgeProxy: { listLoopbackUpstreamPortsStrict: () => Promise<Set<number>> };
+  it.each([false, true])(
+    "uses real edge inventory with an unavailable host channel (read failure: %s)",
+    async (unreadable) => {
+      vi.stubEnv("OPENSHIP_HOST_CONTROL", "false");
+      const executor = await demotedExecutor();
+      const f = imageRefreshFixture();
+      h.services[1]!.ports = ["8080"];
+      h.services[1]!.updatedAt = new Date(2000);
+      const read = vi.fn(async () => {
+        if (unreadable) throw new Error("socket edge unreadable");
+        return new Set([20000]);
+      });
+      h.prepareTargetPinnedHostPorts.mockImplementation(async ({ edgeProxy }) => {
+        await edgeProxy.listLoopbackUpstreamPortsStrict();
+        return [];
+      });
+      const run = () =>
+        f.run(
+          {
+            executor,
+            hostPortTarget: localHostPortTarget,
+            routing: {
+              registerRoute: vi.fn(),
+              removeRoute: vi.fn(),
+              listLoopbackUpstreamPortsStrict: read,
+            },
+          },
+          "manual",
+          { routeStrategy: "loopback-port" },
+        );
+      if (unreadable) {
+        await expect(run()).rejects.toThrow("socket edge unreadable");
+        expect(f.activate).not.toHaveBeenCalled();
+        expect(h.allocateAndReservePinnedHostPort).not.toHaveBeenCalled();
+      } else {
+        expect((await run()).status).toBe("ready");
       }
-    ).edgeProxy;
-    await expect(edgeProxy.listLoopbackUpstreamPortsStrict()).resolves.toEqual(new Set());
-  });
+      expect(read).toHaveBeenCalled();
+    },
+  );
 
   it("stays quiet when the channel is fine", async () => {
     // Nothing was demoted, so there is nothing to report — a notice here would be a

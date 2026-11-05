@@ -22,6 +22,9 @@ import type { RouteProtection } from "./route-protection";
 export type ProjectRouteCleanupResult = "removed" | "absent" | "foreign";
 
 export interface RoutingProvider {
+  /** Full loopback upstream inventory from this edge's own connection.
+   * Unreadable or ambiguous configuration must reject, never return an empty set. */
+  listLoopbackUpstreamPortsStrict?(opts?: { refresh?: boolean }): Promise<Set<number>>;
   /** Validated atomic update of an already-published hostname; false means no route yet. */
   setRouteProtection?(
     domain: string,

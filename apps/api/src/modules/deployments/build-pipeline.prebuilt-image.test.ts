@@ -154,6 +154,7 @@ vi.mock("@repo/adapters", () => {
     allocateHostPort: vi.fn(async () => ({ port: 30_000, scanned: true })),
     pickHostPort: vi.fn(() => 30_000),
     edgeProxyFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
+    loopbackPortInventoryFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
     isHostChannelUnavailableError: vi.fn(() => false),
     runDeployPipeline: (...args: unknown[]) => mocks.runDeployPipeline(...args),
     isMultiServiceRuntime: vi.fn(() => false),
@@ -172,7 +173,6 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentPlatform: vi.fn(),
   resolveEffectiveTarget: vi.fn(() => "local"),
   hostChannelDeployNotice: vi.fn(() => null),
-  isHostChannelUnavailableExecutor: vi.fn(() => false),
 }));
 
 vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
