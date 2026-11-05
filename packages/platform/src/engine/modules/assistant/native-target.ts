@@ -1,3 +1,4 @@
+import { assertLocalHostExecutionAllowed } from "@repo/core";
 import { mkdir, chmod, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -38,6 +39,7 @@ export async function createAssistantClient(
   authSource: NativeAuthSource | "host" | "private" = "host",
   purpose: "assistant" | "chat-apps" = "assistant",
 ): Promise<AssistantNativeClient> {
+  assertLocalHostExecutionAllowed();
   const system = process.platform,
     arch = process.arch;
   if ((system !== "darwin" && system !== "linux") || (arch !== "arm64" && arch !== "x64"))
