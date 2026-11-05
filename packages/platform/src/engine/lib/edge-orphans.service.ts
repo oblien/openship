@@ -56,6 +56,7 @@ export interface EdgeOrphanScan {
  * Remote-server callers must keep using `edgeProxy`, which probes their executor.
  */
 async function localEdgeProxy() {
+  if (env.CLOUD_MODE) return null;
   const { edgeProxy, edgeProxyFor, createExecutor } = await import("@repo/adapters");
   const executor = createExecutor();
   if (process.env.OPENSHIP_EDGE_MODE === "docker") {
