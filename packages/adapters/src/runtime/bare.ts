@@ -35,7 +35,19 @@ import type {
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
 import { ensureOwnedDir } from "../system/elevated-executor";
 import { execReliable } from "../system/remote-journal";
-import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, nodeBinPathExport, withTimeout, type StackId, type StackDefinition } from "@repo/core";
+import {
+  assertLocalHostExecutionAllowed,
+  STACKS,
+  appVolumeTargets,
+  buildOutputTransferExcludes,
+  safeErrorMessage,
+  missingOutputDirectoryMessage,
+  packageManagerEnsureCommand,
+  nodeBinPathExport,
+  withTimeout,
+  type StackId,
+  type StackDefinition,
+} from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type {
   RuntimeAdapter,
@@ -193,6 +205,7 @@ export class BareRuntime implements RuntimeAdapter {
       this.executor = opts.executor;
       this.ownsExecutor = false;
     } else {
+      assertLocalHostExecutionAllowed();
       this.executor = new LocalExecutor();
       this.ownsExecutor = true;
     }
