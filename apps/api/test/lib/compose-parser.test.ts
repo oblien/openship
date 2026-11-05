@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeEnvFile } from "@repo/core";
+import { resolveComposeCommandTemplate, serializeEnvFile } from "@repo/core";
 import { toDockerHealthcheck, toStopConfig } from "../../../../packages/adapters/src/runtime/docker";
 import {
   blockingComposeFields,
@@ -742,6 +742,103 @@ services:
       "--port",
       "3000",
     ]);
+  });
+
+  it("keeps a command template when a variable is missing so deploy can re-resolve it (#1613)", () => {
+    const parsed = parseComposeFile(`
+services:
+  redis:
+    image: redis:7
+    command: redis-server --requirepass \${REDIS_PASSWORD}
+`);
+    // The bug: the stored command resolved to empty and the expression was
+    // lost, so adding REDIS_PASSWORD later could never fix the crash-loop.
+    expect(parsed.services[0]?.command).toBe("redis-server --requirepass ");
+    expect(parsed.services[0]?.commandArgv).toEqual(["redis-server", "--requirepass"]);
+    expect(parsed.services[0]?.advanced?.commandTemplate).toEqual({
+      expression: "redis-server --requirepass ${REDIS_PASSWORD}",
+      unresolvedVariables: ["REDIS_PASSWORD"],
+      sourceValue: "redis-server --requirepass ",
+    });
+  });
+
+  it("keeps a list command template with one expression per argv element (#1613)", () => {
+    const parsed = parseComposeFile(`
+services:
+  redis:
+    image: redis:7
+    command: ["redis-server", "--requirepass", "\${REDIS_PASSWORD}"]
+`);
+    expect(parsed.services[0]?.command).toBe("redis-server --requirepass ");
+    expect(parsed.services[0]?.commandArgv).toEqual(["redis-server", "--requirepass", ""]);
+    expect(parsed.services[0]?.advanced?.commandTemplate).toEqual({
+      expression: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"],
+      unresolvedVariables: ["REDIS_PASSWORD"],
+      // sourceValue is the display string (what the row stores in `command`),
+      // so the drift merge can compare it directly.
+      sourceValue: "redis-server --requirepass ",
+    });
+  });
+
+  it("keeps a command template even when every variable resolves (#1613)", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  redis:
+    image: redis:7
+    command: redis-server --requirepass \${REDIS_PASSWORD}
+`,
+      { envFileContent: "REDIS_PASSWORD=s3cret\n" },
+    );
+    expect(parsed.services[0]?.command).toBe("redis-server --requirepass s3cret");
+    expect(parsed.services[0]?.advanced?.commandTemplate).toEqual({
+      expression: "redis-server --requirepass ${REDIS_PASSWORD}",
+      unresolvedVariables: [],
+      sourceValue: "redis-server --requirepass s3cret",
+    });
+  });
+
+  it("no command template when the command has no interpolation (#1613)", () => {
+    const parsed = parseComposeFile(`
+services:
+  worker:
+    image: node:22
+    command: node worker.js --concurrency 4
+`);
+    expect(parsed.services[0]?.command).toBe("node worker.js --concurrency 4");
+    expect(parsed.services[0]?.advanced?.commandTemplate).toBeUndefined();
+  });
+
+  it("resolveComposeCommandTemplate re-evaluates a stored template against new env (#1613)", () => {
+    expect(
+      resolveComposeCommandTemplate(
+        { expression: "redis-server --requirepass ${REDIS_PASSWORD}" },
+        { REDIS_PASSWORD: "s3cret" },
+      ),
+    ).toEqual({
+      command: "redis-server --requirepass s3cret",
+      commandArgv: ["redis-server", "--requirepass", "s3cret"],
+    });
+    // List form interpolates each element in place, so quoting survives.
+    expect(
+      resolveComposeCommandTemplate(
+        { expression: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"] },
+        { REDIS_PASSWORD: "s3cret" },
+      ),
+    ).toEqual({
+      command: "redis-server --requirepass s3cret",
+      commandArgv: ["redis-server", "--requirepass", "s3cret"],
+    });
+    // A variable still unresolved resolves to empty, as at import time.
+    expect(
+      resolveComposeCommandTemplate(
+        { expression: "redis-server --requirepass ${REDIS_PASSWORD}" },
+        {},
+      ),
+    ).toEqual({
+      command: "redis-server --requirepass ",
+      commandArgv: ["redis-server", "--requirepass"],
+    });
   });
 
   it("empty list command → [] (clears image CMD) (#332)", () => {

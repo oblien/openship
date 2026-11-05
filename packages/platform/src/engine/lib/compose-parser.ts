@@ -207,6 +207,16 @@ export function parseComposeFile(
             sourceValue: sourceImage!.value,
           }
         : undefined;
+    // #1613: the command template is the raw expression plus the value the
+    // compose-adjacent .env alone produced, mirroring the image template
+    // above. Deploy re-evaluates it against the final env.
+    const parsedCommand = parseCommand(svc.command, interpolationEnv);
+    const commandTemplate = parsedCommand.template
+      ? {
+          ...parsedCommand.template,
+          sourceValue: parseCommand(svc.command, sourceInterpolationEnv).command,
+        }
+      : undefined;
     const parsedAdvanced = parseAdvanced(svc, interpolationEnv, name, unsupported);
     // An empty marker is meaningful: it says this BUILD declaration came from a
     // provenance-aware parser. Stamp it even when the current `build:` block has
@@ -216,10 +226,15 @@ export function parseComposeFile(
     const hasEnvironmentDeclaration = Object.hasOwn(svc, "environment");
     const hasBuildDeclaration = Object.hasOwn(svc, "build");
     const advanced: ComposeAdvanced | undefined =
-      parsedAdvanced || imageTemplate || hasEnvironmentDeclaration || hasBuildDeclaration
+      parsedAdvanced ||
+      imageTemplate ||
+      commandTemplate ||
+      hasEnvironmentDeclaration ||
+      hasBuildDeclaration
         ? {
             ...(parsedAdvanced ?? {}),
             ...(imageTemplate && { imageTemplate }),
+            ...(commandTemplate && { commandTemplate }),
             ...(hasEnvironmentDeclaration && {
               environmentTemplateKeys: Object.keys(environment.templates),
             }),
@@ -246,7 +261,8 @@ export function parseComposeFile(
         environmentMeta: environment.metadata,
       }),
       volumes: parseVolumes(svc.volumes, interpolationEnv),
-      ...parseCommand(svc.command, interpolationEnv),
+      command: parsedCommand.command,
+      commandArgv: parsedCommand.commandArgv,
       restart:
         typeof svc.restart === "string"
           ? interpolateComposeString(svc.restart, interpolationEnv)
@@ -514,18 +530,46 @@ function parseVolumes(vols: unknown, env: Record<string, string>): string[] {
  * docker-compose semantics: list → argv verbatim; string → shell-word-split into
  * argv (NO implicit `sh -c` — a shell needs an explicit `sh -c`); absent → no
  * override. The `command` string is kept for display / legacy compatibility.
+ *
+ * When the command carries interpolation, the raw expression is also kept as a
+ * template (#1613): the resolved value is only the scan-time one, and deploy
+ * re-evaluates the expression against the final env instead of freezing it.
  */
 function parseCommand(
   command: unknown,
   env: Record<string, string>,
-): { command?: string; commandArgv?: string[] | null } {
+): {
+  command?: string;
+  commandArgv?: string[] | null;
+  template?: { expression: string | string[]; unresolvedVariables: string[] };
+} {
   if (typeof command === "string") {
-    const interpolated = interpolateComposeString(command, env);
-    return { command: interpolated, commandArgv: commandToArgv(interpolated) };
+    const resolution = resolveComposeInterpolation(command, env);
+    return {
+      command: resolution.value,
+      commandArgv: commandToArgv(resolution.value),
+      ...(hasComposeInterpolation(command) && {
+        template: {
+          expression: command,
+          unresolvedVariables: resolution.unresolvedVariables,
+        },
+      }),
+    };
   }
   if (Array.isArray(command)) {
-    const argv = command.map((part) => interpolateComposeString(String(part), env));
-    return { command: argv.join(" "), commandArgv: argv };
+    const parts = command.map((part) => String(part));
+    const resolutions = parts.map((part) => resolveComposeInterpolation(part, env));
+    const argv = resolutions.map((resolution) => resolution.value);
+    return {
+      command: argv.join(" "),
+      commandArgv: argv,
+      ...(parts.some((part) => hasComposeInterpolation(part)) && {
+        template: {
+          expression: parts,
+          unresolvedVariables: [...new Set(resolutions.flatMap((r) => r.unresolvedVariables))],
+        },
+      }),
+    };
   }
   return {};
 }

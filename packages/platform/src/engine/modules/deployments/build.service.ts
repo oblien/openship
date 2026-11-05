@@ -730,6 +730,42 @@ function withComposeImageSource(
   };
 }
 
+/**
+ * Copy a compose `command:` template (#1613) the same way, without touching
+ * the command itself: the template describes the stored command, so a caller
+ * that changed the command keeps its literal value and loses the stale
+ * expression. A list-form expression is copied element by element.
+ */
+function withComposeCommandSource(
+  service: DeployableService,
+  source: Pick<DeployableService, "command" | "commandArgv" | "advanced">,
+): DeployableService {
+  const advanced = { ...(service.advanced ?? {}) };
+  const commandTemplate = source.advanced?.commandTemplate;
+  if (commandTemplate) {
+    // Copy the expression and unresolved-variable array too: this becomes
+    // release metadata and must not share mutable request/session state.
+    advanced.commandTemplate = {
+      expression: Array.isArray(commandTemplate.expression)
+        ? [...commandTemplate.expression]
+        : commandTemplate.expression,
+      unresolvedVariables: [...commandTemplate.unresolvedVariables],
+      ...(commandTemplate.sourceValue !== undefined && {
+        sourceValue: commandTemplate.sourceValue,
+      }),
+    };
+  } else {
+    delete advanced.commandTemplate;
+  }
+
+  return {
+    ...service,
+    command: source.command,
+    commandArgv: source.commandArgv,
+    ...(Object.keys(advanced).length > 0 ? { advanced } : { advanced: undefined }),
+  };
+}
+
 /** Copy the source-owned Docker build arguments and their interpolation marker
  * without replacing unrelated advanced settings edited in the wizard. */
 function withComposeBuildArgsSource(
@@ -776,7 +812,20 @@ function mergeCanonicalComposeBuildSource(
   return requested.map((service) => {
     if (serviceKind(service) !== "compose") return service;
     const source = byName.get(service.name);
-    return source ? withComposeBuildSource(service, source) : service;
+    if (!source) return service;
+    const withBuild = withComposeBuildSource(service, source);
+    // #1613: the canonical command template is re-attached only when the
+    // request did not edit the command — a wizard runtime edit is literal
+    // input, and the file's expression must not reinterpret it.
+    const commandUnchanged =
+      service.command === source.command &&
+      JSON.stringify(service.commandArgv ?? null) === JSON.stringify(source.commandArgv ?? null);
+    return withComposeCommandSource(
+      withBuild,
+      commandUnchanged
+        ? source
+        : { command: service.command, commandArgv: service.commandArgv, advanced: undefined },
+    );
   });
 }
 
@@ -801,15 +850,30 @@ function mergeRefreshedFolderBuildSource(
     if (!refreshed) return service;
 
     const initial = initialByName.get(service.name);
+    // #1613: same rule as the image above, for the command — an operator edit
+    // after the initial scan is literal input, and the scan's expression must
+    // not reinterpret it. Otherwise the refreshed template (fresh diagnostics)
+    // replaces whatever the service carried.
+    const commandEditedAfterScan =
+      initial !== undefined &&
+      (service.command !== initial.command ||
+        JSON.stringify(service.commandArgv ?? null) !==
+          JSON.stringify(initial.commandArgv ?? null));
+    const commandSource = commandEditedAfterScan
+      ? { command: service.command, commandArgv: service.commandArgv, advanced: undefined }
+      : refreshed;
     if (initial && service.image !== initial.image) {
       // The image changed after scan, so it is operator-owned literal input.
       // Never leave the scan's expression attached to reinterpret that edit.
-      return withComposeBuildArgsSource(
-        withComposeImageSource(service, { image: service.image, advanced: undefined }),
-        refreshed,
+      return withComposeCommandSource(
+        withComposeBuildArgsSource(
+          withComposeImageSource(service, { image: service.image, advanced: undefined }),
+          refreshed,
+        ),
+        commandSource,
       );
     }
-    return withComposeBuildSource(service, refreshed);
+    return withComposeCommandSource(withComposeBuildSource(service, refreshed), commandSource);
   });
 }
 
@@ -1812,12 +1876,16 @@ export async function requestBuildAccess(
   // The uploaded folder's compose file is the only description a new folder
   // deploy has of its service set. Adopt the refreshed scan when neither the
   // request nor the canonical table has rows yet.
-  // `imageTemplate` is parser provenance, never client authority. Strip any
-  // copy supplied on the wire; the canonical repo row / server-side upload scan
-  // below is the only producer allowed to attach it again.
+  // `imageTemplate` and `commandTemplate` (#1613) are parser provenance, never
+  // client authority. Strip any copy supplied on the wire; the canonical repo
+  // row / server-side upload scan below is the only producer allowed to
+  // attach them again.
   let effectiveServices: DeployableService[] | undefined = services?.map((service) =>
     serviceKind(service) === "compose"
-      ? withComposeImageSource(service, { image: service.image, advanced: undefined })
+      ? withComposeCommandSource(
+          withComposeImageSource(service, { image: service.image, advanced: undefined }),
+          { command: service.command, commandArgv: service.commandArgv, advanced: undefined },
+        )
       : service,
   );
   if (
