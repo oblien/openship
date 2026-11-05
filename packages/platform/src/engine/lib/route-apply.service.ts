@@ -111,6 +111,8 @@ export interface RouteRegister {
   /** vercel.json `cleanUrls` / `trailingSlash`. Honoured for a `staticRoot` route only
    *  (registerRoute enforces that) — a proxied app's framework owns its URL shape. */
   cleanUrls?: boolean;
+  /** Missing static paths serve index.html unless explicitly disabled. */
+  spaFallback?: boolean;
   trailingSlash?: boolean;
   /**
    * Canonical redirect to another host instead of serving (see
@@ -382,6 +384,7 @@ export async function reconcileProjectRoutes(
             ...(r.redirects?.length ? { redirects: r.redirects } : {}),
             ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
             ...(r.cleanUrls ? { cleanUrls: true } : {}),
+            ...(r.spaFallback === undefined ? {} : { spaFallback: r.spaFallback }),
             ...(r.trailingSlash === undefined ? {} : { trailingSlash: r.trailingSlash }),
             ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
           });

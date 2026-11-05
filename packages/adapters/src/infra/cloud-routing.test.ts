@@ -68,3 +68,10 @@ describe("project routes on a managed server", () => {
     expect(h.workspace.network.update).toHaveBeenCalledWith({ ingress_ports: [22, 443, 8080, 3000] });
   });
 });
+
+
+it.each([true, false])("publishes the static SPA policy through the existing owned Page: %s", async (spaFallback) => {
+  await h.infra.registerRoute({ domain: route.domain, tls: true,
+    staticRoot: `${h.scope.staticReleaseRoot}/release-one`, spaFallback });
+  expect(h.routes.set).toHaveBeenLastCalledWith(route.domain, { routes: [], static: { page: "app" }, spa: spaFallback });
+});

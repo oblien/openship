@@ -90,6 +90,8 @@ export interface RouteRegistrationOptions {
   redirects?: RouteRedirect[];
   headerRules?: RouteHeaderRule[];
   cleanUrls?: boolean;
+  /** Missing static paths serve index.html unless explicitly disabled. */
+  spaFallback?: boolean;
   trailingSlash?: boolean;
 }
 
@@ -210,6 +212,7 @@ export async function registerResolvedRoutes(
     if (options?.redirects?.length) routeConfig.redirects = options.redirects;
     if (options?.headerRules?.length) routeConfig.headerRules = options.headerRules;
     if (options?.cleanUrls) routeConfig.cleanUrls = true;
+    if (options?.spaFallback !== undefined) routeConfig.spaFallback = options.spaFallback;
     if (options?.trailingSlash !== undefined) routeConfig.trailingSlash = options.trailingSlash;
 
     // Add webhook proxy location if this domain is the project's webhook domain

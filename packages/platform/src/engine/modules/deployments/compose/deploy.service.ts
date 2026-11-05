@@ -4642,6 +4642,7 @@ async function deployComposeServicesCore(
           ...(r.redirects?.length ? { redirects: r.redirects } : {}),
           ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
           ...(r.cleanUrls ? { cleanUrls: true } : {}),
+          ...(r.spaFallback === undefined ? {} : { spaFallback: r.spaFallback }),
           ...(r.trailingSlash === undefined ? {} : { trailingSlash: r.trailingSlash }),
           ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
         });

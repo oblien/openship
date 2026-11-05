@@ -1,6 +1,7 @@
 import type { BuildConfig, ResourceConfig } from "@repo/adapters";
 import type { Deployment, Project } from "@repo/db";
 import { env } from "../../config/env";
+import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import type { BuildStrategy } from "@repo/core";
 import { AppError } from "@repo/core";
 import { getFolderSession } from "../projects/folder/session-store";
@@ -106,6 +107,7 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     productionPaths: snapshot.productionPaths,
     rootDirectory: snapshot.rootDirectory,
     hasServer: snapshot.hasServer,
+    spaFallback: compileProjectRoutingFields(project.routingConfig).spaFallback,
     envVars,
     resources,
     gitToken,

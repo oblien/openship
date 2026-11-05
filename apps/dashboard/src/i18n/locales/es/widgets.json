@@ -396,6 +396,8 @@
       "headersHint": "Cabeceras de respuesta añadidas para las rutas coincidentes.",
       "permanent": "permanente",
       "cleanUrls": "URLs limpias",
+      "spaFallback": "Fallback de SPA",
+      "spaFallbackHint": "Sitios estáticos: servir index.html para rutas inexistentes. Desactívalo para devolver un 404 real con 404.html, si existe. Vuelve a desplegar los sitios en contenedores para aplicar los cambios.",
       "cleanUrlsHint": "(eliminar .html)",
       "trailingSlash": "Barra final",
       "proxyLimits": "Configuración del proxy",

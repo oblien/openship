@@ -526,6 +526,19 @@ describe("NginxProvider.reapplyStoredRoutes", () => {
     expect(conf("myapp-opsh-io")).toContain("proxy_pass_header X-Accel-Buffering;");
   });
 
+  test.each([undefined, false])("repairs generation-3 static routes without changing saved policy: %s", async (spaFallback) => {
+    const { nginx, files, conf } = setup();
+    await nginx.registerRoute({ domain: "static.test", tls: false, staticRoot: "/opt/openship/site", spaFallback });
+    files.set(`${SITES}/static-test.conf`, conf("static-test")!
+      .replace(/^# openship-vhost-gen: \d+$/m, "# openship-vhost-gen: 3")
+      .replace("@osh_fallback;", "/index.html;"));
+    expect(VHOST_GENERATION).toBeGreaterThan(3);
+    expect((await nginx.reapplyStoredRoutes()).repaired).toEqual(["static.test"]);
+    expect(conf("static-test")).toContain("try_files $uri $uri/ @osh_fallback;");
+    expect(conf("static-test")!.includes("try_files /index.html =404;")).toBe(spaFallback !== false);
+    expect((await nginx.reapplyStoredRoutes()).repaired).toEqual([]);
+  });
+
   test("a converged box writes nothing and reloads nothing", async () => {
     // This runs on the ordinary edge-ensure path, so the steady state has to be free.
     const { nginx, calls, writes } = setup();
@@ -3113,8 +3126,7 @@ describe("vercel.json path headers and URL shape", () => {
     // A named location inherits nothing, so it must repeat `root` — without it
     // `try_files /index.html` serves OpenResty's stock welcome page, not the site.
     expect(c).toMatch(/location @osh_fallback \{\n\s+root \/opt\/openship\/site;/);
-    // The slash is added before a missing path can be answered with the 404 page.
-    expect(c.indexOf("return 308 $1/$2;")).toBeLessThan(c.indexOf("return 404;"));
+    expect(c.indexOf("return 308 $1/$2;")).toBeLessThan(c.indexOf("try_files /index.html =404;"));
     // Declines a path that already ends in `/`, so the retry falls through to the index
     // instead of bouncing again.
     expect(c).toContain('if ($request_uri ~ "^([^?]*[^/?])([?].*)?$") {');
@@ -3213,17 +3225,14 @@ describe("vercel.json path headers and URL shape", () => {
 
   // Every unknown path used to answer 200 with the home page, so a multi-page site's own
   // 404.html never showed and `/.well-known/x.json` was "found" as HTML (#1624).
-  test("answers a missing path with the site's 404.html when the root has one", async () => {
+  test.each([undefined, true, false])("only disables SPA fallback when requested: %s", async (spaFallback) => {
     const { nginx, conf } = setup();
-    await nginx.registerRoute(STATIC);
+    await nginx.registerRoute({ ...STATIC, spaFallback });
     const c = appConf(conf);
-    const fallback = c.match(/location @osh_fallback \{[^]*?\n {4}\}/)![0];
-    expect(fallback).toContain("error_page 404 /404.html;");
-    expect(fallback).toContain("if (-f $document_root/404.html) {\n            return 404;");
-    // Without a 404.html the SPA index is still served.
-    expect(fallback).toContain("try_files /index.html =404;");
-    // Only inside the fallback, so ACME, proxied and path-only 404s keep their own answers.
-    expect(c.match(/error_page 404/g)).toHaveLength(c.match(/location @osh_fallback \{/g)!.length);
+    expect(c.includes("try_files /index.html =404;")).toBe(spaFallback !== false);
+    expect(c.includes("error_page 404 =404 @osh_not_found;")).toBe(spaFallback === false);
+    expect(c.includes("try_files /404.html =404;")).toBe(spaFallback === false);
+    expect(c).not.toContain("error_page 404 /404.html;");
   });
 });
 

@@ -280,6 +280,8 @@ function parseRoutes(ctx: Ctx, v: unknown, path: string): RoutingConfig | undefi
       })
       .filter(Boolean) as RoutingConfig["headers"];
   } else if (v.headers !== undefined) ctx.err(`${path}.headers`, "must be an array");
+  const spaFallback = ctx.bool(v.spaFallback, `${path}.spaFallback`);
+  if (spaFallback !== undefined) routes.spaFallback = spaFallback;
   const cleanUrls = ctx.bool(v.cleanUrls, `${path}.cleanUrls`);
   const trailingSlash = ctx.bool(v.trailingSlash, `${path}.trailingSlash`);
   if (cleanUrls !== undefined) routes.cleanUrls = cleanUrls;

@@ -15,6 +15,7 @@
  * ```
  */
 
+import { renderStaticFallback, renderStaticTryFiles } from "./static-routing";
 import { renderRouteProtection, assertRouteProtection, withRouteProtectionRuntime, ROUTE_AUTH_STATE, type RouteProtection } from "./route-protection";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
@@ -220,8 +221,9 @@ const FORWARD_VARS = `    set $openship_fwd_proto $scheme;
  * 3 — the upstream-down `error_page` handler ({@link EDGE_UPSTREAM_DOWN_HANDLER}). Vhosts
  *     written before it serve OpenResty's stock 502 — which, behind Openship Cloud's
  *     edge, is a page branded for a third party on the operator's own domain (#556).
+ * 4 — explicit static SPA fallback with isolated custom 404 handling.
  */
-export const VHOST_GENERATION = 3;
+export const VHOST_GENERATION = 4;
 
 /** Marker line carrying {@link VHOST_GENERATION}, matched by {@link readVhostGeneration}. */
 const GENERATION_MARKER = `# openship-vhost-gen: ${VHOST_GENERATION}`;
@@ -625,79 +627,6 @@ function renderUrlShape(route: RouteConfig): string {
   // construction only runs once nothing resolved.
   // Interpolated where `location /` is already indented, so the first line drops its own.
   return rules.length > 0 ? `${rules.join("\n").trimStart()}\n\n        ` : "";
-}
-
-/** The named location every static `try_files` chain falls back to. See {@link renderStaticFallback}. */
-const STATIC_FALLBACK_NAME = "@osh_fallback";
-
-/**
- * Where a static route lands when `try_files` resolved nothing.
- *
- * A top-level `404.html` in the root is served with a 404, the way Cloudflare Pages and
- * GitHub Pages answer, so a missing path on a multi-page site is a real 404 instead of
- * the home page with a 200. Without one the SPA index is served exactly as before. The
- * `-f` check runs per request because the root's files change on every deploy.
- *
- * The `error_page` lives here and nowhere else, so only this fallback produces the page:
- * ACME, path-only `return 404;` routes and proxied 404s keep their own answers. Its
- * internal redirect to `/404.html` re-enters `location /`, whose rules all match
- * `$request_uri` and already declined this request, so none of them fires a second time.
- *
- * With `trailingSlash: true` it first adds the slash if the client's path lacks one. A
- * named location is reached only from `try_files`, so the redirect cannot fire for a
- * path that DID resolve — which is the whole point. The `[^/?]` before the optional query
- * is what makes it loop-free: after `/a` → 308 `/a/` the retry arrives WITH the slash, so
- * the rule declines and the request falls through instead of bouncing again.
- *
- * It repeats `root`: a named location inherits nothing from `location /`, so without it
- * `try_files /index.html` resolves against the SERVER default root and serves OpenResty's
- * stock welcome page instead of the site — measured on 1.27.1.1.
- */
-function renderStaticFallback(staticRoot: string, addSlash: boolean): string {
-  const slash = addSlash
-    ? `
-        if ($request_uri ~ "^([^?]*[^/?])([?].*)?$") {
-            return 308 $1/$2;
-        }
-`
-    : "";
-  return `    location ${STATIC_FALLBACK_NAME} {
-        root ${staticRoot};
-${slash}
-        error_page 404 /404.html;
-        if (-f $document_root/404.html) {
-            return 404;
-        }
-
-        try_files /index.html =404;
-    }`;
-}
-
-/**
- * The static `try_files` chain. `$uri.html` is the `cleanUrls` probe (after `$uri`, so a
- * real file still wins).
- *
- * `$uri/` is DROPPED when stripping trailing slashes, and replaced by an explicit
- * `$uri/index.html`. `$uri/` triggers nginx's own 301 directory redirect adding the
- * slash, which the strip rule 308s straight back — an unbreakable loop (`curl -L` exits
- * 47) for any directory the build emits without an index, e.g. a `/blog` holding only
- * `post-1.html`. Probing `$uri/index.html` serves the same directories without ever
- * asking nginx to add a slash we are about to remove.
- *
- * When enforcing the slash, `$uri/` is kept precisely BECAUSE it 301s — that is nginx
- * doing the enforcement for us — and {@link renderStaticFallback} adds it, so a
- * path that resolves to nothing gets the slash while a real file still wins. With
- * `cleanUrls` also set, `$uri.html` resolves `/about` before the fallback is reached, so
- * the pair no longer needs the special case it used to (enforcement being dropped
- * outright) and no longer depends on the build emitting `about/index.html`.
- */
-function renderStaticTryFiles(route: RouteConfig): string {
-  const parts = ["$uri"];
-  if (route.cleanUrls) parts.push("$uri.html");
-  if (route.trailingSlash === false) parts.push("$uri/index.html");
-  else parts.push("$uri/");
-  parts.push(STATIC_FALLBACK_NAME);
-  return `try_files ${parts.join(" ")};`;
 }
 
 /**
@@ -2120,7 +2049,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // location is server-scoped, so repeating it across blocks is not a collision.
     const staticFallback =
       !hostRedirect && "staticRoot" in route && route.staticRoot
-        ? `\n\n${renderStaticFallback(route.staticRoot, route.trailingSlash === true)}`
+        ? `\n\n${renderStaticFallback(route.staticRoot, route)}`
         : "";
 
     // The upstream-down page (#556), appended to every block that serves — same reason as

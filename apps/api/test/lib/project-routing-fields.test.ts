@@ -108,3 +108,8 @@ describe("compileProjectRoutingFields", () => {
     expect(compileProjectRoutingFields(config)).toEqual(compileProjectRoutingFields(config, () => {}));
   });
 });
+
+
+it.each([undefined, true, false])("preserves static fallback in every route registration: %s", (spaFallback) => {
+  expect(compileProjectRoutingFields({ spaFallback }).spaFallback).toBe(spaFallback);
+});
