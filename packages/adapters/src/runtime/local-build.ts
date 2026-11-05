@@ -13,6 +13,7 @@
  * the transfer callback and optional preflight hooks.
  */
 
+import { assertLocalHostExecutionAllowed } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { BuildConfig, CommandExecutor } from "../types";
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
@@ -56,9 +57,8 @@ export interface LocalBuildOptions {
 
 // ─── Runner ──────────────────────────────────────────────────────────────────
 
-export async function runLocalBuild(
-  opts: LocalBuildOptions,
-): Promise<BuildPipelineResult> {
+export async function runLocalBuild(opts: LocalBuildOptions): Promise<BuildPipelineResult> {
+  assertLocalHostExecutionAllowed();
   const { config, logger, abort } = opts;
   const localExec = new LocalExecutor();
   const buildDir = `${LOCAL_BUILD_DIR}/${config.sessionId}`;
