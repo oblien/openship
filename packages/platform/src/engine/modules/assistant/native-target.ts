@@ -53,11 +53,15 @@ export async function linkMacosKeychain(
   try {
     await access(target);
   } catch {
+    // diagnostics-ignore: A missing keychain directory is the expected no-op case, not a failure.
     return;
   }
   const link = join(isolatedHome, "Library", "Keychains");
   await mkdir(join(isolatedHome, "Library"), { recursive: true, mode: 0o700 });
-  const stat = await lstat(link).catch(() => null);
+  const stat = await lstat(link).catch(() => {
+    /* diagnostics-ignore: A missing link path is the normal first-run case; null means no existing entry. */
+    return null;
+  });
   if (stat?.isSymbolicLink()) {
     if ((await readlink(link)) === target) return;
     // A symlink to somewhere else is stale — replace it.
