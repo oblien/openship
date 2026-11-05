@@ -86,6 +86,7 @@ import {
   resolveDeploymentPlatform,
   resolveEffectiveTarget,
   hostChannelDeployNotice,
+  isHostChannelUnavailableExecutor,
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { isRealContainerRef } from "../../lib/container-ref";
@@ -2189,6 +2190,14 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // one that reaches that tree — SSH for a remote server, LOCAL for the local box,
   // where /opt/openship/static is the one bind mount the api container, the edge and
   // the host all see, so no host channel is in the path (`sharedMountExecutor`).
+
+  // A demoted host executor cannot read the edge at all, so the strict inventory
+  // would throw "Cannot read Openship edge routes" and fail a deploy the
+  // host-channel notice already promised would skip host-side steps (#1625). The
+  // preflights below get an inventory they can read — an empty one — so
+  // allocation rests on durable claims alone, exactly like the unscanned
+  // live-port pick. A real conflict still fails loudly at the Docker bind.
+  const hostChannelUnavailable = isHostChannelUnavailableExecutor(phase.targetExecutor);
   const isStaticFileServe = phase.deployRouting.deployMode === "static-file-serve";
   // A worker is a running container like a server, but portless: no host port to
   // pin, no readiness dial, no route (issue #538-B). It reuses the server variant's
@@ -2328,7 +2337,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
                           readClaims: () =>
                             prepareTargetPinnedHostPorts({
                               target,
-                              edgeProxy: edgeProxyFor(executor, "openresty", { ours: true }),
+                              edgeProxy: hostChannelUnavailable
+                                ? { listLoopbackUpstreamPortsStrict: async () => new Set<number>() }
+                                : edgeProxyFor(executor, "openresty", { ours: true }),
                             }),
                           allocate: (options) => allocateHostPort(executor, options),
                           isAvailable: (port) => isDockerHostPortAvailable(executor, port),
@@ -2445,9 +2456,19 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
         hostPortPreparation ??= (async () => {
           const target = phase.hostPortTarget!;
           const executor = phase.targetExecutor!;
+          if (hostChannelUnavailable) {
+            logger.log(
+              "Host channel is unavailable, so the strict edge inventory is skipped; loopback ports " +
+                "are allocated from database-pinned ports only. If publishing fails as " +
+                "\"already allocated\", check that Openship can reach this host (Servers → this box).\n",
+              "warn",
+            );
+          }
           const claims = await prepareTargetPinnedHostPorts({
             target,
-            edgeProxy: edgeProxyFor(executor, "openresty", { ours: true }),
+            edgeProxy: hostChannelUnavailable
+              ? { listLoopbackUpstreamPortsStrict: async () => new Set<number>() }
+              : edgeProxyFor(executor, "openresty", { ours: true }),
           });
 
           if (runtime.name !== "bare") {

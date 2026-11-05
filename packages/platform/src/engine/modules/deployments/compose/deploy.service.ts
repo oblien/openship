@@ -142,7 +142,7 @@ import {
 import { resolveReadinessGate, type ResolvedReadinessGate } from "../readiness-gate";
 import { assertExactServiceTargets } from "../exact-service-targets";
 import { probeDeployedReadiness } from "../readiness-probe";
-import { hostChannelDeployNotice, type PortCheckResult } from "../../../lib/deployment-runtime";
+import { hostChannelDeployNotice, isHostChannelUnavailableExecutor, type PortCheckResult } from "../../../lib/deployment-runtime";
 import {
   buildProjectServiceUpstream,
   describeCandidatePorts,
@@ -2029,12 +2029,29 @@ async function deployComposeServicesCore(
   const needsHostPortAllocation = hostLoopbackRoutePortDemands.size > 0 || enabled.some(
     service => portOnlyTcpContainerPorts((service.ports as string[] | null) ?? []).length > 0,
   );
+  // A demoted host executor cannot read the edge at all, so the strict inventory
+  // would throw "Cannot read Openship edge routes" and fail a deploy the
+  // host-channel notice already promised would skip host-side steps (#1625).
+  // Hand the preflight an inventory it can read — an empty one — so allocation
+  // rests on durable claims alone, exactly like the unscanned live-port pick.
+  // A real conflict still fails loudly at the Docker bind.
+  const hostChannelUnavailable = isHostChannelUnavailableExecutor(opts?.executor);
+  if (usesHostLoopback && opts?.executor && needsHostPortAllocation && hostChannelUnavailable) {
+    logger.log(
+      "Host channel is unavailable, so the strict edge inventory is skipped; loopback ports " +
+        "are allocated from database-pinned ports only. If publishing fails as " +
+        "\"already allocated\", check that Openship can reach this host (Servers → this box).\n",
+      "warn",
+    );
+  }
   const pinnedHostPortClaims =
     usesHostLoopback && opts?.executor && needsHostPortAllocation
       ? hostPortTarget
         ? await prepareTargetPinnedHostPorts({
             target: hostPortTarget,
-            edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+            edgeProxy: hostChannelUnavailable
+              ? { listLoopbackUpstreamPortsStrict: async () => new Set<number>() }
+              : edgeProxyFor(opts.executor, "openresty", { ours: true }),
             verifiedCarriedHostPorts,
             onCarriedHostPortReconciled: (claim) => {
               const serviceName =

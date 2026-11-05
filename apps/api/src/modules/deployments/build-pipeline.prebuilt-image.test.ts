@@ -172,6 +172,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentPlatform: vi.fn(),
   resolveEffectiveTarget: vi.fn(() => "local"),
   hostChannelDeployNotice: vi.fn(() => null),
+  isHostChannelUnavailableExecutor: vi.fn(() => false),
 }));
 
 vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
