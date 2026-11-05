@@ -151,3 +151,19 @@ it("opens top-ups only after the server accepts the linked organization", async 
   expect(navigate).toHaveBeenCalledWith("/billing/topups?organizationId=org-b");
   expect(h.setOrg.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
 });
+
+it("keeps the original receipt through organization activation without starting a fresh purchase", async () => {
+  const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  h.setActive.mockResolvedValue({ error: null });
+  await render(<CloudBillingLink organizationId="org-b" workspaceId="server-b" tab="overview" returnQuery={{
+    checkout: "success", session_id: "receipt-b", tier: "starter", interval: "monthly", offer: "offer-b",
+    newServer: "1", startCheckout: "1", checkoutIntent: "another-purchase",
+  }} />);
+  const url = new URL(navigate.mock.calls[0]![0], "https://openship.invalid");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    checkout: "success", session_id: "receipt-b", tier: "starter", interval: "monthly", offer: "offer-b",
+    workspaceId: "server-b", organizationId: "org-b",
+  });
+  expect(h.setActive).toHaveBeenCalledWith({ organizationId: "org-b" });
+  expect(h.setOrg.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+});
