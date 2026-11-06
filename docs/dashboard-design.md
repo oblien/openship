@@ -1208,7 +1208,11 @@ permission/keyboard helper line below the composer.
 Pending agent questions use a compact **Waiting for your answer** disclosure directly above
 the composer. **Answer** expands the controls in place; keep the regular composer available.
 Use a rounded translucent card, bound the answer area with its own scroll, and keep
-**Send answer** visible below it. Collapse preserves unsent choices and text. Multiple requests
+**Send answer** visible below it. While expanded, softly blur the transcript behind the panel
+with a 6px backdrop and a light theme-aware tint. Keep the question controls and composer sharp;
+the visual backdrop must not intercept clicks or scrolling. Fade it with reduced-motion support,
+and remove it when the panel closes or its questions are resolved.
+Collapse preserves unsent choices and text. Multiple requests
 share this panel, with separate drafts and retry identities; both live and message-mode
 questions use the existing response path. Show submission failures inside the panel and
 remove resolved questions when the conversation refreshes.

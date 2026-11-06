@@ -25,8 +25,17 @@ export function AssistantConversationLayout({
     return () => observer.disconnect();
   }, []);
   return (
-    <div ref={container} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {children}
+    <div
+      ref={container}
+      className="group/conversation relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"
+    >
+      <div className="relative z-0 flex min-h-0 flex-1 flex-col">{children}</div>
+      {/* Follow the disclosure's own state without intercepting transcript interaction. */}
+      <div
+        aria-hidden="true"
+        data-assistant-question-backdrop
+        className="pointer-events-none absolute inset-0 bg-background/10 opacity-0 backdrop-blur-[6px] group-has-[[data-assistant-questions-open=true]]/conversation:opacity-100 motion-safe:transition-opacity motion-safe:duration-150"
+      />
       <div
         ref={overlay}
         data-assistant-composer-overlay
