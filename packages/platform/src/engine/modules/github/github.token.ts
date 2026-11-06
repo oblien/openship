@@ -123,8 +123,8 @@ export interface TokenContext {
   projectId?: string;
   /** Selected deployment server. Allows a read-only fallback to its stored
    * token (or the default server credential target when absent — the
-   * organization's local server, else a writable connected server with a
-   * stored token); never makes that token shippable to another build server. */
+   * organization's local server, else its only writable connected server with
+   * a stored token); never makes that token shippable to another build server. */
   serverId?: string;
   /** Restrict resolution to these credential kinds. NARROWING ONLY — the chain
    *  still owns the ORDER, and this can neither promote a kind nor add one.
@@ -246,8 +246,8 @@ function borrowableForOp(c: ChainCtx): boolean {
 
 /** Default server for the server-token fallback when the caller names none:
  * the organization's canonical local server first; when it has none, the
- * oldest connected deployment server the caller has write access to that
- * holds a stored token credential — the same set a real deploy can use.
+ * only connected deployment server the caller can write to that holds a token.
+ * Multiple candidates require explicit selection, not an arbitrary identity.
  * Never leaves the caller's organization, and never picks a server the
  * caller cannot deploy to, so borrowing still requires both repository
  * access (checked by the caller of serverReadTarget) and server authority. */
@@ -257,14 +257,28 @@ async function resolveDefaultServerTarget(c: ChainCtx): Promise<string | null> {
   if (local) return local.id;
   const { authorization } = await import("../../lib/authorization");
   const { canResolveServerGitCredential } = await import("./server-github.service");
+  let candidate: string | null = null;
   for (const server of await repos.server.listByOrganization(organizationId)) {
     if (server.isLocal) continue;
-    if (!(await authorization.checkPermissionOnResource(c.ctx, {
-      resourceType: "server", resourceId: server.id, action: "write",
-    }))) continue;
-    if (await canResolveServerGitCredential(server.id, { tokenOnly: true })) return server.id;
+    if (
+      !(await authorization.checkPermissionOnResource(c.ctx, {
+        resourceType: "server",
+        resourceId: server.id,
+        action: "write",
+      }))
+    )
+      continue;
+    if (!(await canResolveServerGitCredential(server.id, { tokenOnly: true }))) continue;
+    if (candidate) {
+      throw new AppError(
+        "Several servers have stored GitHub tokens. Select the server to use for this repository and retry.",
+        409,
+        "GITHUB_SERVER_SELECTION_REQUIRED",
+      );
+    }
+    candidate = server.id;
   }
-  return null;
+  return candidate;
 }
 
 /** A borrowed server identity needs both source access and deployment authority.

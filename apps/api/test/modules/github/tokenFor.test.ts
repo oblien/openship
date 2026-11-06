@@ -373,14 +373,36 @@ describe("server credential repository reads (#1500)", () => {
     listServers.mockResolvedValue([
       { id: "s-no-write", isLocal: false },
       { id: "s-no-cred", isLocal: false },
+      { id: "s-good", isLocal: false },
     ]);
-    serverAllowed
-      .mockResolvedValueOnce(false) // s-no-write: no server authority
-      .mockResolvedValue(true); // s-no-cred: writable, but probe says no credential
-    serverProbe.mockResolvedValue(false);
-    expect(await tokenFor(ctxOrg, "local", withOwner)).toBeNull();
-    expect(await canResolveTokenFor(ctxOrg, "local", withOwner)).toBeNull();
+    serverAllowed.mockImplementation(async (_ctx, resource) => resource.resourceId !== "s-no-write");
+    serverProbe.mockImplementation(async (id) => id === "s-good");
+    expect(await tokenFor(ctxOrg, "local", withOwner)).toEqual({
+      token: "server-pat",
+      source: "server-token",
+    });
+    expect(await canResolveTokenFor(ctxOrg, "local", withOwner)).toBe("server-token");
+    expect(serverCredential).toHaveBeenCalledWith({
+      ctx: ctxOrg,
+      serverId: "s-good",
+      owner: "acme",
+      repo: "app",
+      tokenOnly: true,
+    });
+  });
+  it("requires the same explicit selection for mint and preflight when several server tokens are eligible", async () => {
+    listServers.mockResolvedValue([
+      { id: "s1", isLocal: false },
+      { id: "s2", isLocal: false },
+    ]);
+    const conflict = { statusCode: 409, code: "GITHUB_SERVER_SELECTION_REQUIRED" };
+    await expect(tokenFor(ctxOrg, "local", withOwner)).rejects.toMatchObject(conflict);
+    await expect(canResolveTokenFor(ctxOrg, "local", withOwner)).rejects.toMatchObject(conflict);
     expect(serverCredential).not.toHaveBeenCalled();
+    expect(await tokenFor(ctxOrg, "local", target)).toEqual({
+      token: "server-pat",
+      source: "server-token",
+    });
   });
   it("never ships a server token through the generic remote chain or uses one in Cloud", async () => {
     expect(await tokenFor(ctxOrg, "remote", target)).toBeNull();

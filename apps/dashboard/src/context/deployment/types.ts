@@ -971,12 +971,19 @@ export interface DeploymentContextType {
     force?: string,
     context?: {
       branch?: string;
+      serverId?: string;
       projectId?: string;
       composePath?: string;
       env?: Record<string, string>;
       preserveEnvState?: boolean;
     },
-  ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    errorType?: string;
+    errorCode?: string;
+    buildInProgress?: boolean;
+  }>;
   initializeFromLocal: (
     path: string,
     context?: {

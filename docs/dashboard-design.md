@@ -594,6 +594,10 @@ check retryable before starting the move.
   Keep Home's project list and the sidebar counts separate too.
 - Cloud's New Project choices are Apps, GitHub, Git URL and Import existing project.
   Folder import and the Browse Templates shortcut are available only on self-hosted instances.
+  If a self-hosted repository scan requires an explicit GitHub server identity, reuse the
+  shared server picker and retry the same source with that server. Do not auto-select or
+  apply a saved default while recovering from ambiguous credentials. Retain the picker
+  after a failed retry so users can correct their selection.
 - Credit warnings belong in Billing's overview for the selected server. Reuse its loaded
   billing state and scoped links; keep the notice inline. Monthly servers have no compute
   credit warnings. Other pages do not mount a credit tray or poll all server balances.
