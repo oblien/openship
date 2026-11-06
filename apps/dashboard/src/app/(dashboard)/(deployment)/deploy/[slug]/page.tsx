@@ -141,7 +141,7 @@ const DeployRepository: React.FC = () => {
     // Own the selector state above both views. Switching between the summary and
     // target settings must not refetch, reseed or replace the chosen Cloud server.
     const serverSelection = useServerSelection({
-        value: config.serverId,
+        value: config.serverId ?? (selectReadServer ? null : undefined),
         selectedName: config.serverName,
         readOnly: !!config.serverId && (!!config.uploadSessionId || (!!config.projectId && !!config.workspaceId)),
         disabled: loading || isRescanning || state.isDeploying,

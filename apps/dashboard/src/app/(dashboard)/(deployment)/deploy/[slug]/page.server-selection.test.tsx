@@ -101,6 +101,7 @@ it("requires a user choice and retries the same source with that server, retaini
   expect(retry().disabled).toBe(true);
   expect(h.selection.autoSelectFirst).toBe(false);
   expect(h.selection.useSavedDefault).toBe(false);
+  expect(h.selection.value).toBeNull();
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((button) => button.textContent === "Select working server")!
