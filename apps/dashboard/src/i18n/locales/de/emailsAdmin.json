@@ -788,7 +788,7 @@
       "localPartHint": "Der Teil vor dem @. Kleinbuchstaben, alphanumerisch.",
       "destinationLabel": "Weiterleiten an",
       "destinationHint": "Jede gültige E-Mail-Adresse — ein Postfach auf diesem Server oder extern (z. B. Gmail).",
-      "inboundNote": "Aliasse leiten nur eingehende E-Mails weiter. Um als diese Adresse E-Mails zu senden oder sich zu authentifizieren, erstellen Sie stattdessen ein Postfach."
+      "senderNote": "Zum Senden als Alias melden Sie sich mit dessen direktem Zielpostfach an. Externe Weiterleitungen und Catch-all-Regeln leiten nur eingehende E-Mails weiter. Die aktuelle Mail-Engine ist erforderlich."
     },
     "deleteForm": {
       "title": "Diesen Alias löschen?",
