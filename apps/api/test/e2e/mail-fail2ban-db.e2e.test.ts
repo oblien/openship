@@ -1,5 +1,5 @@
 /** Real ban/unban operations against the sidecar; no host firewall or production mail changes. */
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,6 +7,12 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
+const transport = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/mail/mail-engine", async (original) => ({
+  ...await original<typeof import("@repo/platform/engine/modules/mail/mail-engine")>(),
+  runMailCommand: (...args: unknown[]) => transport.run(...args),
+}));
+import { getFail2banStatus, banFail2banIp, unbanFail2banIp } from "../../src/modules/mail/admin/components.service";
 
 const exec = promisify(execFile);
 const email = resolve(import.meta.dirname, "../../../email");
@@ -398,5 +404,40 @@ describeDockerE2E("fail2ban PostgreSQL sidecar actions", () => {
     expect(
       await query("SELECT count(*) FROM banned WHERE ip='192.0.2.14' AND remove=1", 5544),
     ).toBe("1");
+  });
+
+  it("manages real Fail2ban IPv4/IPv6 bans through the admin service without touching a firewall", async () => {
+    // Earlier tests deliberately fake fail2ban-client. Install the real client
+    // only after those scheduled-callback fixtures have finished.
+    await docker(["exec", runner, "sh", "-c", "apt-get install -y --no-install-recommends fail2ban >/dev/null"]);
+    const fixtures: Record<string, string> = {
+      "fail2ban.conf": "[Definition]\nloglevel = ERROR\nlogtarget = /tmp/fail2ban-admin.log\nsocket = /var/run/fail2ban/fail2ban.sock\npidfile = /var/run/fail2ban/fail2ban.pid\ndbfile = :memory:\nallowipv6 = yes\n",
+      "jail.conf": "[DEFAULT]\nbackend = polling\nbantime = 300\nfindtime = 60\nmaxretry = 2\nfilter = openship-admin\nlogpath = /tmp/fail2ban-admin-input\naction = dummy\n[postfix]\nenabled = true\n[dovecot]\nenabled = true\n",
+      "openship-admin.conf": "[Definition]\nfailregex = ^FAIL <HOST>$\nignoreregex =\n",
+    };
+    await docker(["exec", runner, "sh", "-c", "mkdir -p /tmp/fail2ban-admin/filter.d /tmp/fail2ban-admin/action.d /var/run/fail2ban; touch /tmp/fail2ban-admin-input; rm -f /usr/local/bin/fail2ban-client; cp /etc/fail2ban/action.d/dummy.conf /tmp/fail2ban-admin/action.d/"]);
+    for (const [name, content] of Object.entries(fixtures)) {
+      await writeFile(join(directory, name), content);
+      await docker(["cp", join(directory, name), `${runner}:/tmp/fail2ban-admin/${name === "openship-admin.conf" ? "filter.d/" : ""}${name}`]);
+    }
+    await docker(["exec", runner, "fail2ban-client", "-c", "/tmp/fail2ban-admin", "start"]);
+    // Only transport/topology discovery is substituted. The real service,
+    // shared command builders, exit handling and strict parsers run unchanged.
+    transport.run.mockImplementation(async (_target: string, build: (flavor: "host") => string) => ({
+      flavor: "host", output: (await docker(["exec", runner, "sh", "-c", build("host")])).stdout,
+    }));
+    expect((await getFail2banStatus("isolated-mail")).jails.sort()).toEqual(["dovecot", "postfix"]);
+    await banFail2banIp("isolated-mail", "203.0.113.10", "postfix");
+    await banFail2banIp("isolated-mail", "203.0.113.10", "dovecot");
+    await banFail2banIp("isolated-mail", "2001:db8::7", "dovecot");
+    const banned = await getFail2banStatus("isolated-mail");
+    expect(banned.details.postfix.bannedIps).toEqual(["203.0.113.10"]);
+    expect(banned.details.dovecot.bannedIps).toEqual(expect.arrayContaining(["203.0.113.10", "2001:db8::7"]));
+    await expect(unbanFail2banIp("isolated-mail", "--all")).rejects.toMatchObject({ statusCode: 400 });
+    await unbanFail2banIp("isolated-mail", "203.0.113.10", "postfix");
+    const after = await getFail2banStatus("isolated-mail");
+    expect(after.details.postfix.currentlyBanned).toBe(0);
+    expect(after.details.dovecot.currentlyBanned).toBe(2);
+    await expect(getFail2banStatus("isolated-mail", "missing-jail")).rejects.toThrow();
   });
 });

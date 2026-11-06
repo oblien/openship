@@ -10,30 +10,21 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  */
 
 import React, { useState } from "react";
+import type { RoutingConfig } from "@repo/core";
 import { useDeployment } from "@/context/DeploymentContext";
 import { RoutingConfigEditor } from "@/components/routing/RoutingConfigEditor";
 import { useI18n } from "@/components/i18n-provider";
 
-function countRules(cfg: DeploymentRoutingLike): number {
+function countRules(cfg: RoutingConfig | null | undefined): number {
   return (
     (cfg?.rewrites?.length ?? 0) +
     (cfg?.redirects?.length ?? 0) +
     (cfg?.headers?.length ?? 0) +
     (cfg?.cleanUrls ? 1 : 0) +
-    (cfg?.trailingSlash ? 1 : 0)
+    (cfg?.trailingSlash !== undefined ? 1 : 0) +
+    (cfg?.spaFallback !== undefined ? 1 : 0)
   );
 }
-
-type DeploymentRoutingLike =
-  | {
-      rewrites?: unknown[];
-      redirects?: unknown[];
-      headers?: unknown[];
-      cleanUrls?: boolean;
-      trailingSlash?: boolean;
-    }
-  | null
-  | undefined;
 
 const RoutingSection: React.FC = () => {
   const { config, updateConfig } = useDeployment();
@@ -42,10 +33,6 @@ const RoutingSection: React.FC = () => {
   const routing = config.routingConfig;
   const count = countRules(routing);
   const [open, setOpen] = useState(false);
-
-  // Only surface when routing rules were actually detected. With none there's
-  // nothing to configure here — don't add an empty section to the wizard.
-  if (count === 0) return null;
 
   return (
     <div className="bg-card rounded-2xl">
@@ -61,7 +48,7 @@ const RoutingSection: React.FC = () => {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-foreground">
-              {r.title} · {count}
+              {r.title}{count > 0 ? ` · ${count}` : ""}
             </h3>
             <p className="text-xs text-muted-foreground">
               {r.descDetected}

@@ -272,6 +272,7 @@
           }
         },
         "cleanUrls": { "type": "boolean" },
+        "spaFallback": { "type": "boolean", "description": "Serve index.html for missing static paths. Defaults to true; false returns 404." },
         "trailingSlash": { "type": "boolean" }
       }
     },

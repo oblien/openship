@@ -54,3 +54,18 @@ describe.each([
     },
   );
 });
+
+
+describe.each([createBuildConfig, createMonorepoSourceBuildConfig])("static build routing policy", (createConfig) => {
+  it.each([undefined, true, false])("passes the saved setting into generated builds: %s", (spaFallback) => {
+    const config = createConfig({
+      project: { id: "site", routingConfig: { spaFallback } } as Project,
+      dep: { branch: "main", trigger: "manual" } as Deployment,
+      snapshot,
+      sessionId: "build-static",
+      envVars: {},
+      resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
+    });
+    expect(config.spaFallback).toBe(spaFallback);
+  });
+});

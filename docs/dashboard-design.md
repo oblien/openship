@@ -904,6 +904,9 @@ Routing rules have visible sections for rewrites, redirects, response headers, a
 URL behavior. Group proxy settings into uploads, timeouts, response buffering,
 compression, headers/protocol, and upstream TLS. Use human labels and shared filled
 controls; keep directive names in each group's Technical details disclosure.
+SPA fallback uses one default-on switch for static sites in the shared routing editor,
+available even when no rules were detected. Turning it off returns a real 404; explain
+that container-hosted static sites need a redeploy to apply the change.
 Trailing slashes have three choices: automatic, add, and remove. Live edge inspection
 is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
@@ -985,6 +988,12 @@ Use focused behavior tests for changes to field selection, validation, or payloa
 spacing adjustment needs visual verification, not a test that asserts a CSS class string.
 
 ## Mail webmail recovery
+
+Manage Fail2ban bans from the mail server's existing Health row in the shared drawer.
+Load jail details only while open, retain the last reading on refresh failure and
+disable mutations until current status is available. Ban actions select an explicit
+jail; review the exact IP and jail before applying either action. Use server-reported
+management capability and the existing mail API; Cloud mail does not mount this panel.
 
 Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
 webmail app installer. Keep its client card beside a compact Managed email / Coming

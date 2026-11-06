@@ -46,7 +46,7 @@
  * See test/helpers/docker-e2e.ts.
  */
 
-import { it, expect, beforeAll, afterAll } from "vitest";
+import { it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -56,6 +56,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DockerRuntime,
+  DockerEdgeExecutor,
+  loopbackPortInventoryFor,
+  rootChecked,
   EDGE_SHARED_DICTS,
   NginxProvider,
   OPENRESTY_DEFAULT_PATHS,
@@ -65,6 +68,7 @@ import {
   type RouteConfig,
 } from "@repo/adapters";
 import type { RoutingConfig } from "@repo/core";
+import { compileProjectRoutingFields } from "@repo/platform/engine/lib/project-routing-fields";
 import { buildDomainFanoutRegistrations } from "@repo/platform/engine/modules/deployments/compose/composite-route";
 import type Dockerode from "dockerode";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
@@ -79,6 +83,8 @@ const SITES_DIR = OPENRESTY_DEFAULT_PATHS.sitesDir;
 const CONF_PATH = `${OPENRESTY_DEFAULT_PATHS.confDir}/nginx.conf`;
 /** Must be under /opt/openship — `assertValidStaticRoot` refuses anything else. */
 const WWW = "/opt/openship/www";
+/** A multi-page site that ships its own top-level 404.html. */
+const WWW_404 = "/opt/openship/www-404";
 
 /** `cat > path <<'EOF'` — quoted delimiter, so nothing in the body is expanded. */
 function heredoc(path: string, content: string): string {
@@ -146,19 +152,13 @@ async function renderVhost(route: RouteConfig): Promise<string> {
 }
 
 /** A static route on `<name>.test`, with the compiled rules of a real vercel.json. */
-async function staticSite(name: string, routing: RoutingConfig): Promise<string> {
-  const c = compileVercelRouting(routing);
-  // A rule silently dropped instead of applied would make the assertions below lie.
-  expect(c.skipped, `unexpected skipped rules for ${name}: ${c.skipped.join("; ")}`).toEqual([]);
+async function staticSite(name: string, routing: RoutingConfig, staticRoot = WWW): Promise<string> {
   return renderVhost({
     domain: `${name}.test`,
     tls: false,
-    staticRoot: WWW,
-    ...(c.redirects.length ? { redirects: c.redirects } : {}),
-    ...(c.headerRules.length ? { headerRules: c.headerRules } : {}),
-    ...(c.cleanUrls ? { cleanUrls: true } : {}),
-    ...(c.trailingSlash === undefined ? {} : { trailingSlash: c.trailingSlash }),
-  } as unknown as RouteConfig);
+    staticRoot,
+    ...compileProjectRoutingFields(routing, (note) => { throw new Error(note); }),
+  });
 }
 
 interface Answer {
@@ -292,6 +292,28 @@ http {
 }
 `;
 
+  it("reads stale loopback routes through the Docker socket with no host channel", async () => {
+    const routing = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS,
+      containerEdge: true,
+      executor: rootChecked(
+        new DockerEdgeExecutor({ containerName: started[0]!.id, docker: runtime.docker }),
+        "isolated E2E socket edge",
+      ),
+    });
+    const host = {
+      exec: vi.fn(async () => {
+        throw new Error("host channel unavailable");
+      }),
+    };
+    const inventory = loopbackPortInventoryFor(routing, host as unknown as CommandExecutor);
+    const observed = await inventory.listLoopbackUpstreamPortsStrict();
+    expect(observed.has(20000)).toBe(true);
+    expect(observed.has(9901)).toBe(true);
+    expect(observed.has(9904)).toBe(true);
+    expect(host.exec).not.toHaveBeenCalled();
+  });
+
   beforeAll(async () => {
     await requireDocker();
     runtime = await DockerRuntime.create({ transport: "socket" });
@@ -353,6 +375,32 @@ http {
     out["strip"] = await staticSite("strip", { trailingSlash: false });
     out["enforce"] = await staticSite("enforce", { trailingSlash: true });
     out["clean"] = await staticSite("clean", { cleanUrls: true });
+    out["nf"] = await staticSite("nf", { spaFallback: false }, WWW_404);
+    out["nf-clean"] = await staticSite("nf-clean", { cleanUrls: true, spaFallback: false }, WWW_404);
+    out["nf-strip"] = await staticSite("nf-strip", { trailingSlash: false, spaFallback: false }, WWW_404);
+    out["nf-enforce"] = await staticSite("nf-enforce", { trailingSlash: true, spaFallback: false }, WWW_404);
+
+    out["nf-standard"] = await staticSite("nf-standard", { spaFallback: false });
+    out["spa-default"] = await staticSite("spa-default", {}, WWW_404);
+    out["spa-on"] = await staticSite("spa-on", { spaFallback: true }, WWW_404);
+    out["spa-rewrite"] = await staticSite("spa-rewrite", {
+      rewrites: [{ source: "/(.*)", destination: "/index.html" }],
+    }, WWW_404);
+    out["nf-explicit"] = await staticSite("nf-explicit", {
+      spaFallback: false, rewrites: [{ source: "/(.*)", destination: "/index.html" }],
+    }, WWW_404);
+    // Internal 404 handling must not enter the user's HTML proxy or redirect.
+    const htmlProxy = compileVercelRouting({ rewrites: [
+      { source: "/(.*).html", destination: "/remote/$1" },
+    ] }, { backendTargetUrl: "http://127.0.0.1:9902" });
+    expect(htmlProxy.skipped).toEqual([]);
+    out["nf-proxy"] = await renderVhost({
+      domain: "nf-proxy.test", tls: false, staticRoot: WWW_404, spaFallback: false,
+      proxyLocations: htmlProxy.proxyLocations,
+    });
+    out["nf-redirect"] = await staticSite("nf-redirect", { spaFallback: false,
+      redirects: [{ source: "/404.html", destination: "/somewhere" }],
+    }, WWW_404);
 
     // Two rules on the SAME source, plus two paths that used to squash to one variable.
     out["hdrs"] = await staticSite("hdrs", {
@@ -455,6 +503,12 @@ http {
       targetUrl: "http://127.0.0.1:9905",
     });
 
+    // A valid old vhost can survive without a workload or a durable DB claim.
+    out["orphan"] = await renderVhost({
+      domain: "orphan.test",
+      tls: false,
+      targetUrl: "http://127.0.0.1:20000",
+    });
     return out;
   }
 
@@ -463,7 +517,7 @@ http {
     const confs = await vhosts();
     const script =
       `set -e\n` +
-      `mkdir -p ${SITES_DIR} ${LUA_DEST} ${WWW}/docs ${WWW}/dir-no-index /var/www/acme/oblien\n` +
+      `mkdir -p ${SITES_DIR} ${LUA_DEST} ${WWW}/docs ${WWW}/dir-no-index ${WWW_404} /var/www/acme/oblien\n` +
       heredoc(CONF_PATH, ENVELOPE) +
       heredoc(
         "/tmp/visitor-country.lua",
@@ -480,6 +534,9 @@ http {
       heredoc(`${WWW}/dir-no-index/post.html`, "POST") +
       // Extension-less REAL file: what slash-enforcement used to shadow.
       heredoc(`${WWW}/LICENSE`, "LICENSE-TEXT") +
+      heredoc(`${WWW_404}/index.html`, "MPA-INDEX") +
+      heredoc(`${WWW_404}/about.html`, "MPA-ABOUT") +
+      heredoc(`${WWW_404}/404.html`, "MPA-NOT-FOUND") +
       Object.entries(confs)
         .map(([name, body]) => heredoc(join(SITES_DIR, `${name}.conf`), body))
         .join("") +
@@ -649,6 +706,68 @@ http {
     const { hops, final } = await follow(port, "/", "clean.test");
     expect(hops).toEqual([]);
     expect(final.body.trim()).toBe("ROOT-INDEX");
+  });
+
+  it("serves a custom 404 only when SPA fallback is disabled", async () => {
+    // The bug: every unknown path answered 200 with the home page, so the site's own
+    // 404.html never showed and a missing JSON file was "found" as HTML (#1624).
+    for (const path of ["/missing", "/a/b/c", "/x.json", "/.well-known/ai-catalog.json"]) {
+      const answer = await ask(port, path, "nf.test");
+      expect({ path, status: answer.status, body: answer.body.trim() }).toEqual({
+        path,
+        status: 404,
+        body: "MPA-NOT-FOUND",
+      });
+    }
+    expect((await ask(port, "/", "nf.test")).body.trim()).toBe("MPA-INDEX");
+    expect((await ask(port, "/about", "nf-clean.test")).body.trim()).toBe("MPA-ABOUT");
+    expect((await ask(port, "/missing", "nf-clean.test")).status).toBe(404);
+    // URL shaping still runs first, then the missing path gets the 404 page.
+    for (const [host, path, hop] of [
+      ["nf-strip.test", "/missing/", "http://nf-strip.test/missing"],
+      ["nf-enforce.test", "/missing", "http://nf-enforce.test/missing/"],
+    ] as const) {
+      const { hops, final } = await follow(port, path, host);
+      expect({ hops, status: final.status, body: final.body.trim() }).toEqual({
+        hops: [hop],
+        status: 404,
+        body: "MPA-NOT-FOUND",
+      });
+    }
+    // A root without 404.html keeps the SPA fallback.
+    const spa = await ask(port, "/missing", "clean.test");
+    expect(spa.status).toBe(200);
+    expect(spa.body.trim()).toBe("ROOT-INDEX");
+  });
+
+  it.each(["spa-default.test", "spa-on.test", "spa-rewrite.test"])("preserves deep links even with a 404.html: %s", async (host) => {
+    for (const path of ["/dashboard/settings", "/missing.js", "/missing?x=1"]) {
+      const answer = await ask(port, path, host);
+      expect(answer.status).toBe(200);
+      expect(answer.body.trim()).toBe("MPA-INDEX");
+    }
+  });
+
+  it("returns 404 without a custom page and honors the explicit switch over a legacy SPA rewrite", async () => {
+    const standard = await ask(port, "/missing", "nf-standard.test");
+    expect(standard.status).toBe(404);
+    expect(standard.body).not.toContain("ROOT-INDEX");
+    const explicit = await ask(port, "/missing", "nf-explicit.test");
+    expect(explicit.status).toBe(404);
+    expect(explicit.body.trim()).toBe("MPA-NOT-FOUND");
+    const head = await ask(port, "/missing", "nf.test", { method: "HEAD" });
+    expect(head.status).toBe(404);
+    expect(head.body).toBe("");
+  });
+
+  it.each(["nf-proxy.test", "nf-redirect.test"])("isolates the custom 404 from user rules: %s", async (host) => {
+    const missing = await ask(port, "/missing", host);
+    expect(missing.status).toBe(404);
+    expect(missing.body.trim()).toBe("MPA-NOT-FOUND");
+    expect(missing.headers["content-type"]).toContain("text/html");
+    const direct = await ask(port, "/404.html", host);
+    if (host === "nf-proxy.test") expect(direct.body).toContain("THIRDPARTY");
+    else expect(direct.location).toBe("http://nf-redirect.test/somewhere");
   });
 
   it.each([

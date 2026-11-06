@@ -2299,6 +2299,47 @@ describe("compose deploy — host channel unavailable", () => {
     }
   });
 
+  it.each([false, true])(
+    "uses real edge inventory with an unavailable host channel (read failure: %s)",
+    async (unreadable) => {
+      vi.stubEnv("OPENSHIP_HOST_CONTROL", "false");
+      const executor = await demotedExecutor();
+      const f = imageRefreshFixture();
+      h.services[1]!.ports = ["8080"];
+      h.services[1]!.updatedAt = new Date(2000);
+      const read = vi.fn(async () => {
+        if (unreadable) throw new Error("socket edge unreadable");
+        return new Set([20000]);
+      });
+      h.prepareTargetPinnedHostPorts.mockImplementation(async ({ edgeProxy }) => {
+        await edgeProxy.listLoopbackUpstreamPortsStrict();
+        return [];
+      });
+      const run = () =>
+        f.run(
+          {
+            executor,
+            hostPortTarget: localHostPortTarget,
+            routing: {
+              registerRoute: vi.fn(),
+              removeRoute: vi.fn(),
+              listLoopbackUpstreamPortsStrict: read,
+            },
+          },
+          "manual",
+          { routeStrategy: "loopback-port" },
+        );
+      if (unreadable) {
+        await expect(run()).rejects.toThrow("socket edge unreadable");
+        expect(f.activate).not.toHaveBeenCalled();
+        expect(h.allocateAndReservePinnedHostPort).not.toHaveBeenCalled();
+      } else {
+        expect((await run()).status).toBe("ready");
+      }
+      expect(read).toHaveBeenCalled();
+    },
+  );
+
   it("stays quiet when the channel is fine", async () => {
     // Nothing was demoted, so there is nothing to report — a notice here would be a
     // false claim about the box, which is how the dashboard came to name the wrong

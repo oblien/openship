@@ -136,14 +136,16 @@ describeDockerE2E("secret environment through the real deployment pipeline (#801
     // strict-inventory contract, but provide its authoritative empty result so
     // the rollback test can exercise loopback allocation without provisioning
     // unrelated edge infrastructure.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
         getPlatform: () => localPlatform.platform,
-        edgeProxyFor: () => ({
-          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
-        }),
+        edgeProxyFor: edgeInventory,
+        loopbackPortInventoryFor: edgeInventory,
       };
     });
     // 3. GitHub check runs: there's no installation in a test org.

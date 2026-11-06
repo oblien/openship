@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
 
 import { DockerEdgeExecutor } from "./docker-edge-executor";
+import { NginxProvider } from "../infra/nginx";
+import { OPENRESTY_DEFAULT_PATHS } from "../infra/openresty-lua";
+import { rootChecked } from "./privilege";
+import { loopbackPortInventoryFor } from "./proxy/api";
 
 /**
  * Fake daemon: records the options handed to `exec.start` and replays a
@@ -344,6 +348,92 @@ describe("DockerEdgeExecutor — the edge container is down", () => {
 
     await expect(ex.exec("openresty -t")).rejects.toThrow(
       /the edge container is not running \("openship-edge"\) — .*docker logs --tail 40 openship-edge/,
+    );
+  });
+});
+
+describe("socket edge port inventory", () => {
+  const config = `http {
+    upstream legacy { server 127.0.0.1:20000; server [::1]:20001; }
+    server { listen 80; server_name _;
+      location / { proxy_pass http://legacy; }
+      location /private { proxy_pass http://127.0.0.2:20002; }
+      location /remote { proxy_pass http://10.0.0.9:3000; }
+    }
+  }`;
+  function inventory(stdout: string, exitCode = 0) {
+    const { docker } = fakeDocker({
+      stdout,
+      exitCode,
+      stderr: exitCode ? "edge config unreadable" : "",
+    });
+    const executor = new DockerEdgeExecutor({ containerName: "openship-edge", docker });
+    const routing = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS,
+      containerEdge: true,
+      executor: rootChecked(executor, "test socket edge"),
+    });
+    const host = {
+      exec: vi.fn(async () => {
+        throw new Error("host channel unavailable");
+      }),
+    };
+    return { routing, host, reader: loopbackPortInventoryFor(routing, host as never) };
+  }
+
+  it("reads all stale upstreams through Docker even when the host channel refuses", async () => {
+    const { reader, host } = inventory(config);
+    expect(await reader.listLoopbackUpstreamPortsStrict()).toEqual(new Set([20000, 20001, 20002]));
+    expect(host.exec).not.toHaveBeenCalled();
+  });
+
+  it("accepts a verified edge with no loopback upstreams", async () => {
+    const { reader } = inventory("http { server { listen 80; return 404; } }");
+    await expect(reader.listLoopbackUpstreamPortsStrict()).resolves.toEqual(new Set());
+  });
+
+  it("keeps host-side detection for an SSH-managed edge", async () => {
+    const host = {
+      exec: vi.fn(async (command: string) => {
+        if (command.includes("docker ps -a"))
+          return "openship-edge\tghcr.io/openship/edge:latest\trunning";
+        if (command.includes("openresty -T")) return config;
+        return "";
+      }),
+    };
+    const edge = {
+      exec: vi.fn(async () => {
+        throw new Error("wrong namespace");
+      }),
+    };
+    const routing = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS,
+      containerEdge: true,
+      hostExecutor: host as never,
+      executor: rootChecked(edge as never, "test remote edge"),
+    });
+    await expect(routing.listLoopbackUpstreamPortsStrict()).resolves.toEqual(
+      new Set([20000, 20001, 20002]),
+    );
+    expect(edge.exec).not.toHaveBeenCalled();
+    expect(host.exec).toHaveBeenCalled();
+  });
+
+  it.each([
+    "",
+    "# server { only a comment }",
+    "http { server { location / { proxy_pass http://$host:20000; } } }",
+  ])("rejects an empty or ambiguous resolved dump (%s)", async (dump) => {
+    const { reader, host } = inventory(dump);
+    await expect(reader.listLoopbackUpstreamPortsStrict()).rejects.toThrow(
+      /Cannot (read|inventory) Openship edge routes/,
+    );
+    expect(host.exec).not.toHaveBeenCalled();
+  });
+
+  it("propagates a failed Docker exec instead of claiming the edge has no routes", async () => {
+    await expect(inventory(config, 1).reader.listLoopbackUpstreamPortsStrict()).rejects.toThrow(
+      "edge config unreadable",
     );
   });
 });
