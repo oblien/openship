@@ -787,7 +787,8 @@
       "localPartLabel": "用户名部分",
       "localPartHint": "@ 之前的部分。小写字母与数字。",
       "destinationLabel": "转发至",
-      "destinationHint": "任意有效邮箱地址 — 此服务器上的邮箱或外部邮箱（例如 Gmail）。"
+      "destinationHint": "任意有效邮箱地址 — 此服务器上的邮箱或外部邮箱（例如 Gmail）。",
+      "inboundNote": "别名仅用于转发收到的邮件。若要使用此地址进行身份验证并发送邮件，请创建邮箱。"
     },
     "deleteForm": {
       "title": "删除此别名？",
