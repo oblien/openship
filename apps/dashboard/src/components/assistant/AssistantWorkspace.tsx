@@ -59,7 +59,7 @@ import { AutomationConversationStatus } from "./AutomationRunReview";
 import { useI18n } from "@/components/i18n-provider";
 import {
   investigationPrompt,
-  investigationHref,
+  investigationAutoSubmitKey,
   readInvestigation,
   type AssistantInvestigation,
 } from "./investigation";
@@ -681,7 +681,7 @@ function ConversationWorkspace({
   };
   const cancelAutoSubmit = useAutoSubmit({
     intent: assistantAutoSubmit,
-    key: investigation ? investigationHref(investigation.target, scope) : null,
+    key: investigation ? investigationAutoSubmitKey(investigation.target, scope) : null,
     ready:
       canSubmit &&
       !!draftCanSend &&
@@ -1178,7 +1178,8 @@ function ConversationWorkspace({
                                   ? investigationCopy.deploymentTitle
                                   : investigation.target.kind === "monitoring"
                                     ? investigationCopy.reportTitle
-                                    : investigation.target.intent === "fix"
+                                    : investigation.target.kind === "security" ||
+                                        investigation.target.intent === "fix"
                                       ? investigationCopy.fixTitle
                                       : investigationCopy.issueTitle
                                 : "What are we working on?"}

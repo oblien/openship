@@ -260,6 +260,7 @@
     "instructions": "Use OpenShip tools to inspect the current status and relevant logs. Explain the likely cause with evidence and suggest the next step. Investigate first; do not change anything. If access is missing, request the specific permissions needed.",
     "fixAction": "Fix with AI",
     "fixTitle": "Fix this app issue",
+    "securityPrompt": "Investigate and fix security advisory {advisoryId} for this app. Read its current OpenShip security findings and official guidance, inspect the affected services and their effective configuration, then apply a persistent fix within approved access. Redeploy affected workers when required and verify the result. A matching runtime version alone does not confirm exploitable application behavior. Do not hide the warning or claim a fix without evidence. First establish whether the advisory applies. If it does not, report the evidence and make no changes to the services.",
     "fixPrompt": "Investigate and fix app issue {issueId}.",
     "fixInstructions": "Use OpenShip tools to inspect the current issue, status and relevant logs. Find the cause, apply an appropriate fix within your approved access, and verify the result. If access or a required decision is missing, offer the relevant inline review. Report what changed and any remaining issues; claim recovery only with observed evidence.",
     "reportAction": "AI health report",

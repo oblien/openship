@@ -6,6 +6,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 export type AssistantInvestigation =
   | { kind: "deployment"; deploymentId: string; projectId?: string }
   | { kind: "issue"; projectId: string; issueId: string; intent?: "fix" }
+  | { kind: "security"; projectId: string; advisoryId: string }
   | { kind: "monitoring" };
 
 type Search = Pick<URLSearchParams, "get" | "getAll" | "has">;
@@ -23,10 +24,19 @@ export function investigationHref(target: AssistantInvestigation, scope: string)
   else if (target.kind === "issue") {
     params.set("issue", target.issueId);
     if (target.intent) params.set("intent", target.intent);
-  }
+  } else if (target.kind === "security") params.set("advisory", target.advisoryId);
   return readInvestigation(params, scope).status === "ready"
     ? `/assistant?${params.toString()}`
     : null;
+}
+
+/** Security remediation always starts with an editable review, even when an
+ * ordinary investigation link has a click-staged automatic submission. */
+export function investigationAutoSubmitKey(
+  target: AssistantInvestigation,
+  scope: string,
+): string | null {
+  return target.kind === "security" ? null : investigationHref(target, scope);
 }
 
 export function readInvestigation(
@@ -40,7 +50,7 @@ export function readInvestigation(
     !scope ||
     search.get("scope") !== scopeKey(scope) ||
     search.has("chat") ||
-    ["investigate", "scope", "project", "deployment", "issue", "intent"].some(
+    ["investigate", "scope", "project", "deployment", "issue", "advisory", "intent"].some(
       (key) => search.getAll(key).length > 1,
     )
   )
@@ -51,10 +61,20 @@ export function readInvestigation(
   const deploymentId = search.get("deployment"),
     issueId = search.get("issue");
   const intent = search.get("intent");
+  const advisoryId = search.get("advisory");
+  if (search.has("advisory") && kind !== "security") return { status: "invalid" };
   if (search.has("intent") && (kind !== "issue" || intent !== "fix")) return { status: "invalid" };
   let target: AssistantInvestigation;
   if (kind === "deployment" && identifier(deploymentId) && !search.has("issue")) {
     target = { kind, deploymentId, ...(projectId ? { projectId } : {}) };
+  } else if (
+    kind === "security" &&
+    identifier(projectId) &&
+    identifier(advisoryId) &&
+    !search.has("deployment") &&
+    !search.has("issue")
+  ) {
+    target = { kind, projectId, advisoryId };
   } else if (
     kind === "issue" &&
     identifier(issueId) &&
@@ -93,11 +113,13 @@ export function investigationPrompt(
   copy: Dictionary["dashboard"]["investigation"],
 ): string {
   if (target.kind === "monitoring") return copy.reportPrompt;
-  const fixing = target.kind === "issue" && target.intent === "fix";
+  const fixing = target.kind === "security" || (target.kind === "issue" && target.intent === "fix");
   const task =
     target.kind === "deployment"
       ? copy.deploymentPrompt.replace("{deploymentId}", target.deploymentId)
-      : (fixing ? copy.fixPrompt : copy.issuePrompt).replace("{issueId}", target.issueId);
+      : target.kind === "security"
+        ? copy.securityPrompt.replace("{advisoryId}", target.advisoryId)
+        : (fixing ? copy.fixPrompt : copy.issuePrompt).replace("{issueId}", target.issueId);
   return [
     task,
     target.projectId ? copy.appContext.replace("{projectId}", target.projectId) : "",

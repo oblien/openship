@@ -5,7 +5,11 @@ import { Icon } from "@repo/ui/icons";
 import { useResourceScope, useResourceScopeReady } from "@/hooks/use-scoped-resource";
 import { useI18n } from "@/components/i18n-provider";
 import { Button, type ButtonProps } from "@/components/ui/button";
-import { investigationHref, type AssistantInvestigation } from "./investigation";
+import {
+  investigationAutoSubmitKey,
+  investigationHref,
+  type AssistantInvestigation,
+} from "./investigation";
 import { assistantAutoSubmit } from "./auto-submit";
 
 export function InvestigationLink({
@@ -26,10 +30,11 @@ export function InvestigationLink({
   const label =
     target.kind === "monitoring"
       ? copy.reportAction
-      : target.kind === "issue" && target.intent === "fix"
+      : target.kind === "security" || (target.kind === "issue" && target.intent === "fix")
         ? copy.fixAction
         : copy.action;
   const href = investigationHref(target, scope);
+  const autoSubmitKey = investigationAutoSubmitKey(target, scope);
   if (!href) return null;
   if (!ready)
     return (
@@ -45,7 +50,7 @@ export function InvestigationLink({
         prefetch={false}
         aria-label={label}
         title={label}
-        onNavigate={() => assistantAutoSubmit.prepare(href)}
+        onNavigate={autoSubmitKey ? () => assistantAutoSubmit.prepare(autoSubmitKey) : undefined}
       >
         <Icon name="assistant" aria-hidden />
         {!compact && label}

@@ -1271,6 +1271,9 @@
     "hideBanners": "隐藏安全横幅",
     "showBanners": "显示安全横幅",
     "bannerDescription": "在此浏览器和工作区的仪表板顶部显示应用和服务器的安全通知。检查与通知渠道单独控制。",
+    "manualReviewRequired": "需要审查",
+    "manualReviewDescription": "阅读指导以判断此公告是否适用。仅在符合其条件时进行更改。",
+    "manualReviewUnverified": "尚未验证是否适用。需要检查配置或应用，才能确认此应用是否受影响。",
     "openRuntimeConfiguration": "检查运行时配置",
     "severity": {
       "critical": "严重",

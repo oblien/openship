@@ -260,6 +260,7 @@
     "instructions": "Mevcut durumu ve ilgili günlükleri incelemek için OpenShip araçlarını kullan. Olası nedeni kanıtlarla açıkla ve sonraki adımı öner. Önce incele, hiçbir değişiklik yapma. Erişim eksikse gereken belirli izinleri iste.",
     "fixAction": "Yapay zekâyla düzelt",
     "fixTitle": "Uygulama sorununu düzelt",
+    "securityPrompt": "Bu uygulama için {advisoryId} güvenlik uyarısını araştır ve gider. Güncel OpenShip bulgularını ve resmî yönergeleri oku, etkilenen hizmetleri ve etkin yapılandırmalarını incele, ardından onaylı erişim kapsamında kalıcı bir düzeltme uygula. Gerektiğinde etkilenen çalışanları yeniden dağıt ve sonucu doğrula. Eşleşen çalışma zamanı sürümü tek başına uygulamanın istismar edilebilir olduğunu kanıtlamaz. Kanıt olmadan uyarıyı gizleme veya düzeltildiğini iddia etme. Önce uyarının geçerli olup olmadığını belirle. Geçerli değilse kanıtları bildir ve hizmetleri değiştirme.",
     "fixPrompt": "{issueId} uygulama sorununu araştır ve düzelt.",
     "fixInstructions": "Güncel sorunu, durumu ve ilgili günlükleri OpenShip araçlarıyla incele. Nedeni bul, onaylanan erişimin kapsamında uygun bir düzeltme uygula ve sonucu doğrula. Erişim veya gerekli bir karar eksikse ilgili incelemeyi sohbet içinde sun. Değişiklikleri ve kalan sorunları bildir; yalnızca gözlemlenen kanıtlarla kurtarmayı doğrula.",
     "reportAction": "Yapay zekâ durum raporu",

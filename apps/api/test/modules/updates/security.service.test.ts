@@ -185,6 +185,55 @@ async function fixture(owner?: Awaited<ReturnType<typeof seedOwner>>) {
 }
 
 describe("security operations", () => {
+  it("exposes configuration review for manual runtime advisories without allowing an image refresh", async () => {
+    const f = await fixture();
+    const feed = await h.feed();
+    feed.security.advisories = [
+      {
+        ...notice,
+        action: "manual",
+        targets: [{ kind: "runtime", runtime: "php", affected: "<=8.5.12", fixed: null }],
+      },
+    ];
+    h.feed.mockResolvedValue(feed);
+    const previous = (await repos.securityAdvisory.project(f.project.id))!
+      .inventory as securityInventory.SecurityInventory;
+    await repos.securityAdvisory.saveInventory(
+      f.project.id,
+      f.owner.orgId,
+      f.deployment.id,
+      {
+        ...previous,
+        probeKey: securityProbeKey(feed.security.advisories),
+        runtimes: [{ serviceId: f.service.id, runtime: "php", version: "8.5.12" }],
+      },
+      new Date(),
+    );
+    const result = await f.client.updates.security(f.project.id);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      id: notice.id,
+      serviceId: f.service.id,
+      evidence: ["php 8.5.12"],
+      confidence: "possible",
+      manualReviewRequired: true,
+      canRefresh: false,
+    });
+    // Review metadata does not turn a configuration advisory into a redeploy operation.
+    const read = vi.spyOn(securityInventory, "projectSecurityInventory").mockResolvedValue({
+      ...previous,
+      runtimes: [{ serviceId: f.service.id, runtime: "php", version: "8.5.12" }],
+    });
+    try {
+      await expect(f.client.updates.applySecurity(f.project.id, f.input)).rejects.toThrow(
+        /no applicable runtime refresh/,
+      );
+      expect(h.deploy).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it.each([false, true])(
     "rejects retained evidence before dispatching a refresh (automatic=%s)",
     async (automatic) => {

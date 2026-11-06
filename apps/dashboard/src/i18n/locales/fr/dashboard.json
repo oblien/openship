@@ -260,6 +260,7 @@
     "instructions": "Utilise les outils OpenShip pour examiner l’état actuel et les journaux pertinents. Explique la cause probable avec des éléments concrets et propose la prochaine étape. Analyse d’abord, sans rien modifier. Si l’accès manque, demande les autorisations précises nécessaires.",
     "fixAction": "Corriger avec l’IA",
     "fixTitle": "Corriger ce problème",
+    "securityPrompt": "Analyse et corrige l’avis de sécurité {advisoryId} pour cette application. Lis les résultats actuels d’OpenShip et les recommandations officielles, vérifie les services concernés et leur configuration effective, puis applique une correction persistante avec les accès approuvés. Redéploie les processus concernés si nécessaire et vérifie le résultat. Une version correspondante ne prouve pas à elle seule que l’application est exploitable. Ne masque pas l’alerte et ne déclare pas la correction sans preuve. Vérifie d’abord si l’avis s’applique. Sinon, présente les preuves et ne modifie pas les services.",
     "fixPrompt": "Examine et corrige le problème de l’application {issueId}.",
     "fixInstructions": "Utilise les outils OpenShip pour examiner le problème actuel, l’état et les journaux pertinents. Identifie la cause, applique une correction adaptée dans les limites des accès approuvés et vérifie le résultat. Si un accès ou une décision manque, propose la validation correspondante dans le chat. Indique les changements et les problèmes restants ; ne confirme le rétablissement qu’avec des preuves observées.",
     "reportAction": "Rapport de santé IA",

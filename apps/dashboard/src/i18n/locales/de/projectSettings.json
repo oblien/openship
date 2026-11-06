@@ -1271,6 +1271,9 @@
     "hideBanners": "Sicherheitsbanner ausblenden",
     "showBanners": "Sicherheitsbanner anzeigen",
     "bannerDescription": "Sicherheitshinweise für Apps und Server oben im Dashboard dieses Browsers und Arbeitsbereichs anzeigen. Prüfungen und Benachrichtigungskanäle werden separat gesteuert.",
+    "manualReviewRequired": "Überprüfung erforderlich",
+    "manualReviewDescription": "Prüfe anhand der Hinweise, ob dieses Advisory zutrifft. Ändere nur etwas, wenn seine Bedingungen vorliegen.",
+    "manualReviewUnverified": "Die Anwendbarkeit ist ungeprüft. Konfiguration oder Anwendung müssen geprüft werden, um eine Betroffenheit zu bestätigen.",
     "openRuntimeConfiguration": "Laufzeitkonfiguration prüfen",
     "severity": {
       "critical": "Kritisch",

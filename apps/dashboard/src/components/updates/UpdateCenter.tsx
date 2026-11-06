@@ -86,6 +86,7 @@ export function UpdateCenter() {
       securityBanners.enabled || !runtimeAdvisories?.some((runtime) => runtime.id === item.id),
   );
   const runtimeAdvisory = runtimeAdvisories?.find((item) => item.id === advisory?.id);
+  const manualReview = runtimeAdvisory?.manualReview === true;
   const affectedProjects = runtimeAdvisory?.projects ?? [];
   const affectedServers = runtimeAdvisory?.servers ?? [];
   const additionalResources =
@@ -173,14 +174,21 @@ export function UpdateCenter() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className={`text-[11px] font-semibold uppercase tracking-wide ${s.fg}`}>
-                      {runtimeSeverity && Object.hasOwn(severityLabels, runtimeSeverity)
-                        ? severityLabels[runtimeSeverity as keyof typeof severityLabels]
-                        : w.severity[advisory.severity as AdvisorySeverity]}
+                      {manualReview
+                        ? t.projectSettings.securityAdvisories.manualReviewRequired
+                        : runtimeSeverity && Object.hasOwn(severityLabels, runtimeSeverity)
+                          ? severityLabels[runtimeSeverity as keyof typeof severityLabels]
+                          : w.severity[advisory.severity as AdvisorySeverity]}
                     </span>
                     <span className="text-[14px] font-semibold text-foreground">
                       {advisory.title}
                     </span>
                   </div>
+                  {manualReview && (
+                    <p className="mt-1 text-[13px] text-muted-foreground">
+                      {t.projectSettings.securityAdvisories.manualReviewUnverified}
+                    </p>
+                  )}
                   {runtimeAdvisory ? (
                     <ul
                       className="mt-2 flex flex-wrap gap-2 text-[13px]"

@@ -36,6 +36,7 @@ export function buildProjectSecurityResult(
         serviceName: match.serviceId ? (services.get(match.serviceId) ?? null) : null,
         evidence: [match.evidence],
         confidence: match.confidence,
+        ...(match.advisory.action === "manual" ? { manualReviewRequired: true } : {}),
         canRefresh:
           !upstream.stale &&
           !inventory.unknownServices.includes(match.serviceId) &&

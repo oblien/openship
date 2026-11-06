@@ -260,6 +260,7 @@
     "instructions": "Usa las herramientas de OpenShip para revisar el estado actual y los registros relevantes. Explica la causa probable con pruebas y sugiere el siguiente paso. Investiga primero, sin hacer cambios. Si falta acceso, solicita los permisos específicos necesarios.",
     "fixAction": "Corregir con IA",
     "fixTitle": "Corregir este problema",
+    "securityPrompt": "Investiga y resuelve el aviso de seguridad {advisoryId} para esta app. Lee los hallazgos actuales de OpenShip y las recomendaciones oficiales, inspecciona los servicios afectados y su configuración efectiva y aplica una solución persistente con los permisos aprobados. Vuelve a desplegar los procesos afectados cuando sea necesario y verifica el resultado. Una versión coincidente por sí sola no demuestra que la aplicación sea explotable. No ocultes la advertencia ni afirmes una solución sin pruebas. Primero determina si el aviso aplica. Si no aplica, presenta las pruebas y no cambies los servicios.",
     "fixPrompt": "Investiga y corrige el problema de la aplicación {issueId}.",
     "fixInstructions": "Usa las herramientas de OpenShip para revisar el problema actual, el estado y los registros relevantes. Encuentra la causa, aplica una solución adecuada dentro de tus permisos aprobados y verifica el resultado. Si faltan permisos o una decisión necesaria, ofrece la revisión correspondiente en el chat. Informa de los cambios y los problemas pendientes; confirma la recuperación solo con pruebas observadas.",
     "reportAction": "Informe de estado con IA",

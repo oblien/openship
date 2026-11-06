@@ -23,12 +23,18 @@ const h = vi.hoisted(() => ({
   pricing: vi.fn(),
   resourceKey: "account-one",
 }));
-vi.mock("@/context/ModalContext", () => ({ useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }) }));
+vi.mock("@/context/ModalContext", () => ({
+  useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast }) }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.resourceKey }));
 vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => h.pricing }));
+vi.mock("@/hooks/use-scoped-resource", () => ({
+  useResourceScope: () => h.resourceKey,
+  useResourceScopeReady: () => true,
+}));
 vi.mock("@/lib/api/updates", () => ({
   updatesApi: {
     updateRuntime: h.update,
@@ -345,6 +351,53 @@ it("explains a required runtime major upgrade and opens the existing configurati
   expect(h.applySecurity).not.toHaveBeenCalled();
 });
 
+it("shows one actionable manual review for all affected services without starting a deployment", async () => {
+  const result = await h.security();
+  const guidance =
+    "Set session.upload_progress.enabled=0 before request parsing and restart every worker.";
+  result.data.findings = ["api", "worker", "scheduler", "realtime"].map((name) => ({
+    ...result.data.findings[0],
+    id: "php-config-review",
+    serviceId: name,
+    serviceName: name,
+    title: "Review PHP configuration",
+    message: guidance,
+    canRefresh: false,
+    manualReviewRequired: true,
+    confidence: "possible",
+  }));
+  h.security.mockResolvedValue(result);
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  const copy = baseDictionary.projectSettings.securityAdvisories;
+  expect(element.textContent?.split("Review PHP configuration")).toHaveLength(2);
+  expect(element.textContent).toContain("api · worker · scheduler · realtime");
+  expect(element.textContent).toContain(copy.manualReviewDescription);
+  expect(element.textContent).toContain(copy.manualReviewUnverified);
+  expect(element.textContent).not.toContain(copy.possible);
+  const instructions = [...element.querySelectorAll("p")].find(
+    (item) => item.textContent === guidance,
+  )!;
+  expect(instructions.closest("details")?.parentElement?.closest("details")).toBeNull();
+  const link = element.querySelector<HTMLAnchorElement>('a[aria-label="Fix with AI"]')!;
+  expect(link).not.toBeNull();
+  const destination = new URL(link.href);
+  expect(destination.searchParams.get("investigate")).toBe("security");
+  expect(destination.searchParams.get("project")).toBe("project-a");
+  expect(destination.searchParams.get("advisory")).toBe("php-config-review");
+  expect(destination.searchParams.get("scope")).toMatch(/^[a-f0-9]{64}$/);
+  expect(destination.searchParams.has("chat")).toBe(false);
+  await click(copy.openRuntimeConfiguration);
+  const configuration = new URL(h.push.mock.calls[0][0], "http://localhost");
+  expect(configuration.searchParams.get("projectId")).toBe("project-a");
+  expect(configuration.searchParams.get("mode")).toBe("config");
+  expect(h.applySecurity).not.toHaveBeenCalled();
+  expect(h.update).not.toHaveBeenCalled();
+  expect(h.policy).not.toHaveBeenCalled();
+  expect(
+    [...element.querySelectorAll("button")].some((item) => item.textContent === c.refresh),
+  ).toBe(false);
+});
+
 it("never shows another workspace's delayed security findings", async () => {
   const pending = deferred<unknown>();
   h.security.mockReturnValueOnce(pending.promise);
@@ -440,4 +493,118 @@ it("explains a source redeploy prerequisite before offering a refresh and opens 
   expect(h.push).toHaveBeenCalledExactlyOnceWith("/projects/project-a/deployments");
   expect(h.applySecurity).not.toHaveBeenCalled();
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "keeps mixed applicability visible in either service order (reverse: %s)",
+  async (reverse) => {
+    const data = (await h.security()).data;
+    const base = {
+      ...data.findings[0],
+      id: "review",
+      manualReviewRequired: true,
+      canRefresh: false,
+    };
+    const possible = {
+      ...base,
+      serviceId: "possible",
+      serviceName: "possible",
+      confidence: "possible",
+    };
+    const confirmed = {
+      ...base,
+      serviceId: "confirmed",
+      serviceName: "confirmed",
+      confidence: "confirmed",
+    };
+    const findings = reverse ? [confirmed, possible] : [possible, confirmed];
+    await act(async () =>
+      root.render(
+        <SecurityProjectReview projectId="project-a" initialResult={{ ...data, findings }} />,
+      ),
+    );
+    expect(element.textContent).toContain(
+      baseDictionary.projectSettings.securityAdvisories.manualReviewUnverified,
+    );
+    const uncertain = [...element.querySelectorAll("p")].find((item) =>
+      item.textContent?.includes(
+        baseDictionary.projectSettings.securityAdvisories.manualReviewUnverified,
+      ),
+    )!;
+    expect(uncertain.textContent).toContain("possible:");
+    expect(uncertain.textContent).not.toContain("confirmed");
+    expect(element.textContent?.split(base.message)).toHaveLength(2);
+    expect(h.applySecurity).not.toHaveBeenCalled();
+  },
+);
+
+it.each([false, true])(
+  "preserves every service's upgrade warning and progress (reverse: %s)",
+  async (reverse) => {
+    const data = (await h.security()).data;
+    const base = {
+      ...data.findings[0],
+      id: "review",
+      manualReviewRequired: true,
+      canRefresh: false,
+    };
+    const current = {
+      ...base,
+      serviceId: "current",
+      serviceName: "current",
+      runtimeUpgradeRequired: false,
+    };
+    const old = {
+      ...base,
+      serviceId: "old",
+      serviceName: "old",
+      runtimeUpgradeRequired: true,
+      refreshBlockedReason: "A newer runtime major is required",
+      refresh: {
+        status: "failed",
+        error: "The earlier update needs attention",
+        deploymentId: "old-service-update",
+      },
+    };
+    const findings = reverse ? [old, current] : [current, old];
+    await act(async () =>
+      root.render(
+        <SecurityProjectReview projectId="project-a" initialResult={{ ...data, findings }} />,
+      ),
+    );
+    const warning = [...element.querySelectorAll("p")].find(
+      (item) => item.textContent === old.refreshBlockedReason,
+    )!;
+    expect(warning).toBeDefined();
+    expect(warning.closest("div")?.textContent).toContain("old");
+    expect(element.textContent).toContain(old.refresh.error);
+    expect(element.querySelector('a[href="/build/old-service-update"]')).not.toBeNull();
+    expect(element.textContent?.split(base.message)).toHaveLength(2);
+    expect(h.applySecurity).not.toHaveBeenCalled();
+  },
+);
+
+it("retains service-specific refresh targets when an advisory is not grouped for manual review", async () => {
+  const data = (await h.security()).data;
+  const base = data.findings[0];
+  const findings = ["api", "worker"].map((serviceId) => ({
+    ...base,
+    serviceId,
+    serviceName: serviceId,
+  }));
+  await act(async () =>
+    root.render(
+      <SecurityProjectReview projectId="project-a" initialResult={{ ...data, findings }} />,
+    ),
+  );
+  const actions = [...element.querySelectorAll("button")].filter(
+    (item) => item.textContent === c.refresh,
+  );
+  expect(actions).toHaveLength(2);
+  await act(async () => actions[1]!.click());
+  expect(h.applySecurity).toHaveBeenCalledExactlyOnceWith("project-a", {
+    advisoryId: base.id,
+    deploymentId: data.deploymentId,
+    serviceId: "worker",
+  });
 });
