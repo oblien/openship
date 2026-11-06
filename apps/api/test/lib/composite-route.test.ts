@@ -82,6 +82,15 @@ describe("buildCompositeRegistration", () => {
   const resolveDomain = (id: string) =>
     id === "web" ? { hostname: "app.opsh.io", isCustomDomain: false } : null;
 
+  it.each([true, false])("carries the static fallback policy in a composite: %s", (spaFallback) => {
+    const out = buildCompositeRegistration({ services: [web, api], resolveTargetUrl, resolveDomain,
+      resolveStaticRoot: id => id === "web" ? "/opt/openship/site" : null,
+      routingConfig: { spaFallback },
+    });
+    expect(out?.register.spaFallback).toBe(spaFallback);
+    expect(out?.register.proxyLocations).toEqual([{ pathPrefix: "/api/", targetUrl: targets.api }]);
+  });
+
   it("builds a single-domain register: frontend at /, backend at /api (default)", () => {
     const out = buildCompositeRegistration({ services: [web, api], resolveTargetUrl, resolveDomain });
     expect(out).not.toBeNull();

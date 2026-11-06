@@ -787,7 +787,8 @@
       "localPartLabel": "Parte local",
       "localPartHint": "La parte antes de @. En minúsculas y alfanumérica.",
       "destinationLabel": "Reenvía a",
-      "destinationHint": "Cualquier dirección de correo válida: un buzón en este servidor o externa (p. ej. Gmail)."
+      "destinationHint": "Cualquier dirección de correo válida: un buzón en este servidor o externa (p. ej. Gmail).",
+      "inboundNote": "Los alias solo redirigen el correo entrante. Para autenticarte y enviar correo desde esta dirección, crea un buzón de correo."
     },
     "deleteForm": {
       "title": "¿Eliminar este alias?",

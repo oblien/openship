@@ -31,7 +31,9 @@ describe("generateDockerfile - static branch", () => {
     expect(df).toContain("FROM nginx:alpine");
     expect(df).toContain("COPY --from=builder /workspace/frontend/dist /usr/share/nginx/html");
     expect(df).toContain("listen 8080 default_server;");
-    expect(df).toContain("try_files $uri $uri/ /index.html;");
+    expect(df).toContain("try_files $uri $uri/ @osh_fallback;");
+    expect(df).toContain("location @osh_fallback {");
+    expect(df).toContain("try_files /index.html =404;");
     expect(df).toContain('CMD ["nginx", "-g", "daemon off;"]');
   });
 

@@ -787,7 +787,8 @@
       "localPartLabel": "Yerel kısım",
       "localPartHint": "@ işaretinden önceki kısım. Küçük harf, alfasayısal.",
       "destinationLabel": "Şuraya iletilir:",
-      "destinationHint": "Herhangi bir geçerli e-posta adresi — bu sunucudaki bir posta kutusu veya harici (örneğin Gmail)."
+      "destinationHint": "Herhangi bir geçerli e-posta adresi — bu sunucudaki bir posta kutusu veya harici (örneğin Gmail).",
+      "inboundNote": "Takma adresler yalnızca gelen e-postaları yönlendirir. Bu adresle kimlik doğrulamak ve e-posta göndermek için bir posta kutusu oluşturun."
     },
     "deleteForm": {
       "title": "Bu takma ad silinsin mi?",

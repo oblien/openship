@@ -247,6 +247,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         redirects: route.redirects ?? [],
         headerRules: route.headerRules ?? [],
         cleanUrls: route.cleanUrls ?? false,
+        spaFallback: route.spaFallback,
         trailingSlash: route.trailingSlash,
       },
       {

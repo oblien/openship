@@ -396,6 +396,8 @@
       "headersHint": "一致するパスに追加されるレスポンスヘッダー。",
       "permanent": "恒久的",
       "cleanUrls": "クリーン URL",
+      "spaFallback": "SPA フォールバック",
+      "spaFallbackHint": "静的サイトで存在しないパスに index.html を返します。オフにすると 404 を返し、404.html があれば使用します。コンテナ上のサイトには再デプロイで反映されます。",
       "cleanUrlsHint": "（.html を除去）",
       "trailingSlash": "末尾のスラッシュ",
       "proxyLimits": "プロキシ設定",
