@@ -2,6 +2,8 @@
 const SECRET_PATH =
   /(\/(?:accept-invite|invitation-preview|reset-password|verify-email)\/)[^/?#\s]+/gi;
 const MAX_INPUT = 16_384;
+// Allow a larger bounded source when known values may be compressed.
+const MAX_SECRET_INPUT = 262_144;
 // V8 shares this intrinsic getter between Error instances. Comparing identity
 // is safer than looking for "native code": a bound application function has
 // the same printed representation. Other engines expose a plain stack value.
@@ -17,8 +19,8 @@ export function diagnosticPath(value: string): string {
 
 /** Bound work before running expressions; also redact incomplete/truncated secrets. */
 export function redactDiagnosticText(value: string, limit = 2048, secrets: readonly string[] = []): string {
-  let text = redactKnownValues(value, secrets);
-  text = text
+  const text = new DiagnosticText(value, secrets);
+  text
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
     .replace(
@@ -44,7 +46,7 @@ export function redactDiagnosticText(value: string, limit = 2048, secrets: reado
       "[REDACTED TOKEN]",
     )
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*)?/g, "[REDACTED TOKEN]")
-    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>"'`]+/gi, (raw) => {
+    .replace(/(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s<>"'`]+/gi, (raw) => {
       try {
         const url = new URL(raw);
         return `${url.protocol}//${url.host}${diagnosticPath(url.pathname)}`;
@@ -56,45 +58,99 @@ export function redactDiagnosticText(value: string, limit = 2048, secrets: reado
     // child-process errors. Even an innocently named variable may be a secret.
     .replace(/\b[A-Z][A-Z0-9_]*=(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s;,]*)/g, "[REDACTED ENV]")
     .replace(
-      /\b[\w.-]*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|signature|eab[_-]hmac[_-]key)[\w.-]*["']?\s*[:=]\s*(?!\d+:\d+(?:\)|\s|$))(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s,;}\n]+)/gi,
+      /(?<![\w.-])[\w.-]*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|signature|eab[_-]hmac[_-]key)[\w.-]*["']?\s*[:=]\s*(?!\d+:\d+(?:\)|\s|$))(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s,;}\n]+)/gi,
       "[REDACTED CREDENTIAL]",
     )
     .replace(
       /\b(?:failed query|query|sql|params|parameters|request body|response body|environment)\s*:[\s\S]*/gi,
       "[REDACTED PAYLOAD]",
     )
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED EMAIL]");
-  text = diagnosticPathInText(text);
-  return text.length > limit ? text.slice(0, limit) + "…" : text;
+    .replace(/(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED EMAIL]");
+  text
+    .replace(SECRET_PATH, (_match, prefix) => `${prefix}[REDACTED]`)
+    // Consume paths without a query too, avoiding a new scan at every slash.
+    .replace(/(\/[\w/.[\]:%-]+)(\?[^\s]*)?/g, (match, prefix, query) => query ? `${prefix}?[REDACTED]` : match);
+  return text.finish(limit);
 }
 
-/** Match original input only, never our replacement markers. Look ahead far
- * enough to recognize a secret crossing the output boundary, while bounding
- * each scan and the output even when the provider sends a huge payload. */
-function redactKnownValues(value: string, secrets: readonly string[]): string {
-  const literals = [...new Set(secrets.filter(Boolean).flatMap((secret) => [
-    secret, JSON.stringify(secret).slice(1, -1),
-  ]))].sort((a, b) => b.length - a.length);
-  if (!literals.length) return value.slice(0, MAX_INPUT);
-  const matcher = new RegExp(literals.map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
-  const lookahead = literals[0]!.length;
-  let output = "";
-  let cursor = 0;
-  while (output.length < MAX_INPUT) {
-    const remaining = MAX_INPUT - output.length;
-    const window = value.slice(cursor, cursor + remaining + lookahead);
-    const match = matcher.exec(window);
-    if (!match || match.index >= remaining) return output + window.slice(0, remaining);
-    output += window.slice(0, match.index) + "[REDACTED]";
-    cursor += match.index + match[0].length;
+/** Keep known values marked while patterns inspect the original syntax. Pattern
+ * replacements carry those marks forward for surviving input only; generated
+ * markers are never scanned as secrets. Each positive mark identifies one
+ * original match, preserving boundaries between adjacent known values. */
+class DiagnosticText {
+  private value: string;
+  private marks: Uint32Array;
+
+  constructor(value: string, secrets: readonly string[]) {
+    const literals = [...new Set(secrets.filter(Boolean).flatMap((secret) => [
+      secret, JSON.stringify(secret).slice(1, -1),
+    ]))].sort((a, b) => b.length - a.length);
+    const inputLimit = literals.length ? MAX_SECRET_INPUT : MAX_INPUT;
+    this.value = value.slice(0, inputLimit);
+    this.marks = new Uint32Array(this.value.length);
+    if (!literals.length) return;
+    const matcher = new RegExp(
+      literals.map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+      "g",
+    );
+    // Look past the input boundary so clipping cannot expose part of a value.
+    const input = value.slice(0, inputLimit + literals[0]!.length);
+    let id = 0;
+    for (const match of input.matchAll(matcher)) {
+      if (match.index >= inputLimit) break;
+      this.marks.fill(++id, match.index, Math.min(match.index + match[0].length, inputLimit));
+    }
   }
-  return output.slice(0, MAX_INPUT);
-}
 
-function diagnosticPathInText(value: string): string {
-  return value
-    .replace(SECRET_PATH, "$1[REDACTED]")
-    .replace(/(\/[\w/.[\]:%-]+)\?[^\s]*/g, "$1?[REDACTED]");
+  replace(pattern: RegExp, replacement: string | ((...matches: string[]) => string)): this {
+    const parts: { value: string; source?: number }[] = [];
+    let cursor = 0;
+    let length = 0;
+    for (const match of this.value.matchAll(pattern)) {
+      const start = match.index;
+      const end = start + match[0].length;
+      const prefix = this.value.slice(cursor, start);
+      // Callback replacements can retain input (URL host/path, for example).
+      // Hide the whole match when that input includes any known private value.
+      let next = typeof replacement === "string" ? replacement : replacement(...match);
+      const unchanged = typeof replacement === "function" && next === match[0];
+      if (
+        typeof replacement === "function" && !unchanged &&
+        this.marks.subarray(start, end).some((id) => id !== 0)
+      ) next = "[REDACTED]";
+      parts.push({ value: prefix, source: cursor }, { value: next, ...(unchanged && { source: start }) });
+      length += prefix.length + next.length;
+      cursor = end;
+    }
+    if (!parts.length) return this;
+    const tail = this.value.slice(cursor);
+    parts.push({ value: tail, source: cursor });
+    const marks = new Uint32Array(length + tail.length);
+    let offset = 0;
+    for (const part of parts) {
+      if (part.source !== undefined)
+        marks.set(this.marks.subarray(part.source, part.source + part.value.length), offset);
+      offset += part.value.length;
+    }
+    this.value = parts.map((part) => part.value).join("");
+    this.marks = marks;
+    return this;
+  }
+
+  finish(limit: number): string {
+    let text = "";
+    for (let cursor = 0; cursor < this.value.length && text.length < MAX_INPUT;) {
+      const id = this.marks[cursor];
+      if (!id) {
+        text += this.value[cursor++];
+        continue;
+      }
+      text += "[REDACTED]";
+      do { cursor++; } while (this.marks[cursor] === id);
+    }
+    text = text.slice(0, MAX_INPUT);
+    return text.length > limit ? text.slice(0, limit) + "…" : text;
+  }
 }
 
 /** Avoid getters, toJSON/toString and provider object graphs (including Proxies). */

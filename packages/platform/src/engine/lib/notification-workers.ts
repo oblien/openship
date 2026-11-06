@@ -14,7 +14,14 @@
  * The runner handles retry policy uniformly so each worker stays simple.
  */
 
-import { observedAllSettled, reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import {
+  diagnosticProperty,
+  redactDiagnosticText,
+  observedAllSettled,
+  reportError,
+  reportCaughtError as observeCaughtError,
+  diagnostics as errorDiagnostics,
+} from "@repo/core/diagnostics";
 import { createHmac } from "node:crypto";
 import { repos, type NotificationChannel, type NotificationDelivery } from "@repo/db";
 import { sendMail } from "@repo/platform/engine/lib/mail";
@@ -22,7 +29,6 @@ import { decrypt } from "@repo/platform/engine/lib/encryption";
 import { findCategory, headlineForEventType } from "@repo/platform/engine/lib/notification-categories";
 import { env } from "@repo/platform/engine/config/env";
 import { safeFetch } from "@repo/platform/engine/lib/safe-fetch";
-import { safeErrorMessage } from "@repo/core";
 import { trackBackgroundWork } from "./background-work";
 import { canReceiveNotification } from "./notification-access";
 import { notificationPreferenceAllows } from "./notification-preferences";
@@ -266,11 +272,6 @@ export function buildTelegramText(input: { title: string; body: string }): strin
   return `${text.slice(0, TELEGRAM_TEXT_LIMIT - 1).replace(/&[a-z]*$/, "")}…`;
 }
 
-/** Replace a bot token wherever it appears in an error string. */
-function redactBotToken(message: string, botToken: string): string {
-  return botToken ? message.split(botToken).join("bot<redacted>") : message;
-}
-
 /* ─── Channel workers ─────────────────────────────────────────────────────── */
 
 class PermanentNotificationError extends Error {}
@@ -372,7 +373,7 @@ async function sendWebhook(
   });
   if (!res.ok) {
     const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Webhook returned ${res.status}: ${text}`);
   }
 }
 
@@ -418,7 +419,7 @@ async function sendDiscord(
   });
   if (!res.ok) {
     const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Discord webhook returned ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Discord webhook returned ${res.status}: ${text}`);
   }
 }
 
@@ -450,7 +451,7 @@ async function sendSlack(
   });
   if (!res.ok) {
     const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Slack webhook returned ${res.status}: ${text}`);
   }
 }
 
@@ -509,7 +510,7 @@ async function sendMSTeams(
   // downstream — a 2xx means "accepted", not "delivered".
   if (!res.ok) {
     const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text}`);
   }
 }
 
@@ -541,24 +542,18 @@ async function sendTelegram(
   // The host is fixed (api.telegram.org), so unlike the user-URL workers there's
   // no allowPrivate escape hatch to honor — still routed through safeFetch for
   // the IP pin, the redirect refusal and the timeout.
-  let res: Awaited<ReturnType<typeof safeFetch>>;
-  let raw: string;
-  try {
-    res = await safeFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      timeoutMs: 10_000,
-    });
-    raw = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
-  } catch (err) {
-    // The token sits in the URL path, and delivery errors are persisted and shown
-    // in the dashboard — never let a transport error carry it out of here.
-    throw new Error(redactBotToken(safeErrorMessage(err), botToken));
-  }
+  // The shared channel error boundary sanitizes transport and response failures
+  // together before either the test endpoint or delivery runner exposes them.
+  const res = await safeFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    timeoutMs: 10_000,
+  });
+  const raw = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
 
   if (!res.ok) {
-    throw new Error(`Telegram API returned ${res.status}: ${raw.slice(0, 200)}`);
+    throw new Error(`Telegram API returned ${res.status}: ${raw}`);
   }
   // Telegram answers HTTP 200 with `{ok:false, description}` for the most common
   // misconfigurations (bot never started by the user, kicked from the group, bad
@@ -572,7 +567,7 @@ async function sendTelegram(
   }
   if (parsed && parsed.ok === false) {
     throw new Error(
-      `Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`,
+      `Telegram rejected the message: ${parsed.description ?? "unknown error"}`,
     );
   }
 }
@@ -617,18 +612,25 @@ export async function sendTestToChannel(channel: NotificationChannel): Promise<v
 }
 
 function channelErrorMessage(error: unknown, channel: NotificationChannel): string {
-  let message = safeErrorMessage(error);
+  const secrets: string[] = [];
   const config = (channel.config ?? {}) as Record<string, unknown>;
   for (const key of ["webhookUrl", "botToken", "hmacSecret", "url"]) {
     const stored = config[key];
     if (typeof stored !== "string" || !stored) continue;
-    let secret = stored;
-    if (key !== "url") { try { secret = decrypt(stored); } catch (diagnosticFailure) {
+    secrets.push(stored);
+    if (key === "url") continue;
+    try {
+      secrets.push(decrypt(stored));
+    } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers");
-    } }
-    if (secret) message = message.split(secret).join("<redacted>");
+    }
   }
-  return message;
+  const message = typeof error === "string" ? error : diagnosticProperty(error, "message");
+  return redactDiagnosticText(
+    typeof message === "string" ? message : "Notification delivery failed.",
+    2000,
+    secrets,
+  );
 }
 
 /* ─── Runner loop ─────────────────────────────────────────────────────────── */

@@ -129,10 +129,38 @@ describe("telegram delivery", () => {
 
     await expect(
       sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "12345" })),
-    ).rejects.toThrow(/bot<redacted>/);
+    ).rejects.toThrow(/connect ETIMEDOUT \[REDACTED\]/);
     await expect(
       sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "12345" })),
     ).rejects.not.toThrow(TOKEN);
+  });
+
+  it("redacts a complete credential before clipping a transport error", async () => {
+    const token = "private-value-".repeat(1600);
+    safeFetch.mockRejectedValueOnce(new Error(`Transport failed for ${token}: connection refused`));
+    await expect(sendTestToChannel(telegramChannel({ botToken: token, chatId: "test" })))
+      .rejects.toThrow("Transport failed for [REDACTED]: connection refused");
+  });
+
+  it("uses one redaction pass for overlapping and JSON-escaped channel credentials", async () => {
+    const secret = 'private"value\nnext';
+    safeFetch.mockRejectedValueOnce(new Error(`x ${JSON.stringify(secret)}`));
+    await expect(sendTestToChannel(telegramChannel({
+      botToken: "x", chatId: "test", hmacSecret: "redacted", webhookUrl: secret,
+    }))).rejects.toThrow('[REDACTED] "[REDACTED]"');
+  });
+
+  it.each([false, true])("redacts credentials before clipping a provider response (HTTP success: %s)", async (ok) => {
+    const description = `${"p".repeat(195)}${TOKEN} connection refused`;
+    safeFetch.mockResolvedValueOnce({
+      ok, status: ok ? 200 : 400,
+      text: async () => ok ? JSON.stringify({ ok: false, description }) : description,
+    });
+    const error = await sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "test" }))
+      .catch((failure: Error) => failure);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(`${"p".repeat(195)}[REDACTED] connection refused`);
+    expect((error as Error).message).not.toContain(TOKEN.slice(0, 5));
   });
 
   it("refuses to send when half the config is missing", async () => {

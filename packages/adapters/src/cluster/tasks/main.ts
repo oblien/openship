@@ -1,4 +1,9 @@
-import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import {
+  diagnosticProperty,
+  redactDiagnosticText,
+  reportCaughtError as observeCaughtError,
+  diagnostics as errorDiagnostics,
+} from "@repo/core/diagnostics";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,19 +44,18 @@ export const restoreSignature = (config: DatabaseTaskConfig) =>
     )
     .digest("hex");
 export function taskError(error: unknown) {
-  let message = error instanceof Error ? error.message : String(error);
-  for (const key of [
+  const secrets = [
     "REDISCLI_AUTH",
     "PGPASSWORD",
     "BACKUP_ACCESS_KEY_ID",
     "BACKUP_SECRET_ACCESS_KEY",
-  ]) {
-    const secret = process.env[key];
-    if (secret) message = message.replaceAll(secret, "[redacted]");
-  }
-  return message
-    .replace(/((?:https?|postgres(?:ql)?|redis):\/\/)[^\s/@]+:[^\s/@]+@/g, "$1[redacted]@")
-    .slice(-3000);
+  ].map((key) => process.env[key] ?? "");
+  const message = typeof error === "string" ? error : diagnosticProperty(error, "message");
+  return redactDiagnosticText(
+    typeof message === "string" ? message : "Database task failed.",
+    3000,
+    secrets,
+  );
 }
 const cleanupMessage = "Archive retention cleanup in progress.";
 async function prune(config: DatabaseTaskConfig, index: TaskArchiveIndex, store: TaskArchiveStore) {

@@ -182,6 +182,13 @@ describe("durable native database tasks", () => {
           "pg_restore private-database-password private-storage-key postgresql://user:pass@database.private",
         ),
       ),
-    ).toBe("pg_restore [redacted] [redacted] postgresql://[redacted]@database.private");
+    ).toBe("pg_restore [REDACTED] [REDACTED] postgresql://database.private");
+  });
+  it("redacts overlapping and JSON-escaped task credentials without rewriting markers", () => {
+    vi.stubEnv("REDISCLI_AUTH", "x");
+    vi.stubEnv("PGPASSWORD", "redacted");
+    vi.stubEnv("BACKUP_SECRET_ACCESS_KEY", 'private"value\nnext');
+    expect(taskError(new Error(`x ${JSON.stringify(process.env.BACKUP_SECRET_ACCESS_KEY)}`)))
+      .toBe('[REDACTED] "[REDACTED]"');
   });
 });

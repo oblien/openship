@@ -30,6 +30,22 @@ function recorder(options: ConstructorParameters<typeof ErrorReporter>[0] = {}) 
 }
 
 describe("structured error reporting", () => {
+  it.each([
+    ["dial postgresql://user:opaque-private-value@db:5432/app failed", "postgresql"],
+    ["token=opaque-private-value failed", "token"],
+    ["to\u001b[31mken=opaque-private-value failed", "ken"],
+  ])("keeps credential syntax visible to redaction when a known value matches it: %s", (message, secret) => {
+    expect(redactDiagnosticText(message, 2048, [secret])).not.toContain("opaque-private-value");
+  });
+  it("keeps every fragment of a known secret private when a pattern changes its middle", () => {
+    const secret = "private-prefix token=private-middle private-suffix";
+    const result = redactDiagnosticText(`failed: ${secret}`, 2048, [secret]);
+    expect(result).not.toContain("private-");
+  });
+  it("keeps known values private when they cross the raw input cap", () => {
+    const secret = "private-value-".repeat(1600);
+    expect(redactDiagnosticText("\u0000".repeat(262_140) + secret, 2048, [secret])).toBe("[REDACTED]");
+  });
   it("does not redact its own markers when known values include single letters", () => {
     const secrets = ["x", "R", "E", "D", "A", "C", "T"];
     expect(redactDiagnosticText("x", 2048, secrets)).toBe("[REDACTED]");
