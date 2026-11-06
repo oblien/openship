@@ -26,6 +26,9 @@ function conflict(message: string): never {
   throw new AppError(message, 409, "SERVICE_ENVIRONMENT_UNAVAILABLE");
 }
 
+/** Its text contains sanitized provider detail plus public Docker state fields. */
+class EnvironmentStartupError extends Error {}
+
 function containerIdentity(
   containerId: string,
   info: Dockerode.ContainerInspectInfo,
@@ -57,6 +60,7 @@ export async function applyDockerEnvironment(
   const original = docker.getContainer(containerId);
   const secrets = [...Object.values(environment), ...(options.commandArgv ?? [])];
   const failureMessage = (error: unknown) => {
+    if (error instanceof EnvironmentStartupError) return error.message;
     const message = diagnosticProperty(error, "message");
     return redactDiagnosticText(
       typeof message === "string" ? message : typeof error === "string" ? error : "Docker operation failed",
@@ -65,13 +69,16 @@ export async function applyDockerEnvironment(
     );
   };
   // Never report the original provider error, its stack or attached payload.
-  const reportFailure = (error: unknown) => observeCaughtError(new Error(failureMessage(error)), "adapters/runtime/docker-environment");
+  const reportFailure = (error: unknown) => {
+    const message = failureMessage(error);
+    observeCaughtError(new Error(message), "adapters/runtime/docker-environment");
+    return message;
+  };
   let before: Dockerode.ContainerInspectInfo;
   try {
     before = await original.inspect();
   } catch (error) {
-    reportFailure(error);
-    throw new AppError(failureMessage(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
+    throw new AppError(reportFailure(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
   }
   secrets.push(...(before.Config.Env ?? []).map((entry) => entry.slice(entry.indexOf("=") + 1)));
   secrets.push(...(before.Config.Cmd ?? []), ...(before.Config.Entrypoint ?? []));
@@ -99,8 +106,7 @@ export async function applyDockerEnvironment(
         "The running service's image is no longer available on this target. Use Redeploy to rebuild it.",
       );
     }
-    reportFailure(error);
-    throw new AppError(failureMessage(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
+    throw new AppError(reportFailure(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
   }
 
   const name = before.Name.replace(/^\//, "");
@@ -205,8 +211,8 @@ export async function applyDockerEnvironment(
       after.RestartCount > 0 ||
       after.State.Health?.Status === "unhealthy"
     ) {
-      throw new Error(
-        `The service failed to start: ${startupFailure(after)}. Check the service logs for details.`,
+      throw new EnvironmentStartupError(
+        `The service failed to start: ${startupFailure(after, failureMessage)}. Check the service logs for details.`,
       );
     }
     const result = containerIdentity(replacement.id, after);
@@ -223,7 +229,7 @@ export async function applyDockerEnvironment(
     }
     return result;
   } catch (error) {
-    reportFailure(error);
+    const failure = reportFailure(error);
     const recovery: string[] = [];
     if (replacement) {
       try {
@@ -233,16 +239,14 @@ export async function applyDockerEnvironment(
         });
         await replacement.remove();
       } catch (restoreError) {
-        reportFailure(restoreError);
-        recovery.push(failureMessage(restoreError));
+        recovery.push(reportFailure(restoreError));
       }
     }
     if (renamed) {
       try {
         await original.rename({ name });
       } catch (restoreError) {
-        reportFailure(restoreError);
-        recovery.push(failureMessage(restoreError));
+        recovery.push(reportFailure(restoreError));
       }
     }
     for (const network of disconnected) {
@@ -251,35 +255,32 @@ export async function applyDockerEnvironment(
           .getNetwork(network)
           .connect({ Container: before.Id, EndpointConfig: endpointSettings[network] });
       } catch (restoreError) {
-        reportFailure(restoreError);
-        recovery.push(failureMessage(restoreError));
+        recovery.push(reportFailure(restoreError));
       }
     }
     if (stopped && recovery.length === 0) {
       try {
         await original.start();
       } catch (restoreError) {
-        reportFailure(restoreError);
-        recovery.push(failureMessage(restoreError));
+        recovery.push(reportFailure(restoreError));
       }
     }
     if (renamed && recovery.length === 0 && options.onRestored) {
       try {
         await options.onRestored(containerIdentity(before.Id, await original.inspect()));
       } catch (restoreError) {
-        reportFailure(restoreError);
-        recovery.push(failureMessage(restoreError));
+        recovery.push(reportFailure(restoreError));
       }
     }
     if (recovery.length > 0) {
       throw new AppError(
-        `Environment apply failed and the previous service could not be fully restored: ${failureMessage(error)}. ${recovery.join("; ")}`,
+        `Environment apply failed and the previous service could not be fully restored: ${failure}. ${recovery.join("; ")}`,
         503,
         "SERVICE_ENVIRONMENT_RECOVERY_FAILED",
       );
     }
     throw new AppError(
-      `Environment changes were not applied; the previous service configuration was preserved. ${failureMessage(error)}`,
+      `Environment changes were not applied; the previous service configuration was preserved. ${failure}`,
       502,
       "SERVICE_ENVIRONMENT_APPLY_FAILED",
     );
@@ -288,12 +289,12 @@ export async function applyDockerEnvironment(
 
 /** Docker's own account of a failed startup. Container logs are left out: they
  * can echo environment values, and this message is shown and reported. */
-function startupFailure(info: Dockerode.ContainerInspectInfo): string {
+function startupFailure(info: Dockerode.ContainerInspectInfo, sanitize: (error: unknown) => string): string {
   const { State: state, RestartCount: restarts } = info;
   const reason = state.OOMKilled
     ? "it ran out of memory"
     : state.Error
-      ? `Docker reported: ${state.Error}`
+      ? `Docker reported: ${sanitize(state.Error)}`
       : state.Health?.Status === "unhealthy"
         ? "its health check failed"
         : state.Running

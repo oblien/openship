@@ -17,14 +17,7 @@ export function diagnosticPath(value: string): string {
 
 /** Bound work before running expressions; also redact incomplete/truncated secrets. */
 export function redactDiagnosticText(value: string, limit = 2048, secrets: readonly string[] = []): string {
-  let text = value;
-  // Literal values must be removed before truncation, which could otherwise
-  // cut a secret in half. Names alone cannot identify every credential.
-  const literals = secrets.filter(Boolean).flatMap((secret) => [secret, JSON.stringify(secret).slice(1, -1)]);
-  for (const secret of [...new Set(literals)].sort((a, b) => b.length - a.length)) {
-    text = text.replaceAll(secret, "[REDACTED]");
-  }
-  text = text.slice(0, MAX_INPUT);
+  let text = redactKnownValues(value, secrets);
   text = text
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
@@ -73,6 +66,29 @@ export function redactDiagnosticText(value: string, limit = 2048, secrets: reado
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED EMAIL]");
   text = diagnosticPathInText(text);
   return text.length > limit ? text.slice(0, limit) + "…" : text;
+}
+
+/** Match original input only, never our replacement markers. Look ahead far
+ * enough to recognize a secret crossing the output boundary, while bounding
+ * each scan and the output even when the provider sends a huge payload. */
+function redactKnownValues(value: string, secrets: readonly string[]): string {
+  const literals = [...new Set(secrets.filter(Boolean).flatMap((secret) => [
+    secret, JSON.stringify(secret).slice(1, -1),
+  ]))].sort((a, b) => b.length - a.length);
+  if (!literals.length) return value.slice(0, MAX_INPUT);
+  const matcher = new RegExp(literals.map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+  const lookahead = literals[0]!.length;
+  let output = "";
+  let cursor = 0;
+  while (output.length < MAX_INPUT) {
+    const remaining = MAX_INPUT - output.length;
+    const window = value.slice(cursor, cursor + remaining + lookahead);
+    const match = matcher.exec(window);
+    if (!match || match.index >= remaining) return output + window.slice(0, remaining);
+    output += window.slice(0, match.index) + "[REDACTED]";
+    cursor += match.index + match[0].length;
+  }
+  return output.slice(0, MAX_INPUT);
 }
 
 function diagnosticPathInText(value: string): string {

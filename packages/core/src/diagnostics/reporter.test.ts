@@ -30,6 +30,21 @@ function recorder(options: ConstructorParameters<typeof ErrorReporter>[0] = {}) 
 }
 
 describe("structured error reporting", () => {
+  it("does not redact its own markers when known values include single letters", () => {
+    const secrets = ["x", "R", "E", "D", "A", "C", "T"];
+    expect(redactDiagnosticText("x", 2048, secrets)).toBe("[REDACTED]");
+    expect(redactDiagnosticText("x".repeat(100_000), 2048, secrets).length).toBeLessThanOrEqual(2049);
+  });
+  it("recognizes long and regex-shaped secrets across bounded windows", () => {
+    const secret = "private-value-".repeat(1600);
+    expect(redactDiagnosticText(`${secret}${secret}: not found`, 100, [secret]))
+      .toBe("[REDACTED][REDACTED]: not found");
+    const metacharacters = "+*.[\\$";
+    expect(redactDiagnosticText(`exec ${metacharacters} failed`, 100, [metacharacters]))
+      .toBe("exec [REDACTED] failed");
+    const boundary = redactDiagnosticText("p".repeat(16_380) + "needle-secret", 16_384, ["needle-secret"]);
+    expect(boundary).not.toContain("need");
+  });
   it("redacts known values before clipping diagnostics, including innocently named credentials", () => {
     const secret = "private-value-".repeat(1600);
     const message = `exec: ${secret}: not found`;

@@ -469,4 +469,14 @@ describe("runtime-only environment apply", () => {
     expect(h.docker.createContainer.mock.calls[0]?.[0].Cmd).toEqual([next]);
   });
 
+  it("keeps structured exit codes and restart counts visible with boolean environment values", async () => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({ ...h.before, Id: "new-container",
+      State: { ...h.before.State, Running: false, ExitCode: 1, Error: "" }, RestartCount: 1,
+    } as typeof h.before);
+    reported.mockClear();
+    await expect(h.apply({ FLAG: "1", PORT: "3000" })).rejects.toThrow("exited with code 1 after 1 restart");
+    expect(reported.mock.calls.at(-1)?.[0].message).toContain("exited with code 1 after 1 restart");
+  });
+
 });
