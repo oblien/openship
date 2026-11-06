@@ -795,7 +795,21 @@ services:
       expression: "redis-server --requirepass ${REDIS_PASSWORD}",
       unresolvedVariables: [],
       sourceValue: "redis-server --requirepass s3cret",
+      sourceEnvironment: { REDIS_PASSWORD: "s3cret" },
     });
+  });
+
+  it("keeps only referenced file defaults and overlays the final command environment", () => {
+    const parsed = parseComposeFile(JSON.stringify({ services: { worker: { image: "busybox",
+      command: ["echo", "${FIRST:?required}", "${CHOICE:-${SECOND}}", "$${UNRELATED}", "$FIRST$$suffix"],
+    } } }), { envFileContent: "FIRST=file-only\nSECOND=fallback\nCHOICE=original\nUNRELATED=never-copy\n" });
+    const template = parsed.services[0]!.advanced!.commandTemplate!;
+    expect(template.sourceEnvironment).toEqual({ FIRST: "file-only", SECOND: "fallback", CHOICE: "original" });
+    expect(resolveComposeCommandTemplate(template, { CHOICE: "" }).commandArgv)
+      .toEqual(["echo", "file-only", "fallback", "${UNRELATED}", "file-only$suffix"]);
+    expect(resolveComposeCommandTemplate(template, { FIRST: "operator value", CHOICE: "new" }).commandArgv)
+      .toEqual(["echo", "operator value", "new", "${UNRELATED}", "operator value$suffix"]);
+    expect(() => resolveComposeCommandTemplate(template, { FIRST: "" })).toThrow("Missing required Compose command variables: FIRST");
   });
 
   it("no command template when the command has no interpolation (#1613)", () => {

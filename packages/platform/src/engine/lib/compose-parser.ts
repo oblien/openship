@@ -211,10 +211,20 @@ export function parseComposeFile(
     // compose-adjacent .env alone produced, mirroring the image template
     // above. Deploy re-evaluates it against the final env.
     const parsedCommand = parseCommand(svc.command, interpolationEnv);
+    const commandReferences = new Set(
+      (typeof svc.command === "string" ? [svc.command] : Array.isArray(svc.command) ? svc.command : [])
+        .flatMap((part) => [...String(part).replaceAll("$$", "\0").matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]!)),
+    );
+    const sourceCommandEnv = Object.fromEntries(
+      [...commandReferences]
+        .filter((key) => Object.hasOwn(sourceInterpolationEnv, key))
+        .map((key) => [key, sourceInterpolationEnv[key]!]),
+    );
     const commandTemplate = parsedCommand.template
       ? {
           ...parsedCommand.template,
           sourceValue: parseCommand(svc.command, sourceInterpolationEnv).command,
+          ...(Object.keys(sourceCommandEnv).length && { sourceEnvironment: sourceCommandEnv }),
         }
       : undefined;
     const parsedAdvanced = parseAdvanced(svc, interpolationEnv, name, unsupported);

@@ -638,9 +638,9 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
   it("re-resolves imported command arguments on environment Apply and rolls back a failed command", async () => {
     const source = parseComposeFile(JSON.stringify({ services: { api: {
       image: "busybox:latest", command: ["sh", "-c",
-        'mkdir -p /www; printf "%s" "$$1" > /www/index.html; exec httpd -f -p 3000 -h /www',
-        "template", "${VALUE:?required}"],
-    } } })).services[0]!;
+        'mkdir -p /www; printf "%s" "$$1" > /www/index.html; printf "%s" "$$2" > /www/source; exec httpd -f -p 3000 -h /www',
+        "template", "${VALUE:?required}", "${FILE_ONLY:?required}"],
+    } } }), { envFileContent: "FILE_ONLY=file default\nUNRELATED=never-export\n" }).services[0]!;
     await repos.service.update(service.id, { command: source.command, commandArgv: source.commandArgv,
       advanced: source.advanced, environment: { VALUE: "new" } });
     const value = "a value with spaces and $literal";
@@ -649,11 +649,14 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     });
     const applied = await client.services.applyEnvironment(project.id, service.id);
     const info = await runtime.docker.getContainer(applied.containerId).inspect();
-    expect(info.Config.Cmd?.at(-1)).toBe(value);
+    expect(info.Config.Cmd?.at(-2)).toBe(value);
+    expect(info.Config.Cmd?.at(-1)).toBe("file default");
+    expect(info.Config.Env.some((value) => /^(FILE_ONLY|UNRELATED)=/.test(value))).toBe(false);
     expect(info.Config.Cmd?.[2]).toContain('"$1"');
     expect(info.Image).toBe(before.Image);
     expect(info.Config.Entrypoint).toEqual(before.Config.Entrypoint);
     expect(await exec(probe, ["wget", "-qO-", "http://api-alias:3000"])).toBe(value);
+    expect(await exec(probe, ["wget", "-qO-", "http://api-alias:3000/source"])).toBe("file default");
     expect(await exec(runtime.docker.getContainer(applied.containerId), ["cat", "/data/keep"])).toBe("persistent");
     // This changes Cmd, not the immutable image. The ordinary replacement flow
     // must restore the previous working command and keep the env pending.

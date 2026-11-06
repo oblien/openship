@@ -268,11 +268,12 @@ export function resolveComposeEnvironmentTemplates(
  * empty-string behavior.
  */
 export function resolveComposeCommandTemplate(
-  template: { expression: string | string[] },
+  template: { expression: string | string[]; sourceEnvironment?: Record<string, string> },
   env: Record<string, string>,
 ): { command: string; commandArgv: string[] } {
   const parts = typeof template.expression === "string" ? [template.expression] : template.expression;
-  const resolved = parts.map((part) => resolveComposeInterpolation(part, env));
+  const scope = { ...template.sourceEnvironment, ...env };
+  const resolved = parts.map((part) => resolveComposeInterpolation(part, scope));
   const required = [...new Set(resolved.flatMap((part) => part.missingRequired.map((item) => item.variable)))];
   if (required.length) throw new Error(`Missing required Compose command variables: ${required.join(", ")}`);
   if (typeof template.expression === "string") {

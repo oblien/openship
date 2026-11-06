@@ -295,6 +295,9 @@ export type ComposeAdvanced = {
     expression: string | string[];
     unresolvedVariables: string[];
     sourceValue?: string;
+    /** Referenced Compose-adjacent .env defaults, kept internal like the
+     * resolved command. They interpolate Cmd without exporting extra variables. */
+    sourceEnvironment?: Record<string, string>;
   };
   /**
    * Environment keys whose stored inline value is the original Compose

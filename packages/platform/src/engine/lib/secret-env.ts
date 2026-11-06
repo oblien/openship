@@ -399,6 +399,7 @@ export function maskDriftChanges<T extends { field: string; from: unknown; to: u
             ...(template as Record<string, unknown>),
             expression: ENV_MASK,
             ...(Object.hasOwn(template, "sourceValue") && { sourceValue: ENV_MASK }),
+            ...(Object.hasOwn(template, "sourceEnvironment") && { sourceEnvironment: ENV_MASK }),
           };
         }
         return advanced;
