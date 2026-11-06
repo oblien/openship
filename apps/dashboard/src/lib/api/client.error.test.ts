@@ -66,6 +66,34 @@ describe("getApiErrorMessage", () => {
     expect(getApiErrorMessage(err, "Connection test failed")).toBe("Host is not reachable");
   });
 
+  it("explains an HTML gateway failure without showing the page or an empty status label", () => {
+    const err = new ApiError(
+      502,
+      "",
+      "<!DOCTYPE html><html>Cloudflare private diagnostic page</html>",
+    );
+    const message = getApiErrorMessage(err, "Failed to start deployment");
+    expect(message).toContain("Failed to start deployment");
+    expect(message).toContain("upstream service");
+    expect(message).toContain("502");
+    expect(message).toMatch(/try again/i);
+    expect(message).not.toContain("<html>");
+    expect(message).not.toContain("private diagnostic");
+    expect(message).not.toBe("API 502: ");
+  });
+
+  it("uses the public detail from a structured gateway problem response", () => {
+    const err = new ApiError(502, "", {
+      type: "https://errors.example.com/origin-unreachable",
+      title: "Bad Gateway",
+      status: 502,
+      detail: "The origin server could not complete this request. Try again shortly.",
+    });
+    expect(getApiErrorMessage(err, "Failed to start deployment")).toBe(
+      "The origin server could not complete this request. Try again shortly.",
+    );
+  });
+
   it("surfaces the first field error of a schema-validation 400", () => {
     const err = new ApiError(400, "Bad Request", {
       success: false,
