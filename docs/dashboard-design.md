@@ -1205,6 +1205,13 @@ conversation title or provider name/avatar above each response. The page header
 identifies the active speaker with its name and a General/Agent/Automation label.
 Keep character avatars in the switcher; chat titles appear in history. Omit the
 permission/keyboard helper line below the composer.
+Pending agent questions use a compact **Waiting for your answer** disclosure directly above
+the composer. **Answer** expands the controls in place; keep the regular composer available.
+Use a rounded translucent card, bound the answer area with its own scroll, and keep
+**Send answer** visible below it. Collapse preserves unsent choices and text. Multiple requests
+share this panel, with separate drafts and retry identities; both live and message-mode
+questions use the existing response path. Show submission failures inside the panel and
+remove resolved questions when the conversation refreshes.
 Before the assistant is enabled, introduce **AI Agents** with a compact 30–36px
 heading, a short description and native provider marks. Group the host picker,
 single **Enable AI Agents** action and brief access guidance in one setup card.

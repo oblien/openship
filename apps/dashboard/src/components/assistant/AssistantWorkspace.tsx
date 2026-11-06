@@ -52,7 +52,8 @@ import { AgentAvatar } from "./AgentAvatar";
 import { AssistantChatIdentity } from "./AssistantChatIdentity";
 import { useConversation } from "./use-conversation";
 import { useAssistantResume } from "./use-assistant-resume";
-import { useInvestigationAutoSend } from "./use-investigation-auto-send";
+import { useAutoSubmit } from "@/hooks/use-auto-submit";
+import { assistantAutoSubmit } from "./auto-submit";
 import { AutomationConversationStatus } from "./AutomationRunReview";
 import { useI18n } from "@/components/i18n-provider";
 import {
@@ -556,7 +557,7 @@ function ConversationWorkspace({
     }
   };
   const select = (chat: string | null) => {
-    cancelInvestigationAutoSend();
+    cancelAutoSubmit();
     resume.cancel();
     currentChat.current = chat;
     draftChat.current = chat;
@@ -573,7 +574,7 @@ function ConversationWorkspace({
     });
   };
   const submit = async (continuation?: string): Promise<boolean> => {
-    cancelInvestigationAutoSend();
+    cancelAutoSubmit();
     if (sending.current || !canSubmit || (!continuation && !draftCanSend)) return false;
     sending.current = true;
     const submittedDraft = { text: draft, images: images.images };
@@ -661,8 +662,9 @@ function ConversationWorkspace({
       sending.current = false;
     }
   };
-  const cancelInvestigationAutoSend = useInvestigationAutoSend({
-    href: investigation ? investigationHref(investigation.target, scope) : null,
+  const cancelAutoSubmit = useAutoSubmit({
+    intent: assistantAutoSubmit,
+    key: investigation ? investigationHref(investigation.target, scope) : null,
     ready:
       canSubmit &&
       !!draftCanSend &&
@@ -672,10 +674,10 @@ function ConversationWorkspace({
       !agents.error &&
       draft === investigationDraft &&
       images.images.length === 0,
-    onSend: submit,
+    onSubmit: submit,
   });
   const openAgent = async (selectedId: string | null, fresh = false) => {
-    cancelInvestigationAutoSend();
+    cancelAutoSubmit();
     const selected = selectedId
       ? savedAgents.data?.find((item) => item.id === selectedId && !item.archived)
       : null;
@@ -730,7 +732,7 @@ function ConversationWorkspace({
     } else navigate();
   };
   const selectAutomation = (flowId: string) => {
-    cancelInvestigationAutoSend();
+    cancelAutoSubmit();
     resume.cancel();
     setMobileRail(false);
     setHistory(false);
@@ -832,7 +834,7 @@ function ConversationWorkspace({
           compact={!!id || !!pending || resume.resolving}
           images={images.images}
           onImages={(files) => {
-            cancelInvestigationAutoSend();
+            cancelAutoSubmit();
             void images.add(files);
           }}
           onRemoveImage={images.remove}
@@ -841,7 +843,7 @@ function ConversationWorkspace({
           imagesSupported={agent?.imageInput === true}
           value={draft}
           onChange={(value) => {
-            cancelInvestigationAutoSend();
+            cancelAutoSubmit();
             setDraft(value);
           }}
           onSend={() => void submit()}

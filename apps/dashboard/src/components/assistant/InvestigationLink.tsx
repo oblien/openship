@@ -6,7 +6,7 @@ import { useResourceScope, useResourceScopeReady } from "@/hooks/use-scoped-reso
 import { useI18n } from "@/components/i18n-provider";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { investigationHref, type AssistantInvestigation } from "./investigation";
-import { prepareInvestigationAutoSend } from "./use-investigation-auto-send";
+import { assistantAutoSubmit } from "./auto-submit";
 
 export function InvestigationLink({
   target,
@@ -45,7 +45,7 @@ export function InvestigationLink({
         prefetch={false}
         aria-label={label}
         title={label}
-        onNavigate={() => prepareInvestigationAutoSend(href)}
+        onNavigate={() => assistantAutoSubmit.prepare(href)}
       >
         <Icon name="assistant" aria-hidden />
         {!compact && label}
