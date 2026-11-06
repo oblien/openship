@@ -199,14 +199,16 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     // This fixture deliberately has no edge daemon. Feed the allocation path
     // the strict scanner's authoritative empty result; all port claims,
     // reservations, Docker binds, and rollback lifecycle remain real.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
         getPlatform: () => localPlatform.platform,
-        edgeProxyFor: () => ({
-          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
-        }),
+        edgeProxyFor: edgeInventory,
+        loopbackPortInventoryFor: edgeInventory,
       };
     });
     vi.doMock("@repo/platform/engine/modules/deployments/service-checks", async (importOriginal) => {

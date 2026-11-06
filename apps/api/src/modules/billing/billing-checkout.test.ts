@@ -152,6 +152,11 @@ describe("Cloud customer checkout", () => {
       },
     });
     expect(input.successUrl).toContain("session_id={CHECKOUT_SESSION_ID}");
+    for (const value of [input.successUrl, input.cancelUrl]) {
+      const url = new URL(value);
+      expect(url.searchParams.get("organizationId")).toBe("org-a");
+      expect(url.searchParams.get("workspaceId")).toBe("workspace-org-a");
+    }
     expect(input.offer).not.toHaveProperty("policy");
     expect(input).not.toHaveProperty("planTierId");
     expect(input).not.toHaveProperty("customer");
@@ -172,6 +177,36 @@ describe("Cloud customer checkout", () => {
           max_ram_mb: 4096, max_total_ram_mb: 4096, max_disk_gb: 50, max_total_disk_gb: 50 },
       }),
     }));
+  });
+
+  it("retries a pre-upgrade checkout with its original redirect URLs and payment key", async () => {
+    await createCheckoutSession(ctx(), "starter", "monthly", "existing-checkout");
+    const request = h.checkout.mock.calls[0]![0];
+    const legacy = { ...request,
+      successUrl: request.successUrl.replace("organizationId=org-a&", ""),
+      cancelUrl: request.cancelUrl.replace("organizationId=org-a&", ""),
+    };
+    h.pending.set("org-a", [{ request: legacy, checkoutId: "cs_test" }]);
+    h.checkout.mockClear();
+    await createCheckoutSession(ctx(), "starter", "monthly", "existing-checkout");
+    expect(h.checkout).toHaveBeenCalledExactlyOnceWith(legacy);
+    expect(h.pending.get("org-a")).toHaveLength(1);
+  });
+
+  it.each(["organization", "price"])("does not accept a changed %s as a legacy retry", async (change) => {
+    await createCheckoutSession(ctx(), "starter", "monthly", "foreign-return");
+    const request = h.checkout.mock.calls[0]![0];
+    const changed = change === "organization" ? { ...request,
+      successUrl: request.successUrl.replace("organizationId=org-a", "organizationId=org-b"),
+    } : { ...request, offer: { ...request.offer, unitAmount: request.offer.unitAmount + 100 },
+      successUrl: request.successUrl.replace("organizationId=org-a&", ""),
+      cancelUrl: request.cancelUrl.replace("organizationId=org-a&", ""),
+    };
+    h.pending.set("org-a", [{ request: changed, checkoutId: "cs_test" }]);
+    h.checkout.mockClear();
+    await expect(createCheckoutSession(ctx(), "starter", "monthly", "foreign-return"))
+      .rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_CONFLICT" });
+    expect(h.checkout).not.toHaveBeenCalled();
   });
   it("refuses a retired offer before creating a checkout", async () => {
     const plan = PRICING.plans.find(plan => plan.id === "hobby")!;
@@ -407,7 +442,7 @@ describe("Cloud customer checkout", () => {
   it("opens a separate customer portal for each trusted organization", async () => {
     for (const org of ["org-a", "org-b"]) {
       expect(await createPortalSession(org)).toEqual({ portalUrl: "https://billing.stripe.com/p/session/test" });
-      expect(h.portal).toHaveBeenLastCalledWith({ namespace: `ns-${org}`, returnUrl: "https://app.openship.io/billing/overview" });
+      expect(h.portal).toHaveBeenLastCalledWith({ namespace: `ns-${org}`, returnUrl: `https://app.openship.io/billing/overview?organizationId=${org}&workspaceId=workspace-${org}` });
     }
   });
   it("stops renewal at the paid period end and can resume without granting credits", async () => {

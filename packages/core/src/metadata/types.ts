@@ -57,6 +57,8 @@ export interface RoutingConfig {
   headers?: DeploymentHeaderRule[];
   /** Strip `.html` extensions (serve `/about` for `/about.html`). */
   cleanUrls?: boolean;
+  /** Serve index.html for missing static paths. Defaults to true; false returns 404. */
+  spaFallback?: boolean;
   /** Enforce (true) or remove (false) trailing slashes. */
   trailingSlash?: boolean;
   /** Project-level reverse-proxy tunables (client_max_body_size, timeouts,

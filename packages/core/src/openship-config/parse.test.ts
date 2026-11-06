@@ -851,3 +851,15 @@ describe("automatic deploy path overrides", () => {
       expect(parseOpenshipConfig({ autoDeployPaths }).errors.length).toBeGreaterThan(0);
   });
 });
+
+
+describe("routes.spaFallback", () => {
+  it.each([true, false])("preserves %s", (spaFallback) => {
+    const { config, errors } = parseOpenshipConfig({ routes: { spaFallback } });
+    expect(errors).toEqual([]);
+    expect(config?.routes?.spaFallback).toBe(spaFallback);
+  });
+  it("rejects a non-boolean setting", () => {
+    expect(parseOpenshipConfig({ routes: { spaFallback: "false" } }).errors).toContain("routes.spaFallback: must be a boolean");
+  });
+});

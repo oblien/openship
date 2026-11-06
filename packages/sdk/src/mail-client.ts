@@ -54,6 +54,9 @@ export function createRemoteMailOperations(http: HttpClient): MailOperations {
       deployExternalWebmail: { method: "POST", path: () => "/mail/webmail/deploy-external" },
     }),
     ...createRemoteResourceOperations(http, MailServerSchemas, {
+      fail2banStatus: { method: "GET", path: (id) => `${server(id)}/fail2ban/status` },
+      fail2banBan: { method: "POST", path: (id) => `${server(id)}/fail2ban/ban` },
+      fail2banUnban: { method: "POST", path: (id) => `${server(id)}/fail2ban/unban` },
       forget: { method: "DELETE", path: (id) => `/mail/servers/${encodeURIComponent(id)}` },
       getHealth: { method: "GET", path: (id) => `/mail/health/${encodeURIComponent(id)}` },
       getCertificate: { method: "GET", path: (id) => `${server(id)}/certificate` },

@@ -44,6 +44,13 @@ function ipv6Words(host: string): number[] | null {
   );
 }
 
+/** Strict address literals for API inputs, without DNS names, CIDRs or zone IDs. */
+export function ipAddressVersion(value: string): 0 | 4 | 6 {
+  if (!value || value.length > 45 || /[^\da-f:.]/i.test(value)) return 0;
+  if (ipv4Octets(value)) return 4;
+  return ipv6Words(value) ? 6 : 0;
+}
+
 /**
  * Whether connecting to this host stays in the caller's own network namespace.
  *

@@ -29,6 +29,16 @@ const certificate = {
 };
 
 describe("mail administration uses the existing authenticated controller", () => {
+  it("uses shared Fail2ban contracts and rejects option injection before any HTTP request", async () => {
+    const f = fixture((url) => Response.json(url.pathname.endsWith("status") ? { jails: [], details: {}, checkedAt: "2026-11-06T08:00:00Z", canManage: true } : { success: true, output: "1" }));
+    await f.ship.mail.fail2banStatus("srv/one", { jail: "postfix" });
+    expect(f.calls[0].url.pathname).toBe("/control/api/mail/admin/srv%2Fone/fail2ban/status");
+    expect(f.calls[0].url.search).toBe("?jail=postfix");
+    await f.ship.mail.fail2banBan("srv/one", { ip: "2001:db8::7", jail: "postfix" });
+    expect(JSON.parse(f.calls[1].request.body as string)).toEqual({ ip: "2001:db8::7", jail: "postfix" });
+    await expect(f.ship.mail.fail2banUnban("srv/one", { ip: "--all" })).rejects.toThrow();
+    expect(f.calls).toHaveLength(2);
+  });
   it("preserves scope and encoding and sends destructive flags as query parameters", async () => {
     const f = fixture(() => Response.json({ ok: true, mode: "soft" }));
     await f.ship.mail.removeMailbox("srv/one", "user+ops@example.com", { hard: false });

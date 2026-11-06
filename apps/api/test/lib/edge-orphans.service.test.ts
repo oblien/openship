@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   removeRoute: vi.fn(async (_h: string) => {}),
   publicUrl: undefined as string | undefined,
   inventoryFailure: false,
+  cloud: false,
+  createExecutor: vi.fn(() => ({})),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -36,7 +38,7 @@ vi.mock("@repo/db", () => ({
 }));
 
 vi.mock("@repo/adapters", () => ({
-  createExecutor: () => ({}),
+  createExecutor: h.createExecutor,
   edgeProxy: async () =>
     h.edgePresent
       ? {
@@ -68,7 +70,7 @@ vi.mock("../../src/lib/controller-helpers", () => ({
 
 vi.mock("@repo/platform/engine/config/env", () => ({
   get env() {
-    return { OPENSHIP_PUBLIC_URL: h.publicUrl };
+    return { OPENSHIP_PUBLIC_URL: h.publicUrl, CLOUD_MODE: h.cloud };
   },
 }));
 
@@ -274,3 +276,15 @@ vi.mock("@repo/platform/engine/lib/platform-config", () => ({
 vi.mock("@repo/platform/engine/lib/resource-access", () => ({
   platform: () => ({ routing: { removeRoute: h.removeRoute } }),
 }));
+
+it("does not inspect the SaaS edge while checking a tenant's domain", async () => {
+  h.cloud = true;
+  h.createExecutor.mockClear();
+  try {
+    expect(await untrackedSiteFor("tenant.example.com")).toBeNull();
+    expect((await scanEdgeOrphans()).scanned).toBe(false);
+    expect(h.createExecutor).not.toHaveBeenCalled();
+  } finally {
+    h.cloud = false;
+  }
+});

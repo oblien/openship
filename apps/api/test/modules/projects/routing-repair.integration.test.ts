@@ -217,6 +217,17 @@ beforeAll(async () => {
   }
   const executor = {
     exec: async (command: string) => {
+      if (command === `${OPENRESTY_DEFAULT_PATHS.bin} '-T'`) {
+        // Match the real edge's resolved dump, including every vhost written by
+        // this fixture, so strict inventory sees route changes during recovery.
+        const sites = [...h.files]
+          .filter(
+            ([path]) =>
+              path.startsWith(`${OPENRESTY_DEFAULT_PATHS.sitesDir}/`) && path.endsWith(".conf"),
+          )
+          .map(([, contents]) => contents);
+        return `http { server { listen 80; return 404; }\n${sites.join("\n")}\n}`;
+      }
       const move = command.match(/^mv '([^']+)' '([^']+)'$/);
       if (move && h.files.has(move[1]!)) {
         h.files.set(move[2]!, h.files.get(move[1]!)!);

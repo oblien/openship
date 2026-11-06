@@ -396,6 +396,8 @@
       "headersHint": "为匹配的路径添加的响应标头。",
       "permanent": "永久",
       "cleanUrls": "简洁 URL",
+      "spaFallback": "SPA 回退",
+      "spaFallbackHint": "静态站点：为不存在的路径返回 index.html。关闭后返回真正的 404，并使用可用的 404.html。容器中的站点需要重新部署才能应用更改。",
       "cleanUrlsHint": "（去除 .html）",
       "trailingSlash": "末尾斜杠",
       "proxyLimits": "代理设置",

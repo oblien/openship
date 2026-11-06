@@ -162,6 +162,7 @@ export function buildCompositeRegistration(input: {
       ...(compiled?.redirects.length ? { redirects: compiled.redirects } : {}),
       ...(compiled?.headerRules.length ? { headerRules: compiled.headerRules } : {}),
       ...(compiled?.cleanUrls ? { cleanUrls: true } : {}),
+      ...(compiled?.spaFallback === undefined ? {} : { spaFallback: compiled.spaFallback }),
       ...(compiled?.trailingSlash === undefined ? {} : { trailingSlash: compiled.trailingSlash }),
     },
   };
