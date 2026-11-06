@@ -1268,6 +1268,8 @@ that the agent has finished. Live thinking/tool indicators replace the generic W
 indicator. The stop control uses a small solid square. Smooth scrolling follows
 new content until the user scrolls up; **Latest messages** resumes following. Respect
 reduced motion for text, loading indicators and scrolling.
+Give **Latest messages** the composer's frosted surface (`bg-card/80` and `backdrop-blur-xl`)
+with a subtle shadow so transcript text cannot visually overlap its label.
 
 Keep the chat header to a single identity row: assistant/agent name and its role.
 Character avatars belong in the switcher and picker, including during loading.

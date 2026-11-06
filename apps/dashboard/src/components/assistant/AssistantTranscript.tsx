@@ -153,7 +153,7 @@ export function AssistantTranscript({
         <Button
           variant="secondary"
           size="sm"
-          className="absolute z-20 self-center"
+          className="absolute z-20 self-center bg-card/80 shadow-sm backdrop-blur-xl hover:bg-card/90"
           style={{ bottom: "calc(var(--assistant-composer-height, 0px) + 8px)" }}
           onClick={() => void scrollToBottom({ animation: reducedMotion ? "instant" : "smooth" })}
         >
