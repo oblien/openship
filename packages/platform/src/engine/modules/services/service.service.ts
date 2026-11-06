@@ -867,6 +867,15 @@ export async function updateService(
     storedArgv: svc.commandArgv as string[] | null,
   });
   if (nextCommandArgv !== undefined) patch.commandArgv = nextCommandArgv;
+  if (
+    ("command" in patch && patch.command !== svc.command) ||
+    (data.commandArgv !== undefined && JSON.stringify(data.commandArgv) !== JSON.stringify(svc.commandArgv))
+  ) {
+    patch.advanced = mergeAdvanced(
+      ("advanced" in patch ? patch.advanced : svc.advanced) as ComposeAdvanced | null,
+      { commandTemplate: null },
+    );
+  }
   // Monorepo sub-app build settings: same trim-or-null treatment so empty
   // strings become null in DB (matches the rest of the service columns).
   for (const key of [

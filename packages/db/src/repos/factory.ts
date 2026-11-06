@@ -159,6 +159,7 @@ export {
   normalizeComposeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  composeValuesEqual,
   reconcileComposeSpec,
   unresolvedComposeEnvironmentKeys,
   composeSpecDiff,

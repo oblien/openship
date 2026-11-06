@@ -1,6 +1,6 @@
 import { OperationError } from "@repo/contracts";
 import { createHmac } from "node:crypto";
-import { sortJsonKeys } from "@repo/core";
+import { commandToArgv, sortJsonKeys } from "@repo/core";
 import { toComposeSpec, type Service } from "@repo/db";
 import { env } from "../../config/env";
 
@@ -19,6 +19,12 @@ function sourceSpec(value: Parameters<typeof toComposeSpec>[0]) {
         unresolvedVariables: [],
       },
     };
+  }
+  if (spec.advanced?.commandTemplate) {
+    const { expression } = spec.advanced.commandTemplate;
+    spec.command = typeof expression === "string" ? expression : expression.join(" ");
+    spec.commandArgv = commandToArgv(expression);
+    spec.advanced = { ...spec.advanced, commandTemplate: { expression, unresolvedVariables: [] } };
   }
   for (const key of ["environmentTemplateKeys", "buildArgTemplateKeys"] as const) {
     if (spec.advanced?.[key]?.length) spec.advanced[key] = [...spec.advanced[key]].sort();
@@ -66,7 +72,11 @@ export function composeSourceChanges(rows: readonly Service[], services: readonl
                 buildArgTemplateKeys: s.advanced?.buildArgTemplateKeys,
               },
             };
-        return JSON.stringify(sourceSpec(baseline)) !== JSON.stringify(sourceSpec(s));
+        const template = s.advanced?.commandTemplate;
+        const migrated = !baseline.advanced?.commandTemplate && template && baseline.command === template.sourceValue
+          ? { ...baseline, advanced: { ...baseline.advanced, commandTemplate: template } }
+          : baseline;
+        return JSON.stringify(sourceSpec(migrated)) !== JSON.stringify(sourceSpec(s));
       })
       .map((s) => s.name),
     removed: existing.filter((s) => s.importedSpec && !names.has(s.name)).map((s) => s.name),

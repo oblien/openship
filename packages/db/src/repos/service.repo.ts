@@ -101,7 +101,7 @@ export function toComposeSpec(s: {
 }
 
 /** Reordered maps are equal; ports, volumes and argv retain their array order. */
-const composeValuesEqual = (a: unknown, b: unknown): boolean =>
+export const composeValuesEqual = (a: unknown, b: unknown): boolean =>
   JSON.stringify(sortJsonKeys(a)) === JSON.stringify(sortJsonKeys(b));
 
 /** Compose-field equality (ignores routing + ordering-insensitive env). */
@@ -259,6 +259,19 @@ export function reconcileComposeSpec(
     merged.command = ours.command;
     merged.commandArgv = ours.commandArgv;
   }
+  // The command template travels with the command: a manually edited command
+  // keeps the operator's value (its template was cleared at write time when
+  // the edit was literal); an untouched command takes the source's template.
+  const commandFromSource =
+    options.acceptUpstream ||
+    (base === null
+      ? Boolean(theirs.advanced?.commandTemplate) &&
+        (Boolean(ours.advanced?.commandTemplate) ||
+          ours.command === theirs.advanced?.commandTemplate?.sourceValue)
+      : composeValuesEqual(ours.command, base.command) &&
+        composeValuesEqual(ours.commandArgv, base.commandArgv) &&
+        (!base.advanced?.commandTemplate ||
+          composeValuesEqual(ours.advanced?.commandTemplate, base.advanced.commandTemplate)));
   const buildArgFromSource = (key: string) =>
     options.acceptUpstream ||
     (base === null
@@ -278,6 +291,7 @@ export function reconcileComposeSpec(
   merged.environment = restored.environment;
   merged.advanced = mergeAdvanced(merged.advanced, {
     imageTemplate: (imageFromSource ? theirs : ours).advanced?.imageTemplate ?? null,
+    commandTemplate: (commandFromSource ? theirs : ours).advanced?.commandTemplate ?? null,
     environmentTemplateKeys: restored.advanced.environmentTemplateKeys ?? null,
     environmentOverrideKeys: restored.advanced.environmentOverrideKeys ?? null,
     buildArgTemplateKeys:
@@ -327,6 +341,8 @@ export function composeWritePatch(
       : parsed.advanced;
   const hasImageTemplateMarker = Object.hasOwn(parsed.advanced ?? {}, "imageTemplate");
   const usesLiteralImage = parsed.image !== undefined && !hasImageTemplateMarker;
+  const hasCommandTemplateMarker = Object.hasOwn(parsed.advanced ?? {}, "commandTemplate");
+  const usesLiteralCommand = parsed.command !== undefined && !hasCommandTemplateMarker;
   const spec = toComposeSpec({ ...parsed, advanced: parsedAdvanced });
   // An explicit reset discards the stored blob, while retaining provenance
   // supplied by this incoming parse. Omission still preserves operator fields.
@@ -351,6 +367,12 @@ export function composeWritePatch(
     // inheriting the current row's expression would make either one deploy a
     // different artifact than it requested.
     delete advanced.imageTemplate;
+  }
+  if (usesLiteralCommand) {
+    // A writer that supplies a command without parser provenance means that
+    // command literally — same as the image above. Inheriting the stored
+    // expression would re-resolve an operator edit against the file's variables.
+    delete advanced.commandTemplate;
   }
   // An explicit empty map clears build args and any stale template provenance,
   // but should not add metadata to an otherwise byte-for-byte snapshot replay.
@@ -423,6 +445,7 @@ const COMPOSE_OWNED_ADVANCED_KEYS = [
   "shmSize",
   "runtime",
   "imageTemplate",
+  "commandTemplate",
   "environmentTemplateKeys",
   "environmentOverrideKeys",
   "buildArgTemplateKeys",

@@ -3,6 +3,7 @@ import {
   composeSpecDiff,
   composeSpecsEqual,
   composeWritePatch,
+  reconcileComposeSpec,
   toComposeSpec,
 } from "./service.repo";
 
@@ -354,5 +355,103 @@ describe("environment provenance across writers (#893)", () => {
     const parsed = { name: "api", environment: { MY_VAR: "literal" } };
     expect(composeWritePatch(parsed, stored).advanced.environmentOverrideKeys).toEqual(["MY_VAR"]);
     expect(composeWritePatch(parsed, stored, true).advanced).toEqual({ readiness: { enabled: true } });
+  });
+});
+
+/**
+ * #1613: a compose `command:` that carried interpolation keeps its authored
+ * expression in `advanced.commandTemplate`, so deploy can re-evaluate it
+ * against the final env. The template travels with the command: a literal
+ * writer means its command literally, and an edited command never inherits
+ * the old expression.
+ */
+describe("compose command templates (#1613)", () => {
+  const template = {
+    expression: "redis-server --requirepass ${REDIS_PASSWORD}",
+    unresolvedVariables: ["REDIS_PASSWORD"],
+    sourceValue: "redis-server --requirepass ",
+  };
+  const storedTemplated = {
+    command: "redis-server --requirepass ",
+    commandArgv: ["redis-server", "--requirepass"],
+    advanced: { commandTemplate: template },
+  };
+
+  it("persists a parser-supplied command template through the write patch", () => {
+    const patch = composeWritePatch(
+      {
+        name: "redis",
+        command: "redis-server --requirepass ",
+        commandArgv: ["redis-server", "--requirepass"],
+        advanced: { commandTemplate: template },
+      },
+      null,
+    );
+    expect(patch.advanced.commandTemplate).toEqual(template);
+  });
+
+  it("a literal command writer clears a stored template", () => {
+    const patch = composeWritePatch(
+      { name: "redis", command: "redis-server --requirepass s3cret" },
+      storedTemplated,
+    );
+    expect(patch.advanced.commandTemplate).toBeUndefined();
+  });
+
+  it("an authoritative re-parse without a command drops the stored template", () => {
+    const patch = composeWritePatch(
+      { name: "redis", command: "redis-server", advanced: {} },
+      storedTemplated,
+      true,
+    );
+    expect(patch.advanced.commandTemplate).toBeUndefined();
+  });
+
+  it("a writer with no opinion on the command keeps the stored template", () => {
+    const patch = composeWritePatch({ name: "redis" }, storedTemplated);
+    expect(patch.advanced.commandTemplate).toEqual(template);
+  });
+});
+
+describe("reconcileComposeSpec carries the command template (#1613)", () => {
+  const template = {
+    expression: "redis-server --requirepass ${REDIS_PASSWORD}",
+    unresolvedVariables: ["REDIS_PASSWORD"],
+    sourceValue: "redis-server --requirepass ",
+  };
+  const base = {
+    command: "redis-server --requirepass ",
+    commandArgv: ["redis-server", "--requirepass"],
+    advanced: {},
+  };
+
+  it("takes the source template when the command was untouched", () => {
+    const merged = reconcileComposeSpec(base, base, {
+      ...base,
+      advanced: { commandTemplate: template },
+    });
+    expect(merged.advanced?.commandTemplate).toEqual(template);
+  });
+
+  it("an edited command keeps the operator value and drops the template", () => {
+    const merged = reconcileComposeSpec(
+      {
+        command: "redis-server --requirepass s3cret",
+        commandArgv: ["redis-server", "--requirepass", "s3cret"],
+        advanced: {},
+      },
+      { ...base, advanced: { commandTemplate: template } },
+      { ...base, advanced: { commandTemplate: template } },
+    );
+    expect(merged.command).toBe("redis-server --requirepass s3cret");
+    expect(merged.advanced?.commandTemplate).toBeUndefined();
+  });
+
+  it("a legacy import adopts the source template when its command is the scan-time value", () => {
+    const merged = reconcileComposeSpec(base, null, {
+      ...base,
+      advanced: { commandTemplate: template },
+    });
+    expect(merged.advanced?.commandTemplate).toEqual(template);
   });
 });

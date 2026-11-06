@@ -2489,6 +2489,61 @@ describe("redeployBuildSession environment snapshot", () => {
  * the project deploys with zero service rows.
  */
 describe("requestBuildAccess — folder-upload compose services", () => {
+  it.each([false, true])("preserves wizard command ownership through an environment refresh (manual=%s)", async (manual) => {
+    repos.project.findById.mockResolvedValue(baseProject({ composePath: "compose.yml",
+      gitProvider: "github", gitUrl: "https://github.com/acme/app.git", gitOwner: "acme", gitRepo: "app", localPath: null }));
+    const initial = { ...scannedServices[0], command: "echo ", commandArgv: ["echo", ""],
+      advanced: { commandTemplate: { expression: ["echo", "${VALUE}"], unresolvedVariables: ["VALUE"] } } };
+    const refreshed = { ...initial, command: "echo new", commandArgv: ["echo", "new"],
+      advanced: { commandTemplate: { expression: ["echo", "${VALUE}"], unresolvedVariables: [] } } };
+    installStatefulComposeRepo({ ...initial, id: "svc-api", projectId: "project-1", kind: "compose",
+      enabled: true, exposed: false, importedSpec: toComposeSpec(initial), driftSpec: null });
+    resolveProjectInfo.mockResolvedValue({ services: [refreshed] });
+    getLatestCommit.mockResolvedValue({ sha: "new-sha", message: "release" });
+    await requestBuildAccess(ctx, { projectId: "project-1", envVars: { VALUE: "new" },
+      services: [manual ? { ...initial, command: "echo literal", commandArgv: ["echo", "literal"] } : initial] as any,
+      serviceDeploymentMode: "services" });
+    const submitted = repos.service.syncFromCompose.mock.calls.at(-1)?.[1]?.[0];
+    expect(submitted.advanced?.commandTemplate).toEqual(manual ? undefined : refreshed.advanced.commandTemplate);
+    expect(submitted.commandArgv).toEqual(["echo", manual ? "literal" : "new"]);
+  });
+  it("preserves file-only command defaults through the trusted upload flow", async () => {
+    const initial = {
+      ...scannedServices[0], command: "echo file-only", commandArgv: ["echo", "file-only"],
+      advanced: { commandTemplate: {
+        expression: ["echo", "${FILE_ONLY:?required}"], unresolvedVariables: [],
+        sourceValue: "echo file-only", sourceEnvironment: { FILE_ONLY: "file-only" },
+      } },
+    };
+    const uploadSessionId = seedSession({ services: [initial] });
+    scanFolderSession.mockResolvedValueOnce({ services: [initial] });
+    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: [initial] as any });
+    const written = repos.service.syncFromCompose.mock.calls.at(-1)?.[1]?.[0];
+    expect(written.advanced.commandTemplate.sourceEnvironment).toEqual({ FILE_ONLY: "file-only" });
+    expect(written.advanced.commandTemplate.sourceEnvironment).not.toBe(initial.advanced.commandTemplate.sourceEnvironment);
+  });
+
+  it("does not rewrite source settings merely because map keys were reordered", async () => {
+    const initial = { ...scannedServices[0], buildArgs: { FIRST: "one", SECOND: "two" },
+      advanced: { buildArgTemplateKeys: [] } };
+    const refreshed = { ...initial, buildArgs: { SECOND: "two", FIRST: "one" } };
+    const uploadSessionId = seedSession({ services: [initial] });
+    repos.service.listByProject.mockResolvedValue([{ ...initial, id: "svc-api", projectId: "project-1", kind: "compose", enabled: true }]);
+    scanFolderSession.mockResolvedValueOnce({ services: [refreshed] });
+    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId });
+    expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
+  });
+
+  it("refreshes command-only changes without a services payload", async () => {
+    const initial = { ...scannedServices[0], command: "echo old", commandArgv: ["echo", "old"] };
+    const refreshed = { ...initial, command: "echo new", commandArgv: ["echo", "new"] };
+    const uploadSessionId = seedSession({ services: [initial] });
+    repos.service.listByProject.mockResolvedValue([{ ...initial, id: "svc-api", projectId: "project-1", kind: "compose", enabled: true }]);
+    scanFolderSession.mockResolvedValueOnce({ services: [refreshed] });
+    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId });
+    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1",
+      [expect.objectContaining({ command: "echo new", commandArgv: ["echo", "new"] })], { removeMissing: false });
+  });
   /** The scan's parsed compose, as stored on the session. */
   const scannedServices = [
     {

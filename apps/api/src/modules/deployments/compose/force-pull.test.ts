@@ -177,3 +177,89 @@ describe("static host artifact trust", () => {
     ).toBe(false);
   });
 });
+
+describe("compose command template re-resolution (#1613)", () => {
+  const templatedService = {
+    ...service,
+    command: "redis-server --requirepass ",
+    commandArgv: ["redis-server", "--requirepass"],
+    advanced: {
+      commandTemplate: {
+        expression: "redis-server --requirepass ${REDIS_PASSWORD}",
+        unresolvedVariables: ["REDIS_PASSWORD"],
+        sourceValue: "redis-server --requirepass ",
+      },
+    },
+  };
+
+  function templatedConfig(environment: Record<string, string>, svc: unknown = templatedService) {
+    return createServiceRuntimeConfig({
+      project: project as never,
+      dep: { id: "deployment-1", trigger: "manual" } as never,
+      service: svc as never,
+      image: "redis:7",
+      environment,
+    });
+  }
+
+  it("re-resolves a stored command template against the deploy env", () => {
+    const cfg = templatedConfig({ REDIS_PASSWORD: "s3cret" });
+    expect(cfg.command).toBe("redis-server --requirepass s3cret");
+    expect(cfg.commandArgv).toEqual(["redis-server", "--requirepass", "s3cret"]);
+  });
+
+  it("resolves an unfilled variable to empty, like import time", () => {
+    const cfg = templatedConfig({});
+    expect(cfg.command).toBe("redis-server --requirepass ");
+    expect(cfg.commandArgv).toEqual(["redis-server", "--requirepass"]);
+  });
+
+  it("leaves the scan-time command alone when no template is stored", () => {
+    const cfg = templatedConfig(
+      { REDIS_PASSWORD: "s3cret" },
+      { ...service, command: "node worker.js", commandArgv: ["node", "worker.js"] },
+    );
+    expect(cfg.command).toBe("node worker.js");
+    expect(cfg.commandArgv).toEqual(["node", "worker.js"]);
+  });
+
+  it("a list-form template resolves each argv element in place", () => {
+    const cfg = templatedConfig(
+      { REDIS_PASSWORD: "s3cret" },
+      {
+        ...service,
+        command: "redis-server --requirepass ",
+        commandArgv: ["redis-server", "--requirepass", ""],
+        advanced: {
+          commandTemplate: {
+            expression: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"],
+            unresolvedVariables: ["REDIS_PASSWORD"],
+            sourceValue: "redis-server --requirepass ",
+          },
+        },
+      },
+    );
+    expect(cfg.command).toBe("redis-server --requirepass s3cret");
+    expect(cfg.commandArgv).toEqual(["redis-server", "--requirepass", "s3cret"]);
+  });
+
+  it("never applies a command template to a monorepo startCommand", () => {
+    const cfg = templatedConfig(
+      { REDIS_PASSWORD: "s3cret" },
+      {
+        ...service,
+        startCommand: "node server.js",
+        command: "redis-server --requirepass ",
+        commandArgv: ["redis-server", "--requirepass"],
+        advanced: {
+          commandTemplate: {
+            expression: "redis-server --requirepass ${REDIS_PASSWORD}",
+            unresolvedVariables: ["REDIS_PASSWORD"],
+          },
+        },
+      },
+    );
+    expect(cfg.command).toBe("node server.js");
+    expect(cfg.commandArgv).toBeNull();
+  });
+});

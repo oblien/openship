@@ -18,6 +18,7 @@ import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { containerIdForService, liveContainerIdWithRuntime } from "./service-container";
 import { liveMatchTiersForDeployment } from "./live-state";
+import { serviceRuntimeCommand } from "./service-runtime-command";
 import {
   loadServiceEnvironment,
   resolveServiceRuntimeEnvironment,
@@ -123,6 +124,12 @@ export async function applyServiceEnvironment(
         serverId,
         cloudRuntime,
       });
+      // A Compose command may consume these same variables. Re-evaluate only
+      // that authored template; preserve the live image, entrypoint and all
+      // unrelated settings through the existing replacement/rollback flow.
+      const command = !service.startCommand && service.advanced?.commandTemplate
+        ? serviceRuntimeCommand(service, environment).commandArgv ?? undefined
+        : undefined;
       let routingChanged = false;
       const refreshRoutes = async (identity: { containerId: string; ip?: string }) => {
         const warnings: string[] = [];
@@ -151,6 +158,7 @@ export async function applyServiceEnvironment(
       const result = await runtime.applyEnvironment(containerId, environment, {
         projectId,
         serviceName: service.name,
+        commandArgv: command,
         onReplaced: async (result) => {
           // Cloud Docker routes address stable workspace host ports. Its bridge
           // IP is private to that workspace and requires no cloud edge update.

@@ -125,6 +125,16 @@ function setup() {
 }
 
 describe("runtime-only environment apply", () => {
+  it.each([{ argv: ["sh", "-c", "printf '%s' 'space and $literal'"] }, { argv: [] }])(
+    "uses resolved Cmd while preserving the image and entrypoint: %j", async ({ argv }) => {
+      const h = setup();
+      await applyDockerEnvironment(h.docker as unknown as Dockerode, h.before.Id,
+        { FLAG: "new" }, { ...h.options, commandArgv: argv });
+      expect(h.docker.createContainer.mock.calls[0]?.[0]).toMatchObject({
+        Cmd: argv, Entrypoint: ["entrypoint.sh"], Image: IMAGE_ID,
+      });
+    },
+  );
   it("applies on an automatic-subnet network without requesting the daemon-assigned IP", async () => {
     const h = setup();
     const create = h.docker.createContainer.getMockImplementation()!;
