@@ -174,8 +174,11 @@ function resolveProxyTarget(
  * prove where this route dials" is never equivalent to "it dials no loopback
  * port" in a security-sensitive allocation decision.
  */
-function strictLoopbackUpstreamPorts(config: string): Set<number> {
+export function strictLoopbackUpstreamPorts(config: string): Set<number> {
   const normalized = stripComments(config);
+  if (!normalized.trim() || !/server\s*\{/.test(normalized)) {
+    throw new Error("Cannot read Openship edge routes: active OpenResty config dump was empty");
+  }
   const upstreams = parseUpstreams(normalized);
   const ports = new Set<number>();
 

@@ -396,6 +396,8 @@
       "headersHint": "Cabeçalhos de resposta adicionados para os caminhos correspondentes.",
       "permanent": "permanente",
       "cleanUrls": "URLs limpas",
+      "spaFallback": "Fallback de SPA",
+      "spaFallbackHint": "Sites estáticos: servir index.html para caminhos inexistentes. Desative para retornar um 404 real com 404.html, se disponível. Reimplante os sites em contêineres para aplicar as alterações.",
       "cleanUrlsHint": "(remover .html)",
       "trailingSlash": "Barra final",
       "proxyLimits": "Configurações do proxy",

@@ -8,6 +8,12 @@ import { setActiveOrganizationId } from "@/lib/api/client";
 import type { IssueFeed } from "@/lib/api/issues";
 import { IssuesView } from "./IssuesView";
 
+// Keep the streaming fixture's session settled and avoid Better Auth's delayed
+// browser cleanup running after happy-dom has been disposed.
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({ data: null, isPending: false }),
+}));
+
 vi.mock("@/components/updates/useUpdates", () => ({
   useUpdates: () => ({ securityOverview: { projects: [], pendingProjects: 0, unknownProjects: 0 }, securityAvailable: true, refresh: vi.fn() }),
 }));

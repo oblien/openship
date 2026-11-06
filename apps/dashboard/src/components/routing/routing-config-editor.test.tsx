@@ -228,3 +228,15 @@ it("sets and clears each trailing slash policy without losing other settings", a
   await select("Trailing slash", "Automatic");
   expect(latest).toEqual({ proxy: { gzip: false } });
 });
+
+
+it("defaults SPA fallback on and preserves explicit off through other edits", async () => {
+  await render();
+  expect(button("SPA fallback").getAttribute("aria-checked")).toBe("true");
+  await click("SPA fallback");
+  expect(latest).toEqual({ spaFallback: false });
+  await click("Hide .html extensions");
+  expect(latest).toEqual({ spaFallback: false, cleanUrls: true });
+  await click("SPA fallback");
+  expect(latest).toEqual({ spaFallback: true, cleanUrls: true });
+});

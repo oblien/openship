@@ -61,7 +61,7 @@ export function compileRoutingToOblien(
 
 /** Emit the same table from routes already compiled by the shared pipeline. */
 export function compileResolvedRoutingToOblien(
-  compiled: Pick<CompiledRouting, "redirects" | "proxyLocations" | "headerRules" | "cleanUrls" | "trailingSlash">,
+  compiled: Pick<CompiledRouting, "redirects" | "proxyLocations" | "headerRules" | "cleanUrls" | "trailingSlash" | "spaFallback">,
   ctx: OblienRoutingContext = {},
 ): RoutesInput {
   const routes: RouteRule[] = [];
@@ -119,7 +119,10 @@ export function compileResolvedRoutingToOblien(
   }
 
   const input: RoutesInput = { routes };
-  if (ctx.staticPage) input.static = { page: ctx.staticPage };
+  if (ctx.staticPage) {
+    input.static = { page: ctx.staticPage };
+    if (compiled.spaFallback !== undefined) input.spa = compiled.spaFallback;
+  }
   if (compiled.cleanUrls) input.cleanUrls = true;
   // vercel `trailingSlash` is a tri-state; Oblien wants a policy. true → enforce,
   // explicit false → strip, omitted → leave default. Read from `compiled`, not the raw

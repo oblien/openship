@@ -42,6 +42,16 @@ afterEach(() => {
 });
 
 describe("MCP route input and transport contracts", () => {
+  it("advertises scoped Fail2ban inputs and rejects command options before forwarding", async () => {
+    const read = tool("get_mail_admin_by_serverId_fail2ban_status");
+    const ban = tool("post_mail_admin_by_serverId_fail2ban_ban");
+    const unban = tool("post_mail_admin_by_serverId_fail2ban_unban");
+    expect(Value.Check(read.inputSchema as TSchema, { serverId: "srv-mail", query: { jail: "postfix" } })).toBe(true);
+    expect(Value.Check(ban.inputSchema as TSchema, { serverId: "srv-mail", body: { ip: "203.0.113.10" } })).toBe(false);
+    expect(Value.Check(unban.inputSchema as TSchema, { serverId: "srv-mail", body: { ip: "--all" } })).toBe(false);
+    expect((await dispatchTool(unban, { serverId: "srv-mail", organizationId: "org-mail", body: { ip: "--all" } }, "test-token", origin)).status).toBe(400);
+    expect(forwarding.fetch).not.toHaveBeenCalled();
+  });
   it.each([
     ["delete_system_compute_clusters_by_id_runtime", { id: "cluster-a", body: { sequence: 7 } }],
     [

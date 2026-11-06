@@ -20,11 +20,17 @@ vi.mock("@repo/platform/engine/modules/mail/mail-engine", async (importOriginal)
   ...(await importOriginal<typeof import("@repo/platform/engine/modules/mail/mail-engine")>()),
   runMailCommand: (...args: unknown[]) => runMailCommand(...args),
 }));
+import { mailFail2banBanCommand, mailFail2banUnbanCommand } from "@repo/platform/engine/modules/mail/mail-engine";
 
 import {
+  banFail2banIp,
   getComponentLogs,
+  getFail2banStatus,
   runComponentAction,
+  unbanFail2banIp,
   MailComponentActionError,
+  parseFail2banStatus,
+  parseFail2banJailStatus,
 } from "../../../src/modules/mail/admin/components.service";
 
 /** Answer each build() with a canned output, marker appended as the real shell would. */
@@ -138,5 +144,61 @@ describe("runComponentAction", () => {
     const res = await act("srv_1", "iredapd", "restart");
 
     expect(res.settled?.status).toBe("missing");
+  });
+});
+
+describe("fail2ban operations", () => {
+  it.each(["host", "container"] as const)("quotes addresses and jails through the shared %s engine builder", (flavor) => {
+    expect(mailFail2banBanCommand(flavor, "2001:db8::1", "postfix-sasl")).toContain("fail2ban-client set 'postfix-sasl' banip '2001:db8::1'");
+    expect(mailFail2banUnbanCommand(flavor, "203.0.113.10", "dovecot")).toContain("fail2ban-client set 'dovecot' unbanip '203.0.113.10'");
+    expect(() => mailFail2banUnbanCommand(flavor, "--all")).toThrow();
+  });
+  it.each([banFail2banIp, unbanFail2banIp])("rejects invalid IPs before acquiring a mail connection", async (action) => {
+    await expect(action("srv_1", "--all", "postfix")).rejects.toMatchObject({ statusCode: 400 });
+    expect(runMailCommand).not.toHaveBeenCalled();
+  });
+  it("rejects malformed status and mismatched jail counts", () => {
+    for (const text of ["", "not a status", "Number of jail: 1\nJail list:\n", "Number of jail: 0\nJail list: postfix", "Number of jail: 2\nJail list: postfix, postfix"]) {
+      expect(() => parseFail2banStatus(text)).toThrow();
+    }
+    expect(parseFail2banStatus("Status\nNumber of jail: 0\nJail list:\n")).toEqual({ jails: [] });
+    expect(() => parseFail2banJailStatus("postfix", "Status for the jail: postfix")).toThrow();
+  });
+  it("fails the status read when a listed jail cannot be inspected", async () => {
+    runMailCommand.mockResolvedValueOnce({ flavor: "container", output: "Number of jail: 1\nJail list: postfix\n__EXIT=0__" }).mockRejectedValueOnce(new Error("connection lost"));
+    await expect(getFail2banStatus("srv_1")).rejects.toThrow("connection lost");
+  });
+  it("does not treat an exit failure or missing exit marker as an empty list", async () => {
+    for (const output of ["__EXIT=1__", "interrupted"]) {
+      runMailCommand.mockResolvedValueOnce({ flavor: "container", output });
+      await expect(getFail2banStatus("srv_1")).rejects.toBeInstanceOf(MailComponentActionError);
+    }
+  });
+  it("parses overall status and individual jail stats", async () => {
+    replies(
+      "Status\n|- Number of jail:\t2\n`- Jail list:\tdovecot, postfix\n",
+      "Status for the jail: dovecot\n|- Filter\n|  |- Currently failed:\t0\n|  |- Total failed:\t1\n`- Actions\n   |- Currently banned:\t0\n   |- Total banned:\t0\n   `- Banned IP list:\t\n",
+      "Status for the jail: postfix\n|- Filter\n|  |- Currently failed:\t2\n|  |- Total failed:\t10\n`- Actions\n   |- Currently banned:\t1\n   |- Total banned:\t3\n   `- Banned IP list:\t89.168.41.226\n",
+    );
+
+    const res = await getFail2banStatus("srv_1");
+    expect(res.jails).toEqual(["dovecot", "postfix"]);
+    expect(res.details?.postfix.currentlyBanned).toBe(1);
+    expect(res.details?.postfix.bannedIps).toEqual(["89.168.41.226"]);
+    expect(res.details?.dovecot.currentlyBanned).toBe(0);
+  });
+
+  it("executes banip command on specified or default jail", async () => {
+    replies("1");
+    const res = await banFail2banIp("srv_1", "1.2.3.4", "postfix");
+    expect(res.success).toBe(true);
+    expect(res.output).toBe("1");
+  });
+
+  it("executes unbanip command across all jails or in specific jail", async () => {
+    replies("1");
+    const res = await unbanFail2banIp("srv_1", "89.168.41.226");
+    expect(res.success).toBe(true);
+    expect(res.output).toBe("1");
   });
 });

@@ -1,6 +1,8 @@
-import { mkdir, chmod, mkdtemp, rm } from "node:fs/promises";
+import { assertLocalHostExecutionAllowed } from "@repo/core";
+import { access, lstat, mkdir, chmod, mkdtemp, readlink, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { Mindwire, local, type NativeAuthSource, type TargetHandle } from "mindwire";
 import {
   assistantEnvironment,
@@ -32,12 +34,54 @@ export type AssistantClientFactory = (
 ) => Promise<AssistantNativeClient>;
 
 /** Mindwire owns native auth and daemon startup; OpenShip supplies scope and private workspaces. */
+
+/**
+ * #1614 — on macOS, Claude Code stores its login in the keychain, which macOS
+ * locates via $HOME/Library/Keychains. The isolated assistant HOME has no
+ * such directory, so sign-in fails with "A keychain cannot be found". Link
+ * the real keychain directory into the isolated home so sign-in can
+ * complete. Isolation is not weakened in practice: the agent runs as the
+ * same OS user, and macOS still gates access to each keychain item.
+ * No-op on other platforms, and when the real keychain directory is absent.
+ */
+export async function linkMacosKeychain(
+  isolatedHome: string,
+  realHome: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  if (platform !== "darwin") return;
+  const target = join(realHome, "Library", "Keychains");
+  try {
+    await access(target);
+  } catch {
+    // diagnostics-ignore: A missing keychain directory is the expected no-op case, not a failure.
+    return;
+  }
+  const link = join(isolatedHome, "Library", "Keychains");
+  await mkdir(join(isolatedHome, "Library"), { recursive: true, mode: 0o700 });
+  const stat = await lstat(link).catch(() => {
+    /* diagnostics-ignore: A missing link path is the normal first-run case; null means no existing entry. */
+    return null;
+  });
+  if (stat?.isSymbolicLink()) {
+    if ((await readlink(link)) === target) return;
+    // A symlink to somewhere else is stale — replace it.
+    await rm(link);
+  } else if (stat) {
+    // A real file or directory already occupies the path: leave it alone,
+    // never delete user data to make the link.
+    return;
+  }
+  await symlink(target, link);
+}
+
 export async function createAssistantClient(
   directory: string,
   userId: string,
   authSource: NativeAuthSource | "host" | "private" = "host",
   purpose: "assistant" | "chat-apps" = "assistant",
 ): Promise<AssistantNativeClient> {
+  assertLocalHostExecutionAllowed();
   const system = process.platform,
     arch = process.arch;
   if ((system !== "darwin" && system !== "linux") || (arch !== "arm64" && arch !== "x64"))
@@ -58,6 +102,8 @@ export async function createAssistantClient(
     await mkdir(path, { recursive: true, mode: 0o700 });
     await chmod(path, 0o700);
   }
+  // #1614: let Claude Code reach the macOS keychain from the isolated home.
+  await linkMacosKeychain(join(root, "home"));
   const searchPath = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
   // macOS Unix sockets have a short path limit. Mindwire's local Git broker also starts at boot.
   const temporary = await mkdtemp("/tmp/openship-mw-");
