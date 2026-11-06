@@ -1,4 +1,4 @@
-import type { AppLocale } from "@repo/core";
+import { assertLocalHostExecutionAllowed, type AppLocale } from "@repo/core";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { access, mkdir, realpath, writeFile, rename } from "node:fs/promises";
@@ -118,6 +118,7 @@ export async function probeHarness(
   searchPath: string,
   env: NodeJS.ProcessEnv,
 ): Promise<HarnessProbe> {
+  assertLocalHostExecutionAllowed();
   const spec = HARNESS[provider];
   let path: string | undefined;
   for (const directory of searchPath.split(delimiter).filter(Boolean)) {

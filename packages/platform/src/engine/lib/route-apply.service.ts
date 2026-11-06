@@ -269,9 +269,15 @@ export async function reconcileProjectRoutes(
     // mutations need this context too: they create no new loopback publish, but
     // they are exactly when an obsolete durable claim becomes reclaimable.
     const hostPortTarget = resolved?.hostPortTarget ?? opts.hostPortTarget ?? null;
-    const edgeProxy = resolved?.platform.executor
-      ? edgeProxyFor(resolved.platform.executor, "openresty", { ours: true })
-      : (opts.edgeProxy ?? null);
+    const readEdgePorts = routing.listLoopbackUpstreamPortsStrict;
+    const edgeProxy = readEdgePorts
+      ? {
+          listLoopbackUpstreamPortsStrict: (options?: { refresh?: boolean }) =>
+            readEdgePorts.call(routing, options),
+        }
+      : resolved?.platform.executor
+        ? edgeProxyFor(resolved.platform.executor, "openresty", { ours: true })
+        : (opts.edgeProxy ?? null);
     const claimContext =
       hostPortTarget && edgeProxy ? { target: hostPortTarget, edgeProxy } : undefined;
 

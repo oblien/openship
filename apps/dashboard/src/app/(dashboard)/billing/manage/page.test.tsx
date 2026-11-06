@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PRICING } from "@repo/core";
 import type { ManagementState } from "@repo/contracts";
 import ManagePage from "./page";
+import { I18nProvider } from "@/components/i18n-provider";
 
 const h = vi.hoisted(() => ({
   org: "org-one",
@@ -15,16 +16,26 @@ const h = vi.hoisted(() => ({
   cancel: vi.fn(),
   resumeCheckout: vi.fn(),
   portal: vi.fn(),
+  setActive: vi.fn(),
+  setOrg: vi.fn(),
 }));
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(h.query) }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(h.query),
+  usePathname: () => "/billing/manage",
+}));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: h.org } } }),
+  authClient: { organization: { setActive: h.setActive } },
+}));
+vi.mock("@/lib/api/client", async (original) => ({
+  ...await original<typeof import("@/lib/api/client")>(),
+  setActiveOrganizationId: h.setOrg,
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => "cloud" }));
 vi.mock("@/lib/api/management", () => ({ managementApi: h }));
 let root: Root, host: HTMLDivElement;
 let state: ManagementState;
-const render = () => act(async () => root.render(<ManagePage />));
+const render = () => act(async () => root.render(<I18nProvider><ManagePage /></I18nProvider>));
 function button(text: string) {
   const result = [...host.querySelectorAll("button")].find(
     (node) => node.textContent?.trim() === text,
@@ -38,6 +49,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.org = "org-one";
   h.query = "";
+  h.setActive.mockResolvedValue({ error: null });
   state = {
     pricing: PRICING.management,
     purchasesAvailable: true,
@@ -53,6 +65,26 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+});
+
+it("activates the purchased organization's Manage page before reading billing", async () => {
+  const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  h.query = "organizationId=org-two&checkout=success&plan=priority";
+  await render();
+  expect(h.get).not.toHaveBeenCalled();
+  expect(h.setActive).toHaveBeenCalledWith({ organizationId: "org-two" });
+  expect(navigate).toHaveBeenCalledWith("/billing/manage?checkout=success&plan=priority&organizationId=org-two");
+});
+
+it("does not show another account's management state when organization activation is forbidden", async () => {
+  const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  h.setActive.mockResolvedValue({ error: { message: "forbidden" } });
+  h.query = "organizationId=org-foreign&checkout=success";
+  await render();
+  expect(h.get).not.toHaveBeenCalled();
+  expect(h.setOrg).not.toHaveBeenCalled();
+  expect(navigate).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
 });
 afterEach(async () => {
   await act(async () => root.unmount());

@@ -380,7 +380,8 @@
       "localPartLabel": "Local part",
       "localPartHint": "The part before @. Lowercase, alphanumeric.",
       "destinationLabel": "Forwards to",
-      "destinationHint": "Any valid email address - a mailbox on this server, or external (e.g. Gmail)."
+      "destinationHint": "Any valid email address - a mailbox on this server, or external (e.g. Gmail).",
+      "inboundNote": "Aliases only route incoming mail. To authenticate and send outbound mail as this address, create a Mailbox instead."
     },
     "deleteForm": {
       "title": "Delete this alias?",

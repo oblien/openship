@@ -190,13 +190,15 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
     });
 
     const observedPorts = new Set([apiPort]);
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set(observedPorts),
+    });
     vi.doMock("@repo/adapters", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
-        edgeProxyFor: () => ({
-          listLoopbackUpstreamPortsStrict: async () => new Set(observedPorts),
-        }),
+        edgeProxyFor: edgeInventory,
+        loopbackPortInventoryFor: edgeInventory,
       };
     });
     const { deployComposeServices } =

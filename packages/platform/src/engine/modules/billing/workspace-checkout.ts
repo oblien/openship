@@ -5,6 +5,7 @@ import { repos, type CloudWorkspace } from "@repo/db";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { oblienCheckoutInputSchema, type OblienCheckout } from "../../lib/oblien-billing-api";
 import { hasPendingSubscriptionChange } from "./billing-subscription";
+import { preserveCheckoutReturnUrls } from "./billing-return-url";
 
 export function isExpiredCheckout(error: unknown): boolean {
   return error instanceof OperationError && error.details?.checkoutExpired === true;
@@ -65,6 +66,7 @@ export async function createTrackedWorkspaceCheckout(
   if (!owner) return billing.createCheckout(request);
   const pending = await reconcileWorkspaceCheckouts(owner);
   const existing = pending.find((item) => item.request.idempotencyKey === request.idempotencyKey);
+  request = preserveCheckoutReturnUrls(request, existing ? workspaceCheckoutRequest(owner, existing) : undefined, owner.organizationId);
   if (existing && !isDeepStrictEqual(existing.request, request))
     throw new AppError(
       "This checkout request no longer matches its original purchase. Start a new checkout.",

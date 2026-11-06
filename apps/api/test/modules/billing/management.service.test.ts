@@ -181,6 +181,11 @@ describe("hosted management lifecycle with real persistence and locks", () => {
     await purchaseManagement(ctx, selection);
     expect(h.checkouts.size).toBe(1);
     const request = [...h.checkouts.values()][0]!.request;
+    for (const value of [request.successUrl, request.cancelUrl]) {
+      const url = new URL(value!);
+      expect(url.searchParams.get("organizationId")).toBe(ctx.organizationId);
+      expect(url.pathname).toBe("/billing/manage");
+    }
     expect(request.offer).toMatchObject({ unitAmount: 2000, billingMode: "service", credits: 0 });
     expect(JSON.parse(request.metadata!.openship_management!)).toMatchObject({ plan: "priority", supportMonthlyCents: 1500 });
     expect(await getManagement(ctx)).toMatchObject({ active: false, support: null, pendingCheckout: true });
@@ -206,6 +211,23 @@ describe("hosted management lifecycle with real persistence and locks", () => {
     await expect(
       purchaseManagement(ctx, { servers: 3, idempotencyKey: "corrected-checkout-key" }),
     ).resolves.toMatchObject({ kind: "checkout" });
+  });
+
+  it("reuses a Manage checkout created before organization-scoped return links", async () => {
+    const ctx = await fixture();
+    const selection = { servers: 2, idempotencyKey: "legacy-redirect" };
+    await purchaseManagement(ctx, selection);
+    const row = (await repos.managementBilling.get(ctx.organizationId))!;
+    const request = row.checkout!.request;
+    const legacy = { ...request,
+      successUrl: request.successUrl!.replace(`organizationId=${ctx.organizationId}&`, ""),
+      cancelUrl: request.cancelUrl!.replace(`organizationId=${ctx.organizationId}&`, ""),
+    };
+    [...h.checkouts.values()][0]!.request = legacy;
+    await repos.managementBilling.update(ctx.organizationId, { checkout: { ...row.checkout!, request: legacy } });
+    h.provider.createCheckout.mockClear();
+    await purchaseManagement(ctx, selection);
+    expect(h.provider.createCheckout).toHaveBeenCalledExactlyOnceWith(legacy);
   });
   it("uses the same scoped billing operations through HTTP and native SDKs", async () => {
     const actor = await seedOwner();

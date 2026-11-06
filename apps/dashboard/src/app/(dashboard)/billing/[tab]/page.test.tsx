@@ -341,6 +341,13 @@ describe("billing page failure recovery", () => {
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
+  it("preserves the payment receipt when the purchaser switches organizations during checkout", async () => {
+    const query = { organizationId: "org-b", workspaceId: "cws-paid", checkout: "success", session_id: "receipt-b", tier: "starter", interval: "monthly", offer: "offer-b" };
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve(query) });
+    expect(findElement<{ returnQuery: unknown }>(page, CloudBillingLink)?.props.returnQuery).toEqual(query);
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
   it.each(["starter", "free"])("opens an allocated server before a draft when multiple subscriptions need selection (saved tier=%s)", async planTierId => {
     const state = { ...free, tier: "starter", workspace: { id: "cws-production" } };
     mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }))
