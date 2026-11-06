@@ -18,13 +18,7 @@ export interface GitHubCheckUpdate {
 
 /** Bounded summaries only. Do not attach build logs, environments or provider payloads. */
 export function checkFailureSummary(message: string, secrets: readonly string[] = []): string {
-  let text = message;
-  // Redact literal values before truncating the public summary. Even ordinary
-  // variable names can contain credentials, so callers supply all captured env values.
-  for (const secret of [...new Set(secrets)].filter(Boolean).sort((a, b) => b.length - a.length)) {
-    text = text.replaceAll(secret, "[REDACTED]");
-  }
-  return redactDiagnosticText(text.slice(0, 16_384), 4000);
+  return redactDiagnosticText(message, 4000, secrets);
 }
 
 /** Shared transport for workflow and deployment Checks, pinned to the scoped App. */

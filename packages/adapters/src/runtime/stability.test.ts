@@ -37,6 +37,13 @@ const judge = (
 ) => classifyStability(first, latest, { ...OPTS, windowElapsed });
 
 describe("classifyStability — while the window is still open", () => {
+  it("includes the runtime's OOM evidence in the shared startup verdict", () => {
+    const latest = sample({ state: "exited", exitCode: 137, oomKilled: true });
+    const verdict = judge(sample(), latest, true);
+    expect(verdict?.ok).toBe(false);
+    expect(verdict?.reason).toContain("137");
+    expect(verdict?.reason).toContain("OOM-killed");
+  });
   it("holds off on a container that merely looks up (nothing proven yet)", () => {
     expect(judge(sample(), sample())).toBeNull();
   });

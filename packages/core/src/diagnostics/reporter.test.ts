@@ -30,6 +30,46 @@ function recorder(options: ConstructorParameters<typeof ErrorReporter>[0] = {}) 
 }
 
 describe("structured error reporting", () => {
+  it.each([
+    ["dial postgresql://user:opaque-private-value@db:5432/app failed", "postgresql"],
+    ["token=opaque-private-value failed", "token"],
+    ["to\u001b[31mken=opaque-private-value failed", "ken"],
+  ])("keeps credential syntax visible to redaction when a known value matches it: %s", (message, secret) => {
+    expect(redactDiagnosticText(message, 2048, [secret])).not.toContain("opaque-private-value");
+  });
+  it("keeps every fragment of a known secret private when a pattern changes its middle", () => {
+    const secret = "private-prefix token=private-middle private-suffix";
+    const result = redactDiagnosticText(`failed: ${secret}`, 2048, [secret]);
+    expect(result).not.toContain("private-");
+  });
+  it("keeps known values private when they cross the raw input cap", () => {
+    const secret = "private-value-".repeat(1600);
+    expect(redactDiagnosticText("\u0000".repeat(262_140) + secret, 2048, [secret])).toBe("[REDACTED]");
+  });
+  it("does not redact its own markers when known values include single letters", () => {
+    const secrets = ["x", "R", "E", "D", "A", "C", "T"];
+    expect(redactDiagnosticText("x", 2048, secrets)).toBe("[REDACTED]");
+    expect(redactDiagnosticText("x".repeat(100_000), 2048, secrets).length).toBeLessThanOrEqual(2049);
+  });
+  it("recognizes long and regex-shaped secrets across bounded windows", () => {
+    const secret = "private-value-".repeat(1600);
+    expect(redactDiagnosticText(`${secret}${secret}: not found`, 100, [secret]))
+      .toBe("[REDACTED][REDACTED]: not found");
+    const metacharacters = "+*.[\\$";
+    expect(redactDiagnosticText(`exec ${metacharacters} failed`, 100, [metacharacters]))
+      .toBe("exec [REDACTED] failed");
+    const boundary = redactDiagnosticText("p".repeat(16_380) + "needle-secret", 16_384, ["needle-secret"]);
+    expect(boundary).not.toContain("need");
+  });
+  it("redacts known values before clipping diagnostics, including innocently named credentials", () => {
+    const secret = "private-value-".repeat(1600);
+    const message = `exec: ${secret}: not found`;
+    expect(redactDiagnosticText(message, 80, [secret])).toBe("exec: [REDACTED]: not found");
+    expect(redactDiagnosticText("old-value and old-value-extended", 200, ["old-value", "old-value-extended"]))
+      .toBe("[REDACTED] and [REDACTED]");
+    const escaped = 'private"value\nnext';
+    expect(redactDiagnosticText(JSON.stringify(escaped), 200, [escaped])).toBe('"[REDACTED]"');
+  });
   it("does not collect caught errors by default, even after installing a destination", async () => {
     const sink = vi.fn();
     const touched = vi.fn();

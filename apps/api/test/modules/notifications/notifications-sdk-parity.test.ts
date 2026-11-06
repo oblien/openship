@@ -149,7 +149,19 @@ describe("notifications shared SDK/HTTP operations", () => {
     expect((await c.remote.listChannels())[0]?.verified).toBe(false);
     h.fetch.mockImplementation(async () => { throw new Error("Failed https://receiver.example.test/new"); });
     const result = await c.remote.testChannel(channel.id);
-    expect(result).toEqual({ ok: false, error: "Failed <redacted>" });
+    expect(result).toEqual({ ok: false, error: "Notification delivery failed" });
+  });
+
+  it("persists approved provider evidence while keeping unknown credentials private", async () => {
+    const owner = await seedOwner(), c = await clients(owner);
+    const { channel, secret } = await c.native.createChannel({ kind: "webhook", label: "Receiver", config: { url: "https://receiver.example.test/notify" } });
+    await c.native.testChannel(channel.id);
+    const queued = await delivery(owner, channel.id, undefined, "webhook");
+    const prefix = "p".repeat(1975);
+    h.fetch.mockRejectedValueOnce(Object.assign(new Error(`${prefix}${secret} unregistered-private-value`), { code: "ECONNREFUSED" }));
+    await processQueuedNotifications();
+    expect(await repos.notificationDelivery.findById(queued.id))
+      .toMatchObject({ status: "queued", attempts: 1, lastError: "Notification delivery failed (ECONNREFUSED)" });
   });
 
   it("filters the inbox and dispatch by current project grants and rechecks queued recipients", async () => {
