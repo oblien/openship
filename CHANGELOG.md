@@ -63,6 +63,11 @@ scans and deployment reliability. Includes every change merged into main since
 - **Cloud host boundaries** — enforce shared safeguards against local workload
   execution on the SaaS API host while retaining authorized managed-server and
   SSH execution. Keep command availability probes separate from execution.
+- **Conditional security reviews** — distinguish PHP's conditional session
+  upload-progress review from confirmed runtime vulnerabilities. Share advisory
+  guidance while retaining each service's confidence, progress and actions;
+  offer saved configuration and an editable, scoped Fix with AI request without
+  automatic submission. High and Critical warnings retain their priority.
 
 ### Mail and application catalog
 
