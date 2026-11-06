@@ -33,7 +33,8 @@ import {
   resolveInvitationClaim,
 } from "@repo/platform/engine/lib/invitation-claim";
 import { setSessionCookie } from "../../lib/session-cookie";
-import { localDashboardUrl } from "@repo/platform/engine/config/env";
+import { env, localDashboardUrl } from "@repo/platform/engine/config/env";
+import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import { alignLoopbackOrigin } from "@repo/core";
 
 // ─── HTML result page ────────────────────────────────────────────────────────
@@ -93,6 +94,17 @@ export async function invitationPreview(c: Context) {
   });
 }
 
+/** Shared Better Auth lookup for Desktop session bootstrap and startup. */
+async function readSession(c: Context) {
+  try {
+    return await auth.api.getSession({ headers: c.req.raw.headers });
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/auth/auth.controller");
+    // The caller still requires the zero-auth gate before bootstrapping.
+    return null;
+  }
+}
+
 /**
  * GET /api/auth/get-session
  *
@@ -103,35 +115,28 @@ export async function invitationPreview(c: Context) {
  * authenticate the next request.
  */
 export async function getSession(c: Context) {
-  try {
-    const realSession = await auth.api.getSession({
-      headers: c.req.raw.headers,
-    });
-    if (realSession) {
-      // activeOrganizationId is NOT NULL at the schema level — set by
-      // the session.create.before hook in lib/auth.ts and by the
-      // local-cookie mintSession path's Better Auth hook. No reactive
-      // backfill needed; the migration handled any legacy rows.
-      return c.json(realSession);
-    }
-  } catch (diagnosticFailure) {
-    observeCaughtError(diagnosticFailure, "api/modules/auth/auth.controller");
-    // session lookup failed — fall through to zero-auth bootstrap below
+  const { zeroAuthAllowed } = await import("../../middleware/zero-auth-guard");
+  const gate = await zeroAuthAllowed(c);
+  const realSession = await readSession(c);
+  if (realSession && (!gate.ok || !realSession.user.autoProvisioned)) {
+    // A verified sign-in outranks the synthetic fallback, including on legacy
+    // installations whose saved device owner is still Local User. Preserve the
+    // existing session and organization; ownership changes require a claim.
+    return c.json(realSession);
   }
 
   // This endpoint MINTS an owner-privileged session, so it must pass the SAME
   // zero-auth gate as authMiddleware — not just authMode===none. Without the
   // kernel-peer loopback check + public/CLI refusals, a network peer reaching a
   // desktop API bound to 0.0.0.0 could mint an admin session unauthenticated.
-  const { zeroAuthAllowed } = await import("../../middleware/zero-auth-guard");
-  const gate = await zeroAuthAllowed(c);
-  if (!gate.ok) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!gate.ok) return c.json({ error: "Unauthorized" }, 401);
 
   const { ensureLocalUser } = await import("../../lib/local-user");
   const { mintSession } = await import("../../lib/cloud-auth-proxy");
+  // The same installation identity as authMiddleware and desktopLogin. An
+  // update may leave a valid cookie for the synthetic user; recover it too.
   const user = await ensureLocalUser();
+  if (realSession?.user.id === user.id) return c.json(realSession);
   const session = await mintSession({
     purpose: "local-cookie",
     userId: user.id,
@@ -187,6 +192,9 @@ export async function desktopLogin(c: Context) {
   if (!gate.ok) {
     return c.redirect(`${dashboardUrl}/login`);
   }
+
+  const realSession = await readSession(c);
+  if (realSession && !realSession.user.autoProvisioned) return c.redirect(dashboardUrl);
 
   const { ensureLocalUser } = await import("../../lib/local-user");
   const { mintSession } = await import("../../lib/cloud-auth-proxy");
@@ -275,7 +283,7 @@ export async function cloudCallback(c: Context) {
 
     const session = await mintSession({
       purpose: "local-cookie",
-      userId: mirroredUserId,
+      userId: targetUserId,
       ipAddress: "127.0.0.1",
       userAgent: "desktop",
     });
@@ -326,12 +334,26 @@ export async function desktopAuthStart(c: Context) {
     return c.json({ error: "missing nonce, state, or code_verifier" }, 400);
   }
 
+  const intent = body?.intent;
+  if (intent !== undefined && intent !== "sign-in" && intent !== "connect")
+    return c.json({ error: "Invalid desktop authentication intent" }, 400);
   let connectUserId: string | undefined;
   try {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    connectUserId = session?.user?.id;
+    // Onboarding is an explicit sign-in, including recovery from a stale Local
+    // User cookie. Settings connects Cloud to the currently selected identity.
+    connectUserId = intent === "sign-in" ? undefined : session?.user?.id;
+    if (intent === "connect" && !connectUserId) {
+      const { zeroAuthAllowed } = await import("../../middleware/zero-auth-guard");
+      if ((await zeroAuthAllowed(c)).ok) {
+        const { ensureLocalUser } = await import("../../lib/local-user");
+        connectUserId = (await ensureLocalUser()).id;
+      }
+      if (!connectUserId) return c.json({ error: "Unauthorized" }, 401);
+    }
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "api/modules/auth/auth.controller");
+    if (intent === "connect") return c.json({ error: "Unauthorized" }, 401);
     // No session — onboarding flow; mirror cloud user instead.
   }
 
@@ -375,6 +397,15 @@ export async function desktopClaim(c: Context) {
     return c.text("Claim expired", 400);
   }
 
+  // Only the one-time claim from the internal Desktop PKCE relay can bind an
+  // installation identity. A public browser login cannot change device ownership.
+  if (env.DEPLOY_MODE === "desktop" && !env.CLOUD_MODE &&
+      !env.OPENSHIP_REQUIRE_AUTH && !env.OPENSHIP_PUBLIC_URL && isLoopbackRequest(c)) {
+    const claimed = await (await auth.$context).internalAdapter.findSession(result.token);
+    if (!claimed || claimed.session.expiresAt <= new Date()) return c.text("Session expired", 401);
+    const { rememberDesktopUser } = await import("../../lib/local-user");
+    await rememberDesktopUser(claimed.user.id);
+  }
   await setSessionCookie(c, result.token);
   return c.redirect(localDashboardUrl);
 }

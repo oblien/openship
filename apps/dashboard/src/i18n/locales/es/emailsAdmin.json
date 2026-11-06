@@ -787,7 +787,8 @@
       "localPartLabel": "Parte local",
       "localPartHint": "La parte antes de @. En minúsculas y alfanumérica.",
       "destinationLabel": "Reenvía a",
-      "destinationHint": "Cualquier dirección de correo válida: un buzón en este servidor o externa (p. ej. Gmail)."
+      "destinationHint": "Cualquier dirección de correo válida: un buzón en este servidor o externa (p. ej. Gmail).",
+      "senderNote": "Para enviar desde un alias, inicia sesión con su buzón de destino directo. Los reenvíos externos y las reglas catch-all solo reciben correo. Requiere el motor de correo más reciente."
     },
     "deleteForm": {
       "title": "¿Eliminar este alias?",
@@ -800,5 +801,29 @@
       "mailboxConflict": "{address} es un buzón real — crear un alias aquí redirigiría su correo. Edita o elimina el buzón en su lugar.",
       "alreadyExists": "Ese reenvío exacto ya existe."
     }
+  },
+  "fail2ban": {
+    "manage": "Gestionar bloqueos",
+    "title": "Bloqueos de Fail2ban",
+    "description": "Consulta las direcciones bloqueadas y gestiona el acceso a este servidor de correo.",
+    "checkedAt": "Última consulta: {time}",
+    "failed": "El estado de Fail2ban no está disponible.",
+    "stale": "Se muestra la última consulta correcta. Actualiza antes de hacer cambios.",
+    "completed": "Solicitud completada.",
+    "emptyJails": "No hay jails activos.",
+    "emptyBans": "No hay direcciones bloqueadas actualmente en este jail.",
+    "banned": "Bloqueadas ahora",
+    "failedNow": "Fallos actuales",
+    "totalBans": "Bloqueos totales",
+    "readOnly": "Puedes ver los bloqueos. Para gestionarlos necesitas permisos de administrador de correo.",
+    "ban": "Bloquear IP",
+    "unban": "Desbloquear",
+    "jail": "Jail",
+    "chooseJail": "Elige un jail",
+    "address": "Dirección IP",
+    "banHint": "Usa una dirección IPv4 o IPv6. Bloquear tu propia dirección puede impedir el acceso al correo.",
+    "reviewBan": "Revisar bloqueo",
+    "banReview": "¿Bloquear {ip} en {jail}?",
+    "unbanReview": "¿Desbloquear {ip} de {jail}?"
   }
 }

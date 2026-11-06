@@ -127,7 +127,8 @@ export function classifyStability(
   opts: StabilityOptions & { windowElapsed: boolean },
 ): StabilityVerdict | null {
   const restarts = Math.max(0, latest.restartCount - first.restartCount);
-  const detail = latest.errorLine?.trim() ? ` (${latest.errorLine.trim()})` : "";
+  const evidence = [latest.oomKilled ? "OOM-killed" : "", latest.errorLine?.trim()].filter(Boolean);
+  const detail = evidence.length ? ` (${evidence.join("; ")})` : "";
 
   if (latest.state === "missing") {
     return {

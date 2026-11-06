@@ -205,6 +205,21 @@ Also scoped to one domain. An alias forwards mail from one address to another â€
 **catch-all** takes every address at the domain that no mailbox or alias matched. Changes are live the moment
 you save; nothing restarts.
 
+On the updated managed mail engine, an active local mailbox that is a **direct destination** of an
+active alias can send using that alias. Authenticate with the destination mailbox's username and
+password and select the alias as the sender. An alias has no password of its own. For an alias that
+forwards to several local mailboxes, each direct destination can use it as a sender.
+
+External forwarding addresses, catch-alls and chains of aliases do not grant sender access. Disabling
+or deleting the alias revokes access immediately; the destination mailbox must remain active with
+SMTP enabled, and both domains must be active. Creating a forwarding rule to a local mailbox therefore
+also grants that mailbox permission to send as the alias.
+
+This requires the updated mail engine image, in addition to the control plane update. The existing
+engine update/setup flow starts that image and reconciles recognized older sender-map defaults while
+preserving credentials and custom SQL. Legacy host installations keep their native mail policy until
+their configuration is updated.
+
 ### Notifications
 
 Rules of the shape "mail arrives here â†’ tell me in this channel", for the addresses on this server. Each rule

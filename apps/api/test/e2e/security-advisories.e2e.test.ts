@@ -232,10 +232,14 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
       platform: () => located.platform,
     }));
     // The real edge is intentionally absent: no service has public routing.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (original) => ({
       ...(await original<object>()),
       getPlatform: () => located.platform,
-      edgeProxyFor: () => ({ listLoopbackUpstreamPortsStrict: async () => new Set<number>() }),
+      edgeProxyFor: edgeInventory,
+      loopbackPortInventoryFor: edgeInventory,
     }));
     h.key = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
     proof = signed([]);

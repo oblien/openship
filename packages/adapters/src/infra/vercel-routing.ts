@@ -24,8 +24,8 @@ export interface CompiledRouting {
   proxyLocations: RouteProxyLocation[];
   redirects: RouteRedirect[];
   headerRules: RouteHeaderRule[];
-  /** A `/(.*) → /index.html` rewrite was present (SPA fallback). */
-  spaFallback: boolean;
+  /** Static fallback policy. Omitted preserves the serving default (SPA). */
+  spaFallback?: boolean;
   cleanUrls: boolean;
   /**
    * TRI-STATE, matching vercel.json: true → enforce a trailing slash, false → strip
@@ -384,7 +384,7 @@ export function compileVercelRouting(
     proxyLocations: [],
     redirects: [],
     headerRules: [],
-    spaFallback: false,
+    ...(typeof routing.spaFallback === "boolean" ? { spaFallback: routing.spaFallback } : {}),
     cleanUrls: !!routing.cleanUrls,
     ...(routing.trailingSlash === undefined ? {} : { trailingSlash: routing.trailingSlash }),
     skipped: [],
@@ -394,7 +394,8 @@ export function compileVercelRouting(
     // A `/(.*) → /index.html` catch-all IS the SPA fallback the static server
     // already does via try_files; flag it and move on.
     if (isSpaDestination(rewrite.destination)) {
-      out.spaFallback = true;
+      // The explicit project switch overrides this legacy fallback shorthand.
+      out.spaFallback ??= true;
       continue;
     }
     const loc = sourceToLocation(rewrite.source);

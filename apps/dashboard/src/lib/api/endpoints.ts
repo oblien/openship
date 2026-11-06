@@ -464,6 +464,7 @@ export const endpoints = {
         `mail/admin/${encodeURIComponent(serverId)}/components/${encodeURIComponent(key)}/logs`,
       componentsRestartAll: (serverId: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/components/restart-all`,
+      fail2ban: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/fail2ban`,
     },
     webmail: {
       targets: "mail/webmail/targets",

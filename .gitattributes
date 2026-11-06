@@ -1,0 +1,2 @@
+# Keep the Docker transport security boundary reviewable as TypeScript source.
+packages/adapters/src/runtime/docker-transport.ts text diff

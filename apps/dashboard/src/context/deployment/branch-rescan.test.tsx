@@ -250,6 +250,24 @@ afterEach(async () => {
 });
 
 describe("deploy branch detection", () => {
+  it("preserves the server-selection error code and the explicit read target", async () => {
+    api.prepare.mockRejectedValueOnce(
+      new ApiError(409, "Conflict", {
+        code: "GITHUB_SERVER_SELECTION_REQUIRED",
+        error: "Select a server",
+      }),
+    );
+    let result: Awaited<ReturnType<DeploymentContextType["initializeFromRepo"]>>;
+    await act(async () => {
+      result = await current.initializeFromRepo("example", "fresh", undefined, {
+        serverId: "chosen-server",
+      });
+    });
+    expect(result!).toMatchObject({ success: false, errorCode: "GITHUB_SERVER_SELECTION_REQUIRED" });
+    expect(api.prepare).toHaveBeenLastCalledWith(
+      expect.objectContaining({ serverId: "chosen-server" }),
+    );
+  });
   it("saves only edited service overrides in their own environment scope", async () => {
     const baseline = [
       {

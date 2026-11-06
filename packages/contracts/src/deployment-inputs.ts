@@ -190,7 +190,7 @@ export const PrepareDeployBody = Type.Object({
     description: "Review source changes for this existing project. Merges saved service settings into the preview and returns composeRevision; does not persist changes. Saved secrets remain masked.",
   })),
   serverId: Type.Optional(Type.String({ minLength: 1, maxLength: 200,
-    description: "Deployment server whose stored GitHub token may be used for repository reads (self-hosted only). Defaults to this organization's local server.",
+    description: "Deployment server whose stored GitHub token may be used for repository reads (self-hosted only). Defaults to this organization's local server, or its only writable connected server with a stored token. Select explicitly when several servers qualify.",
   })),
   rootDirectory: Type.Optional(
     Type.String({

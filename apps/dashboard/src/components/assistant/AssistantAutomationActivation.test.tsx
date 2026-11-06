@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { AssistantNavigationContext } from "./AssistantLink";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AssistantAutomationActivationReview, AssistantPart } from "@repo/contracts";
 import {
@@ -6,6 +10,11 @@ import {
   automationActivationRequest,
   automationActivationContinuation,
 } from "./AssistantAutomationActivation";
+
+const api = vi.hoisted(() => ({ reviewActivation: vi.fn(), activate: vi.fn() }));
+vi.mock("@/lib/api/assistant-automations", () => ({ assistantAutomationsApi: api }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
+vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => "test-host" }));
 
 const request: AssistantAutomationActivationReview = {
   kind: "automation_activation_review",
@@ -102,4 +111,58 @@ describe("automation activation handoff", () => {
     expect(text).toContain("only to the reviewed flows");
     expect(text).not.toContain("DO_NOT_ECHO_INSTRUCTIONS");
   });
+});
+
+it("reloads saved details and clears automatic approval after editing in a drawer", async () => {
+  (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+  const automatic = {
+    ...request,
+    automations: request.automations.map((flow) => ({ ...flow, mode: "automatic" as const })),
+  };
+  api.reviewActivation.mockResolvedValue(automatic);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const render = (revision: number) => (
+    <AssistantNavigationContext.Provider
+      value={{
+        href: (href) => href,
+        navigate: () => {},
+        close: () => {},
+        changed: () => {},
+        open: false,
+        revision,
+      }}
+    >
+      <AssistantAutomationActivation request={automatic} />
+    </AssistantNavigationContext.Provider>
+  );
+  const approve = () =>
+    [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Enable automations"),
+    )!;
+  try {
+    await act(async () => root.render(render(0)));
+    await act(async () => host.querySelector("button")!.click());
+    const consent = host.querySelector<HTMLButtonElement>('[role="checkbox"]')!;
+    await act(async () => consent.click());
+    expect(consent.getAttribute("aria-checked")).toBe("true");
+    expect(approve().disabled).toBe(false);
+    api.reviewActivation.mockResolvedValue({
+      ...automatic,
+      automations: automatic.automations.map((flow) => ({
+        ...flow,
+        name: "Updated flow",
+        revision: 3,
+      })),
+    });
+    await act(async () => root.render(render(1)));
+    expect(host.textContent).toContain("Updated flow");
+    expect(host.querySelector('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(approve().disabled).toBe(true);
+    expect(api.activate).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
 });

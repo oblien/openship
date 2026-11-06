@@ -80,7 +80,7 @@ import { PassThrough, Writable, type Readable } from "node:stream";
 import { relative, sep } from "node:path";
 import { resolveDockerBuildArgs } from "./docker-build-args";
 import { imageStartCommand, nodeOutputOptions } from "./node-output";
-import { dockerContainerStatus, dockerPublishedPortInfo } from "./docker-container-info";
+import { dockerContainerStatus, dockerPublishedPortInfo, stabilitySampleFromDockerInspect } from "./docker-container-info";
 import { applyDockerEnvironment, type DockerEnvironmentOptions } from "./docker-environment";
 import { DEFAULT_CONTAINER_LOG_CONFIG } from "../container-logging";
 import { demuxDockerStream } from "./docker-demux";
@@ -5443,28 +5443,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       throw err;
     }
 
-    const rawState = (data.State?.Status ?? "").toLowerCase().trim();
-    const state: ContainerStabilitySample["state"] = (
-      ["created", "running", "restarting", "paused", "exited", "dead", "removing"] as const
-    ).includes(rawState as never)
-      ? (rawState as ContainerStabilitySample["state"])
-      : "unknown";
-
-    const rawHealth = (data.State?.Health?.Status ?? "").toLowerCase().trim();
-    const health: ContainerStabilitySample["health"] =
-      rawHealth === "healthy" || rawHealth === "unhealthy" || rawHealth === "starting"
-        ? rawHealth
-        : null;
-
-    return {
-      state,
-      exitCode: typeof data.State?.ExitCode === "number" ? data.State.ExitCode : null,
-      restartCount: typeof data.RestartCount === "number" ? data.RestartCount : 0,
-      health,
-      errorLine: data.State?.Error?.trim() ? data.State.Error.trim() : null,
-      oomKilled: data.State?.OOMKilled === true,
-      restartPolicy: data.HostConfig?.RestartPolicy?.Name ?? null,
-    };
+    return stabilitySampleFromDockerInspect(data);
   }
 
   /**

@@ -31,8 +31,9 @@ import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
-import { useServerSelection } from "@/components/shared/ServerSelector";
+import { ServerSelectorView, useServerSelection } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
@@ -114,6 +115,8 @@ const DeployRepository: React.FC = () => {
 
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<DeployError | null>(null);
+    const [selectReadServer, setSelectReadServer] = useState(false);
+    const [scanAttempt, setScanAttempt] = useState(0);
     const hasInitialized = useRef<boolean>(false);
     const { toast } = useToast();
 
@@ -138,7 +141,7 @@ const DeployRepository: React.FC = () => {
     // Own the selector state above both views. Switching between the summary and
     // target settings must not refetch, reseed or replace the chosen Cloud server.
     const serverSelection = useServerSelection({
-        value: config.serverId,
+        value: config.serverId ?? (selectReadServer ? null : undefined),
         selectedName: config.serverName,
         readOnly: !!config.serverId && (!!config.uploadSessionId || (!!config.projectId && !!config.workspaceId)),
         disabled: loading || isRescanning || state.isDeploying,
@@ -147,8 +150,9 @@ const DeployRepository: React.FC = () => {
             : config.projectId && config.workspaceId ? t.billing.workspaces.savedDestinationHint : undefined,
         forDeployment: true,
         needsGpu: (config.services ?? []).some(service => hasComposeGpuRequest(service.advanced)),
-        autoSelectFirst: savedTargetState === "none",
-        useSavedDefault: savedTargetState === "none",
+        autoSelectFirst: savedTargetState === "none" && !selectReadServer,
+        useSavedDefault: savedTargetState === "none" && !selectReadServer,
+        selfHostedOnly: selectReadServer,
         onSelect: (server) => updateConfig({
             deployTarget: server ? (server.raw.managed ? "cloud" : "server") : (selfHosted ? "server" : "cloud"),
             serverId: server?.id,
@@ -218,9 +222,11 @@ const DeployRepository: React.FC = () => {
                 result = await initializeFromRepo(decoded.owner, decoded.repo, force, {
                     branch: branch ?? decoded.branch,
                     projectId: projectId ?? decoded.projectId,
+                    serverId: config.serverId,
                 });
             }
 
+            if (result.success) setSelectReadServer(false);
             if (result.success && loadsSavedTarget) {
                 setSavedTargetState("savedTarget" in result && result.savedTarget ? "saved" : "none");
             }
@@ -239,10 +245,12 @@ const DeployRepository: React.FC = () => {
                 // NetworkErrorHandler — only fire here for api_error so we
                 // don't double-toast network failures.
                 if (result.error) {
+                    const code = "errorCode" in result ? result.errorCode : undefined;
+                    if (code === "GITHUB_SERVER_SELECTION_REQUIRED") setSelectReadServer(true);
                     setError({
                         type: result.errorType === 'api_error' ? 'repo_not_found' : 'initialization_failed',
                         message: decoded.kind === 'local' ? t.deploy.page.errorLoadProjectTitle : t.deploy.page.errorLoadRepoTitle,
-                        details: result.error
+                        details: result.error,
                     });
                     if (result.errorType === 'api_error') {
                         toast('error', result.error);
@@ -264,13 +272,37 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, reviewCompose, uploadStack, uploadName, toast, t]);
+    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, config.serverId, scanAttempt, reviewCompose, uploadStack, uploadName, toast, t]);
 
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
     }
 
     if (error) {
+        if (selfHosted && selectReadServer && decodedSource?.kind === "repo") {
+            return (
+                <PageContainer>
+                    <div className="mx-auto max-w-xl pt-12">
+                        <WarningCallout tone="info" title={error.message} description={error.details}>
+                            <div className="mt-4 space-y-4">
+                                <ServerSelectorView selection={serverSelection} compact />
+                                <Button
+                                    disabled={!serverSelection.ready || !config.serverId}
+                                    onClick={() => {
+                                        hasInitialized.current = false;
+                                        setError(null);
+                                        setLoading(true);
+                                        setScanAttempt(attempt => attempt + 1);
+                                    }}
+                                >
+                                    {t.billing.plansRoute.tryAgain}
+                                </Button>
+                            </div>
+                        </WarningCallout>
+                    </div>
+                </PageContainer>
+            );
+        }
         return (
             <ErrorState 
                 type="repo-not-found" 

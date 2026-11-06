@@ -1,9 +1,20 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, HOST_PORT_QUARANTINE_OWNER, repos, schema, type HostPortClaim } from "@repo/db";
-import type { Platform, RuntimeAdapter } from "@repo/adapters";
+import {
+  allocateHostPort,
+  loopbackPortInventoryFor,
+  NginxProvider,
+  OPENRESTY_DEFAULT_PATHS,
+  rootChecked,
+  type CommandExecutor,
+  type Platform,
+  type RuntimeAdapter,
+} from "@repo/adapters";
 import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
 import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.service";
 import {
+  allocateAndReservePinnedHostPort,
+  prepareTargetPinnedHostPorts,
   reserveTargetPinnedHostPort,
   withHostPortTargetLock,
 } from "@repo/platform/engine/modules/deployments/pinned-host-ports";
@@ -78,6 +89,69 @@ describe("live route host-port recovery (#915)", () => {
 
   beforeEach(async () => {
     await db.delete(schema.hostPortClaim);
+  });
+
+  it("quarantines a stale route before allocating through a disabled host channel", async () => {
+    // There is no database claim or listener for this orphan vhost. A Docker
+    // bind on 20000 would succeed and serve the new workload on its old hostname.
+    let dump =
+      "http { server { listen 80; server_name old.example.com; location / { proxy_pass http://127.0.0.1:20000; } } }";
+    const command = vi.fn(async () => dump);
+    const routing = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS,
+      containerEdge: true,
+      executor: rootChecked({ exec: command } as unknown as CommandExecutor, "test socket edge"),
+    });
+    const host = {
+      exec: vi.fn(async () => {
+        throw new Error("host channel unavailable");
+      }),
+    } as unknown as CommandExecutor;
+    const inventory = loopbackPortInventoryFor(routing, host);
+    const allocated = await withHostPortTargetLock(localTarget, async () => {
+      const claims = await prepareTargetPinnedHostPorts({
+        target: localTarget,
+        edgeProxy: inventory,
+      });
+      return allocateAndReservePinnedHostPort({
+        target: localTarget,
+        claims,
+        owner: { projectId: project.id, serviceId: owner.serviceId, containerPort: 8080 },
+        allocate: (options) => allocateHostPort(host, options),
+      });
+    });
+    expect(allocated.port).toBe(20001);
+    expect(await repos.hostPortClaim.listHostPortClaims(localTarget.targetKey)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ port: 20000, projectId: HOST_PORT_QUARANTINE_OWNER }),
+        expect.objectContaining({ port: 20001, projectId: project.id }),
+      ]),
+    );
+    // Route mutation must refresh through the same socket, not retain a stale dump.
+    dump = "http { server { listen 80; server_name _; return 404; } }";
+    await expect(inventory.listLoopbackUpstreamPortsStrict({ refresh: true })).resolves.toEqual(
+      new Set(),
+    );
+    dump = "";
+    await expect(inventory.listLoopbackUpstreamPortsStrict({ refresh: true })).rejects.toThrow(
+      "config dump was empty",
+    );
+  });
+
+  it("uses the routing provider's inventory when repairing a live loopback route", async () => {
+    const options = routeOptions();
+    options.edgeProxy.listLoopbackUpstreamPortsStrict = async () => {
+      throw new Error("host channel unavailable");
+    };
+    options.routing.listLoopbackUpstreamPortsStrict = async () => new Set([23000, 24000]);
+    await reconcileProjectRoutes(project, options);
+    expect(options.registerRoute).toHaveBeenCalledOnce();
+    expect(await repos.hostPortClaim.listHostPortClaims(localTarget.targetKey)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ...owner }),
+        expect.objectContaining({ port: 24000, projectId: HOST_PORT_QUARANTINE_OWNER }),
+      ]),
+    );
   });
 
   describe.each([

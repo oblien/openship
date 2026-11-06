@@ -663,9 +663,30 @@ automatically; a value saved in the dashboard or CLI for the same key overrides 
       description: "Response headers per path.",
     },
     cleanUrls: { type: "boolean", description: "Strip .html extensions." },
+    spaFallback: { type: "boolean", default: "true", description: "Serve index.html for missing static paths. Set false for real 404 responses." },
     trailingSlash: { type: "boolean", description: "Enforce or remove trailing slashes." },
   }}
 />
+
+For single-page apps, including typical Vite builds, leave **SPA fallback** on so
+client-side routes work when opened directly. Adding `404.html` does not change this default.
+For a multi-page static site, disable it in **Domains & routing → URL behavior**, or declare:
+
+```json
+{
+  "routes": { "spaFallback": false }
+}
+```
+
+The project API accepts the same switch as `routingConfig.spaFallback`. When disabled,
+missing paths return HTTP 404 and use the build's top-level `404.html` when available;
+otherwise the static server returns its standard error page. Existing files, redirects
+and proxy rewrites keep working. The explicit switch takes precedence over an imported
+SPA rewrite to `index.html`.
+
+Saving reapplies edge routing through the normal route-update flow. Generated static
+containers use the same fallback policy at build time, so **redeploy those sites** after
+changing it. Custom Dockerfiles and application servers own their own fallback behavior.
 
 ## Resources
 

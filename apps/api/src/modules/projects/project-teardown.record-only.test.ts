@@ -31,7 +31,12 @@ const h = vi.hoisted(() => ({
   activeDeploymentReadError: null as Error | null,
   keepDeploymentsActive: false,
   activeBackupRuns: [] as Array<{ id: string; status: string }>,
-  activeMigration: null as { id: string; status: string } | null,
+  activeMigration: null as {
+    id: string;
+    status: string;
+    executionStartedAt?: Date;
+    executionFinishedAt?: Date;
+  } | null,
   // Serves the active list once, then empty — so the quiesce poll converges
   // instead of burning the 5s timeout.
   listByProjectCalls: 0,
@@ -113,7 +118,10 @@ vi.mock("@repo/db", () => ({
       transition: h.transitionBackupRun,
     },
     backupRestore: { listInFlightByProject: vi.fn(async () => []) },
-    dockerMigrationRun: { findActiveForProject: vi.fn(async () => h.activeMigration) },
+    dockerMigrationRun: {
+      findActiveForProject: vi.fn(async () => h.activeMigration),
+      findById: vi.fn(async () => h.activeMigration),
+    },
     orphanedResource: {
       create: h.orphanCreate,
       delete: h.orphanDelete,
@@ -996,3 +1004,31 @@ describe("teardownProject — durable deletion intent", () => {
     },
   );
 });
+
+it.each(["partial", "awaiting_cutover", "cutover"])(
+  "rejects a parked %s migration immediately without selecting a retention policy",
+  async (status) => {
+    vi.useFakeTimers();
+    try {
+      h.activeMigration = {
+        id: "migration-parked",
+        status,
+        executionStartedAt: new Date(0),
+        executionFinishedAt: new Date(1000),
+      };
+      const res = await teardownProject(ctx, "p1", { force: true, wipeVolumes: true });
+      expect(res.rejection).toBe("active_work");
+      expect(res.rowDeleted).toBe(false);
+      expect(stepOf(res.steps, "cancel_in_flight")?.error).toMatch(/Settings → Advanced/);
+      expect(stepOf(res.steps, "cancel_in_flight")?.error).not.toMatch(/Timed out/);
+      expect(h.cancelMigration).not.toHaveBeenCalled();
+      expect(h.beginDeletionCleanup).not.toHaveBeenCalled();
+      expect(h.collectProjectManifest).not.toHaveBeenCalled();
+      expect(h.executeCleanup).not.toHaveBeenCalled();
+      expect(h.orphanCreate).not.toHaveBeenCalled();
+      expect(h.clearDeletionInProgress).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);

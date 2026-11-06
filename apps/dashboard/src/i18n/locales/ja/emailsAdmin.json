@@ -787,7 +787,8 @@
       "localPartLabel": "ローカル部",
       "localPartHint": "@ の前の部分。小文字の英数字。",
       "destinationLabel": "転送先",
-      "destinationHint": "有効なメールアドレス（このサーバー上のメールボックス、または Gmail などの外部アドレス）。"
+      "destinationHint": "有効なメールアドレス（このサーバー上のメールボックス、または Gmail などの外部アドレス）。",
+      "senderNote": "エイリアスから送信するには、直接の転送先メールボックスでログインしてください。外部への転送とキャッチオールは受信専用です。最新のメールエンジンが必要です。"
     },
     "deleteForm": {
       "title": "このエイリアスを削除しますか？",
@@ -800,5 +801,29 @@
       "mailboxConflict": "{address} は実際のメールボックスです。ここにエイリアスを作成するとそのメールがリダイレクトされます。代わりにメールボックスを編集または削除してください。",
       "alreadyExists": "その転送設定は既に存在します。"
     }
+  },
+  "fail2ban": {
+    "manage": "ブロックを管理",
+    "title": "Fail2ban のブロック",
+    "description": "このメールサーバーでブロックされたアドレスを確認し、アクセスを管理します。",
+    "checkedAt": "最終確認 {time}",
+    "failed": "Fail2ban の状態を取得できません。",
+    "stale": "最後に取得できた情報を表示しています。変更する前に更新してください。",
+    "completed": "リクエストが完了しました。",
+    "emptyJails": "有効な Jail はありません。",
+    "emptyBans": "この Jail で現在ブロックされているアドレスはありません。",
+    "banned": "現在のブロック数",
+    "failedNow": "現在の失敗数",
+    "totalBans": "累計ブロック数",
+    "readOnly": "ブロックを確認できます。管理にはメール管理者の権限が必要です。",
+    "ban": "IP をブロック",
+    "unban": "解除",
+    "jail": "Jail",
+    "chooseJail": "Jail を選択",
+    "address": "IP アドレス",
+    "banHint": "IPv4 または IPv6 アドレスを指定してください。自分のアドレスをブロックするとメールにアクセスできなくなる場合があります。",
+    "reviewBan": "ブロックを確認",
+    "banReview": "{jail} で {ip} をブロックしますか？",
+    "unbanReview": "{jail} の {ip} のブロックを解除しますか？"
   }
 }

@@ -114,7 +114,7 @@ export interface ContainerEdgeResult {
  */
 export type EdgeProviderOptions = Omit<
   NginxProviderOptions,
-  "executor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir"
+  "executor" | "hostExecutor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir"
 >;
 
 /**
@@ -166,6 +166,7 @@ export async function containerEdgeProvider(
     // while reload/certbot run inside the container.
     paths: EDGE_HOST_PATHS,
     executor: edgeContainerExecutor(await edgeHostExecutor(executor), container),
+    hostExecutor: executor,
     // Challenge tokens go to the HOST side of the ACME mount, for the same reason
     // vhosts do. This is the ONE mount whose two sides differ
     // (/var/lib/openship/edge/acme → /var/www/acme), so the write path and the

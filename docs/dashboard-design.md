@@ -421,6 +421,11 @@ Deploy asks for DNS setup only for newly selected custom hostnames or a changed
 destination. Existing hostnames on the same deployed destination continue directly;
 adding only a www hostname asks for that hostname alone.
 
+External Docker migration cutover distinguishes finishing without touching originals,
+keeping and restarting originals, and removing originals. Never infer a retention
+decision from a project deletion request. Parked migrations explain how to finish
+or resume them before deletion; they are not presented as cancellation timeouts.
+
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
@@ -599,6 +604,10 @@ check retryable before starting the move.
   Keep Home's project list and the sidebar counts separate too.
 - Cloud's New Project choices are Apps, GitHub, Git URL and Import existing project.
   Folder import and the Browse Templates shortcut are available only on self-hosted instances.
+  If a self-hosted repository scan requires an explicit GitHub server identity, reuse the
+  shared server picker and retry the same source with that server. Do not auto-select or
+  apply a saved default while recovering from ambiguous credentials. Retain the picker
+  after a failed retry so users can correct their selection.
 - Credit warnings belong in Billing's overview for the selected server. Reuse its loaded
   billing state and scoped links; keep the notice inline. Monthly servers have no compute
   credit warnings. Other pages do not mount a credit tray or poll all server balances.
@@ -909,6 +918,9 @@ Routing rules have visible sections for rewrites, redirects, response headers, a
 URL behavior. Group proxy settings into uploads, timeouts, response buffering,
 compression, headers/protocol, and upstream TLS. Use human labels and shared filled
 controls; keep directive names in each group's Technical details disclosure.
+SPA fallback uses one default-on switch for static sites in the shared routing editor,
+available even when no rules were detected. Turning it off returns a real 404; explain
+that container-hosted static sites need a redeploy to apply the change.
 Trailing slashes have three choices: automatic, add, and remove. Live edge inspection
 is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
@@ -991,6 +1003,12 @@ spacing adjustment needs visual verification, not a test that asserts a CSS clas
 
 ## Mail webmail recovery
 
+Manage Fail2ban bans from the mail server's existing Health row in the shared drawer.
+Load jail details only while open, retain the last reading on refresh failure and
+disable mutations until current status is available. Ban actions select an explicit
+jail; review the exact IP and jail before applying either action. Use server-reported
+management capability and the existing mail API; Cloud mail does not mount this panel.
+
 Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
 webmail app installer. Keep its client card beside a compact Managed email / Coming
 soon notice. Cloud mail entry points must not mount local server setup, registry or
@@ -1051,7 +1069,7 @@ cards and scroll fades remain consistent.
 
 Keep the original Appearance card and its four immediate theme switches in Settings → General. Its Customize button opens the editor inline at `/settings?tab=general&view=appearance`, keeping General selected in desktop and mobile navigation. Provide Back to General; do not add a dedicated Appearance tab. Inside Customize, use compact labeled icon buttons for Light, Dim, Dark and System instead of large preview cards; keep New theme alongside the selector and preserve the original cards in General. The editor owns personal themes, token editing, typography and portable JSON import/export. The registry and built-in values in `packages/core/src/appearance.ts` and `appearance-defaults.json` are authoritative. Regenerate `apps/dashboard/src/styles/theme-tokens.css` with `node scripts/generate-theme-tokens.mjs`; `theme.css` retains utilities and semantic aliases. Do not duplicate palettes in components. Preset thumbnails use the immutable built-in values; previews and their bridge aliases resolve within `[data-appearance-preview]`.
 
-Use one versioned format across dashboard, API, SDK, CLI and native operations. Save is user-scoped and explicit; a draft updates CSS variables live, while failures preserve the draft. Read failures must not become editable server defaults. Cache by API origin and authenticated user, discard late responses across account switches, and paint validated cached variables before hydration. The editor's recovery controls use the immutable base palette and system font so users can always reset an unreadable theme. WOFF2 assets travel in JSON; do not load arbitrary remote CSS or fonts from imported themes. Terminals subscribe to the shared appearance event, update their existing renderer and refit without reconnecting the PTY.
+Use one versioned format across dashboard, API, SDK, CLI and native operations. Save is user-scoped and explicit; a draft updates CSS variables live, while failures preserve the draft. Read failures must not become editable server defaults. Cache by API origin and authenticated user, discard late responses across account switches, and paint validated cached variables before hydration. Mirror only the saved built-in/System preference and resolved base palette to the `openship-theme` cookie so SSR renders the right theme and page background immediately; keep custom tokens and fonts in the scoped cache, and never persist a preview to this cookie. The editor's recovery controls use the immutable base palette and system font so users can always reset an unreadable theme. WOFF2 assets travel in JSON; do not load arbitrary remote CSS or fonts from imported themes. Terminals subscribe to the shared appearance event, update their existing renderer and refit without reconnecting the PTY.
 
 ## Managed public ingress
 
@@ -1155,9 +1173,14 @@ Comfortable issue rows give the name, status and actions separate columns on wid
 containers; actions move below details on narrower lists so buttons never squeeze
 the status. Compact issue rows keep an accessible icon action. Monitoring's page
 header offers **AI health report**, preparing a read-only report of the current
-workspace's apps, deployments, services and accessible servers. The shortcut
-opens a new, editable request in the normal assistant composer; it never starts a
-turn, enables the assistant or grants access by itself. Carry only resource IDs and
+workspace's apps, deployments, services and accessible servers. Activating these
+actions in the current tab opens the assistant and sends the prepared request once
+the existing connection and model checks are ready, using the normal send path.
+Editing the draft or selecting another conversation cancels the queued send.
+Copied links, new tabs and refreshes open an editable draft; the URL alone never
+starts work. Failed sends use the normal manual retry, without an automatic loop.
+Investigate remains read-only; Fix with AI retains its explicit repair intent.
+These actions never enable the assistant or grant access by themselves. Carry only resource IDs and
 the originating resource scope in the link, never logs or error text. Preserve the
 request through assistant setup, reject a mismatched account/workspace/Cloud connection,
 and keep existing repair actions alongside it. Resolved issues and update notices do
@@ -1196,6 +1219,17 @@ conversation title or provider name/avatar above each response. The page header
 identifies the active speaker with its name and a General/Agent/Automation label.
 Keep character avatars in the switcher; chat titles appear in history. Omit the
 permission/keyboard helper line below the composer.
+Pending agent questions use a compact **Waiting for your answer** disclosure directly above
+the composer. **Answer** expands the controls in place; keep the regular composer available.
+Use a rounded translucent card, bound the answer area with its own scroll, and keep
+**Send answer** visible below it. While expanded, softly blur the transcript behind the panel
+with a 6px backdrop and a light theme-aware tint. Keep the question controls and composer sharp;
+the visual backdrop must not intercept clicks or scrolling. Fade it with reduced-motion support,
+and remove it when the panel closes or its questions are resolved.
+Collapse preserves unsent choices and text. Multiple requests
+share this panel, with separate drafts and retry identities; both live and message-mode
+questions use the existing response path. Show submission failures inside the panel and
+remove resolved questions when the conversation refreshes.
 Before the assistant is enabled, introduce **AI Agents** with a compact 30–36px
 heading, a short description and native provider marks. Group the host picker,
 single **Enable AI Agents** action and brief access guidance in one setup card.
@@ -1248,6 +1282,8 @@ that the agent has finished. Live thinking/tool indicators replace the generic W
 indicator. The stop control uses a small solid square. Smooth scrolling follows
 new content until the user scrolls up; **Latest messages** resumes following. Respect
 reduced motion for text, loading indicators and scrolling.
+Give **Latest messages** the composer's frosted surface (`bg-card/80` and `backdrop-blur-xl`)
+with a subtle shadow so transcript text cannot visually overlap its label.
 
 Keep the chat header to a single identity row: assistant/agent name and its role.
 Character avatars belong in the switcher and picker, including during loading.
@@ -1261,12 +1297,32 @@ Use the shared `assistant` AI icon for the platform. Identify harnesses as
 **Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
 in provider selection, connections, history and settings. Use the shared provider
 labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
-A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action. Agent connections open in one dialog, with provider navigation and a single
-visible detail panel. Preserve unfinished sign-in forms when switching providers
-or closing this dialog; hidden content must not capture keyboard focus. Show the
-host in that dialog. Keep permission review and the audit trail in the header menu.
+A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action.
+Show connections inline in the chat area when setup is needed or the user opens
+**AI connections**. Keep the workspace header and navigation in place. Offer every
+supported provider, Custom API and saved custom models in the same layout, with
+one visible detail panel and all advertised sign-in methods as selectable buttons.
+Use one heading and one connection surface. Show each provider's name and mark only
+in the compact selector; do not repeat them as a second header inside its form.
+Keep connection status in the selector and host information in the footer.
+Use the shared connection forms in settings and agent-editor dialogs as well.
+Preserve unfinished sign-in forms when switching providers or returning to chat;
+hidden content must not capture keyboard focus. Identify the connection host.
+Using a different connection from an existing conversation opens a fresh chat;
+it never changes that conversation's provider or approved access. Keep permission
+review and the audit trail in the header menu.
 
-Agent creation and configuration open an inset right drawer with a 6px blurred backdrop and a short slide
+Use the shared assistant illustration for a conversation whose access has changed,
+with a compact heading, explanation and **New chat** action. New chat retains an
+available specialist; a removed or archived specialist falls back to the general
+assistant with current approved access. Agent and automation navigation empty states
+use quiet action rows aligned with populated items: a small outlined plus, the setup
+action and one short supporting line. Keep them borderless at rest; use the same hover
+and focus treatment as navigation rows. Omit promotional headings, separate CTA pills,
+zero counts and duplicate creation controls while the section is empty.
+Keep loading and fetch failures distinct from an empty list.
+
+Agent and automation creation and configuration use the same inset right drawer with a 6px blurred backdrop and a short slide
 transition. Use the existing theme surfaces and respect reduced motion. Browse agents,
 recent chats and templates in one column; expand the same drawer to the available
 screen width to edit instructions and the shared access editor in two equal columns.
@@ -1296,7 +1352,16 @@ connection dialog.
 Opening or drilling into agents preserves the underlying chat, draft and automation form.
 Agent links from tool results use the same drawer. Close, backdrop and Escape dismiss it
 and return focus to the opener; nested pickers and dialogs handle Escape first. Deep links
-open the corresponding drawer view. Automations keep their existing full-page editor.
+open the corresponding drawer view. **Create automation** opens the shared automation
+form directly from the navigation column; overview and edit links use the same drawer.
+Keep its title and save/cancel actions visible around a scrolling form. An agent opened
+from an automation sits above that unfinished form within the same drawer; hide the
+form from keyboard navigation while preserving its values. Closing the agent returns
+to the automation; closing the automation restores the original chat or overview.
+Opening setup never creates or enables a flow. Existing automation steps remain editable
+inline through the same form, with the same permission review and paused defaults.
+After saving an agent or flow, reload any open activation review and clear its previous
+approval so the user reviews the current saved settings.
 
 **Enable assistant** opens an inline dialog that reuses the MCP authorization form,
 permission templates, resource picker and permission summary. Use Assistant wording

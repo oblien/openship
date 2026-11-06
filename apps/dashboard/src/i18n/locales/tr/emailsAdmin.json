@@ -787,7 +787,8 @@
       "localPartLabel": "Yerel kısım",
       "localPartHint": "@ işaretinden önceki kısım. Küçük harf, alfasayısal.",
       "destinationLabel": "Şuraya iletilir:",
-      "destinationHint": "Herhangi bir geçerli e-posta adresi — bu sunucudaki bir posta kutusu veya harici (örneğin Gmail)."
+      "destinationHint": "Herhangi bir geçerli e-posta adresi — bu sunucudaki bir posta kutusu veya harici (örneğin Gmail).",
+      "senderNote": "Bir takma adla göndermek için doğrudan hedef posta kutusuyla oturum açın. Harici yönlendirmeler ve tümünü yakalama kuralları yalnızca gelen postayı yönlendirir. En güncel posta motoru gereklidir."
     },
     "deleteForm": {
       "title": "Bu takma ad silinsin mi?",
@@ -800,5 +801,29 @@
       "mailboxConflict": "{address} gerçek bir posta kutusudur — burada bir takma ad oluşturmak postalarını yönlendirir. Bunun yerine posta kutusunu düzenleyin veya silin.",
       "alreadyExists": "Bu yönlendirme zaten mevcut."
     }
+  },
+  "fail2ban": {
+    "manage": "Engellemeleri yönet",
+    "title": "Fail2ban engellemeleri",
+    "description": "Engellenen adresleri inceleyin ve bu posta sunucusuna erişimi yönetin.",
+    "checkedAt": "Son kontrol: {time}",
+    "failed": "Fail2ban durumu alınamıyor.",
+    "stale": "Son başarılı okuma gösteriliyor. Değişiklik yapmadan önce yenileyin.",
+    "completed": "İstek tamamlandı.",
+    "emptyJails": "Etkin jail yok.",
+    "emptyBans": "Bu jail içinde şu anda engellenmiş adres yok.",
+    "banned": "Şu an engelli",
+    "failedNow": "Mevcut hatalar",
+    "totalBans": "Toplam engelleme",
+    "readOnly": "Engellemeleri görüntüleyebilirsiniz. Yönetmek için posta yöneticisi yetkisi gerekir.",
+    "ban": "IP engelle",
+    "unban": "Engeli kaldır",
+    "jail": "Jail",
+    "chooseJail": "Bir jail seçin",
+    "address": "IP adresi",
+    "banHint": "IPv4 veya IPv6 adresi kullanın. Kendi adresinizi engellemek posta erişimini önleyebilir.",
+    "reviewBan": "Engellemeyi incele",
+    "banReview": "{ip}, {jail} içinde engellensin mi?",
+    "unbanReview": "{ip} adresinin {jail} içindeki engeli kaldırılsın mı?"
   }
 }

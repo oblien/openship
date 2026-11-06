@@ -257,11 +257,13 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
     );
     // The Noop provider has no host vhost files. Its authoritative inventory is
     // empty; durable claims and actual Docker port bindings still run normally.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (original) => ({
       ...(await original<Record<string, unknown>>()),
-      edgeProxyFor: () => ({
-        listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
-      }),
+      edgeProxyFor: edgeInventory,
+      loopbackPortInventoryFor: edgeInventory,
     }));
     pipeline = await import("@repo/platform/engine/modules/deployments/build-pipeline");
   }, 180_000);

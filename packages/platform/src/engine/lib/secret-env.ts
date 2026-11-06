@@ -174,6 +174,7 @@ export function maskServiceEnv<
     environmentTemplates?: Record<string, string> | null;
     advanced?: {
       imageTemplate?: unknown;
+      commandTemplate?: unknown;
       environmentTemplateKeys?: string[];
       environmentOverrideKeys?: string[];
       buildArgTemplateKeys?: string[];
@@ -192,6 +193,7 @@ export function maskServiceEnv<
     !svc.driftSpec &&
     !svc.environmentTemplates &&
     !svc.advanced?.imageTemplate &&
+    !svc.advanced?.commandTemplate &&
     !svc.advanced?.environmentTemplateKeys &&
     !svc.advanced?.environmentOverrideKeys
   ) {
@@ -212,6 +214,7 @@ export function maskServiceEnv<
     // forging resolution state, stripping the raw expressions avoids exposing
     // literal defaults embedded in `${VAR:-value}` through read APIs.
     delete advanced.imageTemplate;
+    delete advanced.commandTemplate;
     delete advanced.environmentTemplateKeys;
     delete advanced.environmentOverrideKeys;
   }
@@ -308,6 +311,7 @@ export function publicScanService<
     environmentMeta?: Record<string, EnvMetaLike> | null;
     advanced?: {
       imageTemplate?: unknown;
+      commandTemplate?: unknown;
       environmentTemplateKeys?: string[];
       [key: string]: unknown;
     } | null;
@@ -386,20 +390,23 @@ export function maskDriftChanges<T extends { field: string; from: unknown; to: u
       };
     }
     if (c.field === "advanced") {
-      const maskImageTemplate = (value: unknown): unknown => {
+      const maskTemplate = (value: unknown, key: string): unknown => {
         if (!value || typeof value !== "object" || Array.isArray(value)) return value;
         const advanced = { ...(value as Record<string, unknown>) };
-        const template = advanced.imageTemplate;
+        const template = advanced[key];
         if (template && typeof template === "object" && !Array.isArray(template)) {
-          advanced.imageTemplate = {
+          advanced[key] = {
             ...(template as Record<string, unknown>),
             expression: ENV_MASK,
             ...(Object.hasOwn(template, "sourceValue") && { sourceValue: ENV_MASK }),
+            ...(Object.hasOwn(template, "sourceEnvironment") && { sourceEnvironment: ENV_MASK }),
           };
         }
         return advanced;
       };
-      return { ...c, from: maskImageTemplate(c.from), to: maskImageTemplate(c.to) };
+      const maskAdvancedTemplates = (value: unknown): unknown =>
+        maskTemplate(maskTemplate(value, "imageTemplate"), "commandTemplate");
+      return { ...c, from: maskAdvancedTemplates(c.from), to: maskAdvancedTemplates(c.to) };
     }
     return c;
   });

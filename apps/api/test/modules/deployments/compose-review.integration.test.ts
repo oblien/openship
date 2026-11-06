@@ -9,8 +9,10 @@ import { resolveProjectInfo } from "@repo/platform/engine/modules/deployments/pr
 import {
   assertComposeReviewed,
   composeSourceRevision,
+  composeSourceChanges,
 } from "@repo/platform/engine/modules/deployments/compose-review";
 import { seedOrg, seedProject, seedDeployment, seedServiceDeployment } from "../../helpers/seed";
+import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -18,6 +20,26 @@ afterEach(async () => {
 });
 
 describe("Compose source review and synchronization", () => {
+  it("compares authored commands across unresolved values and one-time provenance migration", async () => {
+    const org = await seedOrg();
+    const project = await seedProject(org.organizationId, { framework: "docker-compose" });
+    const source = 'services:\n  api:\n    image: busybox\n    command: [echo, "${VALUE}"]\n';
+    const initial = parseComposeFile(source).services;
+    const saved = await repos.service.syncFromCompose(project.id, initial, { composeAuthoritative: true });
+    const resolved = parseComposeFile(source, { env: { VALUE: "now set" } }).services;
+    expect(composeSourceChanges(saved, resolved).changed).toEqual([]);
+    expect(composeSourceRevision(project.id, initial)).toBe(composeSourceRevision(project.id, resolved));
+    const legacy = { ...saved[0]!, importedSpec: { ...saved[0]!.importedSpec!, advanced: {} } };
+    expect(composeSourceChanges([legacy], resolved).changed).toEqual([]);
+    const edited = parseComposeFile(source.replace("[echo,", "[printf,")).services;
+    expect(composeSourceChanges(saved, edited).changed).toEqual(["api"]);
+  });
+  it("changing a command variable does not invent a Compose source edit", () => {
+    const source = 'services:\n  redis:\n    image: redis:7\n    command: [redis-server, --requirepass, "${REDIS_PASSWORD}"]\n';
+    const before = parseComposeFile(source, { env: { REDIS_PASSWORD: "before" } }).services;
+    const after = parseComposeFile(source, { env: { REDIS_PASSWORD: "after" } }).services;
+    expect(composeSourceRevision("project-review", before)).toBe(composeSourceRevision("project-review", after));
+  });
   it("previews add/change/remove without writes, then archives removed containers for the existing reaper", async () => {
     const org = await seedOrg({ ownsHost: true });
     const localPath = await mkdtemp(join(tmpdir(), "compose-review-"));

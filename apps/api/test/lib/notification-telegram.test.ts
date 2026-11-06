@@ -57,7 +57,29 @@ describe("telegram delivery", () => {
       expect(failure).toBeInstanceOf(Error);
       await errorReporter.flush();
       expect(events).toHaveLength(1);
-      expect(events[0]!.error.message).toContain("Transport failed");
+      expect(events[0]!.error.message).toBe("Notification delivery failed");
+      expect(JSON.stringify(events)).not.toContain(TOKEN);
+    } finally {
+      errorReporter.setEnabled(false);
+      errorReporter.setSink(consoleErrorSink);
+    }
+  });
+
+  it("keeps credentials out of diagnostics when reading a provider response fails", async () => {
+    await errorReporter.flush();
+    const events: ErrorEvent[] = [];
+    errorReporter.setEnabled(true);
+    errorReporter.setSink((batch) => { events.push(...batch); });
+    safeFetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      text: async () => { throw Object.assign(new Error(`Read failed for ${TOKEN}`), { code: "ECONNRESET" }); },
+    });
+    try {
+      await expect(sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "test" })))
+        .resolves.toBeUndefined();
+      await errorReporter.flush();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.error.message).toBe("The Telegram response could not be read (ECONNRESET)");
       expect(JSON.stringify(events)).not.toContain(TOKEN);
     } finally {
       errorReporter.setEnabled(false);
@@ -95,7 +117,7 @@ describe("telegram delivery", () => {
     expect(lastCall().body.message_thread_id).toBe(42);
   });
 
-  it("treats HTTP 200 with { ok: false } as a failure and surfaces the description", async () => {
+  it("treats HTTP 200 with { ok: false } as a failure and reports approved evidence", async () => {
     // The single most common misconfiguration: a bot the user never started.
     safeFetch.mockResolvedValue({
       ok: true,
@@ -105,7 +127,7 @@ describe("telegram delivery", () => {
 
     await expect(
       sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "12345" })),
-    ).rejects.toThrow(/bot was blocked by the user/);
+    ).rejects.toThrow(/Check the bot’s chat access and permissions.*HTTP 403/);
   });
 
   it("fails on a non-2xx status", async () => {
@@ -120,19 +142,56 @@ describe("telegram delivery", () => {
     ).rejects.toThrow(/400/);
   });
 
+  it("does not read an unsuccessful provider body to construct an error", async () => {
+    const text = vi.fn(async () => { throw new Error("unregistered-private-provider-value"); });
+    safeFetch.mockResolvedValueOnce({ ok: false, status: 403, text });
+    await expect(sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "test" })))
+      .rejects.toThrow("Telegram delivery failed (HTTP 403)");
+    expect(text).not.toHaveBeenCalled();
+  });
+
   it("never leaks the bot token through a transport error", async () => {
     // The token is a URL path segment, so any error that echoes the URL would
     // persist it into the delivery row and show it in the dashboard.
     safeFetch.mockRejectedValue(
-      new Error(`connect ETIMEDOUT https://api.telegram.org/bot${TOKEN}/sendMessage`),
+      Object.assign(new Error(`connect ETIMEDOUT https://api.telegram.org/bot${TOKEN}/sendMessage`), { code: "ETIMEDOUT" }),
     );
 
     await expect(
       sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "12345" })),
-    ).rejects.toThrow(/bot<redacted>/);
+    ).rejects.toThrow("Notification delivery failed (ETIMEDOUT)");
     await expect(
       sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "12345" })),
     ).rejects.not.toThrow(TOKEN);
+  });
+
+  it("omits long provider text from public errors", async () => {
+    const token = "private-value-".repeat(1600);
+    safeFetch.mockRejectedValueOnce(new Error(`Transport failed for ${token}: connection refused`));
+    await expect(sendTestToChannel(telegramChannel({ botToken: token, chatId: "test" })))
+      .rejects.toThrow("Notification delivery failed");
+  });
+
+  it("keeps overlapping and JSON-escaped channel credentials out of public errors", async () => {
+    const secret = 'private"value\nnext';
+    safeFetch.mockRejectedValueOnce(new Error(`x ${JSON.stringify(secret)}`));
+    await expect(sendTestToChannel(telegramChannel({
+      botToken: "x", chatId: "test", hmacSecret: "redacted", webhookUrl: secret,
+    }))).rejects.toThrow("Notification delivery failed");
+  });
+
+  it.each([false, true])("omits provider response text while preserving failure status (HTTP success: %s)", async (ok) => {
+    const description = `${"p".repeat(195)}${TOKEN} connection refused`;
+    safeFetch.mockResolvedValueOnce({
+      ok, status: ok ? 200 : 400,
+      text: async () => ok ? JSON.stringify({ ok: false, error_code: 403, description }) : description,
+    });
+    const error = await sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "test" }))
+      .catch((failure: Error) => failure);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(`HTTP ${ok ? 403 : 400}`);
+    expect((error as Error).message).not.toContain("p".repeat(195));
+    expect((error as Error).message).not.toContain(TOKEN.slice(0, 5));
   });
 
   it("refuses to send when half the config is missing", async () => {

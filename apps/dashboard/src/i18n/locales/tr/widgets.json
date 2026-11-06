@@ -396,6 +396,8 @@
       "headersHint": "Eşleşen yollar için eklenen yanıt başlıkları.",
       "permanent": "kalıcı",
       "cleanUrls": "Temiz URL'ler",
+      "spaFallback": "SPA yedek sayfası",
+      "spaFallbackHint": "Statik sitelerde bulunamayan yollar için index.html sunulur. Gerçek bir 404 yanıtı ve varsa 404.html için kapatın. Değişiklikleri uygulamak için konteynerdeki siteleri yeniden dağıtın.",
       "cleanUrlsHint": "(.html uzantısını kaldır)",
       "trailingSlash": "Sondaki eğik çizgi",
       "proxyLimits": "Proxy ayarları",

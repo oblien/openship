@@ -742,6 +742,12 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     const result = await tokenFor(opts.ctx, "local", {
       ...tokenContext,
       ...(rejectedSources.length ? { exclude: [...rejectedSources] } : {}),
+    }).catch((error: unknown) => {
+      // A public read needs no server identity. Preserve the existing anonymous
+      // fallback before asking the caller to resolve private-token ambiguity.
+      if (!(error instanceof AppError) || error.code !== "GITHUB_SERVER_SELECTION_REQUIRED") throw error;
+      authError = error;
+      return null;
     });
     if (!result || rejectedSources.includes(result.source)) break;
     const url = result.source === "app-installation" && customApiBase &&

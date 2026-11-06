@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   pendingAssistantQuestions,
   type AssistantSnapshot,
@@ -9,7 +9,6 @@ import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { AssistantDialog } from "./AssistantDialog";
 import { assistantApi } from "@/lib/api/assistant";
 import { useScopedMutation } from "@/hooks/use-scoped-resource";
 
@@ -27,6 +26,7 @@ export function AssistantQuestions({
     [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Record<string, QuestionAnswer>>>({});
   const [requestIds, setRequestIds] = useState<Record<string, string>>({});
+  const panelId = useId();
   const action = useScopedMutation();
   const request = requests.find((r) => r.key === selected) ?? requests[0];
   if (!request) return null;
@@ -36,67 +36,73 @@ export function AssistantQuestions({
     (q) => q.optional || answers[q.id]?.options?.length || answers[q.id]?.text?.trim(),
   );
   return (
-    <>
-      <div className="mb-3 flex items-center gap-3 rounded-xl bg-card px-4 py-3">
-        <Icon name="help-circle" className="size-4 text-muted-foreground" />
-        <span className="flex-1 text-sm">
-          {requests.length === 1
-            ? "Your agent has a question"
-            : `${requests.length} questions need your input`}
-        </span>
-        <Button size="sm" variant="secondary" onClick={() => setOpened(true)}>
-          Answer
-        </Button>
-      </div>
-      <AssistantDialog
-        label="Agent question"
-        isOpen={opened}
-        closable={!action.busy}
-        onClose={() => setOpened(false)}
-        width="620px"
-        maxWidth="94vw"
-        footer={
-          <div className="flex items-center justify-end gap-2 p-4">
-            <Button variant="ghost" disabled={action.busy} onClick={() => setOpened(false)}>
-              Later
-            </Button>
-            <Button
-              disabled={!ready || action.busy}
-              onClick={() =>
-                void action.execute(async () => {
-                  const requestId = requestIds[request.key] ?? crypto.randomUUID();
-                  setRequestIds((previous) => ({ ...previous, [request.key]: requestId }));
-                  await assistantApi.respond(snapshot.conversation.id, {
-                    interactionId: interaction.id,
-                    requestId,
-                    answers,
-                  });
-                  onAnswered();
-                  setOpened(false);
-                })
-              }
-            >
-              {action.busy ? "Sending…" : "Send answer"}
-            </Button>
-          </div>
-        }
+    <section
+      className="mb-3 overflow-hidden rounded-2xl bg-card/80 backdrop-blur-xl"
+      aria-label="Agent questions"
+      data-assistant-questions-open={opened}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        className="h-auto w-full justify-start gap-3 rounded-2xl px-4 py-3 text-start text-foreground"
+        aria-label={opened ? "Hide agent questions" : "Show agent questions"}
+        aria-expanded={opened}
+        aria-controls={panelId}
+        disabled={action.busy}
+        onClick={() => setOpened((value) => !value)}
       >
-        <div className="space-y-5 p-6">
-          <h2 className="text-lg font-medium">{interaction.title || "A question for you"}</h2>
+        <Icon name="help-circle" className="text-muted-foreground" />
+        <span role="status" className="min-w-0 flex-1 whitespace-normal text-sm font-normal">
+          {requests.length === 1
+            ? "Waiting for your answer"
+            : `${requests.length} requests need your answer`}
+        </span>
+        <span className="text-xs text-muted-foreground">{opened ? "Hide" : "Answer"}</span>
+        <Icon name={opened ? "chevron-down" : "chevron-up"} className="text-muted-foreground" />
+      </Button>
+      <form
+        id={panelId}
+        hidden={!opened}
+        aria-label="Answer agent questions"
+        aria-busy={action.busy}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!ready || action.busy) return;
+          void action.execute(async () => {
+            const requestId = requestIds[request.key] ?? crypto.randomUUID();
+            setRequestIds((previous) => ({ ...previous, [request.key]: requestId }));
+            await assistantApi.respond(snapshot.conversation.id, {
+              interactionId: interaction.id,
+              requestId,
+              answers,
+            });
+            onAnswered();
+            setOpened(false);
+          });
+        }}
+      >
+        <div className="max-h-[min(40dvh,24rem)] space-y-4 overflow-y-auto overscroll-contain px-4 pt-1 pb-2">
           {requests.length > 1 && (
             <div className="flex flex-wrap gap-2">
               {requests.map((r, i) => (
                 <Button
                   key={r.key}
+                  type="button"
                   variant={r === request ? "secondary" : "ghost"}
                   size="sm"
-                  onClick={() => setSelected(r.key)}
+                  aria-pressed={r === request}
+                  disabled={action.busy}
+                  onClick={() => {
+                    setSelected(r.key);
+                    action.setError(null);
+                  }}
                 >
                   Question {i + 1}
                 </Button>
               ))}
             </div>
           )}
+          <h2 className="text-sm font-medium">{interaction.title || "A question for you"}</h2>
           {interaction.questions?.map((question) => {
             const value = answers[question.id] ?? {};
             const update = (value: QuestionAnswer) => {
@@ -125,7 +131,7 @@ export function AssistantQuestions({
                 {question.options?.map((option) => (
                   <label
                     key={option.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-xl bg-card p-3"
+                    className="flex cursor-pointer items-start gap-3 rounded-xl bg-background/60 p-3"
                   >
                     <Checkbox
                       aria-label={option.label}
@@ -165,13 +171,18 @@ export function AssistantQuestions({
               </fieldset>
             );
           })}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-3 p-4 pt-3">
           {action.error && (
-            <p role="alert" className="text-sm text-danger">
+            <p role="alert" className="min-w-0 flex-1 text-sm text-danger">
               {action.error}
             </p>
           )}
+          <Button type="submit" size="sm" disabled={!ready || action.busy}>
+            {action.busy ? "Sending…" : "Send answer"}
+          </Button>
         </div>
-      </AssistantDialog>
-    </>
+      </form>
+    </section>
   );
 }

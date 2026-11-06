@@ -139,8 +139,10 @@
     "warning": "The destination is live. You can remove the original containers or keep them stopped. Source volumes are kept.",
     "stopRemove": "Stop & remove originals",
     "keep": "Keep originals",
+    "keepAsIs": "Finish without restarting originals",
+    "keepRestart": "Keep & restart originals",
     "working": "Working…",
-    "warningRestart": "The destination is live. Keep originals restarts previously running source containers as independent copies. Remove originals retires them. Source volumes are kept."
+    "warningRestart": "The destination is live. You can finish without changing originals, restart them as independent copies, or remove them. Source volumes are kept."
   },
   "discover": {
     "buildBlocked": "Built from source — can't migrate yet (publish an image first)",

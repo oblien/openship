@@ -1,6 +1,10 @@
 import type Dockerode from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import { applyDockerEnvironment } from "./docker-environment";
+const reported = vi.hoisted(() => vi.fn());
+vi.mock("@repo/core/diagnostics", async (original) => ({
+  ...(await original<typeof import("@repo/core/diagnostics")>()), reportCaughtError: reported,
+}));
 
 const IMAGE_ID = `sha256:${"a".repeat(64)}`;
 const BUILD_TAG = "openship/openship-api:bld_previous-svc_api";
@@ -125,6 +129,16 @@ function setup() {
 }
 
 describe("runtime-only environment apply", () => {
+  it.each([{ argv: ["sh", "-c", "printf '%s' 'space and $literal'"] }, { argv: [] }])(
+    "uses resolved Cmd while preserving the image and entrypoint: %j", async ({ argv }) => {
+      const h = setup();
+      await applyDockerEnvironment(h.docker as unknown as Dockerode, h.before.Id,
+        { FLAG: "new" }, { ...h.options, commandArgv: argv });
+      expect(h.docker.createContainer.mock.calls[0]?.[0]).toMatchObject({
+        Cmd: argv, Entrypoint: ["entrypoint.sh"], Image: IMAGE_ID,
+      });
+    },
+  );
   it("applies on an automatic-subnet network without requesting the daemon-assigned IP", async () => {
     const h = setup();
     const create = h.docker.createContainer.getMockImplementation()!;
@@ -234,7 +248,7 @@ describe("runtime-only environment apply", () => {
         Object.assign(new Error("image inspection failed"), { statusCode }),
       );
       await expect(h.apply()).rejects.toThrow(
-        statusCode === 404 ? "Use Redeploy" : "image inspection failed",
+        statusCode === 404 ? "Use Redeploy" : `The service image could not be inspected (HTTP ${statusCode})`,
       );
       expect(h.original.stop).not.toHaveBeenCalled();
       expect(h.original.remove).not.toHaveBeenCalled();
@@ -342,6 +356,36 @@ describe("runtime-only environment apply", () => {
     expect(h.replacement.remove).toHaveBeenCalledOnce();
   });
 
+  it("says why the replacement did not start (#1613)", async () => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before,
+      Id: "new-container",
+      State: { ...h.before.State, Running: false, ExitCode: 1, OOMKilled: false, Error: "" },
+      RestartCount: 2,
+    } as typeof h.before);
+    const error = await h.apply().catch((value) => value);
+    expect(error.message).toContain("restarted 2 times");
+    expect(error.message).toContain("exit code 1");
+  });
+
+  it.each([
+    [{ OOMKilled: true, ExitCode: 137 }, "OOM-killed"],
+    [
+      { Error: 'exec: "redis-server": not found', ExitCode: 127 },
+      "code 127",
+    ],
+    [{ Running: true, Health: { Status: "unhealthy" } }, "its healthcheck reports unhealthy"],
+  ])("names the startup failure from container state: %j", async (state, reason) => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before,
+      Id: "new-container",
+      State: { ...h.before.State, Running: false, ...state },
+    } as typeof h.before);
+    await expect(h.apply()).rejects.toThrow(reason);
+  });
+
   it("does not roll back a successful apply when only old-container cleanup fails", async () => {
     const h = setup();
     h.original.remove.mockRejectedValue(new Error("cleanup failed"));
@@ -379,4 +423,99 @@ describe("runtime-only environment apply", () => {
     expect(h.original.start).not.toHaveBeenCalled();
     expect(h.original.remove).not.toHaveBeenCalled();
   });
+  it.each(["create", "start", "inspect", "cleanup", "recovery"])(
+    "redacts current and previous environment values in %s errors and diagnostics", async (phase) => {
+      const h = setup();
+      const previous = "prior-private-value";
+      const current = "current-private-value";
+      h.before.Config.Env.push(`INNOCENT=${previous}`);
+      const error = new Error(`exec: "${previous}" "${current}": failed`);
+      Object.assign(error, { response: { body: current }, cause: new Error(previous) });
+      reported.mockClear();
+      if (phase === "create") h.docker.createContainer.mockRejectedValue(error);
+      if (phase === "start") h.replacement.start.mockRejectedValue(error);
+      if (phase === "inspect") h.replacement.inspect.mockRejectedValue(error);
+      if (phase === "cleanup") h.original.remove.mockRejectedValue(error);
+      if (phase === "recovery") {
+        h.replacement.start.mockRejectedValue(new Error("start failed"));
+        h.original.rename.mockRejectedValueOnce(error);
+      }
+      const result = await h.apply({ FLAG: current, PORT: "3000" }).catch((value) => value);
+      if (phase === "cleanup") expect(result.warning).toContain("Environment applied");
+      else expect(result).toBeInstanceOf(Error);
+      const exposed = [result.message, ...reported.mock.calls.map(([value]) => value.message)].join(" ");
+      expect(exposed).not.toContain(previous);
+      expect(exposed).not.toContain(current);
+      expect(reported).toHaveBeenCalled();
+      for (const [value] of reported.mock.calls) {
+        expect(value).not.toHaveProperty("cause");
+        expect(value).not.toHaveProperty("response");
+      }
+    },
+  );
+  it("does not expose an environment value echoed by Docker State.Error", async () => {
+    const h = setup();
+    const secret = "review-secret-value";
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before, Id: "new-container",
+      State: { ...h.before.State, Running: false, Error: `exec: \"${secret}\": executable file not found in $PATH`, ExitCode: 127 },
+    } as typeof h.before);
+    const error = await h.apply({ FLAG: secret, PORT: "3000" }).catch((value) => value);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).not.toContain(secret);
+  });
+
+  it("redacts command-only values from current and replacement arguments", async () => {
+    const h = setup();
+    h.before.Config.Cmd = ["old-command-private"];
+    const next = "next-command-private";
+    h.replacement.start.mockRejectedValue(new Error(`exec: ${next}: failed after old-command-private`));
+    reported.mockClear();
+    const error = await applyDockerEnvironment(h.docker as unknown as Dockerode, h.before.Id,
+      { FLAG: "new" }, { ...h.options, commandArgv: [next] }).catch((value) => value);
+    const exposed = [error.message, ...reported.mock.calls.map(([value]) => value.message)].join(" ");
+    expect(exposed).not.toContain(next);
+    expect(exposed).not.toContain("old-command-private");
+    expect(h.docker.createContainer.mock.calls[0]?.[0].Cmd).toEqual([next]);
+  });
+
+  it("keeps structured exit codes and restart counts visible with boolean environment values", async () => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({ ...h.before, Id: "new-container",
+      State: { ...h.before.State, Running: false, ExitCode: 1, Error: "" }, RestartCount: 1,
+    } as typeof h.before);
+    reported.mockClear();
+    await expect(h.apply({ FLAG: "1", PORT: "3000" })).rejects.toThrow("exit code 1");
+    expect(reported.mock.calls.at(-1)?.[0].message).toContain("exit code 1");
+    expect(reported.mock.calls.at(-1)?.[0].message).toContain("restarted 1 time");
+  });
+
+  it("uses approved operation details instead of unknown provider text", async () => {
+    const h = setup();
+    const secret = "credential-not-in-the-service-environment";
+    const message = vi.fn(() => secret);
+    const error = Object.defineProperty({ code: "ECONNREFUSED", statusCode: 503 }, "message", { get: message });
+    h.replacement.start.mockRejectedValue(error);
+    reported.mockClear();
+    const result = await h.apply().catch((failure) => failure);
+    expect(result.message).toContain("Starting the replacement container failed");
+    expect(result.message).toContain("ECONNREFUSED");
+    expect(result.message).toContain("HTTP 503");
+    expect(message).not.toHaveBeenCalled();
+    expect(JSON.stringify([result.message, reported.mock.calls])).not.toContain(secret);
+    expect(h.original.start).toHaveBeenCalledOnce();
+  });
+
+  it("keeps unregistered credentials in Docker State.Error out of the startup verdict", async () => {
+    const h = setup();
+    const secret = "provider-private-value-not-in-env";
+    h.replacement.inspect.mockResolvedValue({ ...h.before, Id: "new-container",
+      State: { ...h.before.State, Running: false, ExitCode: 17, Error: secret },
+    } as typeof h.before);
+    reported.mockClear();
+    const result = await h.apply().catch((failure) => failure);
+    expect(result.message).toContain("code 17");
+    expect(JSON.stringify([result.message, reported.mock.calls])).not.toContain(secret);
+  });
+
 });

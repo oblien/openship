@@ -139,8 +139,10 @@
     "warning": "La destination est en ligne. Vous pouvez supprimer les conteneurs d’origine ou les conserver arrêtés. Les volumes source sont conservés.",
     "stopRemove": "Arrêter et supprimer les originaux",
     "keep": "Conserver les originaux",
+    "keepAsIs": "Terminer sans redémarrer les originaux",
+    "keepRestart": "Conserver et redémarrer les originaux",
     "working": "Traitement…",
-    "warningRestart": "La destination est en ligne. Conserver les originaux redémarre les conteneurs source précédemment actifs comme copies indépendantes. Supprimer les originaux les retire. Les volumes source sont conservés."
+    "warningRestart": "La destination est active. Terminez sans modifier les originaux, redémarrez-les comme copies indépendantes ou supprimez-les. Les volumes sources sont conservés."
   },
   "discover": {
     "buildBlocked": "Construit depuis les sources — migration impossible pour l'instant (publiez d'abord une image)",

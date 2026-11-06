@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { runtimeTarget } from "@repo/core";
+import { APPEARANCE_DEFAULTS, runtimeTarget } from "@repo/core";
 import { CLOUD_ICON_BASE_URL, IconProvider, LOCAL_ICON_BASE_URL } from "@repo/ui/icons";
 import { cookies, headers } from "next/headers";
 import "./globals.css";
@@ -15,6 +15,7 @@ import { NetworkErrorHandler } from "@/components/network-error-handler";
 import { ModalProvider } from "@/context/ModalContext";
 import { DesktopChrome } from "@/components/desktop-chrome";
 import { DesktopInstanceLinks } from "@/components/instance/DesktopInstanceLinks";
+import { parseThemeCookie, THEME_COOKIE, THEME_HEADER } from "@/lib/theme-cookie";
 import {
   baseDictionary,
   defaultLocale,
@@ -45,6 +46,11 @@ async function resolveRequestLocale(): Promise<Locale> {
   const pref = accept.split(",")[0]?.split("-")[0]?.trim().toLowerCase();
   if (pref && (locales as readonly string[]).includes(pref)) return pref as Locale;
   return defaultLocale;
+}
+
+async function resolveRequestTheme() {
+  const [hdrs, cookieStore] = await Promise.all([headers(), cookies()]);
+  return parseThemeCookie(hdrs.get(THEME_HEADER) ?? cookieStore.get(THEME_COOKIE)?.value);
 }
 
 /**
@@ -105,7 +111,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     deploymentInfo?.deployMode !== "desktop" &&
     !(deploymentInfo?.selfHosted ?? runtimeTarget.selfHosted);
 
-  const locale = await resolveRequestLocale();
+  const [locale, initialTheme] = await Promise.all([resolveRequestLocale(), resolveRequestTheme()]);
+  const initialMode = initialTheme?.resolved ?? "light";
   const dir = isRtl(locale) ? "rtl" : "ltr";
   // Resolved here (not in the dashboard layout) because the brand also appears
   // on screens that render outside the dashboard providers: /login, /authorize,
@@ -116,9 +123,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const initialDictionary = locale === defaultLocale ? undefined : await loadDictionary(locale);
 
   return (
-    <html lang={locale} dir={dir} suppressHydrationWarning>
+    <html
+      lang={locale}
+      dir={dir}
+      data-theme={initialMode}
+      style={{ backgroundColor: APPEARANCE_DEFAULTS[initialMode]["--th-bg-page"] }}
+      suppressHydrationWarning
+    >
       <head>
-        <ThemeScript />
+        <ThemeScript initialTheme={initialTheme} />
         {/* Fail closed until the serving API positively identifies Cloud SaaS.
             Cloud-connected self-hosted and Desktop instances remain disabled. */}
         <script
@@ -148,7 +161,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           fallbackBaseUrl={LOCAL_ICON_BASE_URL}
         >
           <AuthProvider>
-            <ThemeProvider>
+            <ThemeProvider initialTheme={initialTheme}>
               {!localApiOrigin &&
               deploymentInfo?.selfHosted === false &&
               deploymentInfo.deployMode !== "desktop" &&

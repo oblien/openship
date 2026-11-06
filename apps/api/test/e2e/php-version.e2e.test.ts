@@ -129,10 +129,14 @@ describeDockerE2E("PHP selection through build, deploy and rollback (#937)", () 
       ...(await original<Record<string, unknown>>()),
       platform: () => platform,
     }));
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (original) => ({
       ...(await original<Record<string, unknown>>()),
       getPlatform: () => platform,
-      edgeProxyFor: () => ({ listLoopbackUpstreamPortsStrict: async () => new Set<number>() }),
+      edgeProxyFor: edgeInventory,
+      loopbackPortInventoryFor: edgeInventory,
     }));
     vi.doMock("@repo/platform/engine/modules/deployments/service-checks", async (original) => ({
       ...(await original<Record<string, unknown>>()),

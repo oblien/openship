@@ -46,16 +46,20 @@ import { ConversationHistory } from "./ConversationHistory";
 import { AssistantAutomationDetail } from "./AssistantAutomationDetail";
 import { AssistantWorkspaceSkeleton, ConversationSkeleton } from "./AssistantSkeletons";
 import { agentChatKey, agentResumeChat } from "./rail-navigation";
-import { AgentConnections } from "./AgentConnections";
-import { AgentLink, useAgentNavigation } from "./AgentLink";
+import { AgentConnections, type AssistantConnectionSelection } from "./AgentConnections";
+import { AssistantIllustration } from "./AssistantIllustration";
+import { useAssistantNavigation } from "./AssistantLink";
 import { AgentAvatar } from "./AgentAvatar";
 import { AssistantChatIdentity } from "./AssistantChatIdentity";
 import { useConversation } from "./use-conversation";
 import { useAssistantResume } from "./use-assistant-resume";
+import { useAutoSubmit } from "@/hooks/use-auto-submit";
+import { assistantAutoSubmit } from "./auto-submit";
 import { AutomationConversationStatus } from "./AutomationRunReview";
 import { useI18n } from "@/components/i18n-provider";
 import {
   investigationPrompt,
+  investigationHref,
   readInvestigation,
   type AssistantInvestigation,
 } from "./investigation";
@@ -307,6 +311,9 @@ function ConversationWorkspace({
 }) {
   const { t } = useI18n();
   const investigationCopy = t.dashboard.investigation;
+  const investigationDraft = investigation
+    ? investigationPrompt(investigation.target, investigationCopy)
+    : null;
   const router = useRouter(),
     search = useSearchParams();
   const scope = useResourceScope();
@@ -338,7 +345,8 @@ function ConversationWorkspace({
   const selectedFlow = flows.data?.automations.find((flow) => flow.id === automationId);
   const viewId = automationId ? `automation:${automationId}` : (id ?? investigation?.key ?? null);
   const [connections, setConnections] = useState(false);
-  const [connectionProvider, setConnectionProvider] = useState<AssistantProvider>("claude");
+  const [connectionProvider, setConnectionProvider] =
+    useState<AssistantConnectionSelection>("claude");
   const [history, setHistory] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   const [mobileRail, setMobileRail] = useState(false);
@@ -441,16 +449,22 @@ function ConversationWorkspace({
       [agentId],
     ),
   );
-  const agentNavigation = useAgentNavigation();
-  const agentRevision = agentNavigation?.revision ?? 0;
+  const navigation = useAssistantNavigation();
+  const navigationRevision = navigation?.revision ?? 0;
   useEffect(() => {
-    if (agentRevision) {
+    if (navigationRevision) {
       specialist.refresh();
       conversation.refresh();
       savedAgents.refresh();
       flows.refresh();
     }
-  }, [agentRevision, specialist.refresh, conversation.refresh, savedAgents.refresh, flows.refresh]);
+  }, [
+    navigationRevision,
+    specialist.refresh,
+    conversation.refresh,
+    savedAgents.refresh,
+    flows.refresh,
+  ]);
   useEffect(() => {
     // Navigation from an agent drawer or task card starts with that chat's own draft.
     // Submission and Select transfer/reset it explicitly before changing the URL.
@@ -470,14 +484,14 @@ function ConversationWorkspace({
     }
     if (preparedInvestigation.current === investigation.key) return;
     preparedInvestigation.current = investigation.key;
-    // A shortcut prepares a new, editable request. Loading a URL never starts a turn
-    // or expands permissions. Keep the draft when setup/providers refresh.
-    setDraft(investigationPrompt(investigation.target, investigationCopy));
+    // Keep the draft through setup/provider refreshes. Only a staged action click
+    // can send it automatically; a URL alone still opens an editable request.
+    setDraft(investigationDraft!);
     images.clear();
     setChatModel(null);
     pendingRequest.current = null;
     setOutgoing(null);
-  }, [investigation, investigationCopy, images.clear]);
+  }, [investigation, investigationDraft, images.clear]);
   useEffect(() => {
     // Retain the submitted message and activity through a new chat's first snapshot.
     if (
@@ -514,6 +528,28 @@ function ConversationWorkspace({
   const ready = assistantModelReady(agent, currentModel);
   const checkingAgents = agents.loading && !agents.data;
   const needsConnection = !checkingAgents && !agents.error && !ready;
+  const showConnections =
+    connections ||
+    (!automationId &&
+      !resume.resolving &&
+      needsConnection &&
+      !snapshot?.accessChanged &&
+      (!id || snapshot?.messages.length === 0));
+  const canSubmit =
+    !connections &&
+    scopeReady &&
+    !resume.resolving &&
+    !action.busy &&
+    !pending &&
+    (!active || scopedTask) &&
+    taskChatAllowed &&
+    !access &&
+    ready &&
+    !snapshot?.accessChanged;
+  const draftCanSend =
+    (!!draft.trim() || images.images.length > 0) &&
+    !images.pending &&
+    (!images.images.length || agent?.imageInput === true);
   const reviewAccess = async (request?: PermissionAccessRequest) => {
     const detail = await action.execute(async () => {
       // Finish the current turn before showing the editor. A stop on another API
@@ -537,6 +573,8 @@ function ConversationWorkspace({
     }
   };
   const select = (chat: string | null) => {
+    action.setError(null);
+    cancelAutoSubmit();
     resume.cancel();
     currentChat.current = chat;
     draftChat.current = chat;
@@ -553,21 +591,8 @@ function ConversationWorkspace({
     });
   };
   const submit = async (continuation?: string): Promise<boolean> => {
-    if (
-      sending.current ||
-      resume.resolving ||
-      action.busy ||
-      pending ||
-      (active && !scopedTask) ||
-      !taskChatAllowed ||
-      access ||
-      (!continuation && !draft.trim() && !images.images.length) ||
-      (!continuation && images.pending) ||
-      (!continuation && images.images.length > 0 && !agent?.imageInput) ||
-      !ready ||
-      snapshot?.accessChanged
-    )
-      return false;
+    cancelAutoSubmit();
+    if (sending.current || !canSubmit || (!continuation && !draftCanSend)) return false;
     sending.current = true;
     const submittedDraft = { text: draft, images: images.images };
     const message = continuation ?? draft.trim();
@@ -654,7 +679,22 @@ function ConversationWorkspace({
       sending.current = false;
     }
   };
+  const cancelAutoSubmit = useAutoSubmit({
+    intent: assistantAutoSubmit,
+    key: investigation ? investigationHref(investigation.target, scope) : null,
+    ready:
+      canSubmit &&
+      !!draftCanSend &&
+      !id &&
+      !automationId &&
+      !agents.loading &&
+      !agents.error &&
+      draft === investigationDraft &&
+      images.images.length === 0,
+    onSubmit: submit,
+  });
   const openAgent = async (selectedId: string | null, fresh = false) => {
+    cancelAutoSubmit();
     const selected = selectedId
       ? savedAgents.data?.find((item) => item.id === selectedId && !item.archived)
       : null;
@@ -687,8 +727,16 @@ function ConversationWorkspace({
       select(chat.id);
     }
   };
+  const previousAgentId = automationId ? selectedFlow?.agentId : agentId;
+  const canStartChat =
+    !action.busy && !pending && scopeReady && !(savedAgents.loading && !!previousAgentId);
   const newChat = () => {
-    void openAgent(automationId ? (selectedFlow?.agentId ?? null) : (agentId ?? null), true);
+    if (!canStartChat) return;
+    const availableAgent = savedAgents.data?.find(
+      (agent) => agent.id === previousAgentId && !agent.archived,
+    );
+    // A removed specialist cannot own the next chat. Start with the current general access.
+    void openAgent(availableAgent?.id ?? null, true);
   };
   const toggleRail = () => {
     if (!window.matchMedia("(min-width: 1024px)").matches) return setMobileRail(true);
@@ -701,14 +749,15 @@ function ConversationWorkspace({
       return !open;
     });
   };
-  const configureAgent = (href: string) => {
-    const navigate = () => (agentNavigation ? agentNavigation.navigate(href) : router.push(href));
+  const configure = (href: string) => {
+    const navigate = () => (navigation ? navigation.navigate(href) : router.push(href));
     if (mobileRail) {
       setMobileRail(false);
       configTimer.current = setTimeout(navigate, 240);
     } else navigate();
   };
   const selectAutomation = (flowId: string) => {
+    cancelAutoSubmit();
     resume.cancel();
     setMobileRail(false);
     setHistory(false);
@@ -727,7 +776,7 @@ function ConversationWorkspace({
     setDraft(message);
     requestAnimationFrame(() => composerInput.current?.focus());
   };
-  const openConnections = (selected: AssistantProvider = currentProvider) => {
+  const openConnections = (selected: AssistantConnectionSelection = currentProvider) => {
     setConnectionProvider(selected);
     setConnections(true);
   };
@@ -745,11 +794,11 @@ function ConversationWorkspace({
         null
       }
       loading={savedAgents.loading || flows.loading}
-      error={savedAgents.error ?? flows.error ?? action.error}
+      error={savedAgents.error ?? flows.error}
       busy={action.busy || !!pending || !scopeReady}
       onAgent={(selected) => void openAgent(selected)}
       onAutomation={selectAutomation}
-      onConfigure={configureAgent}
+      onConfigure={configure}
       onManageAutomations={() => {
         setMobileRail(false);
         router.push("/assistant?tab=automations");
@@ -809,13 +858,19 @@ function ConversationWorkspace({
           inputRef={composerInput}
           compact={!!id || !!pending || resume.resolving}
           images={images.images}
-          onImages={(files) => void images.add(files)}
+          onImages={(files) => {
+            cancelAutoSubmit();
+            void images.add(files);
+          }}
           onRemoveImage={images.remove}
           imageError={images.error}
           imagesPending={images.pending}
           imagesSupported={agent?.imageInput === true}
           value={draft}
-          onChange={setDraft}
+          onChange={(value) => {
+            cancelAutoSubmit();
+            setDraft(value);
+          }}
           onSend={() => void submit()}
           onStop={() =>
             void action.execute(async () => {
@@ -830,7 +885,7 @@ function ConversationWorkspace({
           disabled={
             resume.resolving || !!snapshot?.accessChanged || (!!id && !snapshot) || !taskChatAllowed
           }
-          canSend={ready && !access}
+          canSend={canSubmit}
           placeholder={
             !checkingAgents && !ready
               ? "Connect your agent to continue this conversation…"
@@ -980,9 +1035,7 @@ function ConversationWorkspace({
                 size="icon"
                 aria-label="New chat"
                 title="New chat"
-                disabled={
-                  action.busy || !!pending || !scopeReady || (savedAgents.loading && !!agentId)
-                }
+                disabled={!canStartChat}
                 onClick={newChat}
               >
                 <Icon name="plus" />
@@ -997,7 +1050,7 @@ function ConversationWorkspace({
                           id: "configure-agent",
                           label: "Agent settings & access",
                           icon: <Icon name="settings" className="size-4" />,
-                          onClick: () => configureAgent(`/assistant/agents/${agentId}/edit`),
+                          onClick: () => configure(`/assistant/agents/${agentId}/edit`),
                         },
                       ]
                     : []),
@@ -1005,7 +1058,7 @@ function ConversationWorkspace({
                     id: "manage-agents",
                     label: "Manage agents",
                     icon: <Icon name="bot" className="size-4" />,
-                    onClick: () => configureAgent("/assistant/agents"),
+                    onClick: () => configure("/assistant/agents"),
                   },
                   {
                     id: "connections",
@@ -1054,196 +1107,196 @@ function ConversationWorkspace({
               />
             </div>
           </header>
-          {automationId ? (
-            <AssistantAutomationDetail
-              key={automationId}
-              clientId={clientId}
-              agentName={
-                savedAgents.data?.find((agent) => agent.id === selectedFlow?.agentId)?.name
-              }
-              flow={selectedFlow}
-              runs={(flows.data?.runs ?? []).filter((run) => run.automationId === automationId)}
-              paused={flows.data?.paused ?? false}
-              loading={flows.loading}
-              error={flows.error}
-              onChat={select}
-              onRefresh={flows.refresh}
+          <div
+            hidden={!showConnections}
+            className={showConnections ? "min-h-0 flex-1 overflow-y-auto px-1" : "hidden"}
+          >
+            <AgentConnections
+              inline
+              agents={available}
+              hostName={target?.kind === "local" ? "this computer" : target?.name}
+              selected={connectionProvider}
+              onSelect={setConnectionProvider}
+              onRefresh={agents.refresh}
+              loading={agents.loading}
+              error={agents.error}
+              onBack={connections ? () => setConnections(false) : undefined}
+              useLabel={id ? "Start a new chat" : "Use this connection"}
+              onUse={(selected, selectedModel) => {
+                if (id || automationId) select(null);
+                setProvider(selected);
+                setModel(selectedModel);
+                setConnections(false);
+                requestAnimationFrame(() => composerInput.current?.focus());
+              }}
             />
-          ) : (
-            <div className="flex min-h-0 flex-1">
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                {!resume.resolving &&
-                !pending &&
-                (!id ||
-                  (snapshot && !snapshot.messages.length && !snapshot.accessChanged && !active)) ? (
-                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                    <div className="mx-auto my-auto w-full max-w-3xl py-8 sm:py-10 [@media(max-height:640px)]:py-2">
-                      <div className="mb-8 px-1 text-center [@media(max-height:640px)]:mb-4">
-                        {agentId && (
-                          <AgentAvatar
-                            icon={specialist.data?.icon}
-                            agentId={specialist.data?.id}
-                            className="mb-5 size-16"
-                          />
-                        )}
-                        <h2 className="text-balance text-3xl font-medium leading-tight tracking-[-0.03em] text-foreground sm:text-4xl lg:text-[40px]">
-                          {agentId
-                            ? (specialist.data?.name ?? "Your agent")
-                            : investigation
-                              ? investigation.target.kind === "deployment"
-                                ? investigationCopy.deploymentTitle
-                                : investigation.target.kind === "monitoring"
-                                  ? investigationCopy.reportTitle
-                                  : investigation.target.kind === "security" ||
-                                      investigation.target.intent === "fix"
-                                    ? investigationCopy.fixTitle
-                                    : investigationCopy.issueTitle
-                              : "What are we working on?"}
-                        </h2>
-                        <p className="mx-auto mt-4 max-w-xl text-pretty text-[15px] leading-7 text-muted-foreground [@media(max-height:500px)]:hidden">
-                          {agentId
-                            ? (specialist.data?.purpose ??
-                              "Describe what you’d like this agent to work on.")
-                            : investigation
-                              ? investigationCopy.description
-                              : "A new deploy, a tricky log, or a check on your apps. Start here."}
-                        </p>
-                      </div>
-                      {!needsConnection ? (
-                        composer
-                      ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {available.map((a) => (
-                            <button
-                              key={a.id}
-                              onClick={() => openConnections(a.id)}
-                              className="group flex items-center gap-4 rounded-2xl bg-card p-5 text-start transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                            >
-                              <Icon name={a.id} className="size-7 shrink-0" />
-                              <span className="flex-1">
-                                <span className="block text-sm font-medium">
-                                  {ASSISTANT_PROVIDER_LABELS[a.id]}
-                                </span>
-                                <span className="mt-1 block text-xs text-muted-foreground">
-                                  {!a.available
-                                    ? "View setup options"
-                                    : a.authMethods.some((method) => method.existing)
-                                      ? "Use your existing connection"
-                                      : "Connect your account"}
-                                </span>
-                              </span>
-                              <Icon
-                                name="arrow-right"
-                                className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-                              />
-                            </button>
-                          ))}
-                          {agents.error && (
-                            <p role="alert" className="text-sm text-danger sm:col-span-2">
-                              {agents.error}
-                              <button className="ms-2 underline" onClick={agents.refresh}>
-                                Retry
-                              </button>
-                            </p>
+          </div>
+          <div
+            hidden={showConnections}
+            className={showConnections ? "hidden" : "flex min-h-0 flex-1 flex-col"}
+          >
+            {automationId ? (
+              <AssistantAutomationDetail
+                key={automationId}
+                clientId={clientId}
+                agentName={
+                  savedAgents.data?.find((agent) => agent.id === selectedFlow?.agentId)?.name
+                }
+                flow={selectedFlow}
+                runs={(flows.data?.runs ?? []).filter((run) => run.automationId === automationId)}
+                paused={flows.data?.paused ?? false}
+                loading={flows.loading}
+                error={flows.error}
+                onChat={select}
+                onRefresh={flows.refresh}
+              />
+            ) : (
+              <div className="flex min-h-0 flex-1">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  {!resume.resolving &&
+                  !pending &&
+                  (!id ||
+                    (snapshot &&
+                      !snapshot.messages.length &&
+                      !snapshot.accessChanged &&
+                      !active)) ? (
+                    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                      <div className="mx-auto my-auto w-full max-w-3xl py-8 sm:py-10 [@media(max-height:640px)]:py-2">
+                        <div className="mb-8 px-1 text-center [@media(max-height:640px)]:mb-4">
+                          {agentId && (
+                            <AgentAvatar
+                              icon={specialist.data?.icon}
+                              agentId={specialist.data?.id}
+                              className="mb-5 size-16"
+                            />
                           )}
+                          <h2 className="text-balance text-3xl font-medium leading-tight tracking-[-0.03em] text-foreground sm:text-4xl lg:text-[40px]">
+                            {agentId
+                              ? (specialist.data?.name ?? "Your agent")
+                              : investigation
+                                ? investigation.target.kind === "deployment"
+                                  ? investigationCopy.deploymentTitle
+                                  : investigation.target.kind === "monitoring"
+                                    ? investigationCopy.reportTitle
+                                    : investigation.target.kind === "security" ||
+                                      investigation.target.intent === "fix"
+                                      ? investigationCopy.fixTitle
+                                      : investigationCopy.issueTitle
+                                : "What are we working on?"}
+                          </h2>
+                          <p className="mx-auto mt-4 max-w-xl text-pretty text-[15px] leading-7 text-muted-foreground [@media(max-height:500px)]:hidden">
+                            {agentId
+                              ? (specialist.data?.purpose ??
+                                "Describe what you’d like this agent to work on.")
+                              : investigation
+                                ? investigationCopy.description
+                                : "A new deploy, a tricky log, or a check on your apps. Start here."}
+                          </p>
                         </div>
-                      )}
-                      {!needsConnection && !agentId && !investigation && (
-                        <div className="mt-6 flex flex-wrap justify-center gap-2 [@media(max-height:500px)]:hidden">
-                          {suggestions.map((s) => (
-                            <button
-                              key={s.title}
-                              onClick={() => {
-                                setDraft(s.prompt);
-                                composerInput.current?.focus();
-                              }}
-                              className="flex items-center gap-2 rounded-full px-3.5 py-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                            >
-                              <Icon name={s.icon} className="size-4" />
-                              {s.title}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <AssistantConversationLayout
-                    footer={
-                      <>
-                        {snapshot?.conversation.automationRunId && (
-                          <AutomationConversationStatus
-                            key={snapshot.conversation.automationRunId}
-                            runId={snapshot.conversation.automationRunId}
-                            onChatAvailability={setAutomationCanChat}
-                          />
+                        {composer}
+                        {!needsConnection && !agentId && !investigation && (
+                          <div className="mt-6 flex flex-wrap justify-center gap-2 [@media(max-height:500px)]:hidden">
+                            {suggestions.map((s) => (
+                              <button
+                                key={s.title}
+                                onClick={() => {
+                                  setDraft(s.prompt);
+                                  composerInput.current?.focus();
+                                }}
+                                className="flex items-center gap-2 rounded-full px-3.5 py-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                              >
+                                <Icon name={s.icon} className="size-4" />
+                                {s.title}
+                              </button>
+                            ))}
+                          </div>
                         )}
-                        {(!snapshot?.accessChanged || snapshot.messages.length > 0) && (
-                          <div className="shrink-0 pt-3 pb-1">{composer}</div>
-                        )}
-                      </>
-                    }
-                  >
-                    {snapshot?.accessChanged && !snapshot.messages.length ? (
-                      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-6 text-center">
-                        <Icon name="shield" className="mb-4 size-7 text-muted-foreground" />
-                        <h2 className="text-xl font-medium">
-                          Start fresh with your updated access
-                        </h2>
-                        <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">
-                          Your permissions changed. Open a new chat to continue with the access you
-                          approved.
-                        </p>
-                        <Button className="mt-5 shrink-0" onClick={newChat}>
-                          <Icon name="plus" />
-                          New chat
-                        </Button>
                       </div>
-                    ) : snapshot || pending ? (
-                      <AssistantTranscript
-                        key={id}
-                        clientId={clientId}
-                        reviewingAccess={action.busy || !!access}
-                        accessChanged={snapshot?.accessChanged}
-                        onReviewAccess={(request) => void reviewAccess(request)}
-                        actionDisabled={!ready || action.busy || !!access || !taskChatAllowed}
-                        onContinue={(message) => submit(message)}
-                        messages={
-                          pending &&
-                          !snapshot?.messages.some((message) => message.id === pending.message.id)
-                            ? [...(snapshot?.messages ?? []), pending.message]
-                            : (snapshot?.messages ?? [])
-                        }
-                        automated={!!snapshot?.conversation.automationRunId}
-                        active={active}
-                        pending={pending ? (pending.accepted ? "Working" : "Sending") : undefined}
-                        error={snapshot?.activity.error}
-                        hasMore={snapshot?.hasMore}
-                        onEarlier={async () => {
-                          if (!id || !snapshot?.before) return;
-                          await action.execute(async () => {
-                            const earlier = await assistantApi.history(id, snapshot.before!);
-                            conversation.setSnapshot((previous) =>
-                              previous?.conversation.id === id
-                                ? {
-                                    ...previous,
-                                    messages: [...earlier.messages, ...previous.messages],
-                                    hasMore: earlier.hasMore,
-                                    before: earlier.before,
-                                  }
-                                : previous,
-                            );
-                          });
-                        }}
-                      />
-                    ) : (
-                      <ConversationSkeleton />
-                    )}
-                  </AssistantConversationLayout>
-                )}
+                    </div>
+                  ) : (
+                    <AssistantConversationLayout
+                      footer={
+                        <>
+                          {snapshot?.conversation.automationRunId && (
+                            <AutomationConversationStatus
+                              key={snapshot.conversation.automationRunId}
+                              runId={snapshot.conversation.automationRunId}
+                              onChatAvailability={setAutomationCanChat}
+                            />
+                          )}
+                          {(!snapshot?.accessChanged || snapshot.messages.length > 0) && (
+                            <div className="shrink-0 pt-3 pb-1">{composer}</div>
+                          )}
+                        </>
+                      }
+                    >
+                      {snapshot?.accessChanged && !snapshot.messages.length ? (
+                        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-12 text-center">
+                          <div className="mb-6 w-72 max-w-full">
+                            <AssistantIllustration />
+                          </div>
+                          <h2 className="text-xl font-medium tracking-tight text-foreground/80">
+                            Continue with your updated access
+                          </h2>
+                          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground/80">
+                            Your permissions have changed. Start a new chat using the access you
+                            approved.
+                          </p>
+                          <Button
+                            className="mt-6 shrink-0"
+                            onClick={newChat}
+                            disabled={!canStartChat}
+                          >
+                            <Icon name="plus" />
+                            New chat
+                          </Button>
+                        </div>
+                      ) : snapshot || pending ? (
+                        <AssistantTranscript
+                          key={id}
+                          clientId={clientId}
+                          reviewingAccess={action.busy || !!access}
+                          accessChanged={snapshot?.accessChanged}
+                          onReviewAccess={(request) => void reviewAccess(request)}
+                          actionDisabled={!ready || action.busy || !!access || !taskChatAllowed}
+                          onContinue={(message) => submit(message)}
+                          messages={
+                            pending &&
+                            !snapshot?.messages.some((message) => message.id === pending.message.id)
+                              ? [...(snapshot?.messages ?? []), pending.message]
+                              : (snapshot?.messages ?? [])
+                          }
+                          automated={!!snapshot?.conversation.automationRunId}
+                          active={active}
+                          pending={pending ? (pending.accepted ? "Working" : "Sending") : undefined}
+                          error={snapshot?.activity.error}
+                          hasMore={snapshot?.hasMore}
+                          onEarlier={async () => {
+                            if (!id || !snapshot?.before) return;
+                            await action.execute(async () => {
+                              const earlier = await assistantApi.history(id, snapshot.before!);
+                              conversation.setSnapshot((previous) =>
+                                previous?.conversation.id === id
+                                  ? {
+                                      ...previous,
+                                      messages: [...earlier.messages, ...previous.messages],
+                                      hasMore: earlier.hasMore,
+                                      before: earlier.before,
+                                    }
+                                  : previous,
+                              );
+                            });
+                          }}
+                        />
+                      ) : (
+                        <ConversationSkeleton />
+                      )}
+                    </AssistantConversationLayout>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
         {railOpen && (
           <aside className="hidden w-[340px] shrink-0 border-s border-border/40 ps-4 lg:block xl:ps-5">
@@ -1251,26 +1304,6 @@ function ConversationWorkspace({
           </aside>
         )}
       </div>
-      <AssistantDialog
-        label="AI connections"
-        keepMounted
-        isOpen={connections}
-        onClose={() => setConnections(false)}
-        width="940px"
-        maxWidth="calc(100vw - 24px)"
-        maxHeight="calc(100dvh - 24px)"
-        overflow="auto"
-      >
-        <AgentConnections
-          agents={available}
-          hostName={target?.kind === "local" ? "this computer" : target?.name}
-          selected={connectionProvider}
-          onSelect={setConnectionProvider}
-          onRefresh={agents.refresh}
-          loading={agents.loading}
-          error={agents.error}
-        />
-      </AssistantDialog>
       <Drawer
         label="Conversations"
         isOpen={history}
@@ -1280,7 +1313,7 @@ function ConversationWorkspace({
       >
         <div className="flex shrink-0 items-center gap-3 px-5 pb-4 pe-16 pt-5">
           <h2 className="min-w-0 flex-1 text-lg font-medium">Conversations</h2>
-          <Button variant="ghost" size="sm" disabled={action.busy || !!pending} onClick={newChat}>
+          <Button variant="ghost" size="sm" disabled={!canStartChat} onClick={newChat}>
             <Icon name="plus" className="!size-3.5" />
             New chat
           </Button>

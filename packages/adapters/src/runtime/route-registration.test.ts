@@ -220,6 +220,7 @@ describe("registerResolvedRoutes — compiled vercel.json rules", () => {
     ],
     headerRules: [{ path: "/api/", headers: [{ key: "Cache-Control", value: "no-store" }] }],
     cleanUrls: true,
+    spaFallback: false,
     trailingSlash: false,
   };
 
@@ -274,7 +275,7 @@ describe("registerResolvedRoutes — compiled vercel.json rules", () => {
     const bare = { registerRoute: vi.fn(async () => {}) } as any;
     await registerResolvedRoutes(logger, bare, undefined, [domain("c.example.com")], routeTarget);
     const cfg = bare.registerRoute.mock.calls[0][0];
-    for (const key of ["proxyLocations", "redirects", "headerRules", "cleanUrls", "trailingSlash"]) {
+    for (const key of ["proxyLocations", "redirects", "headerRules", "cleanUrls", "trailingSlash", "spaFallback"]) {
       expect(cfg).not.toHaveProperty(key);
     }
   });

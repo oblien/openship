@@ -57,6 +57,7 @@ import {
   type MailEngineProbe,
 } from "@repo/adapters";
 import { AppError } from "@repo/core";
+import { MailRequestSchemas, parseInput } from "@repo/contracts";
 
 import { sshManager } from "../../lib/ssh-manager";
 
@@ -783,6 +784,26 @@ export function mailUnitActionCommand(
       : `docker exec ${sq(MAIL_CONTAINER)} supervisorctl ${action} ${sq(unit)}`;
   }
   return `systemctl --no-block ${action} ${sq(unit)}`;
+}
+
+/**
+ * Build fail2ban-client command for inspecting or mutating banned IPs.
+ */
+export function mailFail2banStatusCommand(flavor: MailEngineFlavor, jail?: string): string {
+  parseInput(MailRequestSchemas.fail2banStatus, { jail });
+  const subcmd = jail ? `status ${sq(jail)}` : "status";
+  return mailEngineCommand(flavor, `fail2ban-client ${subcmd}`);
+}
+
+export function mailFail2banBanCommand(flavor: MailEngineFlavor, ip: string, jail: string): string {
+  parseInput(MailRequestSchemas.fail2banBan, { ip, jail });
+  return mailEngineCommand(flavor, `fail2ban-client set ${sq(jail)} banip ${sq(ip)}`);
+}
+
+export function mailFail2banUnbanCommand(flavor: MailEngineFlavor, ip: string, jail?: string): string {
+  parseInput(MailRequestSchemas.fail2banUnban, { ip, jail });
+  const subcmd = jail ? `set ${sq(jail)} unbanip ${sq(ip)}` : `unban ${sq(ip)}`;
+  return mailEngineCommand(flavor, `fail2ban-client ${subcmd}`);
 }
 
 /**

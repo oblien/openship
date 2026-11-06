@@ -787,7 +787,8 @@
       "localPartLabel": "用户名部分",
       "localPartHint": "@ 之前的部分。小写字母与数字。",
       "destinationLabel": "转发至",
-      "destinationHint": "任意有效邮箱地址 — 此服务器上的邮箱或外部邮箱（例如 Gmail）。"
+      "destinationHint": "任意有效邮箱地址 — 此服务器上的邮箱或外部邮箱（例如 Gmail）。",
+      "senderNote": "使用别名发信时，请登录该别名直接转发到的本地邮箱。外部转发和全收地址仅用于接收邮件。需要最新的邮件引擎。"
     },
     "deleteForm": {
       "title": "删除此别名？",
@@ -800,5 +801,29 @@
       "mailboxConflict": "{address} 是真实邮箱 — 在此处创建别名会重定向其邮件。请改为编辑或删除该邮箱。",
       "alreadyExists": "该转发规则已存在。"
     }
+  },
+  "fail2ban": {
+    "manage": "管理封禁",
+    "title": "Fail2ban 封禁",
+    "description": "查看被封禁的地址，并管理此邮件服务器的访问权限。",
+    "checkedAt": "上次检查：{time}",
+    "failed": "无法获取 Fail2ban 状态。",
+    "stale": "正在显示上次成功读取的结果。更改前请刷新。",
+    "completed": "请求已完成。",
+    "emptyJails": "没有启用的 Jail。",
+    "emptyBans": "此 Jail 中当前没有被封禁的地址。",
+    "banned": "当前封禁",
+    "failedNow": "当前失败",
+    "totalBans": "累计封禁",
+    "readOnly": "你可以查看封禁记录。管理封禁需要邮件管理员权限。",
+    "ban": "封禁 IP",
+    "unban": "解封",
+    "jail": "Jail",
+    "chooseJail": "选择 Jail",
+    "address": "IP 地址",
+    "banHint": "请输入 IPv4 或 IPv6 地址。封禁自己的地址可能导致无法访问邮件。",
+    "reviewBan": "确认封禁信息",
+    "banReview": "在 {jail} 中封禁 {ip}？",
+    "unbanReview": "从 {jail} 中解封 {ip}？"
   }
 }

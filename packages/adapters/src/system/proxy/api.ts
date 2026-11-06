@@ -24,6 +24,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import type { ProxySettings } from "@repo/core";
 
 import type { CommandExecutor, ManualCert } from "../../types";
+import type { RoutingProvider } from "../../infra/types";
 import type { EdgeStatus, ImportedSite, ProxyKind, ProxyScanResult } from "../types";
 import { probeEdge } from "./detect";
 import {
@@ -265,9 +266,23 @@ export async function edgeProxy(
 }
 
 /**
- * The api over a proxy the caller has ALREADY identified — skips the probe.
- * For callers holding an `EdgeStatus` mid-takeover, and for tests.
+ * Use the resolved routing provider's edge connection for allocation and
+ * reconciliation. Host inspection remains the fallback for other providers.
  */
+export function loopbackPortInventoryFor(
+  routing: RoutingProvider | undefined | null,
+  executor: CommandExecutor,
+): Pick<EdgeProxyApi, "listLoopbackUpstreamPortsStrict"> {
+  const read = routing?.listLoopbackUpstreamPortsStrict;
+  if (read) {
+    return {
+      listLoopbackUpstreamPortsStrict: (opts) => read.call(routing, opts),
+    };
+  }
+  return edgeProxyFor(executor, "openresty", { ours: true });
+}
+
+/** The read API over a proxy the caller has already identified. */
 export function edgeProxyFor(
   exec: CommandExecutor,
   kind: ProxyKind,

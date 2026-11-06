@@ -380,7 +380,8 @@
       "localPartLabel": "Local part",
       "localPartHint": "The part before @. Lowercase, alphanumeric.",
       "destinationLabel": "Forwards to",
-      "destinationHint": "Any valid email address - a mailbox on this server, or external (e.g. Gmail)."
+      "destinationHint": "Any valid email address - a mailbox on this server, or external (e.g. Gmail).",
+      "senderNote": "Send as an alias by signing in as its direct destination mailbox. External forwards and catch-alls only route incoming mail. Requires the latest mail engine."
     },
     "deleteForm": {
       "title": "Delete this alias?",
@@ -800,5 +801,29 @@
       "fail": "Needs attention",
       "unknown": "Unverified"
     }
+  },
+  "fail2ban": {
+    "manage": "Manage bans",
+    "title": "Fail2ban bans",
+    "description": "Inspect blocked addresses and manage access on this mail server.",
+    "checkedAt": "Last checked {time}",
+    "failed": "Fail2ban status is unavailable.",
+    "stale": "Showing the last successful reading. Refresh before making changes.",
+    "completed": "Request completed.",
+    "emptyJails": "No active jails.",
+    "emptyBans": "No addresses are currently banned in this jail.",
+    "banned": "Banned now",
+    "failedNow": "Failed now",
+    "totalBans": "Total bans",
+    "readOnly": "You can view bans. Managing them requires mail administrator access.",
+    "ban": "Ban IP",
+    "unban": "Unban",
+    "jail": "Jail",
+    "chooseJail": "Choose a jail",
+    "address": "IP address",
+    "banHint": "Use an IPv4 or IPv6 address. Blocking your own address can prevent mail access.",
+    "reviewBan": "Review ban",
+    "banReview": "Ban {ip} in {jail}?",
+    "unbanReview": "Unban {ip} from {jail}?"
   }
 }

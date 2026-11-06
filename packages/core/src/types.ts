@@ -283,6 +283,23 @@ export type ComposeAdvanced = {
     sourceValue?: string;
   };
   /**
+   * Provenance for a Compose `command:` expression (#1613), mirroring
+   * `imageTemplate` above: the parser stores the authored expression, and
+   * deploy re-evaluates it against the final env instead of freezing the
+   * scan-time value. String-form commands keep the raw string; list-form
+   * commands keep one expression per argv element, so quoting survives.
+   * `sourceValue` is the display string the scan produced (the value stored
+   * in `command`), so the drift merge can compare it directly.
+   */
+  commandTemplate?: {
+    expression: string | string[];
+    unresolvedVariables: string[];
+    sourceValue?: string;
+    /** Referenced Compose-adjacent .env defaults, kept internal like the
+     * resolved command. They interpolate Cmd without exporting extra variables. */
+    sourceEnvironment?: Record<string, string>;
+  };
+  /**
    * Environment keys whose stored inline value is the original Compose
    * interpolation expression. Values stay in the masked `environment` column;
    * this names-only marker lets deploy resolve them against the final env layers

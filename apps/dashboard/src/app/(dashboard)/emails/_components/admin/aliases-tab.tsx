@@ -412,6 +412,10 @@ function CreateAliasForm({
           className={inputClassName}
         />
       </Field>
+
+      <div className="rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground leading-relaxed">
+        {t.emailsAdmin.aliases.create.senderNote}
+      </div>
     </FormModalContent>
   );
 }

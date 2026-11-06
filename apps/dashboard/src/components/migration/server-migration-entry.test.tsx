@@ -302,7 +302,7 @@ it("uses the reopened run's cutover token without a server prop or a second acti
     root.render(<ServerMigrationWizard variant="tab" initialRunId="run" onClose={vi.fn()} />),
   );
   const keep = Array.from(container.querySelectorAll("button")).find((b) =>
-    /keep.*original/i.test(b.textContent ?? ""),
+    /keep.*original|original.*restart/i.test(b.textContent ?? ""),
   );
   expect(keep).toBeDefined();
   await act(async () => keep!.click());
@@ -1096,4 +1096,28 @@ it("lets New Project select a source before scanning through the shared inline w
     "source-b",
     expect.objectContaining({ flatDocker: false }),
   );
+});
+
+it("offers a separate cutover that leaves originals untouched", async () => {
+  useCloud();
+  h.getMigration.mockResolvedValue({
+    run: {
+      id: "run",
+      status: "awaiting_cutover",
+      mode: "cross_server",
+      projectName: "Imported DB",
+      confirmationToken: "this-run-only",
+      sourceServerId: "external",
+      targetServerId: "managed",
+    },
+  });
+  await act(async () =>
+    root.render(<ServerMigrationWizard variant="tab" initialRunId="run" onClose={vi.fn()} />),
+  );
+  const finish = Array.from(container.querySelectorAll("button")).find((b) =>
+    /finish without restarting originals/i.test(b.textContent ?? ""),
+  );
+  expect(finish).toBeDefined();
+  await act(async () => finish!.click());
+  expect(h.confirmCutover).toHaveBeenCalledExactlyOnceWith("run", "this-run-only", false, false);
 });

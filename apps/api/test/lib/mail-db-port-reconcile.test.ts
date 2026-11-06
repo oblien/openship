@@ -69,6 +69,27 @@ async function fixture() {
 }
 
 describe("mail database port reconciliation", () => {
+  it("upgrades only the known mailbox-only sender map while retaining credentials and permissions", async () => {
+    const directory = await root();
+    const sample = await readFile(join(email, "engine/samples/postfix/pgsql/sender_login_maps.cf"), "utf8");
+    const mysql = await readFile(join(email, "engine/samples/postfix/mysql/sender_login_maps.cf"), "utf8");
+    expect(mysql).toBe(sample);
+    await file(directory, "opt/iRedMail-engine/samples/postfix/pgsql/sender_login_maps.cf", sample);
+    const legacy = "SELECT mailbox.username FROM mailbox,domain WHERE mailbox.username='%s' AND mailbox.domain='%d' AND mailbox.domain=domain.domain AND mailbox.enablesmtp=1 AND mailbox.active=1 AND domain.backupmx=0 AND domain.active=1";
+    const header = "hosts = 127.0.0.1:5432\nuser = operator-role\npassword = private unchanged\ndbname = vmail\n";
+    const path = await file(directory, "etc/postfix/pgsql/sender_login_maps.cf", `${header}query = ${legacy}\n`);
+    run(directory, "5433");
+    const expected = `${header.replace(":5432", ":5433")}query = ${sample.split("query       = ")[1]}`;
+    expect(await readFile(path, "utf8")).toBe(expected);
+    expect((await stat(path)).mode & 0o777).toBe(0o640);
+    const before = await stat(path);
+    run(directory, "5433");
+    expect((await stat(path)).ino).toBe(before.ino);
+    const custom = `${header}query = SELECT custom_sender_owner('%s')\n`;
+    await writeFile(path, custom);
+    run(directory, "5432");
+    expect(await readFile(path, "utf8")).toBe(custom);
+  });
   it("updates actual Postfix, Dovecot, Amavis and iRedAPD configs and can return to the default", async () => {
     const { directory, paths } = await fixture();
     const originals = await Promise.all(paths.map((path) => readFile(path, "utf8")));

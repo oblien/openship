@@ -158,7 +158,8 @@ fi
 bash /opt/openship-mail/reconcile-ssl.sh "$FIRST_DOMAIN"
 
 # 3d. Keep daemon SQL connections on the sidecar's selected host port. Only
-#     database connection fields are rewritten; mail listener ports stay intact.
+#     database connection fields and the recognized legacy sender-ownership
+#     query are reconciled; custom SQL and mail listener ports stay intact.
 python3 /opt/openship-mail/reconcile-db-port.py "${OPENSHIP_MAIL_DB_PORT:-5432}"
 
 

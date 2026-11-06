@@ -18,7 +18,7 @@ import { useScopedMutation, useScopedResource } from "@/hooks/use-scoped-resourc
 import { assistantAutomationsApi } from "@/lib/api/assistant-automations";
 import { assistantToolName } from "./tool-presentation";
 import { parseToolOutput } from "./tool-output";
-import { AgentLink } from "./AgentLink";
+import { AssistantLink, useAssistantNavigation } from "./AssistantLink";
 
 /** Text, failed calls and unrelated tool payloads cannot create an activation control. */
 export function automationActivationRequest(
@@ -49,6 +49,7 @@ type Props = {
 
 export function AssistantAutomationActivation({ request, disabled, onContinue }: Props) {
   const [open, setOpen] = useState(false);
+  const revision = useAssistantNavigation()?.revision ?? 0;
   const contentId = useId();
   return (
     <section className="min-w-0 rounded-2xl bg-card" aria-label="Review automation activation">
@@ -79,7 +80,14 @@ export function AssistantAutomationActivation({ request, disabled, onContinue }:
         </Button>
       </div>
       <div id={contentId} hidden={!open}>
-        {open && <ActivationReview request={request} disabled={disabled} onContinue={onContinue} />}
+        {open && (
+          <ActivationReview
+            key={revision}
+            request={request}
+            disabled={disabled}
+            onContinue={onContinue}
+          />
+        )}
       </div>
     </section>
   );
@@ -184,12 +192,12 @@ function ActivationReview({ request, disabled, onContinue }: Props) {
                   {flow.enabled && (
                     <Icon name="check" className="size-4 shrink-0" aria-label="Enabled" />
                   )}
-                  <Link
+                  <AssistantLink
                     href={`/assistant/automations/${encodeURIComponent(flow.id)}/edit`}
                     className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
                   >
                     Edit flow
-                  </Link>
+                  </AssistantLink>
                 </div>
                 <div className="ps-7 text-xs leading-5">
                   <p>
@@ -221,12 +229,12 @@ function ActivationReview({ request, disabled, onContinue }: Props) {
                       {flow.readRepository ? " · Repository read access" : ""}
                     </p>
                     {flow.agentId && (
-                      <AgentLink
+                      <AssistantLink
                         href={`/assistant/agents/${encodeURIComponent(flow.agentId)}`}
                         className="underline underline-offset-4"
                       >
                         View assigned agent & access
-                      </AgentLink>
+                      </AssistantLink>
                     )}
                     <p className="mt-1 whitespace-pre-wrap break-words">
                       {flow.instructions || "Use the agent’s existing investigation instructions."}

@@ -362,3 +362,19 @@ describe("compileVercelRouting", () => {
     expect(out.skipped.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+
+describe("static fallback policy", () => {
+  it.each([undefined, true, false])("preserves the explicit setting: %s", (spaFallback) => {
+    expect(compileVercelRouting({ spaFallback }).spaFallback).toBe(spaFallback);
+  });
+  it.each([undefined, true, false])("resolves legacy SPA rewrites with the switch taking precedence: %s", (spaFallback) => {
+    const compiled = compileVercelRouting({ spaFallback, rewrites: [
+      { source: "/(.*)", destination: "/index.html" },
+      { source: "/api/:path*", destination: "https://api.example.com/:path*" },
+    ] });
+    expect(compiled.spaFallback).toBe(spaFallback ?? true);
+    expect(compiled.proxyLocations).toHaveLength(1);
+    expect(compiled.skipped).toEqual([]);
+  });
+});

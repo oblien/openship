@@ -40,8 +40,7 @@ openship
 ```
 
 Run **`openship`** with no arguments — the interactive setup walks you through it: your **admin login**
-(name, email, password), then whether the instance is private (this machine only) or public (your own domain
-+ HTTPS). It deploys, installs itself as an always-on background service (back on reboot, auto-restarts), and
+(name, email, password), then whether the instance is private (this machine only) or public (your own domain + HTTPS). It deploys, installs itself as an always-on background service (back on reboot, auto-restarts), and
 prints your sign-in URL. The **API** runs on `:4000` and the **dashboard** on `:3001`. On Linux with Docker
 it brings up the full stack (Postgres, Redis, and an OpenResty edge for domains + TLS); otherwise a single
 lightweight process with a built-in database. Nothing else to set up.

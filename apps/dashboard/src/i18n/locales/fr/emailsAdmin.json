@@ -787,7 +787,8 @@
       "localPartLabel": "Partie locale",
       "localPartHint": "La partie avant @. Minuscules, alphanumérique.",
       "destinationLabel": "Transférer vers",
-      "destinationHint": "Toute adresse e-mail valide — une boîte aux lettres sur ce serveur ou externe (ex. Gmail)."
+      "destinationHint": "Toute adresse e-mail valide — une boîte aux lettres sur ce serveur ou externe (ex. Gmail).",
+      "senderNote": "Pour envoyer depuis un alias, connectez-vous avec sa boîte de destination directe. Les transferts externes et les règles catch-all concernent uniquement les messages entrants. Le moteur de messagerie doit être à jour."
     },
     "deleteForm": {
       "title": "Supprimer cet alias ?",
@@ -800,5 +801,29 @@
       "mailboxConflict": "{address} est une vraie boîte aux lettres — créer un alias ici redirigerait ses e-mails. Modifiez ou supprimez plutôt la boîte aux lettres.",
       "alreadyExists": "Cette redirection exacte existe déjà."
     }
+  },
+  "fail2ban": {
+    "manage": "Gérer les blocages",
+    "title": "Blocages Fail2ban",
+    "description": "Consultez les adresses bloquées et gérez l’accès à ce serveur de messagerie.",
+    "checkedAt": "Dernière vérification : {time}",
+    "failed": "L’état de Fail2ban est indisponible.",
+    "stale": "Le dernier relevé réussi est affiché. Actualisez avant toute modification.",
+    "completed": "Demande terminée.",
+    "emptyJails": "Aucune jail active.",
+    "emptyBans": "Aucune adresse n’est actuellement bloquée dans cette jail.",
+    "banned": "Bloquées actuellement",
+    "failedNow": "Échecs actuels",
+    "totalBans": "Total des blocages",
+    "readOnly": "Vous pouvez consulter les blocages. Leur gestion nécessite les droits d’administration de la messagerie.",
+    "ban": "Bloquer une IP",
+    "unban": "Débloquer",
+    "jail": "Jail",
+    "chooseJail": "Choisir une jail",
+    "address": "Adresse IP",
+    "banHint": "Utilisez une adresse IPv4 ou IPv6. Bloquer votre propre adresse peut empêcher l’accès à la messagerie.",
+    "reviewBan": "Vérifier le blocage",
+    "banReview": "Bloquer {ip} dans {jail} ?",
+    "unbanReview": "Débloquer {ip} de {jail} ?"
   }
 }

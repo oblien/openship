@@ -145,6 +145,21 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("apply service environment operation", () => {
+  it("resolves command and container environment from the same merged values", async () => {
+    h.services.mockResolvedValue([{ ...service, advanced: { commandTemplate: {
+      expression: ["server", "--token", "${TOKEN:?required}", "${OVERRIDE}"], unresolvedVariables: [],
+    } } }]);
+    await applyServiceEnvironment(ctx, "p1", "api");
+    expect(apply.mock.calls[0]?.[2].commandArgv).toEqual(["server", "--token", "private saved value", "service"]);
+  });
+  it("refuses missing mandatory command variables before runtime mutation", async () => {
+    h.services.mockResolvedValue([{ ...service, advanced: { commandTemplate: {
+      expression: ["server", "${MISSING:?private author message}"], unresolvedVariables: ["MISSING"],
+    } } }]);
+    await expect(applyServiceEnvironment(ctx, "p1", "api")).rejects.toThrow("Missing required Compose command variables: MISSING");
+    expect(apply).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+  });
   it("applies current saved layers to one live service without a deployment or build session", async () => {
     const before = Date.now();
     const result = await applyServiceEnvironment(ctx, "p1", "api");

@@ -787,7 +787,8 @@
       "localPartLabel": "Lokaler Teil",
       "localPartHint": "Der Teil vor dem @. Kleinbuchstaben, alphanumerisch.",
       "destinationLabel": "Weiterleiten an",
-      "destinationHint": "Jede gültige E-Mail-Adresse — ein Postfach auf diesem Server oder extern (z. B. Gmail)."
+      "destinationHint": "Jede gültige E-Mail-Adresse — ein Postfach auf diesem Server oder extern (z. B. Gmail).",
+      "senderNote": "Zum Senden als Alias melden Sie sich mit dessen direktem Zielpostfach an. Externe Weiterleitungen und Catch-all-Regeln leiten nur eingehende E-Mails weiter. Die aktuelle Mail-Engine ist erforderlich."
     },
     "deleteForm": {
       "title": "Diesen Alias löschen?",
@@ -800,5 +801,29 @@
       "mailboxConflict": "{address} ist ein reales Postfach — das Erstellen eines Alias hier würde dessen E-Mails umleiten. Bearbeiten oder löschen Sie stattdessen das Postfach.",
       "alreadyExists": "Genau diese Weiterleitung existiert bereits."
     }
+  },
+  "fail2ban": {
+    "manage": "Sperren verwalten",
+    "title": "Fail2ban-Sperren",
+    "description": "Gesperrte Adressen prüfen und den Zugriff auf diesen Mailserver verwalten.",
+    "checkedAt": "Zuletzt geprüft: {time}",
+    "failed": "Der Fail2ban-Status ist nicht verfügbar.",
+    "stale": "Die letzte erfolgreiche Abfrage wird angezeigt. Vor Änderungen aktualisieren.",
+    "completed": "Anfrage abgeschlossen.",
+    "emptyJails": "Keine aktiven Jails.",
+    "emptyBans": "In diesem Jail sind derzeit keine Adressen gesperrt.",
+    "banned": "Aktuell gesperrt",
+    "failedNow": "Aktuelle Fehler",
+    "totalBans": "Sperren insgesamt",
+    "readOnly": "Sie können Sperren ansehen. Zum Verwalten sind Mailadministratorrechte erforderlich.",
+    "ban": "IP sperren",
+    "unban": "Entsperren",
+    "jail": "Jail",
+    "chooseJail": "Jail auswählen",
+    "address": "IP-Adresse",
+    "banHint": "Eine IPv4- oder IPv6-Adresse verwenden. Das Sperren Ihrer eigenen Adresse kann den Mailzugriff verhindern.",
+    "reviewBan": "Sperre prüfen",
+    "banReview": "{ip} in {jail} sperren?",
+    "unbanReview": "{ip} aus {jail} entsperren?"
   }
 }

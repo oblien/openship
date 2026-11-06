@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { containerInfoFromDockerSummary, dockerPublishedPortInfo } from "./docker-container-info";
+import { containerInfoFromDockerSummary, dockerPublishedPortInfo, stabilitySampleFromDockerInspect } from "./docker-container-info";
 import type { DockerContainerSummary } from "./types";
+import type Dockerode from "dockerode";
 
 describe("Docker container information normalization", () => {
+  it.each([
+    [{ Running: true }, "running"],
+    [{ Running: true, Restarting: true }, "restarting"],
+    [{ Running: true, Paused: true }, "paused"],
+    [{ Running: false }, "exited"],
+    [{ Status: "unrecognized", Running: true }, "unknown"],
+  ])("retains stability evidence when inspect omits a status: %j", (State, state) => {
+    const sample = stabilitySampleFromDockerInspect({ State } as Dockerode.ContainerInspectInfo);
+    expect(sample.state).toBe(state);
+    expect(sample.exitCode).toBeNull();
+    expect(sample.restartCount).toBe(0);
+  });
   it("prefers Openship's loopback publish and preserves one mapping per container port", () => {
     expect(
       dockerPublishedPortInfo([

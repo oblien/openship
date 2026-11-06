@@ -1,5 +1,5 @@
 import "../jobs/_env";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 
@@ -73,6 +73,8 @@ beforeEach(() => {
     return { exec: network.exec, dispose: network.dispose };
   });
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("Cloud migration HTTP boundaries", () => {
   it("requires authentication before source operations or scanning", async () => {
@@ -186,5 +188,106 @@ describe("Cloud migration HTTP boundaries", () => {
     await repos.dockerMigrationRun.updateRecovery(run.id, { transferRunTag: null });
     expect((await request("DELETE", `/sources/${source.id}`, auth)).status).toBe(200);
     expect(await repos.server.get(source.id)).toBeUndefined();
+  });
+});
+
+describe("retaining migration originals without runtime changes", () => {
+  const finish = (id: string, auth: string, token = "fixture-confirmation") =>
+    request("POST", `/migrations/${id}/cutover`, auth, {
+      confirmationToken: token,
+      kill: false,
+      restartOriginals: false,
+    });
+
+  async function settledFixture() {
+    const f = await runFixture();
+    await repos.dockerMigrationRun.updateRecovery(f.run.id, { transferRunTag: null });
+    return f;
+  }
+
+  it("finishes a previously failed keep decision without contacting either host or deleting its project", async () => {
+    const runtime = await import("@repo/platform/engine/modules/migration/migration-runtime");
+    const hostActivity = vi
+      .spyOn(runtime, "withMigrationActivity")
+      .mockRejectedValue(new Error("No host activity permitted"));
+    const { auth, run, project } = await settledFixture();
+    await repos.dockerMigrationRun.transition(run.id, "awaiting_cutover", {
+      errorMessage: "Source SSH handshake timed out",
+    });
+    expect((await finish(run.id, auth)).status).toBe(200);
+    const ended = (await repos.dockerMigrationRun.findById(run.id))!;
+    expect(ended.status).toBe("succeeded");
+    expect(ended.errorMessage).toBeNull();
+    expect(ended.finishedAt).toBeInstanceOf(Date);
+    expect(ended.executionFinishedAt).toBeInstanceOf(Date);
+    expect(ended.recovery.sourceRunningContainerIds).toEqual({ app: "original-container" });
+    expect(await repos.project.findById(project.id)).toBeDefined();
+    expect(await repos.dockerMigrationRun.findActiveForProject(project.id)).toBeNull();
+    expect(network.connect).not.toHaveBeenCalled();
+    expect(network.exec).not.toHaveBeenCalled();
+    expect(hostActivity).not.toHaveBeenCalled();
+  });
+
+  it("keeps token, organization and scoped project permission gates", async () => {
+    const { owner, auth, run } = await settledFixture();
+    expect((await finish(run.id, auth, "wrong-token")).status).toBe(403);
+    expect((await finish(run.id, await token(await seedOrg()))).status).toBe(404);
+    const serverOnly = await token(owner, [
+      { resourceType: "server", resourceId: "*", permissions: ["read", "write"] },
+    ]);
+    expect((await finish(run.id, serverOnly)).status).toBe(404);
+    expect((await repos.dockerMigrationRun.findById(run.id))?.status).toBe("awaiting_cutover");
+    expect(network.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { pendingItems: [{ key: "volume:data", reason: "missing" }] },
+    { recovery: { transferRunTag: "unfinished-transfer" } },
+    { recovery: { targetRunningContainerIds: ["paused-target"] } },
+    {
+      recovery: {
+        sourceProject: {
+          serverId: "source",
+          workspaceId: null,
+          activeDeploymentId: null,
+          services: [],
+        },
+      },
+    },
+  ])("does not abandon unfinished data or recovery: %j", async (patch) => {
+    const { auth, run } = await settledFixture();
+    await repos.dockerMigrationRun.transition(run.id, "awaiting_cutover", patch);
+    expect((await finish(run.id, auth)).status).toBe(409);
+    expect((await repos.dockerMigrationRun.findById(run.id))?.status).toBe("awaiting_cutover");
+    expect(network.connect).not.toHaveBeenCalled();
+  });
+
+  it("does not bypass an executing worker or a project deletion claim", async () => {
+    const { owner, auth, run, project } = await settledFixture();
+    expect(
+      await repos.dockerMigrationRun.claimExecution({
+        id: run.id,
+        organizationId: owner.organizationId,
+        from: "awaiting_cutover",
+        to: "awaiting_cutover",
+      }),
+    ).toBeDefined();
+    expect((await finish(run.id, auth)).status).toBe(409);
+    await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id);
+    await repos.project.claimDeletion(project.id);
+    expect((await finish(run.id, auth)).status).toBe(409);
+    expect((await repos.dockerMigrationRun.findById(run.id))?.status).toBe("awaiting_cutover");
+    expect(network.connect).not.toHaveBeenCalled();
+  });
+
+  it("allows only one concurrent decision and never reverses destructive cutover", async () => {
+    const { auth, run } = await settledFixture();
+    const responses = await Promise.all([finish(run.id, auth), finish(run.id, auth)]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    const other = await settledFixture();
+    await repos.dockerMigrationRun.transition(other.run.id, "cutover");
+    expect((await finish(other.run.id, other.auth)).status).toBe(409);
+    expect((await repos.dockerMigrationRun.findById(other.run.id))?.status).toBe("cutover");
+    expect(network.connect).not.toHaveBeenCalled();
   });
 });

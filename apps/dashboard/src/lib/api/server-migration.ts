@@ -385,10 +385,16 @@ export const dockerMigrationApi = {
   },
 
   /** Confirm (kill=true) or decline (kill=false) the destructive cutover. */
-  confirmCutover: (id: string, confirmationToken: string, kill: boolean) =>
+  confirmCutover: (
+    id: string,
+    confirmationToken: string,
+    kill: boolean,
+    restartOriginals?: boolean,
+  ) =>
     api.post<{ success: boolean }>(endpoints.dockerMigration.cutover(id), {
       confirmationToken,
       kill,
+      ...(restartOriginals === undefined ? {} : { restartOriginals }),
     }),
 
   /** Abort an in-flight migration (kills the transfer + rolls back on the server). */

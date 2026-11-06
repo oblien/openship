@@ -1,3 +1,4 @@
+import { serviceRuntimeCommand } from "../../services/service-runtime-command";
 /**
  * Compose deploy service - deploys multi-service projects.
  *
@@ -66,7 +67,7 @@ import {
   ensureEdge,
   STATIC_RELEASE_BASE,
   allocateHostPort,
-  edgeProxyFor,
+  loopbackPortInventoryFor,
   rootOrDegrade,
   resolveEnvironment,
   runDeployPipeline,
@@ -714,18 +715,7 @@ export function createServiceRuntimeConfig(opts: {
     opts;
   const volumes = appRowVolumes(project, service);
   assertDeployVolumePolicy(volumes, opts.runtime);
-  // Monorepo sub-apps store their long-running process in `startCommand`;
-  // compose services in `command`. The DB invariant is that compose rows
-  // never have `startCommand` set, so a single `??` chain covers both:
-  // monorepo → startCommand (with command fallback if missing), compose →
-  // command. No branching on kind needed.
-  const runtimeCommand = service.startCommand ?? service.command ?? undefined;
-  // #332: pass the structured argv for a compose `command` (docker-compose Cmd,
-  // no `sh -c`). Only for compose rows — a monorepo sub-app's `startCommand` is a
-  // shell string, so force null there to keep the legacy `sh -c` shell behavior.
-  const commandArgv = service.startCommand
-    ? null
-    : ((service.commandArgv as string[] | null) ?? null);
+  const { command: runtimeCommand, commandArgv } = serviceRuntimeCommand(service, environment);
   return {
     deploymentId: dep.id,
     projectId: project.id,
@@ -780,7 +770,7 @@ function createServiceDeployConfig(opts: {
   // cleanly in both cases - monorepo rows hit the service-level value,
   // compose rows skip straight to the project / command fallback.
   const stack = service.framework ?? project.framework ?? undefined;
-  const startCommand = service.startCommand ?? service.command ?? undefined;
+  const { command: startCommand } = serviceRuntimeCommand(service, environment);
 
   return {
     deploymentId: dep.id,
@@ -2034,7 +2024,7 @@ async function deployComposeServicesCore(
       ? hostPortTarget
         ? await prepareTargetPinnedHostPorts({
             target: hostPortTarget,
-            edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+            edgeProxy: loopbackPortInventoryFor(opts?.routing, opts.executor),
             verifiedCarriedHostPorts,
             onCarriedHostPortReconciled: (claim) => {
               const serviceName =
@@ -4642,6 +4632,7 @@ async function deployComposeServicesCore(
           ...(r.redirects?.length ? { redirects: r.redirects } : {}),
           ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
           ...(r.cleanUrls ? { cleanUrls: true } : {}),
+          ...(r.spaFallback === undefined ? {} : { spaFallback: r.spaFallback }),
           ...(r.trailingSlash === undefined ? {} : { trailingSlash: r.trailingSlash }),
           ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
         });
@@ -4800,7 +4791,7 @@ async function deployComposeServicesCore(
         target: hostPortTarget,
         projectId: project.id,
         desiredPublishes,
-        edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+        edgeProxy: loopbackPortInventoryFor(opts.routing, opts.executor),
       };
       try {
         // The public wrapper took the target lock for the current loopback

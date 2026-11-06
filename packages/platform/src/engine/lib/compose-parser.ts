@@ -18,6 +18,7 @@ import {
   parseComposeEnvFile,
   interpolateComposeString,
   resolveComposeInterpolation,
+  resolveComposeCommand,
   hasComposeInterpolation,
   resolveComposeValue,
   resolveBareEnvironmentKey,
@@ -207,6 +208,26 @@ export function parseComposeFile(
             sourceValue: sourceImage!.value,
           }
         : undefined;
+    // #1613: the command template is the raw expression plus the value the
+    // compose-adjacent .env alone produced, mirroring the image template
+    // above. Deploy re-evaluates it against the final env.
+    const parsedCommand = parseCommand(svc.command, interpolationEnv);
+    const commandReferences = new Set(
+      (typeof svc.command === "string" ? [svc.command] : Array.isArray(svc.command) ? svc.command : [])
+        .flatMap((part) => [...String(part).replaceAll("$$", "\0").matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]!)),
+    );
+    const sourceCommandEnv = Object.fromEntries(
+      [...commandReferences]
+        .filter((key) => Object.hasOwn(sourceInterpolationEnv, key))
+        .map((key) => [key, sourceInterpolationEnv[key]!]),
+    );
+    const commandTemplate = parsedCommand.template
+      ? {
+          ...parsedCommand.template,
+          sourceValue: parseCommand(svc.command, sourceInterpolationEnv).command,
+          ...(Object.keys(sourceCommandEnv).length && { sourceEnvironment: sourceCommandEnv }),
+        }
+      : undefined;
     const parsedAdvanced = parseAdvanced(svc, interpolationEnv, name, unsupported);
     // An empty marker is meaningful: it says this BUILD declaration came from a
     // provenance-aware parser. Stamp it even when the current `build:` block has
@@ -216,10 +237,15 @@ export function parseComposeFile(
     const hasEnvironmentDeclaration = Object.hasOwn(svc, "environment");
     const hasBuildDeclaration = Object.hasOwn(svc, "build");
     const advanced: ComposeAdvanced | undefined =
-      parsedAdvanced || imageTemplate || hasEnvironmentDeclaration || hasBuildDeclaration
+      parsedAdvanced ||
+      imageTemplate ||
+      commandTemplate ||
+      hasEnvironmentDeclaration ||
+      hasBuildDeclaration
         ? {
             ...(parsedAdvanced ?? {}),
             ...(imageTemplate && { imageTemplate }),
+            ...(commandTemplate && { commandTemplate }),
             ...(hasEnvironmentDeclaration && {
               environmentTemplateKeys: Object.keys(environment.templates),
             }),
@@ -246,7 +272,8 @@ export function parseComposeFile(
         environmentMeta: environment.metadata,
       }),
       volumes: parseVolumes(svc.volumes, interpolationEnv),
-      ...parseCommand(svc.command, interpolationEnv),
+      command: parsedCommand.command,
+      commandArgv: parsedCommand.commandArgv,
       restart:
         typeof svc.restart === "string"
           ? interpolateComposeString(svc.restart, interpolationEnv)
@@ -514,20 +541,30 @@ function parseVolumes(vols: unknown, env: Record<string, string>): string[] {
  * docker-compose semantics: list → argv verbatim; string → shell-word-split into
  * argv (NO implicit `sh -c` — a shell needs an explicit `sh -c`); absent → no
  * override. The `command` string is kept for display / legacy compatibility.
+ *
+ * When the command carries interpolation, the raw expression is also kept as a
+ * template (#1613): the resolved value is only the scan-time one, and deploy
+ * re-evaluates the expression against the final env instead of freezing it.
  */
 function parseCommand(
   command: unknown,
   env: Record<string, string>,
-): { command?: string; commandArgv?: string[] | null } {
-  if (typeof command === "string") {
-    const interpolated = interpolateComposeString(command, env);
-    return { command: interpolated, commandArgv: commandToArgv(interpolated) };
-  }
-  if (Array.isArray(command)) {
-    const argv = command.map((part) => interpolateComposeString(String(part), env));
-    return { command: argv.join(" "), commandArgv: argv };
-  }
-  return {};
+): {
+  command?: string;
+  commandArgv?: string[] | null;
+  template?: { expression: string | string[]; unresolvedVariables: string[] };
+} {
+  if (typeof command !== "string" && !Array.isArray(command)) return {};
+  const expression = typeof command === "string" ? command : command.map(String);
+  const resolved = resolveComposeCommand(expression, env);
+  const parts = typeof expression === "string" ? [expression] : expression;
+  return {
+    command: resolved.command,
+    commandArgv: resolved.commandArgv,
+    ...(parts.some(hasComposeInterpolation) && {
+      template: { expression, unresolvedVariables: resolved.unresolvedVariables },
+    }),
+  };
 }
 
 /**

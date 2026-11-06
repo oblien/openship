@@ -13,13 +13,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * must report the SAME source `tokenFor` would mint.
  */
 
-const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGitHubRepo, getLocalGhToken, serverCredential, serverProbe, serverAllowed, serverTarget } =
+const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGitHubRepo, getLocalGhToken, serverCredential, serverProbe, serverAllowed, serverTarget, listServers } =
   vi.hoisted(() => ({
     envMock: { CLOUD_MODE: false, GITHUB_AUTH_MODE: undefined } as {
       CLOUD_MODE: boolean;
       GITHUB_AUTH_MODE?: string;
     },
-    serverCredential: vi.fn(), serverProbe: vi.fn(), serverAllowed: vi.fn(), serverTarget: vi.fn(),
+    serverCredential: vi.fn(), serverProbe: vi.fn(), serverAllowed: vi.fn(), serverTarget: vi.fn(), listServers: vi.fn(),
     findProjectById: vi.fn(),
     findSettingsByUser: vi.fn(),
     decrypt: vi.fn((s: string) => s.replace(/^ENC:/, "")),
@@ -41,7 +41,7 @@ vi.mock("@repo/platform/engine/modules/github/server-github.service", () => ({
 vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
-    server: { findLocal: async () => undefined },
+    server: { findLocal: async () => undefined, listByOrganization: listServers },
     project: { findById: findProjectById },
     settings: { findByUser: findSettingsByUser },
   },
@@ -89,6 +89,7 @@ beforeEach(() => {
   serverCredential.mockResolvedValue(null);
   serverProbe.mockResolvedValue(false);
   serverAllowed.mockResolvedValue(true);
+  listServers.mockResolvedValue([]);
   serverTarget.mockResolvedValue({ id: "s1", organizationId: "o1" });
   // Baseline: nothing resolves.
   setProjectPat(null);
@@ -358,6 +359,50 @@ describe("server credential repository reads (#1500)", () => {
     expect(await tokenFor(ctxOrg, "local", input)).toBeNull();
     expect(await canResolveTokenFor(ctxOrg, "local", input)).toBeNull();
     expect(serverCredential).not.toHaveBeenCalled();
+  });
+  it("falls back to a writable connected server with a stored credential when there is no local default (#1630)", async () => {
+    listServers.mockResolvedValue([{ id: "s2", isLocal: false }]);
+    serverProbe.mockResolvedValue(true);
+    serverCredential.mockResolvedValue({ token: "server-pat" });
+    expect(await tokenFor(ctxOrg, "local", withOwner)).toEqual({ token: "server-pat", source: "server-token" });
+    expect(await canResolveTokenFor(ctxOrg, "local", withOwner)).toBe("server-token");
+    expect(serverCredential).toHaveBeenCalledWith({ ctx: ctxOrg, serverId: "s2", owner: "acme", repo: "app", tokenOnly: true });
+    expect(serverProbe).toHaveBeenCalledWith("s2", { tokenOnly: true });
+  });
+  it("skips connected servers the caller cannot write to or that hold no credential (#1630)", async () => {
+    listServers.mockResolvedValue([
+      { id: "s-no-write", isLocal: false },
+      { id: "s-no-cred", isLocal: false },
+      { id: "s-good", isLocal: false },
+    ]);
+    serverAllowed.mockImplementation(async (_ctx, resource) => resource.resourceId !== "s-no-write");
+    serverProbe.mockImplementation(async (id) => id === "s-good");
+    expect(await tokenFor(ctxOrg, "local", withOwner)).toEqual({
+      token: "server-pat",
+      source: "server-token",
+    });
+    expect(await canResolveTokenFor(ctxOrg, "local", withOwner)).toBe("server-token");
+    expect(serverCredential).toHaveBeenCalledWith({
+      ctx: ctxOrg,
+      serverId: "s-good",
+      owner: "acme",
+      repo: "app",
+      tokenOnly: true,
+    });
+  });
+  it("requires the same explicit selection for mint and preflight when several server tokens are eligible", async () => {
+    listServers.mockResolvedValue([
+      { id: "s1", isLocal: false },
+      { id: "s2", isLocal: false },
+    ]);
+    const conflict = { statusCode: 409, code: "GITHUB_SERVER_SELECTION_REQUIRED" };
+    await expect(tokenFor(ctxOrg, "local", withOwner)).rejects.toMatchObject(conflict);
+    await expect(canResolveTokenFor(ctxOrg, "local", withOwner)).rejects.toMatchObject(conflict);
+    expect(serverCredential).not.toHaveBeenCalled();
+    expect(await tokenFor(ctxOrg, "local", target)).toEqual({
+      token: "server-pat",
+      source: "server-token",
+    });
   });
   it("never ships a server token through the generic remote chain or uses one in Cloud", async () => {
     expect(await tokenFor(ctxOrg, "remote", target)).toBeNull();

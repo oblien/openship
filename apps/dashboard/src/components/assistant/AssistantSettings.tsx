@@ -2,11 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
-import {
-  ASSISTANT_PROVIDER_LABELS,
-  type AssistantProvider,
-  type AssistantStatus,
-} from "@repo/contracts";
+import { ASSISTANT_PROVIDER_LABELS, type AssistantStatus } from "@repo/contracts";
 import {
   useResourceScope,
   useScopedResource,
@@ -18,7 +14,7 @@ import { tokensApi, type McpClientDetail } from "@/lib/api/tokens";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/Switch";
 import { AssistantDialog } from "./AssistantDialog";
-import { AgentConnections } from "./AgentConnections";
+import { AgentConnections, type AssistantConnectionSelection } from "./AgentConnections";
 import { McpAccessEditor } from "@/app/(dashboard)/settings/_components/McpAccessEditor";
 import { AccessCopyProvider, ASSISTANT_ACCESS_COPY } from "@/components/permissions/access-copy";
 
@@ -166,7 +162,7 @@ function EnabledSettings({ status }: { status: AssistantStatus }) {
   const agents = useScopedResource(assistantApi.providers);
   const automations = useScopedResource(assistantAutomationsApi.overview);
   const mutation = useScopedMutation();
-  const [selected, setSelected] = useState<AssistantProvider>("claude");
+  const [selected, setSelected] = useState<AssistantConnectionSelection>("claude");
   const [connections, setConnections] = useState(false);
   const [detail, setDetail] = useState<McpClientDetail | null>(null);
   const [savingAccess, setSavingAccess] = useState(false);
