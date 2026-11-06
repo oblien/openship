@@ -596,6 +596,8 @@
     "cancel": "İptal",
     "saveChanges": "Değişiklikleri kaydet",
     "close": "Kapat",
+    "rebuildTitle": "Yeniden derle ve dağıt",
+    "rebuildText": "Kaydedildi. Bu ortam değişkenlerini uygulamak için uygulamayı yeniden derleyin.",
     "applyTitle": "Yeniden derleme olmadan uygula",
     "applyText": "Kaydedildi. Çalışma zamanı değişikliklerini uygulamak için yeniden başlatın. İmaj derlenirken kullanılan değerler için yeniden derleyip dağıtın.",
     "applyButton": "Uygula (yeniden başlat, derleme yok)",

@@ -580,6 +580,8 @@
     "unlink": "Eliminar conexión",
     "close": "Cerrar",
     "applyText": "Guardado. Reinicia para aplicar cambios de ejecución. Vuelve a compilar y desplegar para aplicar valores usados al compilar una imagen.",
+    "rebuildTitle": "Reconstruir y volver a desplegar",
+    "rebuildText": "Guardado. Reconstruye la aplicación para aplicar estas variables de entorno.",
     "applyTitle": "Aplicar sin recompilar",
     "applyButton": "Aplicar (reiniciar sin recompilar)"
   },

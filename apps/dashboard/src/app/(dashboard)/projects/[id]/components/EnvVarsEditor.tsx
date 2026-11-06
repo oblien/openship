@@ -2,6 +2,7 @@ import { useComposeReview } from "@/hooks/useComposeReview";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { AppLogo } from "@/components/AppLogo";
 import { projectsApi, deployApi } from "@/lib/api";
@@ -12,6 +13,8 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import type { EnvironmentVariable } from "@/components/import-project/types";
+import { canRefreshProjectEnvironment } from "@/lib/project-application";
+import { openTriggeredBuild } from "@/lib/deploy-nav";
 import {
   computeProjectEnvDiff,
   createProjectEnvEditState,
@@ -48,7 +51,9 @@ export function EnvVarsEditor({
 }) {
   const { showToast } = useToast();
   const { t } = useI18n();
-  const { projectData } = useProjectSettings();
+  const { projectData, servicesData } = useProjectSettings();
+  const router = useRouter();
+  const canRefresh = canRefreshProjectEnvironment(projectData, servicesData.services);
   const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
   const showComposeReview = useComposeReview(projectId);
   const hasActiveDeployment = Boolean(projectData?.activeDeploymentId);
@@ -57,9 +62,7 @@ export function EnvVarsEditor({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
-  // Set after a successful save when there's a live deployment: shows the
-  // "Apply (restart, no rebuild)" affordance so the change reaches the running
-  // service without a full clone+build.
+  // Saving persists the values; applying explicitly updates the active deployment.
   const [pendingApply, setPendingApply] = useState(false);
   const [applying, setApplying] = useState(false);
   // Env keys wired IN by a service connection (keyed by envKey). These render as
@@ -143,8 +146,8 @@ export function EnvVarsEditor({
       await projectsApi.mergeEnv(projectId, { environment: ENVIRONMENT, upserts, deletes });
       showToast(t.projectSettings.envVars.toast.saved, "success", t.projectSettings.envVars.toast.savedTitle);
       // A persisted env change only reaches the RUNNING service on a deploy.
-      // If something is deployed, keep the editor open and offer the no-rebuild
-      // refresh; otherwise there's nothing to apply (it lands on the next deploy).
+      // Offer the deployment mode this project supports; otherwise the saved
+      // values will take effect on its first deployment.
       if (hasActiveDeployment) {
         await load(); // re-sync so the diff resets to the saved state
         setPendingApply(true);
@@ -158,17 +161,31 @@ export function EnvVarsEditor({
     }
   };
 
-  // Apply the saved env to the live service WITHOUT a rebuild: the server's
-  // `refresh` deploy mode recreates the service from its existing image with the
-  // new env (no git clone, no build). The full-rebuild "Redeploy" stays separate.
   const handleApply = async () => {
     setApplying(true);
     try {
-      await deployApi.trigger({ projectId, refresh: true });
-      showToast(t.projectSettings.envVars.toast.applying, "success", t.projectSettings.envVars.toast.applyingTitle);
+      const res = await deployApi.trigger(
+        canRefresh ? { projectId, refresh: true } : { projectId, smartRoute: true },
+      );
+      if (canRefresh) {
+        showToast(t.projectSettings.envVars.toast.applying, "success", t.projectSettings.envVars.toast.applyingTitle);
+      } else {
+        openTriggeredBuild(router, res, projectId);
+      }
       onClose();
     } catch (err) {
-      if (!showComposeReview(err) && !showCloudPricing(err)) showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
+      if (!showComposeReview(err) && !showCloudPricing(err)) {
+        showToast(
+          getApiErrorMessage(
+            err,
+            canRefresh
+              ? t.projectSettings.envVars.toast.applyFailed
+              : t.projects.redeploy.couldNotRedeploy,
+          ),
+          "error",
+          canRefresh ? t.projectSettings.envVars.toast.applyFailedTitle : t.projects.redeploy.errorTitle,
+        );
+      }
     } finally {
       setApplying(false);
     }
@@ -216,7 +233,9 @@ export function EnvVarsEditor({
               className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3.5 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
             >
               {applying ? <UiIcon name="spinner" className="size-3.5 animate-spin" /> : <UiIcon name="refresh" className="size-3.5" />}
-              {t.projectSettings.envVars.applyButton}
+              {canRefresh
+                ? t.projectSettings.envVars.applyButton
+                : t.projectSettings.envVars.rebuildTitle}
             </button>
           ) : (
             <button
@@ -237,9 +256,13 @@ export function EnvVarsEditor({
           <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
             <UiIcon name="refresh" className="mt-0.5 size-4 shrink-0 text-primary" />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">{t.projectSettings.envVars.applyTitle}</p>
+              <p className="text-sm font-medium text-foreground">
+                {canRefresh
+                  ? t.projectSettings.envVars.applyTitle
+                  : t.projectSettings.envVars.rebuildTitle}
+              </p>
               <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
-                {t.projectSettings.envVars.applyText}
+                {canRefresh ? t.projectSettings.envVars.applyText : t.projectSettings.envVars.rebuildText}
               </p>
             </div>
           </div>

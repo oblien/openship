@@ -574,6 +574,8 @@
       "applyFailedTitle": "Échec de l'application"
     },
     "close": "Fermer",
+    "rebuildTitle": "Reconstruire et redéployer",
+    "rebuildText": "Enregistré. Reconstruisez l’application pour appliquer ces variables d’environnement.",
     "applyTitle": "Appliquer sans recompilation",
     "applyText": "Enregistré. Redémarrez pour appliquer les changements d’exécution. Recompilez et redéployez pour appliquer les valeurs utilisées lors de la compilation d’une image.",
     "applyButton": "Appliquer (redémarrage, sans recompilation)",

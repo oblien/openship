@@ -73,7 +73,7 @@ let root: Root;
 let container: HTMLDivElement;
 let context: {
   id: string;
-  projectData: { id: string; name: string; port: number; activeDeploymentId?: string; runtimeMode?: string;
+  projectData: { id: string; name: string; port: number; framework: string; deployTarget?: "cloud" | "server"; activeDeploymentId?: string; runtimeMode?: string;
     options?: { hasServer?: boolean; workloadType?: "static" | "web" | "worker" } };
   hasMultipleServices: boolean;
   servicesData: { services: Service[] };
@@ -92,7 +92,7 @@ beforeEach(() => {
   root = createRoot(container);
   context = {
     id: "project",
-    projectData: { id: "project", name: "demo", port: 9000 },
+    projectData: { id: "project", name: "demo", framework: "docker-compose", port: 9000 },
     hasMultipleServices: true,
     servicesData: { services: [service] },
     domainsData: { domains: [] },
@@ -125,6 +125,50 @@ async function redeploy() {
   await act(async () => root.render(<Deployments />));
   await act(async () => button(baseDictionary.projects.redeploy.redeployProject).click());
 }
+
+it.each([
+  {
+    framework: "static",
+    deployTarget: "server" as const,
+    options: { workloadType: "static" as const },
+    canRefresh: false,
+  },
+  {
+    framework: "node",
+    deployTarget: "cloud" as const,
+    options: { workloadType: "web" as const },
+    canRefresh: false,
+  },
+  {
+    framework: "node",
+    deployTarget: "server" as const,
+    options: { workloadType: "worker" as const, hasServer: false },
+    canRefresh: true,
+  },
+  { framework: "docker-compose", deployTarget: "cloud" as const, options: {}, canRefresh: true },
+])(
+  "offers environment refresh only when supported ($framework on $deployTarget)",
+  async ({ canRefresh, ...project }) => {
+    Object.assign(context.projectData, project, { activeDeploymentId: "active" });
+    context.servicesData.services = [];
+    context.hasMultipleServices = false;
+    await act(async () => root.render(<Deployments />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
+    );
+    const action = [...container.querySelectorAll("button")].find(
+      (el) => el.textContent === baseDictionary.projects.redeploy.refreshEnv,
+    );
+    expect(Boolean(action)).toBe(canRefresh);
+    if (action) {
+      await act(async () => action.click());
+      expect(mocks.trigger).toHaveBeenCalledExactlyOnceWith({
+        projectId: "project",
+        refresh: true,
+      });
+    }
+  },
+);
 
 it("offers an explicit all-services runtime update without changing source", async () => {
   context.projectData.activeDeploymentId = "active";
