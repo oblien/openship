@@ -154,6 +154,7 @@ vi.mock("@repo/adapters", () => {
     allocateHostPort: vi.fn(async () => ({ port: 30_000, scanned: true })),
     pickHostPort: vi.fn(() => 30_000),
     edgeProxyFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
+    loopbackPortInventoryFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
     isHostChannelUnavailableError: vi.fn(() => false),
     runDeployPipeline: (...args: unknown[]) => mocks.runDeployPipeline(...args),
     isMultiServiceRuntime: vi.fn(() => false),

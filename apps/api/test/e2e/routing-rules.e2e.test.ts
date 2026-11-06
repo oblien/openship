@@ -46,7 +46,7 @@
  * See test/helpers/docker-e2e.ts.
  */
 
-import { it, expect, beforeAll, afterAll } from "vitest";
+import { it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -56,6 +56,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DockerRuntime,
+  DockerEdgeExecutor,
+  loopbackPortInventoryFor,
+  rootChecked,
   EDGE_SHARED_DICTS,
   NginxProvider,
   OPENRESTY_DEFAULT_PATHS,
@@ -292,6 +295,28 @@ http {
 }
 `;
 
+  it("reads stale loopback routes through the Docker socket with no host channel", async () => {
+    const routing = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS,
+      containerEdge: true,
+      executor: rootChecked(
+        new DockerEdgeExecutor({ containerName: started[0]!.id, docker: runtime.docker }),
+        "isolated E2E socket edge",
+      ),
+    });
+    const host = {
+      exec: vi.fn(async () => {
+        throw new Error("host channel unavailable");
+      }),
+    };
+    const inventory = loopbackPortInventoryFor(routing, host as unknown as CommandExecutor);
+    const observed = await inventory.listLoopbackUpstreamPortsStrict();
+    expect(observed.has(20000)).toBe(true);
+    expect(observed.has(9901)).toBe(true);
+    expect(observed.has(9904)).toBe(true);
+    expect(host.exec).not.toHaveBeenCalled();
+  });
+
   beforeAll(async () => {
     await requireDocker();
     runtime = await DockerRuntime.create({ transport: "socket" });
@@ -455,6 +480,12 @@ http {
       targetUrl: "http://127.0.0.1:9905",
     });
 
+    // A valid old vhost can survive without a workload or a durable DB claim.
+    out["orphan"] = await renderVhost({
+      domain: "orphan.test",
+      tls: false,
+      targetUrl: "http://127.0.0.1:20000",
+    });
     return out;
   }
 

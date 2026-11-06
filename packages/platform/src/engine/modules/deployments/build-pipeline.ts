@@ -67,7 +67,7 @@ import {
   runDeployPipeline,
   isMultiServiceRuntime,
   ensureEdge,
-  edgeProxyFor,
+  loopbackPortInventoryFor,
 } from "@repo/adapters";
 import { platform } from "../../lib/platform-config";
 import { cloudDockerNeedsBuild, ensureCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
@@ -2328,7 +2328,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
                           readClaims: () =>
                             prepareTargetPinnedHostPorts({
                               target,
-                              edgeProxy: edgeProxyFor(executor, "openresty", { ours: true }),
+                              edgeProxy: loopbackPortInventoryFor(routing, executor),
                             }),
                           allocate: (options) => allocateHostPort(executor, options),
                           isAvailable: (port) => isDockerHostPortAvailable(executor, port),
@@ -2447,7 +2447,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           const executor = phase.targetExecutor!;
           const claims = await prepareTargetPinnedHostPorts({
             target,
-            edgeProxy: edgeProxyFor(executor, "openresty", { ours: true }),
+            edgeProxy: loopbackPortInventoryFor(routing, executor),
           });
 
           if (runtime.name !== "bare") {
@@ -2902,7 +2902,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           target: phase.hostPortTarget,
           projectId: project.id,
           desiredPublishes,
-          edgeProxy: edgeProxyFor(phase.targetExecutor, "openresty", { ours: true }),
+          edgeProxy: loopbackPortInventoryFor(routing, phase.targetExecutor),
         };
         try {
           if (phase.hostPortTargetLockHeld) {
@@ -2996,7 +2996,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
       target: phase.hostPortTarget,
       projectId: project.id,
       desiredPublishes,
-      edgeProxy: edgeProxyFor(phase.targetExecutor, "openresty", { ours: true }),
+      edgeProxy: loopbackPortInventoryFor(routing, phase.targetExecutor),
     };
     try {
       const result = phase.hostPortTargetLockHeld

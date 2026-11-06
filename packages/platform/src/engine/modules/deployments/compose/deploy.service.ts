@@ -66,7 +66,7 @@ import {
   ensureEdge,
   STATIC_RELEASE_BASE,
   allocateHostPort,
-  edgeProxyFor,
+  loopbackPortInventoryFor,
   rootOrDegrade,
   resolveEnvironment,
   runDeployPipeline,
@@ -2034,7 +2034,7 @@ async function deployComposeServicesCore(
       ? hostPortTarget
         ? await prepareTargetPinnedHostPorts({
             target: hostPortTarget,
-            edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+            edgeProxy: loopbackPortInventoryFor(opts?.routing, opts.executor),
             verifiedCarriedHostPorts,
             onCarriedHostPortReconciled: (claim) => {
               const serviceName =
@@ -4800,7 +4800,7 @@ async function deployComposeServicesCore(
         target: hostPortTarget,
         projectId: project.id,
         desiredPublishes,
-        edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+        edgeProxy: loopbackPortInventoryFor(opts.routing, opts.executor),
       };
       try {
         // The public wrapper took the target lock for the current loopback

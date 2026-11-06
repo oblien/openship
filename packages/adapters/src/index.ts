@@ -366,6 +366,7 @@ export type { UnreachableStaticRoot } from "./system/proxy/import";
 export {
   edgeProxy,
   edgeProxyFor,
+  loopbackPortInventoryFor,
   buildProxyRouteIndex,
   collectProxyCerts,
 } from "./system/proxy/api";
