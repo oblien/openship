@@ -1252,5 +1252,21 @@
     "saved": "Paramètre GPU enregistré",
     "saveFailed": "Impossible d’enregistrer le paramètre GPU",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "Cache de build",
+    "subtitle": "Quantité de cache de build qu’Openship conserve sur ce serveur entre les déploiements.",
+    "modeLabel": "Budget du cache",
+    "modeAuto": "Automatique",
+    "modeCustom": "Personnalisé",
+    "modeHint": "Le mode automatique conserve jusqu’à 20 % du disque Docker de ce serveur. Après chaque build, les caches au-delà du budget sont supprimés, en commençant par les moins récemment utilisés.",
+    "statusAuto": "Automatique",
+    "statusCustom": "Personnalisé · {size} Gio",
+    "customLabel": "Budget en Gio",
+    "invalid": "Saisissez une taille entre {min} et {max} Gio, avec au plus deux décimales.",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "saved": "Budget du cache de build enregistré",
+    "saveFailed": "Impossible d’enregistrer le budget du cache de build"
   }
 }

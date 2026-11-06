@@ -1252,5 +1252,21 @@
     "saved": "GPU設定を保存しました",
     "saveFailed": "GPU設定を保存できませんでした",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "ビルドキャッシュ",
+    "subtitle": "デプロイ間で Openship がこのサーバーに保持するビルドキャッシュの量です。",
+    "modeLabel": "キャッシュ上限",
+    "modeAuto": "自動",
+    "modeCustom": "カスタム",
+    "modeHint": "自動では、このサーバーの Docker ディスクの最大 20% を保持します。各ビルドの後、上限を超えたキャッシュは最近使われていないものから削除されます。",
+    "statusAuto": "自動",
+    "statusCustom": "カスタム · {size} GiB",
+    "customLabel": "上限（GiB）",
+    "invalid": "{min}〜{max} GiB のサイズを小数点以下2桁までで入力してください。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "ビルドキャッシュの上限を保存しました",
+    "saveFailed": "ビルドキャッシュの上限を保存できませんでした"
   }
 }

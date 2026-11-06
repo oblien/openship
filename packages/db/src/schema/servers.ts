@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, boolean, check, foreignKey, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, timestamp, boolean, check, foreignKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 import { cloudWorkspace } from "./cloud-workspace";
 
@@ -73,6 +73,12 @@ export const servers = pgTable("servers", {
    */
   gpuOverride: text("gpu_override", { enum: ["yes", "no"] }),
 
+  /**
+   * Managed build-cache budget in bytes. NULL = automatic (a share of the Docker filesystem, see
+   * `buildCacheKeepBytes` in @repo/adapters). Bounded by `servers_build_cache_budget_check`.
+   */
+  buildCacheBudgetBytes: bigint("build_cache_budget_bytes", { mode: "number" }),
+
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -80,6 +86,7 @@ export const servers = pgTable("servers", {
 }, (table) => [
   check("servers_purpose_check", sql`${table.purpose} IN ('deployment', 'migration_source')`),
   check("servers_gpu_override_check", sql`${table.gpuOverride} IS NULL OR ${table.gpuOverride} IN ('yes', 'no')`),
+  check("servers_build_cache_budget_check", sql`${table.buildCacheBudgetBytes} IS NULL OR ${table.buildCacheBudgetBytes} BETWEEN 1073741824 AND 70368744177664`),
   check("servers_migration_source_check", sql`
     ${table.purpose} <> 'migration_source' OR (
       ${table.organizationId} IS NOT NULL AND ${table.workspaceId} IS NULL AND NOT ${table.isLocal}

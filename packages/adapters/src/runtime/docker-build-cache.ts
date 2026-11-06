@@ -76,11 +76,20 @@ export function buildStorageReserve(storage: BuildStorage): number {
 }
 
 /**
- * Automatic managed-cache budget: a share of the Docker filesystem, so it follows the disk in both
- * directions. Under storage pressure {@link pressureAdjustedKeepBytes} shrinks it.
+ * Managed-cache budget. Automatic (`configuredBytes` null/undefined): a share of the Docker
+ * filesystem, so it follows the disk in both directions. An operator's per-server budget replaces
+ * the share but never exceeds the filesystem minus the admission reserve. Under storage pressure
+ * {@link pressureAdjustedKeepBytes} shrinks either one.
  */
-export function buildCacheKeepBytes(storage: BuildStorage): number {
-  return Math.floor(storage.totalBytes * BUILD_CACHE_DISK_FRACTION);
+export function buildCacheKeepBytes(
+  storage: BuildStorage,
+  configuredBytes?: number | null,
+): number {
+  if (configuredBytes === null || configuredBytes === undefined)
+    return Math.floor(storage.totalBytes * BUILD_CACHE_DISK_FRACTION);
+  if (!Number.isSafeInteger(configuredBytes) || configuredBytes <= 0)
+    throw new RangeError("Invalid configured build-cache budget");
+  return Math.min(configuredBytes, Math.max(0, storage.totalBytes - buildStorageReserve(storage)));
 }
 
 /**
@@ -220,6 +229,8 @@ export async function pruneManagedBuildCaches(
     now?: number;
     protectedProjectIds?: ReadonlySet<string>;
     protectAll?: boolean;
+    /** The server's configured budget; null/undefined = automatic. */
+    configuredBudgetBytes?: number | null;
   } = {},
 ): Promise<{ cachesDeleted: string[]; spaceReclaimed: number }> {
   // Omitted: retain up to the host's automatic budget, applied after the storage read below.
@@ -300,7 +311,11 @@ export async function pruneManagedBuildCaches(
   storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
   const keepBytes = Math.min(
     requestedKeepBytes,
-    pressureAdjustedKeepBytes(storage, total, buildCacheKeepBytes(storage)),
+    pressureAdjustedKeepBytes(
+      storage,
+      total,
+      buildCacheKeepBytes(storage, options.configuredBudgetBytes),
+    ),
   );
   const idle = caches.filter(
     (cache) =>
@@ -373,6 +388,9 @@ export async function touchProjectBuildCache(
   );
 }
 
-export function buildKitCacheConfig(storage: BuildStorage): string {
-  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
+export function buildKitCacheConfig(
+  storage: BuildStorage,
+  configuredBudgetBytes?: number | null,
+): string {
+  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage, configuredBudgetBytes)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
 }

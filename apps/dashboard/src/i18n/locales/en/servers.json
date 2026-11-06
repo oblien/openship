@@ -1252,5 +1252,21 @@
     "saved": "GPU setting saved",
     "saveFailed": "Could not save the GPU setting",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "Build cache",
+    "subtitle": "How much build cache Openship keeps on this server between deploys.",
+    "modeLabel": "Cache budget",
+    "modeAuto": "Automatic",
+    "modeCustom": "Custom",
+    "modeHint": "Automatic keeps up to 20% of this server's Docker disk. After each build, caches beyond the budget are removed, least recently used first.",
+    "statusAuto": "Automatic",
+    "statusCustom": "Custom · {size} GiB",
+    "customLabel": "Budget in GiB",
+    "invalid": "Enter a size from {min} to {max} GiB, with up to two decimal places.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Build cache budget saved",
+    "saveFailed": "Could not save the build cache budget"
   }
 }

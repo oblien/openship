@@ -237,6 +237,32 @@ fi
     );
   });
 
+  it("lets a server's configured budget replace the automatic share in both directions", async () => {
+    // 100 GiB disk: automatic would keep 20 GiB, enough for both caches below.
+    const small = fixture([volume("a", 4 * GIB), volume("b", 4 * GIB)]);
+    await pruneManagedBuildCaches(small.docker as never, small.executor, {
+      now: 2000000200000,
+      configuredBudgetBytes: 6 * GIB,
+    });
+    expect(small.removed).toEqual([projectBuildCacheVolume("a")]);
+
+    // 30 GiB of caches is over the automatic 20 GiB but within a configured 32 GiB.
+    const large = fixture([volume("a", 15 * GIB), volume("b", 15 * GIB)]);
+    await pruneManagedBuildCaches(large.docker as never, large.executor, {
+      now: 2000000200000,
+      configuredBudgetBytes: 32 * GIB,
+    });
+    expect(large.removed).toEqual([]);
+  });
+
+  it("caps a configured budget at the filesystem minus the admission reserve", () => {
+    const storage = { totalBytes: 100 * GIB, freeBytes: 50 * GIB, freeInodes: 100 };
+    expect(buildKitCacheConfig(storage, 24 * GIB)).toContain(`maxUsedSpace = ${24 * GIB}`);
+    expect(buildKitCacheConfig(storage, 500 * GIB)).toContain(`maxUsedSpace = ${98 * GIB}`);
+    expect(buildKitCacheConfig(storage, null)).toContain(`maxUsedSpace = ${20 * GIB}`);
+    expect(() => buildKitCacheConfig(storage, 0)).toThrow(RangeError);
+  });
+
   it("protects attached state even when the host is over budget", async () => {
     const h = fixture();
     h.docker.listContainers.mockResolvedValue([
