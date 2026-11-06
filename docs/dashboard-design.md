@@ -1159,9 +1159,14 @@ Comfortable issue rows give the name, status and actions separate columns on wid
 containers; actions move below details on narrower lists so buttons never squeeze
 the status. Compact issue rows keep an accessible icon action. Monitoring's page
 header offers **AI health report**, preparing a read-only report of the current
-workspace's apps, deployments, services and accessible servers. The shortcut
-opens a new, editable request in the normal assistant composer; it never starts a
-turn, enables the assistant or grants access by itself. Carry only resource IDs and
+workspace's apps, deployments, services and accessible servers. Activating these
+actions in the current tab opens the assistant and sends the prepared request once
+the existing connection and model checks are ready, using the normal send path.
+Editing the draft or selecting another conversation cancels the queued send.
+Copied links, new tabs and refreshes open an editable draft; the URL alone never
+starts work. Failed sends use the normal manual retry, without an automatic loop.
+Investigate remains read-only; Fix with AI retains its explicit repair intent.
+These actions never enable the assistant or grant access by themselves. Carry only resource IDs and
 the originating resource scope in the link, never logs or error text. Preserve the
 request through assistant setup, reject a mismatched account/workspace/Cloud connection,
 and keep existing repair actions alongside it. Resolved issues and update notices do
@@ -1200,6 +1205,13 @@ conversation title or provider name/avatar above each response. The page header
 identifies the active speaker with its name and a General/Agent/Automation label.
 Keep character avatars in the switcher; chat titles appear in history. Omit the
 permission/keyboard helper line below the composer.
+Pending agent questions use a compact **Waiting for your answer** disclosure directly above
+the composer. **Answer** expands the controls in place; keep the regular composer available.
+Use a rounded translucent card, bound the answer area with its own scroll, and keep
+**Send answer** visible below it. Collapse preserves unsent choices and text. Multiple requests
+share this panel, with separate drafts and retry identities; both live and message-mode
+questions use the existing response path. Show submission failures inside the panel and
+remove resolved questions when the conversation refreshes.
 Before the assistant is enabled, introduce **AI Agents** with a compact 30–36px
 heading, a short description and native provider marks. Group the host picker,
 single **Enable AI Agents** action and brief access guidance in one setup card.
