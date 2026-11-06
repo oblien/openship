@@ -30,6 +30,15 @@ export function investigationHref(target: AssistantInvestigation, scope: string)
     : null;
 }
 
+/** Security remediation always starts with an editable review, even when an
+ * ordinary investigation link has a click-staged automatic submission. */
+export function investigationAutoSubmitKey(
+  target: AssistantInvestigation,
+  scope: string,
+): string | null {
+  return target.kind === "security" ? null : investigationHref(target, scope);
+}
+
 export function readInvestigation(
   search: Search,
   scope: string,

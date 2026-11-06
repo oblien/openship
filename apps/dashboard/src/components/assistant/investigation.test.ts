@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { baseDictionary } from "@/i18n";
 import { ISSUE_FIXTURES } from "@/components/issues/issue-fixtures";
 import {
+  investigationAutoSubmitKey,
   investigationHref,
   investigationPrompt,
   issueInvestigation,
@@ -133,6 +134,7 @@ describe("investigation handoff", () => {
       advisoryId: "CVE-2026-php-review",
     } as const;
     const href = investigationHref(target, scope)!;
+    expect(investigationAutoSubmitKey(target, scope)).toBeNull();
     const search = new URL(href, "http://localhost").searchParams;
     expect([...search.keys()]).toEqual(["investigate", "scope", "project", "advisory"]);
     expect(readInvestigation(search, scope)).toMatchObject({ status: "ready", target });
@@ -190,4 +192,14 @@ describe("investigation handoff", () => {
       issueInvestigation({ ...issue, target: { ...issue.target, scope: "server" } }),
     ).toBeNull();
   });
+});
+
+it.each([
+  { kind: "deployment", deploymentId: "deployment-one" },
+  { kind: "issue", projectId: "project-one", issueId: "issue-one" },
+  { kind: "issue", projectId: "project-one", issueId: "issue-one", intent: "fix" },
+  { kind: "monitoring" },
+] as const)("preserves the staged submission key for existing $kind handoffs", (target) => {
+  expect(investigationAutoSubmitKey(target, scope)).toBe(investigationHref(target, scope));
+  expect(investigationAutoSubmitKey(target, "")).toBeNull();
 });

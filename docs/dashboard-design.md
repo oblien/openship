@@ -144,9 +144,12 @@ the deployment fails or the promoted runtime remains affected. An unchanged preb
 image is not a remediation: explain that a patched version must be configured instead
 of redeploying the same digest. Opening review alone never resolves a finding.
 Manual advisories show their guidance immediately, grouped once per advisory with
-all affected services. Offer the existing saved configuration and a scoped **Fix
+all affected services. Keep each service’s confidence, update progress and blockers
+when grouping; do not use the first service as the state for the entire advisory.
+Offer the existing saved configuration and a scoped **Fix
 with AI** handoff. The handoff prepares an editable request with project/advisory
-identifiers only; navigation never executes a repair or grants access. Keep these
+identifiers only; security handoffs remain editable and never stage automatic
+submission, including after connection setup. Navigation never grants access. Keep these
 findings visible after an image update when no version-only fix is known.
 Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.

@@ -23,7 +23,9 @@ const h = vi.hoisted(() => ({
   pricing: vi.fn(),
   resourceKey: "account-one",
 }));
-vi.mock("@/context/ModalContext", () => ({ useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }) }));
+vi.mock("@/context/ModalContext", () => ({
+  useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast }) }));
@@ -491,4 +493,118 @@ it("explains a source redeploy prerequisite before offering a refresh and opens 
   expect(h.push).toHaveBeenCalledExactlyOnceWith("/projects/project-a/deployments");
   expect(h.applySecurity).not.toHaveBeenCalled();
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "keeps mixed applicability visible in either service order (reverse: %s)",
+  async (reverse) => {
+    const data = (await h.security()).data;
+    const base = {
+      ...data.findings[0],
+      id: "review",
+      manualReviewRequired: true,
+      canRefresh: false,
+    };
+    const possible = {
+      ...base,
+      serviceId: "possible",
+      serviceName: "possible",
+      confidence: "possible",
+    };
+    const confirmed = {
+      ...base,
+      serviceId: "confirmed",
+      serviceName: "confirmed",
+      confidence: "confirmed",
+    };
+    const findings = reverse ? [confirmed, possible] : [possible, confirmed];
+    await act(async () =>
+      root.render(
+        <SecurityProjectReview projectId="project-a" initialResult={{ ...data, findings }} />,
+      ),
+    );
+    expect(element.textContent).toContain(
+      baseDictionary.projectSettings.securityAdvisories.manualReviewUnverified,
+    );
+    const uncertain = [...element.querySelectorAll("p")].find((item) =>
+      item.textContent?.includes(
+        baseDictionary.projectSettings.securityAdvisories.manualReviewUnverified,
+      ),
+    )!;
+    expect(uncertain.textContent).toContain("possible:");
+    expect(uncertain.textContent).not.toContain("confirmed");
+    expect(element.textContent?.split(base.message)).toHaveLength(2);
+    expect(h.applySecurity).not.toHaveBeenCalled();
+  },
+);
+
+it.each([false, true])(
+  "preserves every service's upgrade warning and progress (reverse: %s)",
+  async (reverse) => {
+    const data = (await h.security()).data;
+    const base = {
+      ...data.findings[0],
+      id: "review",
+      manualReviewRequired: true,
+      canRefresh: false,
+    };
+    const current = {
+      ...base,
+      serviceId: "current",
+      serviceName: "current",
+      runtimeUpgradeRequired: false,
+    };
+    const old = {
+      ...base,
+      serviceId: "old",
+      serviceName: "old",
+      runtimeUpgradeRequired: true,
+      refreshBlockedReason: "A newer runtime major is required",
+      refresh: {
+        status: "failed",
+        error: "The earlier update needs attention",
+        deploymentId: "old-service-update",
+      },
+    };
+    const findings = reverse ? [old, current] : [current, old];
+    await act(async () =>
+      root.render(
+        <SecurityProjectReview projectId="project-a" initialResult={{ ...data, findings }} />,
+      ),
+    );
+    const warning = [...element.querySelectorAll("p")].find(
+      (item) => item.textContent === old.refreshBlockedReason,
+    )!;
+    expect(warning).toBeDefined();
+    expect(warning.closest("div")?.textContent).toContain("old");
+    expect(element.textContent).toContain(old.refresh.error);
+    expect(element.querySelector('a[href="/build/old-service-update"]')).not.toBeNull();
+    expect(element.textContent?.split(base.message)).toHaveLength(2);
+    expect(h.applySecurity).not.toHaveBeenCalled();
+  },
+);
+
+it("retains service-specific refresh targets when an advisory is not grouped for manual review", async () => {
+  const data = (await h.security()).data;
+  const base = data.findings[0];
+  const findings = ["api", "worker"].map((serviceId) => ({
+    ...base,
+    serviceId,
+    serviceName: serviceId,
+  }));
+  await act(async () =>
+    root.render(
+      <SecurityProjectReview projectId="project-a" initialResult={{ ...data, findings }} />,
+    ),
+  );
+  const actions = [...element.querySelectorAll("button")].filter(
+    (item) => item.textContent === c.refresh,
+  );
+  expect(actions).toHaveLength(2);
+  await act(async () => actions[1]!.click());
+  expect(h.applySecurity).toHaveBeenCalledExactlyOnceWith("project-a", {
+    advisoryId: base.id,
+    deploymentId: data.deploymentId,
+    serviceId: "worker",
+  });
 });

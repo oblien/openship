@@ -16,10 +16,15 @@ import { encodeProjectSlug } from "@/utils/repoSlug";
 import { InvestigationLink } from "@/components/assistant/InvestigationLink";
 
 type Finding = ProjectSecurityResult["findings"][number];
+type ReviewGroup = {
+  key: string;
+  advisory: Pick<Finding, "id" | "revision" | "title" | "message" | "url" | "manualReviewRequired">;
+  services: Finding[];
+};
 
-/** Manual guidance applies to the advisory; refresh actions remain service-specific. */
+/** Share advisory copy only. Confidence, progress and actions belong to each service. */
 function groupReviewFindings(findings: Finding[]) {
-  const groups = new Map<string, { finding: Finding; services: Finding[] }>();
+  const groups = new Map<string, ReviewGroup>();
   for (const finding of findings) {
     const key = JSON.stringify([
       finding.id,
@@ -28,9 +33,12 @@ function groupReviewFindings(findings: Finding[]) {
     ]);
     const group = groups.get(key);
     if (group) group.services.push(finding);
-    else groups.set(key, { finding, services: [finding] });
+    else groups.set(key, { key, advisory: finding, services: [finding] });
   }
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({
+    ...group,
+    possibleServices: group.services.filter((finding) => finding.confidence === "possible"),
+  }));
 }
 
 /** One affected app inside the global advisory review; actions stay resource-scoped. */
@@ -180,12 +188,9 @@ export function SecurityProjectReview({
         {!!data?.unknownServices.length && (
           <p className="text-xs text-muted-foreground">{copy.partial}</p>
         )}
-        {groupReviewFindings(findings).map(({ finding, services }) => (
-          <div
-            key={`${finding.id}:${finding.serviceId}`}
-            className="space-y-2 rounded-xl bg-card p-4"
-          >
-            <p className="text-sm font-medium">{finding.title}</p>
+        {groupReviewFindings(findings).map(({ key, advisory, services, possibleServices }) => (
+          <div key={key} className="space-y-2 rounded-xl bg-card p-4">
+            <p className="text-sm font-medium">{advisory.title}</p>
             {!serviceId && services.some((item) => item.serviceName) && (
               <p className="break-words text-xs text-muted-foreground">
                 {services
@@ -194,9 +199,18 @@ export function SecurityProjectReview({
                   .join(" · ")}
               </p>
             )}
-            {finding.confidence === "possible" && (
+            {possibleServices.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {finding.manualReviewRequired ? copy.manualReviewUnverified : copy.possible}
+                {possibleServices.length < services.length && (
+                  <span className="font-medium">
+                    {possibleServices
+                      .map((item) => item.serviceName || item.serviceId)
+                      .filter(Boolean)
+                      .join(" · ")}
+                    {": "}
+                  </span>
+                )}
+                {advisory.manualReviewRequired ? copy.manualReviewUnverified : copy.possible}
               </p>
             )}
             {[...new Set(services.flatMap((item) => item.evidence))].map((evidence) => (
@@ -204,86 +218,105 @@ export function SecurityProjectReview({
                 {evidence}
               </p>
             ))}
-            {finding.refresh && (
-              <div role="status" className="space-y-1 text-sm">
-                <p
-                  className={
-                    finding.refresh.status === "failed" ? "text-warning" : "text-muted-foreground"
-                  }
-                >
-                  {finding.refresh.status === "failed"
-                    ? (finding.refresh.error ?? copy.refreshFailed)
-                    : finding.refresh.status === "awaiting_actions"
-                      ? copy.refreshAwaitingActions
-                      : copy.refreshInProgress}
-                </p>
-                {finding.refresh.deploymentId && (
-                  <Link
-                    className="underline underline-offset-4"
-                    href={`/build/${finding.refresh.deploymentId}`}
-                  >
-                    {copy.viewRefresh}
-                  </Link>
-                )}
-              </div>
+            {services.map(
+              (finding) =>
+                (finding.refresh || finding.refreshBlockedReason) && (
+                  <div key={JSON.stringify(finding.serviceId)} className="space-y-1">
+                    {services.length > 1 && (finding.serviceName || finding.serviceId) && (
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {finding.serviceName || finding.serviceId}
+                      </p>
+                    )}
+                    {finding.refresh && (
+                      <div role="status" className="space-y-1 text-sm">
+                        <p
+                          className={
+                            finding.refresh.status === "failed"
+                              ? "text-warning"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {finding.refresh.status === "failed"
+                            ? (finding.refresh.error ?? copy.refreshFailed)
+                            : finding.refresh.status === "awaiting_actions"
+                              ? copy.refreshAwaitingActions
+                              : copy.refreshInProgress}
+                        </p>
+                        {finding.refresh.deploymentId && (
+                          <Link
+                            className="underline underline-offset-4"
+                            href={`/build/${finding.refresh.deploymentId}`}
+                          >
+                            {copy.viewRefresh}
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                    {finding.refreshBlockedReason && (
+                      <p className="text-sm text-warning">
+                        {finding.sourceRedeployRequired
+                          ? copy.sourceRedeployRequired
+                          : finding.refreshBlockedReason}
+                      </p>
+                    )}
+                  </div>
+                ),
             )}
-            {finding.refreshBlockedReason && (
-              <p className="text-sm text-warning">
-                {finding.sourceRedeployRequired
-                  ? copy.sourceRedeployRequired
-                  : finding.refreshBlockedReason}
-              </p>
-            )}
-            {finding.manualReviewRequired ? (
+            {advisory.manualReviewRequired ? (
               <div className="space-y-2 text-sm">
                 <p className="font-medium text-warning">{copy.manualReviewRequired}</p>
                 <p className="text-muted-foreground">{copy.manualReviewDescription}</p>
                 <p className="whitespace-pre-line leading-relaxed text-muted-foreground">
-                  {finding.message}
+                  {advisory.message}
                 </p>
               </div>
             ) : (
               <details
                 className="text-sm text-muted-foreground"
-                open={finding.runtimeUpgradeRequired}
+                open={services.some((item) => item.runtimeUpgradeRequired)}
               >
                 <summary className="cursor-pointer">{copy.details}</summary>
-                <p className="mt-2 leading-relaxed">{finding.message}</p>
+                <p className="mt-2 leading-relaxed">{advisory.message}</p>
               </details>
             )}
             <div className="flex flex-wrap items-center gap-3">
-              {finding.manualReviewRequired && (
+              {advisory.manualReviewRequired && (
                 <InvestigationLink
-                  target={{ kind: "security", projectId, advisoryId: finding.id }}
+                  target={{ kind: "security", projectId, advisoryId: advisory.id }}
                   size="sm"
                 />
               )}
               <a
                 className="text-sm underline underline-offset-4"
-                href={finding.url}
+                href={advisory.url}
                 target="_blank"
                 rel="noopener noreferrer"
               >
                 {copy.guidance}
               </a>
-              {finding.canRefresh && data?.deploymentId && (
-                <Button
-                  size="sm"
-                  disabled={action.updating || unavailable}
-                  onClick={() =>
-                    void action.applyAdvisory({
-                      advisoryId: finding.id,
-                      deploymentId: data.deploymentId!,
-                      serviceId: finding.serviceId,
-                    })
-                  }
-                >
-                  {action.updating
-                    ? t.projectSettings.runtimeUpdates.refreshing
-                    : t.projectSettings.runtimeUpdates.refresh}
-                </Button>
+              {services.map(
+                (finding) =>
+                  finding.canRefresh &&
+                  data?.deploymentId && (
+                    <Button
+                      key={JSON.stringify(finding.serviceId)}
+                      size="sm"
+                      disabled={action.updating || unavailable}
+                      onClick={() =>
+                        void action.applyAdvisory({
+                          advisoryId: advisory.id,
+                          deploymentId: data.deploymentId!,
+                          serviceId: finding.serviceId,
+                        })
+                      }
+                    >
+                      {action.updating
+                        ? t.projectSettings.runtimeUpdates.refreshing
+                        : t.projectSettings.runtimeUpdates.refresh}
+                    </Button>
+                  ),
               )}
-              {finding.sourceRedeployRequired && (
+              {services.some((item) => item.sourceRedeployRequired) && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -294,9 +327,10 @@ export function SecurityProjectReview({
                   {copy.openSourceRedeploy}
                 </Button>
               )}
-              {(finding.manualReviewRequired ||
-                finding.runtimeUpgradeRequired ||
-                finding.imageChangeRequired) && (
+              {(advisory.manualReviewRequired ||
+                services.some(
+                  (item) => item.runtimeUpgradeRequired || item.imageChangeRequired,
+                )) && (
                 <Button
                   size="sm"
                   variant="secondary"
