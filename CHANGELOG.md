@@ -6,6 +6,115 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+## 0.9.11
+
+Recommended update for Desktop sign-in recovery, assistant connections, repository
+scans and deployment reliability. Includes every change merged into main since
+0.9.10, with mail administration improvements and clearer runtime security updates.
+
+### Assistants and Desktop
+
+- **Codex sign-in on hosted instances** — use device-code sign-in on Cloud, VPS
+  and remote assistant hosts, while keeping browser sign-in on the local Desktop
+  host. Explain the available method in AI connections, use the shared ChatGPT
+  mark, and update the Mindwire runtime and SDK to 0.1.61.
+- **Desktop account recovery** — preserve verified sign-ins during refresh and
+  startup, and remember the administrator selected through Desktop's authenticated
+  sign-in. Missing or stale Local User cookies recover to that saved identity
+  without selecting an unrelated user's session or changing account permissions.
+- **Claude Code on macOS** — make the system keychain available inside the
+  isolated assistant home so sign-in can complete.
+- **Investigations and questions** — start an explicitly requested deployment
+  investigation when the assistant is ready. Answer agent questions above the
+  composer while retaining drafts, separate answer state and retry behavior. Keep
+  expanded questions focused and the latest-messages control readable.
+- **Assistant workspace setup** — keep connection setup inline and use the shared
+  drawer for agents and automations. Preserve unfinished configuration and the
+  underlying chat, recover access to changed specialists, and refresh activation
+  reviews when saved settings change.
+
+### Deployments, routing and security
+
+- **Compose command updates** — resolve authored command expressions against the
+  current service environment during deployment and Apply environment. Preserve
+  referenced file defaults and explicit command edits without exposing internal
+  source metadata as environment values.
+- **Environment apply failures** — show structured startup, health, restart and
+  OOM evidence while retaining the existing replacement and rollback flow. Keep
+  credentials and unrestricted provider error text out of responses, monitoring,
+  notification failures and backup diagnostics.
+- **Static environment changes** — offer Rebuild and redeploy for static sites
+  and single-app Cloud deployments whose variables cannot be applied through a
+  runtime-only refresh. Open the new build's progress and retain retry controls.
+- **Static 404 behavior** — add an explicit SPA fallback setting to shared routing
+  controls, the API and `openship.json`. Keep SPA fallback enabled by default;
+  disabling it returns real 404 responses and uses `404.html` when available.
+- **Compose edge inventory** — inspect loopback upstream ports through the edge's
+  own connection, including mounted Docker sockets without host SSH. Quarantine
+  existing routes before allocating ports and continue refusing unreadable or
+  ambiguous inventory.
+- **Private repository scans** — allow the only eligible connected server's
+  stored token when an organization has no local server. Ask for an explicit
+  server when several qualify, retain the choice across scan retries, and keep
+  public reads anonymous when no credential is needed.
+- **Parked Docker imports** — offer an explicit finish-without-restart decision
+  for imports awaiting cutover. Keep originals untouched and provide actionable
+  guidance when a parked migration prevents project deletion.
+- **Cloud host boundaries** — enforce shared safeguards against local workload
+  execution on the SaaS API host while retaining authorized managed-server and
+  SSH execution. Keep command availability probes separate from execution.
+
+### Mail and application catalog
+
+- **Fail2ban management** — on self-hosted mail installations, inspect jail
+  counters and banned addresses from Health, the API, SDK and MCP. Review the exact
+  address and jail
+  before banning or unbanning; stale observations disable changes until refreshed.
+- **Direct alias senders** — allow active direct aliases to authorize their owning
+  mailbox consistently across mail sender checks. Disabled aliases, external
+  forwards, catch-alls and alias chains grant no sender identity. Clarify the
+  distinction between incoming forwarding and direct-alias sending in the UI.
+- **Appwrite setup** — deduplicate generated credential writes and verify owner
+  bootstrap before reporting success. Exclude the optional Geo service while its
+  upstream PHP runtime remains affected, and document the geolocation limitation.
+- **Security refresh verification** — reject unchanged-image refreshes, track
+  manual remediation through deployment and runtime inspection, and show progress
+  or a verified failure instead of silently repeating an ineffective update.
+  Validate Compose hostname availability against scoped Cloud ownership receipts.
+- **Supabase images** — update the catalog's Storage, Meta and Studio image pins
+  for the bundled Node.js/Brotli security fixes.
+- **RabbitMQ readiness** — run probes as the image's RabbitMQ user and wait for
+  the management listener, avoiding the startup Erlang-cookie ownership race.
+
+### Dashboard, billing and documentation
+
+- **Theme restoration** — render the saved base theme and background on the server
+  through a validated cookie. Preserve custom theme caching, System mode and
+  unsaved previews without flashing Light on refresh.
+- **Checkout returns** — retain the purchasing organization, server and payment
+  receipt through hosted checkout and authorized organization switching. Keep
+  checkout retries tied to their original payment contract.
+- **First-deployment analytics** — wait for an active deployment before reading
+  traffic for a reserved domain. Start reads when deployment activates and retain
+  existing traffic during redeploys; genuine provider failures remain errors.
+- **Quickstart wording** — remove an abrupt line break in the setup description.
+
+### Upgrade notes
+
+- Update the API (including all replicas), dashboard and Desktop app together.
+  This patch adds no new control-plane database migration.
+- If an older Desktop installation already shows only Local User and has no
+  saved authenticated identity, use Back to setup, Continue with Cloud and sign
+  in once. This preserves existing data and records the owner for future recovery.
+- Apply direct-alias sender policy changes by updating the managed mail engine
+  image as well as the control plane. Custom SQL and host-native mail policies
+  remain operator-managed.
+- Redeploy an existing generated static-site container after changing its SPA
+  fallback setting. Existing sites retain SPA behavior until explicitly changed.
+- Runtime security refreshes verify the deployed result; an image that still
+  contains the affected runtime requires a corrected image configuration rather
+  than repeated redeployment. Appwrite's optional Geo service remains excluded.
+
 ## 0.9.10
 
 Recommended patch for Cloud assistant startup, recovery and OAuth consent
