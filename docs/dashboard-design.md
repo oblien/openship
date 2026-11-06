@@ -1159,9 +1159,14 @@ Comfortable issue rows give the name, status and actions separate columns on wid
 containers; actions move below details on narrower lists so buttons never squeeze
 the status. Compact issue rows keep an accessible icon action. Monitoring's page
 header offers **AI health report**, preparing a read-only report of the current
-workspace's apps, deployments, services and accessible servers. The shortcut
-opens a new, editable request in the normal assistant composer; it never starts a
-turn, enables the assistant or grants access by itself. Carry only resource IDs and
+workspace's apps, deployments, services and accessible servers. Activating these
+actions in the current tab opens the assistant and sends the prepared request once
+the existing connection and model checks are ready, using the normal send path.
+Editing the draft or selecting another conversation cancels the queued send.
+Copied links, new tabs and refreshes open an editable draft; the URL alone never
+starts work. Failed sends use the normal manual retry, without an automatic loop.
+Investigate remains read-only; Fix with AI retains its explicit repair intent.
+These actions never enable the assistant or grant access by themselves. Carry only resource IDs and
 the originating resource scope in the link, never logs or error text. Preserve the
 request through assistant setup, reject a mismatched account/workspace/Cloud connection,
 and keep existing repair actions alongside it. Resolved issues and update notices do

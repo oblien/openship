@@ -52,10 +52,12 @@ import { AgentAvatar } from "./AgentAvatar";
 import { AssistantChatIdentity } from "./AssistantChatIdentity";
 import { useConversation } from "./use-conversation";
 import { useAssistantResume } from "./use-assistant-resume";
+import { useInvestigationAutoSend } from "./use-investigation-auto-send";
 import { AutomationConversationStatus } from "./AutomationRunReview";
 import { useI18n } from "@/components/i18n-provider";
 import {
   investigationPrompt,
+  investigationHref,
   readInvestigation,
   type AssistantInvestigation,
 } from "./investigation";
@@ -307,6 +309,9 @@ function ConversationWorkspace({
 }) {
   const { t } = useI18n();
   const investigationCopy = t.dashboard.investigation;
+  const investigationDraft = investigation
+    ? investigationPrompt(investigation.target, investigationCopy)
+    : null;
   const router = useRouter(),
     search = useSearchParams();
   const scope = useResourceScope();
@@ -470,14 +475,14 @@ function ConversationWorkspace({
     }
     if (preparedInvestigation.current === investigation.key) return;
     preparedInvestigation.current = investigation.key;
-    // A shortcut prepares a new, editable request. Loading a URL never starts a turn
-    // or expands permissions. Keep the draft when setup/providers refresh.
-    setDraft(investigationPrompt(investigation.target, investigationCopy));
+    // Keep the draft through setup/provider refreshes. Only a staged action click
+    // can send it automatically; a URL alone still opens an editable request.
+    setDraft(investigationDraft!);
     images.clear();
     setChatModel(null);
     pendingRequest.current = null;
     setOutgoing(null);
-  }, [investigation, investigationCopy, images.clear]);
+  }, [investigation, investigationDraft, images.clear]);
   useEffect(() => {
     // Retain the submitted message and activity through a new chat's first snapshot.
     if (
@@ -514,6 +519,20 @@ function ConversationWorkspace({
   const ready = assistantModelReady(agent, currentModel);
   const checkingAgents = agents.loading && !agents.data;
   const needsConnection = !checkingAgents && !agents.error && !ready;
+  const canSubmit =
+    scopeReady &&
+    !resume.resolving &&
+    !action.busy &&
+    !pending &&
+    (!active || scopedTask) &&
+    taskChatAllowed &&
+    !access &&
+    ready &&
+    !snapshot?.accessChanged;
+  const draftCanSend =
+    (!!draft.trim() || images.images.length > 0) &&
+    !images.pending &&
+    (!images.images.length || agent?.imageInput === true);
   const reviewAccess = async (request?: PermissionAccessRequest) => {
     const detail = await action.execute(async () => {
       // Finish the current turn before showing the editor. A stop on another API
@@ -537,6 +556,7 @@ function ConversationWorkspace({
     }
   };
   const select = (chat: string | null) => {
+    cancelInvestigationAutoSend();
     resume.cancel();
     currentChat.current = chat;
     draftChat.current = chat;
@@ -553,21 +573,8 @@ function ConversationWorkspace({
     });
   };
   const submit = async (continuation?: string): Promise<boolean> => {
-    if (
-      sending.current ||
-      resume.resolving ||
-      action.busy ||
-      pending ||
-      (active && !scopedTask) ||
-      !taskChatAllowed ||
-      access ||
-      (!continuation && !draft.trim() && !images.images.length) ||
-      (!continuation && images.pending) ||
-      (!continuation && images.images.length > 0 && !agent?.imageInput) ||
-      !ready ||
-      snapshot?.accessChanged
-    )
-      return false;
+    cancelInvestigationAutoSend();
+    if (sending.current || !canSubmit || (!continuation && !draftCanSend)) return false;
     sending.current = true;
     const submittedDraft = { text: draft, images: images.images };
     const message = continuation ?? draft.trim();
@@ -654,7 +661,21 @@ function ConversationWorkspace({
       sending.current = false;
     }
   };
+  const cancelInvestigationAutoSend = useInvestigationAutoSend({
+    href: investigation ? investigationHref(investigation.target, scope) : null,
+    ready:
+      canSubmit &&
+      !!draftCanSend &&
+      !id &&
+      !automationId &&
+      !agents.loading &&
+      !agents.error &&
+      draft === investigationDraft &&
+      images.images.length === 0,
+    onSend: submit,
+  });
   const openAgent = async (selectedId: string | null, fresh = false) => {
+    cancelInvestigationAutoSend();
     const selected = selectedId
       ? savedAgents.data?.find((item) => item.id === selectedId && !item.archived)
       : null;
@@ -709,6 +730,7 @@ function ConversationWorkspace({
     } else navigate();
   };
   const selectAutomation = (flowId: string) => {
+    cancelInvestigationAutoSend();
     resume.cancel();
     setMobileRail(false);
     setHistory(false);
@@ -809,13 +831,19 @@ function ConversationWorkspace({
           inputRef={composerInput}
           compact={!!id || !!pending || resume.resolving}
           images={images.images}
-          onImages={(files) => void images.add(files)}
+          onImages={(files) => {
+            cancelInvestigationAutoSend();
+            void images.add(files);
+          }}
           onRemoveImage={images.remove}
           imageError={images.error}
           imagesPending={images.pending}
           imagesSupported={agent?.imageInput === true}
           value={draft}
-          onChange={setDraft}
+          onChange={(value) => {
+            cancelInvestigationAutoSend();
+            setDraft(value);
+          }}
           onSend={() => void submit()}
           onStop={() =>
             void action.execute(async () => {
@@ -830,7 +858,7 @@ function ConversationWorkspace({
           disabled={
             resume.resolving || !!snapshot?.accessChanged || (!!id && !snapshot) || !taskChatAllowed
           }
-          canSend={ready && !access}
+          canSend={canSubmit}
           placeholder={
             !checkingAgents && !ready
               ? "Connect your agent to continue this conversation…"
