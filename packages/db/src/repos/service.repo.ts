@@ -101,7 +101,7 @@ export function toComposeSpec(s: {
 }
 
 /** Reordered maps are equal; ports, volumes and argv retain their array order. */
-const composeValuesEqual = (a: unknown, b: unknown): boolean =>
+export const composeValuesEqual = (a: unknown, b: unknown): boolean =>
   JSON.stringify(sortJsonKeys(a)) === JSON.stringify(sortJsonKeys(b));
 
 /** Compose-field equality (ignores routing + ordering-insensitive env). */

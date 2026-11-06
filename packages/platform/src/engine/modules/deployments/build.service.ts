@@ -24,6 +24,7 @@ import { findActiveDeployment } from "@repo/platform/engine/lib/active-deploymen
 import {
   repos,
   toComposeSpec,
+  composeValuesEqual,
   unresolvedComposeEnvironmentKeys,
   type Project,
   type Service,
@@ -744,7 +745,7 @@ function withComposeSourceFields(
 function sameComposeSourceValues(a: ComposeSource, b: ComposeSource, field: ComposeSourceField): boolean {
   return COMPOSE_SOURCE_FIELDS[field].columns.every((column) =>
     column === "buildArgs" || column === "commandArgv"
-      ? JSON.stringify(a[column] ?? null) === JSON.stringify(b[column] ?? null)
+      ? composeValuesEqual(a[column] ?? null, b[column] ?? null)
       : a[column] === b[column],
   );
 }
@@ -839,8 +840,7 @@ function sameComposeSource(a: DeployableService[], b: DeployableService[]): bool
       (Object.keys(COMPOSE_SOURCE_FIELDS) as ComposeSourceField[]).every((field) => {
         const { provenance } = COMPOSE_SOURCE_FIELDS[field];
         return sameComposeSourceValues(service, other, field) &&
-          JSON.stringify(service.advanced?.[provenance] ?? null) ===
-          JSON.stringify(other.advanced?.[provenance] ?? null);
+          composeValuesEqual(service.advanced?.[provenance] ?? null, other.advanced?.[provenance] ?? null);
       });
   });
 }

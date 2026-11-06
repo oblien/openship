@@ -2520,6 +2520,18 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: [initial] as any });
     const written = repos.service.syncFromCompose.mock.calls.at(-1)?.[1]?.[0];
     expect(written.advanced.commandTemplate.sourceEnvironment).toEqual({ FILE_ONLY: "file-only" });
+    expect(written.advanced.commandTemplate.sourceEnvironment).not.toBe(initial.advanced.commandTemplate.sourceEnvironment);
+  });
+
+  it("does not rewrite source settings merely because map keys were reordered", async () => {
+    const initial = { ...scannedServices[0], buildArgs: { FIRST: "one", SECOND: "two" },
+      advanced: { buildArgTemplateKeys: [] } };
+    const refreshed = { ...initial, buildArgs: { SECOND: "two", FIRST: "one" } };
+    const uploadSessionId = seedSession({ services: [initial] });
+    repos.service.listByProject.mockResolvedValue([{ ...initial, id: "svc-api", projectId: "project-1", kind: "compose", enabled: true }]);
+    scanFolderSession.mockResolvedValueOnce({ services: [refreshed] });
+    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId });
+    expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
   });
 
   it("refreshes command-only changes without a services payload", async () => {
