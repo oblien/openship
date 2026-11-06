@@ -773,6 +773,10 @@ export interface NginxProviderOptions {
    * means a failed reload kills the container and 502s every site.
    */
   containerEdge?: boolean;
+  /** Original host connection for strict inventory on an SSH-managed container
+   * edge. The command executor itself runs inside the edge. Local socket edges
+   * omit this and read the resolved configuration through their command channel. */
+  hostExecutor?: CommandExecutor;
   /**
    * Directory edge-target challenge tokens are WRITTEN to, as seen by whatever
    * performs the write. Default = the container path (`EDGE_CHALLENGE_DIR`), which
@@ -1257,6 +1261,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private reloadCommand: string;
   private readonly pinPaths: boolean;
   private readonly containerEdge: boolean;
+  private readonly hostExecutor: CommandExecutor | undefined;
   private readonly challengeDir: string;
   private readonly configLock: ProvisionLock;
   private readonly configContext = new AsyncLocalStorage<{ active: boolean }>();
@@ -1283,12 +1288,26 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     this.executor = opts.executor ?? null;
     this.paths = opts.paths;
     this.containerEdge = opts.containerEdge ?? false;
+    this.hostExecutor = opts.hostExecutor;
     this.reloadCommand = buildReloadCommand(opts.paths);
     this.pinPaths = opts.pinPaths ?? false;
     this.challengeDir = opts.challengeDir ?? EDGE_CHALLENGE_DIR;
     this.configLock = opts.configLock ?? {
       run: (fn, signal) => withKeyedMutex(`edge-config:${opts.paths.sitesDir}`, fn, signal),
     };
+  }
+
+  async listLoopbackUpstreamPortsStrict(): Promise<Set<number>> {
+    const { scanOpenshipEdgeStrict, strictLoopbackUpstreamPorts } =
+      await import("../system/proxy/import/nginx");
+    if (this.containerEdge && !this.hostExecutor) {
+      // DockerEdgeExecutor uses the mounted socket. Reading through the host
+      // channel here would unnecessarily require SSH on a raw Compose install.
+      return strictLoopbackUpstreamPorts(await this._exec(this.paths.bin, ["-T"]));
+    }
+    const { createExecutor } = await import("../system/executor");
+    const executor = this.hostExecutor ?? this.executor ?? createExecutor();
+    return (await scanOpenshipEdgeStrict(executor)).loopbackUpstreamPorts;
   }
 
   private withConfigLock<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
