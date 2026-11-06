@@ -6,7 +6,7 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import type { MailFail2banStatus } from "@repo/contracts";
 import { Fail2banDrawer } from "./fail2ban-drawer";
-import { baseDictionary } from "@/i18n";
+import { loadDictionary } from "@/i18n";
 
 const api = vi.hoisted(() => ({ status: vi.fn(), ban: vi.fn(), unban: vi.fn() }));
 vi.mock("@/lib/api", () => ({ mailAdminApi: { fail2ban: api } }));
@@ -48,9 +48,11 @@ let root: Root;
 let host: HTMLDivElement;
 const close = vi.fn();
 async function render(serverId = "srv-mail", isOpen = true, rtl = false) {
+  const locale = rtl ? "ar" : "en";
+  const dictionary = await loadDictionary(locale);
   await act(async () => {
     root.render(
-      <I18nProvider initialLocale={rtl ? "ar" : "en"} initialDictionary={baseDictionary}>
+      <I18nProvider initialLocale={locale} initialDictionary={dictionary}>
         <Fail2banDrawer serverId={serverId} isOpen={isOpen} onClose={close} />
       </I18nProvider>,
     );
@@ -99,10 +101,12 @@ describe("Fail2ban management drawer", () => {
     value.details.postfix.bannedIps = ["2001:db8::7"];
     api.status.mockResolvedValue(value);
     await render("srv-mail", true, true);
+    const { unban } = (await loadDictionary("ar")).emailsAdmin.fail2ban;
+    expect(document.documentElement.dir).toBe("rtl");
     expect(document.querySelector('bdi[dir="ltr"]')?.textContent).toBe("2001:db8::7");
-    await click("Unban");
+    await click(unban);
     expect(document.querySelector("footer")?.textContent).toContain("\u20662001:db8::7\u2069");
-    await click("Unban", document.querySelector("footer")!);
+    await click(unban, document.querySelector("footer")!);
     expect(api.unban).toHaveBeenCalledExactlyOnceWith("srv-mail", "2001:db8::7", "postfix");
   });
   it("reads only while open", async () => {

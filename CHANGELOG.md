@@ -99,6 +99,8 @@ scans and deployment reliability. Includes every change merged into main since
 - **Checkout returns** — retain the purchasing organization, server and payment
   receipt through hosted checkout and authorized organization switching. Keep
   checkout retries tied to their original payment contract.
+- **Gateway failures** — request JSON from the API and explain upstream proxy
+  errors with recovery guidance instead of showing an opaque status or HTML page.
 - **First-deployment analytics** — wait for an active deployment before reading
   traffic for a reserved domain. Start reads when deployment activates and retain
   existing traffic during redeploys; genuine provider failures remain errors.
