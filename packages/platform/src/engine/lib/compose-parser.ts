@@ -18,6 +18,7 @@ import {
   parseComposeEnvFile,
   interpolateComposeString,
   resolveComposeInterpolation,
+  resolveComposeCommand,
   hasComposeInterpolation,
   resolveComposeValue,
   resolveBareEnvironmentKey,
@@ -553,35 +554,17 @@ function parseCommand(
   commandArgv?: string[] | null;
   template?: { expression: string | string[]; unresolvedVariables: string[] };
 } {
-  if (typeof command === "string") {
-    const resolution = resolveComposeInterpolation(command, env);
-    return {
-      command: resolution.value,
-      commandArgv: commandToArgv(resolution.value),
-      ...(hasComposeInterpolation(command) && {
-        template: {
-          expression: command,
-          unresolvedVariables: resolution.unresolvedVariables,
-        },
-      }),
-    };
-  }
-  if (Array.isArray(command)) {
-    const parts = command.map((part) => String(part));
-    const resolutions = parts.map((part) => resolveComposeInterpolation(part, env));
-    const argv = resolutions.map((resolution) => resolution.value);
-    return {
-      command: argv.join(" "),
-      commandArgv: argv,
-      ...(parts.some((part) => hasComposeInterpolation(part)) && {
-        template: {
-          expression: parts,
-          unresolvedVariables: [...new Set(resolutions.flatMap((r) => r.unresolvedVariables))],
-        },
-      }),
-    };
-  }
-  return {};
+  if (typeof command !== "string" && !Array.isArray(command)) return {};
+  const expression = typeof command === "string" ? command : command.map(String);
+  const resolved = resolveComposeCommand(expression, env);
+  const parts = typeof expression === "string" ? [expression] : expression;
+  return {
+    command: resolved.command,
+    commandArgv: resolved.commandArgv,
+    ...(parts.some(hasComposeInterpolation) && {
+      template: { expression, unresolvedVariables: resolved.unresolvedVariables },
+    }),
+  };
 }
 
 /**

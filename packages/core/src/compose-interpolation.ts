@@ -260,30 +260,44 @@ export function resolveComposeEnvironmentTemplates(
 }
 
 /**
- * Resolve a stored command template against the env that will actually reach
- * a service (#1613). A string-form command interpolates then shell-splits,
- * exactly as the parser did at import; a list-form command interpolates each
- * argv element in place, so quoting survives. Missing mandatory expressions
- * fail before any runtime mutation; optional unset variables retain Compose's
- * empty-string behavior.
+ * Resolve Compose string/list commands for both source scanning and deployment.
+ * Strings interpolate before shell-word splitting; lists retain each argument.
+ * Diagnostics remain available to the wizard and the strict deployment wrapper.
  */
+export function resolveComposeCommand(
+  expression: string | string[],
+  env: Record<string, string>,
+): { command: string; commandArgv: string[]; unresolvedVariables: string[]; missingRequired: ComposeMissingVariable[] } {
+  const isList = Array.isArray(expression);
+  const parts = typeof expression === "string" ? [expression] : expression;
+  const resolved = parts.map((part) => resolveComposeInterpolation(part, env));
+  const values = resolved.map((part) => part.value);
+  const missing = new Map<string, ComposeMissingVariable>();
+  for (const part of resolved) {
+    for (const item of part.missingRequired) {
+      if (!missing.has(item.variable)) missing.set(item.variable, item);
+    }
+  }
+  const command = isList ? values.join(" ") : values[0]!;
+  return {
+    command,
+    commandArgv: isList ? values : commandToArgv(command) ?? [],
+    unresolvedVariables: [...new Set(resolved.flatMap((part) => part.unresolvedVariables))],
+    missingRequired: [...missing.values()],
+  };
+}
+
+/** Deployment is strict; source scanning uses the same resolver to collect
+ * missing requirements for the configuration wizard without rejecting import. */
 export function resolveComposeCommandTemplate(
   template: { expression: string | string[]; sourceEnvironment?: Record<string, string> },
   env: Record<string, string>,
 ): { command: string; commandArgv: string[] } {
-  const parts = typeof template.expression === "string" ? [template.expression] : template.expression;
-  const scope = { ...template.sourceEnvironment, ...env };
-  const resolved = parts.map((part) => resolveComposeInterpolation(part, scope));
-  const required = [...new Set(resolved.flatMap((part) => part.missingRequired.map((item) => item.variable)))];
-  if (required.length) throw new Error(`Missing required Compose command variables: ${required.join(", ")}`);
-  if (typeof template.expression === "string") {
-    const value = resolved[0]!.value;
-    // commandToArgv only returns null for a nullish input, and `value` is
-    // always a string here — the fallback just satisfies the return type.
-    return { command: value, commandArgv: commandToArgv(value) ?? [] };
+  const resolved = resolveComposeCommand(template.expression, { ...template.sourceEnvironment, ...env });
+  if (resolved.missingRequired.length) {
+    throw new Error(`Missing required Compose command variables: ${resolved.missingRequired.map((item) => item.variable).join(", ")}`);
   }
-  const argv = resolved.map((part) => part.value);
-  return { command: argv.join(" "), commandArgv: argv };
+  return { command: resolved.command, commandArgv: resolved.commandArgv };
 }
 
 export function resolveComposeValue(

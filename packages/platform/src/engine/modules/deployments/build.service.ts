@@ -705,92 +705,52 @@ async function resolveProjectBranch(ctx: RequestContext, project: Project, branc
   return "main";
 }
 
-function withComposeImageSource(
+// Values and provenance travel together. This definition is shared by source
+// copying and change detection so a newly modeled field cannot be lost in one.
+const COMPOSE_SOURCE_FIELDS = {
+  image: { columns: ["image"], provenance: "imageTemplate" },
+  command: { columns: ["command", "commandArgv"], provenance: "commandTemplate" },
+  buildArgs: { columns: ["buildArgs"], provenance: "buildArgTemplateKeys" },
+} as const;
+type ComposeSourceField = keyof typeof COMPOSE_SOURCE_FIELDS;
+type ComposeSource = Pick<DeployableService, "image" | "command" | "commandArgv" | "buildArgs" | "advanced">;
+
+/** Copy only the fields owned by this source, retaining other operator settings. */
+function withComposeSourceFields(
   service: DeployableService,
-  source: Pick<DeployableService, "image" | "advanced">,
+  source: ComposeSource,
+  fields: readonly ComposeSourceField[],
 ): DeployableService {
   const advanced = { ...(service.advanced ?? {}) };
-  const imageTemplate = source.advanced?.imageTemplate;
-  if (imageTemplate) {
-    // Copy the unresolved-variable array too: this becomes release metadata and
-    // must not share mutable request/session state with a later scan.
-    advanced.imageTemplate = {
-      expression: imageTemplate.expression,
-      unresolvedVariables: [...imageTemplate.unresolvedVariables],
-      ...(imageTemplate.sourceValue !== undefined && { sourceValue: imageTemplate.sourceValue }),
-    };
-  } else {
-    delete advanced.imageTemplate;
+  const merged: DeployableService = { ...service, advanced };
+  for (const field of fields) {
+    const { columns, provenance } = COMPOSE_SOURCE_FIELDS[field];
+    for (const column of columns) {
+      const value = column === "buildArgs" ? source.buildArgs ?? undefined : source[column];
+      Object.assign(merged, { [column]: structuredClone(value) });
+    }
+    const marker = source.advanced?.[provenance];
+    // An explicit empty build-arg marker is authoritative too.
+    if (marker || (field === "buildArgs" && Object.hasOwn(source.advanced ?? {}, provenance))) {
+      Object.assign(advanced, { [provenance]: structuredClone(marker ?? []) });
+    } else {
+      delete advanced[provenance];
+    }
   }
-
-  return {
-    ...service,
-    image: source.image,
-    ...(Object.keys(advanced).length > 0 ? { advanced } : { advanced: undefined }),
-  };
+  if (!Object.keys(advanced).length) merged.advanced = undefined;
+  return merged;
 }
 
-/**
- * Copy a compose `command:` template (#1613) the same way, without touching
- * the command itself: the template describes the stored command, so a caller
- * that changed the command keeps its literal value and loses the stale
- * expression. A list-form expression is copied element by element.
- */
-function withComposeCommandSource(
-  service: DeployableService,
-  source: Pick<DeployableService, "command" | "commandArgv" | "advanced">,
-): DeployableService {
-  const advanced = { ...(service.advanced ?? {}) };
-  const commandTemplate = source.advanced?.commandTemplate;
-  if (commandTemplate) {
-    // Copy the expression and unresolved-variable array too: this becomes
-    // release metadata and must not share mutable request/session state.
-    advanced.commandTemplate = {
-      expression: Array.isArray(commandTemplate.expression)
-        ? [...commandTemplate.expression]
-        : commandTemplate.expression,
-      unresolvedVariables: [...commandTemplate.unresolvedVariables],
-      ...(commandTemplate.sourceValue !== undefined && {
-        sourceValue: commandTemplate.sourceValue,
-      }),
-    };
-  } else {
-    delete advanced.commandTemplate;
-  }
-
-  return {
-    ...service,
-    command: source.command,
-    commandArgv: source.commandArgv,
-    ...(Object.keys(advanced).length > 0 ? { advanced } : { advanced: undefined }),
-  };
+function sameComposeSourceValues(a: ComposeSource, b: ComposeSource, field: ComposeSourceField): boolean {
+  return COMPOSE_SOURCE_FIELDS[field].columns.every((column) =>
+    column === "buildArgs" || column === "commandArgv"
+      ? JSON.stringify(a[column] ?? null) === JSON.stringify(b[column] ?? null)
+      : a[column] === b[column],
+  );
 }
 
-/** Copy the source-owned Docker build arguments and their interpolation marker
- * without replacing unrelated advanced settings edited in the wizard. */
-function withComposeBuildArgsSource(
-  service: DeployableService,
-  source: Pick<DeployableService, "buildArgs" | "advanced">,
-): DeployableService {
-  const advanced = { ...(service.advanced ?? {}) };
-  if (Object.hasOwn(source.advanced ?? {}, "buildArgTemplateKeys")) {
-    advanced.buildArgTemplateKeys = [...(source.advanced?.buildArgTemplateKeys ?? [])];
-  } else {
-    delete advanced.buildArgTemplateKeys;
-  }
-
-  return {
-    ...service,
-    buildArgs: source.buildArgs ? { ...source.buildArgs } : undefined,
-    ...(Object.keys(advanced).length > 0 ? { advanced } : { advanced: undefined }),
-  };
-}
-
-function withComposeBuildSource(
-  service: DeployableService,
-  source: Pick<DeployableService, "image" | "buildArgs" | "advanced">,
-): DeployableService {
-  return withComposeBuildArgsSource(withComposeImageSource(service, source), source);
+function withComposeBuildSource(service: DeployableService, source: ComposeSource): DeployableService {
+  return withComposeSourceFields(service, source, ["image", "buildArgs"]);
 }
 
 /**
@@ -803,7 +763,9 @@ function withComposeBuildSource(
 function mergeCanonicalComposeBuildSource(
   requested: DeployableService[],
   canonical: DeployableService[],
+  initial: DeployableService[],
 ): DeployableService[] {
+  const initialByName = new Map(initial.map((service) => [service.name, service]));
   const byName = new Map(
     canonical
       .filter((service) => serviceKind(service) === "compose")
@@ -817,14 +779,15 @@ function mergeCanonicalComposeBuildSource(
     // #1613: the canonical command template is re-attached only when the
     // request did not edit the command — a wizard runtime edit is literal
     // input, and the file's expression must not reinterpret it.
-    const commandUnchanged =
-      service.command === source.command &&
-      JSON.stringify(service.commandArgv ?? null) === JSON.stringify(source.commandArgv ?? null);
-    return withComposeCommandSource(
+    const baseline = initialByName.get(service.name);
+    const commandUnchanged = sameComposeSourceValues(service, source, "command") ||
+      (baseline !== undefined && sameComposeSourceValues(service, baseline, "command"));
+    return withComposeSourceFields(
       withBuild,
       commandUnchanged
         ? source
         : { command: service.command, commandArgv: service.commandArgv, advanced: undefined },
+      ["command"],
     );
   });
 }
@@ -856,40 +819,29 @@ function mergeRefreshedFolderBuildSource(
     // replaces whatever the service carried.
     const commandEditedAfterScan =
       initial !== undefined &&
-      (service.command !== initial.command ||
-        JSON.stringify(service.commandArgv ?? null) !==
-          JSON.stringify(initial.commandArgv ?? null));
+      !sameComposeSourceValues(service, initial, "command");
     const commandSource = commandEditedAfterScan
       ? { command: service.command, commandArgv: service.commandArgv, advanced: undefined }
       : refreshed;
-    if (initial && service.image !== initial.image) {
-      // The image changed after scan, so it is operator-owned literal input.
-      // Never leave the scan's expression attached to reinterpret that edit.
-      return withComposeCommandSource(
-        withComposeBuildArgsSource(
-          withComposeImageSource(service, { image: service.image, advanced: undefined }),
-          refreshed,
-        ),
-        commandSource,
-      );
-    }
-    return withComposeCommandSource(withComposeBuildSource(service, refreshed), commandSource);
+    const buildSource = initial && service.image !== initial.image
+      ? { ...refreshed, image: service.image,
+          advanced: { ...refreshed.advanced, imageTemplate: undefined } }
+      : refreshed;
+    return withComposeSourceFields(withComposeBuildSource(service, buildSource), commandSource, ["command"]);
   });
 }
 
-function sameComposeBuildSource(a: DeployableService[], b: DeployableService[]): boolean {
+function sameComposeSource(a: DeployableService[], b: DeployableService[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((service, index) => {
     const other = b[index];
-    return (
-      other?.name === service.name &&
-      other.image === service.image &&
-      JSON.stringify(other.buildArgs ?? null) === JSON.stringify(service.buildArgs ?? null) &&
-      JSON.stringify(other.advanced?.imageTemplate ?? null) ===
-        JSON.stringify(service.advanced?.imageTemplate ?? null) &&
-      JSON.stringify(other.advanced?.buildArgTemplateKeys ?? null) ===
-        JSON.stringify(service.advanced?.buildArgTemplateKeys ?? null)
-    );
+    return other?.name === service.name &&
+      (Object.keys(COMPOSE_SOURCE_FIELDS) as ComposeSourceField[]).every((field) => {
+        const { provenance } = COMPOSE_SOURCE_FIELDS[field];
+        return sameComposeSourceValues(service, other, field) &&
+          JSON.stringify(service.advanced?.[provenance] ?? null) ===
+          JSON.stringify(other.advanced?.[provenance] ?? null);
+      });
   });
 }
 
@@ -1882,10 +1834,10 @@ export async function requestBuildAccess(
   // attach them again.
   let effectiveServices: DeployableService[] | undefined = services?.map((service) =>
     serviceKind(service) === "compose"
-      ? withComposeCommandSource(
-          withComposeImageSource(service, { image: service.image, advanced: undefined }),
-          { command: service.command, commandArgv: service.commandArgv, advanced: undefined },
-        )
+      ? withComposeSourceFields(service, {
+          image: service.image, command: service.command, commandArgv: service.commandArgv,
+          advanced: undefined,
+        }, ["image", "command"])
       : service,
   );
   if (
@@ -1913,6 +1865,9 @@ export async function requestBuildAccess(
   // compose is taken from the repo. An explicit single-app deploy is an
   // authoritative topology choice: do not parse, materialize, or validate the
   // declared compose file behind the caller's back.
+  const initialComposeServices = !uploadSession && effectiveServices?.length && serviceDeploymentMode !== "single"
+    ? projectServicesToDeployableServices(await listProjectComposeServices(project.id))
+    : [];
   if (serviceDeploymentMode !== "single") {
     const reconciled = await reconcileComposeSource(ctx, project, commitSha ?? resolvedBranch, {
       composeRevision: input.composeRevision,
@@ -1988,11 +1943,11 @@ export async function requestBuildAccess(
         initialUploadServices,
         refreshedUploadServices,
       );
-      if (effectiveServices?.length || !sameComposeBuildSource(current, merged)) {
+      if (effectiveServices?.length || !sameComposeSource(current, merged)) {
         effectiveServices = merged;
       }
     } else if (effectiveServices?.length && canonicalServices.length > 0) {
-      effectiveServices = mergeCanonicalComposeBuildSource(effectiveServices, canonicalServices);
+      effectiveServices = mergeCanonicalComposeBuildSource(effectiveServices, canonicalServices, initialComposeServices);
     }
   }
 
