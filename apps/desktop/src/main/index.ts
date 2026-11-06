@@ -901,7 +901,7 @@ handleIpc("onboarding:cloud-auth", async () => {
         "Content-Type": "application/json",
         "X-Internal-Token": internalToken,
       },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
+      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier, intent: "sign-in" }),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
@@ -1007,7 +1007,7 @@ handleIpc("cloud:connect", async () => {
         "Content-Type": "application/json",
         "X-Internal-Token": internalToken,
       },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
+      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier, intent: "connect" }),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
