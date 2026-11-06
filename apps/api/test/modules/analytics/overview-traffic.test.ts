@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
+  project: { id: "p1", organizationId: "org1", activeDeploymentId: "d1" as string | null },
   sources: [] as Array<{ kind: string; domain: string; serverId?: string }>,
   rows: [] as Array<{
     domain: string;
@@ -21,7 +22,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: {
-  project: { findById: async () => ({ id: "p1", organizationId: "org1" }) },
+  project: { findById: async () => h.project },
   analytics: { queryBuckets: h.query },
 } }));
 vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
@@ -40,6 +41,7 @@ const minute = Math.floor(now / 60_000);
 const row = (offset: number, requests: number, domain = "web.example.com") => ({ domain, minute: minute + offset, requests });
 
 beforeEach(() => {
+  h.project = { id: "p1", organizationId: "org1", activeDeploymentId: "d1" };
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(now);
   h.sources = [
@@ -88,6 +90,38 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("project traffic snapshot", () => {
+  it("waits for the first published deployment before querying a reserved Cloud domain", async () => {
+    h.project.activeDeploymentId = null;
+    h.sources = [{ kind: "cloud", domain: "web.example.com" }];
+    h.cloud.mockRejectedValue(new Error("404 not_found"));
+    const pending = await getAnalyticsOverview(ctx, "p1");
+    expect(pending.summary.lastUpdated).toBeNull();
+    expect(pending.periods).toEqual([]);
+    expect(h.cloud).not.toHaveBeenCalled();
+    expect(h.query).not.toHaveBeenCalled();
+
+    h.project.activeDeploymentId = "first-published";
+    h.cloud.mockResolvedValue({ data: [] });
+    await getAnalyticsOverview(ctx, "p1");
+    expect(h.cloud).toHaveBeenCalledOnce();
+  });
+
+  it("still checks ownership before returning an undeployed project's empty state", async () => {
+    h.project.activeDeploymentId = null;
+    h.project.organizationId = "another-org";
+    await expect(getAnalyticsOverview(ctx, "p1")).rejects.toMatchObject({ statusCode: 404 });
+    expect(h.cloud).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a provider failure for an already deployed site into zero traffic", async () => {
+    h.sources = [{ kind: "cloud", domain: "web.example.com" }];
+    h.cloud.mockRejectedValue(new Error("provider unavailable"));
+    await expect(getAnalyticsOverview(ctx, "p1")).rejects.toMatchObject({
+      statusCode: 502,
+      code: "ANALYTICS_UPSTREAM_UNAVAILABLE",
+    });
+  });
+
   it("keeps the response-time average stable when live counters are archived", async () => {
     const traffic = { ...row(-1, 88), responseTimeSeconds: 44 };
     h.live = [traffic];
