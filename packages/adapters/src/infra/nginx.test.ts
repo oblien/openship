@@ -54,6 +54,7 @@ interface FakeOpts {
   abortOnReloadFailure?: AbortController;
   /** Simulate nginx rejecting the configuration in both validation attempts. */
   failValidation?: boolean;
+  routeProtectionRuntime?: boolean;
   /** Listener shape exposed while recovering a failed bare-host reload. */
   reloadListener?:
     | "verified-nginx"
@@ -99,6 +100,7 @@ function makeExecutor(
   let masterGenerationCaptured = false;
   const exec = async (command: string): Promise<string> => {
     calls.push(command);
+    if (opts.routeProtectionRuntime && command.includes("--with-threads")) return "";
     // openresty path detection (reload re-detects) → fail so cached paths stick.
     if (/\s-V\b|command -v|which\s/.test(command)) throw new Error("no openresty in test");
     if (
@@ -346,6 +348,20 @@ describe("NginxProvider file permissions", () => {
     expect(confWrite?.mode).toBe(0o644);
     expect(stateWrite).toBeDefined();
     expect(stateWrite?.mode).toBe(0o600);
+  });
+
+  test("keeps embedded credentials private and only relaxes the config after unlocking", async () => {
+    const { nginx, writes, files } = setup({ certDomains: ["app.example.com"], routeProtectionRuntime: true });
+    files.set(PATHS.confPath, "events {}\nhttp {}\n");
+    await nginx.registerRoute({ ...OURS, protection: {
+      version: "1".repeat(32), salt: "2".repeat(64), verifier: "3".repeat(64),
+      signingKey: "4".repeat(64), iterations: 600_000, sessionSeconds: 86_400,
+    } });
+    expect(writes.find((w) => w.content.includes("$openship_route_auth"))?.mode).toBe(0o600);
+    writes.length = 0;
+    await nginx.setRouteProtection(OURS.domain, null);
+    expect(writes.find((w) => w.path.includes("app-example-com.conf"))?.mode).toBe(0o644);
+    expect(writes.find((w) => w.path.includes("app-example-com.route.json"))?.mode).toBe(0o600);
   });
 });
 
@@ -2260,8 +2276,7 @@ describe("route protection rollback keeps credentials private", () => {
       ]) {
         expect(files.get(path)).toBe(content);
         const restored = writes.filter((write) => write.content === content).at(-1);
-        const expectedMode = path.endsWith(".conf") ? 0o644 : 0o600;
-        expect(restored).toMatchObject({ content, mode: expectedMode });
+        expect(restored).toMatchObject({ content, mode: 0o600 });
       }
     },
   );

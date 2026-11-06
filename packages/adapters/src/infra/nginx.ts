@@ -1228,6 +1228,12 @@ interface FileSnapshot {
   linkTarget?: string;
 }
 
+/** Protected vhosts embed the route verifier and session signing key. Their
+ * master process can read private files; only public vhosts may be shared. */
+function routeFileMode(path: string, content: string): number {
+  return path.endsWith(".conf") && !content.includes("$openship_route_auth") ? 0o644 : 0o600;
+}
+
 // A shared config file could not be restored. Callers may restore their own
 // files, but must not reload a configuration whose rollback is incomplete.
 class ConfigRollbackError extends Error {}
@@ -1857,8 +1863,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       for (const { path, content } of changes) {
         if (content === null) await this._rm(path);
         else {
-          const mode = path.endsWith(".conf") ? 0o644 : 0o600;
-          await this._writeFile(path, content, mode);
+          await this._writeFile(path, content, routeFileMode(path, content));
         }
       }
       await this.reload();
@@ -1866,8 +1871,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
       for (const { path, snapshot } of snapshots) {
-        const mode = path.endsWith(".conf") ? 0o644 : 0o600;
-        await this._restoreFile(path, snapshot, mode).catch((err) => {
+        await this._restoreFile(path, snapshot, routeFileMode(path, snapshot.content ?? "")).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(`${path}: ${safeErrorMessage(err)}`);
         });
@@ -2472,7 +2476,7 @@ ${serveLocation}
       // reliably abortable, so re-check between each rollback step and remove
       // anything restored if the signal arrives while one is in progress.
       try {
-        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, 0o644);
+        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, routeFileMode(configPath, confSnapshot.content ?? ""));
         if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot, 0o600);
         if (!opts?.signal?.aborted && !(err instanceof ConfigRollbackError)) {
           await this.reloadConfig({ allowStopped: true }).catch((diagnosticFailure) => {
