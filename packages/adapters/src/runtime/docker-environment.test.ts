@@ -129,47 +129,6 @@ function setup() {
 }
 
 describe("runtime-only environment apply", () => {
-  it.each(["create", "start", "inspect", "cleanup", "recovery"])(
-    "redacts current and previous environment values in %s errors and diagnostics", async (phase) => {
-      const h = setup();
-      const previous = "prior-private-value";
-      const current = "current-private-value";
-      h.before.Config.Env.push(`INNOCENT=${previous}`);
-      const error = new Error(`exec: "${previous}" "${current}": failed`);
-      Object.assign(error, { response: { body: current }, cause: new Error(previous) });
-      reported.mockClear();
-      if (phase === "create") h.docker.createContainer.mockRejectedValue(error);
-      if (phase === "start") h.replacement.start.mockRejectedValue(error);
-      if (phase === "inspect") h.replacement.inspect.mockRejectedValue(error);
-      if (phase === "cleanup") h.original.remove.mockRejectedValue(error);
-      if (phase === "recovery") {
-        h.replacement.start.mockRejectedValue(new Error("start failed"));
-        h.original.rename.mockRejectedValueOnce(error);
-      }
-      const result = await h.apply({ FLAG: current, PORT: "3000" }).catch((value) => value);
-      if (phase === "cleanup") expect(result.warning).toContain("Environment applied");
-      else expect(result).toBeInstanceOf(Error);
-      const exposed = [result.message, ...reported.mock.calls.map(([value]) => value.message)].join(" ");
-      expect(exposed).not.toContain(previous);
-      expect(exposed).not.toContain(current);
-      expect(reported).toHaveBeenCalled();
-      for (const [value] of reported.mock.calls) {
-        expect(value).not.toHaveProperty("cause");
-        expect(value).not.toHaveProperty("response");
-      }
-    },
-  );
-  it("does not expose an environment value echoed by Docker State.Error", async () => {
-    const h = setup();
-    const secret = "review-secret-value";
-    h.replacement.inspect.mockResolvedValue({
-      ...h.before, Id: "new-container",
-      State: { ...h.before.State, Running: false, Error: `exec: \"${secret}\": executable file not found in $PATH`, ExitCode: 127 },
-    } as typeof h.before);
-    const error = await h.apply({ FLAG: secret, PORT: "3000" }).catch((value) => value);
-    expect(error).toBeInstanceOf(Error);
-    expect(error.message).not.toContain(secret);
-  });
   it("applies on an automatic-subnet network without requesting the daemon-assigned IP", async () => {
     const h = setup();
     const create = h.docker.createContainer.getMockImplementation()!;
@@ -454,4 +413,46 @@ describe("runtime-only environment apply", () => {
     expect(h.original.start).not.toHaveBeenCalled();
     expect(h.original.remove).not.toHaveBeenCalled();
   });
+  it.each(["create", "start", "inspect", "cleanup", "recovery"])(
+    "redacts current and previous environment values in %s errors and diagnostics", async (phase) => {
+      const h = setup();
+      const previous = "prior-private-value";
+      const current = "current-private-value";
+      h.before.Config.Env.push(`INNOCENT=${previous}`);
+      const error = new Error(`exec: "${previous}" "${current}": failed`);
+      Object.assign(error, { response: { body: current }, cause: new Error(previous) });
+      reported.mockClear();
+      if (phase === "create") h.docker.createContainer.mockRejectedValue(error);
+      if (phase === "start") h.replacement.start.mockRejectedValue(error);
+      if (phase === "inspect") h.replacement.inspect.mockRejectedValue(error);
+      if (phase === "cleanup") h.original.remove.mockRejectedValue(error);
+      if (phase === "recovery") {
+        h.replacement.start.mockRejectedValue(new Error("start failed"));
+        h.original.rename.mockRejectedValueOnce(error);
+      }
+      const result = await h.apply({ FLAG: current, PORT: "3000" }).catch((value) => value);
+      if (phase === "cleanup") expect(result.warning).toContain("Environment applied");
+      else expect(result).toBeInstanceOf(Error);
+      const exposed = [result.message, ...reported.mock.calls.map(([value]) => value.message)].join(" ");
+      expect(exposed).not.toContain(previous);
+      expect(exposed).not.toContain(current);
+      expect(reported).toHaveBeenCalled();
+      for (const [value] of reported.mock.calls) {
+        expect(value).not.toHaveProperty("cause");
+        expect(value).not.toHaveProperty("response");
+      }
+    },
+  );
+  it("does not expose an environment value echoed by Docker State.Error", async () => {
+    const h = setup();
+    const secret = "review-secret-value";
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before, Id: "new-container",
+      State: { ...h.before.State, Running: false, Error: `exec: \"${secret}\": executable file not found in $PATH`, ExitCode: 127 },
+    } as typeof h.before);
+    const error = await h.apply({ FLAG: secret, PORT: "3000" }).catch((value) => value);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).not.toContain(secret);
+  });
+
 });
