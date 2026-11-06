@@ -29,7 +29,7 @@ vi.mock("@/context/ProjectSettingsContext", () => ({
   useProjectSettings: () => ({
     id: h.id,
     domain: "app.example.com",
-    projectData: { domains: [{ domain: "app.example.com" }] },
+    projectData: { id: h.id, activeDeploymentId: "published", domains: [{ domain: "app.example.com" }] },
   }),
 }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ deployMode: h.deployMode }) }));

@@ -66,7 +66,7 @@ const dayKey = (offsetDays = 0) =>
   new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10).replace(/-/g, "");
 
 beforeEach(() => {
-  h.project = { id: "p1", organizationId: "org1", slug: "app" };
+  h.project = { id: "p1", organizationId: "org1", slug: "app", activeDeploymentId: "d1" };
   h.geoRows = [];
   h.mgmt = new Map();
   h.sources = [{ kind: "self-hosted", domain: "a.com", serverId: "s1", deployTarget: "server" }];
@@ -78,6 +78,20 @@ beforeEach(() => {
 });
 
 describe("self-hosted daily rollup", () => {
+  it("does not query a reserved Cloud domain before the first deployment is published", async () => {
+    h.project!.activeDeploymentId = null;
+    h.sources = [{ kind: "cloud", domain: "a.com", deployTarget: "cloud" }];
+    const result = await getProjectGeo(ctx, "p1");
+    expect(result.total).toBe(0);
+    expect(result.countries).toEqual([]);
+    expect(h.cloudCalls).toEqual([]);
+
+    h.project!.activeDeploymentId = "first-published";
+    h.cloudResult = { success: true, data: { total: 0, countries: [] } };
+    await getProjectGeo(ctx, "p1");
+    expect(h.cloudCalls).toHaveLength(1);
+  });
+
   it("defaults to exactly seven UTC dates including today, not eight", async () => {
     const { repos } = await import("@repo/db");
     const { analyticsDependencies } = await import("@repo/platform/engine/modules/analytics/analytics.operations");
