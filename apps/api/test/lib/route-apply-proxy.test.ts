@@ -158,3 +158,12 @@ it("checks stored ingress mode before removing any live route",async()=>{
   expect(removeRoute).not.toHaveBeenCalled();
   expect(registerRoute).not.toHaveBeenCalled();
 });
+
+
+it.each([true, false])("retains static fallback when reconciling live routes: %s", async (spaFallback) => {
+  const { routing, registerRoute } = fakeRouting();
+  await reconcileProjectRoutes(project(), { routing, registers: [{
+    hostname: "static.example.com", staticRoot: "/opt/openship/site", spaFallback,
+  }] });
+  expect(registerRoute).toHaveBeenCalledWith(expect.objectContaining({ spaFallback, staticRoot: "/opt/openship/site" }));
+});

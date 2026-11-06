@@ -58,7 +58,9 @@ describe("compose static sub-app — cloud (served container)", () => {
 
   it("serves on the configured container port with SPA fallback", () => {
     expect(df).toContain("listen 3000 default_server;");
-    expect(df).toContain("try_files $uri $uri/ /index.html;");
+    expect(df).toContain("try_files $uri $uri/ @osh_fallback;");
+    expect(df).toContain("location @osh_fallback {");
+    expect(df).toContain("try_files /index.html =404;");
   });
 });
 

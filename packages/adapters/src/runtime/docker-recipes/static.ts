@@ -1,4 +1,5 @@
 import type { BuildConfig } from "../../types";
+import { renderStaticFallback, renderStaticTryFiles } from "../../infra/static-routing";
 import { normalizeDockerRootDirectory } from "../docker-paths";
 import {
   builderSourceDir,
@@ -11,13 +12,14 @@ import {
 
 // nginx server block for a static SPA build. `listen` is baked at build time
 // (the port is known); nginx's own $uri is written literally.
-function staticNginxTemplateLines(port: number): string[] {
+function staticNginxTemplateLines(config: BuildConfig): string[] {
   return [
     "server {",
-    `    listen ${port} default_server;`,
+    `    listen ${config.port} default_server;`,
     "    root /usr/share/nginx/html;",
     "    index index.html;",
-    "    location / { try_files $uri $uri/ /index.html; }",
+    `    location / { ${renderStaticTryFiles(config)} }`,
+    ...renderStaticFallback("/usr/share/nginx/html", config).split("\n"),
     "}",
   ];
 }
@@ -81,7 +83,7 @@ export function generateStaticDockerfile(config: BuildConfig): string {
   const envPrefix = buildEnvPrefix(config.envVars);
   const workspacePrepare = config.workspacePrepareCommand?.trim();
   const outputPath = staticBuilderOutputPath(config);
-  const nginxTemplate = staticNginxTemplateLines(config.port)
+  const nginxTemplate = staticNginxTemplateLines(config)
     .map((line) => `'${line}'`)
     .join(" ");
 

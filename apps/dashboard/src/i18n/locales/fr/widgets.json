@@ -396,6 +396,8 @@
       "headersHint": "En-têtes de réponse ajoutés pour les chemins correspondants.",
       "permanent": "permanente",
       "cleanUrls": "URL propres",
+      "spaFallback": "Repli SPA",
+      "spaFallbackHint": "Sites statiques : servir index.html pour les chemins inexistants. Désactivez pour un vrai 404 avec 404.html, si disponible. Redéployez les sites en conteneurs pour appliquer les modifications.",
       "cleanUrlsHint": "(supprimer .html)",
       "trailingSlash": "Barre oblique finale",
       "proxyLimits": "Réglages du proxy",

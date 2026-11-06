@@ -788,7 +788,7 @@
       "localPartHint": "La partie avant @. Minuscules, alphanumérique.",
       "destinationLabel": "Transférer vers",
       "destinationHint": "Toute adresse e-mail valide — une boîte aux lettres sur ce serveur ou externe (ex. Gmail).",
-      "inboundNote": "Les alias ne redirigent que les messages entrants. Pour vous authentifier et envoyer des messages avec cette adresse, créez une boîte mail."
+      "inboundNote": "Les alias redirigent uniquement les e-mails entrants. Pour vous authentifier et envoyer des e-mails depuis cette adresse, créez plutôt une boîte aux lettres."
     },
     "deleteForm": {
       "title": "Supprimer cet alias ?",

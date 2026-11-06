@@ -788,7 +788,7 @@
       "localPartHint": "A parte antes do @. Minúsculas, alfanumérico.",
       "destinationLabel": "Encaminha para",
       "destinationHint": "Qualquer endereço de e-mail válido — uma caixa postal neste servidor ou externa (ex.: Gmail).",
-      "inboundNote": "Os aliases apenas encaminham correio recebido. Para se autenticar e enviar correio com este endereço, crie uma caixa de correio."
+      "inboundNote": "Os aliases apenas encaminham mensagens recebidas. Para se autenticar e enviar mensagens com este endereço, crie uma caixa postal."
     },
     "deleteForm": {
       "title": "Excluir este alias?",
