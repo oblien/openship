@@ -337,6 +337,13 @@ describe("NginxProvider path-only routes", () => {
   });
 });
 describe("NginxProvider file permissions", () => {
+  test.each(["http://operator:private@127.0.0.1:3000", "http://127.0.0.1:3000/?token=private"])(
+    "keeps upstream credentials private: %s", async (targetUrl) => {
+      const { nginx, writes } = setup();
+      await nginx.registerRoute({ ...OURS, targetUrl });
+      expect(writes.find((w) => w.path.includes("app-example-com.conf"))?.mode).toBe(0o600);
+    },
+  );
   test("writes 0o644 for public vhost configs and 0o600 for route state files", async () => {
     const { nginx, writes } = setup();
     await nginx.registerRoute(OURS);

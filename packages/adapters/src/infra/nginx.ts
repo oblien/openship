@@ -1231,7 +1231,9 @@ interface FileSnapshot {
 /** Protected vhosts embed the route verifier and session signing key. Their
  * master process can read private files; only public vhosts may be shared. */
 function routeFileMode(path: string, content: string): number {
-  return path.endsWith(".conf") && !content.includes("$openship_route_auth") ? 0o644 : 0o600;
+  const privateConfig = content.includes("$openship_route_auth") ||
+    /proxy_pass\s+[^;\s]*[?@]|proxy_set_header\s+(?:Authorization|Cookie)\b/i.test(content);
+  return path.endsWith(".conf") && !privateConfig ? 0o644 : 0o600;
 }
 
 // A shared config file could not be restored. Callers may restore their own
