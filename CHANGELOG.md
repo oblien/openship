@@ -68,6 +68,9 @@ scans and deployment reliability. Includes every change merged into main since
   guidance while retaining each service's confidence, progress and actions;
   offer saved configuration and an editable, scoped Fix with AI request without
   automatic submission. High and Critical warnings retain their priority.
+- **Database removal conflicts** — reread controller state after explicit
+  Kubernetes version conflicts during database cleanup. Retain object identity,
+  ownership, generation and operation fences while tolerating status-only updates.
 
 ### Mail and application catalog
 

@@ -2,6 +2,59 @@ import { setTimeout as delay } from "node:timers/promises";
 import { AppError } from "@repo/core";
 import { KubernetesApiError, type KubernetesApi, type KubernetesObject } from "./kubernetes-api";
 
+/** Retry only explicit delete conflicts caused by operator status updates.
+ * Keep the original identity and spec generation; callers recheck ownership and
+ * their operation fence before every attempt. Ambiguous failures are not replayed. */
+export async function deleteKubernetesObject(
+  api: KubernetesApi,
+  path: string,
+  expected: KubernetesObject,
+  beforeDelete: (current: KubernetesObject) => void | Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { uid, generation } = expected.metadata;
+  let current = expected;
+  for (let conflicts = 0; ; conflicts++) {
+    signal?.throwIfAborted();
+    if (
+      !uid ||
+      !current.metadata.resourceVersion ||
+      current.metadata.uid !== uid ||
+      current.metadata.generation !== generation
+    )
+      throw new AppError(
+        "The Kubernetes resource changed while removing it. It was left unchanged.",
+        409,
+        "CLUSTER_RESOURCE_CHANGED",
+      );
+    await beforeDelete(current);
+    if (current.metadata.deletionTimestamp) return;
+    try {
+      await api.request(
+        "DELETE",
+        path,
+        {
+          propagationPolicy: "Foreground",
+          preconditions: { uid, resourceVersion: current.metadata.resourceVersion },
+        },
+        signal,
+      );
+      return;
+    } catch (error) {
+      if (error instanceof KubernetesApiError && error.statusCode === 404) return;
+      if (!(error instanceof KubernetesApiError) || error.statusCode !== 409 || conflicts >= 4)
+        throw error;
+    }
+    await delay(25 * (conflicts + 1), undefined, { signal });
+    try {
+      current = await api.request("GET", path, undefined, signal);
+    } catch (error) {
+      if (error instanceof KubernetesApiError && error.statusCode === 404) return;
+      throw error;
+    }
+  }
+}
+
 /** Re-read after an explicit resource-version conflict or refused admission connection. Never replay a mutation
  * after an ambiguous transport failure, or touch a replacement object. Callers
  * check ownership and their operation fence on every attempt. */
