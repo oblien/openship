@@ -989,6 +989,12 @@ spacing adjustment needs visual verification, not a test that asserts a CSS clas
 
 ## Mail webmail recovery
 
+Manage Fail2ban bans from the mail server's existing Health row in the shared drawer.
+Load jail details only while open, retain the last reading on refresh failure and
+disable mutations until current status is available. Ban actions select an explicit
+jail; review the exact IP and jail before applying either action. Use server-reported
+management capability and the existing mail API; Cloud mail does not mount this panel.
+
 Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
 webmail app installer. Keep its client card beside a compact Managed email / Coming
 soon notice. Cloud mail entry points must not mount local server setup, registry or

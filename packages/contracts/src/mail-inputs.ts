@@ -3,6 +3,7 @@ import { Type } from "@sinclair/typebox";
 import { RELAY_PROVIDER_IDS } from "@repo/core";
 import { ResourceIdSchema } from "./deployment-resources";
 import { CreateBackupPolicySchema } from "./backups";
+import { Fail2banIpSchema, Fail2banJailSchema } from "./mail-security";
 
 const optionalText = Type.Optional(Type.String());
 const optionalCount = Type.Optional(Type.Integer({ minimum: 0 }));
@@ -46,6 +47,12 @@ export const MailRequestSchemas = {
   acknowledgeDns: Type.Object({ serverId: ResourceIdSchema, domain: optionalText }),
   requiredDomain: Type.Object({ domain: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   componentAction: Type.Object({ action: Type.Union([Type.Literal("start"), Type.Literal("stop"), Type.Literal("restart")]) }, { additionalProperties: false }),
+  fail2banStatus: Type.Object({ jail: Type.Optional(Fail2banJailSchema) }, { additionalProperties: false }),
+  fail2banBan: Type.Object({ ip: Fail2banIpSchema, jail: Fail2banJailSchema }, { additionalProperties: false }),
+  fail2banUnban: Type.Object({
+    ip: Fail2banIpSchema,
+    jail: Type.Optional(Fail2banJailSchema),
+  }, { additionalProperties: false }),
   configureRelay: Type.Object({
     provider, scope: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("selected")])),
     domains: Type.Optional(Type.Array(Type.String())), addresses: Type.Optional(Type.Array(Type.String())),

@@ -3293,6 +3293,21 @@
       "description": "Remove an inbound mail rule.",
       "route": "DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId"
     },
+    "mail.fail2banStatus": {
+      "page": "mail",
+      "description": "Read Fail2ban jails, counters, banned IPs, inspection time and management capability. Optional `jail` filters the read; failed or incomplete reads are unavailable, never an empty ban list. Self-hosted mail only.",
+      "route": "GET /api/mail/admin/:serverId/fail2ban/status"
+    },
+    "mail.fail2banBan": {
+      "page": "mail",
+      "description": "Ban one IPv4 or IPv6 address in the explicitly named jail. Requires mail-server administrator access. Read available jails before applying.",
+      "route": "POST /api/mail/admin/:serverId/fail2ban/ban"
+    },
+    "mail.fail2banUnban": {
+      "page": "mail",
+      "description": "Unban one IPv4 or IPv6 address from a named jail, or from all jails when jail is omitted. Requires mail-server administrator access; command options and address ranges are rejected.",
+      "route": "POST /api/mail/admin/:serverId/fail2ban/unban"
+    },
     "mail.componentLogs": {
       "page": "mail",
       "description": "Tail a component's logs.",
