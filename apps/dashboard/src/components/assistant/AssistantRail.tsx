@@ -7,13 +7,19 @@ import type {
   AssistantConversation,
 } from "@repo/contracts";
 import { isAssistantActive } from "@repo/contracts";
-import { Icon } from "@repo/ui/icons";
+import { Icon, type IconName } from "@repo/ui/icons";
 import { AssistantListSkeleton } from "./AssistantSkeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { AgentAvatar } from "./AgentAvatar";
 import { agentChats } from "./rail-navigation";
+
+const rowClass = (selected = false) =>
+  cn(
+    "group flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-start transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-info disabled:opacity-50",
+    selected && "bg-muted/70",
+  );
 
 export function AssistantRail({
   agents,
@@ -48,9 +54,9 @@ export function AssistantRail({
   const [flowsOpen, setFlowsOpen] = useState(true);
   const flowsId = useId();
   const needle = query.trim().toLocaleLowerCase();
-  const visibleAgents = agents.filter(
-    (agent) =>
-      !agent.archived && `${agent.name} ${agent.purpose}`.toLocaleLowerCase().includes(needle),
+  const activeAgents = agents.filter((agent) => !agent.archived);
+  const visibleAgents = activeAgents.filter((agent) =>
+    `${agent.name} ${agent.purpose}`.toLocaleLowerCase().includes(needle),
   );
   const visibleFlows = (overview?.automations ?? []).filter((flow) =>
     `${flow.name} ${flow.projectName}`.toLocaleLowerCase().includes(needle),
@@ -58,27 +64,24 @@ export function AssistantRail({
   const general = agentChats(chats).filter((chat) => !chat.automationRunId);
   const active = (chat: AssistantConversation | undefined) =>
     !!chat && isAssistantActive(chat.state);
-  const rowClass = (selected: boolean) =>
-    cn(
-      "group flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-start transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-info disabled:opacity-50",
-      selected && "bg-muted/70",
-    );
   return (
     <nav aria-label="AI Agents workspace" className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-5 pt-1">
+      <div className="flex min-h-14 shrink-0 items-center gap-2 px-3 pb-5 pt-1">
         <Icon name="bot" className="size-4 text-muted-foreground" />
         <h2 className="min-w-0 flex-1 text-sm font-medium">AI Agents</h2>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          aria-label="Create agent"
-          title="Create agent"
-          disabled={busy}
-          onClick={() => onConfigure("/assistant/agents/new")}
-        >
-          <Icon name="plus" className="size-4" />
-        </Button>
+        {activeAgents.length > 0 && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            aria-label="Create agent"
+            title="Create agent"
+            disabled={busy}
+            onClick={() => onConfigure("/assistant/agents/new")}
+          >
+            <Icon name="plus" className="size-4" />
+          </Button>
+        )}
       </div>
       <div className="relative mx-2 mb-4 shrink-0">
         <Icon
@@ -146,11 +149,14 @@ export function AssistantRail({
           </div>
           {loading && !agents.length && <AssistantListSkeleton count={2} />}
           {!loading && !error && !visibleAgents.length && (
-            <p className="px-3 py-3 text-xs leading-5 text-muted-foreground">
-              {needle
-                ? "No matching agents."
-                : "Create a specialist for logs, security or operations."}
-            </p>
+            <RailEmptyAction
+              icon={needle ? "search" : "plus"}
+              title={needle ? "No matching agents" : undefined}
+              description={needle ? "Clear search" : "Give it a focused task."}
+              actionLabel={needle ? "Clear search" : "Create agent"}
+              disabled={busy}
+              onAction={needle ? () => setQuery("") : () => onConfigure("/assistant/agents/new")}
+            />
           )}
           {visibleAgents.map((agent) => {
             const recent = agentChats(chats, agent.id)[0] ?? agent.tasks[0];
@@ -203,17 +209,21 @@ export function AssistantRail({
                 )}
               />
               Automations
-              <span className="ms-auto text-[11px]">{overview?.automations.length ?? ""}</span>
+              {!!overview?.automations.length && (
+                <span className="ms-auto text-[11px]">{overview.automations.length}</span>
+              )}
             </button>
-            <button
-              type="button"
-              title="Manage automations"
-              aria-label="Manage automations"
-              className="rounded-lg p-1 text-muted-foreground hover:text-foreground"
-              onClick={onManageAutomations}
-            >
-              <Icon name="arrow-up-right" className="size-3.5" />
-            </button>
+            {!!overview?.automations.length && (
+              <button
+                type="button"
+                title="Manage automations"
+                aria-label="Manage automations"
+                className="rounded-lg p-1 text-muted-foreground hover:text-foreground"
+                onClick={onManageAutomations}
+              >
+                <Icon name="arrow-up-right" className="size-3.5" />
+              </button>
+            )}
           </div>
           <div id={flowsId} hidden={!(flowsOpen || needle)}>
             {loading && !overview && (
@@ -254,12 +264,17 @@ export function AssistantRail({
                 </button>
               );
             })}
-            {!visibleFlows.length && !loading && (
-              <p className="px-3 py-3 text-xs leading-5 text-muted-foreground">
-                {needle
-                  ? "No matching automations."
-                  : "Give an agent recurring work from Automations."}
-              </p>
+            {!visibleFlows.length && !loading && !error && (
+              <RailEmptyAction
+                icon={needle ? "search" : "plus"}
+                title={needle ? "No matching automations" : undefined}
+                description={needle ? "Clear search" : "Respond to app issues."}
+                actionLabel={needle ? "Clear search" : "Create automation"}
+                disabled={busy}
+                onAction={
+                  needle ? () => setQuery("") : () => onConfigure("/assistant/automations/new")
+                }
+              />
             )}
           </div>
         </section>
@@ -273,5 +288,41 @@ export function AssistantRail({
         )}
       </div>
     </nav>
+  );
+}
+
+function RailEmptyAction({
+  icon,
+  title,
+  description,
+  actionLabel,
+  disabled,
+  onAction,
+}: {
+  icon: IconName;
+  title?: string;
+  description: string;
+  actionLabel: string;
+  disabled: boolean;
+  onAction(): void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={actionLabel}
+      disabled={disabled}
+      onClick={onAction}
+      className={rowClass()}
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors group-hover:text-foreground">
+        <Icon name={icon} className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-medium text-foreground/80">
+          {title ?? actionLabel}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+      </span>
+    </button>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { AgentLink } from "./AgentLink";
+import { AssistantLink } from "./AssistantLink";
 import { Icon } from "@repo/ui/icons";
 import type { ToolResultView } from "./tool-presentation";
 import { AssistantChatAppSetup } from "./AssistantChatAppSetup";
@@ -88,7 +88,7 @@ export function AssistantToolResources({
                 <AssistantChatAppSetup item={{ ...item, setup: item.setup }} />
               ) : (
                 item.href && (
-                  <AgentLink
+                  <AssistantLink
                     prefetch={false}
                     href={item.href}
                     onNavigate={onNavigate}
@@ -96,7 +96,7 @@ export function AssistantToolResources({
                     className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {item.action} <Icon name="arrow-right" className="size-3.5" />
-                  </AgentLink>
+                  </AssistantLink>
                 )
               )}
             </div>

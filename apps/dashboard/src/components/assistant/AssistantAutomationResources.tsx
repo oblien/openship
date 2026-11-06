@@ -5,7 +5,7 @@ import { Icon } from "@repo/ui/icons";
 import { assistantAutomationsApi } from "@/lib/api/assistant-automations";
 import { useScopedResource } from "@/hooks/use-scoped-resource";
 import { AutomationSteps } from "./AutomationSteps";
-import { AgentLink } from "./AgentLink";
+import { AssistantLink } from "./AssistantLink";
 import { presentToolResult, type ToolResultView } from "./tool-presentation";
 import { cn } from "@/lib/utils";
 
@@ -122,7 +122,7 @@ export function AssistantAutomationResources({
                   </div>
                   <div className="flex items-center justify-between gap-3 px-4 pb-3">
                     {item.href && (
-                      <AgentLink
+                      <AssistantLink
                         href={item.href}
                         prefetch={false}
                         onNavigate={onNavigate}
@@ -130,7 +130,7 @@ export function AssistantAutomationResources({
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg py-1 text-xs font-medium text-foreground hover:text-info focus-visible:outline-2 focus-visible:outline-info"
                       >
                         Review flow <Icon name="arrow-right" className="size-3.5" />
-                      </AgentLink>
+                      </AssistantLink>
                     )}
                     {onDetails && (
                       <button

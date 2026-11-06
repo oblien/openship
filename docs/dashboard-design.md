@@ -1287,12 +1287,32 @@ Use the shared `assistant` AI icon for the platform. Identify harnesses as
 **Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
 in provider selection, connections, history and settings. Use the shared provider
 labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
-A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action. Agent connections open in one dialog, with provider navigation and a single
-visible detail panel. Preserve unfinished sign-in forms when switching providers
-or closing this dialog; hidden content must not capture keyboard focus. Show the
-host in that dialog. Keep permission review and the audit trail in the header menu.
+A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action.
+Show connections inline in the chat area when setup is needed or the user opens
+**AI connections**. Keep the workspace header and navigation in place. Offer every
+supported provider, Custom API and saved custom models in the same layout, with
+one visible detail panel and all advertised sign-in methods as selectable buttons.
+Use one heading and one connection surface. Show each provider's name and mark only
+in the compact selector; do not repeat them as a second header inside its form.
+Keep connection status in the selector and host information in the footer.
+Use the shared connection forms in settings and agent-editor dialogs as well.
+Preserve unfinished sign-in forms when switching providers or returning to chat;
+hidden content must not capture keyboard focus. Identify the connection host.
+Using a different connection from an existing conversation opens a fresh chat;
+it never changes that conversation's provider or approved access. Keep permission
+review and the audit trail in the header menu.
 
-Agent creation and configuration open an inset right drawer with a 6px blurred backdrop and a short slide
+Use the shared assistant illustration for a conversation whose access has changed,
+with a compact heading, explanation and **New chat** action. New chat retains an
+available specialist; a removed or archived specialist falls back to the general
+assistant with current approved access. Agent and automation navigation empty states
+use quiet action rows aligned with populated items: a small outlined plus, the setup
+action and one short supporting line. Keep them borderless at rest; use the same hover
+and focus treatment as navigation rows. Omit promotional headings, separate CTA pills,
+zero counts and duplicate creation controls while the section is empty.
+Keep loading and fetch failures distinct from an empty list.
+
+Agent and automation creation and configuration use the same inset right drawer with a 6px blurred backdrop and a short slide
 transition. Use the existing theme surfaces and respect reduced motion. Browse agents,
 recent chats and templates in one column; expand the same drawer to the available
 screen width to edit instructions and the shared access editor in two equal columns.
@@ -1322,7 +1342,16 @@ connection dialog.
 Opening or drilling into agents preserves the underlying chat, draft and automation form.
 Agent links from tool results use the same drawer. Close, backdrop and Escape dismiss it
 and return focus to the opener; nested pickers and dialogs handle Escape first. Deep links
-open the corresponding drawer view. Automations keep their existing full-page editor.
+open the corresponding drawer view. **Create automation** opens the shared automation
+form directly from the navigation column; overview and edit links use the same drawer.
+Keep its title and save/cancel actions visible around a scrolling form. An agent opened
+from an automation sits above that unfinished form within the same drawer; hide the
+form from keyboard navigation while preserving its values. Closing the agent returns
+to the automation; closing the automation restores the original chat or overview.
+Opening setup never creates or enables a flow. Existing automation steps remain editable
+inline through the same form, with the same permission review and paused defaults.
+After saving an agent or flow, reload any open activation review and clear its previous
+approval so the user reviews the current saved settings.
 
 **Enable assistant** opens an inline dialog that reuses the MCP authorization form,
 permission templates, resource picker and permission summary. Use Assistant wording

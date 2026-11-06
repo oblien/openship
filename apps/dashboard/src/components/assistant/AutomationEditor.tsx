@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AgentLink } from "./AgentLink";
+import { AssistantLink } from "./AssistantLink";
 import { AgentAvatar } from "./AgentAvatar";
 import { Icon, type IconName } from "@repo/ui/icons";
 import {
@@ -210,69 +210,81 @@ export function AutomationEditor({
     const result = await mutation.execute(() => assistantAutomationsApi.save(form, initial?.id));
     if (result) onSaved();
   };
+  const saveButton = (
+    <Button size={embedded ? "sm" : "default"} onClick={save} disabled={!canSave || mutation.busy}>
+      {mutation.busy
+        ? "Saving…"
+        : initial
+          ? "Save changes"
+          : form.enabled
+            ? "Enable automation"
+            : "Save paused"}
+    </Button>
+  );
+  const statusLabel = (
+    <span className="hidden shrink-0 items-center gap-2 text-xs text-muted-foreground sm:inline-flex">
+      <Icon name={form.enabled && !paused ? "play" : "pause"} className="size-3" />
+      {paused
+        ? "All automations paused"
+        : form.enabled
+          ? "Enabled on save"
+          : initial
+            ? "Paused"
+            : "Starts paused"}
+    </span>
+  );
+  const saveError = mutation.error && (
+    <p role="alert" className="mt-4 text-sm text-danger">
+      {mutation.error}
+    </p>
+  );
   return (
     <div
-      data-automation-editor={embedded ? "inline" : "page"}
-      className={embedded ? "" : "mx-auto w-full max-w-3xl"}
+      data-automation-editor={embedded ? "inline" : "drawer"}
+      className={embedded ? "" : "flex min-h-0 flex-1 flex-col"}
     >
-      <header className="sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-3 bg-background/90 py-3 backdrop-blur-xl">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          {embedded ? (
-            <span className="truncate text-sm">{project?.name ?? "Automation settings"}</span>
-          ) : (
-            <>
-              <button
-                type="button"
+      <header
+        className={
+          embedded
+            ? "sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-3 bg-background/90 py-3 backdrop-blur-xl"
+            : "shrink-0 px-6 pb-6 pt-7 sm:px-10"
+        }
+      >
+        {embedded ? (
+          <>
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <span className="truncate text-sm">{project?.name ?? "Automation settings"}</span>
+              {statusLabel}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={onCancel}
                 disabled={mutation.busy}
-                className="inline-flex items-center gap-2 rounded-lg text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                aria-label="Cancel changes"
               >
-                <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
-                Automations
-              </button>
-              <span aria-hidden className="hidden text-border sm:inline">
-                /
-              </span>
-              <h1 className="sr-only text-sm font-medium text-foreground sm:not-sr-only">
-                {initial ? "Edit automation" : "Create automation"}
-              </h1>
-            </>
-          )}
-          <span className="hidden shrink-0 items-center gap-2 text-xs text-muted-foreground sm:inline-flex">
-            <Icon name={form.enabled && !paused ? "play" : "pause"} className="size-3" />
-            {paused
-              ? "All automations paused"
-              : form.enabled
-                ? "Enabled on save"
-                : initial
-                  ? "Paused"
-                  : "Starts paused"}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {embedded && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onCancel}
-              disabled={mutation.busy}
-              aria-label="Cancel changes"
-            >
-              Cancel
-            </Button>
-          )}
-          <Button size="sm" onClick={save} disabled={!canSave || mutation.busy}>
-            {mutation.busy
-              ? "Saving…"
-              : initial
-                ? "Save changes"
-                : form.enabled
-                  ? "Enable automation"
-                  : "Save paused"}
-          </Button>
-        </div>
+                Cancel
+              </Button>
+              {saveButton}
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 className="pe-10 text-2xl font-medium">
+              {initial ? "Edit automation" : "Create automation"}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Choose when it runs and what it can do.
+            </p>
+          </>
+        )}
       </header>
-      <div className="mb-6">
+      <div
+        className={
+          embedded ? "mb-6" : "min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-8 sm:px-10"
+        }
+      >
         <AutomationSteps
           flow={{ ...form, agentName: specialist?.name ?? "Choose an agent" }}
           currentStep={step}
@@ -374,12 +386,12 @@ export function AutomationEditor({
                     <label htmlFor="automation-agent" className="text-sm">
                       Agent
                     </label>
-                    <AgentLink
+                    <AssistantLink
                       href={`/assistant/agents/new?project=${encodeURIComponent(form.projectId)}`}
                       className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                     >
                       <Icon name="plus" className="size-3.5" /> Create an agent
-                    </AgentLink>
+                    </AssistantLink>
                   </div>
                   <CustomSelect
                     id="automation-agent"
@@ -418,13 +430,13 @@ export function AutomationEditor({
                         {specialist.readOnly ? "Read-only" : "Scoped actions"} ·{" "}
                         {specialist.model || ASSISTANT_PROVIDER_LABELS[specialist.provider]}
                       </span>
-                      <AgentLink
+                      <AssistantLink
                         href={`/assistant/agents/${specialist.id}/edit`}
                         className="inline-flex items-center gap-1 hover:text-foreground"
                       >
                         Edit agent & access
                         <Icon name="arrow-up-right" className="size-3.5" />
-                      </AgentLink>
+                      </AssistantLink>
                     </div>
                   )}
                   {specialist && !connected && (
@@ -758,12 +770,22 @@ export function AutomationEditor({
             )}
           </div>
         </AutomationSteps>
-        {mutation.error && (
-          <p role="alert" className="mt-4 text-sm text-danger">
-            {mutation.error}
-          </p>
-        )}
+        {embedded && saveError}
       </div>
+      {!embedded && (
+        <footer className="shrink-0 border-t border-border/50 px-6 py-5 sm:px-10">
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="ghost" onClick={onCancel} disabled={mutation.busy}>
+              Cancel
+            </Button>
+            <div className="flex items-center gap-4">
+              {statusLabel}
+              {saveButton}
+            </div>
+          </div>
+          {saveError}
+        </footer>
+      )}
       <AssistantDialog
         isOpen={!!detail}
         label="Assistant permissions"

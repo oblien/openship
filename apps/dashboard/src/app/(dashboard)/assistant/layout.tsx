@@ -1,10 +1,10 @@
 import { Suspense, type ReactNode } from "react";
-import { AgentDrawerLayout } from "@/components/assistant/AgentDrawer";
+import { AssistantDrawerLayout } from "@/components/assistant/AssistantDrawer";
 
 export default function AssistantLayout({ children }: { children: ReactNode }) {
   return (
     <Suspense fallback={children}>
-      <AgentDrawerLayout>{children}</AgentDrawerLayout>
+      <AssistantDrawerLayout>{children}</AssistantDrawerLayout>
     </Suspense>
   );
 }

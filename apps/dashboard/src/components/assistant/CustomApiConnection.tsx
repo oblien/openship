@@ -18,7 +18,7 @@ export function CustomApiConnection({
   const action = useScopedMutation();
   return (
     <form
-      className="space-y-5"
+      className="@container space-y-5"
       onSubmit={async (e) => {
         e.preventDefault();
         const result = await action.execute(() => assistantApi.customApi(form));
@@ -29,36 +29,37 @@ export function CustomApiConnection({
       }}
     >
       <div>
-        <h3 className="text-base font-medium">Connect your API</h3>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Use an API with Responses support and tool calling. Your key stays on your assistant host.
+        <p className="text-sm leading-6 text-muted-foreground">
+          Connect an API with Responses support and tool calling.
         </p>
       </div>
-      {(
-        [
-          ["name", "Connection name", "e.g. Our AI gateway"],
-          ["baseUrl", "API base URL", "https://api.example.com/v1"],
-          ["model", "Model ID", "Your provider’s model or deployment ID"],
-          ["apiKey", "API key", "Enter your API key"],
-        ] as const
-      ).map(([key, label, placeholder]) => (
-        <label key={key} className="block space-y-2 text-sm">
-          <span>{label}</span>
-          <Input
-            variant="filled"
-            type={key === "apiKey" ? "password" : key === "baseUrl" ? "url" : "text"}
-            autoComplete="off"
-            required
-            value={form[key]}
-            placeholder={placeholder}
-            maxLength={
-              key === "apiKey" ? 8000 : key === "baseUrl" ? 1000 : key === "name" ? 80 : 128
-            }
-            onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-            disabled={action.busy}
-          />
-        </label>
-      ))}
+      <div className="grid gap-4 @[480px]:grid-cols-2">
+        {(
+          [
+            ["name", "Connection name", "e.g. Our AI gateway"],
+            ["baseUrl", "API base URL", "https://api.example.com/v1"],
+            ["model", "Model ID", "Your provider’s model or deployment ID"],
+            ["apiKey", "API key", "Enter your API key"],
+          ] as const
+        ).map(([key, label, placeholder]) => (
+          <label key={key} className="block space-y-2 text-sm">
+            <span>{label}</span>
+            <Input
+              variant="filled"
+              type={key === "apiKey" ? "password" : key === "baseUrl" ? "url" : "text"}
+              autoComplete="off"
+              required
+              value={form[key]}
+              placeholder={placeholder}
+              maxLength={
+                key === "apiKey" ? 8000 : key === "baseUrl" ? 1000 : key === "name" ? 80 : 128
+              }
+              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+              disabled={action.busy}
+            />
+          </label>
+        ))}
+      </div>
       {!available && (
         <p className="text-sm text-warning">
           Update the assistant runtime on your host to connect a custom API.

@@ -10,7 +10,7 @@ import {
   AutomationRunReview,
 } from "./AutomationRunReview";
 import { AutomationSteps } from "./AutomationSteps";
-import { AutomationEditorData } from "./AutomationEditorPage";
+import { AutomationEditorData } from "./AutomationEditorData";
 import { AutomationDetailSkeleton } from "./AutomationSkeleton";
 
 export function AssistantAutomationDetail({

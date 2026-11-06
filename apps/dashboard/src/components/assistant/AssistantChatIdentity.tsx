@@ -1,7 +1,7 @@
 "use client";
 
 import type { AssistantAgent, AssistantConversation } from "@repo/contracts";
-import { AgentLink } from "./AgentLink";
+import { AssistantLink } from "./AssistantLink";
 import { SkeletonBlock } from "./AssistantSkeletons";
 
 /** The speaker and the conversation are separate identities, including while loading. */
@@ -34,9 +34,12 @@ export function AssistantChatIdentity({
     <div className="flex min-w-0 items-center gap-2.5">
       <h1 className="min-w-0 truncate text-xl font-medium text-foreground" title={title}>
         {agentId ? (
-          <AgentLink href={`/assistant/agents/${agentId}`} className="hover:text-muted-foreground">
+          <AssistantLink
+            href={`/assistant/agents/${agentId}`}
+            className="hover:text-muted-foreground"
+          >
             {name}
-          </AgentLink>
+          </AssistantLink>
         ) : (
           name
         )}

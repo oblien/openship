@@ -1,13 +1,11 @@
 "use client";
 
-import { Suspense, useCallback, useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import type { AssistantAutomationConfig, AssistantAutomationOverview } from "@repo/contracts";
-import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
-import { useResourceScope, useScopedResource } from "@/hooks/use-scoped-resource";
+import { useScopedResource } from "@/hooks/use-scoped-resource";
 import { useToast } from "@/context/ToastContext";
 import { assistantAgentsApi } from "@/lib/api/assistant-agents";
 import { assistantApi } from "@/lib/api/assistant";
@@ -16,49 +14,27 @@ import { notificationsApi } from "@/lib/api/notifications";
 import { projectsApi } from "@/lib/api/projects";
 import { AutomationEditor } from "./AutomationEditor";
 import { AutomationEditorSkeleton, type AutomationPreview } from "./AutomationSkeleton";
-import { useAgentNavigation } from "./AgentLink";
+import { useAssistantNavigation } from "./AssistantLink";
 
 const automationsHref = "/assistant?tab=automations";
 const noOverview = async () => null;
 
-export function AutomationEditorPage({ id }: { id?: string }) {
-  return (
-    <PageContainer fullScreen={false} className="flex min-h-full w-full max-w-none flex-col py-0">
-      <Suspense fallback={<AutomationEditorSkeleton />}>
-        <ScopedEditor id={id} />
-      </Suspense>
-    </PageContainer>
-  );
-}
-
-function ScopedEditor({ id }: { id?: string }) {
-  const scope = useResourceScope();
-  const params = useSearchParams();
-  const trigger =
-    params.get("trigger") === "service.unhealthy" ? "service.unhealthy" : "deployment.failed";
-  return (
-    <EditorAccess
-      key={`${scope}:${id ?? trigger}`}
-      id={id}
-      trigger={trigger}
-      agentId={params.get("agent") ?? undefined}
-    />
-  );
-}
-
-function EditorAccess(props: {
+export function AutomationEditorPanel(props: {
   id?: string;
   agentId?: string;
   trigger: AssistantAutomationConfig["trigger"];
+  onCancel(): void;
+  onSaved(): void;
 }) {
   const status = useScopedResource(assistantApi.status);
-  if (status.loading) return <AutomationEditorSkeleton />;
+  if (status.loading) return <AutomationEditorSkeleton onCancel={props.onCancel} />;
   if (status.error) {
     return (
       <EditorState
         title="Couldn’t load your assistant"
         error={status.error}
         onRetry={status.refresh}
+        onCancel={props.onCancel}
       />
     );
   }
@@ -67,6 +43,7 @@ function EditorAccess(props: {
       <EditorState
         title="Set up your assistant first"
         description="Connect your agent and choose its access before creating an automation."
+        onCancel={props.onCancel}
       >
         <Button asChild>
           <Link href="/assistant">
@@ -96,11 +73,10 @@ export function AutomationEditorData({
   clientId: string | null;
   embedded?: boolean;
   initialStep?: number;
-  onCancel?(): void;
-  onSaved?(): void;
+  onCancel(): void;
+  onSaved(): void;
   preview?: AutomationPreview;
 }) {
-  const router = useRouter();
   const { showToast } = useToast();
   const overview = useScopedResource<AssistantAutomationOverview | null>(
     id ? assistantAutomationsApi.overview : noOverview,
@@ -108,7 +84,7 @@ export function AutomationEditorData({
   const projects = useScopedResource(projectsApi.getHome);
   const agents = useScopedResource(assistantApi.providers);
   const specialists = useScopedResource(assistantAgentsApi.list);
-  const agentRevision = useAgentNavigation()?.revision ?? 0;
+  const agentRevision = useAssistantNavigation()?.revision ?? 0;
   useEffect(() => {
     if (agentRevision) specialists.refresh();
   }, [agentRevision, specialists.refresh]);
@@ -177,11 +153,10 @@ export function AutomationEditorData({
       channels={channels.data?.channels ?? []}
       clientId={clientId}
       onRefresh={refresh}
-      onCancel={onCancel ?? (() => router.push(automationsHref))}
+      onCancel={onCancel}
       onSaved={() => {
-        if (onSaved) return onSaved();
         showToast(initial ? "Automation updated" : "Automation created", "success");
-        router.push(automationsHref);
+        onSaved();
       }}
     />
   );
