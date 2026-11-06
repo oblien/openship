@@ -263,21 +263,25 @@ export function resolveComposeEnvironmentTemplates(
  * Resolve a stored command template against the env that will actually reach
  * a service (#1613). A string-form command interpolates then shell-splits,
  * exactly as the parser did at import; a list-form command interpolates each
- * argv element in place, so quoting survives. A variable still unresolved here
- * resolves to "" — the same as import time — now against the latest env
- * instead of the scan-time one.
+ * argv element in place, so quoting survives. Missing mandatory expressions
+ * fail before any runtime mutation; optional unset variables retain Compose's
+ * empty-string behavior.
  */
 export function resolveComposeCommandTemplate(
   template: { expression: string | string[] },
   env: Record<string, string>,
 ): { command: string; commandArgv: string[] } {
+  const parts = typeof template.expression === "string" ? [template.expression] : template.expression;
+  const resolved = parts.map((part) => resolveComposeInterpolation(part, env));
+  const required = [...new Set(resolved.flatMap((part) => part.missingRequired.map((item) => item.variable)))];
+  if (required.length) throw new Error(`Missing required Compose command variables: ${required.join(", ")}`);
   if (typeof template.expression === "string") {
-    const value = interpolateComposeString(template.expression, env);
+    const value = resolved[0]!.value;
     // commandToArgv only returns null for a nullish input, and `value` is
     // always a string here — the fallback just satisfies the return type.
     return { command: value, commandArgv: commandToArgv(value) ?? [] };
   }
-  const argv = template.expression.map((part) => interpolateComposeString(part, env));
+  const argv = resolved.map((part) => part.value);
   return { command: argv.join(" "), commandArgv: argv };
 }
 

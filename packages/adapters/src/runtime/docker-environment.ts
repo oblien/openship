@@ -14,6 +14,8 @@ export interface DockerEnvironmentResult {
 export interface DockerEnvironmentOptions {
   projectId: string;
   serviceName: string;
+  /** Re-resolved authored Compose command, when it depends on this environment. */
+  commandArgv?: string[];
   /** Persist the new runtime identity before discarding the recoverable original. */
   onReplaced: (result: DockerEnvironmentResult) => Promise<void>;
   /** Restore routing if rollback gives the original a different dynamic IP. */
@@ -34,7 +36,8 @@ function containerIdentity(
   return { containerId, ...(ip ? { ip } : {}) };
 }
 
-/** Replace only a container's environment. No build, image pull, or VM operation.
+/** Replace a container's environment and its dependent authored Compose Cmd.
+ * No build, image pull, or VM operation.
  * Keep the original stopped container until start AND bookkeeping succeed, so a
  * bad environment or a failed DB write can restore the original configuration. */
 export async function applyDockerEnvironment(
@@ -136,6 +139,7 @@ export async function applyDockerEnvironment(
     name: `${name}-env-next-${randomUUID().slice(0, 8)}`,
     Image: before.Image,
     Env: splitRuntimeEnv(environment).entries.map(([key, value]) => `${key}=${value}`),
+    ...(options.commandArgv !== undefined ? { Cmd: options.commandArgv } : {}),
     HostConfig: hostConfig,
     ...(Object.keys(endpointSettings).length > 0
       ? { NetworkingConfig: { EndpointsConfig: endpointSettings } }

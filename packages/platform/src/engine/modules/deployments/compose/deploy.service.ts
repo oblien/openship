@@ -1,3 +1,4 @@
+import { serviceRuntimeCommand } from "../../services/service-runtime-command";
 /**
  * Compose deploy service - deploys multi-service projects.
  *
@@ -44,7 +45,6 @@ import {
   type ComposeAdvanced,
   validateComposeGpuConfig,
   parseComposeShmSize,
-  resolveComposeCommandTemplate,
   type ProxySettings,
 } from "@repo/core";
 import { getTemplateForOrg } from "../../apps/catalog-source";
@@ -715,30 +715,7 @@ export function createServiceRuntimeConfig(opts: {
     opts;
   const volumes = appRowVolumes(project, service);
   assertDeployVolumePolicy(volumes, opts.runtime);
-  // #1613: a compose `command:` that carried interpolation keeps its authored
-  // expression in `advanced.commandTemplate`; evaluate it against the merged
-  // deploy env (the env the container actually gets) instead of the scan-time
-  // value frozen at import. A monorepo `startCommand` is a literal shell
-  // string and never carries a template.
-  const commandTemplate = service.startCommand
-    ? undefined
-    : (service.advanced as ComposeAdvanced | null)?.commandTemplate;
-  const resolvedCommand = commandTemplate
-    ? resolveComposeCommandTemplate(commandTemplate, environment)
-    : undefined;
-  // Monorepo sub-apps store their long-running process in `startCommand`;
-  // compose services in `command`. The DB invariant is that compose rows
-  // never have `startCommand` set, so a single `??` chain covers both:
-  // monorepo → startCommand (with command fallback if missing), compose →
-  // command. No branching on kind needed.
-  const runtimeCommand =
-    service.startCommand ?? resolvedCommand?.command ?? service.command ?? undefined;
-  // #332: pass the structured argv for a compose `command` (docker-compose Cmd,
-  // no `sh -c`). Only for compose rows — a monorepo sub-app's `startCommand` is a
-  // shell string, so force null there to keep the legacy `sh -c` shell behavior.
-  const commandArgv = service.startCommand
-    ? null
-    : (resolvedCommand?.commandArgv ?? (service.commandArgv as string[] | null) ?? null);
+  const { command: runtimeCommand, commandArgv } = serviceRuntimeCommand(service, environment);
   return {
     deploymentId: dep.id,
     projectId: project.id,
@@ -793,17 +770,7 @@ function createServiceDeployConfig(opts: {
   // cleanly in both cases - monorepo rows hit the service-level value,
   // compose rows skip straight to the project / command fallback.
   const stack = service.framework ?? project.framework ?? undefined;
-  // #1613: same re-resolution as createServiceRuntimeConfig above — a compose
-  // command template evaluates against the merged deploy env, not the
-  // scan-time value.
-  const commandTemplate = service.startCommand
-    ? undefined
-    : (service.advanced as ComposeAdvanced | null)?.commandTemplate;
-  const resolvedCommand = commandTemplate
-    ? resolveComposeCommandTemplate(commandTemplate, environment)
-    : undefined;
-  const startCommand =
-    service.startCommand ?? resolvedCommand?.command ?? service.command ?? undefined;
+  const { command: startCommand } = serviceRuntimeCommand(service, environment);
 
   return {
     deploymentId: dep.id,
