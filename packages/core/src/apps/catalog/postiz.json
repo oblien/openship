@@ -106,7 +106,8 @@
       "restart": "unless-stopped",
       "environment": {
         "POSTGRES_USER": "postiz",
-        "POSTGRES_DB": "postiz"
+        "POSTGRES_DB": "postiz",
+        "POSTGRES_PASSWORD": "{{config:PG_POSTIZ}}"
       },
       "secretEnv": [
         "POSTGRES_PASSWORD"
@@ -149,7 +150,8 @@
       "image": "postgres:16-alpine",
       "restart": "unless-stopped",
       "environment": {
-        "POSTGRES_USER": "temporal"
+        "POSTGRES_USER": "temporal",
+        "POSTGRES_PASSWORD": "{{config:PG_TEMPORAL}}"
       },
       "secretEnv": [
         "POSTGRES_PASSWORD"
@@ -208,6 +210,7 @@
         "DB_PORT": "5432",
         "POSTGRES_USER": "temporal",
         "POSTGRES_SEEDS": "temporal-db",
+        "POSTGRES_PWD": "{{config:PG_TEMPORAL}}",
         "DYNAMIC_CONFIG_FILE_PATH": "config/dynamicconfig/development-sql.yaml",
         "ENABLE_ES": "true",
         "ES_SEEDS": "temporal-es",
@@ -261,7 +264,7 @@
         "FRONTEND_URL": "{{publicUrl:postiz}}",
         "NEXT_PUBLIC_BACKEND_URL": "{{publicUrl:postiz}}/api",
         "BACKEND_INTERNAL_URL": "http://localhost:3000",
-        "DATABASE_URL": "postgresql://postiz:{{config:DB_PASSWORD}}@postiz-db:5432/postiz",
+        "DATABASE_URL": "postgresql://postiz:{{config:PG_POSTIZ}}@postiz-db:5432/postiz",
         "REDIS_URL": "redis://postiz-redis:6379",
         "TEMPORAL_ADDRESS": "temporal:7233",
         "IS_GENERAL": "true",
@@ -290,36 +293,18 @@
   ],
   "configFields": [
     {
-      "key": "POSTGRES_PASSWORD",
+      "key": "PG_POSTIZ",
       "service": "postiz-db",
       "label": "Database password",
       "generate": "secret",
-      "secret": true,
-      "generateGroup": "postiz-db"
+      "secret": true
     },
     {
-      "key": "DB_PASSWORD",
-      "service": "postiz",
-      "label": "Database password (app side)",
-      "generate": "secret",
-      "secret": true,
-      "generateGroup": "postiz-db"
-    },
-    {
-      "key": "POSTGRES_PASSWORD",
+      "key": "PG_TEMPORAL",
       "service": "temporal-db",
       "label": "Workflow database password",
       "generate": "secret",
-      "secret": true,
-      "generateGroup": "temporal-db"
-    },
-    {
-      "key": "POSTGRES_PWD",
-      "service": "temporal",
-      "label": "Workflow database password (engine side)",
-      "generate": "secret",
-      "secret": true,
-      "generateGroup": "temporal-db"
+      "secret": true
     },
     {
       "key": "JWT_SECRET",
