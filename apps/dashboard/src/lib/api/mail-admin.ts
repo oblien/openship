@@ -10,6 +10,7 @@ import type { MailDomainSchema, MailMailboxSchema, MailAliasSchema, MailStatsSch
  */
 
 import type { RelayProviderId, MailCertificateStatus } from "@repo/core";
+import type { MailFail2banStatus, MailFail2banAction } from "@repo/contracts";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsRecords, DnsRecord, MailComponentStatus } from "./mail";
@@ -391,6 +392,17 @@ export const mailAdminApi = {
         endpoints.mail.admin.testEmail(serverId),
         fromDomain ? { to, fromDomain } : { to },
       ),
+  },
+  fail2ban: {
+    status: (serverId: string) => api.get<MailFail2banStatus>(
+      `${endpoints.mail.admin.fail2ban(serverId)}/status`, { timeout: 90_000, dedupe: false },
+    ),
+    ban: (serverId: string, ip: string, jail: string) => api.post<MailFail2banAction>(
+      `${endpoints.mail.admin.fail2ban(serverId)}/ban`, { ip, jail },
+    ),
+    unban: (serverId: string, ip: string, jail: string) => api.post<MailFail2banAction>(
+      `${endpoints.mail.admin.fail2ban(serverId)}/unban`, { ip, jail },
+    ),
   },
   components: {
     action: (serverId: string, key: string, action: ComponentAction) =>

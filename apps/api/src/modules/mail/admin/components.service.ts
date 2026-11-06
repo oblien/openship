@@ -38,6 +38,12 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { AppError, safeErrorMessage } from "@repo/core";
+import {
+  MailRequestSchemas, Fail2banJailSchema, Fail2banIpSchema, parseInput,
+  type MailFail2banJail, type MailFail2banSnapshot, type MailFail2banAction,
+} from "@repo/contracts";
+import { mapWithLimit } from "@repo/platform/engine/lib/map-with-limit";
+import { Value } from "@sinclair/typebox/value";
 
 import { MAIL_COMPONENTS } from "@repo/platform/engine/modules/mail/mail-health.service";
 import {
@@ -322,123 +328,79 @@ export async function restartAllComponents(
   return { results };
 }
 
-export interface Fail2banJailStatus {
-  jail: string;
-  currentlyFailed: number;
-  totalFailed: number;
-  currentlyBanned: number;
-  totalBanned: number;
-  bannedIps: string[];
+/** A status read is complete or unavailable; never invent empty or healthy data. */
+function invalidFail2banStatus(): never {
+  throw new AppError("Fail2ban returned an incomplete or unreadable status. Refresh and try again.", 502, "MAIL_FAIL2BAN_STATUS_INVALID");
 }
 
-export interface Fail2banStatusResult {
-  jails: string[];
-  details?: Record<string, Fail2banJailStatus>;
+function counter(output: string, label: string): number {
+  const match = output.match(new RegExp(`${label}:[ \t]*(\\d+)[ \t]*$`, "im"));
+  const value = match ? Number(match[1]) : NaN;
+  if (!Number.isSafeInteger(value) || value < 0) invalidFail2banStatus();
+  return value;
 }
 
 export function parseFail2banStatus(output: string): { jails: string[] } {
-  const match = output.match(/Jail list:\s*([^\n\r]*)/i);
-  if (!match || !match[1]) return { jails: [] };
-  const raw = match[1].trim();
-  if (!raw) return { jails: [] };
-  const jails = raw
-    .split(",")
-    .map((j) => j.trim())
-    .filter(Boolean);
+  const count = counter(output, "Number of jail");
+  const match = output.match(/Jail list:[ \t]*([^\n\r]*)/i);
+  if (!match || count > 64) invalidFail2banStatus();
+  const jails = match[1]!.trim() ? match[1]!.split(",").map((jail) => jail.trim()) : [];
+  if (jails.length !== count || new Set(jails).size !== count) invalidFail2banStatus();
+  if (jails.some((jail) => !Value.Check(Fail2banJailSchema, jail))) invalidFail2banStatus();
   return { jails };
 }
 
-export function parseFail2banJailStatus(jail: string, output: string): Fail2banJailStatus {
-  const currentlyFailed = Number(output.match(/Currently failed:\s*(\d+)/i)?.[1] ?? 0);
-  const totalFailed = Number(output.match(/Total failed:\s*(\d+)/i)?.[1] ?? 0);
-  const currentlyBanned = Number(output.match(/Currently banned:\s*(\d+)/i)?.[1] ?? 0);
-  const totalBanned = Number(output.match(/Total banned:\s*(\d+)/i)?.[1] ?? 0);
-  const bannedMatch = output.match(/Banned IP list:\s*([^\n\r]*)/i);
-  const bannedIps = bannedMatch && bannedMatch[1]
-    ? bannedMatch[1].trim().split(/\s+/).filter(Boolean)
-    : [];
-
+export function parseFail2banJailStatus(jail: string, output: string): MailFail2banJail {
+  if (output.match(/Status for the jail:[ \t]*([^\n\r]+)/i)?.[1]?.trim() !== jail) invalidFail2banStatus();
+  const match = output.match(/Banned IP list:[ \t]*([^\n\r]*)/i);
+  if (!match) invalidFail2banStatus();
+  const bannedIps = match[1]!.trim() ? match[1]!.trim().split(/\s+/) : [];
+  const currentlyBanned = counter(output, "Currently banned");
+  if (bannedIps.length !== currentlyBanned) invalidFail2banStatus();
+  if (bannedIps.some((ip) => !Value.Check(Fail2banIpSchema, ip))) invalidFail2banStatus();
   return {
     jail,
-    currentlyFailed,
-    totalFailed,
+    currentlyFailed: counter(output, "Currently failed"),
+    totalFailed: counter(output, "Total failed"),
     currentlyBanned,
-    totalBanned,
+    totalBanned: counter(output, "Total banned"),
     bannedIps,
   };
 }
 
-export async function getFail2banStatus(
-  serverId: string,
-  jail?: string,
-): Promise<Fail2banStatusResult> {
-  if (jail) {
-    const { output, code } = await execWithExitMarker(
-      serverId,
-      (flavor) => mailFail2banStatusCommand(flavor, jail),
-      15_000,
-    );
-    if (code !== 0) {
-      throw new MailComponentActionError(output || `Failed to read fail2ban status for jail ${jail}`);
-    }
-    const parsed = parseFail2banJailStatus(jail, output);
-    return {
-      jails: [jail],
-      details: { [jail]: parsed },
-    };
-  }
-
+async function readFail2banStatus(serverId: string, jail?: string): Promise<string> {
   const { output, code } = await execWithExitMarker(
-    serverId,
-    (flavor) => mailFail2banStatusCommand(flavor),
-    15_000,
+    serverId, (flavor) => mailFail2banStatusCommand(flavor, jail), 5_000,
   );
-  if (code !== 0) {
-    throw new MailComponentActionError(output || "Failed to read fail2ban status");
-  }
-  const { jails } = parseFail2banStatus(output);
-  const details: Record<string, Fail2banJailStatus> = {};
-  for (const j of jails) {
-    const res = await execWithExitMarker(
-      serverId,
-      (flavor) => mailFail2banStatusCommand(flavor, j),
-      15_000,
-    ).catch(() => null);
-    if (res && res.code === 0) {
-      details[j] = parseFail2banJailStatus(j, res.output);
-    }
-  }
-  return { jails, details };
+  if (code !== 0) throw new MailComponentActionError(output || "Failed to read fail2ban status");
+  return output;
 }
 
-export async function banFail2banIp(
-  serverId: string,
-  ip: string,
-  jail = "postfix",
-): Promise<{ success: boolean; output: string }> {
-  const { output, code } = await execWithExitMarker(
-    serverId,
-    (flavor) => mailFail2banBanCommand(flavor, ip, jail),
-    15_000,
+export async function getFail2banStatus(serverId: string, jail?: string): Promise<MailFail2banSnapshot> {
+  parseInput(MailRequestSchemas.fail2banStatus, { jail });
+  const checkedAt = new Date().toISOString();
+  const jails = jail ? [jail] : parseFail2banStatus(await readFail2banStatus(serverId)).jails;
+  // Reuse the shared SSH concurrency limit; only the opened drawer requests details.
+  const details = await mapWithLimit(jails, 4, async (name) =>
+    [name, parseFail2banJailStatus(name, await readFail2banStatus(serverId, name))] as const,
   );
-  if (code !== 0) {
-    throw new MailComponentActionError(output || `Failed to ban IP ${ip} in jail ${jail}`);
-  }
+  return { jails, details: Object.fromEntries(details), checkedAt };
+}
+
+export async function banFail2banIp(serverId: string, ip: string, jail: string): Promise<MailFail2banAction> {
+  parseInput(MailRequestSchemas.fail2banBan, { ip, jail });
+  const { output, code } = await execWithExitMarker(
+    serverId, (flavor) => mailFail2banBanCommand(flavor, ip, jail), 15_000,
+  );
+  if (code !== 0) throw new MailComponentActionError(output || `Failed to ban IP ${ip} in jail ${jail}`);
   return { success: true, output };
 }
 
-export async function unbanFail2banIp(
-  serverId: string,
-  ip: string,
-  jail?: string,
-): Promise<{ success: boolean; output: string }> {
+export async function unbanFail2banIp(serverId: string, ip: string, jail?: string): Promise<MailFail2banAction> {
+  parseInput(MailRequestSchemas.fail2banUnban, { ip, jail });
   const { output, code } = await execWithExitMarker(
-    serverId,
-    (flavor) => mailFail2banUnbanCommand(flavor, ip, jail),
-    15_000,
+    serverId, (flavor) => mailFail2banUnbanCommand(flavor, ip, jail), 15_000,
   );
-  if (code !== 0) {
-    throw new MailComponentActionError(output || `Failed to unban IP ${ip}${jail ? ` in jail ${jail}` : ""}`);
-  }
+  if (code !== 0) throw new MailComponentActionError(output || `Failed to unban IP ${ip}${jail ? ` in jail ${jail}` : ""}`);
   return { success: true, output };
 }

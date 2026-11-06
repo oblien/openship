@@ -100,6 +100,13 @@ export function Drawer({
         aria-label={label}
         tabIndex={-1}
         onKeyDown={onKeyDown}
+        onBlurCapture={() => {
+          // Disabling the focused action during an async request can move focus
+          // to body. Keep the existing keyboard trap reachable in that case.
+          requestAnimationFrame(() => {
+            if (document.activeElement === document.body) dialog.current?.focus();
+          });
+        }}
         data-drawer-panel=""
         className="absolute inset-y-2 right-2 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-3xl bg-background shadow-2xl outline-none transition-[transform,opacity,width] duration-[220ms] ease-[cubic-bezier(0.2,0.9,0.3,1)] motion-reduce:transition-none sm:inset-y-4 sm:right-4 sm:max-w-[calc(100vw-2rem)]"
         style={{

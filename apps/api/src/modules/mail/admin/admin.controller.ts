@@ -14,7 +14,8 @@ import type { Context } from "hono";
 import { env } from "@repo/platform/engine/config/index";
 import { repos } from "@repo/db";
 import { getRequestContext, type RequestContext } from "../../../lib/request-context";
-import { permission } from "../../../lib/permission";
+import { permission, checkPermissionOnResource } from "../../../lib/permission";
+import { MailRequestSchemas, parseInput } from "@repo/contracts";
 import { param, isServerInOrg, assertNotCloud } from "../../../lib/controller-helpers";
 import {
   countDomainDependents,
@@ -927,19 +928,34 @@ export async function getComponentLogsHandler(c: Context) {
   }
 }
 
-export async function getFail2banStatusHandler(c: Context) {
+async function guardFail2ban(c: Context, action: "read" | "admin") {
   const guard = assertNotCloud(c);
   if (guard) return guard;
   const serverId = param(c, "serverId");
-  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "read" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "mail_server",
+    resourceId: serverId,
+    action,
+  });
   const ctx = getRequestContext(c);
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const jail = c.req.query("jail");
+}
+
+export async function getFail2banStatusHandler(c: Context) {
+  const rejected = await guardFail2ban(c, "read");
+  if (rejected) return rejected;
+  const serverId = param(c, "serverId");
   try {
+    const { jail } = parseInput(MailRequestSchemas.fail2banStatus, c.req.query());
     const result = await getFail2banStatus(serverId, jail);
-    return c.json(result);
+    const canManage = await checkPermissionOnResource(getRequestContext(c), {
+      resourceType: "mail_server",
+      resourceId: serverId,
+      action: "admin",
+    });
+    return c.json({ ...result, canManage });
   } catch (err) {
     observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     return errorJson(c, err);
@@ -947,19 +963,11 @@ export async function getFail2banStatusHandler(c: Context) {
 }
 
 export async function banFail2banIpHandler(c: Context) {
-  const guard = assertNotCloud(c);
-  if (guard) return guard;
+  const rejected = await guardFail2ban(c, "admin");
+  if (rejected) return rejected;
   const serverId = param(c, "serverId");
-  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "admin" });
-  const ctx = getRequestContext(c);
-  if (!(await isServerInOrg(ctx, serverId))) {
-    return c.json({ error: "Server not found" }, 404);
-  }
-  const body = await c.req.json<{ ip: string; jail?: string }>().catch(() => null);
-  if (!body || !body.ip) {
-    return c.json({ error: "ip is required" }, 400);
-  }
   try {
+    const body = parseInput(MailRequestSchemas.fail2banBan, await c.req.json());
     const result = await banFail2banIp(serverId, body.ip, body.jail);
     return c.json(result);
   } catch (err) {
@@ -969,19 +977,11 @@ export async function banFail2banIpHandler(c: Context) {
 }
 
 export async function unbanFail2banIpHandler(c: Context) {
-  const guard = assertNotCloud(c);
-  if (guard) return guard;
+  const rejected = await guardFail2ban(c, "admin");
+  if (rejected) return rejected;
   const serverId = param(c, "serverId");
-  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "admin" });
-  const ctx = getRequestContext(c);
-  if (!(await isServerInOrg(ctx, serverId))) {
-    return c.json({ error: "Server not found" }, 404);
-  }
-  const body = await c.req.json<{ ip: string; jail?: string }>().catch(() => null);
-  if (!body || !body.ip) {
-    return c.json({ error: "ip is required" }, 400);
-  }
   try {
+    const body = parseInput(MailRequestSchemas.fail2banUnban, await c.req.json());
     const result = await unbanFail2banIp(serverId, body.ip, body.jail);
     return c.json(result);
   } catch (err) {

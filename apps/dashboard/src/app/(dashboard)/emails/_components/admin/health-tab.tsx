@@ -51,6 +51,8 @@ import { SectionCard } from "./_shared/section-card";
 import { Skeleton } from "./_shared/skeleton";
 import { StatusPill, type PillTone } from "./_shared/status-pill";
 import { LogsDrawer } from "./_shared/logs-drawer";
+import { Fail2banDrawer } from "./fail2ban-drawer";
+import { Button } from "@/components/ui/button";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
@@ -444,6 +446,7 @@ function DaemonRow({
   const { showToast } = useToast();
   const [acting, setActing] = useState<ComponentAction | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [bansOpen, setBansOpen] = useState(false);
 
   const run = async (action: ComponentAction) => {
     if (acting) return;
@@ -537,7 +540,7 @@ function DaemonRow({
 
   return (
     <>
-      <div className="flex items-center gap-4 px-5 py-4">
+      <div className="flex flex-wrap items-center gap-4 px-5 py-4 sm:flex-nowrap">
         <div
           className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${presentation.iconBg}`}
         >
@@ -584,7 +587,10 @@ function DaemonRow({
         <StatusPill tone={presentation.tone} icon={presentation.PillIcon}>
           {statusLabel}
         </StatusPill>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-1.5 sm:w-auto">
+          {component.key === "fail2ban" && component.status !== "missing" && (
+            <Button variant="secondary" size="sm" onClick={() => setBansOpen(true)}>{t.emailsAdmin.fail2ban.manage}</Button>
+          )}
           <button
             type="button"
             onClick={() => setLogsOpen(true)}
@@ -617,6 +623,7 @@ function DaemonRow({
           onClose={() => setLogsOpen(false)}
         />
       )}
+      {component.key === "fail2ban" && <Fail2banDrawer serverId={serverId} isOpen={bansOpen} onClose={() => setBansOpen(false)} />}
     </>
   );
 }
