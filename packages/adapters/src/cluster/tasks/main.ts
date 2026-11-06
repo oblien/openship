@@ -215,14 +215,14 @@ export async function runDatabaseTask(config: DatabaseTaskConfig, signal: AbortS
       );
     } catch (error) {
       await index.save({ ...entry, phase: "failed", error: taskError(error) }).catch((diagnosticFailure) => {
-        observeCaughtError(diagnosticFailure, "adapters/cluster/tasks/main");
+        observeCaughtError(taskError(diagnosticFailure), "adapters/cluster/tasks/main");
       });
       throw error;
     }
     try {
       await prune(config, index, store);
     } catch (error) {
-      errorDiagnostics.error("adapters/cluster/tasks/main", `Backup saved; older archive cleanup needs attention: ${taskError(error)}`, error);
+      errorDiagnostics.error("adapters/cluster/tasks/main", `Backup saved; older archive cleanup needs attention: ${taskError(error)}`);
     }
   } finally {
     store.client.destroy();

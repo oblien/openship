@@ -372,7 +372,7 @@ async function sendWebhook(
     allowPrivate,
   });
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
+    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
     throw new Error(`Webhook returned ${res.status}: ${text}`);
   }
 }
@@ -418,7 +418,7 @@ async function sendDiscord(
     allowPrivate,
   });
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
+    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
     throw new Error(`Discord webhook returned ${res.status}: ${text}`);
   }
 }
@@ -450,7 +450,7 @@ async function sendSlack(
     allowPrivate,
   });
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
+    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
     throw new Error(`Slack webhook returned ${res.status}: ${text}`);
   }
 }
@@ -509,7 +509,7 @@ async function sendMSTeams(
   // Note: Power Automate Workflows respond 202 even when the flow fails
   // downstream — a 2xx means "accepted", not "delivered".
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
+    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
     throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text}`);
   }
 }
@@ -550,7 +550,7 @@ async function sendTelegram(
     body: JSON.stringify(payload),
     timeoutMs: 10_000,
   });
-  const raw = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers"); return ""; });
+  const raw = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
 
   if (!res.ok) {
     throw new Error(`Telegram API returned ${res.status}: ${raw}`);
@@ -621,8 +621,8 @@ function channelErrorMessage(error: unknown, channel: NotificationChannel): stri
     if (key === "url") continue;
     try {
       secrets.push(decrypt(stored));
-    } catch (diagnosticFailure) {
-      observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers");
+    } catch {
+      observeCaughtError("Notification channel credentials could not be decrypted.", "platform/engine/lib/notification-workers");
     }
   }
   const message = typeof error === "string" ? error : diagnosticProperty(error, "message");

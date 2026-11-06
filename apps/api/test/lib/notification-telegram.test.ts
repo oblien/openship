@@ -65,6 +65,28 @@ describe("telegram delivery", () => {
     }
   });
 
+  it("keeps credentials out of diagnostics when reading a provider response fails", async () => {
+    await errorReporter.flush();
+    const events: ErrorEvent[] = [];
+    errorReporter.setEnabled(true);
+    errorReporter.setSink((batch) => { events.push(...batch); });
+    safeFetch.mockResolvedValueOnce({
+      ok: false, status: 400,
+      text: async () => { throw new Error(`Read failed for ${TOKEN}`); },
+    });
+    try {
+      await expect(sendTestToChannel(telegramChannel({ botToken: TOKEN, chatId: "test" })))
+        .rejects.toThrow("Telegram API returned 400");
+      await errorReporter.flush();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.error.message).toContain("Read failed");
+      expect(JSON.stringify(events)).not.toContain(TOKEN);
+    } finally {
+      errorReporter.setEnabled(false);
+      errorReporter.setSink(consoleErrorSink);
+    }
+  });
+
   beforeEach(() => {
     safeFetch.mockClear();
     safeFetch.mockResolvedValue({
