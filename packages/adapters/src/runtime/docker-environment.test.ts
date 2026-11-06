@@ -354,18 +354,18 @@ describe("runtime-only environment apply", () => {
       State: { ...h.before.State, Running: false, ExitCode: 1, OOMKilled: false, Error: "" },
       RestartCount: 2,
     } as typeof h.before);
-    await expect(h.apply()).rejects.toThrow(
-      "The service failed to start: it exited with code 1 after 2 restarts. Check the service logs for details.",
-    );
+    const error = await h.apply().catch((value) => value);
+    expect(error.message).toContain("restarted 2 times");
+    expect(error.message).toContain("exit code 1");
   });
 
   it.each([
-    [{ OOMKilled: true, ExitCode: 137 }, "it ran out of memory"],
+    [{ OOMKilled: true, ExitCode: 137 }, "OOM-killed"],
     [
       { Error: 'exec: "redis-server": not found' },
-      'Docker reported: exec: "redis-server": not found',
+      'exec: "redis-server": not found',
     ],
-    [{ Running: true, Health: { Status: "unhealthy" } }, "its health check failed"],
+    [{ Running: true, Health: { Status: "unhealthy" } }, "its healthcheck reports unhealthy"],
   ])("names the startup failure from container state: %j", async (state, reason) => {
     const h = setup();
     h.replacement.inspect.mockResolvedValue({
@@ -475,8 +475,9 @@ describe("runtime-only environment apply", () => {
       State: { ...h.before.State, Running: false, ExitCode: 1, Error: "" }, RestartCount: 1,
     } as typeof h.before);
     reported.mockClear();
-    await expect(h.apply({ FLAG: "1", PORT: "3000" })).rejects.toThrow("exited with code 1 after 1 restart");
-    expect(reported.mock.calls.at(-1)?.[0].message).toContain("exited with code 1 after 1 restart");
+    await expect(h.apply({ FLAG: "1", PORT: "3000" })).rejects.toThrow("exit code 1");
+    expect(reported.mock.calls.at(-1)?.[0].message).toContain("exit code 1");
+    expect(reported.mock.calls.at(-1)?.[0].message).toContain("restarted 1 time");
   });
 
 });

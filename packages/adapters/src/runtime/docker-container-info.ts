@@ -1,5 +1,32 @@
 import type { ContainerInfo } from "../types";
 import type { DockerContainerSummary, DockerPortBinding } from "./types";
+import type Dockerode from "dockerode";
+import type { ContainerStabilitySample } from "./stability";
+
+/** Shared inspect normalization for deployment stability and environment Apply. */
+export function stabilitySampleFromDockerInspect(data: Dockerode.ContainerInspectInfo): ContainerStabilitySample {
+  const rawState = (data.State?.Status ?? "").toLowerCase().trim();
+  let state: ContainerStabilitySample["state"] = "unknown";
+  if ((["created", "running", "restarting", "paused", "exited", "dead", "removing"] as const).includes(rawState as never)) {
+    state = rawState as ContainerStabilitySample["state"];
+  } else if (!rawState) {
+    if (data.State?.Paused) state = "paused";
+    else if (data.State?.Restarting) state = "restarting";
+    else if (data.State?.Running) state = "running";
+    else if (data.State?.Running === false) state = "exited";
+  }
+  const rawHealth = (data.State?.Health?.Status ?? "").toLowerCase().trim();
+  const health = rawHealth === "healthy" || rawHealth === "unhealthy" || rawHealth === "starting" ? rawHealth : null;
+  return {
+    state,
+    exitCode: typeof data.State?.ExitCode === "number" ? data.State.ExitCode : null,
+    restartCount: typeof data.RestartCount === "number" ? data.RestartCount : 0,
+    health,
+    errorLine: data.State?.Error?.trim() ? data.State.Error.trim() : null,
+    oomKilled: data.State?.OOMKilled === true,
+    restartPolicy: data.HostConfig?.RestartPolicy?.Name ?? null,
+  };
+}
 
 /** Docker keeps Running=true while paused or restarting. Those flags, and an
  * unhealthy verdict, take precedence in both inventory and individual reads. */

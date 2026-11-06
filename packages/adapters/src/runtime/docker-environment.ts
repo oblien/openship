@@ -4,6 +4,10 @@ import { AppError, isValidEnvKey } from "@repo/core";
 import { randomUUID } from "node:crypto";
 import { isRuntimeNotFoundError } from "../system/errors";
 import { splitRuntimeEnv } from "./runtime-env";
+import { stabilitySampleFromDockerInspect } from "./docker-container-info";
+import { classifyStability } from "./stability";
+
+const STARTUP_CHECK_MS = 1000;
 
 export interface DockerEnvironmentResult {
   containerId: string;
@@ -201,18 +205,18 @@ export async function applyDockerEnvironment(
     await replacement.start();
     // Docker acknowledges start before PID 1 has read its environment. Catch an
     // immediate startup exit before discarding the recoverable old container.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, STARTUP_CHECK_MS));
     const after = await replacement.inspect();
-    // A crash loop can be "running" between two exits. This is a freshly
-    // created container, so any restart belongs to this startup attempt.
-    if (
-      !after.State.Running ||
-      after.State.Restarting ||
-      after.RestartCount > 0 ||
-      after.State.Health?.Status === "unhealthy"
-    ) {
+    const sample = stabilitySampleFromDockerInspect(after);
+    // The same classifier as deployment. This fresh replacement starts at zero
+    // restarts; Apply retains its short check and rejects any startup bounce.
+    const latest = { ...sample, errorLine: sample.errorLine ? failureMessage(sample.errorLine) : null };
+    const verdict = classifyStability({ ...latest, restartCount: 0 }, latest, {
+      windowMs: STARTUP_CHECK_MS, pollMs: STARTUP_CHECK_MS, crashRestarts: 1, windowElapsed: true,
+    });
+    if (verdict?.status !== "stable") {
       throw new EnvironmentStartupError(
-        `The service failed to start: ${startupFailure(after, failureMessage)}. Check the service logs for details.`,
+        `The service failed to start: ${verdict?.reason ?? "the container did not remain running"}. Check the service logs for details.`,
       );
     }
     const result = containerIdentity(replacement.id, after);
@@ -285,20 +289,4 @@ export async function applyDockerEnvironment(
       "SERVICE_ENVIRONMENT_APPLY_FAILED",
     );
   }
-}
-
-/** Docker's own account of a failed startup. Container logs are left out: they
- * can echo environment values, and this message is shown and reported. */
-function startupFailure(info: Dockerode.ContainerInspectInfo, sanitize: (error: unknown) => string): string {
-  const { State: state, RestartCount: restarts } = info;
-  const reason = state.OOMKilled
-    ? "it ran out of memory"
-    : state.Error
-      ? `Docker reported: ${sanitize(state.Error)}`
-      : state.Health?.Status === "unhealthy"
-        ? "its health check failed"
-        : state.Running
-          ? "it kept restarting"
-          : `it exited with code ${state.ExitCode}`;
-  return restarts > 0 ? `${reason} after ${restarts} restart${restarts === 1 ? "" : "s"}` : reason;
 }
