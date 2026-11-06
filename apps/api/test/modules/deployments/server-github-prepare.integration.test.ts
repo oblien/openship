@@ -184,6 +184,15 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
       expect(JSON.stringify(scan)).not.toContain(pat);
     },
   );
+  it("falls back to a writable connected server with a stored credential when there is no local default (#1630)", async () => {
+    await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
+    const scan = await client().deployments.prepare(source);
+    expect(scan.projectType).toBe("monorepo");
+    expect(scan.monorepoApps?.map((app) => app.rootDirectory)).toEqual(
+      expect.arrayContaining(["apps/web", "apps/api"]),
+    );
+    expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+  });
   it("keeps an explicitly selected remote server through branch and folder browsing", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
     const repo = { owner: source.owner, repo: source.repo, serverId };
@@ -234,9 +243,29 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     ).rejects.toMatchObject({ status: 404 });
     expect(requests).toHaveLength(0);
   });
-  it("never searches another connected server when there is no local default", async () => {
+  it("never borrows a connected server the caller cannot write to when there is no local default (#1630)", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
-    await expect(client().deployments.prepare(source)).rejects.toMatchObject({ status: 403 });
+    const member = await repos.member.find(owner.orgId, owner.userId);
+    await db
+      .update(schema.member)
+      .set({ role: "restricted" })
+      .where(eq(schema.member.id, member!.id));
+    await db.insert(schema.resourceGrant).values({
+      id: crypto.randomUUID(),
+      organizationId: owner.orgId,
+      userId: owner.userId,
+      resourceType: "github_repository",
+      resourceId: "acme/private-workspace",
+      permissionsJson: '["read"]',
+    });
+    const ctx = buildBackgroundContext({
+      userId: owner.userId,
+      organizationId: owner.orgId,
+      role: "restricted",
+    });
+    await expect(buildDependencies.prepare(ctx, source)).rejects.toMatchObject({
+      statusCode: 403,
+    });
     expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
   });
   it("requires server write permission in addition to repository access", async () => {
