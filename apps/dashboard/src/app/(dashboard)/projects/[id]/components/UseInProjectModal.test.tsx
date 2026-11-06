@@ -37,7 +37,7 @@ vi.mock("@/lib/api", () => ({
   deployApi: { trigger: h.trigger },
 }));
 vi.mock("@/context/ProjectSettingsContext", () => ({
-  useProjectSettings: () => ({ projectData: { activeDeploymentId: "active", workspaceId: null } }),
+  useProjectSettings: () => ({ projectData: { framework: "node", activeDeploymentId: "active", workspaceId: null }, servicesData: { services: [] } }),
 }));
 vi.mock("@/context/ModalContext", () => ({ useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));

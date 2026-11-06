@@ -8,7 +8,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Connection } from "@xyflow/react";
-import { resolveWorkload, type ProjectResources } from "@repo/core";
+import type { ProjectResources } from "@repo/core";
+import { canRefreshProjectEnvironment } from "@/lib/project-application";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
@@ -44,7 +45,6 @@ import {
   applicationNodeId,
   buildClusterReplicaTopology,
   dependencyProblem,
-  hasSeparateApplication,
   serviceNodeId,
   type ProjectTopologyGraph,
   type TopologyProject,
@@ -276,10 +276,7 @@ export default function ProjectTopology({
     : undefined;
   const serviceChangesOnly =
     changes.length > 0 && changes.every((change) => change.kind === "update-service");
-  const environmentCanRefresh =
-    !hasSeparateApplication(project, servicesData.services) ||
-    (project.deployTarget !== "cloud" &&
-      resolveWorkload(project.options?.workloadType, project.options?.hasServer) !== "static");
+  const environmentCanRefresh = canRefreshProjectEnvironment(project, servicesData.services);
   const targetCanRefresh =
     !!project.activeDeploymentId &&
     (!!currentService || serviceChangesOnly || environmentCanRefresh);

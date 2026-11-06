@@ -596,6 +596,8 @@
     "cancel": "Cancel",
     "saveChanges": "Save changes",
     "close": "Close",
+    "rebuildTitle": "Rebuild and redeploy",
+    "rebuildText": "Saved. Rebuild the app to apply these environment variables.",
     "applyTitle": "Apply without a rebuild",
     "applyText": "Saved. Restart to apply runtime changes. Rebuild and redeploy to apply values used when building an image.",
     "applyButton": "Apply (restart, no rebuild)",

@@ -547,6 +547,8 @@
     "cancel": "Abbrechen",
     "saveChanges": "Änderungen speichern",
     "close": "Schließen",
+    "rebuildTitle": "Neu bauen und bereitstellen",
+    "rebuildText": "Gespeichert. Baue die App neu, um diese Umgebungsvariablen anzuwenden.",
     "applyTitle": "Ohne Neubau anwenden",
     "applyText": "Gespeichert. Neustarten, um Laufzeitänderungen anzuwenden. Erneut bauen und bereitstellen, um beim Image-Build verwendete Werte anzuwenden.",
     "applyButton": "Anwenden (Neustart, kein Neubau)",

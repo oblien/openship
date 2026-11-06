@@ -11,6 +11,7 @@ import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/
 import type { PendingAction } from "@/lib/api/projects";
 import { updatesApi } from "@/lib/api/updates";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
+import { canRefreshProjectEnvironment } from "@/lib/project-application";
 import { useModal } from "@/context/ModalContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
@@ -417,12 +418,16 @@ export const Deployments = () => {
                 supported={!!canUpdateRuntime}
                 disabled={isRedeploying || runtimeUpdate.updating}
                 actions={[
-                  {
-                    id: "refresh",
-                    label: t.projects.redeploy.refreshEnv,
-                    icon: <UiIcon name="refresh" className="size-4" />,
-                    onClick: () => runRedeploy("refresh"),
-                  },
+                  ...(canRefreshProjectEnvironment(projectData, servicesData.services)
+                    ? [
+                        {
+                          id: "refresh",
+                          label: t.projects.redeploy.refreshEnv,
+                          icon: <UiIcon name="refresh" className="size-4" />,
+                          onClick: () => runRedeploy("refresh"),
+                        },
+                      ]
+                    : []),
                   ...(hasMultipleServices
                     ? [
                         {

@@ -1,4 +1,4 @@
-import { isServicesFramework } from "@repo/core";
+import { isServicesFramework, resolveWorkload } from "@repo/core";
 
 /** The primary app belongs to the project deployment until it is materialized
  * as a service. Lists and topology must not hide it or count it twice. */
@@ -11,4 +11,20 @@ export function hasSeparateApplication(
   if (project.framework === "unknown" && project.projectType === "services") return false;
   if (project.isApp && services.length > 0) return false;
   return true;
+}
+
+/** Whole-project refresh is supported by the service pipeline and by server
+ * runtimes. Static build output and single-app Cloud deployments need a rebuild. */
+export function canRefreshProjectEnvironment(
+  project: Parameters<typeof hasSeparateApplication>[0] & {
+    deployTarget?: string | null;
+    options?: { workloadType?: string | null; hasServer?: boolean | null };
+  },
+  services: Parameters<typeof hasSeparateApplication>[1],
+): boolean {
+  return (
+    !hasSeparateApplication(project, services) ||
+    (project.deployTarget !== "cloud" &&
+      resolveWorkload(project.options?.workloadType, project.options?.hasServer) !== "static")
+  );
 }

@@ -580,6 +580,8 @@
     "unlink": "Remover conexão",
     "close": "Fechar",
     "applyText": "Salvo. Reinicie para aplicar alterações de execução. Compile e implante novamente para aplicar valores usados na compilação de uma imagem.",
+    "rebuildTitle": "Reconstruir e reimplantar",
+    "rebuildText": "Salvo. Reconstrua o aplicativo para aplicar estas variáveis de ambiente.",
     "applyTitle": "Aplicar sem rebuild",
     "applyButton": "Aplicar (reiniciar sem rebuild)"
   },

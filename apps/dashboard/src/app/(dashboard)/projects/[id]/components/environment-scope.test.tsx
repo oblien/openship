@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   toast: vi.fn(),
   trigger: vi.fn(),
   inspectCaches: vi.fn(),
+  push: vi.fn(),
 }));
 vi.mock("@/lib/api", () => ({
   projectsApi: { getEnv: api.getEnv, mergeEnv: api.mergeEnv, getCommitStatus: async () => ({ data: { supported: false } }) },
@@ -23,8 +24,10 @@ vi.mock("@/lib/api", () => ({
   getApiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@/lib/api/client", () => ({
+  ApiError: class extends Error {},
   api: { post: api.inspectCaches },
   getApiRequestScopeVersion: () => 0,
+  getApiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getEnv: api.getEnv } }));
 vi.mock("@/lib/api/connections", () => ({ connectionsApi: { list: async () => ({ data: [] }) } }));
@@ -33,7 +36,7 @@ vi.mock("@/hooks/useProjectEndpoints", () => ({
   invalidateProjectCachesFor: vi.fn(),
   PROJECT_INFO_NOT_FOUND: "missing",
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: api.push, replace: vi.fn() }) }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ isServerHost: true }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: api.toast }) }));
 vi.mock("@/components/i18n-provider", () => ({
@@ -69,6 +72,7 @@ beforeEach(() => {
     ],
   });
   api.mergeEnv.mockResolvedValue({ upserted: 1, deleted: 0 });
+  api.trigger.mockReset().mockResolvedValue({ data: { deployment: { id: "next-deployment" } } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -133,6 +137,74 @@ async function editInput(input: HTMLInputElement, value: string) {
 }
 
 describe("project environment access (GH-881)", () => {
+  it.each([
+    {
+      framework: "static",
+      deployTarget: "server" as const,
+      options: { workloadType: "static" as const, hasServer: false },
+    },
+    { framework: "node", deployTarget: "server" as const, options: { hasServer: false } },
+    { framework: "node", deployTarget: "cloud" as const, options: { workloadType: "web" as const } },
+  ])(
+    "rebuilds saved environment changes for $framework on $deployTarget",
+    async ({ framework, ...extra }) => {
+      await mountProject(framework, <BuildSettings />, extra);
+      await act(async () => button("Edit").click());
+      await editInput(
+        [...document.querySelectorAll("input")].find((input) => input.value === "old")!,
+        "new",
+      );
+      await act(async () => button("Save changes").click());
+      expect(api.trigger).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toContain("Apply without a rebuild");
+      await act(async () => button("Rebuild and redeploy").click());
+      expect(api.trigger).toHaveBeenCalledExactlyOnceWith({ projectId: "project", smartRoute: true });
+      expect(api.push).toHaveBeenCalledWith("/build/next-deployment");
+      expect(api.mergeEnv).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    {
+      framework: "node",
+      deployTarget: "server" as const,
+      options: { workloadType: "worker" as const, hasServer: false },
+    },
+    { framework: "docker-compose", deployTarget: "cloud" as const, options: {} },
+  ])("preserves runtime refresh for $framework on $deployTarget", async ({ framework, ...extra }) => {
+    await mountProject(framework, <BuildSettings />, extra);
+    await act(async () => button("Edit").click());
+    await editInput(
+      [...document.querySelectorAll("input")].find((input) => input.value === "old")!,
+      "new",
+    );
+    await act(async () => button("Save changes").click());
+    await act(async () => button("Apply (restart, no rebuild)").click());
+    expect(api.trigger).toHaveBeenCalledExactlyOnceWith({ projectId: "project", refresh: true });
+    expect(api.push).not.toHaveBeenCalled();
+  });
+
+  it("keeps a static site's saved values available when starting the rebuild fails", async () => {
+    api.trigger.mockRejectedValueOnce(new Error("unavailable"));
+    await mountProject("static", <BuildSettings />, { options: { workloadType: "static" } });
+    await act(async () => button("Edit").click());
+    await editInput(
+      [...document.querySelectorAll("input")].find((input) => input.value === "old")!,
+      "new",
+    );
+    await act(async () => button("Save changes").click());
+    await act(async () => button("Rebuild and redeploy").click());
+    expect(api.push).not.toHaveBeenCalled();
+    expect(api.toast).toHaveBeenLastCalledWith(
+      baseDictionary.projects.redeploy.couldNotRedeploy,
+      "error",
+      baseDictionary.projects.redeploy.errorTitle,
+    );
+    await act(async () => button("Rebuild and redeploy").click());
+    expect(api.push).toHaveBeenCalledWith("/build/next-deployment");
+    expect(api.mergeEnv).toHaveBeenCalledOnce();
+  });
+
   it.each(["nextjs", "docker-compose"])(
     "keeps %s Settings reachable and edits shared project inputs without overwriting secrets",
     async (framework) => {
