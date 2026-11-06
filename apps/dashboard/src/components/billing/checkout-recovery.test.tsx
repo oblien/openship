@@ -292,7 +292,7 @@ describe("unfinished checkout recovery", () => {
     h.get.mockRejectedValueOnce(new ApiError(503, "Provider unavailable", {}));
     await render();
     expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain(
-      "Provider unavailable",
+      "temporarily unavailable",
     );
     expect(dialog()?.textContent).not.toContain(copy.empty);
     expect(h.cleared).not.toHaveBeenCalled();

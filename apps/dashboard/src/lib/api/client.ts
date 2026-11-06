@@ -131,6 +131,9 @@ export function getApiErrorMessage(
     const body = err.body as Record<string, unknown> | undefined;
     if (body && typeof body.message === "string") return msgs ? localizeDiagnosisMessage(body.message, msgs) : body.message;
     if (body && typeof body.error === "string") return msgs ? localizeDiagnosisMessage(body.error, msgs) : body.error;
+    // Gateways can negotiate RFC 9457 problem JSON instead of an HTML error page.
+    if (body && typeof body.detail === "string" && body.detail.trim())
+      return msgs ? localizeDiagnosisMessage(body.detail, msgs) : body.detail;
     // TypeBox schema-validation 400s carry `{ success:false, errors:[{path,message}] }`
     // with no top-level message/error, so they used to collapse to the opaque
     // "API 400: Bad Request" (#427). Surface the first field error instead.
@@ -139,6 +142,16 @@ export function getApiErrorMessage(
       const message = typeof first.message === "string" ? first.message : "";
       const path = typeof first.path === "string" ? first.path : "";
       if (message) return path ? `${path} ${message}` : message;
+    }
+    // A proxy/CDN may replace the API's JSON with HTML and omit statusText over
+    // HTTP/2. Keep that page out of toasts and give the failed action a recovery.
+    if ([502, 503, 504, 520, 521, 522, 523, 524, 525, 526].includes(err.status)) {
+      const reason =
+        err.status === 503
+          ? "This service is temporarily unavailable."
+          : "OpenShip could not get a valid response from an upstream service.";
+      const raw = `${fallback.replace(/[.!?]$/, "")}. ${reason} Try again shortly, or contact OpenShip support if this continues. (HTTP ${err.status})`;
+      return msgs ? localizeDiagnosisMessage(raw, msgs) : raw;
     }
     const raw = err.message || fallback;
     return msgs ? localizeDiagnosisMessage(raw, msgs) : raw;
@@ -356,6 +369,7 @@ async function doFetch<T>(
     // Preparation errors (e.g. circular JSON or invalid headers) are not
     // transport failures. Serialize before entering the fetch-only catch.
     const headers = new Headers(init.headers);
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
     const rawBody =
       body instanceof FormData ||
       (typeof Blob !== "undefined" && body instanceof Blob) ||
