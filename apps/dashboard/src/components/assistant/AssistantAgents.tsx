@@ -15,12 +15,12 @@ import { assistantAgentsApi } from "@/lib/api/assistant-agents";
 import { assistantApi } from "@/lib/api/assistant";
 import { AssistantIllustration } from "./AssistantIllustration";
 import { AssistantDialog } from "./AssistantDialog";
-import { AgentLink, useAgentNavigation } from "./AgentLink";
+import { AssistantLink, useAssistantNavigation } from "./AssistantLink";
 import { AgentAvatar } from "./AgentAvatar";
 import { AssistantListSkeleton, SkeletonBlock } from "./AssistantSkeletons";
 
 export function AssistantAgents({ id }: { id?: string }) {
-  const navigation = useAgentNavigation();
+  const navigation = useAssistantNavigation();
   const status = useScopedResource(assistantApi.status);
   const load = useCallback(
     () =>
@@ -37,12 +37,12 @@ export function AssistantAgents({ id }: { id?: string }) {
     <>
       <header className="shrink-0 px-6 pb-6 pt-7 sm:px-8">
         {id && (
-          <AgentLink
+          <AssistantLink
             href="/assistant/agents"
             className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <Icon name="arrow-left" className="size-4" /> All agents
-          </AgentLink>
+          </AssistantLink>
         )}
         <div className="flex items-start gap-4 pe-10">
           {id &&
@@ -126,9 +126,9 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
           Your agents <span className="ms-1.5 text-muted-foreground">{active.length}</span>
         </h3>
         <Button asChild size="sm">
-          <AgentLink href="/assistant/agents/new">
+          <AssistantLink href="/assistant/agents/new">
             <Icon name="plus" /> Create agent
-          </AgentLink>
+          </AssistantLink>
         </Button>
       </div>
       <div className="space-y-3">
@@ -145,7 +145,7 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
           </div>
         )}
         {active.map((agent) => (
-          <AgentLink
+          <AssistantLink
             key={agent.id}
             href={`/assistant/agents/${agent.id}`}
             className="group flex items-start gap-3 rounded-2xl bg-card p-4 transition-colors hover:bg-muted/60 sm:gap-4 sm:p-5"
@@ -172,7 +172,7 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
               name="arrow-right"
               className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 motion-reduce:transition-none"
             />
-          </AgentLink>
+          </AssistantLink>
         ))}
         {agents.some((a) => a.archived) && (
           <details className="px-2 pt-4 text-sm text-muted-foreground">
@@ -181,13 +181,13 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
               {agents
                 .filter((a) => a.archived)
                 .map((a) => (
-                  <AgentLink
+                  <AssistantLink
                     className="block hover:text-foreground"
                     key={a.id}
                     href={`/assistant/agents/${a.id}`}
                   >
                     {a.name} · {a.tasks.length} {a.tasks.length === 1 ? "task" : "tasks"}
-                  </AgentLink>
+                  </AssistantLink>
                 ))}
             </div>
           </details>
@@ -199,7 +199,7 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
         </div>
         <div className="space-y-2">
           {ASSISTANT_AGENT_TEMPLATES.map((t) => (
-            <AgentLink
+            <AssistantLink
               key={t.id}
               href={`/assistant/agents/new?template=${t.id}`}
               className="group flex items-start gap-3 rounded-xl p-3 transition-colors hover:bg-card"
@@ -210,7 +210,7 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.purpose}</p>
               </div>
               <Icon name="plus" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            </AgentLink>
+            </AssistantLink>
           ))}
         </div>
       </section>
@@ -220,7 +220,7 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
 function AgentDetail({ agent, onRefresh }: { agent: AssistantAgent; onRefresh(): void }) {
   const router = useRouter();
   const mutation = useScopedMutation();
-  const navigation = useAgentNavigation();
+  const navigation = useAssistantNavigation();
   const [archiving, setArchiving] = useState(false);
   const openChat = async () => {
     const chat = await mutation.execute(() =>
@@ -257,9 +257,9 @@ function AgentDetail({ agent, onRefresh }: { agent: AssistantAgent; onRefresh():
           </Button>
         )}
         <Button asChild variant="secondary">
-          <AgentLink href={`/assistant/agents/${agent.id}/edit`}>
+          <AssistantLink href={`/assistant/agents/${agent.id}/edit`}>
             <Icon name="settings" /> Edit agent & access
-          </AgentLink>
+          </AssistantLink>
         </Button>
       </div>
       {mutation.error && (
@@ -311,7 +311,7 @@ function AgentDetail({ agent, onRefresh }: { agent: AssistantAgent; onRefresh():
       <div className="space-y-6 text-sm">
         {!agent.archived && (
           <>
-            <Link
+            <AssistantLink
               href={`/assistant/automations/new?agent=${agent.id}`}
               className="group flex items-center gap-4 rounded-2xl bg-card p-5 hover:bg-muted/60"
             >
@@ -323,7 +323,7 @@ function AgentDetail({ agent, onRefresh }: { agent: AssistantAgent; onRefresh():
                 </p>
               </div>
               <Icon name="arrow-right" className="size-4 shrink-0" />
-            </Link>
+            </AssistantLink>
             <button
               className="text-xs text-muted-foreground hover:text-danger"
               onClick={() => setArchiving(true)}

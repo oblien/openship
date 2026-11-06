@@ -1,6 +1,7 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { AssistantLink, useAssistantNavigation } from "./AssistantLink";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import { AssistantListSkeleton } from "./AssistantSkeletons";
@@ -86,6 +87,11 @@ function AutomationHeader({ children }: { children?: ReactNode }) {
 function AutomationContent() {
   const overview = useScopedResource(assistantAutomationsApi.overview, 5000);
   const mutation = useScopedMutation();
+  const navigation = useAssistantNavigation();
+  const revision = navigation?.revision ?? 0;
+  useEffect(() => {
+    if (revision) overview.refresh();
+  }, [revision, overview.refresh]);
   const params = useSearchParams();
   const router = useRouter();
   const [tab, setTab] = useState<"flows" | "runs">(params.get("run") ? "runs" : "flows");
@@ -115,8 +121,11 @@ function AutomationContent() {
                 className="size-4"
               />
             ),
-            onClick: () =>
-              router.push(`/assistant/automations/new?trigger=${encodeURIComponent(trigger.id)}`),
+            onClick: () => {
+              const href = `/assistant/automations/new?trigger=${encodeURIComponent(trigger.id)}`;
+              if (navigation) navigation.navigate(href);
+              else router.push(href);
+            },
           }))}
         />
       </AutomationHeader>
@@ -207,7 +216,7 @@ function AutomationContent() {
           <div className="overflow-hidden rounded-2xl bg-card">
             {data.automations.map((flow) => (
               <article key={flow.id} className="border-b border-border/40 last:border-0">
-                <Link
+                <AssistantLink
                   href={`/assistant/automations/${encodeURIComponent(flow.id)}/edit`}
                   className="group flex items-center gap-4 px-4 py-5 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-info sm:gap-6 sm:px-6 sm:py-6"
                 >
@@ -249,7 +258,7 @@ function AutomationContent() {
                       className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180"
                     />
                   </div>
-                </Link>
+                </AssistantLink>
               </article>
             ))}
           </div>

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { agentDrawerHref } from "@/components/assistant/agent-navigation";
+import { assistantDrawerHref } from "@/components/assistant/assistant-navigation";
 
 export default function Page() {
-  redirect(agentDrawerHref("/assistant/agents"));
+  redirect(assistantDrawerHref("/assistant/agents"));
 }

@@ -1,21 +1,24 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   ASSISTANT_PROVIDER_LABELS,
   assistantFieldInput,
+  assistantModelReady,
   type AssistantProviderInfo,
   type AssistantProvider,
   type AuthState,
 } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
-import { CustomSelect } from "@/components/ui/CustomSelect";
 import { assistantApi } from "@/lib/api/assistant";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useScopedMutation } from "@/hooks/use-scoped-resource";
 import { AssistantFields } from "./AssistantFields";
 import { CustomApiConnection } from "./CustomApiConnection";
 
+export type AssistantConnectionSelection = AssistantProvider | "custom";
+
+/** One set of connection forms, presented inline in chat or inside settings. */
 export function AgentConnections({
   agents,
   hostName,
@@ -24,29 +27,81 @@ export function AgentConnections({
   onRefresh,
   loading,
   error,
+  inline = false,
+  onBack,
+  onUse,
+  useLabel = "Use this connection",
 }: {
   agents: AssistantProviderInfo[];
   hostName?: string;
-  selected: AssistantProvider;
-  onSelect(provider: AssistantProvider): void;
+  selected: AssistantConnectionSelection;
+  onSelect(selection: AssistantConnectionSelection): void;
   onRefresh(): void;
   loading: boolean;
   error: string | null;
+  inline?: boolean;
+  onBack?(): void;
+  onUse?(provider: AssistantProvider, model: string): void;
+  useLabel?: string;
 }) {
-  const [custom, setCustom] = useState(false);
+  const id = useId();
   const installing = agents.some((agent) => agent.setup?.state === "installing");
+  const codex = agents.find((agent) => agent.id === "codex");
+  const choices = [
+    ...agents.map((agent) => ({
+      id: agent.id as AssistantConnectionSelection,
+      label: ASSISTANT_PROVIDER_LABELS[agent.id],
+      icon: agent.id,
+      status:
+        agent.setup?.state === "installing"
+          ? "Setting up…"
+          : agent.authStatus.configured
+            ? "Connected"
+            : !agent.available
+              ? "Setup required"
+              : agent.authMethods.some((method) => method.existing)
+                ? "Connection found"
+                : null,
+    })),
+    {
+      id: "custom" as const,
+      label: "Custom API",
+      icon: "code" as const,
+      status: null,
+    },
+  ];
+  const active = choices.some((choice) => choice.id === selected) ? selected : choices[0].id;
   useEffect(() => {
     if (!installing || loading || error) return;
     const timer = setTimeout(onRefresh, 2000);
     return () => clearTimeout(timer);
   }, [installing, agents, loading, error, onRefresh]);
   return (
-    <div className="p-5 sm:p-8">
-      <div className="mb-7 pe-10">
-        <h2 className="text-xl font-medium text-foreground">AI connections</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Connect the account you already use. Choose your agent in any new chat.
-        </p>
+    <section
+      className={inline ? "mx-auto w-full max-w-3xl py-6 sm:py-8" : "p-5 sm:p-8"}
+      aria-label="AI connections"
+    >
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2
+            className={
+              inline
+                ? "text-2xl font-medium tracking-tight text-foreground"
+                : "text-xl font-medium text-foreground"
+            }
+          >
+            {inline ? "Connect your AI" : "AI connections"}
+          </h2>
+          <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
+            Choose an account or connect your own model.
+          </p>
+        </div>
+        {onBack && (
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <Icon name="arrow-left" />
+            Back to chat
+          </Button>
+        )}
       </div>
       {error && (
         <p role="alert" className="mb-4 text-sm text-danger">
@@ -54,126 +109,153 @@ export function AgentConnections({
         </p>
       )}
       {loading && !agents.length && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="mb-4 text-sm text-muted-foreground">
           Checking your installed agents…
         </p>
       )}
-      <div className="grid items-start gap-6 sm:grid-cols-[200px_minmax(0,1fr)] sm:gap-8">
-        <div>
-          <div role="tablist" aria-label="Agent connections" className="flex gap-2 sm:flex-col">
-            {agents.map((agent) => (
+      <div className="rounded-2xl bg-card p-4 sm:p-6">
+        <div className="mb-6 border-b border-border/50 pb-4">
+          <div role="tablist" aria-label="Agent connections" className="flex flex-wrap gap-2">
+            {choices.map((choice, index) => (
               <button
-                key={agent.id}
-                id={`agent-tab-${agent.id}`}
+                key={choice.id}
+                id={`${id}-tab-${choice.id}`}
                 type="button"
                 role="tab"
-                aria-selected={!custom && agent.id === selected}
-                aria-controls={`agent-panel-${agent.id}`}
-                tabIndex={!custom && agent.id === selected ? 0 : -1}
-                onClick={() => {
-                  setCustom(false);
-                  onSelect(agent.id);
-                }}
+                aria-selected={active === choice.id}
+                aria-controls={`${id}-panel-${choice.id}`}
+                tabIndex={active === choice.id ? 0 : -1}
+                onClick={() => onSelect(choice.id)}
                 onKeyDown={(event) => {
-                  const direction =
-                    event.key === "ArrowRight" || event.key === "ArrowDown"
-                      ? 1
-                      : event.key === "ArrowLeft" || event.key === "ArrowUp"
-                        ? -1
-                        : 0;
-                  if (!direction) return;
-                  event.preventDefault();
                   const next =
-                    agents[(agents.indexOf(agent) + direction + agents.length) % agents.length];
-                  setCustom(false);
-                  onSelect(next.id);
-                  document.getElementById(`agent-tab-${next.id}`)?.focus();
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? choices.length - 1
+                        : ["ArrowRight", "ArrowDown"].includes(event.key)
+                          ? (index + 1) % choices.length
+                          : ["ArrowLeft", "ArrowUp"].includes(event.key)
+                            ? (index - 1 + choices.length) % choices.length
+                            : null;
+                  if (next === null) return;
+                  event.preventDefault();
+                  onSelect(choices[next].id);
+                  document.getElementById(`${id}-tab-${choices[next].id}`)?.focus();
                 }}
-                className={`flex flex-1 items-center gap-3 rounded-xl p-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:p-4 ${!custom && agent.id === selected ? "bg-card text-foreground" : "text-muted-foreground hover:bg-muted/50"}`}
+                className={`flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${active === choice.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"}`}
               >
-                <Icon name={agent.id} className="size-5 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">{ASSISTANT_PROVIDER_LABELS[agent.id]}</span>
-                  <span className="mt-1 hidden text-xs text-muted-foreground sm:block">
-                    {agent.setup?.state === "installing"
-                      ? "Setting up…"
-                      : agent.authStatus.configured
-                        ? "Connected"
-                        : "Not connected"}
-                  </span>
+                <Icon name={choice.icon} className="size-4 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block font-medium text-foreground">{choice.label}</span>
+                  {choice.status && (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {choice.status}
+                    </span>
+                  )}
                 </span>
-                {agent.authStatus.configured && (
-                  <Icon name="check" className="size-3.5 shrink-0 text-success" />
-                )}
               </button>
             ))}
           </div>
-          <Button
-            variant={custom ? "secondary" : "ghost"}
-            className="mt-2 w-full justify-start"
-            aria-pressed={custom}
-            onClick={() => setCustom(true)}
-          >
-            <Icon name="code" /> Custom API
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-4"
-            disabled={loading}
-            onClick={onRefresh}
-            aria-label="Check agent connections"
-          >
-            <Icon name="refresh" className={loading ? "animate-spin" : ""} />
-            Refresh
-          </Button>
         </div>
         <div className="min-w-0">
           {agents.map((agent) => (
             <div
               key={agent.id}
-              id={`agent-panel-${agent.id}`}
+              id={`${id}-panel-${agent.id}`}
               role="tabpanel"
-              aria-labelledby={`agent-tab-${agent.id}`}
-              hidden={custom || agent.id !== selected}
+              aria-labelledby={`${id}-tab-${agent.id}`}
+              hidden={active !== agent.id}
             >
-              <AgentConnection info={agent} refresh={onRefresh} />
+              <AgentConnection
+                info={agent}
+                refresh={onRefresh}
+                onUse={onUse ? () => onUse(agent.id, "") : undefined}
+                useLabel={useLabel}
+              />
             </div>
           ))}
-          {custom && (
-            <div className="rounded-2xl bg-card p-5">
-              <CustomApiConnection
-                available={!!agents.find((a) => a.id === "codex")?.customApiAvailable}
-                onSaved={() => {
-                  onRefresh();
-                }}
-              />
-              {agents
-                .find((a) => a.id === "codex")
-                ?.customProviders?.map((p) => (
-                  <div key={p.id} className="mt-4 rounded-xl bg-background p-3 text-sm">
-                    <p>{p.name}</p>
-                    <p className="mt-1 break-all text-xs text-muted-foreground">
-                      {p.models.join(", ")}
-                    </p>
-                  </div>
-                ))}
-            </div>
-          )}
+          <div
+            id={`${id}-panel-custom`}
+            role="tabpanel"
+            aria-labelledby={`${id}-tab-custom`}
+            hidden={active !== "custom"}
+          >
+            <CustomApiConnection
+              available={!!codex?.customApiAvailable}
+              onSaved={(model) => {
+                onRefresh();
+                onUse?.("codex", model);
+              }}
+            />
+          </div>
         </div>
       </div>
-      <div className="mt-7 flex items-center gap-2 text-xs leading-5 text-muted-foreground">
-        <Icon name="lock" className="size-3.5 shrink-0" />
-        <span>
-          Your connection stays on {hostName || "the assistant host"}. OpenShip uses the access you
-          approved.
+      {!!codex?.customProviders?.length && (
+        <section aria-label="Saved custom models" className="mt-6">
+          <h3 className="mb-3 text-xs font-medium text-muted-foreground">Your custom models</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {codex.customProviders.flatMap((provider) =>
+              provider.models.map((model) => (
+                <div
+                  key={`${provider.id}/${model}`}
+                  className="flex min-w-0 items-center gap-3 rounded-xl bg-card px-4 py-3"
+                >
+                  <Icon name="code" className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{model}</p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {provider.name} · {provider.hasKey ? "Connected" : "API key needed"}
+                    </p>
+                  </div>
+                  {onUse && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!assistantModelReady(codex, `${provider.id}/${model}`)}
+                      onClick={() => onUse("codex", `${provider.id}/${model}`)}
+                      aria-label={`Use ${model}`}
+                    >
+                      Use
+                      <Icon name="arrow-right" />
+                    </Button>
+                  )}
+                </div>
+              )),
+            )}
+          </div>
+        </section>
+      )}
+      <div className="mt-6 flex flex-wrap items-center gap-3 text-xs leading-5 text-muted-foreground">
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <Icon name="lock" className="size-3.5 shrink-0" />
+          Connections stay on {hostName || "the assistant host"}.
         </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={loading}
+          onClick={onRefresh}
+          aria-label="Check agent connections"
+        >
+          <Icon name="refresh" className={loading ? "animate-spin" : ""} />
+          Refresh
+        </Button>
       </div>
-    </div>
+    </section>
   );
 }
 
-function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refresh(): void }) {
+function AgentConnection({
+  info,
+  refresh,
+  onUse,
+  useLabel,
+}: {
+  info: AssistantProviderInfo;
+  refresh(): void;
+  onUse?(): void;
+  useLabel: string;
+}) {
   const [chosenMethod, setMethod] = useState<string | null>(null);
   const [state, setState] = useState<AuthState | null>(null),
     [values, setValues] = useState<Record<string, string>>({});
@@ -184,7 +266,12 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
     info.id === "codex"
       ? info.authMethods.find((m) => m.id === "login" || m.id === "loginDevice")
       : undefined;
-  const method = chosenMethod ?? chatgptMethod?.id ?? "";
+  const method =
+    chosenMethod ??
+    info.authMethods.find((method) => method.existing)?.id ??
+    chatgptMethod?.id ??
+    info.authMethods[0]?.id ??
+    "";
   const selectedMethod = info.authMethods.find((m) => m.id === method);
   const signInHelp =
     info.id === "codex" && selectedMethod?.id === "loginDevice"
@@ -218,26 +305,7 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
   const fields = state?.fields ?? selectedMethod?.fields ?? [];
   const authUrl = state?.url && /^https?:\/\//i.test(state.url) ? state.url : null;
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 sm:p-6">
-      <div className="flex items-center gap-3">
-        <div className="flex size-11 items-center justify-center rounded-xl bg-muted/60">
-          <Icon name={info.id} className="size-6" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-medium">{ASSISTANT_PROVIDER_LABELS[info.id]}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {info.setup?.state === "installing"
-              ? "Setting up in Cloud…"
-              : info.authStatus.configured
-                ? "Connected"
-                : info.available
-                  ? "Ready to connect"
-                  : "Not available"}
-            {info.installedVersion ? ` · ${info.installedVersion}` : ""}
-          </p>
-        </div>
-        {info.authStatus.configured && <Icon name="check" className="size-4 text-success" />}
-      </div>
+    <section className="min-w-0" aria-label={`${ASSISTANT_PROVIDER_LABELS[info.id]} connection`}>
       {info.issue && <p className="mt-4 text-sm leading-6 text-muted-foreground">{info.issue}</p>}
       {!info.available && info.setup && (
         <Button
@@ -260,13 +328,19 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
         </Button>
       )}
       {info.available && (
-        <div className="mt-5 space-y-5">
+        <div className="space-y-5">
           {info.authStatus.configured ? (
             <>
               <p className="text-sm leading-6 text-muted-foreground">
                 {info.authStatus.detail ||
                   "Your saved connection is ready. Your agent can only use the tools and resources you authorize."}
               </p>
+              {onUse && (
+                <Button onClick={onUse} disabled={action.busy}>
+                  {useLabel}
+                  <Icon name="arrow-right" />
+                </Button>
+              )}
               {info.fields.length > 0 && (
                 <details>
                   <summary className="cursor-pointer rounded-lg py-2 text-sm text-muted-foreground">
@@ -313,25 +387,32 @@ function AgentConnection({ info, refresh }: { info: AssistantProviderInfo; refre
             </>
           ) : (
             <>
-              <CustomSelect
+              <div
+                role="group"
                 aria-label={`Sign-in method for ${ASSISTANT_PROVIDER_LABELS[info.id]}`}
-                value={method}
-                options={info.authMethods.map((m) => ({
-                  value: m.id,
-                  label: m.label,
-                  description: m.help,
-                }))}
-                onChange={(value) => {
-                  setMethod(value);
-                  setState(null);
-                  setPollError(null);
-                  setValues({});
-                }}
-                placeholder="Choose a sign-in method"
-                variant="filled"
-                triggerClassName="bg-muted/60 hover:bg-muted"
-                disabled={action.busy || state?.status === "pending"}
-              />
+                className="flex flex-wrap gap-2"
+              >
+                {info.authMethods.map((option) => (
+                  <Button
+                    key={option.id}
+                    type="button"
+                    size="sm"
+                    variant={method === option.id ? "secondary" : "ghost"}
+                    aria-pressed={method === option.id}
+                    disabled={action.busy || state?.status === "pending"}
+                    onClick={() => {
+                      if (option.id === method) return;
+                      setMethod(option.id);
+                      setState(null);
+                      setPollError(null);
+                      setValues({});
+                      action.setError(null);
+                    }}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
               {!state && method && (
                 <>
                   {signInHelp && (

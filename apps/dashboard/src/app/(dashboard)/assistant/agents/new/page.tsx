@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { agentDrawerHref } from "@/components/assistant/agent-navigation";
+import { assistantDrawerHref } from "@/components/assistant/assistant-navigation";
 
 export default async function Page({
   searchParams,
@@ -10,5 +10,5 @@ export default async function Page({
   const params = new URLSearchParams();
   if (template) params.set("template", template);
   if (project) params.set("project", project);
-  redirect(agentDrawerHref(`/assistant/agents/new?${params}`));
+  redirect(assistantDrawerHref(`/assistant/agents/new?${params}`));
 }

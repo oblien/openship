@@ -30,8 +30,8 @@ import {
 } from "@/components/permissions/mcp-access-templates";
 import type { CatalogEntry, ResourceType } from "@/lib/api";
 import { AssistantDialog } from "./AssistantDialog";
-import { AgentConnections } from "./AgentConnections";
-import { AgentLink, useAgentNavigation } from "./AgentLink";
+import { AgentConnections, type AssistantConnectionSelection } from "./AgentConnections";
+import { AssistantLink, useAssistantNavigation } from "./AssistantLink";
 import { AgentIconPicker } from "./AgentAvatar";
 import { resolveAgentAvatar } from "./agent-avatar";
 import { AgentEditorSkeleton } from "./AssistantSkeletons";
@@ -74,7 +74,7 @@ function Editor({
   project?: string;
 }) {
   const scope = useResourceScope();
-  const navigation = useAgentNavigation();
+  const navigation = useAssistantNavigation();
   const template = ASSISTANT_AGENT_TEMPLATES.find((t) => t.id === templateId);
   const backHref = initial ? `/assistant/agents/${initial.id}` : "/assistant/agents";
   const [requestId] = useState(() => crypto.randomUUID());
@@ -89,6 +89,9 @@ function Editor({
   const [provider, setProvider] = useState<AssistantProvider>(initial?.provider ?? "codex");
   const [model, setModel] = useState(initial?.model ?? "");
   const [connections, setConnections] = useState(false);
+  const [connectionSelection, setConnectionSelection] = useState<AssistantConnectionSelection>(
+    initial?.provider ?? "codex",
+  );
   const ctx = useMemo<TemplateContext>(() => ({ githubAccounts: [] }), []);
   const [selection, dispatch] = useReducer(
     (s: AccessSelection, a: ScopeAction) => reduceSelection(s, a, ctx),
@@ -143,12 +146,12 @@ function Editor({
   return (
     <>
       <header className="mx-auto w-full max-w-[1480px] shrink-0 px-6 pb-6 pt-7 sm:px-10 lg:px-12">
-        <AgentLink
+        <AssistantLink
           href={backHref}
           className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <Icon name="arrow-left" className="size-4" /> {initial ? initial.name : "All agents"}
-        </AgentLink>
+        </AssistantLink>
         <h2 className="pe-10 text-2xl font-medium">{initial ? "Edit agent" : "Create an agent"}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Give it a purpose and a clear scope. Use it for tasks, conversations and automations.
@@ -349,8 +352,13 @@ function Editor({
       >
         <AgentConnections
           agents={providers.data ?? []}
-          selected={provider}
-          onSelect={setProvider}
+          selected={connectionSelection}
+          onSelect={setConnectionSelection}
+          onUse={(provider, model) => {
+            setProvider(provider);
+            setModel(model);
+            setConnections(false);
+          }}
           onRefresh={providers.refresh}
           loading={providers.loading}
           error={providers.error}
