@@ -12,7 +12,7 @@ import type {
   PrepareMonorepoApp,
 } from "@/lib/api/deploy";
 import type { Service } from "@/lib/api/services";
-import { ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
@@ -952,6 +952,7 @@ export function useDeploymentConfig() {
       success: boolean;
       error?: string;
       errorType?: string;
+      errorCode?: string;
       buildInProgress?: boolean;
     }> => {
       try {
@@ -1070,6 +1071,7 @@ export function useDeploymentConfig() {
           success: false,
           error: errorMessage,
           errorType: err instanceof ApiError ? "api_error" : "network_error",
+          errorCode: getApiErrorCode(err) ?? undefined,
         };
       }
     },

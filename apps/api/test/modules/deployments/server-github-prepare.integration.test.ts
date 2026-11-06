@@ -42,6 +42,7 @@ let serverId: string;
 let requests: { path: string; token: string | null }[];
 let rejectAccount: boolean;
 let providerStatus: number;
+let publicReadAllowed: boolean;
 
 beforeEach(async () => {
   env.CLOUD_MODE = false;
@@ -58,6 +59,7 @@ beforeEach(async () => {
   requests = [];
   rejectAccount = false;
   providerStatus = 200;
+  publicReadAllowed = false;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -73,7 +75,7 @@ beforeEach(async () => {
           { message: "Resource not accessible by personal access token" },
           { status: 403 },
         );
-      if (token !== `Bearer ${pat}`)
+      if (token !== `Bearer ${pat}` && !(publicReadAllowed && token === null))
         return Response.json({ message: "Not Found" }, { status: 404 });
       if (providerStatus !== 200)
         return Response.json({ message: "Provider unavailable" }, { status: providerStatus });
@@ -84,7 +86,7 @@ beforeEach(async () => {
           name: "private-workspace",
           owner: { login: "acme" },
           default_branch: "main",
-          private: true,
+          private: !publicReadAllowed,
         });
       if (url.pathname === `${prefix}/branches`)
         return Response.json([
@@ -144,6 +146,22 @@ const source = {
   branch: "main",
 };
 
+async function addOtherServerToken() {
+  const id = await seedServer(owner.orgId, "other-repository");
+  await db
+    .update(schema.servers)
+    .set({ createdAt: new Date("2000-01-01T00:00:00Z") })
+    .where(eq(schema.servers.id, id));
+  await repos.serverGithubAuth.upsert({
+    serverId: id,
+    organizationId: owner.orgId,
+    mode: "token",
+    tokenEncrypted: encrypt("unrelated-repository-pat"),
+    tokenSource: "pat",
+  });
+  return id;
+}
+
 describe("server PAT-only preparation through the real authenticated HTTP/SDK flow (#1500)", () => {
   it.each([false, true])(
     "detects the monorepo and sub-app using the same credential as deploy (explicit server=%s)",
@@ -184,6 +202,45 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
       expect(JSON.stringify(scan)).not.toContain(pat);
     },
   );
+  it("falls back to a writable connected server with a stored credential when there is no local default (#1630)", async () => {
+    await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
+    const scan = await client().deployments.prepare(source);
+    expect(scan.projectType).toBe("monorepo");
+    expect(scan.monorepoApps?.map((app) => app.rootDirectory)).toEqual(
+      expect.arrayContaining(["apps/web", "apps/api"]),
+    );
+    expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+  });
+  it("requires a selection before trying ambiguous server tokens, then scans with the selected server", async () => {
+    await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
+    const otherId = await addOtherServerToken();
+    await expect(client().deployments.prepare(source)).rejects.toMatchObject({
+      status: 409,
+      body: { code: "GITHUB_SERVER_SELECTION_REQUIRED" },
+    });
+    expect(requests.every((request) => request.token === null)).toBe(true);
+    requests = [];
+    expect((await client().deployments.prepare({ ...source, serverId })).projectType).toBe(
+      "monorepo",
+    );
+    expect(requests.every((request) => request.token === `Bearer ${pat}`)).toBe(true);
+    requests = [];
+    // Explicit selection is a pin, even if another server has a working token.
+    await expect(
+      client().deployments.prepare({ ...source, serverId: otherId }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(requests.every((request) => request.token === "Bearer unrelated-repository-pat")).toBe(
+      true,
+    );
+  });
+  it("scans public repositories anonymously even when several server tokens are eligible", async () => {
+    publicReadAllowed = true;
+    await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
+    await addOtherServerToken();
+    expect((await client().deployments.prepare(source)).projectType).toBe("monorepo");
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((request) => request.token === null)).toBe(true);
+  });
   it("keeps an explicitly selected remote server through branch and folder browsing", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
     const repo = { owner: source.owner, repo: source.repo, serverId };
@@ -234,9 +291,29 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     ).rejects.toMatchObject({ status: 404 });
     expect(requests).toHaveLength(0);
   });
-  it("never searches another connected server when there is no local default", async () => {
+  it("never borrows a connected server the caller cannot write to when there is no local default (#1630)", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
-    await expect(client().deployments.prepare(source)).rejects.toMatchObject({ status: 403 });
+    const member = await repos.member.find(owner.orgId, owner.userId);
+    await db
+      .update(schema.member)
+      .set({ role: "restricted" })
+      .where(eq(schema.member.id, member!.id));
+    await db.insert(schema.resourceGrant).values({
+      id: crypto.randomUUID(),
+      organizationId: owner.orgId,
+      userId: owner.userId,
+      resourceType: "github_repository",
+      resourceId: "acme/private-workspace",
+      permissionsJson: '["read"]',
+    });
+    const ctx = buildBackgroundContext({
+      userId: owner.userId,
+      organizationId: owner.orgId,
+      role: "restricted",
+    });
+    await expect(buildDependencies.prepare(ctx, source)).rejects.toMatchObject({
+      statusCode: 403,
+    });
     expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
   });
   it("requires server write permission in addition to repository access", async () => {
@@ -273,6 +350,18 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     expect((await buildDependencies.prepare(ctx, { ...source, serverId })).projectType).toBe(
       "monorepo",
     );
+    // Exercise the reported explicit-server case through real HTTP/PAT auth too.
+    await db.insert(schema.resourceGrant).values({
+      id: crypto.randomUUID(),
+      organizationId: owner.orgId,
+      userId: owner.userId,
+      resourceType: "deployment",
+      resourceId: "*",
+      permissionsJson: '["read", "write"]',
+    });
+    expect((await client().deployments.prepare({ ...source, serverId })).projectType).toBe(
+      "monorepo",
+    );
     requests = [];
     // Metadata/deployment permission cannot reveal editable source env values.
     await expect(
@@ -280,6 +369,42 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     ).rejects.toMatchObject({ statusCode: 404 });
     expect(requests).toHaveLength(0);
   });
+  it.each([false, true])(
+    "does not let server write permission replace repository access (explicit=%s)",
+    async (explicit) => {
+      await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
+      const member = await repos.member.find(owner.orgId, owner.userId);
+      await db
+        .update(schema.member)
+        .set({ role: "restricted" })
+        .where(eq(schema.member.id, member!.id));
+      await db.insert(schema.resourceGrant).values([
+        {
+          id: crypto.randomUUID(),
+          organizationId: owner.orgId,
+          userId: owner.userId,
+          resourceType: "deployment",
+          resourceId: "*",
+          permissionsJson: '["read", "write"]',
+        },
+        {
+          id: crypto.randomUUID(),
+          organizationId: owner.orgId,
+          userId: owner.userId,
+          resourceType: "server",
+          resourceId: serverId,
+          permissionsJson: '["write"]',
+        },
+      ]);
+      await expect(
+        client().deployments.prepare({ ...source, ...(explicit ? { serverId } : {}) }),
+      ).rejects.toMatchObject({
+        status: 403,
+        body: { code: "GITHUB_TOKEN_REQUIRED" },
+      });
+      expect(requests.every((request) => request.token !== `Bearer ${pat}`)).toBe(true);
+    },
+  );
   it("leaves Cloud's account-only authentication unchanged", async () => {
     env.CLOUD_MODE = true;
     await expect(client().deployments.prepare({ ...source, serverId })).rejects.toMatchObject({

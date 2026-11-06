@@ -41,7 +41,7 @@ const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGit
 vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
-    server: { findLocal: async () => undefined },
+    server: { findLocal: async () => undefined, listByOrganization: async () => [] },
     project: { findById: findProjectById },
     settings: { findByUser: findSettingsByUser },
   },
