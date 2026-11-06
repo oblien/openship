@@ -88,6 +88,9 @@ async function cookie(userId: string) {
       return c.text("ok");
     })
     .request("/");
+  return sessionCookie(response);
+}
+async function sessionCookie(response: Response) {
   const name = (await auth.$context).authCookies.sessionToken.name;
   return response.headers
     .getSetCookie()
@@ -112,6 +115,43 @@ function claim(token: string) {
 }
 
 describe("durable Desktop bootstrap identity (#1612)", () => {
+  it.each(["admin", "user"])(
+    "preserves a verified legacy %s session during refresh and Desktop startup",
+    async (role) => {
+      await db.insert(schema.instanceController).values({ installationId: randomUUID() });
+      const local = await ensureLocalUser();
+      expect(await owner()).toBe(local.id);
+      const expected = await administrator(role);
+      const existingCookie = await cookie(expected);
+      const headers = { cookie: existingCookie };
+      expect((await auth.api.getSession({ headers: new Headers(headers) }))?.user.id).toBe(expected);
+
+      const response = await app.request("/get-session", { headers });
+      expect(response.status).toBe(200);
+      expect((await response.json()).user).toMatchObject({ id: expected, role });
+      expect(response.headers.get("set-cookie")).toBeNull();
+      const startup = await app.request("/login", { headers });
+      expect(startup.status).toBe(302);
+      expect(startup.headers.get("set-cookie")).toBeNull();
+      expect(await owner()).toBe(local.id);
+
+      // Reading a verified cookie is not an installation ownership change.
+      invalidateLocalUserCache();
+      expect((await ensureLocalUser()).id).toBe(local.id);
+      expect((await (await app.request("/get-session", { headers })).json()).user.id).toBe(expected);
+    },
+  );
+  it("does not rebind an explicitly saved owner from another user's valid cookie", async () => {
+    const saved = await administrator();
+    await rememberDesktopUser(saved);
+    const expected = await administrator();
+    const headers = { cookie: await cookie(expected) };
+    expect((await (await app.request("/get-session", { headers })).json()).user.id).toBe(expected);
+    expect((await app.request("/login", { headers })).headers.get("set-cookie")).toBeNull();
+    invalidateLocalUserCache();
+    expect((await ensureLocalUser()).id).toBe(saved);
+    expect(await owner()).toBe(saved);
+  });
   it("does not guess an identity from another user's recent session", async () => {
     const local = await ensureLocalUser();
     const other = await administrator();
@@ -139,6 +179,11 @@ describe("durable Desktop bootstrap identity (#1612)", () => {
     const response = await app.request("/get-session", { headers: { cookie: oldCookie } });
     expect((await response.json()).user.id).toBe(expected);
     expect(response.headers.get("set-cookie")).toContain("openship.session_token");
+    const startup = await app.request("/login", { headers: { cookie: oldCookie } });
+    const restored = await auth.api.getSession({
+      headers: new Headers({ cookie: await sessionCookie(startup) }),
+    });
+    expect(restored?.user.id).toBe(expected);
   });
   it("preserves real authenticated sessions and refuses cookieless bootstrap when the gate fails", async () => {
     const local = await ensureLocalUser();

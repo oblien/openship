@@ -94,6 +94,17 @@ export async function invitationPreview(c: Context) {
   });
 }
 
+/** Shared Better Auth lookup for Desktop session bootstrap and startup. */
+async function readSession(c: Context) {
+  try {
+    return await auth.api.getSession({ headers: c.req.raw.headers });
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/auth/auth.controller");
+    // The caller still requires the zero-auth gate before bootstrapping.
+    return null;
+  }
+}
+
 /**
  * GET /api/auth/get-session
  *
@@ -106,21 +117,12 @@ export async function invitationPreview(c: Context) {
 export async function getSession(c: Context) {
   const { zeroAuthAllowed } = await import("../../middleware/zero-auth-guard");
   const gate = await zeroAuthAllowed(c);
-  let realSession: Awaited<ReturnType<typeof auth.api.getSession>> = null;
-  try {
-    realSession = await auth.api.getSession({
-      headers: c.req.raw.headers,
-    });
-    if (realSession && !gate.ok) {
-      // activeOrganizationId is NOT NULL at the schema level — set by
-      // the session.create.before hook in lib/auth.ts and by the
-      // local-cookie mintSession path's Better Auth hook. No reactive
-      // backfill needed; the migration handled any legacy rows.
-      return c.json(realSession);
-    }
-  } catch (diagnosticFailure) {
-    observeCaughtError(diagnosticFailure, "api/modules/auth/auth.controller");
-    // session lookup failed — fall through to zero-auth bootstrap below
+  const realSession = await readSession(c);
+  if (realSession && (!gate.ok || !realSession.user.autoProvisioned)) {
+    // A verified sign-in outranks the synthetic fallback, including on legacy
+    // installations whose saved device owner is still Local User. Preserve the
+    // existing session and organization; ownership changes require a claim.
+    return c.json(realSession);
   }
 
   // This endpoint MINTS an owner-privileged session, so it must pass the SAME
@@ -190,6 +192,9 @@ export async function desktopLogin(c: Context) {
   if (!gate.ok) {
     return c.redirect(`${dashboardUrl}/login`);
   }
+
+  const realSession = await readSession(c);
+  if (realSession && !realSession.user.autoProvisioned) return c.redirect(dashboardUrl);
 
   const { ensureLocalUser } = await import("../../lib/local-user");
   const { mintSession } = await import("../../lib/cloud-auth-proxy");
