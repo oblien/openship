@@ -455,4 +455,18 @@ describe("runtime-only environment apply", () => {
     expect(error.message).not.toContain(secret);
   });
 
+  it("redacts command-only values from current and replacement arguments", async () => {
+    const h = setup();
+    h.before.Config.Cmd = ["old-command-private"];
+    const next = "next-command-private";
+    h.replacement.start.mockRejectedValue(new Error(`exec: ${next}: failed after old-command-private`));
+    reported.mockClear();
+    const error = await applyDockerEnvironment(h.docker as unknown as Dockerode, h.before.Id,
+      { FLAG: "new" }, { ...h.options, commandArgv: [next] }).catch((value) => value);
+    const exposed = [error.message, ...reported.mock.calls.map(([value]) => value.message)].join(" ");
+    expect(exposed).not.toContain(next);
+    expect(exposed).not.toContain("old-command-private");
+    expect(h.docker.createContainer.mock.calls[0]?.[0].Cmd).toEqual([next]);
+  });
+
 });

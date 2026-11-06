@@ -36,6 +36,8 @@ describe("structured error reporting", () => {
     expect(redactDiagnosticText(message, 80, [secret])).toBe("exec: [REDACTED]: not found");
     expect(redactDiagnosticText("old-value and old-value-extended", 200, ["old-value", "old-value-extended"]))
       .toBe("[REDACTED] and [REDACTED]");
+    const escaped = 'private"value\nnext';
+    expect(redactDiagnosticText(JSON.stringify(escaped), 200, [escaped])).toBe('"[REDACTED]"');
   });
   it("does not collect caught errors by default, even after installing a destination", async () => {
     const sink = vi.fn();

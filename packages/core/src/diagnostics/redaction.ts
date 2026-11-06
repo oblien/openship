@@ -20,7 +20,8 @@ export function redactDiagnosticText(value: string, limit = 2048, secrets: reado
   let text = value;
   // Literal values must be removed before truncation, which could otherwise
   // cut a secret in half. Names alone cannot identify every credential.
-  for (const secret of [...new Set(secrets)].filter(Boolean).sort((a, b) => b.length - a.length)) {
+  const literals = secrets.filter(Boolean).flatMap((secret) => [secret, JSON.stringify(secret).slice(1, -1)]);
+  for (const secret of [...new Set(literals)].sort((a, b) => b.length - a.length)) {
     text = text.replaceAll(secret, "[REDACTED]");
   }
   text = text.slice(0, MAX_INPUT);

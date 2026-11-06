@@ -14,6 +14,8 @@ export interface DockerEnvironmentResult {
 export interface DockerEnvironmentOptions {
   projectId: string;
   serviceName: string;
+  /** Re-resolved authored Compose command, when it depends on this environment. */
+  commandArgv?: string[];
   /** Persist the new runtime identity before discarding the recoverable original. */
   onReplaced: (result: DockerEnvironmentResult) => Promise<void>;
   /** Restore routing if rollback gives the original a different dynamic IP. */
@@ -53,7 +55,7 @@ export async function applyDockerEnvironment(
     }
   }
   const original = docker.getContainer(containerId);
-  const secrets = Object.values(environment);
+  const secrets = [...Object.values(environment), ...(options.commandArgv ?? [])];
   const failureMessage = (error: unknown) => {
     const message = diagnosticProperty(error, "message");
     return redactDiagnosticText(
@@ -72,6 +74,7 @@ export async function applyDockerEnvironment(
     throw new AppError(failureMessage(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
   }
   secrets.push(...(before.Config.Env ?? []).map((entry) => entry.slice(entry.indexOf("=") + 1)));
+  secrets.push(...(before.Config.Cmd ?? []), ...(before.Config.Entrypoint ?? []));
   const labels = before.Config.Labels ?? {};
   if (
     (labels["openship.project"] && labels["openship.project"] !== options.projectId) ||
@@ -155,6 +158,7 @@ export async function applyDockerEnvironment(
     name: `${name}-env-next-${randomUUID().slice(0, 8)}`,
     Image: before.Image,
     Env: splitRuntimeEnv(environment).entries.map(([key, value]) => `${key}=${value}`),
+    ...(options.commandArgv !== undefined ? { Cmd: options.commandArgv } : {}),
     HostConfig: hostConfig,
     ...(Object.keys(endpointSettings).length > 0
       ? { NetworkingConfig: { EndpointsConfig: endpointSettings } }
