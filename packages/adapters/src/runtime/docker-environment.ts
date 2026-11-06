@@ -1,6 +1,6 @@
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { diagnosticProperty, redactDiagnosticText, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type Dockerode from "dockerode";
-import { AppError, isValidEnvKey, safeErrorMessage } from "@repo/core";
+import { AppError, isValidEnvKey } from "@repo/core";
 import { randomUUID } from "node:crypto";
 import { isRuntimeNotFoundError } from "../system/errors";
 import { splitRuntimeEnv } from "./runtime-env";
@@ -53,7 +53,25 @@ export async function applyDockerEnvironment(
     }
   }
   const original = docker.getContainer(containerId);
-  const before = await original.inspect();
+  const secrets = Object.values(environment);
+  const failureMessage = (error: unknown) => {
+    const message = diagnosticProperty(error, "message");
+    return redactDiagnosticText(
+      typeof message === "string" ? message : typeof error === "string" ? error : "Docker operation failed",
+      2000,
+      secrets,
+    );
+  };
+  // Never report the original provider error, its stack or attached payload.
+  const reportFailure = (error: unknown) => observeCaughtError(new Error(failureMessage(error)), "adapters/runtime/docker-environment");
+  let before: Dockerode.ContainerInspectInfo;
+  try {
+    before = await original.inspect();
+  } catch (error) {
+    reportFailure(error);
+    throw new AppError(failureMessage(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
+  }
+  secrets.push(...(before.Config.Env ?? []).map((entry) => entry.slice(entry.indexOf("=") + 1)));
   const labels = before.Config.Labels ?? {};
   if (
     (labels["openship.project"] && labels["openship.project"] !== options.projectId) ||
@@ -78,7 +96,8 @@ export async function applyDockerEnvironment(
         "The running service's image is no longer available on this target. Use Redeploy to rebuild it.",
       );
     }
-    throw error;
+    reportFailure(error);
+    throw new AppError(failureMessage(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
   }
 
   const name = before.Name.replace(/^\//, "");
@@ -183,7 +202,7 @@ export async function applyDockerEnvironment(
       after.State.Health?.Status === "unhealthy"
     ) {
       throw new Error(
-        `The service did not start with the new environment: ${startupFailure(after)}. Check the service logs for details.`,
+        `The service failed to start: ${startupFailure(after)}. Check the service logs for details.`,
       );
     }
     const result = containerIdentity(replacement.id, after);
@@ -194,13 +213,13 @@ export async function applyDockerEnvironment(
     try {
       await original.remove();
     } catch (diagnosticFailure) {
-      observeCaughtError(diagnosticFailure, "adapters/runtime/docker-environment");
+      reportFailure(diagnosticFailure);
       result.warning =
         "Environment applied, but the stopped previous container could not be removed.";
     }
     return result;
   } catch (error) {
-    observeCaughtError(error, "adapters/runtime/docker-environment");
+    reportFailure(error);
     const recovery: string[] = [];
     if (replacement) {
       try {
@@ -210,16 +229,16 @@ export async function applyDockerEnvironment(
         });
         await replacement.remove();
       } catch (restoreError) {
-        observeCaughtError(restoreError, "adapters/runtime/docker-environment");
-        recovery.push(safeErrorMessage(restoreError));
+        reportFailure(restoreError);
+        recovery.push(failureMessage(restoreError));
       }
     }
     if (renamed) {
       try {
         await original.rename({ name });
       } catch (restoreError) {
-        observeCaughtError(restoreError, "adapters/runtime/docker-environment");
-        recovery.push(safeErrorMessage(restoreError));
+        reportFailure(restoreError);
+        recovery.push(failureMessage(restoreError));
       }
     }
     for (const network of disconnected) {
@@ -228,35 +247,35 @@ export async function applyDockerEnvironment(
           .getNetwork(network)
           .connect({ Container: before.Id, EndpointConfig: endpointSettings[network] });
       } catch (restoreError) {
-        observeCaughtError(restoreError, "adapters/runtime/docker-environment");
-        recovery.push(safeErrorMessage(restoreError));
+        reportFailure(restoreError);
+        recovery.push(failureMessage(restoreError));
       }
     }
     if (stopped && recovery.length === 0) {
       try {
         await original.start();
       } catch (restoreError) {
-        observeCaughtError(restoreError, "adapters/runtime/docker-environment");
-        recovery.push(safeErrorMessage(restoreError));
+        reportFailure(restoreError);
+        recovery.push(failureMessage(restoreError));
       }
     }
     if (renamed && recovery.length === 0 && options.onRestored) {
       try {
         await options.onRestored(containerIdentity(before.Id, await original.inspect()));
       } catch (restoreError) {
-        observeCaughtError(restoreError, "adapters/runtime/docker-environment");
-        recovery.push(safeErrorMessage(restoreError));
+        reportFailure(restoreError);
+        recovery.push(failureMessage(restoreError));
       }
     }
     if (recovery.length > 0) {
       throw new AppError(
-        `Environment apply failed and the previous service could not be fully restored: ${safeErrorMessage(error)}. ${recovery.join("; ")}`,
+        `Environment apply failed and the previous service could not be fully restored: ${failureMessage(error)}. ${recovery.join("; ")}`,
         503,
         "SERVICE_ENVIRONMENT_RECOVERY_FAILED",
       );
     }
     throw new AppError(
-      `Environment changes were not applied; the previous service configuration was preserved. ${safeErrorMessage(error)}`,
+      `Environment changes were not applied; the previous service configuration was preserved. ${failureMessage(error)}`,
       502,
       "SERVICE_ENVIRONMENT_APPLY_FAILED",
     );

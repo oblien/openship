@@ -16,8 +16,14 @@ export function diagnosticPath(value: string): string {
 }
 
 /** Bound work before running expressions; also redact incomplete/truncated secrets. */
-export function redactDiagnosticText(value: string, limit = 2048): string {
-  let text = value.slice(0, MAX_INPUT);
+export function redactDiagnosticText(value: string, limit = 2048, secrets: readonly string[] = []): string {
+  let text = value;
+  // Literal values must be removed before truncation, which could otherwise
+  // cut a secret in half. Names alone cannot identify every credential.
+  for (const secret of [...new Set(secrets)].filter(Boolean).sort((a, b) => b.length - a.length)) {
+    text = text.replaceAll(secret, "[REDACTED]");
+  }
+  text = text.slice(0, MAX_INPUT);
   text = text
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")

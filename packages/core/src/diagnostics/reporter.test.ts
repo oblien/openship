@@ -30,6 +30,13 @@ function recorder(options: ConstructorParameters<typeof ErrorReporter>[0] = {}) 
 }
 
 describe("structured error reporting", () => {
+  it("redacts known values before clipping diagnostics, including innocently named credentials", () => {
+    const secret = "private-value-".repeat(1600);
+    const message = `exec: ${secret}: not found`;
+    expect(redactDiagnosticText(message, 80, [secret])).toBe("exec: [REDACTED]: not found");
+    expect(redactDiagnosticText("old-value and old-value-extended", 200, ["old-value", "old-value-extended"]))
+      .toBe("[REDACTED] and [REDACTED]");
+  });
   it("does not collect caught errors by default, even after installing a destination", async () => {
     const sink = vi.fn();
     const touched = vi.fn();
