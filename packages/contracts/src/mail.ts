@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { MailCertificateHealth, MailCertificateStatus } from "@repo/core";
 import { MailRequestSchemas as input } from "./mail-inputs";
+import { MailFail2banStatusSchema, MailFail2banActionSchema } from "./mail-security";
 import { BackupPolicySchema, BackupRunSchema } from "./backups";
 import { DomainDnsPlanSchema, DomainDnsApplySchema } from "./domains";
 import type { DeploymentEvent } from "./deployment-resources";
@@ -439,6 +440,9 @@ export const MailScopedSchemas = {
 } as const satisfies Record<string, ResourceOperationSchema>;
 
 export const MailServerSchemas = {
+  fail2banStatus: { action: "read", input: input.fail2banStatus, optionalInput: true, output: MailFail2banStatusSchema },
+  fail2banBan: { action: "admin", input: input.fail2banBan, output: MailFail2banActionSchema },
+  fail2banUnban: { action: "admin", input: input.fail2banUnban, output: MailFail2banActionSchema },
   forget: { action: "admin", output: ok },
   getHealth: { action: "read", input: input.health, optionalInput: true, output: MailHealthSchema },
   getCertificate: { action: "read", output: MailCertificateStatusSchema },

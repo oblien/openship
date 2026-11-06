@@ -396,6 +396,8 @@
       "headersHint": "Antwort-Header, die für übereinstimmende Pfade hinzugefügt werden.",
       "permanent": "permanent",
       "cleanUrls": "Saubere URLs",
+      "spaFallback": "SPA-Fallback",
+      "spaFallbackHint": "Statische Websites: index.html für fehlende Pfade ausliefern. Ausschalten für einen echten 404 mit 404.html, falls vorhanden. Websites in Containern zum Anwenden erneut bereitstellen.",
       "cleanUrlsHint": "(.html entfernen)",
       "trailingSlash": "Abschließender Schrägstrich",
       "proxyLimits": "Proxy-Einstellungen",

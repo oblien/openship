@@ -188,6 +188,7 @@ afterEach(async () => {
   container.remove();
   delete window.desktop;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("release check requests (#661)", () => {
@@ -381,6 +382,35 @@ describe("global runtime advisories", () => {
     };
     await act(async () => state[0].refresh());
     expect(state[0].securityOverview.projects[0].findings).toEqual([]);
+  });
+
+  it("replaces an actionable banner with persisted update progress and restores it on failure", async () => {
+    const progress = (status: "running" | "failed") => ({
+      ...affectedOverview,
+      projects: affectedOverview.projects.map((p) => ({
+        ...p,
+        findings: p.findings.map((f) => ({
+          ...f,
+          refresh: {
+            status,
+            deploymentId: "security-deployment",
+            error: status === "failed" ? "Runtime is still affected" : null,
+          },
+        })),
+      })),
+    });
+    vi.useFakeTimers();
+    feed.overview = progress("running");
+    await mount();
+    expect(state[0].runtimeAdvisories).toEqual([]);
+    expect(state[0].securityOverview.projects[0].findings[0].refresh?.status).toBe("running");
+    feed.overview = progress("failed");
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(state[0].runtimeAdvisories).toHaveLength(1);
+    expect(state[0].securityOverview.projects[0].findings[0].refresh?.error).toBe(
+      "Runtime is still affected",
+    );
+    vi.useRealTimers();
   });
 
   it("groups only the apps and service evidence belonging to each advisory", async () => {

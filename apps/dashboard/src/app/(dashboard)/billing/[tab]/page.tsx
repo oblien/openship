@@ -53,6 +53,7 @@ export default async function BillingTabPage({
   };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
     return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer}
+      returnQuery={checkoutReturn ? query : undefined}
       purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt, referralCode: typeof query.ref === "string" ? query.ref : undefined } : undefined} embedded /></BillingPageView>;
   }
   // Buying another server is separate from inspecting an existing subscription.

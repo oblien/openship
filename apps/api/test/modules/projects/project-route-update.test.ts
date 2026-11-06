@@ -198,6 +198,14 @@ describe("updateProject route persistence", () => {
     expect(applyProjectRouting).toHaveBeenCalled();
   });
 
+  it.each([true, false])("saves SPA fallback %s through the existing live routing flow", async (spaFallback) => {
+    const updated = { ...project, routingConfig: { spaFallback } };
+    projectRepo.findById.mockResolvedValue(updated);
+    await updateProject(project.id, { routingConfig: { spaFallback } }, project.organizationId);
+    expect(projectRepo.update).toHaveBeenCalledWith(project.id, expect.objectContaining({ routingConfig: { spaFallback } }));
+    expect(applyProjectRouting).toHaveBeenCalledTimes(1);
+  });
+
   it("persists and applies changed self-hosted proxy settings", async () => {
     projectRepo.findById.mockResolvedValue({ ...project, serverId: "selfhost", routingConfig: { proxy: { gzip: true } } });
     const routingConfig = { proxy: { gzip: false } };

@@ -10,6 +10,7 @@ import {
   writeFile as fsWriteFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
+import { assertLocalHostExecutionAllowed } from "@repo/core";
 
 import type { CommandExecutor, LogEntry } from "../types";
 import {
@@ -26,6 +27,7 @@ import {
  */
 export class LocalExecutor implements CommandExecutor {
   async exec(command: string, opts?: { timeout?: number }): Promise<string> {
+    assertLocalHostExecutionAllowed();
     return new Promise((resolve, reject) => {
       const shell = getLocalShellPath();
       exec(
@@ -54,6 +56,7 @@ export class LocalExecutor implements CommandExecutor {
     opts?: { signal?: AbortSignal; killProcessTree?: boolean },
   ): Promise<{ code: number; output: string }> {
     return new Promise((resolve) => {
+      assertLocalHostExecutionAllowed();
       // Already told to stop before we even spawned (a stream torn down immediately).
       if (opts?.signal?.aborted) {
         resolve({ code: 0, output: "" });

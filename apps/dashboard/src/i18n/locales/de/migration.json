@@ -197,10 +197,12 @@
   },
   "cutover": {
     "warning": "Das Ziel ist live. Du kannst die Originalcontainer entfernen oder gestoppt behalten. Die Quellvolumes bleiben erhalten.",
-    "warningRestart": "Das Ziel ist live. Originale behalten startet zuvor laufende Quellcontainer als unabhängige Kopien neu. Originale entfernen löscht diese Container. Die Quellvolumes bleiben erhalten.",
+    "warningRestart": "Das Ziel ist live. Ohne Änderungen an den Originalen abschließen, sie als unabhängige Kopien neu starten oder entfernen. Quellvolumes bleiben erhalten.",
     "title": "Migration abschließen",
     "stopRemove": "Originale stoppen & entfernen",
     "keep": "Originale behalten",
+    "keepAsIs": "Ohne Neustart der Originale abschließen",
+    "keepRestart": "Originale behalten und neu starten",
     "working": "Wird ausgeführt…"
   },
   "discover": {

@@ -197,10 +197,12 @@
   },
   "cutover": {
     "warning": "El destino está activo. Puedes eliminar los contenedores originales o conservarlos detenidos. Los volúmenes de origen se conservan.",
-    "warningRestart": "El destino está activo. Conservar originales reinicia los contenedores de origen que estaban en ejecución como copias independientes. Eliminar originales los retira. Los volúmenes de origen se conservan.",
+    "warningRestart": "El destino está activo. Finaliza sin cambiar los originales, reinícialos como copias independientes o elimínalos. Se conservan los volúmenes de origen.",
     "title": "Finalizar migración",
     "stopRemove": "Detener y eliminar originales",
     "keep": "Conservar originales",
+    "keepAsIs": "Finalizar sin reiniciar originales",
+    "keepRestart": "Conservar y reiniciar originales",
     "working": "Procesando…"
   },
   "discover": {

@@ -22,7 +22,7 @@ import type { RouteRegister } from "./route-apply.service";
 /** The compiled vercel.json fields a `RouteRegister` carries, and nothing else. */
 export type CompiledRoutingFields = Pick<
   RouteRegister,
-  "proxyLocations" | "redirects" | "headerRules" | "cleanUrls" | "trailingSlash"
+  "proxyLocations" | "redirects" | "headerRules" | "cleanUrls" | "trailingSlash" | "spaFallback"
 >;
 
 /**
@@ -54,6 +54,7 @@ export function compileProjectRoutingFields(
     ...(compiled.redirects.length ? { redirects: compiled.redirects } : {}),
     ...(compiled.headerRules.length ? { headerRules: compiled.headerRules } : {}),
     ...(compiled.cleanUrls ? { cleanUrls: true } : {}),
+    ...(compiled.spaFallback === undefined ? {} : { spaFallback: compiled.spaFallback }),
     ...(compiled.trailingSlash === undefined ? {} : { trailingSlash: compiled.trailingSlash }),
   };
 }

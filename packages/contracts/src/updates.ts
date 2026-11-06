@@ -33,6 +33,18 @@ export const ProjectSecurityResultSchema = Type.Object({
       evidence: Type.Array(Type.String()),
       confidence: Type.Union([Type.Literal("confirmed"), Type.Literal("possible")]),
       canRefresh: Type.Boolean(),
+      refresh: Type.Optional(
+        Type.Object({
+          status: Type.Union([
+            Type.Literal("running"),
+            Type.Literal("awaiting_actions"),
+            Type.Literal("failed"),
+          ]),
+          deploymentId: nullableString,
+          error: nullableString,
+        }),
+      ),
+      imageChangeRequired: Type.Optional(Type.Boolean()),
       refreshBlockedReason: Type.Optional(Type.String()),
       sourceRedeployRequired: Type.Optional(Type.Boolean()),
       runtimeUpgradeRequired: Type.Optional(Type.Boolean()),

@@ -36,6 +36,7 @@ export * from "./domain-retry";
 export * from "./utils";
 export * from "./runtime-version";
 export * from "./errors";
+export { assertLocalHostExecutionAllowed } from "./local-execution-policy";
 export * from "./operation-state";
 export * from "./service-routing";
 export * from "./volume-spec";

@@ -1298,7 +1298,11 @@
     "monitoring": "在监控中查看",
     "persistent": "关闭横幅后，未解决的发现仍会保留在此处。",
     "otherApps": "其他应用 ({count})",
-    "details": "详情与建议"
+    "details": "详情与建议",
+    "refreshFailed": "安全更新失败。重试前请检查部署。",
+    "refreshAwaitingActions": "请检查待处理的部署操作以继续安全更新。",
+    "refreshInProgress": "安全更新正在进行。解决此警告前将验证运行环境。",
+    "viewRefresh": "查看更新"
   },
   "hostSecurity": {
     "title": "服务器安全",

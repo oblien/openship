@@ -259,13 +259,15 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     // strict-inventory contract, but provide its authoritative empty result so
     // the rollback test can exercise loopback allocation without provisioning
     // unrelated edge infrastructure.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
-        edgeProxyFor: () => ({
-          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
-        }),
+        edgeProxyFor: edgeInventory,
+        loopbackPortInventoryFor: edgeInventory,
       };
     });
     // 3. GitHub check runs: there's no installation in a test org.

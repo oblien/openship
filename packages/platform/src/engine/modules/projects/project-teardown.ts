@@ -386,7 +386,9 @@ async function teardownProjectLocked(
           status: "skipped",
           details: "kept: in-flight work did not quiesce",
         });
-        return finalize(steps, false);
+        return finalize(steps, false, "active_work", {
+          active: await getActiveProjectState(projectId),
+        });
       }
     } else {
       // Authoritative graceful gate, deliberately INSIDE the deletion lock.
@@ -670,6 +672,27 @@ async function stepCancelInFlight(
     return true;
   }
 
+  // A parked migration is waiting for an explicit data-retention decision,
+  // not a cancellable writer. Refuse before cancelling any other work. A live
+  // worker still uses the quiescence gate below; never infer it stopped from FSM
+  // status alone or auto-select source destruction/restart during deletion.
+  for (const id of before.activeMigrationIds) {
+    const migration = await repos.dockerMigrationRun.findById(id);
+    if (
+      migration &&
+      ["partial", "awaiting_cutover", "cutover"].includes(migration.status) &&
+      (!migration.executionStartedAt || migration.executionFinishedAt)
+    ) {
+      push({
+        step: "cancel_in_flight",
+        status: "failed",
+        details: before.summary,
+        error: `Migration ${id} requires a decision (${migration.status}). Open Settings → Advanced and finish or resume the migration before deleting this project. No resources were removed.`,
+      });
+      return false;
+    }
+  }
+
   // Diagnostic notes are surfaced only if work remains after the grace window.
   // A capture may finish naturally (or a restore may acknowledge cooperatively),
   // in which case confirmed quiescence is success even if a request raced.
@@ -748,8 +771,8 @@ async function stepCancelInFlight(
   // writes a terminal row only after source restoration/target cleanup. Request
   // that cooperative rollback, then let the shared poll below require the
   // durable terminal acknowledgement. Parked partial/cutover states may refuse
-  // cancellation; in that case deletion safely times out and tells the operator
-  // to resolve the migration first.
+  // cancellation; parked decisions are rejected above. A worker still unwinding
+  // must acknowledge completion through the shared quiescence gate.
   if (before.activeMigrationIds.length > 0) {
     const { migrationOrchestrator } = await import("../migration/migration.orchestrator");
     for (const migrationId of before.activeMigrationIds) {

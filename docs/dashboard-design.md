@@ -132,6 +132,12 @@ version probes inside isolated containers. Workspace owners and admins can pause
 runtime advisory checks with the separate saved setting in Settings → Notifications.
 Monitoring must show checks disabled rather than a clean result; banner visibility
 remains a separate browser preference. Pausing checks also pauses automatic security refreshes.
+Security refresh actions retain a durable deployment receipt. Hide only the finding's
+banner while its update is running or awaiting deployment actions; retain its progress
+in the shared review and Monitoring. Restore the warning with an explicit failure if
+the deployment fails or the promoted runtime remains affected. An unchanged prebuilt
+image is not a remediation: explain that a patched version must be configured instead
+of redeploying the same digest. Opening review alone never resolves a finding.
 Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
 Host notices share that banner and review, linking to **Servers → Runs**. Monitoring's
@@ -404,6 +410,11 @@ cleanup while preserving their persistent data and deployment history.
 Deploy asks for DNS setup only for newly selected custom hostnames or a changed
 destination. Existing hostnames on the same deployed destination continue directly;
 adding only a www hostname asks for that hostname alone.
+
+External Docker migration cutover distinguishes finishing without touching originals,
+keeping and restarting originals, and removing originals. Never infer a retention
+decision from a project deletion request. Parked migrations explain how to finish
+or resume them before deletion; they are not presented as cancellation timeouts.
 
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
@@ -893,6 +904,9 @@ Routing rules have visible sections for rewrites, redirects, response headers, a
 URL behavior. Group proxy settings into uploads, timeouts, response buffering,
 compression, headers/protocol, and upstream TLS. Use human labels and shared filled
 controls; keep directive names in each group's Technical details disclosure.
+SPA fallback uses one default-on switch for static sites in the shared routing editor,
+available even when no rules were detected. Turning it off returns a real 404; explain
+that container-hosted static sites need a redeploy to apply the change.
 Trailing slashes have three choices: automatic, add, and remove. Live edge inspection
 is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
@@ -974,6 +988,12 @@ Use focused behavior tests for changes to field selection, validation, or payloa
 spacing adjustment needs visual verification, not a test that asserts a CSS class string.
 
 ## Mail webmail recovery
+
+Manage Fail2ban bans from the mail server's existing Health row in the shared drawer.
+Load jail details only while open, retain the last reading on refresh failure and
+disable mutations until current status is available. Ban actions select an explicit
+jail; review the exact IP and jail before applying either action. Use server-reported
+management capability and the existing mail API; Cloud mail does not mount this panel.
 
 Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
 webmail app installer. Keep its client card beside a compact Managed email / Coming
@@ -1245,7 +1265,7 @@ Use the shared `assistant` AI icon for the platform. Identify harnesses as
 **Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
 in provider selection, connections, history and settings. Use the shared provider
 labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
-A native sign-in option may still say “Sign in with ChatGPT.” Use Codex’s blue mark with a transparent background, without the white app tile, and Claude Code’s original terracotta mark. Keep their colors across themes, without a current-color mask, inversion or added brand tints. Agent connections open in one dialog, with provider navigation and a single
+A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action. Agent connections open in one dialog, with provider navigation and a single
 visible detail panel. Preserve unfinished sign-in forms when switching providers
 or closing this dialog; hidden content must not capture keyboard focus. Show the
 host in that dialog. Keep permission review and the audit trail in the header menu.

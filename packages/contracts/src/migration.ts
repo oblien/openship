@@ -149,6 +149,12 @@ export const MigrationRequestSchemas = {
   cutover: Type.Object({
     confirmationToken: Type.String({ minLength: 1 }),
     kill: Type.Optional(Type.Boolean()),
+    restartOriginals: Type.Optional(
+      Type.Boolean({
+        description:
+          "For kill=false external cross-server imports only. Defaults to true (restart previously running sources). False finishes without contacting either host or changing any containers or volumes.",
+      }),
+    ),
   }),
   respond: Type.Object({ promptId: ResourceIdSchema, action: Type.String({ minLength: 1 }) }),
   resume: Type.Object({

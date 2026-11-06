@@ -427,6 +427,21 @@ describeDockerE2E("password-protected routes through the real edge", () => {
     expect((await ask("/asset.js", { cookie })).status).toBe(200);
   });
 
+  it("applies fallback changes live without exposing a protected custom error page", async () => {
+    await write("/opt/openship/route-test/404.html", "private not-found page");
+    for (const spaFallback of [false, true, undefined]) {
+      await nginx.registerRoute({ domain: "private.test", tls: true, terminatesTlsLocally: true,
+        staticRoot: "/opt/openship/route-test", spaFallback, proxyLocations });
+      await settleReload();
+      const anonymous = await ask("/missing-page");
+      expect(anonymous.status).toBe(401);
+      expect(anonymous.body).not.toContain("private not-found page");
+      const authenticated = await ask("/missing-page", { cookie });
+      expect(authenticated.status).toBe(spaFallback === false ? 404 : 200);
+      expect(authenticated.body).toBe(spaFallback === false ? "private not-found page" : "private document");
+    }
+  });
+
   it("invalidates old cookies and restores the previous lock after a rejected config update", async () => {
     protection = revokeRouteSessions(protection);
     await nginx.setRouteProtection("private.test", protection);

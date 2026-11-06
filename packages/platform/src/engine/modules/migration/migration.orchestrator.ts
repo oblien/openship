@@ -1977,6 +1977,7 @@ class MigrationOrchestratorImpl {
     organizationId: string,
     confirmationToken: string,
     kill: boolean,
+    restartOriginals = true,
   ): Promise<
     { ok: true; leftBehind: LeftBehindContainer[] } | { ok: false; status: number; error: string }
   > {
@@ -1996,6 +1997,16 @@ class MigrationOrchestratorImpl {
         ok: false,
         status: 409,
         error: "Source removal already started; retry with kill=true to finish cutover",
+      };
+    }
+    if (
+      !restartOriginals &&
+      (kill || run.mode !== "cross_server" || run.sourceServerId === run.targetServerId)
+    ) {
+      return {
+        ok: false,
+        status: 400,
+        error: "restartOriginals=false requires a non-destructive external cross-server cutover",
       };
     }
     const expected = Buffer.from(run.confirmationToken ?? "");
@@ -2020,6 +2031,29 @@ class MigrationOrchestratorImpl {
         status: 409,
         error: "Migration state changed or one of its projects is being deleted",
       };
+    }
+
+    // Explicitly retaining originals AS THEY ARE is bookkeeping only. In
+    // particular, do not acquire host activity: that can wake a managed host.
+    // Use the same admitted worker claim/final acknowledgement as every other
+    // cutover, and never abandon unfinished transfer or rollback checkpoints.
+    if (!restartOriginals) {
+      return this.runWorker(id, async () => {
+        if (
+          claimed.pendingItems?.length ||
+          claimed.recovery.transferRunTag ||
+          claimed.recovery.targetRunningContainerIds?.length ||
+          claimed.recovery.sourceProject
+        ) {
+          return {
+            ok: false as const,
+            status: 409,
+            error: "Migration still has pending data or recovery work; resolve it before finishing",
+          };
+        }
+        await this.transition(id, "succeeded");
+        return { ok: true as const, leftBehind: [] };
+      });
     }
 
     return this.runWorker(id, () => withMigrationActivity(organizationId, claimed.sourceServerId!, claimed.targetServerId!, id, async () => {

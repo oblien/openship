@@ -244,7 +244,7 @@
         },
         {
           "name": "storage",
-          "image": "supabase/storage-api:v1.60.4",
+          "image": "supabase/storage-api:v1.81.0",
           "resources": {
             "cpuCores": 0.5,
             "memoryMb": 512,
@@ -319,7 +319,7 @@
         },
         {
           "name": "meta",
-          "image": "supabase/postgres-meta:v0.96.6",
+          "image": "supabase/postgres-meta:v0.100.0",
           "resources": {
             "cpuCores": 0.25,
             "memoryMb": 256,
@@ -341,7 +341,7 @@
         },
         {
           "name": "studio",
-          "image": "supabase/studio:2026.07.07-sha-a6a04f2",
+          "image": "supabase/studio:2026.10.12-sha-3699278",
           "resources": {
             "cpuCores": 0.5,
             "memoryMb": 1024,
@@ -6560,9 +6560,11 @@
           "healthcheck": {
             "test": [
               "CMD",
+              "docker-entrypoint.sh",
               "rabbitmq-diagnostics",
               "-q",
-              "ping"
+              "check_port_listener",
+              "15672"
             ],
             "interval": "15s",
             "timeout": "10s",
@@ -10049,29 +10051,6 @@
           }
         },
         {
-          "name": "appwrite-geo",
-          "image": "appwrite/geo:0.3.2",
-          "restart": "unless-stopped",
-          "resources": {
-            "cpuCores": 0.5,
-            "memoryMb": 192,
-            "diskMb": 512
-          },
-          "secretEnv": [
-            "GEO_SECRET"
-          ],
-          "healthcheck": {
-            "test": [
-              "CMD-SHELL",
-              "php -r \"exit(json_decode(file_get_contents('http://localhost/v1/health'))->status === 'ok' ? 0 : 1);\""
-            ],
-            "interval": "10s",
-            "timeout": "5s",
-            "retries": 30,
-            "startPeriod": "20s"
-          }
-        },
-        {
           "name": "appwrite-autogravity",
           "image": "ghcr.io/appwrite/autogravity:0.0.11",
           "restart": "unless-stopped",
@@ -10150,8 +10129,8 @@
             "_APP_STORAGE_ANTIVIRUS": "disabled",
             "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
             "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_GEO_ENDPOINT": "",
+            "_APP_GEO_SECRET": "",
             "_APP_FUNCTIONS_RUNTIMES": "",
             "_APP_SITES_RUNTIMES": "",
             "_APP_EMBEDDING": "disabled",
@@ -10161,8 +10140,6 @@
             "_APP_SYSTEM_EMAIL_NAME": "Appwrite",
             "_APP_SYSTEM_EMAIL_ADDRESS": "noreply@example.com",
             "_APP_SYSTEM_SECURITY_EMAIL_ADDRESS": "security@example.com",
-            "OPENSHIP_ADMIN_EMAIL": "{{config:OPENSHIP_ADMIN_EMAIL}}",
-            "OPENSHIP_ADMIN_PASSWORD": "{{config:OPENSHIP_ADMIN_PASSWORD}}",
             "_APP_LOCKING_ENABLED": "enabled",
             "_APP_OPENSSL_KEY_CURRENT": "1",
             "_APP_OPENSSL_KEY_OLDEST": "1",
@@ -10216,7 +10193,6 @@
             "_APP_CONNECTIONS_DB_EXECUTIONS",
             "_APP_OPENSSL_KEY_V1",
             "_APP_NOTIFICATIONS_TRACKING_SECRET",
-            "_APP_GEO_SECRET",
             "OPENSHIP_ADMIN_PASSWORD"
           ],
           "volumes": [
@@ -10239,7 +10215,6 @@
             "appwrite-mongodb",
             "redis",
             "clickhouse",
-            "appwrite-geo",
             "appwrite-autogravity",
             "appwrite-exiftool"
           ],
@@ -10310,8 +10285,8 @@
             "_APP_STORAGE_ANTIVIRUS": "disabled",
             "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
             "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_GEO_ENDPOINT": "",
+            "_APP_GEO_SECRET": "",
             "_APP_FUNCTIONS_RUNTIMES": "",
             "_APP_SITES_RUNTIMES": "",
             "_APP_EMBEDDING": "disabled",
@@ -10373,8 +10348,7 @@
             "_APP_CONNECTIONS_DB_USAGE",
             "_APP_CONNECTIONS_DB_EXECUTIONS",
             "_APP_OPENSSL_KEY_V1",
-            "_APP_NOTIFICATIONS_TRACKING_SECRET",
-            "_APP_GEO_SECRET"
+            "_APP_NOTIFICATIONS_TRACKING_SECRET"
           ],
           "volumes": [
             "appwrite_uploads:/storage/uploads",
@@ -10396,7 +10370,6 @@
             "appwrite-mongodb",
             "redis",
             "clickhouse",
-            "appwrite-geo",
             "appwrite-autogravity",
             "appwrite-exiftool"
           ]
@@ -10457,8 +10430,8 @@
             "_APP_STORAGE_ANTIVIRUS": "disabled",
             "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
             "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_GEO_ENDPOINT": "",
+            "_APP_GEO_SECRET": "",
             "_APP_FUNCTIONS_RUNTIMES": "",
             "_APP_SITES_RUNTIMES": "",
             "_APP_EMBEDDING": "disabled",
@@ -10520,8 +10493,7 @@
             "_APP_CONNECTIONS_DB_USAGE",
             "_APP_CONNECTIONS_DB_EXECUTIONS",
             "_APP_OPENSSL_KEY_V1",
-            "_APP_NOTIFICATIONS_TRACKING_SECRET",
-            "_APP_GEO_SECRET"
+            "_APP_NOTIFICATIONS_TRACKING_SECRET"
           ],
           "commandArgv": [
             "sh",
@@ -10533,7 +10505,6 @@
             "appwrite-mongodb",
             "redis",
             "clickhouse",
-            "appwrite-geo",
             "appwrite-autogravity",
             "appwrite-exiftool"
           ]
@@ -10594,8 +10565,8 @@
             "_APP_STORAGE_ANTIVIRUS": "disabled",
             "_APP_AUTOGRAVITY_HOST": "http://appwrite-autogravity:8080",
             "_APP_EXIFTOOL_HOST": "http://appwrite-exiftool:8080",
-            "_APP_GEO_ENDPOINT": "http://appwrite-geo/v1",
-            "_APP_GEO_SECRET": "{{config:GEO_SECRET}}",
+            "_APP_GEO_ENDPOINT": "",
+            "_APP_GEO_SECRET": "",
             "_APP_FUNCTIONS_RUNTIMES": "",
             "_APP_SITES_RUNTIMES": "",
             "_APP_EMBEDDING": "disabled",
@@ -10657,8 +10628,7 @@
             "_APP_CONNECTIONS_DB_USAGE",
             "_APP_CONNECTIONS_DB_EXECUTIONS",
             "_APP_OPENSSL_KEY_V1",
-            "_APP_NOTIFICATIONS_TRACKING_SECRET",
-            "_APP_GEO_SECRET"
+            "_APP_NOTIFICATIONS_TRACKING_SECRET"
           ],
           "commandArgv": [
             "sh",
@@ -10670,7 +10640,6 @@
             "appwrite-mongodb",
             "redis",
             "clickhouse",
-            "appwrite-geo",
             "appwrite-autogravity",
             "appwrite-exiftool"
           ]
@@ -10761,14 +10730,6 @@
           "label": "Usage password",
           "generate": "secret",
           "generateGroup": "appwrite-usage-password",
-          "secret": true
-        },
-        {
-          "service": "appwrite-geo",
-          "key": "GEO_SECRET",
-          "label": "Geo secret",
-          "generate": "secret",
-          "generateGroup": "appwrite-geo-secret",
           "secret": true
         },
         {
@@ -10942,9 +10903,23 @@
             "description": "Generated owner credentials and private persistent databases."
           }
         ],
-        "article": "# Appwrite\n\nDeploy an Appwrite 2.7.0 backend with the Console, API, combined worker, scheduler,\nand Realtime service. PostgreSQL, MongoDB, Redis, and ClickHouse stay private on\nthe project network. Storage and database state use project-scoped named volumes.\nThe gateway serves the Console and `/v1` API on one OpenShip domain.\n\n## First login\n\nChoose the owner's email during installation. OpenShip generates the initial\npassword and creates that owner before the public gateway starts. Sign in using\nthe connection panel, then create your organization and project in the Console.\nOnly the first Console owner can register; invite additional team members through\nAppwrite. Redeploying preserves accounts and passwords.\n\n## Included services\n\nAuth, TablesDB, DocumentsDB, VectorsDB, file Storage, Realtime, and usage statistics\nare included. Configure your own SMTP server in the Appwrite API and worker before\nusing password recovery, invitations, or email messaging. Keep the domain stable;\nupdate `OPENSHIP_PUBLIC_URL` across the Appwrite services if you change it.\n\nFunctions and Sites require Appwrite's Docker executor, runtime networks, and\nwildcard routing. Those runtime services are not included in this catalog recipe.\nEmbedding model execution also requires an additional model service. Use the\n[official installation guide](https://appwrite.io/docs/advanced/self-hosting/installation)\nfor those deployments; this recipe does not mount the host Docker socket or create\nunmanaged sibling workloads.\n\n## Resources and maintenance\n\nUse at least 2 CPU cores, 4 GB RAM, and 10 GB free disk; allow more for application\ntraffic and stored files. Back up the database and storage volumes together, and\nreview Appwrite's upgrade instructions before changing versions. The encryption\nkey is generated once and must be retained with your backups.\n\nMongoDB initialization and ClickHouse retention helpers are taken from the\n[Appwrite 2.7.0 distribution](https://github.com/appwrite/appwrite/tree/2.7.0)."
+        "article": "# Appwrite\n\nDeploy an Appwrite 2.7.0 backend with the Console, API, combined worker, scheduler,\nand Realtime service. PostgreSQL, MongoDB, Redis, and ClickHouse stay private on\nthe project network. Storage and database state use project-scoped named volumes.\nThe gateway serves the Console and `/v1` API on one OpenShip domain.\n\n## First login\n\nChoose the owner's email during installation. OpenShip generates the initial\npassword and creates that owner before the public gateway starts. Sign in using\nthe connection panel, then create your organization and project in the Console.\nOnly the first Console owner can register; invite additional team members through\nAppwrite. Redeploying preserves accounts and passwords.\n\n## Included services\n\nAuth, TablesDB, DocumentsDB, VectorsDB, file Storage, Realtime, and usage statistics\nare included. Configure your own SMTP server in the Appwrite API and worker before\nusing password recovery, invitations, or email messaging. Keep the domain stable;\nupdate `OPENSHIP_PUBLIC_URL` across the Appwrite services if you change it.\n\nFunctions and Sites require Appwrite's Docker executor, runtime networks, and\nwildcard routing. Those runtime services are not included in this catalog recipe.\nEmbedding model execution also requires an additional model service. Use the\n[official installation guide](https://appwrite.io/docs/advanced/self-hosting/installation)\nfor those deployments; this recipe does not mount the host Docker socket or create\nunmanaged sibling workloads.\n\n## Resources and maintenance\n\nUse at least 2 CPU cores, 4 GB RAM, and 10 GB free disk; allow more for application\ntraffic and stored files. Back up the database and storage volumes together, and\nreview Appwrite's upgrade instructions before changing versions. The encryption\nkey is generated once and must be retained with your backups.\n\nMongoDB initialization and ClickHouse retention helpers are taken from the\n[Appwrite 2.7.0 distribution](https://github.com/appwrite/appwrite/tree/2.7.0).\n\nIP geolocation enrichment is disabled until Appwrite publishes a Geo image with the October 2026 PHP security fixes. Core API, Console, authentication, databases, storage and realtime do not require this optional service."
       },
-      "schemaVersion": 2
+      "schemaVersion": 2,
+      "prepare": [
+        {
+          "service": "appwrite",
+          "phase": "post-ready",
+          "capture": "Appwrite owner setup verified",
+          "command": "test -f /tmp/.openship-owner-ready && printf \"Appwrite owner setup verified\\n\"",
+          "readiness": {
+            "test": "test -f /tmp/.openship-owner-ready",
+            "interval": 2000,
+            "retries": 150
+          },
+          "mustSucceed": true
+        }
+      ]
     },
     {
       "available": true,

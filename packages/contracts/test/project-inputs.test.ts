@@ -29,3 +29,13 @@ describe("project publicEndpoints domain cap (issue #1018)", () => {
     expect(() => parseInput(UpdateProjectBody, { publicEndpoints })).toThrow();
   });
 });
+
+
+describe.each([CreateProjectBody, UpdateProjectBody])("static fallback input", (schema) => {
+  it.each([true, false])("preserves %s instead of stripping the setting", (spaFallback) => {
+    expect(parseInput(schema, { name: "site", routingConfig: { spaFallback } }).routingConfig).toEqual({ spaFallback });
+  });
+  it.each(["false", 0, null])("rejects a non-boolean setting: %s", (spaFallback) => {
+    expect(() => parseInput(schema, { name: "site", routingConfig: { spaFallback } })).toThrow();
+  });
+});
