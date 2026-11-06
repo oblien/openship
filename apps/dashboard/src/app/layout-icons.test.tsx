@@ -3,17 +3,27 @@ import { runInNewContext } from "node:vm";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLOUD_ICON_BASE_URL, Icon, iconAssetUrl, outlineModern } from "@repo/ui/icons";
+import { APPEARANCE_DEFAULTS } from "@repo/core";
 
 const mocks = vi.hoisted(() => ({
   deployment: vi.fn(),
   runtimeTarget: { selfHosted: true },
   provider: ({ children }: { children: ReactNode }) => children,
+  headers: new Headers(),
+  themeCookie: undefined as string | undefined,
 }));
 
-vi.mock("@repo/core", () => ({ runtimeTarget: mocks.runtimeTarget }));
+vi.mock("@repo/core", async (original) => ({
+  ...(await original<typeof import("@repo/core")>()),
+  runtimeTarget: mocks.runtimeTarget,
+}));
 vi.mock("next/headers", () => ({
-  headers: async () => new Headers(),
-  cookies: async () => ({ get: () => undefined }),
+  headers: async () => mocks.headers,
+  cookies: async () => ({
+    get: (name: string) => name === "openship-theme" && mocks.themeCookie
+      ? { value: mocks.themeCookie }
+      : undefined,
+  }),
 }));
 vi.mock("@/lib/server/session", () => ({ getDeploymentInfoOrNull: mocks.deployment }));
 vi.mock("@/lib/server/product-view", () => ({ resolveRequestProductView: async () => "platform" }));
@@ -36,8 +46,32 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.runtimeTarget.selfHosted = true;
   mocks.deployment.mockResolvedValue({ selfHosted: false, deployMode: "cloud" });
+  mocks.headers = new Headers();
+  mocks.themeCookie = undefined;
   vi.stubEnv("OPENSHIP_LOCAL_API_URL", "");
   vi.stubEnv("OPENSHIP_ICON_BASE_URL", "");
+});
+
+describe("dashboard theme before hydration", () => {
+  it.each(["light", "dim", "dark"] as const)("renders the saved %s palette on the server", async (mode) => {
+    mocks.themeCookie = `${mode}:${mode}`;
+    const html = renderToStaticMarkup(await RootLayout({ children: null }));
+    expect(html).toContain(`data-theme="${mode}"`);
+    expect(html).toContain(`background-color:${APPEARANCE_DEFAULTS[mode]["--th-bg-page"]}`);
+  });
+
+  it("reads the proxy's theme header when SSR cookies are unavailable", async () => {
+    mocks.headers.set("x-openship-theme", "system:dark");
+    const html = renderToStaticMarkup(await RootLayout({ children: null }));
+    expect(html).toContain('data-theme="dark"');
+  });
+
+  it("rejects an invalid cookie rather than interpolating it into the page", async () => {
+    mocks.themeCookie = "dim:dark; color:red";
+    const html = renderToStaticMarkup(await RootLayout({ children: null }));
+    expect(html).toContain('data-theme="light"');
+    expect(html).not.toContain("color:red");
+  });
 });
 afterEach(() => vi.unstubAllEnvs());
 

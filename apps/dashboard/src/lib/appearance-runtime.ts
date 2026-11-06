@@ -8,6 +8,7 @@ import {
   type AppearancePreferences,
   type ThemeMode,
 } from "@repo/core";
+import { THEME_COOKIE, themeCookieValue, type ThemePreference } from "./theme-cookie";
 
 export const APPEARANCE_CACHE_POINTER = "openship-appearance-owner";
 export const APPEARANCE_CHANGED = "openship:appearance-changed";
@@ -108,40 +109,67 @@ export function cacheAppearance(
       "dashboard/appearance/cache",
     ); /* Account persistence still succeeds when browser storage is unavailable. */
   }
+  persistThemeCookie(preferences, mode);
+}
+
+export function persistThemeCookie(preferences: AppearancePreferences, mode: ThemeMode): void {
+  try {
+    const secure = window.location.protocol === "https:" ? ";secure" : "";
+    document.cookie = `${THEME_COOKIE}=${themeCookieValue(preferences.active, mode)};path=/;max-age=31536000;samesite=lax${secure}`;
+  } catch {
+    /* diagnostics-ignore: Browser cookie restrictions must not prevent appearance changes. */
+  }
 }
 /** Serializable pre-hydration painter. Only typed CSS values on known properties are applied. */
 export function bootAppearance(
   defaults: Record<ThemeMode, { "--th-bg-page": string }>,
   tokens: Array<{ key: string; type: string }>,
+  initialTheme?: ThemePreference | null,
 ) {
   try {
     const desktop = !!(window as { desktop?: { isDesktop?: boolean } }).desktop?.isDesktop;
     const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-    const legacy = localStorage.getItem("theme");
+    let legacy: string | null = null;
+    let snapshot: { mode?: string; active?: string; variables?: Record<string, unknown> } | null = null;
+    try {
+      legacy = localStorage.getItem("theme");
+      const owner = localStorage.getItem("openship-appearance-owner");
+      const raw = owner?.startsWith("openship-appearance-v1:")
+        ? localStorage.getItem(`${owner}:paint`)
+        : null;
+      snapshot = raw && raw.length < 64_000 ? JSON.parse(raw) : null;
+    } catch {
+      // The cookie still supplies a palette when storage is blocked or corrupt.
+    }
+    const preference = initialTheme?.active ?? legacy;
     let mode =
-      legacy === "light" || legacy === "dim" || legacy === "dark"
-        ? legacy
-        : legacy === "system" || desktop
+      preference === "light" || preference === "dim" || preference === "dark"
+        ? preference
+        : preference === "system" || desktop
           ? dark
             ? desktop
               ? "dim"
               : "dark"
             : "light"
           : "light";
-    const owner = localStorage.getItem("openship-appearance-owner");
-    const raw = owner?.startsWith("openship-appearance-v1:")
-      ? localStorage.getItem(`${owner}:paint`)
-      : null;
-    const snapshot = raw && raw.length < 64_000 ? JSON.parse(raw) : null;
-    if (snapshot && ["light", "dim", "dark"].includes(snapshot.mode))
+    // A failed cache write must not override a newer saved cookie with old tokens.
+    const compatible =
+      snapshot &&
+      ["light", "dim", "dark"].includes(snapshot.mode ?? "") &&
+      (!initialTheme ||
+        (snapshot.mode === initialTheme.resolved &&
+          (initialTheme.active !== "system" || snapshot.active === "system")))
+        ? snapshot
+        : null;
+    if (compatible && !initialTheme)
       mode =
-        snapshot.active === "system"
+        compatible.active === "system"
           ? dark
             ? desktop
               ? "dim"
               : "dark"
             : "light"
-          : snapshot.mode;
+          : (compatible.mode as ThemeMode);
     const root = document.documentElement;
     root.setAttribute("data-theme", mode);
     const allowed: Record<string, string> = Object.fromEntries(
@@ -162,7 +190,7 @@ export function bootAppearance(
       "--appearance-line-height": "line-height",
       "--appearance-font-weight": "font-weight",
     });
-    for (const [key, value] of Object.entries(snapshot?.variables ?? {}))
+    for (const [key, value] of Object.entries(compatible?.variables ?? {}))
       if (
         Object.hasOwn(allowed, key) &&
         typeof value === "string" &&
@@ -175,6 +203,6 @@ export function bootAppearance(
     root.style.backgroundColor =
       root.style.getPropertyValue("--th-bg-page") || defaults[mode as ThemeMode]["--th-bg-page"];
   } catch {
-    document.documentElement.setAttribute("data-theme", "light");
+    // Retain the server-rendered palette if a browser API is unavailable.
   }
 }
