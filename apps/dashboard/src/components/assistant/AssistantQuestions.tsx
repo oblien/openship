@@ -39,6 +39,7 @@ export function AssistantQuestions({
     <section
       className="mb-3 overflow-hidden rounded-2xl bg-card/80 backdrop-blur-xl"
       aria-label="Agent questions"
+      data-assistant-questions-open={opened}
     >
       <Button
         type="button"
