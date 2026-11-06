@@ -53,7 +53,8 @@ export function Fail2banDrawer({
 
 /** Lazy, server-scoped reads. Neither opening Health nor its poll reads jail details. */
 function Fail2banPanel({ serverId }: { serverId: string }) {
-  const { t, locale } = useI18n();
+  const { t, locale, dir } = useI18n();
+  const isolate = (value: string) => (dir === "rtl" ? `\u2066${value}\u2069` : value);
   const copy = t.emailsAdmin.fail2ban;
   const [status, setStatus] = useState<MailFail2banStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -207,7 +208,9 @@ function Fail2banPanel({ serverId }: { serverId: string }) {
                 <ul className="divide-y divide-border/40">
                   {detail.bannedIps.map((address) => (
                     <li key={address} className="flex items-center justify-between gap-3 py-2">
-                      <span className="min-w-0 break-all font-mono text-xs">{address}</span>
+                      <bdi dir="ltr" className="min-w-0 break-all font-mono text-xs">
+                        {address}
+                      </bdi>
                       {status.canManage && (
                         <Button
                           variant="ghost"
@@ -256,6 +259,7 @@ function Fail2banPanel({ serverId }: { serverId: string }) {
               <span>{copy.address}</span>
               <Input
                 variant="filled"
+                dir="ltr"
                 value={ip}
                 onChange={(event) => {
                   setIp(event.target.value);
@@ -286,8 +290,8 @@ function Fail2banPanel({ serverId }: { serverId: string }) {
         >
           <p className="break-words text-sm">
             {interpolate(review.action === "ban" ? copy.banReview : copy.unbanReview, {
-              ip: review.ip,
-              jail: review.jail,
+              ip: isolate(review.ip),
+              jail: isolate(review.jail),
             })}
           </p>
           <div className="flex justify-end gap-2">
