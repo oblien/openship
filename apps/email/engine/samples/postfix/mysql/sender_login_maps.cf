@@ -2,4 +2,4 @@ hosts       = PH_SQL_SERVER_ADDRESS:PH_SQL_SERVER_PORT
 user        = PH_VMAIL_DB_BIND_USER
 password    = PH_VMAIL_DB_BIND_PASSWD
 dbname      = PH_VMAIL_DB_NAME
-query       = SELECT mailbox.username FROM mailbox,domain WHERE mailbox.username='%s' AND mailbox.domain='%d' AND mailbox.domain=domain.domain AND mailbox.enablesmtp=1 AND mailbox.active=1 AND domain.backupmx=0 AND domain.active=1
+query       = SELECT m.username FROM mailbox AS m JOIN domain AS d ON m.domain=d.domain WHERE m.username='%s' AND m.domain='%d' AND m.enablesmtp=1 AND m.active=1 AND d.backupmx=0 AND d.active=1 UNION SELECT m.username FROM forwardings AS f JOIN domain AS d ON f.domain=d.domain JOIN mailbox AS m ON f.forwarding=m.username JOIN domain AS md ON m.domain=md.domain WHERE f.address='%s' AND f.domain='%d' AND f.address<>f.domain AND f.is_alias=1 AND f.active=1 AND d.backupmx=0 AND d.active=1 AND m.enablesmtp=1 AND m.active=1 AND md.backupmx=0 AND md.active=1
