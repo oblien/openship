@@ -20,6 +20,7 @@
     "build:all": "turbo run build",
     "start": "turbo run start --filter=@repo/api --filter=@repo/dashboard --concurrency=10",
     "build:desktop": "bun run --cwd apps/desktop make",
+    "build:mobile": "bun run --cwd apps/mobile build",
     "build:cli": "bun run --cwd apps/cli build",
     "cli": "bun run --cwd apps/cli cli",
     "build:server": "bun run --cwd apps/api build-release",
