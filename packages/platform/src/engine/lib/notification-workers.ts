@@ -15,8 +15,7 @@
  */
 
 import {
-  diagnosticProperty,
-  redactDiagnosticText,
+  providerFailureMessage,
   observedAllSettled,
   reportError,
   reportCaughtError as observeCaughtError,
@@ -274,7 +273,9 @@ export function buildTelegramText(input: { title: string; body: string }): strin
 
 /* ─── Channel workers ─────────────────────────────────────────────────────── */
 
-class PermanentNotificationError extends Error {}
+/** Only messages authored in this module cross the notification boundary. */
+class NotificationDeliveryError extends Error {}
+class PermanentNotificationError extends NotificationDeliveryError {}
 
 async function sendEmail(
   delivery: NotificationDelivery,
@@ -282,7 +283,7 @@ async function sendEmail(
 ): Promise<void> {
   const config = channel.config as { address?: string; accountEmail?: boolean };
   if (!config?.address) {
-    throw new Error("Email channel has no address configured");
+    throw new NotificationDeliveryError("Email channel has no address configured");
   }
 
   if (config.accountEmail || channel.id.startsWith("nch_account_email_")) {
@@ -307,7 +308,7 @@ async function sendEmail(
   // alert is retried and the reason lands in the delivery row's lastError, and the test
   // endpoint's catch now refuses to verify the channel.
   if (!delivered) {
-    throw new Error(
+    throw new NotificationDeliveryError(
       "No email transport is configured on this instance, so the message could not be " +
         "sent. Configure SMTP in Settings → Email.",
     );
@@ -320,7 +321,7 @@ async function sendWebhook(
 ): Promise<void> {
   const config = channel.config as { url?: string; hmacSecret?: string };
   if (!config?.url) {
-    throw new Error("Webhook channel has no URL configured");
+    throw new NotificationDeliveryError("Webhook channel has no URL configured");
   }
 
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
@@ -372,8 +373,7 @@ async function sendWebhook(
     allowPrivate,
   });
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Webhook returned ${res.status}: ${text}`);
+    throw new NotificationDeliveryError(providerFailureMessage({ status: res.status }, "Webhook delivery failed"));
   }
 }
 
@@ -389,7 +389,7 @@ async function sendDiscord(
 ): Promise<void> {
   const config = channel.config as { webhookUrl?: string };
   if (!config?.webhookUrl) {
-    throw new Error("Discord channel has no webhook URL configured");
+    throw new NotificationDeliveryError("Discord channel has no webhook URL configured");
   }
 
   // Webhook URL is encrypted at storage time.
@@ -418,8 +418,7 @@ async function sendDiscord(
     allowPrivate,
   });
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Discord webhook returned ${res.status}: ${text}`);
+    throw new NotificationDeliveryError(providerFailureMessage({ status: res.status }, "Discord webhook delivery failed"));
   }
 }
 
@@ -429,7 +428,7 @@ async function sendSlack(
 ): Promise<void> {
   const config = channel.config as { webhookUrl?: string; channelName?: string };
   if (!config?.webhookUrl) {
-    throw new Error("Slack channel has no webhook URL configured");
+    throw new NotificationDeliveryError("Slack channel has no webhook URL configured");
   }
 
   // The webhook URL is encrypt()'d at storage time. Decrypt before
@@ -450,8 +449,7 @@ async function sendSlack(
     allowPrivate,
   });
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Slack webhook returned ${res.status}: ${text}`);
+    throw new NotificationDeliveryError(providerFailureMessage({ status: res.status }, "Slack webhook delivery failed"));
   }
 }
 
@@ -461,7 +459,7 @@ async function sendMSTeams(
 ): Promise<void> {
   const config = channel.config as { webhookUrl?: string };
   if (!config?.webhookUrl) {
-    throw new Error("Microsoft Teams channel has no webhook URL configured");
+    throw new NotificationDeliveryError("Microsoft Teams channel has no webhook URL configured");
   }
 
   // Webhook URL is encrypted at storage time.
@@ -509,8 +507,7 @@ async function sendMSTeams(
   // Note: Power Automate Workflows respond 202 even when the flow fails
   // downstream — a 2xx means "accepted", not "delivered".
   if (!res.ok) {
-    const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
-    throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text}`);
+    throw new NotificationDeliveryError(providerFailureMessage({ status: res.status }, "Microsoft Teams webhook delivery failed"));
   }
 }
 
@@ -523,8 +520,8 @@ async function sendTelegram(
     chatId?: string;
     messageThreadId?: string;
   };
-  if (!config?.botToken) throw new Error("Telegram channel has no bot token configured");
-  if (!config?.chatId) throw new Error("Telegram channel has no chat ID configured");
+  if (!config?.botToken) throw new NotificationDeliveryError("Telegram channel has no bot token configured");
+  if (!config?.chatId) throw new NotificationDeliveryError("Telegram channel has no chat ID configured");
 
   // Bot token is encrypted at storage time.
   const botToken = decrypt(config.botToken);
@@ -542,32 +539,34 @@ async function sendTelegram(
   // The host is fixed (api.telegram.org), so unlike the user-URL workers there's
   // no allowPrivate escape hatch to honor — still routed through safeFetch for
   // the IP pin, the redirect refusal and the timeout.
-  // The shared channel error boundary sanitizes transport and response failures
-  // together before either the test endpoint or delivery runner exposes them.
+  // The shared channel error boundary exposes approved summaries and codes
+  // for transport failures; response bodies never become public error text.
   const res = await safeFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     timeoutMs: 10_000,
   });
-  const raw = await res.text().catch((diagnosticFailure) => { observeCaughtError(channelErrorMessage(diagnosticFailure, channel), "platform/engine/lib/notification-workers"); return ""; });
-
   if (!res.ok) {
-    throw new Error(`Telegram API returned ${res.status}: ${raw}`);
+    throw new NotificationDeliveryError(providerFailureMessage({ status: res.status }, "Telegram delivery failed"));
   }
+  const raw = await res.text().catch((diagnosticFailure) => {
+    observeCaughtError(providerFailureMessage(diagnosticFailure, "The Telegram response could not be read"), "platform/engine/lib/notification-workers");
+    return "";
+  });
   // Telegram answers HTTP 200 with `{ok:false, description}` for the most common
   // misconfigurations (bot never started by the user, kicked from the group, bad
   // chat id). Checking only the status would mark those delivered — and, worse,
   // flip the channel to `verified`.
-  let parsed: { ok?: boolean; description?: string } | null = null;
+  let parsed: { ok?: boolean; error_code?: number } | null = null;
   try {
-    parsed = JSON.parse(raw) as { ok?: boolean; description?: string };
+    parsed = JSON.parse(raw) as { ok?: boolean; error_code?: number };
   } catch {
     return; // 200 with an unparseable body: accept rather than retry forever.
   }
   if (parsed && parsed.ok === false) {
-    throw new Error(
-      `Telegram rejected the message: ${parsed.description ?? "unknown error"}`,
+    throw new NotificationDeliveryError(
+      providerFailureMessage({ status: parsed.error_code }, "Telegram rejected the message. Check the bot’s chat access and permissions"),
     );
   }
 }
@@ -594,7 +593,7 @@ const WORKERS: Record<
  */
 export async function sendTestToChannel(channel: NotificationChannel): Promise<void> {
   const worker = WORKERS[channel.kind];
-  if (!worker) throw new Error(`No worker for channel kind "${channel.kind}"`);
+  if (!worker) throw new NotificationDeliveryError("This notification channel type is not supported");
   const testDelivery = {
     id: "test",
     userId: channel.userId,
@@ -606,31 +605,14 @@ export async function sendTestToChannel(channel: NotificationChannel): Promise<v
   } as unknown as NotificationDelivery;
   try { await worker(testDelivery, channel); }
   catch (error) {
-    // The caller observes this sanitized error; raw webhook paths are credentials.
-    throw new Error(channelErrorMessage(error, channel));
+    // The caller receives an approved summary, never provider text or payloads.
+    throw new Error(notificationErrorMessage(error));
   }
 }
 
-function channelErrorMessage(error: unknown, channel: NotificationChannel): string {
-  const secrets: string[] = [];
-  const config = (channel.config ?? {}) as Record<string, unknown>;
-  for (const key of ["webhookUrl", "botToken", "hmacSecret", "url"]) {
-    const stored = config[key];
-    if (typeof stored !== "string" || !stored) continue;
-    secrets.push(stored);
-    if (key === "url") continue;
-    try {
-      secrets.push(decrypt(stored));
-    } catch {
-      observeCaughtError("Notification channel credentials could not be decrypted.", "platform/engine/lib/notification-workers");
-    }
-  }
-  const message = typeof error === "string" ? error : diagnosticProperty(error, "message");
-  return redactDiagnosticText(
-    typeof message === "string" ? message : "Notification delivery failed.",
-    2000,
-    secrets,
-  );
+function notificationErrorMessage(error: unknown): string {
+  return error instanceof NotificationDeliveryError
+    ? error.message : providerFailureMessage(error, "Notification delivery failed");
 }
 
 /* ─── Runner loop ─────────────────────────────────────────────────────────── */
@@ -685,7 +667,7 @@ async function deliverQueuedNotifications(): Promise<void> {
         if (!worker) {
           await repos.notificationDelivery.markFailed(
             delivery.id,
-            `No worker for channel kind "${channel.kind}"`,
+            "This notification channel type is not supported",
             false,
             attempt,
           );
@@ -699,7 +681,7 @@ async function deliverQueuedNotifications(): Promise<void> {
           observeCaughtError(diagnosticFailure, "platform/engine/lib/notification-workers");
         });
       } catch (err) {
-        const message = channel ? channelErrorMessage(err, channel) : "Notification lookup temporarily unavailable";
+        const message = channel ? notificationErrorMessage(err) : "Notification lookup temporarily unavailable";
         const retry = !(err instanceof PermanentNotificationError) &&
           ((delivery.payload as { durable?: boolean })?.durable === true || attempt < MAX_ATTEMPTS);
         await repos.notificationDelivery.markFailed(delivery.id, message, retry, attempt);

@@ -1,4 +1,4 @@
-import { diagnosticProperty, redactDiagnosticText, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { providerFailureMessage, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type Dockerode from "dockerode";
 import { AppError, isValidEnvKey } from "@repo/core";
 import { randomUUID } from "node:crypto";
@@ -30,7 +30,7 @@ function conflict(message: string): never {
   throw new AppError(message, 409, "SERVICE_ENVIRONMENT_UNAVAILABLE");
 }
 
-/** Its text contains sanitized provider detail plus public Docker state fields. */
+/** Its text is built from approved messages and public Docker state fields. */
 class EnvironmentStartupError extends Error {}
 
 function containerIdentity(
@@ -62,19 +62,10 @@ export async function applyDockerEnvironment(
     }
   }
   const original = docker.getContainer(containerId);
-  const secrets = [...Object.values(environment), ...(options.commandArgv ?? [])];
-  const failureMessage = (error: unknown) => {
-    if (error instanceof EnvironmentStartupError) return error.message;
-    const message = diagnosticProperty(error, "message");
-    return redactDiagnosticText(
-      typeof message === "string" ? message : typeof error === "string" ? error : "Docker operation failed",
-      2000,
-      secrets,
-    );
-  };
   // Never report the original provider error, its stack or attached payload.
-  const reportFailure = (error: unknown) => {
-    const message = failureMessage(error);
+  const reportFailure = (error: unknown, summary: string) => {
+    const message = error instanceof EnvironmentStartupError
+      ? error.message : providerFailureMessage(error, summary);
     observeCaughtError(new Error(message), "adapters/runtime/docker-environment");
     return message;
   };
@@ -82,10 +73,8 @@ export async function applyDockerEnvironment(
   try {
     before = await original.inspect();
   } catch (error) {
-    throw new AppError(reportFailure(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
+    throw new AppError(reportFailure(error, "The running service could not be inspected"), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
   }
-  secrets.push(...(before.Config.Env ?? []).map((entry) => entry.slice(entry.indexOf("=") + 1)));
-  secrets.push(...(before.Config.Cmd ?? []), ...(before.Config.Entrypoint ?? []));
   const labels = before.Config.Labels ?? {};
   if (
     (labels["openship.project"] && labels["openship.project"] !== options.projectId) ||
@@ -110,7 +99,7 @@ export async function applyDockerEnvironment(
         "The running service's image is no longer available on this target. Use Redeploy to rebuild it.",
       );
     }
-    throw new AppError(reportFailure(error), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
+    throw new AppError(reportFailure(error, "The service image could not be inspected"), 502, "SERVICE_ENVIRONMENT_UNAVAILABLE");
   }
 
   const name = before.Name.replace(/^\//, "");
@@ -180,6 +169,7 @@ export async function applyDockerEnvironment(
   let stopped = false;
   const disconnected: string[] = [];
   const wasRunning = before.State.Running || before.State.Restarting;
+  let operation = "Creating the replacement container";
   try {
     // Docker validates the image, mounts and network configuration at create
     // time, without starting a second process over the service's volumes.
@@ -187,9 +177,11 @@ export async function applyDockerEnvironment(
     if (wasRunning) {
       // stop() honors the configured signal/grace period and Docker's default
       // SIGTERM/10s when none was specified. Never force-remove the live app.
+      operation = "Stopping the previous container";
       await original.stop();
       stopped = true;
     }
+    operation = "Reserving the previous container name";
     await original.rename({ name: `${name}-env-backup-${randomUUID().slice(0, 8)}` });
     renamed = true;
     for (const network of Object.keys(endpointSettings)) {
@@ -198,19 +190,25 @@ export async function applyDockerEnvironment(
       // its network configuration for rollback without unnecessary reconnects.
       const ipam = endpointSettings[network]!.IPAMConfig;
       if (!ipam?.IPv4Address && !ipam?.IPv6Address) continue;
+      operation = "Releasing the previous container's static network address";
       await docker.getNetwork(network).disconnect({ Container: before.Id });
       disconnected.push(network);
     }
+    operation = "Naming the replacement container";
     await replacement.rename({ name });
+    operation = "Starting the replacement container";
     await replacement.start();
     // Docker acknowledges start before PID 1 has read its environment. Catch an
     // immediate startup exit before discarding the recoverable old container.
     await new Promise((resolve) => setTimeout(resolve, STARTUP_CHECK_MS));
+    operation = "Inspecting the replacement container";
     const after = await replacement.inspect();
     const sample = stabilitySampleFromDockerInspect(after);
     // The same classifier as deployment. This fresh replacement starts at zero
     // restarts; Apply retains its short check and rejects any startup bounce.
-    const latest = { ...sample, errorLine: sample.errorLine ? failureMessage(sample.errorLine) : null };
+    // State.Error is free-form provider text and can contain credentials that
+    // were never present in the service env. The verdict uses structured state.
+    const latest = { ...sample, errorLine: null };
     const verdict = classifyStability({ ...latest, restartCount: 0 }, latest, {
       windowMs: STARTUP_CHECK_MS, pollMs: STARTUP_CHECK_MS, crashRestarts: 1, windowElapsed: true,
     });
@@ -220,6 +218,7 @@ export async function applyDockerEnvironment(
       );
     }
     const result = containerIdentity(replacement.id, after);
+    operation = "Saving the replacement service and refreshing its routes";
     await options.onReplaced(result);
 
     // The replacement is serving and its identity is durable. Cleanup failure
@@ -227,13 +226,13 @@ export async function applyDockerEnvironment(
     try {
       await original.remove();
     } catch (diagnosticFailure) {
-      reportFailure(diagnosticFailure);
+      reportFailure(diagnosticFailure, "The stopped previous container could not be removed");
       result.warning =
         "Environment applied, but the stopped previous container could not be removed.";
     }
     return result;
   } catch (error) {
-    const failure = reportFailure(error);
+    const failure = reportFailure(error, `${operation} failed`);
     const recovery: string[] = [];
     if (replacement) {
       try {
@@ -243,14 +242,14 @@ export async function applyDockerEnvironment(
         });
         await replacement.remove();
       } catch (restoreError) {
-        recovery.push(reportFailure(restoreError));
+        recovery.push(reportFailure(restoreError, "The failed replacement could not be removed"));
       }
     }
     if (renamed) {
       try {
         await original.rename({ name });
       } catch (restoreError) {
-        recovery.push(reportFailure(restoreError));
+        recovery.push(reportFailure(restoreError, "The previous container name could not be restored"));
       }
     }
     for (const network of disconnected) {
@@ -259,21 +258,21 @@ export async function applyDockerEnvironment(
           .getNetwork(network)
           .connect({ Container: before.Id, EndpointConfig: endpointSettings[network] });
       } catch (restoreError) {
-        recovery.push(reportFailure(restoreError));
+        recovery.push(reportFailure(restoreError, "The previous container network could not be restored"));
       }
     }
     if (stopped && recovery.length === 0) {
       try {
         await original.start();
       } catch (restoreError) {
-        recovery.push(reportFailure(restoreError));
+        recovery.push(reportFailure(restoreError, "The previous container could not be restarted"));
       }
     }
     if (renamed && recovery.length === 0 && options.onRestored) {
       try {
         await options.onRestored(containerIdentity(before.Id, await original.inspect()));
       } catch (restoreError) {
-        recovery.push(reportFailure(restoreError));
+        recovery.push(reportFailure(restoreError, "The previous service routes and runtime record could not be restored"));
       }
     }
     if (recovery.length > 0) {

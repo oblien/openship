@@ -238,7 +238,7 @@ describe("runtime-only environment apply", () => {
         Object.assign(new Error("image inspection failed"), { statusCode }),
       );
       await expect(h.apply()).rejects.toThrow(
-        statusCode === 404 ? "Use Redeploy" : "image inspection failed",
+        statusCode === 404 ? "Use Redeploy" : `The service image could not be inspected (HTTP ${statusCode})`,
       );
       expect(h.original.stop).not.toHaveBeenCalled();
       expect(h.original.remove).not.toHaveBeenCalled();
@@ -362,8 +362,8 @@ describe("runtime-only environment apply", () => {
   it.each([
     [{ OOMKilled: true, ExitCode: 137 }, "OOM-killed"],
     [
-      { Error: 'exec: "redis-server": not found' },
-      'exec: "redis-server": not found',
+      { Error: 'exec: "redis-server": not found', ExitCode: 127 },
+      "code 127",
     ],
     [{ Running: true, Health: { Status: "unhealthy" } }, "its healthcheck reports unhealthy"],
   ])("names the startup failure from container state: %j", async (state, reason) => {
@@ -478,6 +478,34 @@ describe("runtime-only environment apply", () => {
     await expect(h.apply({ FLAG: "1", PORT: "3000" })).rejects.toThrow("exit code 1");
     expect(reported.mock.calls.at(-1)?.[0].message).toContain("exit code 1");
     expect(reported.mock.calls.at(-1)?.[0].message).toContain("restarted 1 time");
+  });
+
+  it("uses approved operation details instead of unknown provider text", async () => {
+    const h = setup();
+    const secret = "credential-not-in-the-service-environment";
+    const message = vi.fn(() => secret);
+    const error = Object.defineProperty({ code: "ECONNREFUSED", statusCode: 503 }, "message", { get: message });
+    h.replacement.start.mockRejectedValue(error);
+    reported.mockClear();
+    const result = await h.apply().catch((failure) => failure);
+    expect(result.message).toContain("Starting the replacement container failed");
+    expect(result.message).toContain("ECONNREFUSED");
+    expect(result.message).toContain("HTTP 503");
+    expect(message).not.toHaveBeenCalled();
+    expect(JSON.stringify([result.message, reported.mock.calls])).not.toContain(secret);
+    expect(h.original.start).toHaveBeenCalledOnce();
+  });
+
+  it("keeps unregistered credentials in Docker State.Error out of the startup verdict", async () => {
+    const h = setup();
+    const secret = "provider-private-value-not-in-env";
+    h.replacement.inspect.mockResolvedValue({ ...h.before, Id: "new-container",
+      State: { ...h.before.State, Running: false, ExitCode: 17, Error: secret },
+    } as typeof h.before);
+    reported.mockClear();
+    const result = await h.apply().catch((failure) => failure);
+    expect(result.message).toContain("code 17");
+    expect(JSON.stringify([result.message, reported.mock.calls])).not.toContain(secret);
   });
 
 });
