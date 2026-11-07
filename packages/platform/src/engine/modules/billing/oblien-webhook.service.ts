@@ -22,7 +22,6 @@ import {
 } from "@repo/platform/engine/modules/billing/oblien-webhook-crypto";
 
 import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
-import { observeVerifiedBillingEvent } from "../cloud-analytics/billing";
 import { creditAlertNotification } from "./billing-credit-alert";
 import { findBillingOwnerByNamespace } from "./billing-namespace-owner";
 import { prepareCustomerPaymentEmails } from "../customer-email/payment";
@@ -207,7 +206,6 @@ export async function handleOblienWebhook(
         .from(schema.oblienWebhookEvent)
         .where(eq(schema.oblienWebhookEvent.oblienEventId, eventId)).limit(1);
       if (existing?.processedAt) {
-        await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
         return;
       }
       // Every relevant notification refreshes provider truth. In particular,
@@ -219,7 +217,6 @@ export async function handleOblienWebhook(
       if (eventType === "credits.usage" && !owner.workspaceId) await handleCreditsUsage(organizationId, payload, entitlement.quota.balance);
       const alert = creditAlertNotification({ eventType, eventId, data: payload.data ?? {},
         timestamp: payload.timestamp, organizationId, workspaceId: owner.workspaceId ?? undefined, entitlement, dashboardUrl: localDashboardUrl });
-      await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
       const enqueue = alert ? await notification.prepare(alert) : null;
       const enqueueEmail = await prepareCustomerPaymentEmails({ organizationId, namespace, scope: "hosting",
         workspaceId: owner.workspaceId, eventType, data: payload.data });

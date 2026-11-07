@@ -351,8 +351,6 @@ if (env.CLOUD_MODE) {
   app.route("/api/diagnostics", diagnosticsRoutes);
   const { cloudSupportRoutes } = await import("./modules/cloud-support/cloud-support.routes");
   app.route("/api/cloud/support", cloudSupportRoutes);
-  const { cloudAnalyticsRoutes } = await import("./modules/cloud-analytics/cloud-analytics.routes");
-  app.route("/api/cloud/telemetry", cloudAnalyticsRoutes);
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
 
@@ -473,6 +471,8 @@ async function startControllerBackground(): Promise<void> {
         processRun: (runId) => backupOrchestrator.execute(runId),
         processRecurring: runScheduledJob,
       });
+      // Earlier releases persisted a separate product-telemetry delivery schedule.
+      await runner.removeRecurring("cloud-analytics:deliver");
       console.log(`[boot] backup runner: ${runner.describe()}`);
       (await import("@repo/platform/engine/modules/actions/lifecycle")).startActionController();
       (await import("@repo/platform/engine/modules/ingress/lifecycle")).startIngressController();
@@ -532,14 +532,6 @@ async function startControllerBackground(): Promise<void> {
             errorDiagnostics.warn(
               "api/app",
               "[cloud-support] Background delivery could not start; requests remain saved.",
-            ),
-          );
-        void import("@repo/platform/engine/modules/cloud-analytics/index")
-          .then(({ startCloudAnalytics }) => startCloudAnalytics())
-          .catch(() =>
-            errorDiagnostics.warn(
-              "api/app",
-              "[cloud-analytics] Background delivery could not start.",
             ),
           );
         void import("@repo/platform/engine/lib/oblien-client")

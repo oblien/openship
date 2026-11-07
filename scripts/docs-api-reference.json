@@ -4134,10 +4134,6 @@
       "page": "cloud",
       "description": "Proxy Oblien analytics for a hostname in the caller's namespace."
     },
-    "POST /api/cloud/telemetry": {
-      "page": "cloud",
-      "description": "Capture optional hosted dashboard product events with exact-origin and verified cookie identity checks."
-    },
     "POST /api/cloud/connect-authorize": {
       "page": "cloud",
       "description": "Consent page mints a one-time handoff code (cookie session checked inline)."

@@ -929,10 +929,6 @@ export const EXCLUDED_TABLES: Record<string, string> = {
     "Private Cloud support requests; never export one customer's correspondence to another installation",
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
   cloud_customer_email: "Private Cloud onboarding and invoice delivery state; never transfer or replay on another installation",
-  cloud_analytics_event:
-    "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
-  cloud_analytics_checkout: "Cloud-only analytics checkout correlation",
-  cloud_analytics_workspace: "Cloud-only analytics subscription snapshots",
   platform_instance:
     "the receiving installation retains its own identity and encryption-key binding",
   // Ephemeral / in-flight — re-created on demand, meaningless on another host.

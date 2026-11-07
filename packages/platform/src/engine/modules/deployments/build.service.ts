@@ -1433,8 +1433,6 @@ async function createQueuedDeploymentUnlocked(opts: {
   /** Internal, reviewed resource edit committed with deployment admission. */
   roleChanges?: import("@repo/db").DeploymentRoleChanges;
   resourceChanges?: DeploymentResourceChanges;
-  /** Attribution only; ownership/authorization still comes from organizationId. */
-  analyticsActor?: Pick<RequestContext, "userId" | "source">;
   projectId: string;
   /** Org that owns this deployment. Pass project.organizationId — the
    *  scoping key for the row. (Actor attribution lives on the audit
@@ -1653,8 +1651,6 @@ async function createQueuedDeploymentUnlocked(opts: {
       errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[build] supersede pending decisions for ${opts.projectId} failed:`, err),
     );
 
-  const { cloudAnalytics } = await import("../cloud-analytics");
-  await cloudAnalytics.record({ ...opts.analyticsActor, organizationId: opts.organizationId }, "cloud_deployment_started", { project_id: opts.projectId, deployment_id: dep.id }, `deployment-started:${dep.id}`);
   return dep;
 }
 
@@ -2267,7 +2263,6 @@ export async function requestBuildAccess(
   );
 
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch: snapshot.branch,
@@ -2640,7 +2635,6 @@ export async function redeployBuildSession(
   // Service-scoped rows stay out of this flat capture: the compose deployer
   // reads them live per service and applies them after compose inline env.
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch,
@@ -3263,7 +3257,6 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
   }
 
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch,

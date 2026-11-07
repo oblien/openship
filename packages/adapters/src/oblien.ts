@@ -1,5 +1,6 @@
 import { workspaceMetricsStream } from "./oblien-metrics";
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { diagnosticTraceparent, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import {
   Oblien as OblienSdk, OblienError, AuthenticationError, ConflictError,
   NotFoundError, PaymentRequiredError, RateLimitError, ValidationError,
@@ -268,7 +269,7 @@ export class Oblien extends OblienSdk {
       if (response.status === 401) await invalidateRejectedToken(headers.get("Authorization"));
       return response;
     }, signal);
-    this._http.request = async <T>(request: RequestOptions): Promise<T> => {
+    this._http.request = async <T>(request: RequestOptions): Promise<T> => withDiagnosticSpan({ kind: "operation", component: "oblien", operation: "oblien.request", method: request.method }, async () => {
       request.signal?.throwIfAborted();
       const url = new URL(request.path, base);
       if (url.origin !== base.origin || url.username || url.password) throw new Error("Oblien request escaped its API origin");
@@ -277,6 +278,8 @@ export class Oblien extends OblienSdk {
       request.signal?.throwIfAborted();
       for (const [key, value] of Object.entries(request.query ?? {})) if (value !== undefined) url.searchParams.set(key, String(value));
       const headers = new Headers(request.headers);
+      const parent = diagnosticTraceparent();
+      if (parent) headers.set("traceparent", parent);
       for (const key of ["Authorization", "X-Client-ID", "X-Client-Secret"]) headers.delete(key);
       headers.set("Accept", "application/json");
       headers.set("Content-Type", "application/json");
@@ -319,7 +322,7 @@ export class Oblien extends OblienSdk {
         );
       }
       return body as T;
-    };
+    }, { kind: "client" });
     // SDK 2.5 types get() as WorkloadInfo but leaves the HTTP envelope intact,
     // unlike create() and list(). Normalize at the provider boundary so process
     // control and server-resize recovery read the same saved workload record.

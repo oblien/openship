@@ -16,7 +16,7 @@
  * jobs can also be resolved by a consumer that has not registered them locally.
  */
 
-import { observedAllSettled, reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { diagnosticTraceparent, observedAllSettled, reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { observeBackground } from "@repo/core/diagnostics/node";
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import IORedis from "ioredis";
@@ -86,12 +86,12 @@ export class BullMQJobRunner implements JobRunner {
       },
     });
 
-    this.runWorker = new Worker<{ runId: string }>(
+    this.runWorker = new Worker<{ runId: string; traceparent?: string }>(
       Q_RUN,
       async (job) => {
         const { runId } = job.data;
         if (!runId) throw new Error("backup-run job missing runId");
-        await observeBackground({ component: "backup-runner", runId, attempt: job.attemptsMade + 1 }, () => opts.processRun(runId));
+        await observeBackground({ component: "backup-runner", runId, attempt: job.attemptsMade + 1 }, () => opts.processRun(runId), { parent: job.data.traceparent });
       },
       { connection: conn, concurrency: 2, ...queueScope },
     );
@@ -143,9 +143,10 @@ export class BullMQJobRunner implements JobRunner {
 
   async enqueueRun(runId: string): Promise<void> {
     if (!this.runQueue) throw new Error("BullMQJobRunner not started");
+    const traceparent = diagnosticTraceparent();
     await this.runQueue.add(
       "run",
-      { runId },
+      { runId, ...(traceparent ? { traceparent } : {}) },
       {
         jobId: runId, // dedupe replays of the same runId
         attempts: 3,

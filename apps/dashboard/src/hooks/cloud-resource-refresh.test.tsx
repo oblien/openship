@@ -7,7 +7,6 @@ vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: "
 vi.mock("@/lib/api", () => ({ projectsApi: { getHome: h.home, getInfo: h.info, getCommitStatus: async () => ({ data: { supported: false } }) }, servicesApi: { list: h.services }, api: {}, endpoints: {}, ApiError: class extends Error {} }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.servers } }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { post: h.checkout } }));
-vi.mock("@/lib/cloud-analytics", () => ({ trackCloudEvent: () => {} }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: true }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
 import { CloudResourceContext } from "@/context/CloudResourceContext";
