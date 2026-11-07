@@ -145,6 +145,50 @@ describe("authored mounts through HTTP and native operations", () => {
       }
     },
   );
+
+  it.each(["native", "http"] as const)(
+    "%s explains Cloud host-mount refusals for both owners and instance admins",
+    async (transport) => {
+      const cloud = env.CLOUD_MODE;
+      env.CLOUD_MODE = true;
+      try {
+        for (const instanceAdmin of [false, true]) {
+          const { project, service, clients } = await setup(instanceAdmin);
+          const client = clients[transport];
+          for (const volumes of [["/media:/media:ro"], ["/var/run/docker.sock:/socket"]]) {
+            const writes = [
+              () => client.services.update(project.id, service.id, { volumes }),
+              () => client.projects.setOptions(project.id, { volumes }),
+              () =>
+                client.deployments.buildAccess({
+                  projectId: project.id,
+                  services: [{
+                    name: "blocked",
+                    image: "alpine:3",
+                    volumes,
+                    ports: [],
+                    dependsOn: [],
+                    environment: {},
+                  }],
+                }),
+            ];
+            for (const write of writes) {
+              const error = await write().catch((error) => error);
+              expect(error).toMatchObject({
+                ...(transport === "native" ? { statusCode: 403 } : { status: 403 }),
+                code: "HOST_MOUNT_FORBIDDEN",
+              });
+              expect(error.message).toContain("Host bind mounts are disabled in Cloud");
+            }
+          }
+          expect((await repos.service.findById(service.id))?.volumes ?? []).toEqual([]);
+          expect((await repos.project.findById(project.id))?.volumes ?? []).toEqual([]);
+        }
+      } finally {
+        env.CLOUD_MODE = cloud;
+      }
+    },
+  );
 });
 
 describe("deployment boundary for repository, restored and previously stored mounts", () => {

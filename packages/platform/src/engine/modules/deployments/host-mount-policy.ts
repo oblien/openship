@@ -13,6 +13,16 @@ function hasRestrictedMounts(
   );
 }
 
+function hostMountForbidden(cloud: boolean): AppError {
+  return new AppError(
+    cloud
+      ? "Host bind mounts are disabled in Cloud. Use named volumes or relative repository paths on a managed Docker target."
+      : "Host bind mounts are disabled. Use named volumes, or ask the instance operator to enable OPENSHIP_ALLOW_HOST_BIND_MOUNTS on an instance with trusted deployment authors.",
+    403,
+    "HOST_MOUNT_FORBIDDEN",
+  );
+}
+
 /** Runs in shared operations, so HTTP, MCP and native SDK writes agree. */
 export async function assertHostMountWriteAccess(
   ctx: ExecutionContext,
@@ -26,6 +36,9 @@ export async function assertHostMountWriteAccess(
     !input.services?.some((service) => hasRestrictedMounts(service.volumes, env.CLOUD_MODE))
   )
     return;
+  // Cloud never permits authored host paths, including for an instance admin.
+  // Report the mount restriction instead of suggesting a role upgrade can fix it.
+  if (env.CLOUD_MODE) throw hostMountForbidden(true);
   await instanceAuthorization.assert(ctx, "write");
 }
 
@@ -44,11 +57,5 @@ export function assertDeployVolumePolicy(
   if (!hasRestrictedMounts(volumes, managedRepositoryMounts)) return;
   const cloud = env.CLOUD_MODE || managedRepositoryMounts;
   if (!cloud && process.env.OPENSHIP_ALLOW_HOST_BIND_MOUNTS === "true") return;
-  throw new AppError(
-    cloud
-      ? "Host bind mounts are disabled in Cloud. Use named volumes or relative repository paths on a managed Docker target."
-      : "Host bind mounts are disabled. Use named volumes, or ask the instance operator to enable OPENSHIP_ALLOW_HOST_BIND_MOUNTS on an instance with trusted deployment authors.",
-    403,
-    "HOST_MOUNT_FORBIDDEN",
-  );
+  throw hostMountForbidden(cloud);
 }
