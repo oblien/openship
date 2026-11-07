@@ -357,3 +357,60 @@ describe("certificate activation", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("round trips per registration", () => {
+  it("reads each route file once per registration, however many checks consult it", async () => {
+    const nginx = provider();
+    await nginx.registerRoute(route());
+    const reads = vi.spyOn(executor, "readFile");
+
+    await nginx.registerRoute(route());
+
+    const perPath = new Map<string, number>();
+    for (const [path] of reads.mock.calls) perPath.set(path, (perPath.get(path) ?? 0) + 1);
+    expect(perPath.get(confPath())).toBe(1);
+    expect(perPath.get(statePath())).toBe(1);
+  });
+
+  it("a later registration sees what an earlier one wrote", async () => {
+    const nginx = provider();
+    await nginx.registerRoute(route(3001));
+    await nginx.registerRoute(route(3002));
+
+    // A third registration with the new port must find the 3002 files unchanged.
+    resetCounts();
+    await nginx.registerRoute(route(3002));
+    expect(writes).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(statePath(), "utf8")).targetUrl).toBe("http://127.0.0.1:3002");
+  });
+
+  it("creates the sites directory once per provider and leaves an absent bootstrap dir alone", async () => {
+    const mkdirs = vi.spyOn(executor, "mkdir");
+    const removals = vi.spyOn(executor, "rm");
+    const nginx = provider();
+
+    await nginx.registerRoute(route());
+    await nginx.registerRoute(route());
+
+    expect(mkdirs.mock.calls.filter(([path]) => path === sites)).toHaveLength(1);
+    expect(removals.mock.calls.filter(([path]) => path.includes("bootstrap"))).toEqual([]);
+  });
+
+  it("still removes a bootstrap dir the host cannot see but the edge container can", async () => {
+    // files: "auto" container edges: lstat looks at the host, exists also looks inside.
+    const nginx = provider();
+    await nginx.registerRoute(route());
+    vi.spyOn(executor, "lstat").mockImplementation(async (path) =>
+      path.includes("bootstrap") ? null : new LocalExecutor().lstat(path),
+    );
+    const realExists = executor.exists.bind(executor);
+    vi.spyOn(executor, "exists").mockImplementation(async (path) =>
+      path.includes("bootstrap") ? true : realExists(path),
+    );
+    const removals = vi.spyOn(executor, "rm");
+
+    await nginx.registerRoute(route(3002));
+
+    expect(removals.mock.calls.some(([path]) => path.includes("bootstrap"))).toBe(true);
+  });
+});

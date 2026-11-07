@@ -227,6 +227,29 @@ describe("elevatedExecutor", () => {
     await expect(elevatedExecutor(inner).readFile("/etc/x.conf")).rejects.toThrow(/EACCES/);
   });
 
+  it("trusts lstat's \"no such file\" and skips the sudo probe for an absent path", async () => {
+    const { inner, exists, exec } = fakeExecutor();
+    exists.mockResolvedValue(false);
+    const lstat = vi.fn(async (_path: string) => null);
+    const el = elevatedExecutor(Object.assign(inner, { lstat }));
+
+    expect(await el.exists("/etc/openresty/sites-enabled/_oblien-challenge-x.conf")).toBe(false);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("still asks root when lstat is refused, since the path may sit behind a 0700 directory", async () => {
+    const { inner, exists, exec } = fakeExecutor();
+    exists.mockResolvedValue(false);
+    const lstat = vi.fn(async (_path: string) => {
+      throw Object.assign(new Error("Permission denied"), { code: 3 });
+    });
+    exec.mockResolvedValue("");
+    const el = elevatedExecutor(Object.assign(inner, { lstat }));
+
+    expect(await el.exists("/etc/letsencrypt/live/x/fullchain.pem")).toBe(true);
+    expect(String(exec.mock.calls[0]?.[0])).toContain("test -e");
+  });
+
   it("reports a genuinely missing file with the original error, not sudo's", async () => {
     const { inner, readFile, exists, exec } = fakeExecutor();
     readFile.mockRejectedValue(new Error("ENOENT: no such file or directory"));

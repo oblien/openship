@@ -1231,6 +1231,25 @@ interface FileSnapshot {
   linkTarget?: string;
 }
 
+/**
+ * State of one turn of the edge config lock.
+ *
+ * `siteFiles` remembers what this turn read or wrote under the sites directory
+ * (content, or `null` for a path known to be absent). One route registration reads
+ * the same vhost and sidecar several times (slug resolution, the protection check,
+ * the transaction snapshot), and over a non-root SSH login each read is a refused
+ * SFTP read plus a `sudo cat`. Only the provider's own file helpers change these
+ * files, every one of them under this lock, so the turn can trust what it saw.
+ * Certificates are not cached: certbot changes them through commands.
+ *
+ * The lock is in-process. Two API processes driving one box could already interleave
+ * their writes; scoping the cache to a single turn keeps that no worse.
+ */
+interface ConfigTransaction {
+  active: boolean;
+  siteFiles: Map<string, string | null>;
+}
+
 /** One file of an {@link NginxProvider.updateConfig} transaction; `null` removes it. */
 interface ConfigChange {
   path: string;
@@ -1322,7 +1341,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private readonly hostExecutor: CommandExecutor | undefined;
   private readonly challengeDir: string;
   private readonly configLock: ProvisionLock;
-  private readonly configContext = new AsyncLocalStorage<{ active: boolean }>();
+  private readonly configContext = new AsyncLocalStorage<ConfigTransaction>();
+  /** The sites directory this provider has already created, if any. */
+  private ensuredSitesDir: string | null = null;
   /**
    * nginx version of the edge, when `detectOpenRestyPaths` could read it. Gates the
    * one directive whose syntax is version-dependent (`http2`); undefined = unknown,
@@ -1373,7 +1394,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // Nested calls share the transaction; unrelated async requests still queue.
     if (this.configContext.getStore()?.active) return fn();
     return this.configLock.run(async () => {
-      const context = { active: true };
+      const context: ConfigTransaction = { active: true, siteFiles: new Map() };
       try {
         return await this.configContext.run(context, fn);
       } finally {
@@ -1386,7 +1407,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
   private async _writeFile(path: string, content: string, mode?: number): Promise<void> {
     this.configMayChange();
+    this.forgetSiteFile(path);
     await this.writeAtomic(path, content, mode);
+    this.siteFileCache(path)?.set(path, content);
   }
 
   /** {@link _writeFile} for files the edge serves but never loads (challenge tokens). */
@@ -1430,25 +1453,48 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     }
   }
 
-  private async _readFile(path: string): Promise<string> {
-    if (this.executor) {
-      return this.executor.readFile(path);
+  /** This turn's cache for `path`, when the path is one {@link ConfigTransaction} covers. */
+  private siteFileCache(path: string): Map<string, string | null> | undefined {
+    const turn = this.configContext.getStore();
+    if (!turn?.active || !path.startsWith(`${this.sitesDir}/`)) return undefined;
+    return turn.siteFiles;
+  }
+
+  /** Forget `path` and anything beneath it in this turn's cache. */
+  private forgetSiteFile(path: string): void {
+    const turn = this.configContext.getStore();
+    if (!turn?.active) return;
+    for (const key of turn.siteFiles.keys()) {
+      if (key === path || key.startsWith(`${path}/`)) turn.siteFiles.delete(key);
     }
-    return fsReadFile(path, "utf-8");
+  }
+
+  private async _readFile(path: string): Promise<string> {
+    const cache = this.siteFileCache(path);
+    const cached = cache?.get(path);
+    if (typeof cached === "string") return cached;
+    const content = this.executor ? await this.executor.readFile(path) : await fsReadFile(path, "utf-8");
+    cache?.set(path, content);
+    return content;
   }
 
   private async _exists(path: string): Promise<boolean> {
+    const cache = this.siteFileCache(path);
+    if (cache?.has(path)) return cache.get(path) !== null;
+    let exists: boolean;
     if (this.executor) {
-      return this.executor.exists(path);
+      exists = await this.executor.exists(path);
+    } else {
+      try {
+        await fsAccess(path);
+        exists = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        exists = false;
+      }
     }
-
-    try {
-      await fsAccess(path);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw error;
-    }
+    if (!exists) cache?.set(path, null);
+    return exists;
   }
 
   private async _rm(path: string): Promise<void> {
@@ -1458,6 +1504,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
   /** {@link _rm} for files no loaded config references (a retired placeholder). */
   private async removePath(path: string): Promise<void> {
+    this.forgetSiteFile(path);
     if (this.executor) {
       await this.executor.rm(path);
     } else {
@@ -1465,6 +1512,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       // config transaction so it can restore the other files before returning.
       await fsRm(path, { recursive: true, force: true });
     }
+    this.siteFileCache(path)?.set(path, null);
   }
 
   private async _mkdir(path: string): Promise<void> {
@@ -1917,6 +1965,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
   private async _restoreFile(path: string, snapshot: FileSnapshot, mode?: number): Promise<void> {
     this.configMayChange();
+    this.forgetSiteFile(path);
     if (!snapshot.exists) {
       await this._rm(path);
       return;
@@ -1927,6 +1976,8 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       await this._rm(path);
       if (this.executor) await this.executor.exec(`ln -s ${sq(snapshot.linkTarget)} ${sq(path)}`);
       else await fsSymlink(snapshot.linkTarget, path);
+      // `_rm` above recorded the path as absent; the link now exists.
+      this.forgetSiteFile(path);
       return;
     }
     await this._writeFile(path, snapshot.content ?? "", mode);
@@ -2066,7 +2117,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     opts: { forceReload?: boolean } = {},
   ): Promise<void> {
     assertValidDomain(route.domain);
-    await this._mkdir(this.sitesDir);
+    // Once per provider: the atomic writes below create missing parents anyway, and
+    // on a non-root login every mkdir is a `sudo` round trip.
+    if (this.ensuredSitesDir !== this.sitesDir) {
+      await this._mkdir(this.sitesDir);
+      this.ensuredSitesDir = this.sitesDir;
+    }
 
     const slug = await this.resolveSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
@@ -2412,8 +2468,16 @@ ${serveLocation}
     // OpenResty is still reading the bootstrap paths, and removing them first would
     // break TLS for the domain on the next unrelated reload.
     if (!bootstrapServed) {
-      // Not a config change: the conf just loaded no longer names these files.
-      await this.removePath(this.bootstrapCertDir(route.domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      // Not a config change: the conf just loaded no longer names these files. Probe
+      // first: the removal is a `sudo` round trip on a non-root login, while absence
+      // answers over SFTP. Skip only when lstat says absent AND `_exists` agrees, since
+      // a container edge can hold a path the host does not; unknown still removes.
+      const bootstrapDir = this.bootstrapCertDir(route.domain);
+      const absent =
+        (await this._lstat(bootstrapDir)) === null && !(await this._exists(bootstrapDir));
+      if (!absent) {
+        await this.removePath(bootstrapDir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      }
     }
 
     // The full RouteConfig sidecar was committed with the vhost above, so TLS
