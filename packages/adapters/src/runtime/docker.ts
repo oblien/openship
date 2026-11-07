@@ -46,6 +46,7 @@ import {
   DEFAULT_BUILD_CACHE_KEEP_BYTES, DOCKER_BUILD_STORAGE_COMMAND, parseBuildStorage,
   assertBuildStorage, buildKitCacheConfig,
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
+  type BuildStorage,
 } from "./docker-build-cache";
 import { AppError, withKeyedMutex, parseVolumeMount, formatVolumeMount } from "@repo/core";
 import { readServerStats } from "../system/server-stats";
@@ -252,6 +253,11 @@ export type DockerConnectionOptions = DockerTransportOptions & {
   /** Optional immutable public OCI image attachment supplied by the host provider.
    * Trusted connection configuration only; never inferred from project inputs. */
   softwareCacheRoot?: string;
+  /**
+   * The server's configured managed build-cache budget in bytes; null = automatic. Read before each
+   * collection so a changed setting applies to the next build without reconnecting.
+   */
+  buildCacheBudgetBytes?: () => Promise<number | null>;
 };
 
 /**
@@ -1776,7 +1782,23 @@ export class DockerRuntime implements RuntimeAdapter {
     await currentManagedCommandTracking()?.flush();
     const protection = await this.connectionOptions?.buildCacheProtection?.();
     return pruneManagedBuildCaches(this.docker, await this.buildCacheHostExecutor(executor), { ...options,
-      protectedProjectIds: new Set(protection?.projectIds), protectAll: protection?.all });
+      protectedProjectIds: new Set(protection?.projectIds), protectAll: protection?.all,
+      configuredBudgetBytes: await this.configuredBuildCacheBudget() });
+  }
+
+  /** The project worker's BuildKit GC policy, using this server's budget. */
+  private async buildWorkerCacheConfig(storage: BuildStorage): Promise<string> {
+    return buildKitCacheConfig(storage, await this.configuredBuildCacheBudget());
+  }
+
+  /** A failed settings read falls back to the automatic budget rather than failing a build. */
+  private async configuredBuildCacheBudget(): Promise<number | null> {
+    try {
+      return (await this.connectionOptions?.buildCacheBudgetBytes?.()) ?? null;
+    } catch (error) {
+      observeCaughtError(error, "adapters/runtime/docker");
+      return null;
+    }
   }
 
   private async assertBuildCacheCommandsStopped(projectId: string): Promise<void> {
@@ -1844,7 +1866,7 @@ export class DockerRuntime implements RuntimeAdapter {
       try {
         const workerImage = await prepareProtectedBuildKitImage(executor,
           image => this.prepareDeploymentImage(image, { logger: log }), log.callback);
-        await executor.writeFile(configPath, buildKitCacheConfig(storage));
+        await executor.writeFile(configPath, await this.buildWorkerCacheConfig(storage));
         try {
           await executor.exec(`docker buildx create --name ${sq(builderName)} --node ${sq(buildWorker.nodeName)} --driver docker-container ${driverOptions} --driver-opt ${sq(`image=${workerImage}`)} --buildkitd-flags ${sq("--oci-worker-net=bridge")} --buildkitd-config ${sq(configPath)} --bootstrap`, { timeout: 120_000 });
         } catch (cause) {

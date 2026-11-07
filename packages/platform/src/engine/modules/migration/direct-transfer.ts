@@ -302,15 +302,13 @@ export class PathMissingError extends Error {
   }
 }
 
-/** Highest cumulative byte count in rsync progress output. Cloud streams can
- * coalesce several CR-delimited updates, including the initial zero, into one chunk. */
-export function parseRsyncProgress(output: string): number | null {
-  let bytes: number | null = null;
-  for (const match of output.matchAll(/(?:^|[\r\n])[ \t]*([\d,]+)B?[ \t]+\d+%/g)) {
-    const value = Number(match[1]!.replace(/,/g, ""));
-    if (Number.isFinite(value)) bytes = Math.max(bytes ?? 0, value);
-  }
-  return bytes;
+/** Parse exact rsync byte counters, including the B suffix used by newer releases.
+ * Rounded K/M/G values are deliberately not accepted as exact byte counts. */
+export function parseRsyncProgress(line: string): number | null {
+  const m = line.match(/^\s*([\d,]+)B?\s+\d+%/);
+  if (!m) return null;
+  const n = Number(m[1]!.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Build the rsync command for one path move (direction decides which end
@@ -332,7 +330,7 @@ export function rsyncCommand(
   // The reviewed destination is an empty/owned copy (or an explicitly
   // approved overwrite). Remove stale destination files after a successful
   // directory copy, matching the streamed transport's replacement semantics.
-  // The progress parser needs byte counts without scaling or locale separators.
+  // Keep progress counters machine-readable across rsync versions and locales.
   const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --no-human-readable --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
   const dash_e = `-e ${sq(sshCommand)}`;
   const slash = dir ? "/" : "";
@@ -370,19 +368,23 @@ export async function runRsync(
   signal?: AbortSignal,
 ): Promise<void> {
   let lastTail = "";
-  const reportProgress = (message: string) => {
-    if (!onProgress) return;
-    const bytes = parseRsyncProgress(message);
-    if (bytes != null) onProgress(bytes);
-  };
   for (let attempt = 1; attempt <= RSYNC_MAX_ATTEMPTS; attempt++) {
     signal?.throwIfAborted();
+    // Executors stream arbitrary chunks. Frame rsync's CR/LF updates separately
+    // for stdout and stderr, including a final update without a line ending.
+    const pending = new Map<LogEntry["level"], string>();
+    const report = (line: string) => {
+      const bytes = parseRsyncProgress(line);
+      if (bytes != null) onProgress?.(bytes);
+    };
     const { code, output } = await initiatorExec.streamExec(command, (entry: LogEntry) => {
-      reportProgress(entry.message);
+      if (!onProgress) return;
+      const lines = ((pending.get(entry.level) ?? "") + entry.message).split(/\r\n|[\r\n]/);
+      // Only the short numeric prefix matters; bound unfinished diagnostic lines.
+      pending.set(entry.level, lines.pop()!.slice(0, 4096));
+      for (const line of lines) report(line);
     }, { signal });
-    // A byte count can span chunks. The executor's completed output retains
-    // the full final record even when no individual chunk contained it.
-    reportProgress(output);
+    for (const line of pending.values()) report(line);
     if (code === 0) return;
 
     lastTail = output.split("\n").filter(Boolean).slice(-4).join(" ");
