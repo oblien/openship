@@ -129,7 +129,7 @@ export {
   waitForCloudDockerWorkspace,
   waitForCloudWorkspaceStopped,
 } from "./runtime/cloud/workspace-ready";
-export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
+export { cloudDockerProjectPaths, isCloudProjectMountSource } from "./runtime/cloud/docker-paths";
 export { ensureCloudProjectVolume } from "./runtime/cloud/docker-volume";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
