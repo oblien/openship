@@ -1262,6 +1262,9 @@
     "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
   },
   "securityAdvisories": {
+    "applyPatch": "Appliquer le correctif de sécurité",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Enregistre les images d’exécution et de compilation pour les prochains déploiements.",
+    "bunRuntimePatchDescription": "La version de Bun choisie sert aussi à installer les dépendances et remplace la version fixée dans le dépôt.",
     "checksEnabled": "Vérifier les avis de sécurité",
     "checksDescription": "La désactivation suspend les vérifications des runtimes et hôtes, les nouveaux avis et les correctifs pour cet espace. Les données et les autorisations de mise à jour des projets sont conservées.",
     "checksDisabled": "Les vérifications de sécurité sont désactivées pour cet espace.",

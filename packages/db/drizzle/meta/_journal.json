@@ -1569,6 +1569,13 @@
       "when": 1793725200000,
       "tag": "0223_cloud_customer_email",
       "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1793728800000,
+      "tag": "0224_server_build_cache_budget",
+      "breakpoints": true
     }
   ]
 }

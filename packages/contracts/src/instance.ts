@@ -75,7 +75,8 @@ export type InstanceArchive = Static<typeof InstanceArchiveSchema>;
 
 export const InstanceOnboardingSchema = Type.Object(
   {
-    ...UpdateServerInputSchema.properties,
+    // Onboarding sets up the host row, which builds without a managed cache budget.
+    ...Type.Omit(UpdateServerInputSchema, ["buildCacheBudgetBytes"]).properties,
     ...Type.Pick(UpdateInstanceSettingsInputSchema, [
       "authMode",
       "confirm",

@@ -1262,6 +1262,9 @@
     "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   },
   "securityAdvisories": {
+    "applyPatch": "Sicherheitspatch anwenden",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Speichert Laufzeit- und Build-Images für künftige Bereitstellungen.",
+    "bunRuntimePatchDescription": "Die gewählte Bun-Version gilt auch für die Installation der Abhängigkeiten und überschreibt Versionsvorgaben im Repository.",
     "checksEnabled": "Sicherheitshinweise prüfen",
     "checksDescription": "Deaktivieren pausiert Laufzeit- und Host-Prüfungen, neue Hinweise und Sicherheits-Patches für diesen Arbeitsbereich. Bisherige Daten und Projektzustimmungen bleiben erhalten.",
     "checksDisabled": "Sicherheitsprüfungen sind für diesen Arbeitsbereich deaktiviert.",

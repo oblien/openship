@@ -1262,6 +1262,9 @@
     "pinned": "イメージはダイジェストで固定されています。更新するには設定した参照を編集してください。"
   },
   "securityAdvisories": {
+    "applyPatch": "セキュリティ修正を適用",
+    "runtimePatchDescription": "{runtime} {current} → {target}。今後のデプロイ用にランタイムとビルドのイメージを保存します。",
+    "bunRuntimePatchDescription": "選択した Bun バージョンは依存関係のインストールにも使用され、リポジトリの固定バージョンより優先されます。",
     "checksEnabled": "セキュリティ情報を確認",
     "checksDescription": "無効にすると、このワークスペースのランタイムとホストの確認、新しい通知、パッチ適用を停止します。既存の情報とプロジェクトの更新許可は保持されます。",
     "checksDisabled": "このワークスペースのセキュリティ確認は無効です。",

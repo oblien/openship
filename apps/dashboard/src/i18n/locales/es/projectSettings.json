@@ -1262,6 +1262,9 @@
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   },
   "securityAdvisories": {
+    "applyPatch": "Aplicar parche de seguridad",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Guarda las imágenes de ejecución y compilación para futuros despliegues.",
+    "bunRuntimePatchDescription": "La versión de Bun seleccionada también se usa para instalar dependencias y sustituye las versiones fijadas en el repositorio.",
     "checksEnabled": "Comprobar avisos de seguridad",
     "checksDescription": "Al desactivarlo, se pausan las comprobaciones de runtimes y hosts, los avisos nuevos y las acciones de parcheo de este espacio. Se conservan los datos y el consentimiento de actualización de los proyectos.",
     "checksDisabled": "Las comprobaciones de seguridad están desactivadas en este espacio.",

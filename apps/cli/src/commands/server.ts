@@ -122,7 +122,7 @@ for (const [name, method, description] of [
     .action((id: string) => printResult(() => getShipClient().servers[method](id)));
 }
 server.command("configure").argument("<id>", "Server ID").argument("<file>", "JSON patch with the fields to change")
-  .description("Change a server's name or connection settings; omitted fields are preserved")
+  .description("Change a server's name, connection settings or build-cache budget; omitted fields are preserved")
   .action((id: string, file: string) => printResult(() => getShipClient().servers.update(id,
     parseInput(UpdateServerInputSchema, readJsonInput(file)))));
 server.command("exec").argument("<id>", "Server ID").argument("<command>", "Shell command to run on this server")

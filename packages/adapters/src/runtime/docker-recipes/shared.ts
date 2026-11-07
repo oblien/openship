@@ -1,5 +1,5 @@
 import type { BuildConfig } from "../../types";
-import { packageManagerEnsureCommand, nodeBinDirs } from "@repo/core";
+import { managedRuntimeImage, packageManagerEnsureCommand, nodeBinDirs } from "@repo/core";
 
 import { sq } from "../build-pipeline";
 import { cachedRunPrefix } from "./cache";
@@ -104,17 +104,26 @@ export function nodeBinPathEnvLine(
   return dirs.length > 0 ? `ENV PATH="${dirs.join(":")}:$PATH"` : null;
 }
 
-/** The monorepo workspace-prepare RUN line (root `pnpm install` etc.). This is
- *  the FIRST pnpm/yarn invocation in the Dockerfile, so the corepack prelude
- *  must lead it — otherwise the build image (corepack disabled) fails with
- *  "pnpm: not found" before the per-app install line (which has its own prelude)
- *  is ever reached. */
+/** Bun is both runtime and package manager, so its explicit runtime selection
+ * also selects the build tool. Node's version must not become npm/pnpm's version. */
+function ensurePackageManager(config: BuildConfig, manager = config.packageManager): string {
+  const image =
+    config.runtimeImageOverride && manager === "bun"
+      ? managedRuntimeImage(config.runtimeImage)
+      : null;
+  return packageManagerEnsureCommand(
+    manager,
+    image?.runtime === "bun" ? image.version ?? undefined : undefined,
+  );
+}
+
+/** The workspace install runs before per-app commands and needs the same toolchain. */
 export function workspacePrepareRunLine(
   config: BuildConfig,
   envPrefix: string,
   workspacePrepare: string,
 ): string {
-  const pmEnsure = packageManagerEnsureCommand(config.packageManager);
+  const pmEnsure = ensurePackageManager(config);
   const body = pmEnsure ? `${pmEnsure} && ${workspacePrepare}` : workspacePrepare;
   return `${cachedRunPrefix(config)}${envPrefix}${body}`;
 }
@@ -133,9 +142,8 @@ export function stepsRunLine(
   const install = opts.install ? config.installCommand : "";
   const build = opts.build ? config.buildCommand : "";
   const steps: string[] = [];
-  // Ensure the package manager exists in the image before install
-  // (corepack for pnpm/yarn; no-op for npm/bun/non-node) — fixes "pnpm: not found".
-  const pmEnsure = packageManagerEnsureCommand(opts.packageManager ?? config.packageManager);
+  // Select and verify the package manager before running project commands.
+  const pmEnsure = ensurePackageManager(config, opts.packageManager ?? config.packageManager);
   if (pmEnsure && (install || build)) {
     steps.push(pmEnsure);
   }

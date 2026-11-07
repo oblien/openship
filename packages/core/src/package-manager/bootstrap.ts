@@ -19,9 +19,19 @@ function verifyPackageManager({ manager, version }: PackageManagerSelection): vo
   console.log("[openship] Verified package manager: " + manager + "@" + actual);
 }
 
-export function bootstrapPackageManager(manager: ManagedPackageManager): void {
+export function bootstrapPackageManager(
+  manager: ManagedPackageManager,
+  versionOverride?: string,
+): void {
   const discovery = discoverPackageManager(manager);
-  const selection = resolvePackageManager(manager, discovery);
+  const selection = resolvePackageManager(manager, discovery, versionOverride);
+  if (versionOverride && discovery.pin && discovery.pin !== selection.pin)
+    console.log(
+      "[openship] Explicit package-manager selection " +
+        selection.pin +
+        " overrides repository " +
+        discovery.pin,
+    );
   console.log("[openship] Selected package manager: " + selection.pin);
   installPackageManager(selection);
   verifyPackageManager(selection);

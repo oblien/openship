@@ -1252,5 +1252,21 @@
     "saved": "GPU 设置已保存",
     "saveFailed": "无法保存 GPU 设置",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "构建缓存",
+    "subtitle": "Openship 在两次部署之间于此服务器上保留多少构建缓存。",
+    "modeLabel": "缓存上限",
+    "modeAuto": "自动",
+    "modeCustom": "自定义",
+    "modeHint": "自动模式最多保留此服务器 Docker 磁盘的 20%。每次构建后，超出上限的缓存会按最久未使用的顺序删除。",
+    "statusAuto": "自动",
+    "statusCustom": "自定义 · {size} GiB",
+    "customLabel": "上限（GiB）",
+    "invalid": "请输入 {min} 到 {max} GiB 之间的大小，最多两位小数。",
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "已保存构建缓存上限",
+    "saveFailed": "无法保存构建缓存上限"
   }
 }
