@@ -265,6 +265,11 @@ export interface BuildCachePruneOptions {
   all?: boolean;
   /** Retained unused-cache budget. Omit for a full prune of eligible idle state. */
   keepStorageBytes?: number;
+  /**
+   * Automatic retention: managed project caches keep up to the host's disk-relative budget
+   * (`buildCacheKeepBytes`); `keepStorageBytes` then applies only to native Docker Engine cache.
+   */
+  automaticRetention?: boolean;
   /** Native Docker-only filters, for example `{ until: ["24h"] }`. Rejected on managed Cloud. */
   filters?: Record<string, string[]>;
   abortSignal?: AbortSignal;
@@ -4788,7 +4793,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         options.abortSignal?.throwIfAborted();
         // Maintenance has a longer bounded scan window than the build path,
         // so caches deferred by a build can still be collected in the daily sweep.
-        return this.pruneManagedBuildState(executor, { keepBytes: keepStorageBytes ?? 0, measurementTimeoutMs: 120_000 });
+        return this.pruneManagedBuildState(executor, {
+          keepBytes: options.automaticRetention ? undefined : (keepStorageBytes ?? 0),
+          measurementTimeoutMs: 120_000,
+        });
       });
     }
 

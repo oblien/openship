@@ -180,6 +180,17 @@ describe("managed project cache cleanup", () => {
     expect(h.remove).not.toHaveBeenCalled();
   });
 
+  it("keeps idle project state under the disk budget during automatic retention", async () => {
+    const h = cacheRuntime();
+    h.idle();
+    // keepStorageBytes is the native Docker Engine target; managed caches follow the host's disk.
+    await expect(
+      h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 0, automaticRetention: true }),
+    ).resolves.toEqual({ cachesDeleted: [], spaceReclaimed: 0 });
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(h.dial).not.toHaveBeenCalled();
+  });
+
   it("preserves attached project state without falling through to native pruning", async () => {
     const h = cacheRuntime();
     await expect(h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 0 })).resolves.toEqual({

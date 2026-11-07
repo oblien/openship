@@ -113,8 +113,9 @@ deployment gates before cutover.
 
 ## Storage policy
 
-Managed remote-worker idle caches retain at most 10% of Docker’s filesystem, capped at
-5 GiB, with a seven-day idle expiry. Collection removes the least recently used idle state first. BuildKit
+Managed remote-worker idle caches retain at most 20% of Docker’s filesystem, with a
+seven-day idle expiry. When free space falls below 20% of the filesystem, the idle budget
+shrinks to what still fits above that target, but never below `min(5 GiB, 10%)`. Collection removes the least recently used idle state first. BuildKit
 workers also receive that cache ceiling and a native BuildKit GC target of
 20% free space. Attached state and active build records remain protected. Collection runs
 before and after builds and in the daily cache sweep. Explicit cache clearing and project deletion use

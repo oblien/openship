@@ -5,7 +5,10 @@ import type { CommandExecutor } from "../types";
 import { projectBuildKitWorker } from "./docker-buildkit-worker";
 import { sq } from "./build-pipeline";
 
+/** Native Docker Engine `keep-storage` target. Managed caches use {@link buildCacheKeepBytes}. */
 export const DEFAULT_BUILD_CACHE_KEEP_BYTES = 5 * 1024 ** 3;
+/** Share of the Docker filesystem that managed project build caches may retain. */
+export const BUILD_CACHE_DISK_FRACTION = 0.2;
 /** Cleanup headroom target; does not raise build admission limits. */
 export const BUILD_STORAGE_GC_FREE_FRACTION = 0.2;
 const CACHE_LABEL = "openship.build-cache";
@@ -72,9 +75,30 @@ export function buildStorageReserve(storage: BuildStorage): number {
   return Math.min(2 * 1024 ** 3, Math.ceil(storage.totalBytes / 10));
 }
 
-/** Automatic cache ceiling scales down on small Docker filesystems. */
+/**
+ * Automatic managed-cache budget: a share of the Docker filesystem, so it follows the disk in both
+ * directions. Under storage pressure {@link pressureAdjustedKeepBytes} shrinks it.
+ */
 export function buildCacheKeepBytes(storage: BuildStorage): number {
-  return Math.min(DEFAULT_BUILD_CACHE_KEEP_BYTES, Math.floor(storage.totalBytes / 10));
+  return Math.floor(storage.totalBytes * BUILD_CACHE_DISK_FRACTION);
+}
+
+/**
+ * Below the 20% free-space GC target, idle caches give space back before rollback artifacts and
+ * running apps do: the budget shrinks to what still fits above that target, but never below the
+ * previous `min(5 GiB, 10%)` ceiling: when the target cannot be met, idle caches keep no more than
+ * they did before. A worker's BuildKit `maxUsedSpace` is set when it starts; after that,
+ * BuildKit's own `minFreeSpace` bounds it.
+ */
+export function pressureAdjustedKeepBytes(
+  storage: BuildStorage,
+  idleCacheBytes: number,
+  budgetBytes: number,
+): number {
+  const freeTarget = Math.ceil(storage.totalBytes * BUILD_STORAGE_GC_FREE_FRACTION);
+  if (storage.freeBytes >= freeTarget) return budgetBytes;
+  const floor = Math.min(DEFAULT_BUILD_CACHE_KEEP_BYTES, Math.floor(storage.totalBytes / 10));
+  return Math.min(budgetBytes, Math.max(floor, idleCacheBytes + storage.freeBytes - freeTarget));
 }
 
 export function assertBuildStorage(storage: BuildStorage): void {
@@ -198,7 +222,8 @@ export async function pruneManagedBuildCaches(
     protectAll?: boolean;
   } = {},
 ): Promise<{ cachesDeleted: string[]; spaceReclaimed: number }> {
-  const requestedKeepBytes = options.keepBytes ?? DEFAULT_BUILD_CACHE_KEEP_BYTES;
+  // Omitted: retain up to the host's automatic budget, applied after the storage read below.
+  const requestedKeepBytes = options.keepBytes ?? Number.MAX_SAFE_INTEGER;
   if (!Number.isSafeInteger(requestedKeepBytes) || requestedKeepBytes < 0)
     throw new RangeError("Invalid build-cache budget");
   // When admission is already blocked on storage, deferring a slow idle cache
@@ -273,7 +298,10 @@ export async function pruneManagedBuildCaches(
   let total = caches.reduce((sum, cache) => sum + cache.bytes, 0);
   // Other, attached builders can consume storage during a long measurement.
   storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
-  const keepBytes = Math.min(requestedKeepBytes, buildCacheKeepBytes(storage));
+  const keepBytes = Math.min(
+    requestedKeepBytes,
+    pressureAdjustedKeepBytes(storage, total, buildCacheKeepBytes(storage)),
+  );
   const idle = caches.filter(
     (cache) =>
       cache.references === 0 &&
