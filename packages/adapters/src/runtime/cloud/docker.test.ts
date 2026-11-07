@@ -10,6 +10,7 @@ import type { Oblien } from "oblien";
 import { NotFoundError } from "oblien";
 import { CloudDockerRuntime } from "./docker";
 import { DockerRuntime } from "../docker";
+import { generateDockerfile } from "../docker-build-plan";
 import { BuildLogger } from "../build-pipeline";
 import type { MultiServiceDeployConfig, MultiServiceDeployResult } from "../types";
 import { CLOUD_DOCKER_BRIDGE_VERSION } from "./docker-bridge-source";
@@ -668,6 +669,30 @@ describe("containers on one Oblien Docker workspace", () => {
     ], logger);
     expect(runtime.connectionOptions?.executor).toBe(runtime.executor);
     expect(runtime.transport.kind).toBe("cloud");
+  });
+  it("preserves a reviewed Bun runtime patch through the isolated Cloud builder", async () => {
+    const sharedBuild = vi.spyOn(DockerRuntime.prototype, "build").mockResolvedValue({
+      sessionId: "security-build", status: "deploying", imageRef: "patched-app",
+    });
+    const transfer = vi.spyOn(runtime.executor, "transferIn").mockRejectedValue(new Error("must not read API-host files"));
+    await runtime.build({
+      projectId: "project-a", sessionId: "security-build", repoUrl: "", branch: "main", stack: "nextjs",
+      packageManager: "bun", buildImage: "oven/bun:1.4.4-alpine", runtimeImage: "oven/bun:1.4.4-alpine",
+      runtimeImageOverride: true, refreshBaseImages: true,
+      installCommand: "bun install", buildCommand: "bun run build", startCommand: "bun run start",
+      outputDirectory: ".next", port: 3000, envVars: {}, resources: { cpuCores: 1, memoryMb: 512, diskMb: 1024 },
+      inlineSourceFiles: [{ path: "package.json", content: '{"packageManager":"bun@1.3.1"}' }],
+    });
+    const passed = sharedBuild.mock.calls[0][0];
+    expect(passed).toMatchObject({ cloneOnServer: true, runtimeImageOverride: true, refreshBaseImages: true });
+    expect(passed.localPath).toBeUndefined();
+    const dockerfile = generateDockerfile(passed);
+    expect(dockerfile).toContain("FROM oven/bun:1.4.4-alpine AS builder");
+    expect(dockerfile).toContain("FROM oven/bun:1.4.4-alpine AS runtime");
+    expect(dockerfile).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
+    expect(transfer).not.toHaveBeenCalled();
+    expect(runtime.connectionOptions?.executor).toBe(runtime.executor);
+    expect(provider.workspaces.create).not.toHaveBeenCalled();
   });
   it("does not let an empty image-only source mask a later inline build context", async () => {
     const source = { projectId: "project-a", sessionId: "build-a", repoUrl: "" };

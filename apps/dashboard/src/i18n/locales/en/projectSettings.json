@@ -1262,6 +1262,9 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
+    "applyPatch": "Apply security patch",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Saves the runtime and build images for future deployments.",
+    "bunRuntimePatchDescription": "The selected Bun version also applies to dependency installation, overriding repository version pins.",
     "checksEnabled": "Check security advisories",
     "checksDescription": "When off, pauses runtime and host inspections, new advisory alerts and security patch actions for this workspace. Existing evidence and project refresh consent are retained.",
     "checksDisabled": "Security advisory checks are disabled for this workspace.",

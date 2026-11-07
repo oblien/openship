@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { db, schema, repos, seedOwner, installFakeRunner } from "../jobs/_harness";
 import { eq } from "@repo/db";
@@ -969,4 +969,273 @@ describe("security operations", () => {
       .where(eq(schema.notificationDelivery.organizationId, f.owner.orgId));
     expect(after).toHaveLength(next.length);
   });
+});
+
+describe("reviewed managed runtime patches", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function sourceFixture(runtime: "node" | "bun" = "bun") {
+    const f = await fixture();
+    await repos.service.remove(f.service.id);
+    const image = runtime === "bun" ? "oven/bun:1.3.1-alpine" : "node:22.22.0-bookworm";
+    await repos.project.update(f.project.id, {
+      framework: "nextjs",
+      packageManager: runtime === "bun" ? "bun" : "npm",
+      buildImage: image,
+      runtimeImage: null,
+      gitProvider: "github",
+      gitUrl: "https://github.com/example/source.git",
+      gitOwner: "example",
+      gitRepo: "source",
+      gitBranch: "main",
+      installCommand: `${runtime === "bun" ? "bun" : "npm"} install`,
+      buildCommand: "npm run build",
+      startCommand: "npm run start",
+    });
+    const source = (await repos.project.findById(f.project.id))!;
+    await db
+      .update(schema.deployment)
+      .set({
+        trigger: "manual",
+        commitSha: "1".repeat(40),
+        meta: { ...buildConfigSnapshot(source, "main"), ...(await resolveSnapshotTarget(source)) },
+      })
+      .where(eq(schema.deployment.id, f.deployment.id));
+    const feed = await h.feed();
+    feed.security.advisories = [
+      {
+        ...notice,
+        targets: [
+          {
+            kind: "runtime",
+            runtime,
+            affected: runtime === "bun" ? "<1.4.4" : "<22.23.4",
+            fixed: runtime === "bun" ? ">=1.4.4" : ">=22.23.4 <23 || >=24.22.1 <25",
+          },
+        ],
+      },
+    ];
+    h.feed.mockResolvedValue(feed);
+    const inventory: securityInventory.SecurityInventory = {
+      deploymentId: f.deployment.id,
+      checkedAt: new Date().toISOString(),
+      probeKey: securityProbeKey(feed.security.advisories),
+      images: [{ serviceId: null, serviceName: null, role: "base", ref: image, digest: OLD }],
+      runtimes: [{ serviceId: null, runtime, version: runtime === "bun" ? "1.3.1" : "22.22.0" }],
+      unknownServices: [],
+    };
+    await repos.securityAdvisory.saveInventory(
+      f.project.id,
+      f.owner.orgId,
+      f.deployment.id,
+      inventory,
+      new Date(),
+    );
+    const probe = vi
+      .spyOn(securityInventory, "projectSecurityInventory")
+      .mockResolvedValue(inventory);
+    return { ...f, inventory, probe, image, input: { ...f.input, serviceId: null } };
+  }
+
+  it.each(["bun", "node"] as const)(
+    "persists the reviewed %s version in both stages and rebuilds the deployed commit",
+    async (runtime) => {
+      const f = await sourceFixture(runtime);
+      const detail = await f.client.updates.security(f.project.id);
+      const patch = detail.findings[0].runtimePatch!;
+      const expected = runtime === "bun" ? "oven/bun:1.4.4-alpine" : "node:22.23.4-bookworm";
+      expect(detail.findings[0].canRefresh).toBe(true);
+      expect(patch).toMatchObject({ runtime, buildImage: expected, runtimeImage: expected });
+      const overview = await securityOverview(f.ctx, await h.feed());
+      expect(
+        overview.projects.find((p) => p.projectId === f.project.id)?.findings[0].runtimePatch,
+      ).toEqual(patch);
+      expect(h.deploy).not.toHaveBeenCalled();
+      await f.client.updates.applySecurity(f.project.id, {
+        ...f.input,
+        runtimePatchId: patch.reviewId,
+      });
+      const saved = (await repos.project.findById(f.project.id))!;
+      expect(saved).toMatchObject({ buildImage: expected, runtimeImage: expected });
+      // An ordinary later deploy snapshots the saved selection, not the old tag.
+      expect(buildConfigSnapshot(saved)).toMatchObject({
+        buildImage: expected,
+        runtimeImage: expected,
+        runtimeImageOverride: true,
+      });
+      expect(h.deploy).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ organizationId: f.owner.orgId }),
+        expect.objectContaining({
+          projectId: f.project.id,
+          commitSha: "1".repeat(40),
+          trigger: "update",
+          forcePullImages: true,
+        }),
+      );
+      expect(h.deploy.mock.calls[0][1]).not.toHaveProperty("securityApproval");
+    },
+  );
+
+  it("requires review of the version change rather than accepting an old refresh button", async () => {
+    const f = await sourceFixture();
+    await expect(f.client.updates.applySecurity(f.project.id, f.input)).rejects.toThrow(
+      /review the patched version/,
+    );
+    expect((await repos.project.findById(f.project.id))?.buildImage).toBe(f.image);
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it.each(["configuration", "advisory"])(
+    "rejects a review after the %s changes",
+    async (change) => {
+      const f = await sourceFixture();
+      const patch = (await f.client.updates.security(f.project.id)).findings[0].runtimePatch!;
+      if (change === "configuration")
+        await repos.project.update(f.project.id, { buildCommand: "npm run other-build" });
+      else {
+        const feed = await h.feed();
+        feed.security.advisories[0].revision++;
+      }
+      await expect(
+        f.client.updates.applySecurity(f.project.id, {
+          ...f.input,
+          runtimePatchId: patch.reviewId,
+        }),
+      ).rejects.toThrow(/patch has changed/);
+      expect((await repos.project.findById(f.project.id))?.runtimeImage).toBeNull();
+      expect(h.deploy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not save a patch if the registry cannot confirm the target image", async () => {
+    const f = await sourceFixture();
+    const patch = (await f.client.updates.security(f.project.id)).findings[0].runtimePatch!;
+    h.digest.mockResolvedValue(null);
+    await expect(
+      f.client.updates.applySecurity(f.project.id, { ...f.input, runtimePatchId: patch.reviewId }),
+    ).rejects.toThrow(/registry could not confirm/);
+    expect((await repos.project.findById(f.project.id))?.buildImage).toBe(f.image);
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it("can retry the reviewed patch after deployment admission fails", async () => {
+    const f = await sourceFixture();
+    const patch = (await f.client.updates.security(f.project.id)).findings[0].runtimePatch!;
+    h.deploy.mockRejectedValueOnce(new Error("Billing admission failed"));
+    const input = { ...f.input, runtimePatchId: patch.reviewId };
+    await expect(f.client.updates.applySecurity(f.project.id, input)).rejects.toThrow(
+      /Internal server error/,
+    );
+    expect((await repos.project.findById(f.project.id))?.runtimeImage).toBe(patch.runtimeImage);
+    await expect(f.client.updates.applySecurity(f.project.id, input)).resolves.toMatchObject({
+      deployment_id: "new-secure-deployment",
+    });
+    expect(h.deploy).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["dockerfile", "custom-image"])(
+    "does not offer an ineffective builder refresh for %s",
+    async (kind) => {
+      const f = await sourceFixture();
+      await repos.project.update(
+        f.project.id,
+        kind === "dockerfile"
+          ? { framework: "docker" }
+          : { runtimeImage: "ghcr.io/customer/runtime:1.3.1" },
+      );
+      const finding = (await f.client.updates.security(f.project.id)).findings[0];
+      expect(finding).toMatchObject({ canRefresh: false, imageChangeRequired: true });
+      expect(finding.runtimePatch).toBeUndefined();
+      await expect(f.client.updates.applySecurity(f.project.id, f.input)).rejects.toThrow(
+        /configuration|Dockerfile/,
+      );
+      expect(h.deploy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not extend automatic refresh consent to version-changing source patches", async () => {
+    const f = await sourceFixture();
+    await setProjectSecurityPolicy(f.ctx, f.project.id, { autoRefresh: true });
+    expect(await applySecurityAdvisory(f.ctx, f.project.id, f.input, true)).toBeNull();
+    expect((await repos.project.findById(f.project.id))?.buildImage).toBe(f.image);
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a proposed version that is still in the affected range", async () => {
+    const f = await sourceFixture();
+    const feed = await h.feed();
+    feed.security.advisories[0].targets[0].affected = "<1.4.5";
+    const finding = (await f.client.updates.security(f.project.id)).findings[0];
+    expect(finding).toMatchObject({ canRefresh: false, imageChangeRequired: true });
+    expect(finding.runtimePatch).toBeUndefined();
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it("preserves the existing refresh policy for other managed runtimes", async () => {
+    const f = await sourceFixture();
+    await repos.project.update(f.project.id, {
+      framework: "laravel",
+      packageManager: "composer",
+      runtimeVersion: "8.4",
+      buildImage: "php:8.4-cli",
+      runtimeImage: null,
+    });
+    const feed = await h.feed();
+    feed.security.advisories[0].targets = [
+      { kind: "runtime", runtime: "php", affected: "<8.4.27", fixed: ">=8.4.27" },
+    ];
+    f.probe.mockResolvedValue({
+      ...f.inventory,
+      runtimes: [{ serviceId: null, runtime: "php", version: "8.4.0" }],
+    });
+    const finding = (await f.client.updates.security(f.project.id)).findings[0];
+    expect(finding.canRefresh).toBe(true);
+    expect(finding.runtimePatch).toBeUndefined();
+    await f.client.updates.applySecurity(f.project.id, f.input);
+    expect((await repos.project.findById(f.project.id))?.buildImage).toBe("php:8.4-cli");
+    expect(h.deploy).toHaveBeenCalledOnce();
+  });
+
+  it("cannot use a reviewed patch from another organization", async () => {
+    const f = await sourceFixture();
+    const patch = (await f.client.updates.security(f.project.id)).findings[0].runtimePatch!;
+    const other = await seedOwner();
+    const ctx = buildBackgroundContext({ userId: other.userId, organizationId: other.orgId });
+    await expect(
+      applySecurityAdvisory(ctx, f.project.id, { ...f.input, runtimePatchId: patch.reviewId }),
+    ).rejects.toThrow();
+    expect((await repos.project.findById(f.project.id))?.runtimeImage).toBeNull();
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it.each(["1.3.1", "1.4.4"])(
+    "checks the running Bun version (%s) before resolving the finding",
+    async (version) => {
+      const f = await sourceFixture();
+      const patch = (await f.client.updates.security(f.project.id)).findings[0].runtimePatch!;
+      const next = await repos.deployment.create({
+        projectId: f.project.id,
+        organizationId: f.owner.orgId,
+        environment: "production",
+        branch: "main",
+        status: "ready",
+        commitSha: "1".repeat(40),
+      });
+      h.deploy.mockResolvedValue({ deployment: next });
+      await f.client.updates.applySecurity(f.project.id, {
+        ...f.input,
+        runtimePatchId: patch.reviewId,
+      });
+      await repos.project.update(f.project.id, { activeDeploymentId: next.id });
+      f.probe.mockResolvedValue({
+        ...f.inventory,
+        deploymentId: next.id,
+        runtimes: [{ serviceId: null, runtime: "bun", version }],
+      });
+      await reconcileSecurityRefreshes();
+      const [attempt] = await repos.securityAdvisory.attemptsForProject(f.project.id);
+      expect(attempt.status).toBe(version === "1.4.4" ? "verified" : "failed");
+      if (version === "1.3.1") expect(attempt.error).toContain("still affected");
+    },
+  );
 });

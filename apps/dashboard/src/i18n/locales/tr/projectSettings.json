@@ -1262,6 +1262,9 @@
     "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
   },
   "securityAdvisories": {
+    "applyPatch": "Güvenlik yamasını uygula",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Çalışma zamanı ve derleme imajlarını sonraki dağıtımlar için kaydeder.",
+    "bunRuntimePatchDescription": "Seçilen Bun sürümü bağımlılık kurulumunda da kullanılır ve depoda sabitlenen sürümün yerini alır.",
     "checksEnabled": "Güvenlik duyurularını kontrol et",
     "checksDescription": "Kapatıldığında bu çalışma alanındaki çalışma zamanı ve ana makine kontrolleri, yeni uyarılar ve yama işlemleri duraklatılır. Veriler ve proje güncelleme onayları korunur.",
     "checksDisabled": "Bu çalışma alanında güvenlik kontrolleri kapalı.",

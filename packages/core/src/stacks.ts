@@ -1310,12 +1310,15 @@ export function getBuildImage(
 /** Shared JavaScript toolchain bootstrap: select from repository configuration,
  * install through the manager's adapter, then verify the actual version. Other
  * language ecosystems retain their existing install contracts. */
-export function packageManagerEnsureCommand(packageManager?: string): string {
+export function packageManagerEnsureCommand(
+  packageManager?: string,
+  versionOverride?: string,
+): string {
   if (
     packageManager === "npm" || packageManager === "pnpm" ||
     packageManager === "yarn" || packageManager === "bun"
   )
-    return managedPackageManagerEnsureCommand(packageManager);
+    return managedPackageManagerEnsureCommand(packageManager, versionOverride);
   return "";
 }
 
