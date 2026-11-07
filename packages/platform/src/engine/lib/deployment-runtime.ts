@@ -689,7 +689,11 @@ async function createPlatformForResolvedServer(
     } } : {}) },
     docker:
       runtimeMode === "docker"
-        ? { ...toDockerSshTransport(ssh!, executor), resolveRegistryAuth }
+        ? {
+            ...toDockerSshTransport(ssh!, executor),
+            resolveRegistryAuth,
+            buildCacheBudgetBytes: serverBuildCacheBudget(id),
+          }
         : undefined,
     nginx: edgeProviderOptions(id),
     // Serialize provisioning per target server, so concurrent deploys (across
@@ -792,11 +796,24 @@ export async function createServerDockerRuntime(
   return createDockerRuntimeForResolvedServer(resolved, organizationId);
 }
 
+/**
+ * The server's configured managed build-cache budget (null = automatic). Read on every collection,
+ * not captured here, so a changed setting applies to the next build on a retained connection.
+ * Only SSH runtimes use managed BuildKit caches; socket runtimes build with the host daemon's
+ * native cache, so they never receive this option.
+ */
+function serverBuildCacheBudget(
+  serverId: string | null | undefined,
+): (() => Promise<number | null>) | undefined {
+  if (!serverId) return undefined;
+  return async () => (await repos.server.get(serverId))?.buildCacheBudgetBytes ?? null;
+}
+
 async function createDockerRuntimeForResolvedServer(
-  resolved: Pick<Awaited<ReturnType<typeof resolveServerExecutor>>, "executor" | "isLocal" | "ssh">,
+  resolved: Pick<Awaited<ReturnType<typeof resolveServerExecutor>>, "id" | "executor" | "isLocal" | "ssh">,
   organizationId: string,
 ): Promise<DockerRuntime> {
-  const { executor, isLocal, ssh } = resolved;
+  const { id, executor, isLocal, ssh } = resolved;
   // Registry credentials for every pull this runtime makes, bound to THIS org. Injected
   // rather than read from the host's docker config: it is the only source that works on
   // every install shape, and binding the org here means no later call site can resolve
@@ -809,7 +826,11 @@ async function createDockerRuntimeForResolvedServer(
     return DockerRuntime.create({ transport: "socket", resolveRegistryAuth });
   }
   return createWithRetainedConnection(executor, () =>
-    DockerRuntime.create({ ...toDockerSshTransport(ssh!, executor), resolveRegistryAuth }),
+    DockerRuntime.create({
+      ...toDockerSshTransport(ssh!, executor),
+      resolveRegistryAuth,
+      buildCacheBudgetBytes: serverBuildCacheBudget(id),
+    }),
   );
 }
 

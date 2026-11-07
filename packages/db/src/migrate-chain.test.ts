@@ -556,6 +556,7 @@ describe("migration chain applies to an existing, populated database", () => {
         purpose: "deployment",
         ssh_host_key: null,
         gpu_override: null,
+        build_cache_budget_bytes: null,
       })));
       // Repeated startup retains execution IDs and cannot detach a managed project.
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
