@@ -119,8 +119,9 @@ describe("readDeclaredPair", () => {
         return files[p];
       }),
       exec: vi.fn(async (cmd: string) => {
+        // File reads come back framed (see exact-file-read.ts).
         const hit = Object.entries(containerFiles).find(([p]) => cmd.includes(p));
-        return hit ? hit[1] : "";
+        return hit ? `<openship-file>${hit[1]}</openship-file>` : "";
       }),
     }) as unknown as CommandExecutor;
 

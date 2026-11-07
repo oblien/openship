@@ -953,8 +953,10 @@ describe("mail bring-up on a non-root sudo box (GH-630)", () => {
     const originalExec = box.exec;
     box.executor.exec = box.exec = vi.fn(async (cmd: string) => {
       if (cmd.includes("PG_VERSION")) return "yes\n";
-      if (cmd.includes("cat ") && cmd.includes("engine.env")) return "OPENSHIP_MAIL_DB_PORT=5436\n";
-      if (cmd.includes("cat ") && cmd.includes("db.env")) return "POSTGRES_PASSWORD=pw\n";
+      // Elevated file reads come back framed (see exact-file-read.ts).
+      if (cmd.includes("cat ") && cmd.includes("engine.env"))
+        return "<openship-file>OPENSHIP_MAIL_DB_PORT=5436\n</openship-file>";
+      if (cmd.includes("cat ") && cmd.includes("db.env")) return "<openship-file>POSTGRES_PASSWORD=pw\n</openship-file>";
       if (cmd.includes("/proc/net/tcp")) {
         return (
           "  sl  local_address rem_address   st ...\n" +

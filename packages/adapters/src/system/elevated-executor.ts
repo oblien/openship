@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import type { CommandExecutor, LogEntry } from "../types";
 import { resolveEnvironment } from "./environment";
 import { sq } from "./local-shell";
+import { framedCatCommand, unframeFileRead } from "./exact-file-read";
 
 // apt/dpkg non-interactive env, re-set INSIDE the sudo'd root shell. sudo
 // resets the environment and many sudoers configs reject -E / --preserve-env,
@@ -72,7 +73,8 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
       return await inner.readFile(path);
     } catch (err) {
       try {
-        return await inner.exec(elevateCommand(`cat ${sq(path)}`));
+        // Framed: `exec` trims its output, and a file read must come back byte-exact.
+        return unframeFileRead(await inner.exec(elevateCommand(framedCatCommand(path))), path);
       } catch (diagnosticFailure) {
         observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor");
         throw err;

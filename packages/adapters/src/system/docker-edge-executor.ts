@@ -7,6 +7,7 @@ import { LocalExecutor } from "./local-executor";
 import { logEntry, sq } from "./local-shell";
 import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
 import { edgeFailureReason } from "./proxy/detect";
+import { framedCatCommand, unframeFileRead } from "./exact-file-read";
 
 const DEFAULT_SOCKET = "/var/run/docker.sock";
 
@@ -246,7 +247,8 @@ export class DockerEdgeExecutor implements CommandExecutor {
 
   async readFile(path: string): Promise<string> {
     if (this.fileMode === "mounted") return this.files.readFile(path);
-    return this.exec(`cat ${sq(path)}`);
+    // Framed: `exec` trims its output, and a file read must come back byte-exact.
+    return unframeFileRead(await this.exec(framedCatCommand(path)), path);
   }
 
   async exists(path: string): Promise<boolean> {

@@ -4,6 +4,7 @@ import { EXECUTOR_DELEGATE } from "./elevated-executor";
 import { logEntry, sq } from "./local-shell";
 import { edgeFailureReason, resolveOurEdgeContainer } from "./proxy/detect";
 import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
+import { framedCatCommand, unframeFileRead } from "./exact-file-read";
 
 /** Wrap a command so it runs INSIDE the named edge container. */
 export function containerCommand(container: string, command: string): string {
@@ -90,7 +91,11 @@ export async function readMaybeInContainer(
   // and it must not pay for a `docker ps` to answer a question it never asks.
   const name = await resolveRef(container);
   if (!name) return "";
-  return exec.exec(containerCommand(name, `cat ${sq(path)}`)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return ""; });
+  // Framed: `exec` trims its output, and a file read must come back byte-exact.
+  return exec
+    .exec(containerCommand(name, framedCatCommand(path)))
+    .then((output) => unframeFileRead(output, path))
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/edge-container-executor"); return ""; });
 }
 
 /**
