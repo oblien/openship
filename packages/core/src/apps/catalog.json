@@ -11130,7 +11130,7 @@
           "service": "hermes",
           "port": 8642,
           "label": "OpenAI-compatible API",
-          "kind": "http",
+          "kind": "tcp",
           "scope": "internal",
           "defaultMode": "internal",
           "allowedModes": [
