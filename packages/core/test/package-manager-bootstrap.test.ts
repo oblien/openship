@@ -15,6 +15,8 @@ function run(
     manager?: string;
     reportedVersion?: string;
     nodeAliasToBun?: boolean;
+    bunRuntimeVersion?: string;
+    environmentOverride?: string;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "openship-pnpm-bootstrap-"));
@@ -48,17 +50,22 @@ exit 0
     mkdirSync(cwd);
     writeFileSync(join(cwd, "package.json"), "{}");
   }
-  const result = spawnSync("sh", ["-c", packageManagerEnsureCommand(options.manager ?? "pnpm")], {
-    cwd,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${join(root, "bin")}:${process.env.PATH}`,
-      BOOTSTRAP_LOG: join(root, "calls"),
-      BOOTSTRAP_STATE: join(root, "version"),
-      REPORTED_VERSION: options.reportedVersion ?? "",
+  const result = spawnSync(
+    "sh",
+    ["-c", packageManagerEnsureCommand(options.manager ?? "pnpm", options.bunRuntimeVersion)],
+    {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${join(root, "bin")}:${process.env.PATH}`,
+        BOOTSTRAP_LOG: join(root, "calls"),
+        BOOTSTRAP_STATE: join(root, "version"),
+        REPORTED_VERSION: options.reportedVersion ?? "",
+        OPENSHIP_BUILD_BUN_VERSION: options.environmentOverride,
+      },
     },
-  });
+  );
   let calls = "";
   try {
     calls = readFileSync(join(root, "calls"), "utf8");
@@ -138,6 +145,63 @@ describe("managed pnpm bootstrap", () => {
 });
 
 describe("shared package-manager contract", () => {
+  it.each([
+    { packageManager: "bun@1.3.1" },
+    { devEngines: { packageManager: { name: "bun", version: "1.3.1" } } },
+  ])("keeps an explicitly selected patched runtime despite a repository pin: %j", (manifest) => {
+    const source = JSON.stringify(manifest);
+    const result = run(
+      { "package.json": source },
+      {
+        manager: "bun",
+        bunRuntimeVersion: "1.4.4",
+        reportedVersion: "1.4.4",
+        nested: true,
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("overrides repository bun@1.3.1");
+    expect(result.stdout).toContain("Verified package manager: bun@1.4.4");
+    expect(result.calls).not.toContain("install --global bun@1.3.1");
+    expect(readFileSync(join(result.root, "package.json"), "utf8")).toBe(source);
+  });
+  it("does not let an inherited environment override the repository's normal Bun pin", () => {
+    const result = run(
+      { "package.json": '{"packageManager":"bun@1.3.1"}' },
+      {
+        manager: "bun",
+        environmentOverride: "1.4.4",
+        reportedVersion: "1.3.1",
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Verified package manager: bun@1.3.1");
+  });
+  it("does not discard an integrity requirement when changing the Bun runtime", () => {
+    const result = run(
+      { "package.json": JSON.stringify({ packageManager: `bun@1.3.1+sha256.${"a".repeat(64)}` }) },
+      {
+        manager: "bun",
+        bunRuntimeVersion: "1.4.4",
+      },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("cannot discard a packageManager integrity requirement");
+    expect(result.calls).toBe("");
+  });
+  it("does not downgrade a newer repository Bun requirement to the selected runtime version", () => {
+    const result = run(
+      { "package.json": '{"packageManager":"bun@1.5.0"}' },
+      {
+        manager: "bun",
+        bunRuntimeVersion: "1.4.4",
+        reportedVersion: "1.4.4",
+      },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("the build will not downgrade Bun");
+    expect(result.calls).toBe("");
+  });
   it("bootstraps Bun when node is an alias to the actual Bun runtime", () => {
     const result = run(
       { "package.json": '{"packageManager":"bun@1.4.4"}' },

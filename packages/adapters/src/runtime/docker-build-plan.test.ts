@@ -34,6 +34,31 @@ function phpConfig(over: Partial<BuildConfig> = {}): BuildConfig {
   });
 }
 
+describe("explicit Bun runtime selection", () => {
+  it("uses the selected Bun in workspace preparation, dependency installation and the final stage", () => {
+    const df = generateDockerfile(config({
+      stack: "nextjs", packageManager: "bun",
+      buildImage: "oven/bun:1.4.4-alpine", runtimeImage: "oven/bun:1.4.4-alpine",
+      runtimeImageOverride: true,
+      workspacePrepareCommand: "bun install --frozen-lockfile",
+      installCommand: "bun install --frozen-lockfile", buildCommand: "bun run build",
+      startCommand: "bun run start",
+    }));
+    expect(df).toContain("FROM oven/bun:1.4.4-alpine AS builder");
+    expect(df).toContain("FROM oven/bun:1.4.4-alpine AS runtime");
+    const runs = df.split("\n").filter((line) => line.startsWith("RUN") && line.includes("bun install"));
+    expect(runs).toHaveLength(2);
+    for (const run of runs) expect(run).toContain("OPENSHIP_BUILD_BUN_VERSION='1.4.4'");
+  });
+  it("leaves repository toolchain selection intact when there is no explicit runtime override", () => {
+    const df = generateDockerfile(config({
+      stack: "nextjs", packageManager: "bun", buildImage: "oven/bun:1.4.4", runtimeImage: "oven/bun:1.4.4",
+      installCommand: "bun install",
+    }));
+    expect(df).not.toContain("OPENSHIP_BUILD_BUN_VERSION='1.4.4'");
+  });
+});
+
 describe("generateDockerfile — PHP branch", () => {
   it("checks both selected stages and the actual Composer platform", () => {
     const selected = generateDockerfile(phpConfig({ runtimeVersion: "8.3", buildImage: "php:8.3-cli-bookworm", runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm" }));
