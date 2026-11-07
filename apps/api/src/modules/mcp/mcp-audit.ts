@@ -20,7 +20,6 @@
  */
 
 import { audit } from "@repo/platform/engine/lib/audit-emitter";
-import { cloudAnalytics } from "@repo/platform/engine/modules/cloud-analytics/index";
 
 /** One executed tool call — the facts the audit decision is made from. */
 export interface ToolCallRecord {
@@ -70,7 +69,6 @@ export function recordToolCall(actor: ToolCallActor, record: ToolCallRecord): vo
   // Never attribute a failed request to an unverified caller-supplied tenant.
   const organizationId = record.ok ? record.organizationId ?? actor.organizationId : actor.organizationId;
   if (!organizationId) return;
-  cloudAnalytics.capture({ organizationId, userId: actor.userId, source: "mcp" }, "cloud_mcp_tool_called", { tool: record.tool, ok: record.ok, status: record.status });
   if (!needsOwnAuditRow(record)) return;
 
   audit.recordAsync(

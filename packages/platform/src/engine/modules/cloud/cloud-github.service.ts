@@ -309,8 +309,6 @@ export async function attributeGithubInstall(input: {
       );
     });
 
-    const { cloudAnalytics } = await import("../cloud-analytics");
-    cloudAnalytics.capture({ organizationId, userId, source: "dashboard" }, "cloud_github_connected", { method: "app" }, `github:${organizationId}:app:${installationId}`);
     await repos.auditEvent
       .create({
         organizationId,

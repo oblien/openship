@@ -9,6 +9,7 @@ import {
   setDiagnosticOutputGuard,
 } from "./reporter";
 import type { ErrorContext, ErrorSink } from "./types";
+import { endDiagnosticSpan, enrichDiagnosticSpan, startDiagnosticSpan, type DiagnosticSpanOptions } from "./tracing";
 
 const contexts = new AsyncLocalStorage<ErrorContext>();
 const observedOutputs = new WeakSet<Writable>();
@@ -39,10 +40,27 @@ export function withErrorContext<T>(context: ErrorContext, fn: () => T, replace 
 export function enrichErrorContext(context: ErrorContext): void {
   const frame = contexts.getStore();
   if (frame) Object.assign(frame, diagnosticContext(context));
+  enrichDiagnosticSpan(context);
+}
+
+/** Preserve the result/error while the Cloud host supplies optional trace timing. */
+export function withDiagnosticSpan<T>(context: ErrorContext, work: () => Promise<T>, options: DiagnosticSpanOptions = {}, replace = false): Promise<T> {
+  const span = startDiagnosticSpan({ ...(replace ? {} : currentErrorContext()), ...context }, options);
+  const run = () => withErrorContext({ ...context, ...span?.correlation }, async () => {
+    try {
+      const result = await work();
+      endDiagnosticSpan(span, currentErrorContext());
+      return result;
+    } catch (error) {
+      endDiagnosticSpan(span, currentErrorContext(), error);
+      throw error;
+    }
+  }, replace);
+  return span ? span.run(run) : run();
 }
 
 export async function observeOperation<T>(context: ErrorContext, fn: () => Promise<T>): Promise<T> {
-  return withErrorContext(context, async () => {
+  return withDiagnosticSpan(context, async () => {
     try {
       return await fn();
     } catch (error) {
@@ -56,8 +74,9 @@ export async function observeOperation<T>(context: ErrorContext, fn: () => Promi
 export async function observeBackground<T>(
   context: ErrorContext,
   fn: () => Promise<T>,
+  options: DiagnosticSpanOptions = {},
 ): Promise<T> {
-  return withErrorContext(
+  return withDiagnosticSpan(
     {
       source: "worker",
       kind: "background",
@@ -72,6 +91,7 @@ export async function observeBackground<T>(
         throw error;
       }
     },
+    { root: true, kind: "consumer", ...options },
     true,
   );
 }

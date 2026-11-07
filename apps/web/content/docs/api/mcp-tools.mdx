@@ -891,7 +891,6 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/support/tickets/:id/replies` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `POST /api/cloud/support/tickets/:id/retry` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `POST /api/cloud/teardown-project` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
-| `POST /api/cloud/telemetry` | Optional hosted dashboard product telemetry; validates the exact Origin and associates only verified cookie sessions. Not an SDK/MCP operation. |
 | `POST /api/cloud/token` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/deployments/:id/build` | Legacy start-by-deployment-ID adapter. Start or redeploy through /api/deployments or /api/deployments/build/access. |
 | `GET /api/deployments/:id/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |

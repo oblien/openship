@@ -1,4 +1,5 @@
-import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { diagnosticTraceparent, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import { z } from "zod";
 import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
@@ -315,7 +316,11 @@ export class OblienBillingApi {
     this.billing = client.billing;
   }
 
-  private async request<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
+  private request<T>(input: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
+    return withDiagnosticSpan({ kind: "operation", component: "oblien-billing", operation: "oblien.billing", method: input.method }, () => this.requestBilling<T>(input), { kind: "client" });
+  }
+
+  private async requestBilling<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
     const meteredPricing = method === "GET" && path === "/pricing/calculator";
     if (!path.startsWith("/billing/") && !meteredPricing) throw new Error("Billing transport only accepts billing routes");
     const url = new URL(`${this.baseUrl}${path}`);
@@ -324,6 +329,8 @@ export class OblienBillingApi {
     }
     const publicRead = meteredPricing || (method === "GET" && (path === "/billing/catalog" || path === "/billing/capacity/catalog"));
     const headers: Record<string, string> = { Accept: "application/json" };
+    const parent = diagnosticTraceparent();
+    if (parent) headers.traceparent = parent;
     if (!publicRead) {
       if (!this.options.clientId || !this.options.clientSecret) {
         throw new AppError("Cloud billing is not configured", 503, "BILLING_NOT_CONFIGURED");

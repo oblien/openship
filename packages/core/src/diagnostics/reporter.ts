@@ -20,6 +20,8 @@ const STRING_FIELDS = [
   "requestId",
   "parentRequestId",
   "traceId",
+  "spanId",
+  "eventId",
   "errorId",
   "clientEventId",
   "organizationId",
@@ -49,6 +51,7 @@ const CONTEXT_FIELDS = [
   "handled",
   "untrusted",
   "retryable",
+  "traceFlags",
 ] as const;
 
 /** Merge allowed data properties only; explicit undefined still clears a parent field. */
@@ -84,6 +87,9 @@ export function diagnosticContext(input: ErrorContext): ErrorContext {
     const value = diagnosticProperty(input, key);
     if (typeof value === "boolean") result[key] = value;
   }
+  const traceFlags = diagnosticProperty(input, "traceFlags");
+  if (typeof traceFlags === "number" && Number.isInteger(traceFlags) && traceFlags >= 0 && traceFlags <= 255)
+    result.traceFlags = traceFlags;
   return result as ErrorContext;
 }
 
@@ -206,6 +212,7 @@ export class ErrorReporter {
   private sinkVersion = 0;
   private fallback: ErrorSink;
   private context: () => ErrorContext;
+  private observer?: (event: Readonly<ErrorEvent>) => void;
   private queue: { event: ErrorEvent; bytes: number }[] = [];
   private bytes = 0;
   private timer?: ReturnType<typeof setTimeout>;
@@ -243,6 +250,12 @@ export class ErrorReporter {
   }
   setContextProvider(context: () => ErrorContext): void {
     this.context = context;
+  }
+
+  /** Observe each accepted sanitized snapshot once, independently of destination retries/fallback. */
+  setObserver(observer: ((event: Readonly<ErrorEvent>) => void) | undefined): () => void {
+    this.observer = observer;
+    return () => { if (this.observer === observer) this.observer = undefined; };
   }
 
   /** Capture is opt-in at the owning process/UI boundary, never from account connection state. */
@@ -313,6 +326,8 @@ export class ErrorReporter {
       else {
         this.queue.push({ event, bytes });
         this.bytes += bytes;
+        try { this.observer?.(event); }
+        catch { /* An optional observer cannot change capture or its existing destination. */ }
         this.schedule();
       }
     } catch {

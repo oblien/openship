@@ -77,7 +77,6 @@
     "oxlint": "1.6.0",
     "partysocket": "^1.1.4",
     "pluralize": "^8.0.0",
-    "posthog-js": "1.256.0",
     "prosemirror-model": "1.25.8",
     "prosemirror-state": "1.4.4",
     "prosemirror-view": "1.42.3",
