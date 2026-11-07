@@ -1252,5 +1252,21 @@
     "saved": "GPU-Einstellung gespeichert",
     "saveFailed": "GPU-Einstellung konnte nicht gespeichert werden",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "Build-Cache",
+    "subtitle": "Wie viel Build-Cache Openship auf diesem Server zwischen Deployments behält.",
+    "modeLabel": "Cache-Budget",
+    "modeAuto": "Automatisch",
+    "modeCustom": "Benutzerdefiniert",
+    "modeHint": "Automatisch behält bis zu 20 % des Docker-Speichers dieses Servers. Nach jedem Build werden Caches über dem Budget entfernt, die am längsten ungenutzten zuerst.",
+    "statusAuto": "Automatisch",
+    "statusCustom": "Benutzerdefiniert · {size} GiB",
+    "customLabel": "Budget (in GiB)",
+    "invalid": "Gib eine Größe von {min} bis {max} GiB mit höchstens zwei Nachkommastellen ein.",
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "Build-Cache-Budget gespeichert",
+    "saveFailed": "Build-Cache-Budget konnte nicht gespeichert werden"
   }
 }

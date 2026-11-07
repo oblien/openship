@@ -115,7 +115,15 @@ deployment gates before cutover.
 
 Managed remote-worker idle caches retain at most 20% of Docker’s filesystem, with a
 seven-day idle expiry. When free space falls below 20% of the filesystem, the idle budget
-shrinks to what still fits above that target, but never below `min(5 GiB, 10%)`. Collection removes the least recently used idle state first. BuildKit
+shrinks to what still fits above that target, but never below `min(5 GiB, 10%)`.
+Server admins can replace the automatic share for a remote deployment server under
+**Servers → Overview → Build cache** (or `buildCacheBudgetBytes` on the server update API).
+The API accepts 1 GiB to 64 TiB; the budget applied is capped at the filesystem minus the
+admission reserve, and under storage pressure it still shrinks as above, though never below
+the lower of the configured budget and `min(5 GiB, 10%)`. The local "This Server" row builds
+with the host daemon's native cache and migration sources never build, so the setting is not
+offered on either.
+Collection removes the least recently used idle state first. BuildKit
 workers also receive that cache ceiling and a native BuildKit GC target of
 20% free space. Attached state and active build records remain protected. Collection runs
 before and after builds and in the daily cache sweep. Explicit cache clearing and project deletion use

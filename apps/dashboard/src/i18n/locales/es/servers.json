@@ -1252,5 +1252,21 @@
     "saved": "Configuración de GPU guardada",
     "saveFailed": "No se pudo guardar la configuración de GPU",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "Caché de compilación",
+    "subtitle": "Cuánta caché de compilación conserva Openship en este servidor entre despliegues.",
+    "modeLabel": "Límite de caché",
+    "modeAuto": "Automático",
+    "modeCustom": "Personalizado",
+    "modeHint": "El modo automático conserva hasta el 20 % del disco de Docker de este servidor. Tras cada compilación, se eliminan las cachés que superan el límite, empezando por las menos usadas recientemente.",
+    "statusAuto": "Automático",
+    "statusCustom": "Personalizado · {size} GiB",
+    "customLabel": "Límite en GiB",
+    "invalid": "Introduce un tamaño entre {min} y {max} GiB, con hasta dos decimales.",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "saved": "Límite de caché de compilación guardado",
+    "saveFailed": "No se pudo guardar el límite de caché de compilación"
   }
 }

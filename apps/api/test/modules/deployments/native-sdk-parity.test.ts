@@ -2366,6 +2366,62 @@ describe("server HTTP/native parity", () => {
     expect(h.serverInvalidate).toHaveBeenCalledExactlyOnceWith("server-a");
   });
 
+  it("updates the build-cache budget through HTTP/native and validates its bounds", async () => {
+    const local = await native();
+    const budget = 24 * 1024 ** 3;
+    for (const servers of [local.servers, remote().servers]) {
+      await expect(
+        servers.update("server-a", { buildCacheBudgetBytes: budget }),
+      ).resolves.toMatchObject({ buildCacheBudgetBytes: budget });
+      await expect(
+        servers.update("server-a", { buildCacheBudgetBytes: 1024 }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    }
+    expect(h.serverInvalidate).not.toHaveBeenCalled();
+    expect(h.audit.mock.calls.at(-1)?.[0]).toMatchObject({
+      after: { buildCacheBudgetBytes: budget },
+    });
+  });
+
+  it("keeps the build-cache budget to server admins on remote deployment servers", async () => {
+    const budget = 24 * 1024 ** 3;
+    h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    h.grants.set("org-a:alice:server:server-a", { permissions: ["write"] });
+    const writer = await native();
+    for (const servers of [writer.servers, remote().servers]) {
+      expect((await servers.get("server-a")).capabilities).toMatchObject({
+        buildCacheBudget: false,
+      });
+      await expect(servers.update("server-a", { name: "Renamed" })).resolves.toMatchObject({
+        name: "Renamed",
+      });
+      await expect(
+        servers.update("server-a", { buildCacheBudgetBytes: budget }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+    h.grants.set("org-a:alice:server:server-a", { permissions: ["admin"] });
+    const admin = await native();
+    for (const servers of [admin.servers, remote().servers]) {
+      expect((await servers.get("server-a")).capabilities).toMatchObject({
+        buildCacheBudget: true,
+      });
+    }
+    // The local row builds through the host daemon's native cache and migration sources never
+    // build, so a budget would do nothing on either.
+    const unsupportedRows = [{ isLocal: true }, { isLocal: false, purpose: "migration_source" }];
+    for (const unsupported of unsupportedRows) {
+      Object.assign(h.servers.get("server-a")!, unsupported);
+      for (const servers of [admin.servers, remote().servers]) {
+        const view = await servers.get("server-a");
+        expect(view).not.toHaveProperty("buildCacheBudgetBytes");
+        expect(view.capabilities).toMatchObject({ buildCacheBudget: false });
+        await expect(
+          servers.update("server-a", { buildCacheBudgetBytes: budget }),
+        ).rejects.toMatchObject({ code: "BUILD_CACHE_BUDGET_UNSUPPORTED" });
+      }
+    }
+  });
+
   it("requires server admin for execution and rate-limit writes, beyond a write grant", async () => {
     h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
     h.grants.set("org-a:alice:server:server-a", { permissions: ["write"] });
