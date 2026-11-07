@@ -369,11 +369,21 @@ export async function runRsync(
   let lastTail = "";
   for (let attempt = 1; attempt <= RSYNC_MAX_ATTEMPTS; attempt++) {
     signal?.throwIfAborted();
+    // Executors stream arbitrary chunks. Frame rsync's CR/LF updates separately
+    // for stdout and stderr, including a final update without a line ending.
+    const pending = new Map<LogEntry["level"], string>();
+    const report = (line: string) => {
+      const bytes = parseRsyncProgress(line);
+      if (bytes != null) onProgress?.(bytes);
+    };
     const { code, output } = await initiatorExec.streamExec(command, (entry: LogEntry) => {
       if (!onProgress) return;
-      const bytes = parseRsyncProgress(entry.message);
-      if (bytes != null) onProgress(bytes);
+      const lines = ((pending.get(entry.level) ?? "") + entry.message).split(/\r\n|[\r\n]/);
+      // Only the short numeric prefix matters; bound unfinished diagnostic lines.
+      pending.set(entry.level, lines.pop()!.slice(0, 4096));
+      for (const line of lines) report(line);
     }, { signal });
+    for (const line of pending.values()) report(line);
     if (code === 0) return;
 
     lastTail = output.split("\n").filter(Boolean).slice(-4).join(" ");

@@ -71,6 +71,32 @@ describe("runRsync retry / bail", () => {
   });
 });
 
+describe("runRsync streamed progress", () => {
+  test.each([
+    {
+      name: "coalesced carriage-return updates",
+      chunks: ["\r          0   0%  0.00kB/s\r        512 100%  1.00kB/s\r"],
+      expected: [0, 512],
+    },
+    {
+      name: "fragmented counters and an unterminated final update",
+      chunks: ["      1,", "234  50%  1.00kB/s\r      2,", "468 100%  1.00kB/s"],
+      expected: [1234, 2468],
+    },
+  ])("reports $name without mixing stderr into stdout", async ({ chunks, expected }) => {
+    const progress: number[] = [];
+    const streamExec: CommandExecutor["streamExec"] = async (_command, onLog) => {
+      for (const message of chunks) {
+        onLog({ timestamp: new Date().toISOString(), level: "info", message });
+        onLog({ timestamp: new Date().toISOString(), level: "warn", message: "rsync diagnostic\n" });
+      }
+      return { code: 0, output: chunks.join("") };
+    };
+    await runRsync({ streamExec } as CommandExecutor, "rsync ...", bytes => progress.push(bytes));
+    expect(progress).toEqual(expected);
+  });
+});
+
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
 describe("parseRsyncProgress", () => {
