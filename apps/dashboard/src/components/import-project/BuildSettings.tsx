@@ -365,7 +365,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
           <div className="relative p-3 bg-background rounded-xl group">
             <div className="flex items-center gap-3">
               {field.icon}
-              <p className="min-w-0 flex-1 truncate pe-8 font-mono text-sm text-foreground">{displayValue || field.placeholder}</p>
+              <p className="min-w-0 flex-1 truncate pe-8 font-mono text-sm text-foreground">{displayValue || "—"}</p>
             </div>
             <button
               onClick={() => handleEdit(field.key, value)}

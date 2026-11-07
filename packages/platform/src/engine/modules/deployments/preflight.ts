@@ -33,6 +33,7 @@ import {
   manualBuildCaches,
   normalizeAppVolume,
   parseVolumeMount,
+  missingBuildCommands,
 } from "@repo/core";
 import { cloudClient } from "../../lib/cloud/client";
 import { isCloudConnectedForOrg } from "../../lib/cloud/session";
@@ -1055,23 +1056,17 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
   // buildpack commands are deliberately empty after repository/folder detection
   // and are not consumed by the Docker pipeline. The workload-specific checks
   // below still enforce a port for web apps.
-  const dockerOwnsBuild = snapshot.framework === "docker";
-  if (!releaseImageRef && !dockerOwnsBuild && snapshot.hasBuild && !snapshot.installCommand) {
-    missing.push("install command");
+  if (!releaseImageRef) {
+    for (const field of missingBuildCommands({ ...snapshot, ...cls })) {
+      missing.push(field === "installCommand" ? "install command" : "start command");
+    }
   }
 
   if (cls.workload === "web") {
     // A web app is reached on a port and must declare how it starts and listens.
     // Dockerfile apps inherit their process command from the image.
     // A prebuilt image may intentionally inherit its Dockerfile CMD.
-    if (!releaseImageRef && !dockerOwnsBuild && !snapshot.startCommand)
-      missing.push("start command");
     if (!snapshot.port) missing.push("port");
-  } else if (cls.workload === "worker") {
-    // A worker is a portless long-running container (#538-B): it needs a command
-    // to run but no port and no route. A dockerfile/prebuilt worker takes its
-    // command from the image CMD, so only a buildpack worker must supply one.
-    if (cls.build === "buildpack" && !snapshot.startCommand) missing.push("start command");
   }
   // A static workload needs neither a start command nor a port — its output is
   // served as files, so nothing is required here.
