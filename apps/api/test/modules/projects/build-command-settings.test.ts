@@ -132,6 +132,30 @@ describe("saved build commands", () => {
     },
   );
 
+  it.each([false, true])(
+    "does not let disabled incoming apps bypass validation (previous active app: %s)",
+    async (previousApp) => {
+      const { owner, project } = await fixture();
+      if (previousApp)
+        await seedService(project.id, { name: "web", kind: "monorepo", enabled: true });
+      await expect(
+        ensureProject(
+          {
+            projectId: project.id,
+            name: project.name,
+            projectType: "monorepo",
+            installCommand: "",
+            monorepoApps: [{ name: "web", rootDirectory: "apps/web", enabled: false }],
+          },
+          owner.organizationId,
+        ),
+      ).rejects.toThrow(/command.*empty/i);
+      expect((await repos.project.findById(project.id))?.installCommand).toBe("npm ci");
+      if (previousApp)
+        expect((await repos.service.listByProject(project.id))[0]?.enabled).toBe(true);
+    },
+  );
+
   it.each(["monorepo", "services"] as const)(
     "allows incoming %s recipes to own their commands",
     async (projectType) => {

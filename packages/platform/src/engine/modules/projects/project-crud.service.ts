@@ -117,26 +117,29 @@ export { resolveProjectDeployTarget } from "./project-deploy-target";
 async function assertBuildCommandUpdate(
   project: Project,
   changes: Record<string, unknown>,
-  hasIncomingServiceRecipes = false,
+  incomingCommandOwner?: "project" | "services",
 ) {
   if (changes.installCommand === undefined && changes.startCommand === undefined) return;
   const next = { ...project, ...changes };
-  if (hasIncomingServiceRecipes || isMultiServiceProject(next)) return;
+  if (incomingCommandOwner === "services" || isMultiServiceProject(next)) return;
   const missing = missingBuildCommands({
     ...next,
     ...projectToClass(next),
     hasBuild: next.hasBuild ?? true,
   }).filter((field) => changes[field] !== undefined);
   if (!missing.length) return;
-  const services = await repos.service.listByProject(project.id);
-  if (
-    services.some(
-      (service) =>
-        service.enabled !== false &&
-        service.kind === "monorepo" &&
-        !isMaterializedAppRow(project, service),
-    )
-  ) return;
+  // An authoritative incoming app list replaces the saved monorepo topology.
+  if (incomingCommandOwner === undefined) {
+    const services = await repos.service.listByProject(project.id);
+    if (
+      services.some(
+        (service) =>
+          service.enabled !== false &&
+          service.kind === "monorepo" &&
+          !isMaterializedAppRow(project, service),
+      )
+    ) return;
+  }
   const fields = missing.map((field) =>
     field === "installCommand" ? "Install command" : "Start command",
   );
@@ -1670,10 +1673,14 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
 
-    const hasIncomingServiceRecipes =
-      (data.projectType === "monorepo" && !!data.monorepoApps?.length) ||
-      (data.projectType === "services" && !!data.services?.length);
-    await assertBuildCommandUpdate(project, update, hasIncomingServiceRecipes);
+    let incomingCommandOwner: "project" | "services" | undefined;
+    if (data.projectType === "monorepo" && data.monorepoApps?.length) {
+      incomingCommandOwner = data.monorepoApps.some((app) => app.enabled !== false)
+        ? "services" : "project";
+    } else if (data.projectType === "services" && data.services?.length) {
+      incomingCommandOwner = "services";
+    }
+    await assertBuildCommandUpdate(project, update, incomingCommandOwner);
 
     // Validate explicit route changes before saving any of the accompanying
     // field edits. In particular, ensure must not silently accept a refused URL.
