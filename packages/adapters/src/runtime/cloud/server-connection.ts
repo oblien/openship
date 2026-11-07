@@ -131,6 +131,9 @@ async function bridgeVersionMatches(response: Response): Promise<boolean> {
 export class CloudServerConnection {
   readonly executor: CloudWorkspaceExecutor;
   readonly workspaceId: string;
+  /** Oblien's optional, immutable software attachment. Generic Docker execution
+   * accepts this capability without knowing a provider-specific filesystem path. */
+  readonly softwareCacheRoot = "/opt/oblien/build-cache";
   private bridgePromise?: Promise<void>;
 
   constructor(

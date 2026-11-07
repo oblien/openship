@@ -315,7 +315,7 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       "FROM alpine:3.20",
       "ARG BUILD",
       "ARG FAIL=false",
-      'RUN --mount=type=cache,id=packages,target=/cache,sharing=locked if [ -f /cache/ready ]; then echo CACHE_REUSED; else echo CACHE_EMPTY; fi && touch /cache/ready && echo "$BUILD" > /version',
+      'RUN --mount=type=cache,id=packages,target=/cache,sharing=locked if [ -f /cache/ready ]; then echo reused > /cache-state; else echo empty > /cache-state; fi && touch /cache/ready && echo "$BUILD" > /version',
       'RUN test "$FAIL" = false',
       'CMD ["cat", "/version"]',
     ].join("\n"));
@@ -324,21 +324,33 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         tag: string, logger: BuildLogger): Promise<void>;
     };
     let attemptedTag = "";
-    const attempt = async (version: string, fail = false) => {
+    const attempt = async (version: string, fail = false, project = projectId) => {
       const tag = `openship/cache-e2e:${randomUUID()}`;
       attemptedTag = tag;
       images.add(tag);
       const logs: string[] = [];
-      await remote.buildImageOnRemote({ projectId, sessionId: randomUUID(), resources,
+      await remote.buildImageOnRemote({ projectId: project, sessionId: randomUUID(), resources,
         buildArgs: { BUILD: version, FAIL: String(fail) } } as BuildConfig, root, "Dockerfile", tag,
         new BuildLogger(entry => logs.push(entry.message)));
       return { tag, logs: logs.join("\n") };
     };
     const first = await attempt("first");
-    expect(first.logs).toContain("CACHE_EMPTY");
+    expect((await docker("run", "--rm", first.tag, "cat", "/cache-state")).stdout.trim(), first.logs).toBe("empty");
     const second = await attempt("second");
-    expect(second.logs).toContain("CACHE_REUSED");
+    expect((await docker("run", "--rm", second.tag, "cat", "/cache-state")).stdout.trim(), second.logs).toBe("reused");
     expect((await docker("run", "--rm", second.tag)).stdout.trim()).toBe("second");
+    // Identical cache-mount IDs in another project must not expose this
+    // project's package cache, even though both projects use the same daemon.
+    const otherProject = `${projectId}-isolated`;
+    const otherBuilder = `openship-cache-${createHash("sha256").update(otherProject).digest("hex").slice(0, 24)}`;
+    try {
+      const isolated = await attempt("isolated", false, otherProject);
+      expect((await docker("run", "--rm", isolated.tag, "cat", "/cache-state")).stdout.trim(), isolated.logs).toBe("empty");
+      expect((await docker("run", "--rm", isolated.tag)).stdout.trim()).toBe("isolated");
+    } finally {
+      await docker("buildx", "rm", "--force", otherBuilder).catch(() => {});
+      await docker("volume", "rm", `buildx_buildkit_${otherBuilder}0_state`).catch(() => {});
+    }
     await expect(attempt("failed", true)).rejects.toThrow(/exit code: 1/);
     await expect(docker("image", "inspect", attemptedTag)).rejects.toThrow();
     expect((await docker("run", "--rm", first.tag)).stdout.trim()).toBe("first");

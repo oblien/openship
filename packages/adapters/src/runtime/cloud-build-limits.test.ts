@@ -61,13 +61,14 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
 describe("Cloud Docker build execution limits", () => {
   it("passes verified public OCI images to the real build command without sharing writable state", async () => {
     const h = fixture();
+    Object.assign(h.runtime.connectionOptions, { softwareCacheRoot: "/srv/public-images" });
     const original = h.executor.exec.getMockImplementation()!;
     const digest = `sha256:${"a".repeat(64)}`;
     h.executor.exec.mockImplementation(async command => command.startsWith("python3")
       ? JSON.stringify({ platform: "linux/amd64", dockerfile: "FROM oven/bun:1.3.14", pack: { version: 2, platform: "linux/amd64", images: [{ image: "oven/bun:1.3.14", path: "images/bun", digest, sourceDigest: digest }] } })
       : command.includes("imagetools inspect") ? digest : original(command));
     await h.run();
-    expect(h.commands()).toContain("--build-context 'oven/bun:1.3.14=oci-layout:///opt/oblien/build-cache/images/bun@");
+    expect(h.commands()).toContain("--build-context 'oven/bun:1.3.14=oci-layout:///srv/public-images/images/bun@");
     expect(h.commands()).not.toContain("--cache-to");
     expect(h.commands()).toContain("--keep-state");
   });
@@ -189,7 +190,7 @@ describe("Cloud Docker build execution limits", () => {
     expect(command).toContain("--driver-opt 'memory-swap=536870912'");
     expect(command).toContain("--driver-opt 'cpu-quota=25000'");
     expect(command).toContain("--driver-opt 'cpu-period=100000'");
-    expect(command).toContain("--load --progress=plain");
+    expect(command).toContain("--output type=docker,compression=gzip,compression-level=1 --progress=plain");
     expect(command).toContain("cd '/tmp/build dir'");
     expect(command).not.toContain("--use");
     expect(command).toContain("trap ");
