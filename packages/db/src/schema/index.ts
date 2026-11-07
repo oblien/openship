@@ -96,11 +96,6 @@ export { computeCluster, computeClusterMember } from "./compute-cluster";
 export { clusterRuntime } from "./cluster-runtime";
 export { clusterStorage } from "./cluster-storage";
 export { clusterDatabase } from "./cluster-database";
-export {
-  cloudAnalyticsEvent,
-  cloudAnalyticsCheckout,
-  cloudAnalyticsWorkspace,
-} from "./cloud-analytics";
 export { cloudSupportTicket, cloudSupportMessage } from "./cloud-support";
 export { cloudCustomerEmail } from "./cloud-customer-email";
 export { instanceController, instanceHandoff } from "./instance-controller";

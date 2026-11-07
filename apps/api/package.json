@@ -29,6 +29,7 @@
     "@hono/node-ws": "^1.3.1",
     "@hono/typebox-validator": "^0.3.0",
     "@repo/adapters": "workspace:*",
+    "@repo/commands": "workspace:*",
     "@repo/contracts": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
@@ -37,6 +38,7 @@
     "@slack/socket-mode": "3.1.0",
     "better-auth": "1.7.15",
     "bullmq": "^5.70.4",
+    "bytesmap": "0.1.2",
     "cron-parser": "^4.9.0",
     "hono": "^4.12.5",
     "ioredis": "^5.10.0",
@@ -48,8 +50,7 @@
     "stripe": "^20.4.0",
     "ws": "^8.21.3",
     "yaml": "^2.8.2",
-    "zod": "^4.3.6",
-    "@repo/commands": "workspace:*"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@repo/sdk": "workspace:*",

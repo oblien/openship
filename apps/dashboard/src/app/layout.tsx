@@ -9,7 +9,6 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { brandNameFor } from "@/lib/product-view";
 import { resolveRequestProductView } from "@/lib/server/product-view";
 import { AuthProvider } from "@/context/AuthContext";
-import { CloudAnalytics } from "@/components/cloud-analytics";
 import { getDeploymentInfoOrNull } from "@/lib/server/session";
 import { NetworkErrorHandler } from "@/components/network-error-handler";
 import { ModalProvider } from "@/context/ModalContext";
@@ -162,12 +161,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           <AuthProvider>
             <ThemeProvider initialTheme={initialTheme}>
-              {!localApiOrigin &&
-              deploymentInfo?.selfHosted === false &&
-              deploymentInfo.deployMode !== "desktop" &&
-              deploymentInfo.cloudAnalytics ? (
-                <CloudAnalytics config={deploymentInfo.cloudAnalytics} />
-              ) : null}
               <I18nProvider
                 initialLocale={locale}
                 initialDictionary={initialDictionary}

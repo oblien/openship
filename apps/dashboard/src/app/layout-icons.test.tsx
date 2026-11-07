@@ -35,7 +35,6 @@ vi.mock("@/components/toast", () => ({ ToastProvider: mocks.provider }));
 vi.mock("@/components/i18n-provider", () => ({ I18nProvider: mocks.provider }));
 vi.mock("@/context/AuthContext", () => ({ AuthProvider: mocks.provider }));
 vi.mock("@/context/ModalContext", () => ({ ModalProvider: mocks.provider }));
-vi.mock("@/components/cloud-analytics", () => ({ CloudAnalytics: () => null }));
 vi.mock("@/components/network-error-handler", () => ({ NetworkErrorHandler: () => null }));
 vi.mock("@/components/desktop-chrome", () => ({ DesktopChrome: () => null }));
 vi.mock("@/components/instance/DesktopInstanceLinks", () => ({ DesktopInstanceLinks: () => null }));

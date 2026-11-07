@@ -10,7 +10,6 @@ import { api, ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/cl
 import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
 import { endpoints } from "@/lib/api/endpoints";
 import { randomUUID } from "@/lib/random-uuid";
-import { trackCloudEvent } from "@/lib/cloud-analytics";
 import { checkoutFailureKind, type CheckoutFailure } from "@/lib/checkout-failure";
 import { useSession } from "@/lib/auth-client";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
@@ -82,7 +81,6 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     if (!enabled || busy.current || planTierId === "free" || planTierId === "enterprise") return;
     busy.current = true;
     const version = generation.current;
-    trackCloudEvent({ event: "cloud_checkout_clicked", properties: { kind: "subscription", surface: preserveProject ? "onboarding" : "billing" } });
     // Open within the user's click, preserving unfinished project configuration.
     const navigation = beginCheckoutNavigation(preserveProject);
     setSubscribing(custom ? "custom" : planTierId);
