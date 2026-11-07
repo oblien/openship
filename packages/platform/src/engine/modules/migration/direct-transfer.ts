@@ -302,13 +302,15 @@ export class PathMissingError extends Error {
   }
 }
 
-/** Parse an `rsync --info=progress2` line → cumulative bytes transferred, or
- *  null for a non-progress line. Format: "  1,234,567  12%  1.23MB/s  0:00:05". */
-export function parseRsyncProgress(line: string): number | null {
-  const m = line.match(/^\s*([\d,]+)\s+\d+%/);
-  if (!m) return null;
-  const n = Number(m[1]!.replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
+/** Highest cumulative byte count in rsync progress output. Cloud streams can
+ * coalesce several CR-delimited updates, including the initial zero, into one chunk. */
+export function parseRsyncProgress(output: string): number | null {
+  let bytes: number | null = null;
+  for (const match of output.matchAll(/(?:^|[\r\n])[ \t]*([\d,]+)[ \t]+\d+%/g)) {
+    const value = Number(match[1]!.replace(/,/g, ""));
+    if (Number.isFinite(value)) bytes = Math.max(bytes ?? 0, value);
+  }
+  return bytes;
 }
 
 /** Build the rsync command for one path move (direction decides which end
@@ -367,13 +369,19 @@ export async function runRsync(
   signal?: AbortSignal,
 ): Promise<void> {
   let lastTail = "";
+  const reportProgress = (message: string) => {
+    if (!onProgress) return;
+    const bytes = parseRsyncProgress(message);
+    if (bytes != null) onProgress(bytes);
+  };
   for (let attempt = 1; attempt <= RSYNC_MAX_ATTEMPTS; attempt++) {
     signal?.throwIfAborted();
     const { code, output } = await initiatorExec.streamExec(command, (entry: LogEntry) => {
-      if (!onProgress) return;
-      const bytes = parseRsyncProgress(entry.message);
-      if (bytes != null) onProgress(bytes);
+      reportProgress(entry.message);
     }, { signal });
+    // A byte count can span chunks. The executor's completed output retains
+    // the full final record even when no individual chunk contained it.
+    reportProgress(output);
     if (code === 0) return;
 
     lastTail = output.split("\n").filter(Boolean).slice(-4).join(" ");

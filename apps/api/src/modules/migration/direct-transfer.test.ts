@@ -69,11 +69,27 @@ describe("runRsync retry / bail", () => {
     await expect(runRsync(e, "rsync ...")).rejects.toThrow(/cannot read\/write the Docker volume path/i);
     expect(e.calls).toBe(1);
   });
+
+  test("reports complete progress when Cloud chunks split a byte count", async () => {
+    const chunks = ["  0 0% 0.00kB/s\r  1,", "234 100% 1.23kB/s\r"];
+    const e = exec([{ code: 0, output: chunks.join("") }]);
+    e.streamExec = async (_command, onLog) => {
+      for (const message of chunks) onLog({ timestamp: new Date().toISOString(), level: "info", message });
+      return { code: 0, output: chunks.join("") };
+    };
+    const progress: number[] = [];
+    await runRsync(e, "rsync ...", (bytes) => progress.push(bytes));
+    expect(progress.at(-1)).toBe(1234);
+  });
 });
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
 describe("parseRsyncProgress", () => {
+  test("reads every CR/LF progress record in a coalesced Cloud chunk", () => {
+    expect(parseRsyncProgress("  0 0% 0.00kB/s\r  512 100% 0.50kB/s\r\n")).toBe(512);
+    expect(parseRsyncProgress("receiving file list\n  1,234 100% 1.23kB/s\n")).toBe(1234);
+  });
   test("extracts cumulative bytes from an --info=progress2 line", () => {
     expect(parseRsyncProgress("      1,234,567  12%  1.23MB/s    0:00:05")).toBe(1234567);
     expect(parseRsyncProgress("  512  100%  0.50MB/s    0:00:00 (xfr#1, to-chk=0/1)")).toBe(512);
