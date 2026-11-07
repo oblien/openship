@@ -189,6 +189,19 @@ describe("shared package-manager contract", () => {
     expect(result.stderr).toContain("cannot discard a packageManager integrity requirement");
     expect(result.calls).toBe("");
   });
+  it("does not downgrade a newer repository Bun requirement to the selected runtime version", () => {
+    const result = run(
+      { "package.json": '{"packageManager":"bun@1.5.0"}' },
+      {
+        manager: "bun",
+        bunRuntimeVersion: "1.4.4",
+        reportedVersion: "1.4.4",
+      },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("the build will not downgrade Bun");
+    expect(result.calls).toBe("");
+  });
   it("bootstraps Bun when node is an alias to the actual Bun runtime", () => {
     const result = run(
       { "package.json": '{"packageManager":"bun@1.4.4"}' },

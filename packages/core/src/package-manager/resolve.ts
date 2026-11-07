@@ -24,6 +24,20 @@ export function resolvePackageManager(
       throw new Error(
         "A runtime override cannot discard a packageManager integrity requirement. Update the repository pin first.",
       );
+    const declared = pin
+      ?.match(/^bun@(\d+)\.(\d+)\.(\d+)/)
+      ?.slice(1)
+      .map(Number);
+    const selected = bunRuntimeVersion.split(".").map(Number);
+    const difference = declared?.findIndex((value, index) => value !== selected[index]) ?? -1;
+    if (declared && difference >= 0 && declared[difference]! > selected[difference]!)
+      throw new Error(
+        "The repository requires " +
+          pin +
+          ", newer than the selected Bun runtime " +
+          bunRuntimeVersion +
+          ". Select a compatible runtime image; the build will not downgrade Bun.",
+      );
     // Bun is both package manager and runtime. An explicit managed runtime
     // selection must also own the builder, or bootstrap reinstalls the old pin.
     pin = `bun@${bunRuntimeVersion}`;

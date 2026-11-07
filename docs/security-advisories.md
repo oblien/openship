@@ -31,7 +31,8 @@ For Bun, an explicit official runtime-image version also selects the dependency
 installer's version. Repository `packageManager` and `devEngines.packageManager`
 pins cannot silently reinstall the vulnerable Bun during the build. The override
 is shown in review and build logs; repository files are not changed. The saved
-selection applies to subsequent ordinary deploys too. Integrity requirements
+selection applies to subsequent ordinary deploys too. A newer repository Bun pin
+requires a compatible runtime image; the build will not downgrade it. Integrity requirements
 are never discarded; incompatible integrity pins must be updated in the source.
 
 The ordinary **Refresh images & redeploy** action still preserves configured versions
