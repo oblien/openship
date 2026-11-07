@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import {
   ErrorReporter,
+  emitDiagnosticEvent,
   errorReporter,
   reportError,
   setDiagnosticTelemetry,
@@ -17,7 +18,11 @@ import {
 } from "@repo/core/diagnostics/node";
 import { observePlatformOperations } from "../../../../packages/platform/src/diagnostics";
 import { audit } from "../../../../packages/platform/src/engine/lib/audit-emitter";
-import { noteApiError, observeRequestErrors } from "../../src/middleware/error-observation";
+import {
+  drainErrorResponses,
+  noteApiError,
+  observeRequestErrors,
+} from "../../src/middleware/error-observation";
 import { resolveBytesMapTelemetry } from "../../src/lib/bytesmap-telemetry-config";
 import { createBytesMapTelemetry, type BytesMapTelemetry } from "../../src/lib/bytesmap-telemetry";
 
@@ -333,6 +338,92 @@ describe("BytesMap SDK traces, logs and operational events", () => {
     expect(roots.find((span) => Number(attrs(span).status_code) === 400).status?.code ?? 0).toBe(0);
     expect(roots.find((span) => Number(attrs(span).status_code) === 503).status.code).toBe(2);
     expect(logs().filter((log) => attrs(log).event_name === "openship.error")).toHaveLength(2);
+  });
+
+  it.each([200, 400, 503] as const)(
+    "uses the final HTTP %i response after a reported error or failed lifecycle event",
+    async (status) => {
+      const app = new Hono();
+      app.use("*", observeRequestErrors);
+      app.get("/reported", (context) => {
+        reportError(new Error("Handled downstream failure"), { handled: true });
+        return context.json({ result: "handled" }, status);
+      });
+      app.get("/lifecycle", (context) => {
+        emitDiagnosticEvent("deployment.failed", { deploymentId: "deploy-a" });
+        return context.json({ result: "recorded" }, status);
+      });
+
+      const responses = await Promise.all([
+        app.request("/reported"),
+        app.request("/lifecycle"),
+      ]);
+      expect(responses.map((response) => response.status)).toEqual([status, status]);
+      await drainErrorResponses();
+      await errorReporter.flush();
+      await telemetry.flush();
+
+      const roots = spans();
+      expect(roots).toHaveLength(2);
+      for (const root of roots) {
+        expect(Number(attrs(root).http_status_code)).toBe(status);
+        expect(root.status?.code ?? 0).toBe(status >= 500 ? 2 : 0);
+      }
+      for (const [event, route] of [
+        ["openship.error", "/reported"],
+        ["deployment.failed", "/lifecycle"],
+      ]) {
+        const matching = logs().filter(
+          (log) =>
+            attrs(log).event_name === event &&
+            (event !== "openship.error" || log.body.stringValue === "Handled downstream failure"),
+        );
+        expect(matching).toHaveLength(1);
+        expect(matching[0].severityText).toBe("ERROR");
+        const root = roots.find((span) => attrs(span).http_route === route);
+        expect(matching[0].spanId).toBe(root.spanId);
+        expect(matching[0].traceId).toBe(root.traceId);
+      }
+      const errors = logs().filter((log) => attrs(log).event_name === "openship.error");
+      expect(errors).toHaveLength(status >= 400 ? 3 : 1);
+      expect(new Set(errors.map((log) => attrs(log).observation_id)).size).toBe(
+        errors.length,
+      );
+    },
+  );
+
+  it("keeps failed child operations separate from concurrent successful HTTP responses", async () => {
+    const app = new Hono();
+    app.use("*", observeRequestErrors);
+    app.get("/recover/:id", async (context) => {
+      await withDiagnosticSpan({ operation: "recoverable.operation" }, async () => {
+        await Promise.resolve();
+        if (context.req.param("id") === "reported")
+          reportError(new Error("Child operation failed"), { handled: true });
+        else emitDiagnosticEvent("deployment.failed", { deploymentId: "deploy-child" });
+      });
+      return context.json({ recovered: true });
+    });
+    const responses = await Promise.all([
+      app.request("/recover/reported"),
+      app.request("/recover/lifecycle"),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    await errorReporter.flush();
+    await telemetry.flush();
+
+    const roots = spans().filter((span) => span.name !== "recoverable.operation");
+    const children = spans().filter((span) => span.name === "recoverable.operation");
+    expect(roots).toHaveLength(2);
+    expect(children).toHaveLength(2);
+    for (const root of roots) {
+      expect(root.status?.code ?? 0).toBe(0);
+      const child = children.find((span) => span.parentSpanId === root.spanId);
+      expect(child.status.code).toBe(2);
+      expect(child.traceId).toBe(root.traceId);
+      expect(logs().filter((log) => log.spanId === child.spanId)).toHaveLength(1);
+    }
+    expect(new Set(roots.map((span) => span.traceId)).size).toBe(2);
   });
 
   it("uses span completion only for status and leaves error capture to the existing reporter", async () => {

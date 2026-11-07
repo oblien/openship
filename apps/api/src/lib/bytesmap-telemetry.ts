@@ -2,6 +2,7 @@ import {
   createTelemetry,
   parseTraceparent,
   type LogOptions,
+  type TelemetrySpan,
   type TraceContext,
 } from "bytesmap/events/server";
 import {
@@ -113,6 +114,11 @@ export function createBytesMapTelemetry(
     onError: warn,
     ...(testing.allowPlaintextLoopback ? { allowPlaintextLoopback: true } : {}),
   });
+  // HTTP status belongs to request completion, not to errors handled along the way.
+  const serverSpans = new WeakSet<TelemetrySpan>();
+  function markOperationFailed(span = telemetry.current()) {
+    if (span && !serverSpans.has(span)) span.setStatus("error");
+  }
   const eventLoop = monitorEventLoopDelay({ resolution: 20 });
   eventLoop.enable();
   let cpu = process.cpuUsage();
@@ -133,6 +139,7 @@ export function createBytesMapTelemetry(
             ? { parent: null }
             : {}),
       });
+      if (options.kind === "server") serverSpans.add(span);
       let ended = false;
       return {
         correlation: span.context,
@@ -143,13 +150,12 @@ export function createBytesMapTelemetry(
           try {
             span.setDimensions(attributes(context));
             const status = context.statusCode ?? 0;
-            const clientError = options.kind === "server" && status >= 400 && status < 500;
-            if (error !== undefined && !clientError) {
-              // Exception details come from the existing error reporter, once per observation.
-              span.setStatus(
-                diagnosticProperty(error, "name") === "AbortError" ? "unset" : "error",
-              );
-            } else if (status >= 500) span.setStatus("error");
+            const operationFailed =
+              error !== undefined &&
+              diagnosticProperty(error, "name") !== "AbortError" &&
+              (options.kind !== "server" || status === 0);
+            // Exception details come from the existing error reporter, once per observation.
+            if (status >= 500 || operationFailed) span.setStatus("error");
           } finally {
             span.end();
           }
@@ -163,7 +169,7 @@ export function createBytesMapTelemetry(
       if (closed) return;
       const context = { ...currentErrorContext(), ...supplied };
       const failed = /\.(failed|unhealthy|unavailable|lost)$/.test(name);
-      if (failed) telemetry.current()?.setStatus("error");
+      if (failed) markOperationFailed();
       telemetry.log(failed ? "error" : "info", name, {
         dimensions: { ...attributes(context), event_name: name },
       });
@@ -181,7 +187,7 @@ export function createBytesMapTelemetry(
       active.context.spanId === context?.spanId &&
       ["error", "fatal"].includes(event.severity)
     )
-      active.setStatus("error");
+      markOperationFailed(active);
     telemetry.log(event.severity, event.error.message, {
       context: context ?? null,
       timestamp: new Date(event.timestamp),

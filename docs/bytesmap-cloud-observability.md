@@ -9,8 +9,10 @@ continue to operate independently of the exporter. A collector outage cannot
 change an API result, retry a deployment, or grant access to an organization.
 Spans carry timing, status and correlation; exception details are exported only
 through the existing error reporter, without another copy on each span.
-HTTP server spans distinguish client rejections (4xx) from server failures (5xx),
-while the existing reporter retains the corresponding error observations.
+HTTP server spans follow the final response: only 5xx responses count as server
+failures. Handled errors and failed lifecycle events retain their diagnostic logs
+without marking successful or rejected (4xx) requests as server failures. Failed
+child operations and background jobs keep their own error status.
 
 ## Configuration
 
