@@ -167,7 +167,7 @@ describeDockerE2E("external SSH to a managed execution endpoint", () => {
     await current.link.transferVolume("source-data", bytes => { progress = Math.max(progress, bytes); }, "target-data");
     expect(await target.readFile(`${dstMount}/value.txt`)).toBe(literal);
     expect(await target.exists(`${dstMount}/stale.txt`)).toBe(false);
-    expect(progress).toBeGreaterThan(0);
+    expect(progress).toBe(Buffer.byteLength(literal));
     await source.writeFile("/srv/app's settings/empty.conf", "");
     await target.writeFile("/srv/import/sibling.conf", "keep");
     await current.link.transferPath("/srv/app's settings/empty.conf", "/srv/import/empty.conf");

@@ -42,6 +42,7 @@ describe("rsyncCommand resume flags", () => {
     const cmd = rsyncCommand("ssh -i k", peer, "/a", "/b", true, false);
     expect(cmd).toContain("--partial");
     expect(cmd).toContain("--partial-dir=.openship-partial");
+    expect(cmd).toContain("--no-human-readable");
   });
 });
 
@@ -79,6 +80,11 @@ describe("runRsync streamed progress", () => {
       expected: [0, 512],
     },
     {
+      name: "coalesced byte-suffixed updates from newer rsync",
+      chunks: ["\r              0B   0%       0B/s\r             47B 100%   47000B/s\n"],
+      expected: [0, 47],
+    },
+    {
       name: "fragmented counters and an unterminated final update",
       chunks: ["      1,", "234  50%  1.00kB/s\r      2,", "468 100%  1.00kB/s"],
       expected: [1234, 2468],
@@ -103,11 +109,14 @@ describe("parseRsyncProgress", () => {
   test("extracts cumulative bytes from an --info=progress2 line", () => {
     expect(parseRsyncProgress("      1,234,567  12%  1.23MB/s    0:00:05")).toBe(1234567);
     expect(parseRsyncProgress("  512  100%  0.50MB/s    0:00:00 (xfr#1, to-chk=0/1)")).toBe(512);
+    expect(parseRsyncProgress("  1,234,567B  100%  1234567B/s  0:00:00")).toBe(1234567);
   });
   test("returns null for non-progress lines", () => {
     expect(parseRsyncProgress("sending incremental file list")).toBeNull();
     expect(parseRsyncProgress("./")).toBeNull();
     expect(parseRsyncProgress("")).toBeNull();
+    expect(parseRsyncProgress("  1.23KB 100%  1234B/s  0:00:00")).toBeNull();
+    expect(parseRsyncProgress("  47KB 100%  47000B/s  0:00:00")).toBeNull();
   });
 });
 
