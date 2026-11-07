@@ -1,7 +1,7 @@
 /** Build → deploy execution engine. Extracted from build.service.ts — private pipeline: kickoffBuild fires executeBuildAndDeploy, which runs the build, deploy phases, and post-deploy sync. */
 
 import { createProjectRouteRegistrar } from "../../lib/project-route-registration";
-import { withErrorContext } from "@repo/core/diagnostics/node";
+import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import { reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { posix as pathPosix } from "node:path";
@@ -376,7 +376,7 @@ async function kickoffBuildNow(project: Project, dep: Deployment, reservedBuildR
   }
   dep.status = "building";
 
-  void detachedDeploymentContext(() => ownedDeploymentExecution(project, dep, () => withErrorContext({ kind: "deployment", component: "build-pipeline", projectId: project.id,
+  void detachedDeploymentContext(() => ownedDeploymentExecution(project, dep, () => withDiagnosticSpan({ kind: "deployment", operation: "deployment.execute", component: "build-pipeline", projectId: project.id,
     deploymentId: dep.id, organizationId: dep.organizationId, serverId: project.serverId ?? undefined }, async () => {
     // A deferred row can be claimed again before this worker unwinds. Register
     // only after exact execution ownership, so it cannot reuse the old signal.

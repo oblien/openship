@@ -17,7 +17,6 @@ import type { Sender } from '@/types';
 import { useQueryState } from 'nuqs';
 import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router';
-import posthog from 'posthog-js';
 import { toast } from 'sonner';
 
 interface ReplyComposeProps {
@@ -161,8 +160,6 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
         originalFolder: folder,
         scheduleAt: data.scheduleAt,
       });
-
-      posthog.capture('Reply Email Sent');
 
       // Reset states
       setMode(null);

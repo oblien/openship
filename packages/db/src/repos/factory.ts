@@ -22,7 +22,6 @@ export {
   type ActionRun,
   type ActionJob,
 } from "./actions.repo";
-import { createCloudAnalyticsRepo } from "./cloud-analytics.repo";
 import { createCloudSupportRepo } from "./cloud-support.repo";
 import { createCloudCustomerEmailRepo } from "./cloud-customer-email.repo";
 export { createCloudCustomerEmailRepo, type CloudCustomerEmailRepo, type CustomerEmail, type CustomerEmailInput, type CustomerPaymentEmail } from "./cloud-customer-email.repo";
@@ -34,13 +33,6 @@ export {
   type CloudSupportTicket,
   type CloudSupportMessage,
 } from "./cloud-support.repo";
-export {
-  createCloudAnalyticsRepo,
-  type CloudAnalyticsRepo,
-  type CloudAnalyticsOutboxInput,
-  type CloudAnalyticsOutboxEvent,
-  type CloudAnalyticsCheckout,
-} from "./cloud-analytics.repo";
 export { createClusterStorageRepo, type ClusterStorageRecord } from "./cluster-storage.repo";
 export { createUserRepo, type User, type NewUser } from "./user.repo";
 export {
@@ -513,7 +505,6 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     billingAnniversaryGrant: createBillingAnniversaryGrantRepo(db),
     billingUsageSnapshot: createBillingUsageSnapshotRepo(db),
     billingPlanGrant: createBillingPlanGrantRepo(db),
-    cloudAnalytics: createCloudAnalyticsRepo(db),
     cloudSupport: createCloudSupportRepo(db),
     cloudCustomerEmail: createCloudCustomerEmailRepo(db),
   } as const;

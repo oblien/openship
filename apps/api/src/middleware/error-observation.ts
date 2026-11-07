@@ -1,7 +1,9 @@
 import {
   diagnosticId,
+  endDiagnosticSpan,
   errorReporter,
   reportError,
+  startDiagnosticSpan,
   type ErrorContext,
 } from "@repo/core/diagnostics";
 import { withErrorContext } from "@repo/core/diagnostics/node";
@@ -40,7 +42,9 @@ export function requestErrorContext(c: Context): ErrorContext {
     kind: "http",
     component: "http",
     requestId: c.get("diagnosticRequestId"),
-    traceId: c.get("diagnosticRequestId"),
+    traceId: c.get("diagnosticTraceId") ?? c.get("diagnosticRequestId"),
+    spanId: c.get("diagnosticSpanId"),
+    traceFlags: c.get("diagnosticTraceFlags"),
     ...(ctx ? { userId: ctx.userId, organizationId: ctx.organizationId } : {}),
     method: c.req.method,
     route: c.get("diagnosticRoute") ?? registeredRoute(c),
@@ -76,12 +80,21 @@ export const observeRequestErrors: MiddlewareHandler = async (c, next) => {
   c.set("diagnosticRequestId", requestId);
   c.set("diagnosticRoute", route);
   c.header("X-Request-ID", requestId);
-  return withErrorContext(
+  const span = startDiagnosticSpan({ source: "api", kind: "http", method: c.req.method, route, requestId }, {
+    kind: "server", root: true, parent: c.req.header("traceparent"),
+  });
+  if (span) {
+    c.set("diagnosticTraceId", span.correlation.traceId);
+    c.set("diagnosticSpanId", span.correlation.spanId);
+    c.set("diagnosticTraceFlags", span.correlation.traceFlags);
+  }
+  const run = () => withErrorContext(
     {
       source: "api",
       kind: "http",
       requestId,
       traceId: requestId,
+      ...span?.correlation,
       method: c.req.method,
       route,
       ...(parent && REQUEST_ID.test(parent) ? { parentRequestId: parent } : {}),
@@ -124,11 +137,14 @@ export const observeRequestErrors: MiddlewareHandler = async (c, next) => {
           // Observation must not replace an application response, including a
           // WebSocket upgrade or a response with immutable headers.
           reportError(error, { component: "http-observer", handled: true });
+        } finally {
+          endDiagnosticSpan(span, requestErrorContext(c), c.get("diagnosticError") ?? c.error);
         }
       }
     },
     true,
   );
+  return span ? span.run(run) : run();
 };
 
 async function responseFailure(

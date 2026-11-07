@@ -10,7 +10,6 @@ import { moveThreadsTo } from '@/lib/thread-actions';
 import { m } from '@/paraglide/messages';
 import { useQueryState } from 'nuqs';
 import { useCallback } from 'react';
-import posthog from 'posthog-js';
 import { useAtom } from 'jotai';
 import { toast } from 'sonner';
 
@@ -24,30 +23,6 @@ enum ActionType {
   UNSNOOZE = 'UNSNOOZE',
   DELETE_DRAFT = 'DELETE_DRAFT',
 }
-
-// Update the params interface
-interface ActionParams {
-  starred?: boolean;
-  read?: boolean;
-  important?: boolean;
-  labelId?: string;
-  add?: boolean;
-  currentFolder?: string;
-  destination?: ThreadDestination;
-  wakeAt?: string;
-}
-
-const actionEventNames: Record<ActionType, (params: ActionParams) => string> = {
-  [ActionType.MOVE]: () => 'email_moved',
-  [ActionType.STAR]: (params) => (params.starred ? 'email_starred' : 'email_unstarred'),
-  [ActionType.READ]: (params) => (params.read ? 'email_marked_read' : 'email_marked_unread'),
-  [ActionType.IMPORTANT]: (params) =>
-    params.important ? 'email_marked_important' : 'email_unmarked_important',
-  [ActionType.LABEL]: (params) => (params.add ? 'email_label_added' : 'email_label_removed'),
-  [ActionType.SNOOZE]: () => 'email_snoozed',
-  [ActionType.UNSNOOZE]: () => 'email_unsnoozed',
-  [ActionType.DELETE_DRAFT]: () => 'draft_deleted',
-};
 
 export function useOptimisticActions() {
   const trpc = useTRPC();
@@ -154,11 +129,6 @@ export function useOptimisticActions() {
     async function doAction() {
       try {
         await execute();
-
-        const eventName = actionEventNames[type]?.(params);
-        if (eventName) {
-          posthog.capture(eventName);
-        }
 
         optimisticActionsManager.pendingActions.delete(pendingActionId);
         optimisticActionsManager.pendingActionsByType.get(type)?.delete(pendingActionId);

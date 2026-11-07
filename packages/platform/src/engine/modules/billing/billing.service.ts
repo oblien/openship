@@ -18,7 +18,6 @@ import { syncOblienEntitlement, withCloudBillingLock } from "./billing-oblien-qu
 import { listLiveSubscriptions } from "./billing.repository";
 import { canStartCloudSubscription, canTopUpCloudSubscription, hasPendingSubscriptionChange, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
-import { cloudAnalytics } from "../cloud-analytics";
 import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
 import { readCloudWorkspaceHost } from "../../lib/cloud-workspace-host";
 import { createTrackedWorkspaceCheckout } from "./workspace-checkout";
@@ -104,8 +103,6 @@ export async function createCheckoutSession(
         requestKey,
       ),
     });
-    // A checkout redirect is not proof of payment. Webhooks/polling mirror access.
-    await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "subscription", amount: offer.unitAmount, plan: planTierId, interval });
     return { checkoutUrl: result.url };
   }, owner.workspaceId);
 }
@@ -140,7 +137,6 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
     cancelUrl: `${billingReturnUrl("overview", ctx.organizationId, owner.workspaceId)}&topup=cancelled`,
     idempotencyKey: checkoutKey(ctx.organizationId, `topup:${owner.workspaceId ? `${namespace}:` : ""}${offer.reference}`, requestKey),
   });
-  await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "topup", amount: offer.unitAmount });
   return { checkoutUrl: result.url };
   }, owner.workspaceId);
 }
@@ -167,7 +163,6 @@ export async function getCheckoutStatus(orgId: string, checkoutId: string, works
       await requestPaidWorkspaceProvisioning(orgId, owner.workspaceId);
     }
   }
-  await cloudAnalytics.checkoutObserved(orgId, checkout);
   const { namespaceCreditsGranted, ...state } = checkout;
   return { ...state, creditsGranted: fromOblienCredits(namespaceCreditsGranted) };
 }

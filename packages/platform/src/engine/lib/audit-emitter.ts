@@ -1,6 +1,5 @@
-import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { diagnostics as errorDiagnostics, emitDiagnosticEvent } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { observeCloudAudit } from "../modules/cloud-analytics/lifecycle";
 import type { ExecutionContext } from "@repo/platform";
 type AuditSource = NonNullable<ExecutionContext["source"]>;
 const pending = new Set<Promise<void>>();
@@ -47,9 +46,8 @@ export interface AuditEventInput {
 export const audit = {
   /** Awaited write. See module header. */
   async record(ctx: AuditContext, event: AuditEventInput): Promise<void> {
-    observeCloudAudit(ctx, event);
     try {
-      await repos.auditEvent.create({
+      const recorded = await repos.auditEvent.create({
         organizationId: ctx.organizationId,
         actorUserId: ctx.actorUserId ?? null,
         eventType: event.eventType,
@@ -61,6 +59,12 @@ export const audit = {
         userAgent: ctx.userAgent ?? null,
         source: event.source ?? ctx.source ?? null,
         sourceClientId: event.sourceClientId ?? ctx.sourceClientId ?? null,
+      });
+      // Observe the recorded fact once. Audit diffs, names, IPs and user agents stay in the audit store.
+      if (recorded) emitDiagnosticEvent(event.eventType, {
+        eventId: recorded.id, organizationId: ctx.organizationId, userId: ctx.actorUserId ?? undefined,
+        resourceType: event.resourceType ?? undefined, resourceId: event.resourceId ?? undefined,
+        operation: event.eventType,
       });
     } catch (err) {
       errorDiagnostics.error("platform/engine/lib/audit-emitter", "[audit] failed to record event", event.eventType, err);

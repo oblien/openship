@@ -166,13 +166,14 @@ const envSchema = z.object({
 
   /* ---------- Mode ---------- */
   CLOUD_MODE: envBool("false"),
-  /** Optional product analytics. Production SaaS only; never enabled locally. */
-  POSTHOG_ENABLED: envBool("false"),
-  POSTHOG_PROJECT_KEY: z.string().optional(),
-  POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
-  /** Internal/demo workspaces and users, excluded on both ingestion paths. */
-  POSTHOG_EXCLUDED_ORGANIZATION_IDS: z.string().optional(),
-  POSTHOG_EXCLUDED_USER_IDS: z.string().optional(),
+  /** Cloud control-plane telemetry. Credentials are never sent to browsers or native workers. */
+  OPENSHIP_BYTESMAP_ENABLED: envBool("false"),
+  OPENSHIP_BYTESMAP_ENDPOINT: z.string().optional(),
+  OPENSHIP_BYTESMAP_DATASET: z.string().optional(),
+  OPENSHIP_BYTESMAP_TOKEN: z.string().optional(),
+  // Validate optional telemetry only after the Cloud/enable guards; it cannot block local startup.
+  OPENSHIP_BYTESMAP_SAMPLE_RATE: z.string().optional(),
+  OPENSHIP_BYTESMAP_ENVIRONMENT: z.string().optional(),
   /**
    * MASTER switch for the whole Openship Cloud billing feature (subscriptions,
    * top-ups). OFF by default → the billing state reports
