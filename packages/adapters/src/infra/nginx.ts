@@ -25,6 +25,7 @@ import {
   mkdir as fsMkdir,
   readFile as fsReadFile,
   readlink as fsReadlink,
+  lstat as fsLstat,
   readdir as fsReaddir,
   rename as fsRename,
   stat as fsStat,
@@ -38,6 +39,7 @@ import { posix as edgePath } from "node:path";
 
 import type {
   CommandExecutor,
+  FileStat,
   ProvisionLock,
   ManualCert,
   RouteConfig,
@@ -85,6 +87,7 @@ import {
 } from "./edge-real-ip";
 import { EDGE_UPSTREAM_DOWN_HANDLER } from "./edge-upstream-down";
 import { sq } from "../system/local-shell";
+import { fileStatOf } from "../system/file-stat";
 import type { RootChecked } from "../system/privilege";
 import { edgeDownExplanation } from "../system/edge-exec-error";
 import { BOOTSTRAP_CERT_SEGMENT, validateCertFor } from "../system/proxy/cert-material";
@@ -1228,6 +1231,17 @@ interface FileSnapshot {
   linkTarget?: string;
 }
 
+/** One file of an {@link NginxProvider.updateConfig} transaction; `null` removes it. */
+interface ConfigChange {
+  path: string;
+  content: string | null;
+  /** Defaults to {@link ROUTE_FILE_MODE}. */
+  mode?: number;
+}
+
+/** Mode of every vhost, route-state sidecar and challenge vhost the edge writes. */
+const ROUTE_FILE_MODE = 0o600;
+
 // A shared config file could not be restored. Callers may restore their own
 // files, but must not reload a configuration whose rollback is incomplete.
 class ConfigRollbackError extends Error {}
@@ -1260,6 +1274,50 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private paths: OpenRestyPaths;
   private reloadCommand: string;
   private readonly pinPaths: boolean;
+  /**
+   * Whether this provider has seen the edge load what is on disk: set by a successful
+   * reload, cleared by a failed one or an incomplete rollback.
+   *
+   * {@link updateConfig} skips the reload for a transaction that writes nothing only
+   * while this is true. Disk matching the desired files proves nothing about the
+   * RUNNING config on its own (an earlier process may have died between write and
+   * reload), so a fresh provider always confirms with one reload first. Remote servers
+   * get a new provider per deployment, so that is one reload per deploy rather than one
+   * per route; the native local platform keeps one provider for the process.
+   *
+   * That confirming reload also runs reload()'s trusted-proxy include sync. The include
+   * comes from the API's environment, which changes only with a restart, and a restart
+   * builds a new provider.
+   *
+   * A `reloadConfig({ allowStopped: true })` against a stopped bare edge also sets it.
+   * That is still true in the sense that matters: an edge that starts reads the disk.
+   */
+  private edgeConfigLoaded = false;
+
+  /** Bumped by every write to edge config or certificate files; see {@link reloadConfig}. */
+  private configGeneration = 0;
+
+  /**
+   * Every write path to edge config or certificate files calls this BEFORE it touches
+   * disk, so a mutation that fails part-way (or whose restore fails) cannot leave
+   * {@link edgeConfigLoaded} vouching for files the edge has not loaded. Writers that
+   * run outside the config lock (certbot, certificate staging) call it again when they
+   * finish, so a reload that overlapped them does not count either.
+   */
+  private configMayChange(): void {
+    this.configGeneration++;
+    this.edgeConfigLoaded = false;
+  }
+
+  /** Run a writer that does not hold the config lock; see {@link configMayChange}. */
+  private async unlockedConfigWrite<T>(write: () => Promise<T>): Promise<T> {
+    this.configMayChange();
+    try {
+      return await write();
+    } finally {
+      this.configMayChange();
+    }
+  }
   private readonly containerEdge: boolean;
   private readonly hostExecutor: CommandExecutor | undefined;
   private readonly challengeDir: string;
@@ -1327,6 +1385,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   // ── File operation helpers (dual-path: local or remote) ──────────────
 
   private async _writeFile(path: string, content: string, mode?: number): Promise<void> {
+    this.configMayChange();
+    await this.writeAtomic(path, content, mode);
+  }
+
+  /** {@link _writeFile} for files the edge serves but never loads (challenge tokens). */
+  private async writeAtomic(path: string, content: string, mode?: number): Promise<void> {
     // Random suffix (not just pid+ms) so two same-ms writes to the same conf
     // can't collide on the temp path and defeat the atomic rename.
     const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}-${randomBytes(4).toString("hex")}`;
@@ -1388,6 +1452,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   }
 
   private async _rm(path: string): Promise<void> {
+    this.configMayChange();
+    await this.removePath(path);
+  }
+
+  /** {@link _rm} for files no loaded config references (a retired placeholder). */
+  private async removePath(path: string): Promise<void> {
     if (this.executor) {
       await this.executor.rm(path);
     } else {
@@ -1471,6 +1541,14 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // Publication below uses exec to move the pair; both channels must name
     // the same files even though writeFile now sets permissions itself.
     this._assertOneNamespace(dir, `stage certificate files in ${dir}`);
+    // Lineage adoption calls this outside the config lock.
+    return this.unlockedConfigWrite(() => this.publishCertDir(dir, cert));
+  }
+
+  private async publishCertDir(
+    dir: string,
+    cert: ManualCert | { lineageDir: string },
+  ): Promise<void> {
     const staging = `${dir}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
     const names = ["fullchain.pem", "privkey.pem"];
     if ("lineageDir" in cert) {
@@ -1593,6 +1671,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
     const staging = `${dir}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
     try {
+      this.configMayChange();
       await this._mkdir(staging);
       // 10 years: nothing ever trusts this cert (Cloudflare "Full" doesn't validate
       // it, a direct visitor gets a warning), so a short life buys no security —
@@ -1717,6 +1796,11 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * still sees the real cause.
    */
   private async _execCertbot(args: string[], onLog?: (line: string) => void): Promise<string> {
+    // certbot writes certificate material the vhosts name, outside the config lock.
+    return this.unlockedConfigWrite(() => this.runCertbot(args, onLog));
+  }
+
+  private async runCertbot(args: string[], onLog?: (line: string) => void): Promise<string> {
     const command = this.acmeCaBundle ? "env" : "certbot";
     const commandArgs = this.acmeCaBundle
       ? [`REQUESTS_CA_BUNDLE=${this.acmeCaBundle}`, "certbot", ...args]
@@ -1832,6 +1916,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   }
 
   private async _restoreFile(path: string, snapshot: FileSnapshot, mode?: number): Promise<void> {
+    this.configMayChange();
     if (!snapshot.exists) {
       await this._rm(path);
       return;
@@ -1847,40 +1932,104 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     await this._writeFile(path, snapshot.content ?? "", mode);
   }
 
-  /** Called under the edge config lock. Publish all files before one validation
-   * and reload; restore every snapshot on any write, removal, or reload failure. */
-  private async updateConfig(changes: { path: string; content: string | null }[]): Promise<void> {
-    const snapshots = await Promise.all(
-      changes.map(async ({ path }) => ({ path, snapshot: await this._captureFile(path) })),
+  /**
+   * Called under the edge config lock. Publish the files that differ from disk before
+   * one validation and reload; restore every published file on any write, removal, or
+   * reload failure.
+   *
+   * A change is skipped when the file already holds exactly that content as a regular
+   * file with the desired mode, or when it removes a path that does not exist. If
+   * nothing is left, the reload is skipped too, unless the edge has not been seen to
+   * load the current files ({@link edgeConfigLoaded}) or `forceReload` is set because
+   * something outside these files changed (certificate material at an unchanged path).
+   */
+  private async updateConfig(
+    changes: ConfigChange[],
+    opts: { forceReload?: boolean } = {},
+  ): Promise<void> {
+    const inspected = await Promise.all(
+      changes.map(async (change) => {
+        // A successful lstat answers the existence probe too, so an unchanged file
+        // still costs two file operations. Absent or unknown keeps the old probe:
+        // the host not seeing a path does not prove the edge cannot.
+        const stat = await this._lstat(change.path);
+        // A symlink is always replaced (it is never "unchanged"), and its target may be
+        // missing: snapshot the link itself so a rollback can put it back.
+        const snapshot: FileSnapshot =
+          stat?.kind === "symlink"
+            ? await this._captureFile(change.path, true)
+            : stat
+              ? { exists: true, content: await this._readFile(change.path) }
+              : await this._captureFile(change.path);
+        return { ...change, snapshot, stat };
+      }),
     );
+    const pending = inspected.filter((change) => this.isPendingChange(change));
+    if (!pending.length && this.edgeConfigLoaded && !opts.forceReload) return;
+
+    // Recorded before each operation: one that throws may still have published.
+    const attempted: typeof pending = [];
     try {
-      for (const { path, content } of changes) {
+      for (const change of pending) {
+        attempted.push(change);
+        const { path, content, mode } = change;
         if (content === null) await this._rm(path);
-        else await this._writeFile(path, content, 0o600);
+        else await this._writeFile(path, content, mode ?? ROUTE_FILE_MODE);
       }
       await this.reload();
     } catch (error) {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
-      for (const { path, snapshot } of snapshots) {
-        await this._restoreFile(path, snapshot, 0o600).catch((err) => {
+      for (const { path, snapshot, stat } of attempted) {
+        const mode = stat?.kind === "file" ? stat.mode : ROUTE_FILE_MODE;
+        await this._restoreFile(path, snapshot, mode).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(`${path}: ${safeErrorMessage(err)}`);
         });
       }
-      // Never reload a partially restored configuration.
-      if (!failures.length && !(error instanceof ConfigRollbackError)) {
+      // Never reload a partially restored configuration. With nothing published there
+      // is nothing to restore, and repeating the reload that just failed proves nothing.
+      if (attempted.length && !failures.length && !(error instanceof ConfigRollbackError)) {
         await this.reloadConfig({}).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(safeErrorMessage(err));
         });
       }
+      if (failures.length || error instanceof ConfigRollbackError) this.edgeConfigLoaded = false;
       if (failures.length) {
         throw new Error(`${safeErrorMessage(error)}; rollback failed: ${failures.join("; ")}`, {
           cause: error,
         });
       }
       throw error;
+    }
+  }
+
+  private isPendingChange({
+    content,
+    mode,
+    snapshot,
+    stat,
+  }: ConfigChange & { snapshot: FileSnapshot; stat: FileStat | null | undefined }): boolean {
+    if (content === null) return snapshot.exists;
+    if (!snapshot.exists || snapshot.content !== content) return true;
+    // Unknown (no lstat, a refused probe, or a file the host cannot see but the edge
+    // container can) leaves content as the only evidence, as before this check existed.
+    if (!stat) return false;
+    return stat.kind !== "file" || stat.mode !== (mode ?? ROUTE_FILE_MODE);
+  }
+
+  /** Best-effort {@link CommandExecutor.lstat}; `undefined` when it cannot say. */
+  private async _lstat(path: string): Promise<FileStat | null | undefined> {
+    try {
+      if (!this.executor) {
+        return fileStatOf(await fsLstat(path));
+      }
+      return await this.executor.lstat?.(path);
+    } catch (error) {
+      if (!this.executor && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      observeCaughtError(error, "adapters/infra/nginx");
+      return undefined;
     }
   }
 
@@ -1894,8 +2043,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * exist yet, writes an HTTP-only block (certbot will add SSL later
    * via provisionCert).
    */
-  async registerRoute(route: RouteConfig): Promise<void> {
-    return this.withConfigLock(() => this.writeRoute(route));
+  /** `opts.forceReload` is internal: certificate activation, see {@link activateCert}. */
+  async registerRoute(route: RouteConfig, opts: { forceReload?: boolean } = {}): Promise<void> {
+    return this.withConfigLock(() => this.writeRoute(route, opts));
   }
 
   async setRouteProtection(domain: string, protection: RouteProtection | null): Promise<boolean> {
@@ -1911,7 +2061,10 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     });
   }
 
-  private async writeRoute(route: RouteConfig): Promise<void> {
+  private async writeRoute(
+    route: RouteConfig,
+    opts: { forceReload?: boolean } = {},
+  ): Promise<void> {
     assertValidDomain(route.domain);
     await this._mkdir(this.sitesDir);
 
@@ -2239,12 +2392,15 @@ ${serveLocation}
     // The prelude carries http-scope `map` blocks, so it goes ABOVE the server
     // block(s) — one file may hold both the :80 and :443 blocks, and a map may
     // appear only once for the pair.
-    await this.updateConfig([
-      ...runtimeChanges,
-      { path: configPath, content: `${prelude}${serverBlock}` },
-      { path: this.routeStatePath(slug), content: JSON.stringify(route) },
-      ...challenges.map((path) => ({ path, content: null })),
-    ]);
+    await this.updateConfig(
+      [
+        ...runtimeChanges,
+        { path: configPath, content: `${prelude}${serverBlock}` },
+        { path: this.routeStatePath(slug), content: JSON.stringify(route) },
+        ...challenges.map((path) => ({ path, content: null })),
+      ],
+      opts,
+    );
 
     // The conf we just loaded doesn't reference the placeholder, so nothing is
     // serving it — drop it. Keyed on what was EMITTED rather than on "a real cert
@@ -2256,7 +2412,8 @@ ${serveLocation}
     // OpenResty is still reading the bootstrap paths, and removing them first would
     // break TLS for the domain on the next unrelated reload.
     if (!bootstrapServed) {
-      await this._rm(this.bootstrapCertDir(route.domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      // Not a config change: the conf just loaded no longer names these files.
+      await this.removePath(this.bootstrapCertDir(route.domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
     }
 
     // The full RouteConfig sidecar was committed with the vhost above, so TLS
@@ -2486,8 +2643,8 @@ ${serveLocation}
 
     // Nothing references the placeholder cert once the vhost is gone. Real certs
     // in certbot's tree are deliberately left alone (a re-add reuses them); this
-    // material is disposable by construction.
-    await this._rm(this.bootstrapCertDir(domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+    // material is disposable by construction, and no loaded config names it.
+    await this.removePath(this.bootstrapCertDir(domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
   }
 
   // ── Edge-target challenge ────────────────────────────────────────────
@@ -2547,8 +2704,9 @@ ${serveLocation}
    * this feature, and including a rollback. The baked image's catch-all cannot make
    * that claim, which is why it is not the mechanism.
    *
-   * Idempotent: skips the vhost write AND the reload when what is on disk already
-   * matches, so re-asserting on every deploy costs a couple of stats.
+   * Idempotent: skips the vhost write when what is on disk already matches, and the
+   * reload too once this provider has seen the edge load it (see
+   * {@link edgeConfigLoaded}), so re-asserting on every deploy costs a couple of stats.
    *
    * `tokens` is a list because a re-issued verification resets the token while an
    * older record may still be probed, and because two orgs can target one box. All
@@ -2575,7 +2733,7 @@ ${serveLocation}
     //    the container path — this mount is the one whose two sides differ.
     //    `_writeFile` creates the parent dir on both the local and executor paths.
     for (const token of tokens) {
-      await this._writeFile(join(this.challengeDir, token), token);
+      await this.writeAtomic(join(this.challengeDir, token), token);
     }
 
     // 2. Is some Openship-managed vhost already answering for this host? Only the
@@ -2641,11 +2799,9 @@ ${serveLocation}
     const vhost = edgeChallengeVhostConf(host);
     const slug = await this.resolveSlug(host, "_oblien-challenge-");
     const path = join(this.sitesDir, `${slug}.conf`);
-    const existing = await this._captureFile(path);
     const duplicates = (await this.ownedChallengeVhosts(host)).filter((p) => p !== path);
-    if (existing.content === vhost && !duplicates.length) {
-      return { served: true, via: "challenge-vhost" };
-    }
+    // updateConfig skips an unchanged vhost itself, checking the mode and whether this
+    // provider has seen the edge load it; a content-only early return here did neither.
     await this.updateConfig([
       { path, content: vhost },
       ...duplicates.map((path) => ({ path, content: null })),
@@ -2688,7 +2844,13 @@ ${serveLocation}
       const certificate = await this.resolveCertificate(domain);
       if (certificate.kind !== "unavailable" || certificate.info.reason === "read_error") {
         const existing = await this.readCertInfo(domain, certificate);
-        if (existing.verified) await this.activateCert(domain);
+        // Reusing a certificate this deployment did not change: the vhost write may be
+        // skipped like any other unchanged route. Every path that installs new
+        // material at the same file paths (issuance, upload) goes through
+        // activateCert, which always reloads.
+        if (existing.verified) {
+          await this.withConfigLock(() => this.activateRouteCert(domain, { forceReload: false }));
+        }
         return existing;
       }
     }
@@ -2799,12 +2961,21 @@ ${serveLocation}
     return this.ensureIssued(domain, certonlyOut);
   }
 
-  /** One route activation path for Certbot, manual DNS, and uploaded certs. */
+  /**
+   * One route activation path for Certbot, manual DNS, and uploaded certs.
+   *
+   * Always reloads, even when the vhost text is unchanged: new certificate material
+   * lands at the same paths the vhost already names, so the file contents cannot tell
+   * the edge that it must load it.
+   */
   async activateCert(domain: string): Promise<void> {
-    return this.withConfigLock(() => this.activateRouteCert(domain));
+    return this.withConfigLock(() => this.activateRouteCert(domain, { forceReload: true }));
   }
 
-  private async activateRouteCert(domain: string): Promise<void> {
+  private async activateRouteCert(
+    domain: string,
+    opts: { forceReload: boolean },
+  ): Promise<void> {
     assertValidDomain(domain);
     // Rewrite the config with SSL now that certs exist
     const slug = await this.resolveSlug(domain);
@@ -2826,7 +2997,7 @@ ${serveLocation}
     // A write/reload failure must propagate, not trigger a lossy fallback or be
     // reported as success just because certbot issued a readable certificate.
     if (saved) {
-      await this.registerRoute({ ...saved, domain, tls: true });
+      await this.registerRoute({ ...saved, domain, tls: true }, opts);
       return;
     }
 
@@ -2846,12 +3017,15 @@ ${serveLocation}
         if (isLoopbackHost(upstream.hostname) && Number(upstream.port) === ACME_HTTP01_PORT) {
           continue;
         }
-        await this.registerRoute({
-          domain,
-          targetUrl,
-          tls: true,
-          ...(scraped ? { proxy: scraped } : {}),
-        });
+        await this.registerRoute(
+          {
+            domain,
+            targetUrl,
+            tls: true,
+            ...(scraped ? { proxy: scraped } : {}),
+          },
+          opts,
+        );
         return;
       }
 
@@ -2860,13 +3034,16 @@ ${serveLocation}
         // Re-registering the root from OUR OWN existing vhost to add TLS. It passed
         // the floor when first written (possibly as adopted), so re-checking it here
         // would reject a legitimately imported site at cert time.
-        await this.registerRoute({
-          domain,
-          staticRoot,
-          staticRootAdopted: true,
-          tls: true,
-          ...(scraped ? { proxy: scraped } : {}),
-        });
+        await this.registerRoute(
+          {
+            domain,
+            staticRoot,
+            staticRootAdopted: true,
+            tls: true,
+            ...(scraped ? { proxy: scraped } : {}),
+          },
+          opts,
+        );
         return;
       }
     }
@@ -3308,6 +3485,19 @@ ${serveLocation}
   }
 
   private async reloadConfig(opts: { allowStopped?: boolean }): Promise<void> {
+    // Vouch only for what was on disk when the reload started: a write that began or
+    // ended meanwhile bumped the generation.
+    const generation = this.configGeneration;
+    try {
+      await this.applyReload(opts);
+      this.edgeConfigLoaded = this.configGeneration === generation;
+    } catch (error) {
+      this.edgeConfigLoaded = false;
+      throw error;
+    }
+  }
+
+  private async applyReload(opts: { allowStopped?: boolean }): Promise<void> {
     if (this.executor) {
       if (!this.pinPaths) {
         try {

@@ -2,7 +2,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import Dockerode from "dockerode";
 import { PassThrough } from "node:stream";
 
-import type { CommandExecutor, LogEntry } from "../types";
+import type { CommandExecutor, FileStat, LogEntry } from "../types";
 import { LocalExecutor } from "./local-executor";
 import { logEntry, sq } from "./local-shell";
 import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
@@ -249,6 +249,12 @@ export class DockerEdgeExecutor implements CommandExecutor {
     if (this.fileMode === "mounted") return this.files.readFile(path);
     // Framed: `exec` trims its output, and a file read must come back byte-exact.
     return unframeFileRead(await this.exec(framedCatCommand(path)), path);
+  }
+
+  /** Mounted mode only; in container mode the type and mode are unknown. */
+  async lstat(path: string): Promise<FileStat | null> {
+    if (this.fileMode === "mounted") return this.files.lstat(path);
+    throw new Error("lstat is not available in container file mode");
   }
 
   async exists(path: string): Promise<boolean> {

@@ -6,7 +6,18 @@ import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 
 import { prepareSourceTarArgs } from "../archive";
-import type { CommandExecutor, LogEntry, ShellOptions, ShellSession, SshConfig } from "../types";
+import type {
+  CommandExecutor,
+  FileStat,
+  LogEntry,
+  ShellOptions,
+  ShellSession,
+  SshConfig,
+} from "../types";
+import { fileStatOf } from "./file-stat";
+
+/** SSH_FX_NO_SUCH_FILE (draft-ietf-secsh-filexfer). */
+const SFTP_NO_SUCH_FILE = 2;
 import { logEntry, sq } from "./local-shell";
 import {
   canUseRemoteRsync,
@@ -859,6 +870,21 @@ export class SshExecutor implements CommandExecutor {
       return this.runSftpRequest<string>(client, sftp, `SFTP read ${path}`, (done) => {
         sftp.readFile(path, { encoding: "utf-8" }, (err, data) => {
           done(err, data?.toString());
+        });
+      });
+    });
+  }
+
+  async lstat(path: string): Promise<FileStat | null> {
+    return this.withChannelRetry(async () => {
+      const sftp = await this.sftp();
+      const client = this.client;
+      if (!client) throw new SshDisconnectedError("SSH connection lost before SFTP lstat");
+      return this.runSftpRequest<FileStat | null>(client, sftp, `SFTP lstat ${path}`, (done) => {
+        sftp.lstat(path, (err, attrs) => {
+          // Only "no such file" is an answer; a refusal is unknown, not absent.
+          if (err) done((err as { code?: number }).code === SFTP_NO_SUCH_FILE ? null : err, null);
+          else done(null, fileStatOf(attrs));
         });
       });
     });

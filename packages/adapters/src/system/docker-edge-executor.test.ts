@@ -450,3 +450,35 @@ describe("socket edge port inventory", () => {
     );
   });
 });
+
+describe("DockerEdgeExecutor.lstat", () => {
+  it("reports type and mode through the mount in mounted mode", async () => {
+    const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "openship-edge-lstat-"));
+    try {
+      await writeFile(join(dir, "a.conf"), "x", { mode: 0o600 });
+      const { docker } = recordingDocker();
+      const ex = new DockerEdgeExecutor({
+        containerName: "openship-edge",
+        docker,
+        fileMode: "mounted",
+      });
+      expect(await ex.lstat(join(dir, "a.conf"))).toEqual({ kind: "file", mode: 0o600 });
+      expect(await ex.lstat(join(dir, "missing.conf"))).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports unknown (rejects) in container file mode rather than guessing", async () => {
+    const { docker } = recordingDocker();
+    const ex = new DockerEdgeExecutor({
+      containerName: "openship-edge",
+      docker,
+      fileMode: "container",
+    });
+    await expect(ex.lstat("/etc/openresty/sites-enabled/a.conf")).rejects.toThrow(/not available/);
+  });
+});
