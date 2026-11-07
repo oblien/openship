@@ -104,6 +104,67 @@ describe("saved build commands", () => {
     });
   });
 
+  it("does not let a disabled monorepo service bypass primary-app validation", async () => {
+    const { owner, project } = await fixture();
+    await seedService(project.id, {
+      name: "disabled-web",
+      kind: "monorepo",
+      rootDirectory: "apps/web",
+      enabled: false,
+    });
+    await expect(
+      updateOptions(project.id, { installCommand: "" }, owner.organizationId),
+    ).rejects.toThrow(/command.*empty/i);
+    expect((await repos.project.findById(project.id))?.installCommand).toBe("npm ci");
+  });
+
+  it.each(["monorepo", "services"] as const)(
+    "does not let a %s hint without service recipes bypass validation",
+    async (projectType) => {
+      const { owner, project } = await fixture();
+      await expect(
+        ensureProject(
+          { projectId: project.id, name: project.name, projectType, installCommand: "" },
+          owner.organizationId,
+        ),
+      ).rejects.toThrow(/command.*empty/i);
+      expect((await repos.project.findById(project.id))?.installCommand).toBe("npm ci");
+    },
+  );
+
+  it.each(["monorepo", "services"] as const)(
+    "allows incoming %s recipes to own their commands",
+    async (projectType) => {
+      const { owner, project } = await fixture();
+      await ensureProject(
+        {
+          projectId: project.id,
+          name: project.name,
+          projectType,
+          installCommand: "",
+          startCommand: "",
+          ...(projectType === "monorepo"
+            ? {
+                monorepoApps: [
+                  {
+                    name: "web",
+                    rootDirectory: "apps/web",
+                    framework: "nextjs",
+                    installCommand: "npm ci",
+                    startCommand: "npm start",
+                  },
+                ],
+              }
+            : { services: [{ name: "web", image: "nginx:alpine" }] }),
+        },
+        owner.organizationId,
+      );
+      expect(
+        (await repos.service.listByProject(project.id)).map((service) => service.name),
+      ).toContain("web");
+    },
+  );
+
   it("does not let an added image service disable primary-app validation", async () => {
     const { owner, project } = await fixture();
     await seedService(project.id, { name: "redis", image: "redis:7" });

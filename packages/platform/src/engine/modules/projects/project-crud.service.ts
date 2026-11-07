@@ -87,6 +87,7 @@ import { markRoutingWarning, syncProjectManagedEdge } from "./project-runtime.se
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
 import { projectToClass } from "../deployments/deployment-class";
+import { isMultiServiceProject } from "../deployments/compose/project-services";
 import { isMaterializedAppRow } from "../services/materialized-app-row";
 import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
@@ -113,22 +114,32 @@ export { resolveProjectDeployTarget } from "./project-deploy-target";
  * Unrelated edits to an incomplete draft remain possible. Service-first projects
  * validate their own recipes at deployment; adding a sidecar does not exempt the app.
  */
-async function assertBuildCommandUpdate(project: Project, changes: Record<string, unknown>) {
+async function assertBuildCommandUpdate(
+  project: Project,
+  changes: Record<string, unknown>,
+  hasIncomingServiceRecipes = false,
+) {
   if (changes.installCommand === undefined && changes.startCommand === undefined) return;
   const next = { ...project, ...changes };
-  if (
-    isServicesFramework(next.framework) || next.composePath?.trim() ||
-    changes.projectType === "monorepo" || changes.projectType === "services"
-  ) return;
+  if (hasIncomingServiceRecipes || isMultiServiceProject(next)) return;
   const missing = missingBuildCommands({
     ...next,
     ...projectToClass(next),
     hasBuild: next.hasBuild ?? true,
-  }).filter(field => changes[field] !== undefined);
+  }).filter((field) => changes[field] !== undefined);
   if (!missing.length) return;
   const services = await repos.service.listByProject(project.id);
-  if (services.some(service => service.kind === "monorepo" && !isMaterializedAppRow(project, service))) return;
-  const fields = missing.map(field => field === "installCommand" ? "Install command" : "Start command");
+  if (
+    services.some(
+      (service) =>
+        service.enabled !== false &&
+        service.kind === "monorepo" &&
+        !isMaterializedAppRow(project, service),
+    )
+  ) return;
+  const fields = missing.map((field) =>
+    field === "installCommand" ? "Install command" : "Start command",
+  );
   throw new ValidationError(
     `${fields.join(" and ")} cannot be empty for this build configuration. Enter the required commands in Configuration before saving.`,
   );
@@ -1659,7 +1670,10 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
 
-    await assertBuildCommandUpdate(project, { ...update, projectType: data.projectType });
+    const hasIncomingServiceRecipes =
+      (data.projectType === "monorepo" && !!data.monorepoApps?.length) ||
+      (data.projectType === "services" && !!data.services?.length);
+    await assertBuildCommandUpdate(project, update, hasIncomingServiceRecipes);
 
     // Validate explicit route changes before saving any of the accompanying
     // field edits. In particular, ensure must not silently accept a refused URL.
