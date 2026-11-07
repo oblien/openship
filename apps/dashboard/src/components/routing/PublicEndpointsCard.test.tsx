@@ -65,6 +65,42 @@ it.each([
     expect(document.querySelector('input[type="password"]') !== null).toBe(supported);
   },
 );
+
+it.each([
+  { hostnames: ["private.example.com"], supported: false },
+  { hostnames: ["other.example.com"], supported: true },
+])(
+  "hides the password form for hostnames behind external ingress (supported=$supported)",
+  async ({ hostnames, supported }) => {
+    h.selfHosted = true;
+    h.deployTarget = "server";
+    await act(async () =>
+      root.render(
+        <PublicEndpointsCard
+          projectName="private"
+          endpoints={[
+            createPublicEndpoint({
+              domainType: "custom",
+              customDomain: "private.example.com",
+              port: "3000",
+            }),
+          ]}
+          hasServer
+          runtimePort="3000"
+          hideHeader
+          externalIngressHostnames={new Set(hostnames)}
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+    const protection = container.querySelector<HTMLButtonElement>(
+      'button[aria-label$=": private.example.com"]',
+    );
+    expect(protection).not.toBeNull();
+    await act(async () => protection!.click());
+    expect(document.querySelector('input[type="password"]') !== null).toBe(supported);
+  },
+);
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();

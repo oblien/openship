@@ -45,6 +45,16 @@ interface PublicEndpointsCardProps {
    * caller opts in where it applies. Opt in only when the destination preserves the complete request URL.
    */
   allowRedirects?: boolean;
+  /**
+   * Hostnames already known to sit behind external ingress (TLS terminates
+   * upstream, e.g. a Cloudflare Tunnel). Password protection can never apply
+   * there — route apply rejects it — so the protection dialog shows the
+   * "not supported" notice instead of the password form. The deploy wizard
+   * passes the project's domain rows; other callers omit it and behave as
+   * before. Entries are lowercased hostnames; the endpoint's hostname
+   * resolves lowercased too, so the match is case-insensitive.
+   */
+  externalIngressHostnames?: ReadonlySet<string>;
 }
 
 const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
@@ -62,6 +72,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   allowRemoveAll = false,
   allowWww = false,
   allowRedirects = false,
+  externalIngressHostnames,
 }) => {
   const { t } = useI18n();
   const deployment = useOptionalDeployment();
@@ -199,7 +210,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     <RouteProtectionButton
       hostname={endpointHostname(endpoint)}
       projectId={deployment.config.projectId}
-      unsupported={!selfHosted || deployment.config.deployTarget === "cloud" || deployment.config.deployTarget === "cluster" || endpoint.domainType !== "custom" || endpointHostname(endpoint).startsWith("*.")}
+      unsupported={!selfHosted || deployment.config.deployTarget === "cloud" || deployment.config.deployTarget === "cluster" || endpoint.domainType !== "custom" || endpointHostname(endpoint).startsWith("*.") || (externalIngressHostnames?.has(endpointHostname(endpoint)) ?? false)}
       draft={endpoint.protectionDraft}
       onDraftChange={(protectionDraft) => handleEndpointChange(endpoint.id, { protectionDraft })}
     />

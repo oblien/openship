@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   scopeVersion: 0,
   picker: vi.fn(),
   update: vi.fn(),
+  list: vi.fn(),
   toast: vi.fn(),
 }));
 vi.mock("@/context/PlatformContext", () => ({
@@ -18,6 +19,7 @@ vi.mock("@/context/PlatformContext", () => ({
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.toast }) }));
 vi.mock("@/lib/api", () => ({
   projectsApi: { update: mocks.update },
+  domainsApi: { list: mocks.list },
   getApiErrorMessage: vi.fn(),
 }));
 vi.mock("@/components/routing/RoutingModePicker", () => ({
@@ -37,6 +39,7 @@ beforeEach(() => {
   mocks.scopeVersion = 0;
   mocks.picker.mockReset();
   mocks.update.mockReset().mockResolvedValue({});
+  mocks.list.mockReset().mockResolvedValue({ data: [] });
   mocks.toast.mockReset();
   container = document.createElement("div");
   document.body.append(container);
@@ -203,4 +206,53 @@ it("discards queued saves after an account switch without blocking the new scope
     await Promise.all([first, stale]);
   });
   expect(mocks.update).toHaveBeenCalledTimes(2);
+});
+
+it("passes only external-ingress hostnames to the routing picker", async () => {
+  mocks.list.mockResolvedValue({
+    data: [
+      { hostname: "Tunnel.Example.com", externalIngress: true },
+      { hostname: "plain.example.com", externalIngress: false },
+    ],
+  });
+  await act(async () =>
+    root.render(
+      <DomainSettings
+        projectId="tunnel-wizard"
+        projectName="site"
+        endpoints={[]}
+        hasServer
+        runtimePort="3000"
+        setEndpoints={() => {}}
+        noPublicRoute={false}
+        setNoPublicRoute={() => {}}
+      />,
+    ),
+  );
+  expect(mocks.list).toHaveBeenCalledWith("tunnel-wizard");
+  expect(mocks.picker).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      externalIngressHostnames: new Set(["tunnel.example.com"]),
+    }),
+  );
+});
+
+it("passes an empty external-ingress set when there is no project yet", async () => {
+  await act(async () =>
+    root.render(
+      <DomainSettings
+        projectName="site"
+        endpoints={[]}
+        hasServer
+        runtimePort="3000"
+        setEndpoints={() => {}}
+        noPublicRoute={false}
+        setNoPublicRoute={() => {}}
+      />,
+    ),
+  );
+  expect(mocks.list).not.toHaveBeenCalled();
+  expect(mocks.picker).toHaveBeenLastCalledWith(
+    expect.objectContaining({ externalIngressHostnames: new Set() }),
+  );
 });
