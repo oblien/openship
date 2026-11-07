@@ -38,6 +38,7 @@ import {
   aliasConflictsWithSiblings,
   normalizeFramework,
   isServicesFramework,
+  missingBuildCommands,
   resolveWorkload,
   resolveGitHubDeploymentChecks,
   toWorkloadType,
@@ -85,6 +86,8 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { markRoutingWarning, syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
+import { projectToClass } from "../deployments/deployment-class";
+import { isMaterializedAppRow } from "../services/materialized-app-row";
 import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
@@ -104,6 +107,32 @@ import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../li
 import { requireOrgServer } from "../../lib/server-target";
 import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
+
+/**
+ * Reject explicitly blank required commands before saving the rest of an edit.
+ * Unrelated edits to an incomplete draft remain possible. Service-first projects
+ * validate their own recipes at deployment; adding a sidecar does not exempt the app.
+ */
+async function assertBuildCommandUpdate(project: Project, changes: Record<string, unknown>) {
+  if (changes.installCommand === undefined && changes.startCommand === undefined) return;
+  const next = { ...project, ...changes };
+  if (
+    isServicesFramework(next.framework) || next.composePath?.trim() ||
+    changes.projectType === "monorepo" || changes.projectType === "services"
+  ) return;
+  const missing = missingBuildCommands({
+    ...next,
+    ...projectToClass(next),
+    hasBuild: next.hasBuild ?? true,
+  }).filter(field => changes[field] !== undefined);
+  if (!missing.length) return;
+  const services = await repos.service.listByProject(project.id);
+  if (services.some(service => service.kind === "monorepo" && !isMaterializedAppRow(project, service))) return;
+  const fields = missing.map(field => field === "installCommand" ? "Install command" : "Start command");
+  throw new ValidationError(
+    `${fields.join(" and ")} cannot be empty for this build configuration. Enter the required commands in Configuration before saving.`,
+  );
+}
 
 /** A retention edit and its cleanup share the admission lock. A concurrent
  * increase/pin must not race a sweep operating on the previous policy. */
@@ -1630,6 +1659,8 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
 
+    await assertBuildCommandUpdate(project, { ...update, projectType: data.projectType });
+
     // Validate explicit route changes before saving any of the accompanying
     // field edits. In particular, ensure must not silently accept a refused URL.
     const nextRoutes = data.publicEndpoints !== undefined || update.slug !== undefined || update.port !== undefined
@@ -1851,6 +1882,7 @@ async function updateProjectUnlocked(
   }
   Object.assign(update, runtimeProjectUpdate(p, update));
   assertRuntimeVersionTarget({ ...p, ...update });
+  await assertBuildCommandUpdate(p, update);
   // A rename changes the DISPLAY NAME only — `slug` is deliberately NOT
   // recomputed. The slug is this project's infrastructure identity, not a label:
   // it names the `openship-<slug>` docker network, the `openship-<slug>-<svc>`
@@ -2815,6 +2847,7 @@ export async function updateOptions(
 
   Object.assign(update, runtimeProjectUpdate(p, options));
   assertRuntimeVersionTarget({ ...p, ...update });
+  await assertBuildCommandUpdate(p, update);
 
   // Persist the canonical config FIRST, then reconcile routes (best-effort) on a
   // port change. Ordering the project write before route-sync means a route-sync
