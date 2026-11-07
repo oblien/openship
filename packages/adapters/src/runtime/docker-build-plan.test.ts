@@ -48,14 +48,25 @@ describe("explicit Bun runtime selection", () => {
     expect(df).toContain("FROM oven/bun:1.4.4-alpine AS runtime");
     const runs = df.split("\n").filter((line) => line.startsWith("RUN") && line.includes("bun install"));
     expect(runs).toHaveLength(2);
-    for (const run of runs) expect(run).toContain("OPENSHIP_BUILD_BUN_VERSION='1.4.4'");
+    for (const run of runs) expect(run).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
   });
   it("leaves repository toolchain selection intact when there is no explicit runtime override", () => {
     const df = generateDockerfile(config({
       stack: "nextjs", packageManager: "bun", buildImage: "oven/bun:1.4.4", runtimeImage: "oven/bun:1.4.4",
       installCommand: "bun install",
     }));
-    expect(df).not.toContain("OPENSHIP_BUILD_BUN_VERSION='1.4.4'");
+    expect(df).not.toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
+  });
+  it.each(["npm", "pnpm", "yarn"])("does not use the Node runtime version as the %s version", (packageManager) => {
+    const df = generateDockerfile(config({
+      packageManager,
+      buildImage: "node:22.22.2-alpine", runtimeImage: "node:22.22.2-alpine",
+      runtimeImageOverride: true,
+      installCommand: `${packageManager} install`,
+    }));
+    expect(df).toContain("FROM node:22.22.2-alpine AS runtime");
+    expect(df).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION=''");
+    expect(df).not.toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='22.22.2'");
   });
 });
 

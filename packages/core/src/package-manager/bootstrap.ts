@@ -21,13 +21,13 @@ function verifyPackageManager({ manager, version }: PackageManagerSelection): vo
 
 export function bootstrapPackageManager(
   manager: ManagedPackageManager,
-  bunRuntimeVersion?: string,
+  versionOverride?: string,
 ): void {
   const discovery = discoverPackageManager(manager);
-  const selection = resolvePackageManager(manager, discovery, bunRuntimeVersion);
-  if (bunRuntimeVersion && discovery.pin && discovery.pin !== selection.pin)
+  const selection = resolvePackageManager(manager, discovery, versionOverride);
+  if (versionOverride && discovery.pin && discovery.pin !== selection.pin)
     console.log(
-      "[openship] Explicit runtime selection " +
+      "[openship] Explicit package-manager selection " +
         selection.pin +
         " overrides repository " +
         discovery.pin,

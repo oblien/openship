@@ -1312,13 +1312,13 @@ export function getBuildImage(
  * language ecosystems retain their existing install contracts. */
 export function packageManagerEnsureCommand(
   packageManager?: string,
-  bunRuntimeVersion?: string,
+  versionOverride?: string,
 ): string {
   if (
     packageManager === "npm" || packageManager === "pnpm" ||
     packageManager === "yarn" || packageManager === "bun"
   )
-    return managedPackageManagerEnsureCommand(packageManager, bunRuntimeVersion);
+    return managedPackageManagerEnsureCommand(packageManager, versionOverride);
   return "";
 }
 

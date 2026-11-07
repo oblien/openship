@@ -689,7 +689,7 @@ describe("containers on one Oblien Docker workspace", () => {
     const dockerfile = generateDockerfile(passed);
     expect(dockerfile).toContain("FROM oven/bun:1.4.4-alpine AS builder");
     expect(dockerfile).toContain("FROM oven/bun:1.4.4-alpine AS runtime");
-    expect(dockerfile).toContain("OPENSHIP_BUILD_BUN_VERSION='1.4.4'");
+    expect(dockerfile).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
     expect(transfer).not.toHaveBeenCalled();
     expect(runtime.connectionOptions?.executor).toBe(runtime.executor);
     expect(provider.workspaces.create).not.toHaveBeenCalled();

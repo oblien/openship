@@ -14,33 +14,30 @@ export interface PackageManagerSelection {
 export function resolvePackageManager(
   manager: ManagedPackageManager,
   discovery: PackageManagerDiscovery,
-  bunRuntimeVersion?: string,
+  versionOverride?: string,
 ): PackageManagerSelection {
   let { pin } = discovery;
-  if (bunRuntimeVersion) {
-    if (manager !== "bun" || !/^\d+\.\d+\.\d+$/.test(bunRuntimeVersion))
-      throw new Error("An explicit Bun runtime requires an exact stable Bun version.");
-    if (pin?.includes("+sha"))
+  if (versionOverride) {
+    if (!/^\d+\.\d+\.\d+$/.test(versionOverride))
+      throw new Error("A package-manager version override requires an exact stable version.");
+    const declaredVersion = pin?.slice(manager.length + 1).split("+sha")[0];
+    if (pin?.includes("+sha") && declaredVersion !== versionOverride)
       throw new Error(
-        "A runtime override cannot discard a packageManager integrity requirement. Update the repository pin first.",
+        "A version override cannot discard a packageManager integrity requirement. Update the repository pin first.",
       );
-    const declared = pin
-      ?.match(/^bun@(\d+)\.(\d+)\.(\d+)/)
+    const declared = declaredVersion
+      ?.match(/^(\d+)\.(\d+)\.(\d+)/)
       ?.slice(1)
       .map(Number);
-    const selected = bunRuntimeVersion.split(".").map(Number);
+    const selected = versionOverride.split(".").map(Number);
     const difference = declared?.findIndex((value, index) => value !== selected[index]) ?? -1;
     if (declared && difference >= 0 && declared[difference]! > selected[difference]!)
       throw new Error(
-        "The repository requires " +
-          pin +
-          ", newer than the selected Bun runtime " +
-          bunRuntimeVersion +
-          ". Select a compatible runtime image; the build will not downgrade Bun.",
+        `The repository requires ${pin}, newer than the selected ${manager} version ${versionOverride}. ` +
+          `Select a compatible version; the build will not downgrade ${manager}.`,
       );
-    // Bun is both package manager and runtime. An explicit managed runtime
-    // selection must also own the builder, or bootstrap reinstalls the old pin.
-    pin = `bun@${bunRuntimeVersion}`;
+    // Preserve integrity when the selected version already matches the pin.
+    pin = pin?.includes("+sha") ? pin : `${manager}@${versionOverride}`;
   }
   const { lock, yarnLock, yarnPath, scriptPolicy, ignoreYarnPath } = discovery;
   let localYarnVersion: string | undefined;

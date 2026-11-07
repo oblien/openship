@@ -104,7 +104,8 @@ export function nodeBinPathEnvLine(
   return dirs.length > 0 ? `ENV PATH="${dirs.join(":")}:$PATH"` : null;
 }
 
-/** An explicitly selected Bun runtime also owns the build tool's version. */
+/** Bun is both runtime and package manager, so its explicit runtime selection
+ * also selects the build tool. Node's version must not become npm/pnpm's version. */
 function ensurePackageManager(config: BuildConfig, manager = config.packageManager): string {
   const image =
     config.runtimeImageOverride && manager === "bun"
