@@ -11056,6 +11056,126 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "rclone",
+      "name": "rclone",
+      "description": "rclone remote-control daemon with the web GUI: browse, copy and sync files between cloud storage providers and your server.",
+      "kind": "template",
+      "logo": "rclone",
+      "category": "other",
+      "repository": "https://github.com/rclone/rclone",
+      "tags": [
+        "storage",
+        "sync",
+        "backup",
+        "cloud"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "rclone",
+          "image": "rclone/rclone:1.75.2",
+          "exposed": true,
+          "ports": [
+            "8228:5572"
+          ],
+          "exposedPort": 5572,
+          "routes": [
+            {
+              "port": 5572
+            }
+          ],
+          "command": "rcd --rc-addr=:5572 --rc-web-gui --rc-web-gui-no-open-browser",
+          "restart": "unless-stopped",
+          "volumes": [
+            "rclone_config:/config/rclone",
+            "rclone_cache:/root/.cache/rclone"
+          ],
+          "environment": {
+            "RCLONE_RC_USER": "rcadmin",
+            "RCLONE_LOG_LEVEL": "ERROR"
+          },
+          "secretEnv": [
+            "RCLONE_RC_PASS"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null --header \"Authorization: Basic $(printf %s:%s \"$RCLONE_RC_USER\" \"$RCLONE_RC_PASS\" | base64 | tr -d '\\n')\" http://127.0.0.1:5572/ || exit 1"
+            ],
+            "interval": "30s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "30s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "RCLONE_RC_PASS",
+          "service": "rclone",
+          "label": "Login password",
+          "help": "Auto-generated. The username is rcadmin. Access to this login is equivalent to shell access as the rclone process and reveals every stored cloud credential, so keep it private.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "rclone",
+          "port": 5572,
+          "label": "Web GUI",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to rclone",
+        "description": "rclone web GUI. Sign in with username rcadmin and the generated password below.",
+        "guide": {
+          "intro": "The rclone remote-control daemon with its web GUI. Cloud provider credentials you add are stored in the persisted config volume.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Web GUI",
+            "source": "publicUrl:rclone",
+            "kind": "url",
+            "recommended": true,
+            "help": "Opens the rclone web GUI. Your browser asks for the username and password."
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:rclone:RCLONE_RC_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Login password",
+            "source": "env:rclone:RCLONE_RC_PASS",
+            "secret": true,
+            "width": "half"
+          }
+        ]
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Cloud-to-cloud sync",
+            "description": "Copy and sync files between dozens of storage providers from a browser GUI."
+          },
+          {
+            "title": "Persistent config",
+            "description": "Remote credentials and cache stay on project-scoped volumes across deployments."
+          }
+        ]
+      }
     }
   ]
 }
