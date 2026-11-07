@@ -29,6 +29,7 @@ const BRAND_LOGO: Record<
   // simpleicons carries no pgAdmin mark (cdn.simpleicons.org/pgadmin4 404s) —
   // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
   pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
+  rallly: { src: "https://www.google.com/s2/favicons?domain=rallly.co&sz=128" },
   pocketbase: { slug: "pocketbase" },
   mongodb: { slug: "mongodb" },
   n8n: { slug: "n8n" },
