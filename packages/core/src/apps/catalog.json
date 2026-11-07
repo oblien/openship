@@ -11056,6 +11056,222 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "hermes-agent",
+      "name": "Hermes Agent",
+      "description": "Self-hosted AI agent from Nous Research with persistent memory, auto-created skills, scheduled jobs and a chat gateway for Telegram, Discord, Slack and more, with a password-protected web dashboard and an OpenAI-compatible API.",
+      "kind": "template",
+      "logo": "hermes-agent",
+      "category": "ai",
+      "repository": "https://github.com/NousResearch/hermes-agent",
+      "tags": [
+        "ai",
+        "agent",
+        "assistant",
+        "automation"
+      ],
+      "framework": "docker-compose",
+      "settings": [
+        {
+          "id": "models",
+          "label": "Model providers",
+          "columns": 1,
+          "description": "Optional. The agent needs a model to answer: add a provider key here, or sign in to Nous Portal and add keys later from the dashboard. Keys are stored as secrets and never shown again.",
+          "fields": [
+            {
+              "key": "OPENROUTER_API_KEY",
+              "service": "hermes",
+              "label": "OpenRouter API key",
+              "type": "password",
+              "secret": true,
+              "installStep": true,
+              "help": "One key for many models."
+            },
+            {
+              "key": "ANTHROPIC_API_KEY",
+              "service": "hermes",
+              "label": "Anthropic API key",
+              "type": "password",
+              "secret": true,
+              "installStep": true,
+              "help": "For Claude models."
+            },
+            {
+              "key": "OPENAI_API_KEY",
+              "service": "hermes",
+              "label": "OpenAI API key",
+              "type": "password",
+              "secret": true,
+              "installStep": true,
+              "help": "For OpenAI models."
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 1
+      },
+      "endpoints": [
+        {
+          "service": "hermes",
+          "port": 9119,
+          "label": "Dashboard",
+          "kind": "http",
+          "defaultMode": "domain",
+          "help": "Sign-in is required. Use a domain with HTTPS where you can; this agent can run commands for whoever signs in."
+        },
+        {
+          "service": "hermes",
+          "port": 8642,
+          "label": "OpenAI-compatible API",
+          "kind": "http",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ],
+          "help": "Reachable by other apps on the same host. Every /v1 request requires the generated API key."
+        }
+      ],
+      "minResources": {
+        "cpuCores": 2,
+        "memoryMb": 2048
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "An agent that learns",
+            "description": "Persistent memory, skills it writes for itself, sub-agents and scheduled jobs."
+          },
+          {
+            "title": "Chat where you already are",
+            "description": "A gateway for Telegram, Discord, Slack, WhatsApp and Signal, plus an OpenAI-compatible API."
+          },
+          {
+            "title": "Your data stays with you",
+            "description": "Config, memory and sessions live in one volume on your server; bring your own model provider."
+          }
+        ]
+      },
+      "services": [
+        {
+          "name": "hermes",
+          "image": "nousresearch/hermes-agent:v0.23.0",
+          "restart": "unless-stopped",
+          "commandArgv": [
+            "gateway",
+            "run"
+          ],
+          "ports": [
+            "8238:9119"
+          ],
+          "exposed": true,
+          "exposedPort": 9119,
+          "routes": [
+            {
+              "port": 9119
+            }
+          ],
+          "volumes": [
+            "hermes_data:/opt/data"
+          ],
+          "environment": {
+            "HERMES_DASHBOARD": "1",
+            "HERMES_DASHBOARD_PUBLIC_URL": "{{publicUrl:hermes}}",
+            "HERMES_DASHBOARD_BASIC_AUTH_USERNAME": "admin",
+            "API_SERVER_ENABLED": "true",
+            "API_SERVER_HOST": "0.0.0.0"
+          },
+          "secretEnv": [
+            "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD",
+            "HERMES_DASHBOARD_BASIC_AUTH_SECRET",
+            "API_SERVER_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS -o /dev/null http://127.0.0.1:8642/health || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 20,
+            "startPeriod": "120s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD",
+          "service": "hermes",
+          "label": "Dashboard password",
+          "help": "Auto-generated. Shown on the Connection card.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "HERMES_DASHBOARD_BASIC_AUTH_SECRET",
+          "service": "hermes",
+          "label": "Dashboard session signing key",
+          "help": "Auto-generated. Keeps dashboard sessions valid across restarts.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "API_SERVER_KEY",
+          "service": "hermes",
+          "label": "API key",
+          "help": "Auto-generated. Bearer token for the OpenAI-compatible API.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "connection": {
+        "title": "Sign in to Hermes Agent",
+        "description": "Sign in to the dashboard with the username and generated password below. The API key is the bearer token for the OpenAI-compatible API on port 8642 (reachable by other apps on the same host).",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Dashboard",
+            "source": "publicUrl:hermes",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "template:admin",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:hermes:HERMES_DASHBOARD_BASIC_AUTH_PASSWORD",
+            "secret": true,
+            "width": "half"
+          },
+          {
+            "id": "apiKey",
+            "label": "API key",
+            "source": "env:hermes:API_SERVER_KEY",
+            "secret": true
+          }
+        ],
+        "firstLogin": {
+          "note": "Security: this agent can run commands and use the model keys stored here for anyone who can sign in or message it through a chat channel. Prefer a domain with HTTPS, turn on the edge password for the hostname, keep the chat allowlists tight, and run it on a server you do not share with production apps. The agent needs a model before it can answer: add a provider key in the dashboard, or run 'hermes setup --portal' from the service terminal. Chat platforms (Telegram, Discord, Slack) are connected from the dashboard or the service terminal. Config, memory and sessions are kept in one volume, so redeployment keeps them. Do not run a second Hermes against the same volume."
+        }
+      }
     }
   ]
 }
