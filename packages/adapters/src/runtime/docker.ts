@@ -249,6 +249,9 @@ import {
 export type DockerConnectionOptions = DockerTransportOptions & {
   /** Durable ownership protects a pending bootstrap before its container exists. */
   buildCacheProtection?: () => Promise<{ projectIds: readonly string[]; all: boolean }>;
+  /** Optional immutable public OCI image attachment supplied by the host provider.
+   * Trusted connection configuration only; never inferred from project inputs. */
+  softwareCacheRoot?: string;
 };
 
 /**
@@ -1996,7 +1999,8 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     const limits = dockerBuildResourceLimits(config.resources);
     const worker = projectBuildKitWorker(config.projectId);
     const removeBuilder = `docker buildx rm --force --keep-state ${sq(worker.builderName)}`;
-    const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal);
+    const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal,
+      this.connectionOptions?.softwareCacheRoot);
     if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
     else if (software.unavailable) log.log("Shared base images are unavailable on this server; uncached image layers will download from the registry. Project build cache remains enabled.\n", "warn");
     const buildCmd = [
@@ -2005,7 +2009,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       `cd ${sq(remoteBuildDir)}`,
       // Update runs refresh FROMs; ordinary builds retain local-only base support.
       // Cache substitutions above are independently validated against the registry.
-      `docker buildx build --builder ${sq(worker.builderName)}${pullFlag} --load --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+      // The exporter loads into Docker on this same host. Favor gzip speed over
+      // archive size without changing image compatibility or recompressing bases.
+      `docker buildx build --builder ${sq(worker.builderName)}${pullFlag} --output type=docker,compression=gzip,compression-level=1 --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
     ].join("\n");
     log.log("Builder: protected BuildKit (Docker Buildx)");
     log.log(Object.keys(limits).length > 0

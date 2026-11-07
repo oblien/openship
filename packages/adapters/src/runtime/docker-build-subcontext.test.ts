@@ -294,7 +294,7 @@ describe("remote docker build — declared build context (#634)", () => {
       } as unknown as CommandExecutor;
       const runtime = runtimeFor(
         { kind: "ssh", description: "test ssh" },
-        { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+        { connectionOptions: { executor, softwareCacheRoot: "/srv/public-images" }, transferBuildContext: vi.fn(async () => {}) },
       );
       const results = await runtime.buildImages(
         [spec(serviceConfig(await makeRepo("FROM php:8.4-fpm\n"), { refreshBaseImages: true }))],
