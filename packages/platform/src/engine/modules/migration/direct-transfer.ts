@@ -306,7 +306,7 @@ export class PathMissingError extends Error {
  * coalesce several CR-delimited updates, including the initial zero, into one chunk. */
 export function parseRsyncProgress(output: string): number | null {
   let bytes: number | null = null;
-  for (const match of output.matchAll(/(?:^|[\r\n])[ \t]*([\d,]+)[ \t]+\d+%/g)) {
+  for (const match of output.matchAll(/(?:^|[\r\n])[ \t]*([\d,]+)B?[ \t]+\d+%/g)) {
     const value = Number(match[1]!.replace(/,/g, ""));
     if (Number.isFinite(value)) bytes = Math.max(bytes ?? 0, value);
   }
@@ -332,7 +332,8 @@ export function rsyncCommand(
   // The reviewed destination is an empty/owned copy (or an explicitly
   // approved overwrite). Remove stale destination files after a successful
   // directory copy, matching the streamed transport's replacement semantics.
-  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
+  // The progress parser needs byte counts without scaling or locale separators.
+  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --no-human-readable --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
   const dash_e = `-e ${sq(sshCommand)}`;
   const slash = dir ? "/" : "";
   const local = `${sq(localPath)}${slash}`;

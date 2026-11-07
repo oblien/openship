@@ -86,6 +86,11 @@ describe("runRsync retry / bail", () => {
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
 describe("parseRsyncProgress", () => {
+  test("accepts rsync's byte-unit suffix without interpreting rounded sizes as byte counts", () => {
+    expect(parseRsyncProgress("\r  0B   0% 0B/s\r  47B 100% 47000B/s\n")).toBe(47);
+    expect(parseRsyncProgress("  2097152B 100% 1032192000B/s\n")).toBe(2097152);
+    expect(parseRsyncProgress("  2.1MB 100% 1MB/s\n")).toBeNull();
+  });
   test("reads every CR/LF progress record in a coalesced Cloud chunk", () => {
     expect(parseRsyncProgress("  0 0% 0.00kB/s\r  512 100% 0.50kB/s\r\n")).toBe(512);
     expect(parseRsyncProgress("receiving file list\n  1,234 100% 1.23kB/s\n")).toBe(1234);
