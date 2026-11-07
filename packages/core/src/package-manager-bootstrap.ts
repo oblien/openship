@@ -3,10 +3,14 @@ import type { ManagedPackageManager } from "./package-manager-version";
 import { PACKAGE_MANAGER_BOOTSTRAP_SOURCE } from "./package-manager-bootstrap.generated";
 
 /** Bundle is generated from typed sources; build hosts need only Node or Bun. */
-export function managedPackageManagerEnsureCommand(manager: ManagedPackageManager): string {
+export function managedPackageManagerEnsureCommand(
+  manager: ManagedPackageManager,
+  bunRuntimeVersion?: string,
+): string {
   const source = shellQuote(PACKAGE_MANAGER_BOOTSTRAP_SOURCE);
   // Use a process-scoped environment value: Bun's node alias can drop eval args.
-  const selection = `OPENSHIP_BUILD_PACKAGE_MANAGER=${shellQuote(manager)}`;
+  // Set even the empty value so a project environment cannot supply an override.
+  const selection = `OPENSHIP_BUILD_PACKAGE_MANAGER=${shellQuote(manager)} OPENSHIP_BUILD_BUN_VERSION=${shellQuote(bunRuntimeVersion ?? "")}`;
   const runner =
     manager === "bun"
       ? `(if command -v node >/dev/null 2>&1; then ${selection} node -e ${source}; else ${selection} bun -e ${source}; fi)`

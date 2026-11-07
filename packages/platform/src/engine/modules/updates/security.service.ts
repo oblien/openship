@@ -38,6 +38,7 @@ import { buildProjectSecurityResult, RUNTIME_UPGRADE_REQUIRED_MESSAGE } from "./
 import { approveSecurityUpdate } from "./security-refresh-guard";
 import { annotateSecurityRefreshState } from "./security-refresh-state";
 import { annotateSecurityRefreshAvailability } from "./security-refresh-availability";
+import type { SecurityRuntimePatch } from "./security-runtime-patch";
 
 const key = (...parts: (string | number | null)[]) =>
   createHash("sha256").update(JSON.stringify(parts)).digest("hex");
@@ -118,7 +119,9 @@ export async function projectSecurityStatus(
       (await repos.service.listByProject(projectId)).map((service) => [service.id, service.name]),
     ),
   );
-  await annotateSecurityRefreshAvailability(ctx, result, inventory.images, refresh);
+  await annotateSecurityRefreshAvailability(
+    ctx, result, inventory, upstream.security?.advisories ?? [], refresh,
+  );
   await annotateSecurityRefreshState(result);
   return result;
 }
@@ -233,15 +236,23 @@ export async function applySecurityAdvisory(
       );
     if (matches.some((item) => item.runtimeUpgradeRequired))
       throw new ValidationError(RUNTIME_UPGRADE_REQUIRED_MESSAGE);
+    let runtimePatch: SecurityRuntimePatch | undefined;
     if (!automatic) {
       const eligibility = buildProjectSecurityResult(projectId, inventory, feed, false, new Map());
-      await annotateSecurityRefreshAvailability(ctx, eligibility, inventory.images, true);
+      await annotateSecurityRefreshAvailability(
+        ctx, eligibility, inventory, feed.security!.advisories, true,
+      );
       const finding = eligibility.findings.find(
         (f) => f.id === input.advisoryId && f.serviceId === (input.serviceId ?? null),
       );
       if (!finding?.canRefresh)
         throw new ValidationError(
           finding?.refreshBlockedReason ?? "This advisory cannot be refreshed. Check it again.",
+        );
+      runtimePatch = finding.runtimePatch;
+      if (input.runtimePatchId !== runtimePatch?.reviewId)
+        throw new ValidationError(
+          "The runtime patch has changed. Check the advisory and review the patched version before applying it.",
         );
       await annotateSecurityRefreshState(eligibility);
       if (finding.refresh && finding.refresh.status !== "failed")
@@ -279,6 +290,14 @@ export async function applySecurityAdvisory(
     )
       return null;
     try {
+      if (runtimePatch) {
+        // Persist the reviewed selection so webhooks and ordinary redeploys do
+        // not return to the vulnerable version. A failed build keeps this choice.
+        await repos.project.update(projectId, {
+          buildImage: runtimePatch.buildImage,
+          runtimeImage: runtimePatch.runtimeImage,
+        });
+      }
       const result = await updateProjectRuntime(
         ctx,
         projectId,
@@ -306,6 +325,7 @@ export async function applySecurityAdvisory(
           operation: "securityRefresh",
           advisoryId: input.advisoryId,
           automatic,
+          ...(runtimePatch && { runtimePatch }),
           deploymentId: result.deployment_id,
         },
       });

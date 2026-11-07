@@ -14,8 +14,20 @@ export interface PackageManagerSelection {
 export function resolvePackageManager(
   manager: ManagedPackageManager,
   discovery: PackageManagerDiscovery,
+  bunRuntimeVersion?: string,
 ): PackageManagerSelection {
   let { pin } = discovery;
+  if (bunRuntimeVersion) {
+    if (manager !== "bun" || !/^\d+\.\d+\.\d+$/.test(bunRuntimeVersion))
+      throw new Error("An explicit Bun runtime requires an exact stable Bun version.");
+    if (pin?.includes("+sha"))
+      throw new Error(
+        "A runtime override cannot discard a packageManager integrity requirement. Update the repository pin first.",
+      );
+    // Bun is both package manager and runtime. An explicit managed runtime
+    // selection must also own the builder, or bootstrap reinstalls the old pin.
+    pin = `bun@${bunRuntimeVersion}`;
+  }
   const { lock, yarnLock, yarnPath, scriptPolicy, ignoreYarnPath } = discovery;
   let localYarnVersion: string | undefined;
   if (manager === "yarn" && yarnPath && !ignoreYarnPath) {

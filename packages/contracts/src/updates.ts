@@ -33,6 +33,16 @@ export const ProjectSecurityResultSchema = Type.Object({
       evidence: Type.Array(Type.String()),
       confidence: Type.Union([Type.Literal("confirmed"), Type.Literal("possible")]),
       canRefresh: Type.Boolean(),
+      runtimePatch: Type.Optional(
+        Type.Object({
+          reviewId: Type.String(),
+          runtime: Type.Union([Type.Literal("node"), Type.Literal("bun")]),
+          currentVersion: Type.String(),
+          targetVersion: Type.String(),
+          buildImage: Type.String(),
+          runtimeImage: Type.String(),
+        }),
+      ),
       manualReviewRequired: Type.Optional(Type.Boolean()),
       refresh: Type.Optional(
         Type.Object({
@@ -159,6 +169,7 @@ export const UpdateProjectSchemas = {
         advisoryId: Type.String({ minLength: 1, maxLength: 100 }),
         deploymentId: Type.String({ minLength: 1 }),
         serviceId: Type.Optional(nullableString),
+        runtimePatchId: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
       },
       { additionalProperties: false },
     ),

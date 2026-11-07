@@ -4,6 +4,7 @@ export * from "./actions";
 export * from "./action-capabilities";
 export * from "./stacks";
 export * from "./package-manager-version";
+export * from "./runtime-image";
 export * from "./stack-roles";
 export * from "./duration";
 export * from "./volumes";

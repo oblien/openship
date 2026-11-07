@@ -106,7 +106,7 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
-Security advisories reuse those deployment actions and the existing root UpdateCenter
+Security advisories use the existing deployment pipeline and root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app
 inside the dialog. The compact banner names only the apps and services affected by its
@@ -115,7 +115,12 @@ severity; a High finding must not be labeled Critical. Low-priority manual revie
 with only possible applicability use an informational **Review required** notice,
 with applicability explicitly unverified. Preserve the signed severity in the
 underlying finding; do not treat the runtime version as proof of application behavior
-or let a review outrank a confirmed vulnerability. High and Critical advisories
+or let a review outrank a confirmed vulnerability. Generated single-app Node and Bun
+runtime fixes show **Apply security patch**, the current and target versions and
+the proposed images. Explain that the saved choice also applies to future deploys;
+for Bun, explain that it overrides repository toolchain version pins. Submit the
+review identity with the action so changed settings require another review. Keep
+ordinary image refresh labeled separately. High and Critical advisories
 retain their warning priority even if they need manual review. Monitoring → Security retains
 active findings independently of banner dismissal and reuses the same review component
 and cached overview.

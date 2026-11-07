@@ -1262,6 +1262,9 @@
     "pinned": "镜像已通过摘要固定。请编辑配置的引用以更新镜像。"
   },
   "securityAdvisories": {
+    "applyPatch": "应用安全补丁",
+    "runtimePatchDescription": "{runtime} {current} → {target}。保存运行时和构建镜像，供后续部署使用。",
+    "bunRuntimePatchDescription": "所选 Bun 版本也用于安装依赖，优先于仓库中锁定的版本。",
     "checksEnabled": "检查安全公告",
     "checksDescription": "关闭后，将暂停此工作区的运行时和主机检查、新公告提醒及安全补丁操作。保留现有信息和项目更新授权。",
     "checksDisabled": "此工作区已禁用安全公告检查。",
