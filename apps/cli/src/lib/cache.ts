@@ -8,6 +8,10 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { get as httpGet, type IncomingMessage } from "node:http";
+import { get as httpsGet } from "node:https";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import { OS_DIR } from "./paths";
 
@@ -41,35 +45,47 @@ export async function downloadToFile(
   dest: string,
   onProgress?: (received: number, total: number) => void,
 ): Promise<{ sha256: string; size: number }> {
-  const res = await fetch(url, { headers: { "User-Agent": "openship-cli" } });
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
-
-  mkdirSync(dirname(dest), { recursive: true });
-  const total = Number(res.headers.get("content-length")) || 0;
-  const hash = createHash("sha256");
-  const file = createWriteStream(dest);
-  const reader = res.body.getReader();
-  let received = 0;
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      hash.update(value);
-      if (!file.write(Buffer.from(value))) {
-        await new Promise<void>((r) => file.once("drain", r));
-      }
-      received += value.length;
-      onProgress?.(received, total);
+  // Node 22's bundled fetch can assert in Parser.finish when a closing peer
+  // races body backpressure. Core HTTP streams handle this without Undici's
+  // uncaught socket assertion, and pipeline propagates file/network failures.
+  let target = new URL(url);
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    if (target.protocol !== "https:" && target.protocol !== "http:")
+      throw new Error(`Unsupported download protocol: ${target.protocol}`);
+    const get = target.protocol === "https:" ? httpsGet : httpGet;
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      get(target, { headers: { "User-Agent": "openship-cli" } }, resolve).once("error", reject);
+    });
+    const status = response.statusCode ?? 0;
+    if ([301, 302, 303, 307, 308].includes(status) && response.headers.location) {
+      response.destroy();
+      if (redirects === 5) throw new Error("Too many download redirects");
+      target = new URL(response.headers.location, target);
+      continue;
     }
-  } finally {
-    file.end();
+    if (status < 200 || status >= 300) {
+      response.destroy();
+      throw new Error(`HTTP ${status} for ${target.origin}${target.pathname}`);
+    }
+    try { mkdirSync(dirname(dest), { recursive: true }); }
+    catch (error) { response.destroy(); throw error; }
+    const total = Number(response.headers["content-length"]) || 0;
+    const hash = createHash("sha256");
+    let received = 0;
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        try {
+          hash.update(chunk);
+          received += chunk.length;
+          onProgress?.(received, total);
+          callback(null, chunk);
+        } catch (error) { callback(error as Error); }
+      },
+    });
+    await pipeline(response, meter, createWriteStream(dest));
+    return { sha256: hash.digest("hex"), size: received };
   }
-  await new Promise<void>((resolve, reject) => {
-    file.on("finish", () => resolve());
-    file.on("error", reject);
-  });
-  return { sha256: hash.digest("hex"), size: received };
+  throw new Error("Too many download redirects");
 }
 
 /** Human-readable byte size for progress/listing output. */
