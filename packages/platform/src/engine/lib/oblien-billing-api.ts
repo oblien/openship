@@ -231,6 +231,19 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
   const monthly = subscription?.offer?.billingMode === "monthly";
   const expectedTier = monthly ? "capacity" : subscription?.tierId ?? "free";
   const capacity = entitlement.capacity;
+  // An unpaid renewal advances Stripe's invoice period without buying another
+  // month of compute. The retained, expired capacity still describes the last
+  // funded period. Keep billing readable so the customer can pay, while the
+  // provider's uncovered entitlement continues to block new billable work.
+  const unpaidRenewal = monthly && subscription &&
+    ["past_due", "unpaid", "paused", "canceled"].includes(subscription.status) &&
+    entitlement.status !== "active" && entitlement.computeCovered === false &&
+    capacity?.computeCovered === false && capacity.status === "expired" &&
+    entitlement.periodStart !== null && entitlement.periodEnd !== null &&
+    subscription.periodStart !== null && subscription.periodEnd !== null &&
+    Date.parse(entitlement.periodStart) < Date.parse(entitlement.periodEnd) &&
+    Date.parse(entitlement.periodEnd) <= Date.parse(subscription.periodStart) &&
+    Date.parse(subscription.periodStart) < Date.parse(subscription.periodEnd);
   if ((entitlement.tierId ?? "free") !== expectedTier ||
       (monthly && (!capacity || capacity.namespace !== entitlement.namespace || capacity.provider !== "stripe" ||
         capacity.billingMode !== "monthly" || entitlement.billingMode !== "monthly" ||
@@ -238,8 +251,8 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
         !isDeepStrictEqual(capacity.capacity, subscription!.offer!.capacity) ||
         timestamp(capacity.periodStart) !== timestamp(entitlement.periodStart) || timestamp(capacity.periodEnd) !== timestamp(entitlement.periodEnd))) ||
       (!subscription && (entitlement.periodStart !== null || entitlement.periodEnd !== null)) ||
-      (subscription && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
-      (subscription && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
       (!monthly && entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
     throw new AppError("Cloud billing returned an entitlement that does not match this organization's subscription", 502, "OBLIEN_ENTITLEMENT_MISMATCH");
   }

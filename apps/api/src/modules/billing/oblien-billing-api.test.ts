@@ -4,7 +4,7 @@ import { OblienBillingApi, oblienOfferSchema, assertOblienEntitlementMatchesSubs
 import { BillingOperationSchemas } from "@repo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import capacityCatalog from "../../../test/fixtures/oblien-capacity-catalog.json";
-import { monthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
+import { monthlyCloudBilling, unpaidMonthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
 
 beforeEach(() => vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
@@ -654,6 +654,34 @@ describe("Oblien monthly capacity contract", () => {
       const value = monthlyCloudBilling(); mutate(value);
       expect(() => assertOblienEntitlementMatchesSubscription(value.entitlement, value.subscription))
         .toThrow(/does not match/);
+    }
+  });
+  it.each(["past_due", "unpaid", "paused", "canceled"] as const)("keeps billing readable for an expired paid month and a %s renewal", async status => {
+    const state = unpaidMonthlyCloudBilling("org-one", "os-one");
+    state.subscription.status = status;
+    const entitlement = await setup(state.entitlement).api.getEntitlement("os-one");
+    const { subscription } = await setup({ success: true, namespace: "os-one", subscription: state.subscription }).api.getSubscription("os-one");
+    expect(() => assertOblienEntitlementMatchesSubscription(entitlement, subscription)).not.toThrow();
+    expect(entitlement).toMatchObject({ status: "canceled", computeCovered: false, capacity: { status: "expired", computeCovered: false } });
+    expect(entitlement.periodEnd).not.toBe(subscription!.periodEnd);
+  });
+  it("still rejects funded, overlapping, foreign or inconsistent unpaid renewal records", () => {
+    for (const mutate of [
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.status = "active"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.status = "trialing"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.status = "active"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = true; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.status = "active"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.namespace = "other-customer"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.provider = "wallet"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.capacity = { ...state.entitlement.capacity!.capacity, vcpus: 8 }; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodStart = "2026-10-15T00:00:00Z"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodStart = null; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodEnd = state.subscription.periodStart; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.periodEnd = "2026-10-31T00:00:00Z"; },
+    ]) {
+      const state = unpaidMonthlyCloudBilling(); mutate(state);
+      expect(() => assertOblienEntitlementMatchesSubscription(state.entitlement, state.subscription)).toThrow(/does not match/);
     }
   });
   it.each([0, 3900])("sends a %s-cent monthly offer through the existing hosted checkout without a credit policy", async unitAmount => {
