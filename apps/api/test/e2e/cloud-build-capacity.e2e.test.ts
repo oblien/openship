@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { BuildLogger, DockerRuntime, LocalExecutor, sq, type BuildConfig } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, LocalExecutor, elevatedExecutor, sq, type BuildConfig } from "@repo/adapters";
 import { generateDockerfile } from "../../../../packages/adapters/src/runtime/docker-build-plan";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
 import { protectedBuildKitImage } from "../helpers/buildkit-image";
@@ -44,6 +44,9 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     protectedImage = await protectedBuildKitImage(projectId, docker);
     root = await mkdtemp(join(tmpdir(), "openship-cloud-build-capacity-"));
     executor = new LocalExecutor();
+    // The simulated Cloud commands run as root; file transfers must use the same
+    // identity. Reuse protected staging instead of placing secret bytes in commands.
+    if (useSudo) executor.writeFile = elevatedExecutor(new LocalExecutor()).writeFile;
     // Reap the test's local shell as the Cloud executor reaps its remote task.
     const hostExec = executor.exec.bind(executor);
     executor.exec = (command, options) => hostExec(privileged(command), options);
