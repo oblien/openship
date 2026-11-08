@@ -1623,7 +1623,7 @@
         "fields": {
           "apiToken": {
             "label": "APIトークン",
-            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。"
+            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。My Profile → API Tokens で作成してください。"
           }
         }
       }

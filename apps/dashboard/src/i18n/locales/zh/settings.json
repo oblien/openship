@@ -1623,7 +1623,7 @@
         "fields": {
           "apiToken": {
             "label": "API 令牌",
-            "help": "对您希望 Openship 管理的区域拥有 Zone:Read 和 DNS:Edit 权限的令牌。"
+            "help": "对您希望 Openship 管理的区域拥有 Zone:Read 和 DNS:Edit 权限的令牌。请在 My Profile → API Tokens 中创建。"
           }
         }
       }
