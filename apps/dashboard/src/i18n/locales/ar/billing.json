@@ -840,7 +840,11 @@
     "viewPlan": "عرض الخطة",
     "active": "نشطة",
     "inactive": "غير نشطة",
-    "management": "إدارة الخوادم"
+    "management": "إدارة الخوادم",
+    "paymentPending": "دفعة معلقة",
+    "paymentRequired": "تحتاج الدفعة إلى مراجعة",
+    "reviewPayment": "مراجعة الدفعة",
+    "paymentNotice": "راجع الدفعة المحفوظة لهذه الخطة. يتم تحديث الوصول بعد تأكيد الدفع فقط."
   },
   "managementDetail": {
     "servers": "الخوادم في هذه الخطة",

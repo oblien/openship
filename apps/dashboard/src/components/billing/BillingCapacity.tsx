@@ -15,7 +15,7 @@ import { CloudActivationSteps } from "./CloudActivationSteps";
 export type { BillingState };
 
 /** Provider allocations and host measurements remain separate from metered consumption. */
-export function BillingCapacity({ state }: { state: BillingState }) {
+export function BillingCapacity({ state, embedded = false }: { state: BillingState; embedded?: boolean }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
   const limits = state.plan?.limits ?? PLANS[state.tier].limits;
@@ -65,7 +65,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   if (state.tier === "free")
     return (
       <>
-        {isNewCloudCustomer(state) ? <CloudActivationSteps /> : state.workspace?.serverId && (
+        {isNewCloudCustomer(state) ? <CloudActivationSteps /> : !embedded && state.workspace?.serverId && (
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-5">
             <p className="text-sm font-medium">{state.workspace.name || t.servers.resources.space}</p>
             <Button asChild variant="secondary" size="sm"><Link href={cloudSpaceHref(state.workspace.serverId)}>{t.billing.workspaces.openWorkspace}</Link></Button>
@@ -102,7 +102,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
               {t.billing.resourceOverview.overviewHint}
             </p>
           </div>
-          {state.workspace?.serverId ? (
+          {!embedded && state.workspace?.serverId ? (
             <Button asChild variant="secondary" size="sm">
               <Link href={cloudSpaceHref(state.workspace.serverId)}>
                 {t.billing.workspaces.openWorkspace}

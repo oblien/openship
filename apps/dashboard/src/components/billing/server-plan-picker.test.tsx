@@ -11,7 +11,7 @@ import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayout
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { baseDictionary } from "@/i18n";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
-import { BillingPlansRoute } from "@/app/(dashboard)/billing/_components/BillingPlansRoute";
+import { CloudPlanPicker as BillingPlansRoute } from "./CloudPlanPicker";
 import { BillingPurchaseContent } from "@/app/(dashboard)/billing/_components/BillingPurchaseContent";
 import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";

@@ -19,14 +19,16 @@ allowance and support level. Included Basic management is a Cloud benefit rather
 than another purchased plan.
 
 Open a compute card for its named plan page, with resource usage, assigned projects,
-Activity and subscription controls together. **Change plan** opens the available
-upgrades in a dialog; **Open billing portal** handles payment details, invoices and
-cancellation. A Manage card opens its covered servers and saved subscription.
+Overview, Usage, Payments & invoices and Activity tabs. **Change plan** opens the
+available upgrades in a dialog. The plan’s **Payments & invoices** tab contains its
+payment recovery and billing portal for payment details, invoices and cancellation. A Manage card opens its covered servers and saved subscription.
 **Add plan** starts a separate purchase. Explicit workspace links continue to handle
 upgrades and unfinished payments for that space.
 
-If there are no purchased plans, the overview redirects to Plans after both account
-reads succeed. Choose a monthly or yearly preset, Custom resources or Openship Manage.
+Unfinished checkouts appear as pending plan cards, with their saved offer, price and
+a payment warning. Opening one goes straight to that plan’s **Payments & invoices** tab.
+If there are no purchased or pending plans, the overview redirects to Plans after all
+account and payment reads succeed. Choose a monthly or yearly preset, Custom resources or Openship Manage.
 Failed reads remain retryable instead of being treated as an empty account.
 
 ## Server management
@@ -56,23 +58,25 @@ usage. Public app routes and backups are separate. Transfer exhaustion does not
 end paid compute coverage. Existing metered subscriptions keep their saved terms
 and credit displays; updating Openship does not convert them.
 
-Existing scoped billing links also retain these views for payment recovery and history:
+Each compute plan has these tabs:
 
 | Tab | What it does |
 | --- | --- |
-| **Overview** | Current plan, period, coverage and renewal controls. |
-| **Usage** | Recorded resource usage over the selected period. |
-| **Plans** | Review upgrades or other plans, including Custom resources. |
-| **Top-ups** | Shown only for eligible saved metered subscriptions. |
-| **Payments** | Unfinished payments, plus invoices and cards in the server's scoped Stripe portal. |
+| **Overview** | Measured resources, assigned projects, plan counters and paid coverage. |
+| **Usage** | Recorded resource usage over the selected period, scoped to this plan. |
+| **Payments & invoices** | This plan’s unfinished payments, renewal controls and billing portal. |
+| **Activity** | Setup progress, logs and recovery for the allocation. |
+
+Saved metered subscriptions retain eligible Top-ups. Monthly plans have no credit
+top-up purchasing. Existing billing bookmarks redirect into the selected plan; an
+unscoped history link returns to the plan cards.
 
 ## Finish or cancel a checkout
 
-Open **Pending payments** in the Billing header to find unfinished payments across
-your Cloud servers, including servers without an active plan. Connected desktop and
-self-hosted installations offer the same recovery flow without creating local
-execution links. A server's **Payments** tab lists its own unfinished payments;
-the header action lists all of your Cloud servers' payments.
+Open the pending plan card in **Plans & billing**. Its **Payments & invoices** tab
+lists only that plan’s unfinished checkouts. A payment-attention notice remains
+visible until payment or cancellation is confirmed. Connected desktop and
+self-hosted installations use the same recovery flow and existing execution links.
 
 **Resume payment** opens the original checkout with its saved plan and price.
 **Cancel payment** closes a supported checkout after the provider confirms it
