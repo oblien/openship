@@ -55,6 +55,7 @@ it("requires current-source image evidence on ordinary npm dispatch but preserve
     gate: { result: "success" },
     publish: { result: "skipped" },
     "images-ready": { result: "failure" },
+    "installed-cli-update": { result: "success" },
   };
   expect(
     allowed({ event_name: "workflow_dispatch" }, { npm_release_run: "" }, needs, () => true),
@@ -63,7 +64,11 @@ it("requires current-source image evidence on ordinary npm dispatch but preserve
   expect(
     allowed({ event_name: "workflow_dispatch" }, { npm_release_run: "" }, needs, () => true),
   ).toBe(true);
-  needs["images-ready"].result = needs.gate.result = "skipped";
+  needs["installed-cli-update"].result = "failure";
+  expect(
+    allowed({ event_name: "workflow_dispatch" }, { npm_release_run: "" }, needs, () => true),
+  ).toBe(false);
+  needs["images-ready"].result = needs.gate.result = needs["installed-cli-update"].result = "skipped";
   expect(
     allowed({ event_name: "workflow_dispatch" }, { npm_release_run: "123" }, needs, () => true),
   ).toBe(true);
