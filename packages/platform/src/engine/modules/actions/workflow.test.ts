@@ -41,6 +41,22 @@ describe("Actions workflow planning", () => {
     expect(jobs[0]!.timeoutSeconds).toBe(3600);
   });
 
+  it("accepts a bounded YAML alias shared by GitHub jobs", async () => {
+    const aliased = `name: Deploy
+on: [push]
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    steps: &deploy_steps
+      - run: echo deployed
+  prod:
+    runs-on: ubuntu-latest
+    steps: *deploy_steps
+`;
+    const plan = await parseActionWorkflow(aliased, ".github/workflows/deploy.yml", "github");
+    expect(plan.jobs.map((job) => job.id)).toEqual(["dev", "prod"]);
+  });
+
   it("rejects invalid expressions, missing dependencies and cyclic graphs before dispatch", async () => {
     await expect(
       parseActionWorkflow(source.replace("needs: test", "needs: nonexistent")),
