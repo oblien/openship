@@ -115,7 +115,12 @@ it("requires a user choice and retries the same source with that server, retaini
     serverId: "working-server",
   });
   expect(host.textContent).toContain("Repository could not be read");
-  expect(host.textContent).toContain("Select working server");
+  // A generic scan failure uses source recovery controls. Keep the selected
+  // server for retries without leaving the server-selection refusal on screen.
+  expect(host.textContent).not.toContain("Select working server");
+  expect(h.selection.value).toBe("working-server");
+  expect(h.selection.selfHostedOnly).toBe(false);
+  expect(retry().disabled).toBe(false);
   h.initialize.mockResolvedValueOnce({ success: true });
   await act(async () => retry().click());
   expect(host.textContent).toContain("Project configuration");
