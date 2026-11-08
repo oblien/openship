@@ -3436,6 +3436,7 @@ async function deployComposeServicesCore(
       // persist every binding reported before the transport disappeared.
       let serviceResult: MultiServiceDeployResult | undefined;
       let pipelineReachedReady = false;
+      let runtimeReadyReleased = false;
       try {
         // Ownership transfers from the outer exact-cohort cleanup to this
         // service only once its own failure handler is active.
@@ -3488,6 +3489,7 @@ async function deployComposeServicesCore(
         const deployEnv: DeployEnvironment = {
           onRuntimeReady: (containerId) => {
             containerIdByServiceName.set(svc.name, containerId);
+            runtimeReadyReleased = true;
             runtimeReady();
           },
           ...(runtime.prepareServiceWorkload ? {
@@ -3678,7 +3680,7 @@ async function deployComposeServicesCore(
           // the catch below marks it `indeterminate` so the deploy RECONCILES
           // instead of hard-failing and destroying a healthy container. Only a
           // genuine failure destroys the container here.
-          if (deployedContainerId && !isConnectionLoss(deployResult.error) && !cutover.pending?.preserveCandidate) {
+          if (deployedContainerId && !runtimeReadyReleased && !isConnectionLoss(deployResult.error) && !cutover.pending?.preserveCandidate) {
             try {
               await runtime.destroy(deployedContainerId);
               deployedContainerCleaned = true;
@@ -3907,9 +3909,11 @@ async function deployComposeServicesCore(
         // be running fine — and do NOT mark it failed. Record `indeterminate` so
         // the deploy resolves to `reconciling`; reconciliation reads the true
         // remote state and settles it to ready/failed later.
-        if (isConnectionLoss(err) && deployedContainerId && !deployedContainerCleaned) {
+        if ((isConnectionLoss(err) || runtimeReadyReleased) && deployedContainerId && !deployedContainerCleaned) {
           logger.log(
-            `Service "${svc.name}" — connection lost after container start; will verify on reconcile.\n`,
+            runtimeReadyReleased && !isConnectionLoss(err)
+              ? `Service "${svc.name}" — publication could not be confirmed; retaining its runtime for dependents and reconciliation: ${message}\n`
+              : `Service "${svc.name}" — connection lost after container start; will verify on reconcile.\n`,
             "warn",
             { serviceName: svc.name },
           );

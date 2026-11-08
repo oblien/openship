@@ -2705,11 +2705,12 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.convergeTargetHostPortClaimsUnlocked).not.toHaveBeenCalled();
   });
 
-  it("retains every claim while a started service has an indeterminate outcome", async () => {
+  it.each(["Channel open failure: connection lost", "database unavailable"])("retains a released runtime and claims when publication is indeterminate (%s)", async failure => {
     h.upsertServiceDeployment
-      .mockRejectedValueOnce(new Error("Channel open failure: connection lost"))
+      .mockRejectedValueOnce(new Error(failure))
       .mockResolvedValueOnce(undefined);
     const { logger } = recordingLogger();
+    const runtime = startingRuntime();
 
     const result = await deployComposeServices(
       {
@@ -2718,7 +2719,7 @@ describe("compose deploy — host channel unavailable", () => {
         routeStrategy: "loopback-port",
       } as unknown as Project,
       dep,
-      startingRuntime(),
+      runtime,
       logger,
       {
         executor: { exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })) } as never,
@@ -2738,6 +2739,7 @@ describe("compose deploy — host channel unavailable", () => {
     );
 
     expect(result.status).toBe("reconciling");
+    expect(runtime.destroy).not.toHaveBeenCalled();
     expect(h.allocateAndReservePinnedHostPort).toHaveBeenCalled();
     expect(h.releaseNewPinnedHostPortClaims).not.toHaveBeenCalled();
     expect(h.convergeTargetHostPortClaims).not.toHaveBeenCalled();

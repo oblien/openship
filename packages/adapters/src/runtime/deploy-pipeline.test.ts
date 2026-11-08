@@ -46,7 +46,7 @@ function recordingEnv(events: string[], over: Partial<DeployEnvironment> = {}): 
 }
 
 describe("runDeployPipeline cutover ordering", () => {
-  it("announces runtime readiness after the health gate and before routing", async () => {
+  it("announces runtime readiness after target validation and before publication", async () => {
     const events: string[] = [];
     const env = recordingEnv(events, {
       canOverlap: true,
@@ -54,7 +54,18 @@ describe("runDeployPipeline cutover ordering", () => {
       onRuntimeReady: () => { events.push("runtime-ready"); },
     });
     expect((await runDeployPipeline(env, makeInput(), fakeLogger())).status).toBe("ready");
-    expect(events).toEqual(["activate", "health", "runtime-ready", "route", "deactivate"]);
+    expect(events).toEqual(["activate", "health", "route", "runtime-ready", "deactivate"]);
+  });
+
+  it("does not release dependents if route-target preparation fails", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      resolveRoute: async () => { throw new Error("host-port reservation unavailable"); },
+      onRuntimeReady: () => { events.push("runtime-ready"); },
+    });
+    expect((await runDeployPipeline(env, makeInput(), fakeLogger())).status).toBe("failed");
+    expect(events).not.toContain("runtime-ready");
   });
 
   it("never releases startup dependents when the health gate fails", async () => {

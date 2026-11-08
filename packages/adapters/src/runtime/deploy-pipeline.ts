@@ -154,7 +154,7 @@ export interface DeployEnvironment {
    */
   healthCheck?(containerId: string, config: DeployConfig): Promise<void>;
 
-  /** Container activation and its health gate succeeded. Publication may continue
+  /** Activation, its health gate and route-target validation succeeded. Publication may continue
    * while independent services and startup dependents become runnable. */
   onRuntimeReady?(containerId: string): void;
 
@@ -420,8 +420,6 @@ export async function runDeployPipeline(
       throwIfCancelled(signal);
     }
 
-    env.onRuntimeReady?.(containerId);
-
     // ── Register routes (repoint traffic to the new deployment) ───────
     const routeTarget = env.resolveRoute
       ? await env.resolveRoute(containerId, config)
@@ -451,6 +449,9 @@ export async function runDeployPipeline(
         }
       }
     }
+
+    throwIfCancelled(signal);
+    env.onRuntimeReady?.(containerId);
 
     // Best-effort: returns per-domain warnings instead of throwing. A routing
     // failure here must NOT fail the deploy — the container is already up + healthy.
