@@ -201,24 +201,6 @@ export const customPricingSchema = z.object({
   }).strict(),
 }).strict();
 
-/** Openship resource access tiers, independent of monthly offers and usage rates.
- * Funding thresholds refer to verified credit purchases, never remaining balance. */
-const paygPricingSchema = z.object({
-  version: z.number().int().positive(),
-  creditPackagesCents: z.array(z.number().int().positive()).min(1),
-  tiers: z.array(z.object({
-    id: z.string().regex(/^tier_[1-9]\d*$/),
-    level: z.number().int().positive(),
-    minimumFundingCents: z.number().int().positive(),
-    pool: z.object({
-      cpuCores: z.number().int().positive(),
-      memoryMb: z.number().int().positive(),
-      diskGb: z.number().int().positive(),
-      servers: z.number().int().positive(),
-    }).strict(),
-  }).strict()).min(1),
-}).strict();
-
 /** Retail worker time, separate from app-server subscriptions and provider usage. */
 const actionsPricingSchema = z.object({
   version: z.number().int().positive(),
@@ -260,7 +242,6 @@ export const pricingCatalogSchema = z
     /** Time-bounded automatic discounts. Empty = list price. */
     campaigns: z.array(campaignSchema),
     custom: customPricingSchema,
-    payg: paygPricingSchema,
     actions: actionsPricingSchema,
     management: z.object({
       version: z.number().int().positive(),
@@ -303,22 +284,6 @@ export const pricingCatalogSchema = z
       ctx.addIssue({ code: "custom", path: ["management", "priorityMonthlyCents"], message: "Priority must include the Basic price and an additional support fee" });
     }
     const ids = new Set<string>();
-    data.payg.tiers.forEach((tier, i) => {
-      const previous = data.payg.tiers[i - 1];
-      if (tier.level !== i + 1 || tier.id !== `tier_${tier.level}` ||
-          (previous && (tier.minimumFundingCents <= previous.minimumFundingCents ||
-            Object.keys(tier.pool).some(key => tier.pool[key as keyof typeof tier.pool] < previous.pool[key as keyof typeof tier.pool])))) {
-        ctx.addIssue({ code: "custom", path: ["payg", "tiers", i], message: "PAYG tiers must have ordered identities, increasing funding thresholds and non-decreasing pools" });
-      }
-      if (tier.pool.memoryMb % 1024 !== 0 ||
-          (["cpuCores", "memoryMb", "diskGb"] as const).some(key =>
-            tier.pool[key] < data.custom.resources[key].min * tier.pool.servers)) {
-        ctx.addIssue({ code: "custom", path: ["payg", "tiers", i, "pool"], message: "A PAYG pool must fit its advertised server count at the supported minimum size" });
-      }
-    });
-    if (data.payg.creditPackagesCents.some((amount, i, amounts) => i > 0 && amount <= amounts[i - 1]!)) {
-      ctx.addIssue({ code: "custom", path: ["payg", "creditPackagesCents"], message: "PAYG packages must be unique and ascending" });
-    }
     data.plans.forEach((plan, i) => {
       if (ids.has(plan.id)) {
         ctx.addIssue({ code: "custom", path: ["plans", i, "id"], message: `duplicate plan id "${plan.id}"` });

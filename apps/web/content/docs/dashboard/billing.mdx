@@ -10,25 +10,37 @@ Running your own Openship control plane remains free. Linked self-hosted
 installations can also manage Cloud billing.
 </Callout>
 
-## Choose a server
+## Your plans
 
-Select a server in Billing to inspect its own plan, usage and payments. The right
-card lists existing servers on usage and history tabs; Plans keeps a compact
-selector in the header. **Get server** opens a separate server purchase. A server
-without a plan keeps the selector so you can return to another server.
+**Plans & billing** opens an overview with one card for each purchased Cloud space,
+a card for a purchased Openship Manage subscription, and **Add plan**. Cloud space
+cards show allocated capacity and project counts. Manage shows the saved server
+allowance and support level. Included Basic management is a Cloud benefit rather
+than another purchased plan.
 
-A first purchase shows **Monthly plans** and **Prepaid PAYG**. Monthly plans
-and Custom use the same purchase controls. The PAYG pricing preview has resource
-tier tabs inside the resource configurator. Each tier shows its shared CPU, RAM, storage
-and server allowance, together with the credit-purchase amount needed to unlock it.
-Resource inputs stay intact when switching tiers. Configurations above a pool's
-limits show the excess and offer a larger tier when one fits.
+Open a compute card for its named plan page, with resource usage, assigned projects,
+Activity and subscription controls together. **Change plan** opens the available
+upgrades in a dialog; **Open billing portal** handles payment details, invoices and
+cancellation. A Manage card opens its covered servers and saved subscription.
+**Add plan** starts a separate purchase. Explicit workspace links continue to handle
+upgrades and unfinished payments for that space.
 
-Choose a credit package to see its qualifying tier and estimate one server's
-hourly cost at full CPU usage using the provider's published rates. Spending credits
-does not lower a tier. Purchases are not available yet; the displayed selections
-do not grant access or change an existing plan.
-Both purchase views end with an Enterprise contact card for larger or tailored needs.
+If there are no purchased plans, the overview redirects to Plans after both account
+reads succeed. Choose a monthly or yearly preset, Custom resources or Openship Manage.
+Failed reads remain retryable instead of being treated as an empty account.
+
+## Server management
+
+The Manage plan page lists connected external servers; Cloud allocations and local
+hosts do not consume its server allowance. **Add server** opens the normal connection
+form while a slot is available. At the limit, choose the number of additional slots,
+review the quoted monthly total and amount due, then continue to checkout. The support
+plan stays the same. Allowance changes activate only after billing confirms them.
+
+**Change plan** compares the current and proposed support plan and allowance. Review
+the provider's quote before applying an upgrade or downgrade. Existing paid access
+remains until a scheduled reduction takes effect. Payment recovery and cancellation
+use the same saved subscription.
 
 ## Coverage and usage
 
@@ -43,6 +55,8 @@ allowance, or **Unlimited** when confirmed by the provider, and current-period
 usage. Public app routes and backups are separate. Transfer exhaustion does not
 end paid compute coverage. Existing metered subscriptions keep their saved terms
 and credit displays; updating Openship does not convert them.
+
+Existing scoped billing links also retain these views for payment recovery and history:
 
 | Tab | What it does |
 | --- | --- |

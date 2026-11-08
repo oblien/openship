@@ -11,9 +11,14 @@ export function hasUnlimitedCloudCredits(state: BillingState): boolean {
   return state.tier === "enterprise" && !needsCloudPlan(state) && state.status === "active" && state.balance.unlimited === true;
 }
 
+/** A saved monthly plan remains monthly while live coverage is unavailable. */
+export function isMonthlyCloudPlan(state: Pick<BillingState, "compute" | "plan">): boolean {
+  return (state.compute?.billingMode ?? state.plan?.billingMode) === "monthly";
+}
+
 /** Usage has a percentage only when the provider supplies a finite allowance. */
 export function cloudUsagePercent(state: BillingState): number | null {
-  if (state.compute) return null;
+  if (state.compute || isMonthlyCloudPlan(state)) return null;
   const { quotaLimit, quotaUsed } = state.balance;
   if (quotaLimit === null || quotaLimit <= 0 || !Number.isFinite(quotaLimit) || !Number.isFinite(quotaUsed)) return null;
   return Math.min(100, Math.max(0, quotaUsed / quotaLimit * 100));

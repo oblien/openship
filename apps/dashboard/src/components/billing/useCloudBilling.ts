@@ -42,7 +42,7 @@ export function useCloudPlans() {
 }
 
 /** Shared hosted checkout, including duplicate-click and uncertain-payment retries. */
-export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved, idempotencyKey, onCheckoutSettled, affiliateCode }: {
+export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved, idempotencyKey, onCheckoutSettled, referralCode }: {
   enabled: boolean;
   workspaceId?: string;
   preserveProject?: boolean;
@@ -50,7 +50,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   prepareWorkspace?: () => Promise<string>;
   onWorkspaceRemoved?: (workspaceId: string) => void;
   idempotencyKey?: string;
-  affiliateCode?: string;
+  referralCode?: string;
   onCheckoutSettled?: () => void;
 }) {
   const { t } = useI18n();
@@ -94,13 +94,13 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
       targetWorkspaceId = prepareWorkspace ? await prepareWorkspace() : workspaceId;
       if (version !== generation.current) { navigation.close(); return; }
       if (prepareWorkspace && !targetWorkspaceId) throw new Error(t.billing.plansRoute.checkoutError);
-      const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}:${affiliateCode ?? ""}`;
+      const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}:${referralCode ?? ""}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt,
-        idempotencyKey && !custom && !affiliateCode ? `${idempotencyKey}-${planTierId}-${interval}` : randomUUID());
+        idempotencyKey && !custom && !referralCode ? `${idempotencyKey}-${planTierId}-${interval}` : randomUUID());
       requestId = attempts.current.get(attempt)!;
       const res = await api.post<{ data: { checkoutUrl: string } }>(endpoints.billing.subscription, {
         planTierId, interval, workspaceId: targetWorkspaceId, custom, idempotencyKey: requestId,
-        ...(affiliateCode ? { affiliateCode } : {}),
+        ...(referralCode ? { referralCode } : {}),
       });
       if (version !== generation.current) { navigation.close(); return; }
       const url = navigation.navigate(res.data.checkoutUrl);

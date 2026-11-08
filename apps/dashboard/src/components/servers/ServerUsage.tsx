@@ -230,14 +230,20 @@ export function ServerUsage({
         </section>
       )}
       {showProjects && (
-        <section className="rounded-2xl bg-card p-5" aria-busy={loading}>
+        <section className="@container/plan-projects rounded-2xl bg-card p-5" aria-busy={loading}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-base font-medium">
                 {projectTitle ?? t.billing.resourcesGuide.projects}
               </h2>
-              {showDisk && (
-                <p className="mt-1 text-xs text-muted-foreground">{copy.projectDiskHint}</p>
+              {resourcePool ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {resourceCopy.projectsAssignedHint}
+                </p>
+              ) : (
+                showDisk && (
+                  <p className="mt-1 text-xs text-muted-foreground">{copy.projectDiskHint}</p>
+                )
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -254,7 +260,13 @@ export function ServerUsage({
               {error}
             </p>
           )}
-          <div className="mt-4 space-y-2">
+          <div
+            className={
+              resourcePool
+                ? "mt-4 grid gap-3 @min-[36rem]/plan-projects:grid-cols-2"
+                : "mt-4 space-y-2"
+            }
+          >
             {loading ? (
               [0, 1].map((key) => (
                 <div key={key} className="h-12 animate-pulse rounded-xl bg-muted/40" />
@@ -265,14 +277,47 @@ export function ServerUsage({
                   <Link
                     key={project.id}
                     href={`/projects/${encodeURIComponent(project.id)}`}
-                    className="flex min-w-0 items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3 text-sm hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                    className={
+                      resourcePool
+                        ? "group flex min-w-0 flex-col gap-4 rounded-xl bg-muted/30 p-4 text-sm hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                        : "flex min-w-0 items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3 text-sm hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                    }
                   >
-                    <span className="truncate font-medium">{project.name}</span>
-                    <span className="flex shrink-0 items-center gap-3 tabular-nums text-muted-foreground">
-                      {showDisk &&
-                        (project.diskMb == null ? "—" : `${number(project.diskMb / 1024)} GB`)}
-                      <UiIcon name="arrow-up-right" className="size-3.5" aria-hidden />
-                    </span>
+                    {resourcePool ? (
+                      <>
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-card text-muted-foreground">
+                            <UiIcon name="folder" className="size-5" />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-medium">
+                            {project.name}
+                          </span>
+                          {
+                            <UiIcon
+                              name="arrow-up-right"
+                              className="size-4 shrink-0 text-muted-foreground"
+                            />
+                          }
+                        </span>
+                        {showDisk && (
+                          <span className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+                            <span>{copy.diskUsage}</span>
+                            <span className="font-medium tabular-nums">
+                              {project.diskMb == null ? "—" : `${number(project.diskMb / 1024)} GB`}
+                            </span>
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="truncate font-medium">{project.name}</span>
+                        <span className="flex shrink-0 items-center gap-3 tabular-nums text-muted-foreground">
+                          {showDisk &&
+                            (project.diskMb == null ? "—" : `${number(project.diskMb / 1024)} GB`)}
+                          <UiIcon name="arrow-up-right" className="size-3.5" aria-hidden />
+                        </span>
+                      </>
+                    )}
                   </Link>
                 ))}
                 {usage.projects.length === 0 && usage.available && (
@@ -293,7 +338,7 @@ export function ServerUsage({
                   </p>
                 )}
                 {usage.sharedDiskMb != null && (
-                  <div className="flex justify-between gap-4 px-4 py-2 text-xs text-muted-foreground">
+                  <div className="flex justify-between gap-4 px-4 py-2 text-xs text-muted-foreground col-span-full">
                     <span>{copy.sharedDisk}</span>
                     <span className="shrink-0 whitespace-nowrap tabular-nums">
                       {number(usage.sharedDiskMb / 1024)} GB
@@ -307,6 +352,12 @@ export function ServerUsage({
               </p>
             )}
           </div>
+          {resourcePool && showDisk && (
+            <details className="mt-4 text-xs text-muted-foreground">
+              <summary className="cursor-pointer">{resourceCopy.storageDetails}</summary>
+              <p className="mt-2 leading-5">{copy.projectDiskHint}</p>
+            </details>
+          )}
         </section>
       )}
     </div>

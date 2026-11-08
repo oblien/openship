@@ -9,12 +9,12 @@ import { BillingSidebar, BillingPaymentsPanel } from "../_components/billing-sha
 import { BILLING_TABS } from "../_components/billing-tabs";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { getBillingPageState, getDefaultBillingWorkspace } from "../_components/billing-state";
-import { isNewCloudCustomer } from "@/lib/billing-presentation";
+import { isMonthlyCloudPlan, isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingContent } from "../_components/BillingContent";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { getSession } from "@/lib/server/session";
-import { billingTabHref, newServerBillingHref } from "@/lib/billing-links";
+import { billingTabHref, isNewCloudPurchase, newServerBillingHref } from "@/lib/billing-links";
 import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
@@ -37,7 +37,7 @@ export default async function BillingTabPage({
   const workspaceId = (Array.isArray(query.workspaceId) ? query.workspaceId[0] : query.workspaceId) || undefined;
   const organizationId = (Array.isArray(query.organizationId) ? query.organizationId[0] : query.organizationId) || undefined;
   const checkoutReturn = ["checkout", "topup", "session_id"].some(key => query[key] !== undefined);
-  const newServer = activeTab === "plans" && query.newServer === "1" && !checkoutReturn;
+  const newServer = isNewCloudPurchase({ tab: activeTab, workspaceId, newServer: query.newServer === "1", checkoutReturn });
   const requestedPlanId = typeof query.plan === "string" ? query.plan : undefined;
   const requestedInterval = query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined;
   const autoCheckout = query.startCheckout === "1" && (query.checkoutIntent === undefined || isCloudPurchaseIntent(query.checkoutIntent));
@@ -92,6 +92,8 @@ export default async function BillingTabPage({
 
   const state = result.state;
   const plansOnly = isNewCloudCustomer(state);
+  if (activeTab === "topups" && isMonthlyCloudPlan(state) && !checkoutReturn)
+    redirect(billingTabHref("overview", query));
   if (plansOnly && activeTab !== "plans" && activeTab !== "payment") {
     redirect(billingTabHref("plans", { ...query, workspaceId: state.workspace?.id ?? workspaceId }));
   }
@@ -134,7 +136,7 @@ export default async function BillingTabPage({
   }
 
   return (
-    <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly, topupsAvailable: state.topups?.available === true }}>
+    <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly, topupsAvailable: !isMonthlyCloudPlan(state) && state.topups?.available === true }}>
       <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
         {(query.checkout === "success" || query.topup === "success") && (
           <BillingCheckoutStatus

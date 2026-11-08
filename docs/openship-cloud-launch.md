@@ -31,10 +31,8 @@ durable resize worker applies approved resources and preserves restart consent.
 
 Monthly billing shows purchased capacity, coverage dates, measured CPU time and
 separate optional proxy/retained-storage details. It has no compute-credit donut
-or top-up tab. PAYG includes a pricing preview with credit packages, shared-balance
-resource estimates at published usage rates. Customer checkout stays
-unavailable until there is customer-specific funding rather than owner-wallet
-spending. New monthly servers cannot be funded by a complimentary-credit grant.
+or top-up tab. New purchases use monthly or yearly plans, including Custom
+resources. New monthly servers cannot be funded by a complimentary-credit grant.
 
 Before rollout, verify the provider tariff and a real signup → checkout → signed
 payment delivery → namespace coverage → server provisioning/deployment cycle.

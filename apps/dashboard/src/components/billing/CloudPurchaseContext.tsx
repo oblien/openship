@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "@/components/i18n-provider";
 import { Tabs } from "@/components/ui/Tabs";
 
-type PurchaseMode = "monthly" | "payg" | "manage";
+type PurchaseMode = "monthly" | "manage";
 type PurchaseContext = {
   mode: PurchaseMode;
   management: boolean;
@@ -62,8 +62,6 @@ export function CloudPurchaseProvider({
         intro:
           mode === "manage"
             ? { title: t.billing.purchase.manage, description: t.billing.purchase.manageDescription }
-            : mode === "payg"
-            ? { title: t.billing.purchase.title, description: t.billing.purchase.description }
             : {
                 title: t.billing.onboarding.compareTitle,
                 description: t.billing.workspaces.description,
@@ -112,20 +110,19 @@ export function CloudPurchaseTabs({ children }: { children?: ReactNode }) {
       )}
       <fieldset disabled={purchase.busy} aria-busy={purchase.busy} className="min-w-0">
         <div
-          className={`flex min-w-0 items-center gap-3 border-b border-border/50 ${children ? "flex-wrap" : ""}`}
+          className={`flex min-w-0 items-center gap-3 ${purchase.management ? "border-b border-border/50" : "justify-between"} ${children ? "flex-wrap" : ""}`}
         >
-          <Tabs
+          {purchase.management && <Tabs
             tabs={[
               { key: "monthly", label: t.billing.purchase.monthly },
-              { key: "payg", label: t.billing.purchase.payg },
-              { key: "manage", label: t.billing.purchase.manage, hidden: !purchase.management },
+              { key: "manage", label: t.billing.purchase.manage },
             ]}
             value={purchase.mode}
             onChange={purchase.selectMode}
             idPrefix={purchase.id}
             ariaLabel={t.billing.purchase.mode}
             className={`flex-1 border-b-0 ${children ? "basis-64" : ""}`}
-          />
+          />}
           {purchase.tabs === "inline" && (
             <div
               ref={purchase.setControlsTarget}

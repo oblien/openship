@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import type { BillingOperations, ManagementPlanId } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
@@ -9,21 +9,21 @@ import { useManagementPlan, type ManagementPlanResource } from "./useManagementP
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { interpolate, useI18n } from "@/components/i18n-provider";
+import { PlanChangeModal } from "./PlanChangeModal";
+import { ManagementServers } from "./ManagementServers";
+import { managementMoney as money } from "./management-presentation";
+import { ManagementServerSlots } from "./ManagementServerSlots";
+import { getApiErrorMessage } from "@/lib/api/client";
 
-const money = (cents: number) =>
-  new Intl.NumberFormat("en", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
 type Quote = Awaited<ReturnType<BillingOperations["purchaseManagement"]>>;
 
 /** Account-scoped billing view shared by the purchase tab and payment returns. */
 export function ManagementBilling({
   initialPlan,
   onBusyChange,
+  detailView = false,
 }: {
+  detailView?: boolean;
   initialPlan?: ManagementPlanId;
   onBusyChange?: (busy: boolean) => void;
 }) {
@@ -33,6 +33,7 @@ export function ManagementBilling({
       key={`${scope}:${initialPlan ?? ""}`}
       initialPlan={initialPlan}
       onBusyChange={onBusyChange}
+      detailView={detailView}
     />
   );
 }
@@ -40,13 +41,20 @@ export function ManagementBilling({
 function ManagementBillingContent({
   initialPlan,
   onBusyChange,
+  detailView,
 }: {
+  detailView?: boolean;
   initialPlan?: ManagementPlanId;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const resource = useManagementPlan();
   return (
-    <ManagementPlan resource={resource} initialPlan={initialPlan} onBusyChange={onBusyChange} />
+    <ManagementPlan
+      resource={resource}
+      initialPlan={initialPlan}
+      onBusyChange={onBusyChange}
+      detailView={detailView}
+    />
   );
 }
 
@@ -56,7 +64,9 @@ export function ManagementPlan({
   initialPlan,
   embedded = false,
   onBusyChange,
+  detailView = false,
 }: {
+  detailView?: boolean;
   resource: ManagementPlanResource;
   initialPlan?: ManagementPlanId;
   embedded?: boolean;
@@ -76,6 +86,11 @@ export function ManagementPlan({
   const [servers, setServers] = useState<number | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [cancel, setCancel] = useState(false);
+  const [editing, setEditing] = useState<"plan" | "servers" | null>(null);
+  const [checkingSlots, setCheckingSlots] = useState(false);
+  const [slotError, setSlotError] = useState<string | null>(null);
+  const quoteQueue = useRef<Promise<void> | null>(null);
+  const scope = useResourceScope();
   // Reuse the original key after uncertain responses; changed selections are
   // refused by the server until the saved checkout has been recovered/canceled.
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
@@ -84,6 +99,80 @@ export function ManagementPlan({
     if (result !== null) onSuccess?.(result);
     refresh();
   };
+  useEffect(() => {
+    if (editing !== "servers" || !data?.subscription) {
+      setCheckingSlots(false);
+      return;
+    }
+    const saved = data.subscription;
+    if (
+      servers === null ||
+      !Number.isInteger(servers) ||
+      servers <= saved.servers ||
+      servers > data.pricing.maxServers ||
+      data.pendingCheckout ||
+      data.change
+    )
+      return;
+    let active = true;
+    setQuote(null);
+    setSlotError(null);
+    setCheckingSlots(true);
+    const timer = setTimeout(() => {
+      // Serial reads keep an older in-flight preview from replacing a newer saved quote.
+      quoteQueue.current = (quoteQueue.current ?? Promise.resolve()).then(async () => {
+        if (!active) return;
+        try {
+          const result = await managementApi.purchase({
+            servers,
+            plan: saved.plan ?? "basic",
+            idempotencyKey: requestKey,
+          });
+          if (
+            result.kind !== "quote" ||
+            !result.quoteId ||
+            !Number.isSafeInteger(result.monthlyCents) ||
+            result.monthlyCents < 0 ||
+            result.amountDueNow === null ||
+            !Number.isSafeInteger(result.amountDueNow) ||
+            result.amountDueNow < 0
+          )
+            throw new Error(
+              "The price could not be verified. Refresh the quote before continuing.",
+            );
+          if (active) setQuote(result);
+        } catch (failure) {
+          if (active) setSlotError(getApiErrorMessage(failure));
+        } finally {
+          if (active) setCheckingSlots(false);
+        }
+      });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [
+    editing,
+    servers,
+    requestKey,
+    scope,
+    data?.subscription?.plan,
+    data?.subscription?.servers,
+    data?.subscription?.priceCents,
+    data?.cloudIncluded,
+    data?.pricing.version,
+    data?.pricing.maxServers,
+    data?.pricing.monthlyCents,
+    data?.pricing.priorityMonthlyCents,
+    data?.pricing.extraServerMonthlyCents,
+    data?.pricing.includedServers,
+    data?.pendingCheckout,
+    data?.change,
+  ]);
+  useEffect(() => {
+    if (data?.change && !action.busy) setEditing(null);
+  }, [data?.change, action.busy]);
   if (loading)
     return (
       <p role="status" className="text-muted-foreground">
@@ -97,6 +186,7 @@ export function ManagementPlan({
         <Button onClick={refresh}>Try again</Button>
       </div>
     );
+  const showingDetails = detailView && Boolean(data.subscription);
   const count =
     servers ??
     Math.max(data.pricing.includedServers, data.subscription?.servers ?? data.connectedServers);
@@ -108,7 +198,11 @@ export function ManagementPlan({
     (data.cloudIncluded ? data.pricing.monthlyCents : 0) +
     Math.max(0, count - data.pricing.includedServers) * data.pricing.extraServerMonthlyCents;
   const planAvailable = plan !== "priority" || !!data.pricing.priorityMonthlyCents;
-  const monthly = planAvailable ? planPrice(plan) : null;
+  const validCount =
+    Number.isInteger(count) &&
+    count >= Math.max(data.pricing.includedServers, data.connectedServers) &&
+    count <= data.pricing.maxServers;
+  const monthly = planAvailable && validCount ? planPrice(plan) : null;
   const selectionDisabled = action.busy || data.pendingCheckout || !!data.change;
   const selectedMatches =
     !!data.subscription &&
@@ -124,7 +218,161 @@ export function ManagementPlan({
         else setQuote(result);
       },
     );
-  return (
+  const confirmQuote = () => {
+    if (!quote?.quoteId) return;
+    void run(
+      () => managementApi.confirm(quote.quoteId!),
+      (result) => {
+        setQuote(null);
+        setEditing(null);
+        if (result.change?.paymentUrl) window.location.assign(result.change.paymentUrl);
+      },
+    );
+  };
+  const subscriptionControls = data.subscription && (
+    <section className="space-y-3 rounded-2xl bg-card p-5">
+      <h3 className="font-medium">{copy[data.subscription.plan ?? "basic"]} subscription</h3>
+      {!showingDetails && (
+        <>
+          <p className="text-sm">
+            {money(data.subscription.priceCents)} / month ·{" "}
+            {data.subscription.status.replaceAll("_", " ")}
+          </p>
+          {data.subscription.periodEnd && (
+            <p className="text-sm text-muted-foreground">
+              {data.subscription.cancelAtPeriodEnd ? "Ends" : "Current period ends"}{" "}
+              {new Date(data.subscription.periodEnd).toLocaleDateString()}
+            </p>
+          )}
+        </>
+      )}
+      {data.cloudIncluded && !data.subscription.baseIncluded && (
+        <p className="text-sm text-muted-foreground">
+          Cloud includes the base allowance. Your separate base fee ends at renewal; any
+          extra-server charge retains its saved terms.
+        </p>
+      )}
+      {!data.cloudIncluded && data.subscription.baseIncluded && (
+        <p className="text-sm text-muted-foreground">
+          Your Cloud coverage ended. This paid allowance lasts until the date above and will not
+          renew at the discounted price. Choose Manage after it ends; we will not raise your charge
+          automatically.
+        </p>
+      )}
+      <Button
+        variant="secondary"
+        disabled={action.busy}
+        onClick={() =>
+          void run(managementApi.portal, (result) => {
+            window.location.assign(result.portalUrl);
+          })
+        }
+      >
+        Payment details & invoices
+      </Button>
+      {data.subscription.status !== "canceled" &&
+        (data.subscription.cancelAtPeriodEnd ? (
+          <Button
+            variant="ghost"
+            disabled={action.busy || data.cloudIncluded !== data.subscription.baseIncluded}
+            onClick={() => void run(managementApi.resume)}
+          >
+            Resume renewal
+          </Button>
+        ) : (
+          <Button variant="ghost" disabled={action.busy} onClick={() => setCancel(true)}>
+            Cancel renewal
+          </Button>
+        ))}
+      {cancel && (
+        <div className="space-y-3 rounded-xl bg-muted/50 p-4">
+          <p className="text-sm">
+            End management after the paid period? Your apps and data keep running on your servers.
+            Openship will no longer manage them after your allowance ends.
+          </p>
+          <Button
+            disabled={action.busy}
+            onClick={() =>
+              void run(managementApi.cancel, () => {
+                setCancel(false);
+              })
+            }
+          >
+            Confirm cancellation
+          </Button>
+          <Button variant="ghost" disabled={action.busy} onClick={() => setCancel(false)}>
+            Keep subscription
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+  const recoveryControls = (
+    <>
+      {data.pendingCheckout && (
+        <section className="space-y-3 rounded-2xl bg-card p-5">
+          <h3 className="font-medium">Your checkout is saved</h3>
+          <p className="text-sm text-muted-foreground">
+            Complete payment or cancel it before choosing another plan or allowance. Payment
+            confirmation may take a moment.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              disabled={action.busy}
+              onClick={() =>
+                void run(managementApi.resumeCheckout, (result) => {
+                  if (result.url) window.location.assign(result.url);
+                })
+              }
+            >
+              Resume checkout
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={action.busy}
+              onClick={() =>
+                void run(managementApi.cancelCheckout, () => {
+                  setRequestKey(crypto.randomUUID());
+                })
+              }
+            >
+              Cancel checkout
+            </Button>
+          </div>
+        </section>
+      )}
+      {data.change && (
+        <section className="space-y-3 rounded-2xl bg-card p-5">
+          <h3 className="font-medium">
+            Subscription change · {data.change.status.replaceAll("_", " ")}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Effective {new Date(data.change.effectiveAt).toLocaleString()}. Your current paid
+            allowance remains available until the change completes.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {data.change.paymentUrl && (
+              <Button asChild>
+                <a href={data.change.paymentUrl}>Complete payment</a>
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              disabled={action.busy}
+              onClick={() =>
+                void run(managementApi.cancelChange, () => {
+                  setRequestKey(crypto.randomUUID());
+                })
+              }
+            >
+              Cancel change
+            </Button>
+          </div>
+        </section>
+      )}
+    </>
+  );
+  const purchaseContent = (
     <div className="@container/management min-w-0 space-y-5 max-md:pb-[calc(9rem+env(safe-area-inset-bottom))]">
       {(error || action.error) && (
         <div role="alert" className="rounded-xl bg-danger/10 p-4 text-sm text-danger">
@@ -134,7 +382,7 @@ export function ManagementPlan({
           </Button>
         </div>
       )}
-      <div className="space-y-1">
+      <div className={showingDetails ? "sr-only" : "space-y-1"}>
         <h2 id={`${supportChoiceId}-title`} className="text-base font-medium text-foreground">
           Openship Manage
         </h2>
@@ -142,6 +390,42 @@ export function ManagementPlan({
           {copy.description}
         </p>
       </div>
+      {showingDetails && editing === "plan" && (
+        <div className="grid gap-3 rounded-xl bg-muted/30 p-4 text-sm sm:grid-cols-2">
+          <div>
+            <p className="text-xs text-muted-foreground">{t.billing.pricing.currentPlan}</p>
+            <p className="mt-1 font-medium">
+              {copy[data.subscription!.plan ?? "basic"]} · {money(data.subscription!.priceCents)}{" "}
+              {copy.perMonth}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {interpolate(t.billing.managementDetail.totalSlots, {
+                count: String(data.subscription!.servers),
+              })}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              {t.billing.managementDetail.selectedPlan}
+            </p>
+            <p className="mt-1 font-medium">
+              {copy[plan]} · {monthly === null ? "—" : money(quote?.monthlyCents ?? monthly)}{" "}
+              {copy.perMonth}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {interpolate(t.billing.managementDetail.totalSlots, { count: String(count) })}
+            </p>
+          </div>
+          {monthly !== null && (
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              {t.billing.managementDetail.monthlyChange}:{" "}
+              {(quote?.monthlyCents ?? monthly) - data.subscription!.priceCents > 0 ? "+" : ""}
+              {money((quote?.monthlyCents ?? monthly) - data.subscription!.priceCents)}{" "}
+              {copy.perMonth}
+            </p>
+          )}
+        </div>
+      )}
       {!planAvailable && (
         <p role="alert" className="text-sm text-warning">
           {t.billing.plansRoute.requestedPlanUnavailable}
@@ -335,19 +619,7 @@ export function ManagementPlan({
                       . Increased allowances activate after payment is confirmed.
                     </p>
                     <div className="flex flex-wrap gap-3">
-                      <Button
-                        disabled={action.busy}
-                        onClick={() =>
-                          void run(
-                            () => managementApi.confirm(quote.quoteId!),
-                            (result) => {
-                              setQuote(null);
-                              if (result.change?.paymentUrl)
-                                window.location.assign(result.change.paymentUrl);
-                            },
-                          )
-                        }
-                      >
+                      <Button disabled={action.busy} onClick={confirmQuote}>
                         Confirm change
                       </Button>
                       <Button
@@ -414,68 +686,8 @@ export function ManagementPlan({
                 )}
             </div>
           </section>
-          {data.pendingCheckout && (
-            <section className="space-y-3 rounded-2xl bg-card p-5">
-              <h3 className="font-medium">Your checkout is saved</h3>
-              <p className="text-sm text-muted-foreground">
-                Complete payment or cancel it before choosing another plan or allowance. Payment
-                confirmation may take a moment.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  disabled={action.busy}
-                  onClick={() =>
-                    void run(managementApi.resumeCheckout, (result) => {
-                      if (result.url) window.location.assign(result.url);
-                    })
-                  }
-                >
-                  Resume checkout
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={action.busy}
-                  onClick={() =>
-                    void run(managementApi.cancelCheckout, () => {
-                      setRequestKey(crypto.randomUUID());
-                    })
-                  }
-                >
-                  Cancel checkout
-                </Button>
-              </div>
-            </section>
-          )}
-          {data.change && (
-            <section className="space-y-3 rounded-2xl bg-card p-5">
-              <h3 className="font-medium">
-                Subscription change · {data.change.status.replaceAll("_", " ")}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Effective {new Date(data.change.effectiveAt).toLocaleString()}. Your current paid
-                allowance remains available until the change completes.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                {data.change.paymentUrl && (
-                  <Button asChild>
-                    <a href={data.change.paymentUrl}>Complete payment</a>
-                  </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  disabled={action.busy}
-                  onClick={() =>
-                    void run(managementApi.cancelChange, () => {
-                      setRequestKey(crypto.randomUUID());
-                    })
-                  }
-                >
-                  Cancel change
-                </Button>
-              </div>
-            </section>
-          )}
-          {!embedded && data.active && (
+          {!showingDetails && recoveryControls}
+          {!showingDetails && !embedded && data.active && (
             <section className="space-y-4 rounded-2xl bg-card p-5">
               <h3 className="font-medium">Your infrastructure</h3>
               <p>
@@ -494,84 +706,122 @@ export function ManagementPlan({
               </Button>
             </section>
           )}
-          {data.subscription && (
-            <section className="space-y-3 rounded-2xl bg-card p-5">
-              <h3 className="font-medium">
-                {copy[data.subscription.plan ?? "basic"]} subscription
-              </h3>
-              <p className="text-sm">
-                {money(data.subscription.priceCents)} / month ·{" "}
-                {data.subscription.status.replaceAll("_", " ")}
-              </p>
-              {data.subscription.periodEnd && (
-                <p className="text-sm text-muted-foreground">
-                  {data.subscription.cancelAtPeriodEnd ? "Ends" : "Current period ends"}{" "}
-                  {new Date(data.subscription.periodEnd).toLocaleDateString()}
-                </p>
-              )}
-              {data.cloudIncluded && !data.subscription.baseIncluded && (
-                <p className="text-sm text-muted-foreground">
-                  Cloud includes the base allowance. Your separate base fee ends at renewal; any
-                  extra-server charge retains its saved terms.
-                </p>
-              )}
-              {!data.cloudIncluded && data.subscription.baseIncluded && (
-                <p className="text-sm text-muted-foreground">
-                  Your Cloud coverage ended. This paid allowance lasts until the date above and will
-                  not renew at the discounted price. Choose Manage after it ends; we will not raise
-                  your charge automatically.
-                </p>
-              )}
-              <Button
-                variant="secondary"
-                disabled={action.busy}
-                onClick={() =>
-                  void run(managementApi.portal, (result) => {
-                    window.location.assign(result.portalUrl);
-                  })
-                }
-              >
-                Payment details & invoices
-              </Button>
-              {data.subscription.status !== "canceled" &&
-                (data.subscription.cancelAtPeriodEnd ? (
-                  <Button
-                    variant="ghost"
-                    disabled={action.busy || data.cloudIncluded !== data.subscription.baseIncluded}
-                    onClick={() => void run(managementApi.resume)}
-                  >
-                    Resume renewal
-                  </Button>
-                ) : (
-                  <Button variant="ghost" disabled={action.busy} onClick={() => setCancel(true)}>
-                    Cancel renewal
-                  </Button>
-                ))}
-              {cancel && (
-                <div className="space-y-3 rounded-xl bg-muted/50 p-4">
-                  <p className="text-sm">
-                    End management after the paid period? Your apps and data keep running on your
-                    servers. Openship will no longer manage them after your allowance ends.
-                  </p>
-                  <Button
-                    disabled={action.busy}
-                    onClick={() =>
-                      void run(managementApi.cancel, () => {
-                        setCancel(false);
-                      })
-                    }
-                  >
-                    Confirm cancellation
-                  </Button>
-                  <Button variant="ghost" disabled={action.busy} onClick={() => setCancel(false)}>
-                    Keep subscription
-                  </Button>
-                </div>
-              )}
-            </section>
-          )}
+          {!showingDetails && subscriptionControls}
         </aside>
       </div>
+    </div>
+  );
+  if (!showingDetails) return purchaseContent;
+  const saved = data.subscription!;
+  const blocked =
+    action.busy || data.pendingCheckout || Boolean(data.change) || saved.cancelAtPeriodEnd;
+  const openEditor = (mode: "plan" | "servers" = "plan") => {
+    if (blocked) return;
+    const next = mode === "servers" && saved.status !== "canceled" ? "servers" : "plan";
+    setSelectedPlan(saved.plan ?? "basic");
+    setServers(next === "servers" ? saved.servers + 1 : saved.servers);
+    setQuote(null);
+    setSlotError(null);
+    action.setError(null);
+    setRequestKey(crypto.randomUUID());
+    setEditing(next);
+  };
+  return (
+    <div className="@container/manage-detail space-y-5">
+      {!editing && (error || action.error) && (
+        <p role="alert" className="rounded-xl bg-danger/10 p-4 text-sm text-danger">
+          {action.error || error}
+        </p>
+      )}
+      <div className="grid items-start gap-5 @min-[64rem]/manage-detail:grid-cols-[minmax(0,1fr)_340px]">
+        <ManagementServers
+          atCapacity={data.connectedServers >= data.serverLimit}
+          onUpgrade={() => openEditor("servers")}
+          upgradeDisabled={blocked || data.serverLimit >= data.pricing.maxServers}
+        />
+        <aside className="min-w-0 space-y-4">
+          <section className="space-y-4 rounded-2xl bg-card p-5">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
+                <Icon name={saved.plan === "priority" ? "shield" : "server"} className="size-5" />
+              </span>
+              <h2 className="min-w-0 flex-1 text-lg font-medium">{copy[saved.plan ?? "basic"]}</h2>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${data.active ? "bg-success-bg text-success" : "bg-muted text-muted-foreground"}`}
+              >
+                {data.active ? t.billing.hub.active : t.billing.hub.inactive}
+              </span>
+            </div>
+            <div>
+              <p className="flex flex-wrap items-baseline gap-2">
+                <span className="text-xl font-medium">{money(saved.priceCents)}</span>
+                <span className="text-xs text-muted-foreground">{copy.perMonth}</span>
+              </p>
+              {saved.periodEnd && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {interpolate(
+                    saved.cancelAtPeriodEnd
+                      ? t.billing.sidebar.accessUntil
+                      : t.billing.sidebar.renewsOn,
+                    { date: new Date(saved.periodEnd).toLocaleDateString() },
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="flex items-baseline justify-between gap-3 rounded-xl bg-muted/40 p-3 text-sm">
+              <span className="text-muted-foreground">{copy.serverCount}</span>
+              <span className="font-medium tabular-nums">
+                {data.connectedServers} / {data.serverLimit}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {saved.plan === "priority" ? copy.prioritySupport : copy.email}
+            </p>
+          </section>
+          <Button className="w-full" disabled={blocked} onClick={() => openEditor("plan")}>
+            {t.billing.workspaces.changePlan}
+            <Icon name="arrow-up-right" className="size-4" />
+          </Button>
+          <div className="min-w-0 space-y-4">
+            {recoveryControls}
+            {subscriptionControls}
+          </div>
+        </aside>
+      </div>
+      {editing && (
+        <PlanChangeModal
+          busy={action.busy || checkingSlots}
+          title={editing === "servers" ? t.billing.managementDetail.addSlots : undefined}
+          width={editing === "servers" ? 480 : 920}
+          onClose={() => setEditing(null)}
+        >
+          {editing === "servers" ? (
+            <ManagementServerSlots
+              data={data}
+              additional={(servers ?? saved.servers + 1) - saved.servers}
+              quote={quote}
+              checking={checkingSlots}
+              busy={action.busy}
+              error={slotError || action.error}
+              onChange={(additional) => {
+                setServers(saved.servers + additional);
+                setQuote(null);
+                setSlotError(null);
+                action.setError(null);
+                setRequestKey(crypto.randomUUID());
+              }}
+              onRetry={() => {
+                setQuote(null);
+                action.setError(null);
+                setRequestKey(crypto.randomUUID());
+              }}
+              onCheckout={confirmQuote}
+            />
+          ) : (
+            purchaseContent
+          )}
+        </PlanChangeModal>
+      )}
     </div>
   );
 }

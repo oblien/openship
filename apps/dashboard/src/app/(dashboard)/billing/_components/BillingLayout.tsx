@@ -9,7 +9,6 @@ import {
 } from "@/components/billing/BillingWorkspaceContext";
 import {
   BillingServerInventoryProvider,
-  ServerBillingPicker,
   billingServersVisible,
 } from "@/components/billing/ServerBillingPicker";
 import { useI18n } from "@/components/i18n-provider";
@@ -17,11 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@repo/ui/icons";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { CloudPurchaseProvider } from "@/components/billing/CloudPurchaseContext";
-import { newServerBillingHref } from "@/lib/billing-links";
+import { isNewCloudPurchase, newServerBillingHref } from "@/lib/billing-links";
 import { BILLING_TABS } from "./billing-tabs";
 import { BillingTabBar } from "./BillingTabBar";
 import { BillingHeader } from "./BillingHeader";
-import Link from "next/link";
 import { BillingViewProvider, type BillingView } from "./BillingViewContext";
 import { PendingCheckoutsProvider } from "@/components/billing/PendingCheckoutsContext";
 import { BillingPurchaseContent } from "./BillingPurchaseContent";
@@ -29,20 +27,7 @@ import { BillingPurchaseContent } from "./BillingPurchaseContent";
 /** Persistent route chrome. Only the tab content suspends while its scoped state loads. */
 export function BillingLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname.endsWith("/manage"))
-    return (
-      <PageContainer className="space-y-6">
-        <BillingHeader>
-          <Button asChild variant="secondary">
-            <Link href="/billing/plans">
-              <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
-              Back to plans
-            </Link>
-          </Button>
-        </BillingHeader>
-        {children}
-      </PageContainer>
-    );
+  if (pathname === "/billing" || pathname.endsWith("/manage")) return children;
   return <CloudBillingLayout>{children}</CloudBillingLayout>;
 }
 function CloudBillingLayout({ children }: { children: React.ReactNode }) {
@@ -52,10 +37,12 @@ function CloudBillingLayout({ children }: { children: React.ReactNode }) {
   const requestedWorkspaceId = searchParams.get("workspaceId") || undefined;
   const organizationId = searchParams.get("organizationId") || undefined;
   const segment = pathname.split("/").at(-1);
-  const newServer =
-    segment === "plans" &&
-    searchParams.get("newServer") === "1" &&
-    !["checkout", "topup", "session_id"].some((key) => searchParams.has(key));
+  const newServer = isNewCloudPurchase({
+    tab: segment,
+    workspaceId: requestedWorkspaceId,
+    newServer: searchParams.get("newServer") === "1",
+    checkoutReturn: ["checkout", "topup", "session_id"].some((key) => searchParams.has(key)),
+  });
   const inventory = useServerDestinations();
   const [view, setView] = useState<BillingView | null>(null);
   const organizationMatches = !organizationId || organizationId === inventory.organizationId;
@@ -117,25 +104,16 @@ function CloudBillingLayout({ children }: { children: React.ReactNode }) {
                 management={activeTab === "plans" && organizationMatches}
               >
                 <BillingHeader>
-                  {billingServersVisible(serverInventory) &&
-                    (newServer ? (
+                  {!newServer && billingServersVisible(serverInventory) && (
+                    <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto">
                       <Button asChild variant="secondary" className="shrink-0">
-                        <BillingLink href="/billing">
-                          <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
-                          {t.billing.creditAlert.backToBilling}
+                        <BillingLink href={newServerBillingHref()}>
+                          <Icon name="plus" className="size-4" aria-hidden="true" />
+                          {t.billing.layout.getServer}
                         </BillingLink>
                       </Button>
-                    ) : (
-                      <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto">
-                        {activeTab === "plans" && <div className="w-full min-w-0 md:w-auto"><ServerBillingPicker compact /></div>}
-                        <Button asChild variant="secondary" className="shrink-0">
-                          <BillingLink href={newServerBillingHref()}>
-                            <Icon name="plus" className="size-4" aria-hidden="true" />
-                            {t.billing.layout.getServer}
-                          </BillingLink>
-                        </Button>
-                      </div>
-                    ))}
+                    </div>
+                  )}
                 </BillingHeader>
                 <BillingTabBar
                   activeTab={activeTab}

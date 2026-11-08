@@ -61,6 +61,7 @@ export function sdkSurface() {
   const groups = new Map();
   for (const [surface, location] of [["native", declaration], ["remote", remote]]) {
     for (const property of checker.getTypeAtLocation(location).getProperties()) {
+      if (property.getJsDocTags().some(tag => tag.name === "deprecated")) continue;
       if (["deploy", "deployment", "organizationId", "http", "options"].includes(property.name)) continue;
       const type = checker.getTypeOfSymbolAtLocation(property, location);
       // Root workflow functions are documented separately; groups contain named methods.
