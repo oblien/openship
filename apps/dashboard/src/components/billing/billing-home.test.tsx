@@ -287,3 +287,13 @@ it("keeps renewal payment recovery on the existing plan", async () => {
     host.querySelector('a[href="/resources?pool=production&tab=payment"]')?.textContent,
   ).toContain(baseDictionary.billing.hub.paymentRequired);
 });
+
+it("matches an existing linked plan through its canonical Cloud reference without adding another card", async () => {
+  const local = space("local-production", "Production");
+  local.cloudReference = { serverId: "remote-production", workspaceId: "subscription-remote-production" };
+  h.list.mockResolvedValue({ servers: [local] });
+  h.checkouts.mockResolvedValue({ items: [pendingPayment(space("remote-production", "Cloud production"))] });
+  await render();
+  expect(host.querySelectorAll('a[href^="/resources?pool="]')).toHaveLength(1);
+  expect(host.querySelector('a[href="/resources?pool=local-production&tab=payment"]')?.textContent).toContain(baseDictionary.billing.hub.paymentRequired);
+});

@@ -101,7 +101,7 @@ export function BillingPlanCards({
   organizationId,
   showAddPlan = true,
 }: {
-  spaces: Array<Pick<ServerDetail, "id" | "name" | "managed">>;
+  spaces: Array<Pick<ServerDetail, "id" | "name" | "managed" | "cloudReference">>;
   management: Pick<
     ManagementState,
     "active" | "subscription" | "pendingCheckout" | "change"
@@ -118,7 +118,9 @@ export function BillingPlanCards({
     subscriptionNeedsPayment(subscription?.status),
   );
   const plansHref = newServerBillingHref(organizationId);
-  const cards = new Map(spaces.map((server) => [server.managed!.id, server]));
+  const cards = new Map(
+    spaces.map((server) => [server.cloudReference?.workspaceId ?? server.managed!.id, server]),
+  );
   for (const item of pending) {
     if (!cards.has(item.server.id))
       cards.set(item.server.id, {
@@ -131,7 +133,9 @@ export function BillingPlanCards({
     <div className="grid items-stretch gap-5 @min-[36rem]/billing-home:grid-cols-2 @min-[66rem]/billing-home:grid-cols-3">
       {[...cards.values()].map((server) => {
         const space = server.managed!;
-        const payment = pending.find((item) => item.server.id === space.id);
+        const payment = pending.find(
+          (item) => item.server.id === (server.cloudReference?.workspaceId ?? space.id),
+        );
         const paymentRequired = Boolean(
           payment || subscriptionNeedsPayment(space.subscriptionStatus),
         );
