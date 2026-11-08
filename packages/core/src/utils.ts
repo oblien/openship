@@ -277,7 +277,8 @@ export function sleep(ms: number): Promise<void> {
  * Race a promise against a timeout, rejecting with `Error(message)` after `ms`.
  * `ms` of 0/undefined disables the timeout (returns the promise as-is). Clears
  * the timer on settle so it never leaks. One shared impl — callers pass their
- * own message so prior error contracts are preserved.
+ * own message so prior error contracts are preserved. An optional signal also
+ * ends the wait; callers still own cancellation of the underlying operation.
  */
 export function withTimeout<T>(
   promise: Promise<T>,
@@ -288,7 +289,7 @@ export function withTimeout<T>(
   if (!ms && !signal) return promise;
   return new Promise<T>((resolve, reject) => {
     const cleanup = () => {
-      if (timer) clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       signal?.removeEventListener("abort", aborted);
     };
     const aborted = () => { cleanup(); reject(signal!.reason); };

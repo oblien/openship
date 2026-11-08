@@ -274,12 +274,10 @@ describeDockerE2E("native Compose build batches", () => {
       migrate: { condition: service_completed_successfully }
 `);
     await repos.service.syncFromCompose(project.id, parsed.services, { composeAuthoritative: true });
-    const services = await repos.service.listByProject(project.id);
     const deployment = await seedDeployment(project, { imageRef: "compose", containerId: "compose" });
     const noop = new NoopInfraProvider();
     const result = await deployComposeServices(project, deployment, runtime, logger(), {
       executor, localHost: false, routing: noop, ssl: noop, usesManagedRouting: false,
-      preparedLocalImages: new Map(services.map(service => [service.id, "alpine:3.21"])),
     });
     expect(result.status, JSON.stringify(result)).toBe("ready");
     const migration = result.services.find(service => service.serviceName === "migrate")!;
