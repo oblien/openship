@@ -1662,7 +1662,7 @@
         "fields": {
           "apiToken": {
             "label": "API belirteci",
-            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç."
+            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç. My Profile → API Tokens altında oluşturun."
           }
         }
       }

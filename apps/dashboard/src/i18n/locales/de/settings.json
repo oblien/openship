@@ -1623,7 +1623,7 @@
         "fields": {
           "apiToken": {
             "label": "API-Token",
-            "help": "Ein Token mit Zone:Read und DNS:Edit für die Zonen, die Openship verwalten soll."
+            "help": "Ein Token mit Zone:Read und DNS:Edit für die Zonen, die Openship verwalten soll. Erstellen Sie ihn unter My Profile → API Tokens."
           }
         }
       }
