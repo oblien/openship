@@ -172,11 +172,11 @@ describe("Cloud billing before the first subscription", () => {
     await render(<BillingSidebar state={free} />);
     expect(button("Subscribe to Hobby")).toBeDefined();
     await render(<BillingSidebar state={paid} />);
-    expect(container.textContent).toContain(copy.pricing.currentPlan);
+    expect(container.querySelector(`section[aria-label="${copy.pricing.currentPlan}"]`)).not.toBeNull();
     expect(container.textContent).toContain("Hobby");
     expect(container.textContent).not.toContain("Subscribe to Hobby");
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, cancelAtPeriodEnd: true } }} />);
-    expect(container.textContent).toContain(copy.pricing.currentPlan);
+    expect(container.querySelector(`section[aria-label="${copy.pricing.currentPlan}"]`)).not.toBeNull();
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, status: "canceled" } }} />);
     expect(container.textContent).toContain(copy.sidebar.noActivePlan);
     expect(container.textContent).not.toContain("Subscribe to Hobby");
@@ -535,7 +535,7 @@ describe("complimentary Cloud plans", () => {
   it.each(["active", "credit_exhausted"])("shows the current Scale grant without a paid subscription when %s", async status => {
     await render(<BillingSidebar state={{ ...complimentary, status }} />);
     expect(container.querySelector("h2")?.textContent).toBe("Scale");
-    expect(visibleText()).toContain(copy.pricing.currentPlan);
+    expect(container.querySelector(`section[aria-label="${copy.pricing.currentPlan}"]`)).not.toBeNull();
     expect(visibleText()).toContain(copy.complimentary.label);
     expect(visibleText()).toContain(copy.complimentary.untilRevoked);
     expect(visibleText()).toContain("Credits renew on Oct 27, 2026");

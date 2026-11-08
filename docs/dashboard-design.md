@@ -520,8 +520,13 @@ check retryable before starting the move.
   them. Exclude local hosts, Cloud allocations and migration sources from that grid, using
   the shared destination inventory. An empty server list stays on the plan page. Add server
   opens the normal connection form while an allowance slot is available; at the limit it
-  opens the same Change plan modal to increase the allowance. Reuse the management quote,
+  opens a quantity-only dialog showing additional slots, the verified monthly total and
+  amount due before checkout. Change plan compares the saved plan with proposed upgrades
+  or downgrades. Both use the existing locked quote/confirmation path; never calculate
+  prorated charges in the browser. Reuse the management quote,
   confirmation, pending-payment and cancellation flow; browsing never starts a purchase.
+  Keep a plain Support link with the shared help icon in Billing, Plans and each plan's
+  header. It opens the normal Support page without a filled button or separate card.
 - When no purchased plans are known and both inventory reads succeeded, replace bare
   `/billing` with the organization-scoped `/billing/plans` purchase route. Keep the loading
   skeleton during that handoff; plan selection lives only on the plans route. Failed or
