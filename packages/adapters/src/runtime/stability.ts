@@ -263,6 +263,7 @@ export interface WatchStabilityDeps {
   /** Injected for tests. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  onPending?: (sample: ContainerStabilitySample, elapsedMs: number, remainingMs: number) => void;
 }
 
 /**
@@ -282,6 +283,7 @@ export async function watchContainerStability(
 
   const first = await deps.sample();
   const alreadyUp = Math.max(0, Math.min(opts.alreadyRunningMs ?? 0, opts.windowMs));
+  const started = now();
   const deadline = now() + Math.max(0, opts.windowMs - alreadyUp);
 
   let latest = first;
@@ -290,6 +292,7 @@ export async function watchContainerStability(
     const verdict = classifyStability(first, latest, { ...opts, windowElapsed });
     if (verdict) return verdict;
     const remaining = deadline - now();
+    deps.onPending?.(latest, alreadyUp + now() - started, Math.max(0, remaining));
     await sleep(Math.max(0, Math.min(opts.pollMs, remaining)));
     latest = await deps.sample();
   }

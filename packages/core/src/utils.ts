@@ -283,17 +283,25 @@ export function withTimeout<T>(
   promise: Promise<T>,
   ms: number | undefined,
   message: string,
+  signal?: AbortSignal,
 ): Promise<T> {
-  if (!ms) return promise;
+  if (!ms && !signal) return promise;
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), ms);
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", aborted);
+    };
+    const aborted = () => { cleanup(); reject(signal!.reason); };
+    const timer = ms ? setTimeout(() => { cleanup(); reject(new Error(message)); }, ms) : undefined;
+    signal?.addEventListener("abort", aborted, { once: true });
+    if (signal?.aborted) aborted();
     promise.then(
       (v) => {
-        clearTimeout(timer);
+        cleanup();
         resolve(v);
       },
       (e) => {
-        clearTimeout(timer);
+        cleanup();
         reject(e);
       },
     );

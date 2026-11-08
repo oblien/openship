@@ -111,6 +111,9 @@ export interface RoutingProvider {
 // ─── SSL ─────────────────────────────────────────────────────────────────────
 
 export interface ProvisionCertOptions {
+  /** The caller just registered the TLS route. A usable existing certificate
+   * needs no second route activation; newly issued material still does. */
+  routeAlreadyConfigured?: boolean;
   onLog?: (line: string) => void;
   force?: boolean;
   challenge?: "http-01" | "dns-01";

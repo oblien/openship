@@ -682,6 +682,19 @@ export function createTrackedSslProvider(
    *  local box, which is correct for a single-box install. */
   lockScope: string = LOCAL_ACME_SCOPE,
 ): SslProvider {
+  // Operation-scoped evidence only: never reuse another server's observation,
+  // cache a failed read, or hide a certificate that expires during this operation.
+  const verifiedThisRun = new Map<string, SslResult>();
+  const fresh = (result: SslResult | null | undefined) => !!result?.verified &&
+    result.reason !== "not_local" && result.reason !== "read_error" &&
+    Date.parse(result.expiresAt) > Date.now();
+  const verifyCert = async (hostname: string) => {
+    const key = hostname.toLowerCase();
+    const known = verifiedThisRun.get(key);
+    if (fresh(known)) return known!;
+    return ssl.verifyCert(key);
+  };
+
   // Persist via the shared no-clobber resolver: a verified cert → "active"; a
   // genuinely missing cert → "provisioning"; a transient read failure leaves the
   // row alone (so a redeploy that can't momentarily read an existing cert can't
@@ -709,7 +722,7 @@ export function createTrackedSslProvider(
   //     Action-Required dot); the domain's own `status` stays pending so the
   //     verify-pending cron keeps retrying. A VERIFIED row keeps resolveSslPatch
   //     (→ "provisioning") so the auto-heal sweep still covers it.
-  const provisionCert = async (hostname: string): Promise<SslResult> => {
+  const provisionCert = async (hostname: string, options?: { routeAlreadyConfigured?: boolean }): Promise<SslResult> => {
     const host = hostname.toLowerCase();
     const domainRecord = domainByHostname.get(host);
     const wasVerified = !!domainRecord?.verified;
@@ -720,11 +733,14 @@ export function createTrackedSslProvider(
       // or prevents the existing issuance/recovery path from running.
       const dnsChallenge = ssl.certificateManagement !== "provider" &&
         (host.startsWith("*.") || domainRecord?.sslChallenge === "dns-01");
-      const onDisk = log || dnsChallenge ? await ssl.verifyCert(host).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/routing-domains"); return null; }) : null;
+      const onDisk = log || dnsChallenge ? await verifyCert(host).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/routing-domains"); return null; }) : null;
       const noCertYet = onDisk?.reason === "missing";
-      log?.(noCertYet
-        ? `No HTTPS certificate found for ${host}; the HTTP route is configured while certificate issuance is in progress.`
-        : `Requesting SSL certificate for ${host}…`);
+      const reusable = ssl.certificateManagement !== "provider" && fresh(onDisk) && (dnsChallenge || Date.parse(onDisk!.expiresAt) >
+        Date.now() + SYSTEM.DOMAINS.SSL_RENEW_BEFORE_DAYS * 86_400_000);
+      log?.(reusable ? `Reusing the verified HTTPS certificate for ${host} (expires ${onDisk!.expiresAt}).`
+        : noCertYet
+          ? `No HTTPS certificate found for ${host}; the HTTP route is configured while certificate issuance is in progress.`
+          : `Checking or renewing SSL certificate for ${host}…`);
       let result: SslResult;
       let errorReason: string | null = null;
       try {
@@ -732,15 +748,15 @@ export function createTrackedSslProvider(
         // `www.example.com` issues two certificates in a row, and each certbot run
         // binds the same standalone challenge port. Without this they can also
         // collide with the pending-SSL sweep working on the other hostname.
-        if (dnsChallenge && onDisk?.verified && Date.parse(onDisk.expiresAt) > Date.now()) {
-          await ssl.activateCert?.(host);
+        if (reusable && onDisk) {
+          if (!options?.routeAlreadyConfigured) await ssl.activateCert?.(host);
           result = onDisk;
         } else {
           const dnsOptions = dnsChallenge && domainRecord?.projectId
             ? await domainDnsProvisionOptions(host, domainRecord.projectId)
             : undefined;
           result = await createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
-            dnsOptions ? ssl.provisionCert(host, dnsOptions) : ssl.provisionCert(host),
+            dnsOptions || options ? ssl.provisionCert(host, { ...dnsOptions, ...options }) : ssl.provisionCert(host),
           );
         }
       } catch (err) {
@@ -814,6 +830,7 @@ export function createTrackedSslProvider(
             sslExpiresAt: new Date(result.expiresAt),
           });
         }
+        verifiedThisRun.set(host, result);
         log?.(noCertYet
           ? `SSL certificate issued for ${host}.`
           : `SSL certificate active for ${host}.`);
@@ -834,9 +851,15 @@ export function createTrackedSslProvider(
     ...(ssl.certificateManagement ? { certificateManagement: ssl.certificateManagement } : {}),
     ...(ssl.dnsChallengeProvider ? { dnsChallengeProvider: () => ssl.dnsChallengeProvider!() } : {}),
     ...(ssl.activateCert ? { activateCert: (hostname: string) => ssl.activateCert!(hostname) } : {}),
-    renewCert: async (hostname: string) => persist(hostname, await ssl.renewCert(hostname)),
-    verifyCert: async (hostname: string) => persist(hostname, await ssl.verifyCert(hostname)),
-    installCert: async (hostname, cert) => persist(hostname, await ssl.installCert(hostname, cert)),
+    renewCert: async (hostname: string) => {
+      verifiedThisRun.delete(hostname.toLowerCase());
+      return persist(hostname, await ssl.renewCert(hostname));
+    },
+    verifyCert: async (hostname: string) => persist(hostname, await verifyCert(hostname)),
+    installCert: async (hostname, cert) => {
+      verifiedThisRun.delete(hostname.toLowerCase());
+      return persist(hostname, await ssl.installCert(hostname, cert));
+    },
   };
 }
 

@@ -742,3 +742,37 @@ describe.each(engineBuildCases)(
     );
   });
 });
+
+describe("shared batch worker lifecycle", () => {
+  it("keeps one worker until every concurrent service finishes, including failure", async () => {
+    const repo = await makeRepo();
+    let release!: () => void;
+    let signalStarted!: () => void;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { signalStarted = resolve; });
+    const executor = { exec: vi.fn(async () => "") } as unknown as CommandExecutor;
+    const runtime = runtimeFor({ kind: "ssh", description: "batch-test" }, {
+      connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}),
+      batchBuildConcurrency: vi.fn(async () => 2),
+    });
+    const internals = runtime as unknown as Record<string, any>;
+    let calls = 0;
+    internals.buildImageOnRemote = vi.fn(async () => {
+      if (++calls === 1) { await started; throw new Error("one service failed"); }
+      signalStarted(); await drain;
+    });
+    const work = runtime.buildImages(["one", "two"].map(name => ({
+      ...spec(serviceConfig(repo, { sessionId: `batch-${name}` })), serviceName: name,
+    })), new BuildLogger(() => {}));
+    await started;
+    await Promise.resolve();
+    expect(internals.startProtectedBuildWorker).toHaveBeenCalledTimes(1);
+    expect(internals.cleanupProtectedBuildWorker).not.toHaveBeenCalled();
+    release();
+    const results = await work;
+    expect(results.map(entry => entry.result.status)).toEqual(["failed", "deploying"]);
+    expect(internals.cleanupProtectedBuildWorker).toHaveBeenCalledTimes(1);
+    expect(internals.buildImageOnRemote.mock.calls.every((call: unknown[]) =>
+      (call[5] as { sharedWorker?: boolean }).sharedWorker)).toBe(true);
+  });
+});

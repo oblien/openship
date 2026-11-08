@@ -48,7 +48,7 @@ import {
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
   type BuildStorage,
 } from "./docker-build-cache";
-import { AppError, withKeyedMutex, parseVolumeMount, formatVolumeMount } from "@repo/core";
+import { AppError, withKeyedMutex, parseVolumeMount, formatVolumeMount, mapConcurrent } from "@repo/core";
 import { readServerStats } from "../system/server-stats";
 import { CUTOVER_SHARED_VOLUMES_ENV, decideCutover, newcomerName, parseSharedVolumeOptIn } from "./cutover";
 import { dockerServiceCutover, type DockerServiceCutover } from "./docker-service-cutover";
@@ -258,6 +258,10 @@ export type DockerConnectionOptions = DockerTransportOptions & {
    * collection so a changed setting applies to the next build without reconnecting.
    */
   buildCacheBudgetBytes?: () => Promise<number | null>;
+  /** Operator-owned connection policy. Never accepted from repository/build input.
+   * Native Docker builds trust every build author with this connected host.
+   * Managed Cloud connections must retain the protected worker. */
+  nativeBuilds?: boolean;
 };
 
 /**
@@ -1810,6 +1814,10 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   private async retainNativeBuildCache(log: BuildLogger): Promise<void> {
+    // The trusted SSH path uses the daemon's native BuildKit GC, like `docker
+    // compose build`. Managed project-cache collection must not run per image
+    // or evict unrelated native records after a successful deployment.
+    if (this.connectionOptions?.nativeBuilds && this.transport.kind === "ssh") return;
     if (!this._docker?.modem) return;
     try {
       await this.pruneBuildCache({ all: true, keepStorageBytes: DEFAULT_BUILD_CACHE_KEEP_BYTES });
@@ -1840,6 +1848,58 @@ export class DockerRuntime implements RuntimeAdapter {
     // that is the probe-memo-poison shape this repo has been bitten by before.
     if (!available) this.buildKitProbe = null;
     return available;
+  }
+
+  private usesNativeBuild(config: BuildConfig): boolean {
+    return this.connectionOptions?.nativeBuilds === true && this.transport.kind === "ssh" &&
+      Object.keys(dockerBuildResourceLimits(config.resources)).length === 0;
+  }
+
+  private nativeBuildHostProbe: Promise<void> | null = null;
+
+  private nativeDockerHost(): string {
+    return `unix://${this.connectionOptions?.dockerSocketPath ?? "/var/run/docker.sock"}`;
+  }
+
+  private async assertNativeBuildHost(): Promise<void> {
+    try {
+      await (this.nativeBuildHostProbe ??= (async () => {
+        const [hostId, daemon] = await Promise.all([
+          this.connectionOptions!.executor!.exec(
+            `DOCKER_HOST=${sq(this.nativeDockerHost())} docker info --format '{{.ID}}'`, { timeout: 5_000 }),
+          this.docker.info(),
+        ]);
+        if (!daemon.ID || hostId.trim() !== daemon.ID) throw new AppError(
+          "The native build command and deployment connection do not address the same Docker daemon. Check the server's Docker socket configuration.",
+          503, "BUILD_DAEMON_MISMATCH",
+        );
+      })());
+    } catch (error) {
+      this.nativeBuildHostProbe = null;
+      throw error;
+    }
+  }
+
+  /** Bound concurrency by the actual deployment host, never the API machine.
+   * Leave memory for its running applications; unavailable measurements stay serial. */
+  private async batchBuildConcurrency(config: BuildConfig, count: number): Promise<number> {
+    const executor = this.connectionOptions?.executor;
+    if (count < 2 || !executor || !this._docker?.info) return 1;
+    try {
+      const [host, daemon] = await withTimeout(Promise.all([
+        readServerStats(executor), this.docker.info(),
+      ]), 5_000, "Build host measurement timed out");
+      if (!daemon.NCPU || !daemon.MemTotal ||
+        Math.abs(host.memTotal - daemon.MemTotal) > daemon.MemTotal * 0.05) return 1;
+      const memory = Math.min(host.memAvail / 1024 ** 2,
+        config.resources.memoryMb || Number.POSITIVE_INFINITY);
+      const cpu = Math.min(daemon.NCPU * Math.max(0, 1 - host.cpu / 100),
+        config.resources.cpuCores || Number.POSITIVE_INFINITY);
+      return Math.max(1, Math.min(count, 4, Math.ceil(cpu), Math.floor((memory - 512) / 2048)));
+    } catch (error) {
+      observeCaughtError(error, "adapters/runtime/docker");
+      return 1;
+    }
   }
 
   private async startProtectedBuildWorker(config: BuildConfig, log: BuildLogger, signal?: AbortSignal): Promise<void> {
@@ -1977,15 +2037,22 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     dockerfileName: string,
     tag: string,
     log: BuildLogger,
-    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean },
+    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; sharedWorker?: boolean },
   ): Promise<BaseImageReceipt[] | undefined> {
-    const pin = await this.pinBuildBaseImages(config, remoteBuildDir, dockerfileName, log, opts?.signal, this.connectionOptions?.executor);
-    try {
-      await this.runRemoteImageBuild(config, remoteBuildDir, dockerfileName, tag, log, opts);
-      return pin.baseImages;
-    } finally {
-      await pin.restore();
-    }
+    const build = async () => {
+      const pin = await this.pinBuildBaseImages(config, remoteBuildDir, dockerfileName, log, opts?.signal, this.connectionOptions?.executor);
+      try {
+        await this.runRemoteImageBuild(config, remoteBuildDir, dockerfileName, tag, log, opts);
+        return pin.baseImages;
+      } finally {
+        await pin.restore();
+      }
+    };
+    // Explicit security refreshes temporarily pin FROM lines. Two services may
+    // share this Dockerfile; never restore it underneath a sibling's context read.
+    return config.refreshBaseImages
+      ? withKeyedMutex(`dockerfile-refresh:${this.transport.description}:${remoteBuildDir}/${dockerfileName}`, build)
+      : build();
   }
 
   private async runRemoteImageBuild(
@@ -1994,7 +2061,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     dockerfileName: string,
     tag: string,
     log: BuildLogger,
-    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean },
+    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; sharedWorker?: boolean },
   ): Promise<void> {
     const signal = opts?.signal;
     const executor = this.connectionOptions?.executor;
@@ -2021,16 +2088,23 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         503,
         "BUILD_METADATA_PROTECTION_UNAVAILABLE",
       );
-    await requireProtectedBuildHost(executor);
-    await this.buildCacheHostExecutor(executor);
+    const native = this.usesNativeBuild(config);
+    if (native) await this.assertNativeBuildHost();
+    else {
+      await requireProtectedBuildHost(executor);
+      await this.buildCacheHostExecutor(executor);
+    }
     const limits = dockerBuildResourceLimits(config.resources);
     const worker = projectBuildKitWorker(config.projectId);
-    const removeBuilder = `docker buildx rm --force --keep-state ${sq(worker.builderName)}`;
-    const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal,
-      this.connectionOptions?.softwareCacheRoot);
+    const removeBuilder = native || opts?.sharedWorker
+      ? ":" : `docker buildx rm --force --keep-state ${sq(worker.builderName)}`;
+    const software = native ? { args: "", unavailable: false } :
+      await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal,
+        this.connectionOptions?.softwareCacheRoot);
     if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
     else if (software.unavailable) log.log("Shared base images are unavailable on this server; uncached image layers will download from the registry. Project build cache remains enabled.\n", "warn");
     const buildCmd = [
+      ...(native ? [`export DOCKER_HOST=${sq(this.nativeDockerHost())}`] : []),
       "set -e",
       `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
       `cd ${sq(remoteBuildDir)}`,
@@ -2038,9 +2112,11 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       // Cache substitutions above are independently validated against the registry.
       // The exporter loads into Docker on this same host. Favor gzip speed over
       // archive size without changing image compatibility or recompressing bases.
-      `docker buildx build --builder ${sq(worker.builderName)}${pullFlag} --output type=docker,compression=gzip,compression-level=1 --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+      `docker buildx build --builder ${sq(native ? "default" : worker.builderName)}${pullFlag}${native ? "" : " --output type=docker,compression=gzip,compression-level=1"} --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
     ].join("\n");
-    log.log("Builder: protected BuildKit (Docker Buildx)");
+    log.log(native
+      ? "Builder: native Docker BuildKit (trusted host; image stays in the deployment engine)."
+      : "Builder: protected BuildKit (Docker Buildx)");
     log.log(Object.keys(limits).length > 0
       ? `Build worker limited to ${describeResourceLimits(config.resources)}.\n`
       : "Build worker uses the server's resources without additional CPU or memory limits.\n");
@@ -2082,7 +2158,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     let code: number | null = null;
     let execError: unknown = null;
     try {
-      await this.startProtectedBuildWorker(config, log, signal);
+      if (!native && !opts?.sharedWorker) await this.startProtectedBuildWorker(config, log, signal);
       signal?.throwIfAborted();
       const result = await executor.streamExec(
         buildCmd,
@@ -2106,7 +2182,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     } finally {
       idleMonitor.stop();
       signal?.removeEventListener("abort", forwardCancellation);
-      await this.cleanupProtectedBuildWorker(config.projectId);
+      if (!opts?.sharedWorker) {
+        if (native) await this.retainNativeBuildCache(log);
+        else await this.cleanupProtectedBuildWorker(config.projectId);
+      }
     }
 
     log.log("─── end docker build output ───");
@@ -3621,6 +3700,8 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     };
 
     let tree: Awaited<ReturnType<typeof prepareSourceTree>> | null = null;
+    let sharedWorker = false;
+    let protectedBatch = false;
     try {
       // Cancelled while these controllers were being registered. Bail BEFORE the
       // clone: it is the most expensive thing this method does on the host, and a
@@ -3745,15 +3826,20 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         }
       }
 
-      // Build each image against the shared tree ONE AT A TIME. Sequential is
-      // deliberate: concurrent `docker build` over SSH contends for SSH channels
-      // (nondeterministic which stream wins) and for server memory (parallel
-      // `bun install`/`next build` OOMs a single box). Sequential also lets each
-      // service's onStart fire in turn, so the UI's auto-follow lands on the ONE
-      // service that's actually streaming. The expensive part (clone + transfer)
-      // is already shared above; only the per-image build is serialized here.
-      const results: Array<{ serviceName: string; result: BuildResult }> = [];
-      for (const {
+      // One project owns one worker and aggregate resource budget for the whole
+      // batch. Individual commands must never remove a sibling's active worker.
+      const sameBudget = specs.every(spec => spec.config.projectId === source.projectId &&
+        JSON.stringify(dockerBuildResourceLimits(spec.config.resources)) ===
+          JSON.stringify(dockerBuildResourceLimits(source.resources)));
+      const concurrency = sameBudget ? await this.batchBuildConcurrency(source, specs.length) : 1;
+      if (isSsh && sameBudget && !allCancelled() && resolvedList.some(item => !item.error && item.dockerfileName)) {
+        sharedWorker = true;
+        protectedBatch = !this.usesNativeBuild(source);
+        if (protectedBatch) await this.startProtectedBuildWorker(source, prepareLogger, sourceAbort.signal);
+      }
+      prepareLogger.log(`Building ${specs.length} images with up to ${concurrency} concurrent builds; startup dependencies apply after images are ready.\n`);
+      const results = await mapConcurrent(resolvedList, concurrency, async ({
+
         spec,
         dockerfileName,
         remoteBuildDir,
@@ -3763,7 +3849,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         ignoreContextPath,
         requiresBuildKit,
         error,
-      } of resolvedList) {
+      }) => {
         const startedAt = Date.now();
         const tag = this.imageTag(spec.config.slug, spec.config.sessionId);
         const signal = abortControllers.get(spec.config.sessionId)?.signal;
@@ -3774,8 +3860,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         if (isCancelled(spec.config.sessionId)) {
           const result = cancelledResult(spec.config.sessionId, startedAt);
           spec.onResult?.(result);
-          results.push({ serviceName: spec.serviceName, result });
-          continue;
+          return { serviceName: spec.serviceName, result };
         }
 
         if (error || !dockerfileName) {
@@ -3786,8 +3871,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             errorMessage: error ?? "Failed to resolve Dockerfile",
           };
           spec.onResult?.(result);
-          results.push({ serviceName: spec.serviceName, result });
-          continue;
+          return { serviceName: spec.serviceName, result };
         }
 
         // This image's build starts now — flip its status so the UI follows it.
@@ -3806,7 +3890,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
               dockerfileName,
               tag,
               spec.logger,
-              { signal, requiresBuildKit },
+              { signal, requiresBuildKit, sharedWorker },
             );
           } else {
             // The shared tree belongs to the batch, so only restore this
@@ -3826,8 +3910,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           if (isCancelled(spec.config.sessionId)) {
             const result = cancelledResult(spec.config.sessionId, startedAt);
             spec.onResult?.(result);
-            results.push({ serviceName: spec.serviceName, result });
-            continue;
+            return { serviceName: spec.serviceName, result };
           }
 
           await this.verifyImageBuilt(tag);
@@ -3858,8 +3941,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
                   durationMs: Date.now() - startedAt,
                 };
             spec.onResult?.(result);
-            results.push({ serviceName: spec.serviceName, result });
-            continue;
+            return { serviceName: spec.serviceName, result };
           }
 
           spec.logger.log(`Image ${tag} is ready.\n`);
@@ -3872,7 +3954,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             ...(baseImages && { baseImages }),
           };
           spec.onResult?.(result);
-          results.push({ serviceName: spec.serviceName, result });
+          return { serviceName: spec.serviceName, result };
         } catch (err) {
           observeCaughtError(err, "adapters/runtime/docker");
           // A cancelled build surfaces as an aborted stream or BuildCancelledError;
@@ -3881,8 +3963,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             spec.logger.log("Docker build cancelled\n", "error");
             const result = cancelledResult(spec.config.sessionId, startedAt);
             spec.onResult?.(result);
-            results.push({ serviceName: spec.serviceName, result });
-            continue;
+            return { serviceName: spec.serviceName, result };
           }
           const msg = safeErrorMessage(err);
           spec.logger.log(`Docker build failed: ${msg}\n`, "error");
@@ -3894,17 +3975,24 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             errorCause: err,
           };
           spec.onResult?.(result);
-          results.push({ serviceName: spec.serviceName, result });
+          return { serviceName: spec.serviceName, result };
         }
-      }
+      });
       return results;
     } catch (error) {
       if (allCancelled()) return cancelledBatch();
       throw error;
     } finally {
-      for (const [sessionId, abort] of abortControllers) {
-        abort.signal.removeEventListener("abort", cancelSource);
-        releaseDockerBuild(sessionId, abort);
+      try {
+        if (sharedWorker) {
+          if (protectedBatch) await this.cleanupProtectedBuildWorker(source.projectId);
+          else await this.retainNativeBuildCache(prepareLogger);
+        }
+      } finally {
+        for (const [sessionId, abort] of abortControllers) {
+          abort.signal.removeEventListener("abort", cancelSource);
+          releaseDockerBuild(sessionId, abort);
+        }
       }
       if (isSsh) {
         await this.connectionOptions?.executor?.exec(`rm -rf ${sq(remoteContextDir)}`, { timeout: 10_000 }).catch((diagnosticFailure) => {

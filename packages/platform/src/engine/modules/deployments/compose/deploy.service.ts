@@ -23,6 +23,9 @@ import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib
 import { posix as pathPosix } from "node:path";
 import {
   SYSTEM,
+  mapConcurrent,
+  runDependencyTasks,
+  parseComposeDurationNs,
   resolveServiceHostnameLabel,
   normalizeServiceLabel,
   buildPublicUrlLookup,
@@ -71,6 +74,7 @@ import {
   rootOrDegrade,
   resolveEnvironment,
   runDeployPipeline,
+  withDeploymentProgress,
   sharedMountExecutor,
   type CommandExecutor,
   type ContainerInfo,
@@ -143,6 +147,7 @@ import {
 import { resolveReadinessGate, type ResolvedReadinessGate } from "../readiness-gate";
 import { assertExactServiceTargets } from "../exact-service-targets";
 import { probeDeployedReadiness } from "../readiness-probe";
+import { waitForDependencyCondition } from "../dependency-readiness";
 import { hostChannelDeployNotice, type PortCheckResult } from "../../../lib/deployment-runtime";
 import {
   buildProjectServiceUpstream,
@@ -1546,49 +1551,60 @@ async function deployComposeServicesCore(
         retained: !!retainRunning || reusingBuild || isPreparedLocalImage(service, image, opts?.preparedLocalImages),
         refresh: !outsideScope });
     }
-    const byRef = new Map<string, Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>>>();
+    const byRef = new Map<string, Promise<Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>>>>();
     const startedAtByRef = new Map<string, Date>();
-    for (const { service, image, requestedRef, retained, refresh } of candidates.sort((a, b) => Number(b.retained) - Number(a.retained))) {
-      throwIfDeploymentCancelled(opts?.signal);
-      const key = `${retained ? "retained" : refresh ? "registry" : "existing"}\0${image}`;
-      const startedAt = startedAtByRef.get(key) ?? new Date();
-      startedAtByRef.set(key, startedAt);
-      imagePreparationStartedAt.set(service.id, startedAt);
-      let prepared = byRef.get(key);
-      try {
-        if (!prepared) {
-          logger.log(`Preparing image ${image} before service cutover...\n`);
-          const started = Date.now();
-          const heartbeat = setInterval(() => logger.log(`Still preparing ${image} (${Math.floor((Date.now() - started) / 1000)}s)...\n`), 15_000);
-          heartbeat.unref?.();
-          const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
-            : { force: false, refreshMutableTag: false };
-          try {
-            prepared = await runtime.prepareDeploymentImage(image, {
-              ...policy, requirePresent: retained, signal: opts?.signal, logger,
-            });
-            logger.log(`Image ${image} is ready (${Math.floor((Date.now() - started) / 1000)}s).\n`);
-          } finally {
-            clearInterval(heartbeat);
-          }
-          byRef.set(key, prepared);
-        }
-        throwIfDeploymentCancelled(opts?.signal);
-        preparedImages.set(service.id, { ...prepared, requestedRef });
-      } catch (error) {
-        // A preparation refusal aborts the cohort before activation. Start only
-        // this attempted service and freeze measured clocks before cleanup;
-        // preserve the original error and every runtime/outcome field.
-        const finishedAt = new Date();
-        try {
-          await repos.service.startServiceDeploymentTiming({
-            deploymentId: dep.id, serviceId: service.id, serviceName: service.name, startedAt,
+    // Freeze all retained artifacts before refreshing mutable tags. Within each
+    // phase distinct images can pull together; a shared ref has exactly one pull.
+    let preparationFailed = false;
+    try {
+      for (const retainedPhase of [true, false]) {
+        await mapConcurrent(candidates.filter(candidate => candidate.retained === retainedPhase), 4,
+          async ({ service, image, requestedRef, retained, refresh }) => {
+            throwIfDeploymentCancelled(opts?.signal);
+            const key = `${retained ? "retained" : refresh ? "registry" : "existing"}\0${image}`;
+            const startedAt = startedAtByRef.get(key) ?? new Date();
+            startedAtByRef.set(key, startedAt);
+            imagePreparationStartedAt.set(service.id, startedAt);
+            let pending = byRef.get(key);
+            try {
+              if (!pending) {
+                pending = (async () => {
+                  logger.log(`Preparing image ${image} before service cutover...\n`);
+                  const started = Date.now();
+                  const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
+                    : { force: false, refreshMutableTag: false };
+                  const prepared = await withDeploymentProgress(logger, `image ${image}`, () =>
+                    runtime.prepareDeploymentImage(image, {
+                      ...policy, requirePresent: retained, signal: opts?.signal, logger,
+                    }));
+                  logger.log(`Image ${image} is ready (${Math.floor((Date.now() - started) / 1000)}s).\n`);
+                  return prepared;
+                })();
+                byRef.set(key, pending);
+              }
+              const prepared = await pending;
+              throwIfDeploymentCancelled(opts?.signal);
+              preparedImages.set(service.id, { ...prepared, requestedRef });
+            } catch (error) {
+              preparationFailed = true;
+              try {
+                await repos.service.startServiceDeploymentTiming({
+                  deploymentId: dep.id, serviceId: service.id, serviceName: service.name, startedAt,
+                });
+              } catch (diagnosticFailure) {
+                observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service");
+              }
+              throw error;
+            }
           });
-          await repos.service.finishStartedServiceDeploymentTimings(dep.id, finishedAt);
-        } catch (diagnosticFailure) {
-          observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service");
-        }
-        throw error;
+      }
+    } finally {
+      // The bounded pool drains all admitted work before freezing clocks. A
+      // sibling still preparing an image must not be marked finished early.
+      if (preparationFailed) {
+        await repos.service.finishStartedServiceDeploymentTimings(dep.id, new Date()).catch(error => {
+          observeCaughtError(error, "platform/engine/modules/deployments/compose/deploy.service");
+        });
       }
     }
     throwIfDeploymentCancelled(opts?.signal);
@@ -1805,6 +1821,8 @@ async function deployComposeServicesCore(
    *  reaped container, persisted env. See `ComposeDeployResult.summary.mutated`. */
   let mutated = false;
   let firstPublicUrl: string | undefined;
+  let firstPublicUrlOrder = Number.POSITIVE_INFINITY;
+  const serviceOrder = new Map(ordered.map((service, index) => [service.id, index]));
   const seenRouteDomains = new Set<string>();
   /**
    * Routes this pass really put on the edge, across all services. Read once at the
@@ -1821,6 +1839,7 @@ async function deployComposeServicesCore(
    */
   const registeredRoutes: PlannedRouteDomain[] = [];
   const unavailableServiceNames = new Set<string>();
+  const dependencyChecks = new Map<string, Promise<void>>();
   /**
    * serviceName → the container id currently backing it, for resolving a sibling's
    * `network_mode: service:<name>` / `pid: service:<name>`. Filled as each service
@@ -2446,12 +2465,11 @@ async function deployComposeServicesCore(
     }
   };
 
-  try {
-    for (const svc of ordered) {
-      throwIfDeploymentCancelled(opts?.signal);
-      // Ownership guard - ensure this service actually belongs to the project
-      if (svc.projectId !== project.id) continue;
-
+  const wouldCarryByPolicy = (svc: Service) => Boolean(
+    (opts?.targetServiceIds && !opts.targetServiceIds.has(svc.id)) ||
+    isExternalUnchanged(svc) || isNewerThanRelease(svc),
+  );
+  const carryServiceIfUnchanged = async (svc: Service): Promise<boolean> => {
       // Leave a service running exactly as-is (carry its previous runtime row
       // forward under THIS deployment id) instead of recreating it, in three cases:
       //   1. Smart (partial) redeploy — it's not in the target subset.
@@ -2476,9 +2494,7 @@ async function deployComposeServicesCore(
       ).some((name) => recreatedServiceNames.has(name));
       const carried =
         !providerRecreated &&
-        ((opts?.targetServiceIds && !opts.targetServiceIds.has(svc.id)) ||
-          isExternalUnchanged(svc) ||
-          isNewerThanRelease(svc))
+        wouldCarryByPolicy(svc)
           ? previousByServiceId.get(svc.id)
           : undefined;
       if (providerRecreated) {
@@ -2603,7 +2619,7 @@ async function deployComposeServicesCore(
               serviceName: svc.name,
             },
           );
-          continue;
+          return true;
         }
         logger.log(
           `Service "${svc.name}" was expected running but its container is gone - redeploying it.\n`,
@@ -2649,8 +2665,39 @@ async function deployComposeServicesCore(
         logger.log(`Service "${svc.name}" unchanged - kept serving static files.\n`, "info", {
           serviceName: svc.name,
         });
-        continue;
+        return true;
       }
+
+    return false;
+  };
+
+  try {
+    // Complete no-op bookkeeping before any target mutates. A failed row write
+    // must leave the running cohort and all preallocated host ports untouched.
+    const carriedIds = new Set<string>();
+    const carriedNames = new Set<string>();
+    const carryAttempted = new Set<string>();
+    for (const svc of ordered) {
+      if (svc.projectId !== project.id || !wouldCarryByPolicy(svc)) continue;
+      if (composeNamespaceDependencies(svc.advanced as ComposeAdvanced | null)
+        .some(provider => !carriedNames.has(provider))) continue;
+      throwIfDeploymentCancelled(opts?.signal);
+      carryAttempted.add(svc.id);
+      if (await carryServiceIfUnchanged(svc)) {
+        carriedIds.add(svc.id);
+        carriedNames.add(svc.name);
+      }
+    }
+    await runDependencyTasks(ordered.filter(service => !carriedIds.has(service.id)), {
+      key: service => service.name,
+      dependencies: effectiveDependencies,
+      concurrency: 4,
+      run: async (svc, runtimeReady) => {
+      throwIfDeploymentCancelled(opts?.signal);
+      // Ownership guard - ensure this service actually belongs to the project
+      if (svc.projectId !== project.id) return;
+
+      if (!carryAttempted.has(svc.id) && await carryServiceIfUnchanged(svc)) return;
 
       // Strict per-service scope (decoupled single-service provision): never
       // deploy, fail, or mark unavailable a service we weren't asked to touch. A
@@ -2659,7 +2706,7 @@ async function deployComposeServicesCore(
       // is what keeps adding one app from re-deploying a freshly-added sibling
       // (→ UNIQUE(deploymentId,serviceId) violation) or bouncing an unrelated one.
       if (opts?.strictScope && opts.targetServiceIds && !opts.targetServiceIds.has(svc.id)) {
-        continue;
+        return;
       }
 
       // Prefer a freshly-built image; else the service's configured image
@@ -2722,7 +2769,7 @@ async function deployComposeServicesCore(
             );
           });
         skippedOutOfScope.push(svc.name);
-        continue;
+        return;
       }
 
       // Includes the namespace provider: a service whose netns/pidns host failed is
@@ -2730,8 +2777,36 @@ async function deployComposeServicesCore(
       const blockedDependencies = effectiveDependencies(svc).filter((dependency) =>
         unavailableServiceNames.has(dependency),
       );
-      if (blockedDependencies.length > 0) {
-        const message = `Skipped because required service${blockedDependencies.length === 1 ? "" : "s"} ${blockedDependencies.join(", ")} did not deploy.`;
+      let dependencyFailure: string | undefined;
+      if (blockedDependencies.length === 0) {
+        try {
+          for (const name of (svc.dependsOn as string[] | null) ?? []) {
+            const condition = (svc.advanced as ComposeAdvanced | null)?.dependsOnConditions?.[name];
+            if (!condition || condition === "service_started") continue;
+            const id = containerIdByServiceName.get(name);
+            if (!id) throw new Error(`Dependency "${name}" has no container for ${condition}.`);
+            const key = `${id}:${condition}`;
+            let check = dependencyChecks.get(key);
+            if (!check) {
+              const provider = ordered.find(service => service.name === name);
+              const health = (provider?.advanced as ComposeAdvanced | null)?.healthcheck;
+              const duration = (value: string | undefined, fallback: number) =>
+                (parseComposeDurationNs(value) ?? fallback * 1_000_000) / 1_000_000;
+              const healthWindow = duration(health?.startPeriod, 0) +
+                (health?.retries || 3) * (duration(health?.interval, 30_000) + duration(health?.timeout, 30_000));
+              check = waitForDependencyCondition({ runtime, containerId: id, serviceName: name,
+                condition, logger, signal: opts?.signal, timeoutMs: Math.max(120_000, healthWindow) });
+              dependencyChecks.set(key, check);
+            }
+            await check;
+          }
+        } catch (error) {
+          throwIfDeploymentCancelled(opts?.signal);
+          dependencyFailure = safeErrorMessage(error);
+        }
+      }
+      if (blockedDependencies.length > 0 || dependencyFailure) {
+        const message = dependencyFailure ?? `Skipped because required service${blockedDependencies.length === 1 ? "" : "s"} ${blockedDependencies.join(", ")} did not deploy.`;
         logger.log(`Service "${svc.name}" skipped: ${message}\n`, "warn", {
           serviceName: svc.name,
         });
@@ -2756,7 +2831,7 @@ async function deployComposeServicesCore(
         });
         unavailableServiceNames.add(svc.name);
         await releasePendingPreparedHostPorts(svc.id);
-        continue;
+        return;
       }
 
       // Image-only deployments start here. Built services retain the clock
@@ -2804,7 +2879,7 @@ async function deployComposeServicesCore(
         });
         unavailableServiceNames.add(svc.name);
         await releasePendingPreparedHostPorts(svc.id);
-        continue;
+        return;
       }
       const mergedEnv = resolvedEnvironment.mergedEnv;
 
@@ -2834,7 +2909,7 @@ async function deployComposeServicesCore(
         });
         unavailableServiceNames.add(svc.name);
         await releasePendingPreparedHostPorts(svc.id);
-        continue;
+        return;
       }
 
       // `image` was resolved before the scope gate above. Reaching here with none means this
@@ -2862,7 +2937,7 @@ async function deployComposeServicesCore(
         });
         unavailableServiceNames.add(svc.name);
         await releasePendingPreparedHostPorts(svc.id);
-        continue;
+        return;
       }
 
       // ── Static sub-app: files on the host, served by the edge ──────────────
@@ -2960,7 +3035,7 @@ async function deployComposeServicesCore(
             error: detail,
           });
           unavailableServiceNames.add(svc.name);
-          continue;
+          return;
         }
 
         logger.log(`Serving static files for "${svc.name}" from ${staticRoot}\n`, "info", {
@@ -3103,7 +3178,7 @@ async function deployComposeServicesCore(
           serviceId: svc.id,
           status: "running",
         });
-        continue;
+        return;
       }
 
       logger.log(`Deploying service "${svc.name}" (${image})...\n`, "info", {
@@ -3173,7 +3248,7 @@ async function deployComposeServicesCore(
           error: message,
         });
         unavailableServiceNames.add(svc.name);
-        continue;
+        return;
       }
       // Its ports and domains are inert the moment it has no endpoint of its own —
       // whether because another container owns the interfaces or because there are
@@ -3354,6 +3429,7 @@ async function deployComposeServicesCore(
       }
 
       let deployedContainerId: string | undefined;
+      let runtimeStartedAtMs: number | undefined;
       let deployedContainerCleaned = false;
       // Kept outside the try so a connection loss after Docker returned can still
       // persist every binding reported before the transport disappeared.
@@ -3409,6 +3485,10 @@ async function deployComposeServicesCore(
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
         const deployEnv: DeployEnvironment = {
+          onRuntimeReady: (containerId) => {
+            containerIdByServiceName.set(svc.name, containerId);
+            runtimeReady();
+          },
           ...(runtime.prepareServiceWorkload ? {
             preflight: () => runtime.prepareServiceWorkload!(serviceRuntimeConfig),
           } : {}),
@@ -3434,6 +3514,7 @@ async function deployComposeServicesCore(
                 }),
             );
             deployedContainerId = result.containerId;
+            runtimeStartedAtMs = Date.now();
             serviceResult = result;
             if (plan) {
               const pending: PendingServiceCutover = {
@@ -3680,7 +3761,7 @@ async function deployComposeServicesCore(
             serviceId: svc.id,
             serviceName: svc.name,
             containerId: result.containerId,
-            startedAtMs: Date.now(),
+            startedAtMs: runtimeStartedAtMs,
           });
           // Effective gate for THIS service: its own `advanced.readiness` when it
           // declares one, else the project's. Captured here because `svc.advanced` is
@@ -3761,11 +3842,14 @@ async function deployComposeServicesCore(
         }
 
         const openableRoute = proxyRoutes.find((route) => !isWildcardHostname(route.hostname));
-        firstPublicUrl ??= openableRoute
+        const publicUrl = openableRoute
           ? `https://${openableRoute.hostname}`
-          : cloudHosted
-            ? resolveServicePublicUrl(project, svc)
-            : undefined;
+          : cloudHosted ? resolveServicePublicUrl(project, svc) : undefined;
+        const order = serviceOrder.get(svc.id)!;
+        if (publicUrl && order < firstPublicUrlOrder) {
+          firstPublicUrl = publicUrl;
+          firstPublicUrlOrder = order;
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         if (cutover.pending && cutover.pending.containerId === deployedContainerId && cutover.pending.published) {
@@ -3943,6 +4027,8 @@ async function deployComposeServicesCore(
         }
       }
     }
+    });
+    results.sort((a, b) => serviceOrder.get(a.serviceId)! - serviceOrder.get(b.serviceId)!);
   } finally {
     // Every exact-cohort plan must be consumed or released, including when an
     // unexpected throw escapes before the per-service activation catch (route

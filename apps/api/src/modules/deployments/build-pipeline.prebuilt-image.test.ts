@@ -135,6 +135,7 @@ vi.mock("@repo/adapters", () => {
   }
 
   return {
+    withDeploymentProgress: (_logger: unknown, _reason: string, run: () => Promise<unknown>) => run(),
     BuildLogger,
     LocalExecutor: class LocalExecutor {},
     BareRuntime: class BareRuntime {},

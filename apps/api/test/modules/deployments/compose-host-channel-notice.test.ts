@@ -473,7 +473,7 @@ describe("compose deploy — host channel unavailable", () => {
     await f.run();
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).not.toHaveBeenCalled();
     expect(f.activate).toHaveBeenCalledOnce();
@@ -492,7 +492,7 @@ describe("compose deploy — host channel unavailable", () => {
     await expect(f.run()).rejects.toThrow("registry unavailable");
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(
       dep.id, new Date(start.getTime() + 20_000),
@@ -895,9 +895,11 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.pull).toHaveBeenCalledTimes(1);
     expect(f.activate).not.toHaveBeenCalled();
     expect(f.runtime.destroy).not.toHaveBeenCalled();
-    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ serviceId: "svc-db", startedAt: expect.any(Date) }),
-    );
+    // Both image requests were admitted before cancellation. Neither may activate;
+    // each attempted service keeps its own timing instead of inheriting a sibling's.
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledTimes(2);
+    expect(h.startServiceDeploymentTiming.mock.calls.map(([input]) => input.serviceId).sort())
+      .toEqual(["svc-api", "svc-db"]);
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(dep.id, expect.any(Date));
   });
 

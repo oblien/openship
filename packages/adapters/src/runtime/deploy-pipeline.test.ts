@@ -46,6 +46,27 @@ function recordingEnv(events: string[], over: Partial<DeployEnvironment> = {}): 
 }
 
 describe("runDeployPipeline cutover ordering", () => {
+  it("announces runtime readiness after the health gate and before routing", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      healthCheck: async () => { events.push("health"); },
+      onRuntimeReady: () => { events.push("runtime-ready"); },
+    });
+    expect((await runDeployPipeline(env, makeInput(), fakeLogger())).status).toBe("ready");
+    expect(events).toEqual(["activate", "health", "runtime-ready", "route", "deactivate"]);
+  });
+
+  it("never releases startup dependents when the health gate fails", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      healthCheck: async () => { throw new Error("not healthy"); },
+      onRuntimeReady: () => { events.push("runtime-ready"); },
+    });
+    expect((await runDeployPipeline(env, makeInput(), fakeLogger())).status).toBe("failed");
+    expect(events).not.toContain("runtime-ready");
+  });
   it("overlap: activate → health → route → deactivate (old stopped LAST)", async () => {
     const events: string[] = [];
     const env = recordingEnv(events, {

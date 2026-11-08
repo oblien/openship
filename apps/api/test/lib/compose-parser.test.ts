@@ -662,6 +662,23 @@ services:
       - cache
 `);
     expect(parsed.services[0]?.dependsOn).toEqual(["db", "cache"]);
+    expect(parsed.services[0]?.advanced?.dependsOnConditions).toEqual({});
+  });
+
+  it("preserves long-form startup conditions without turning build order into startup order", () => {
+    const parsed = parseComposeFile(`services:
+  api:
+    image: api:test
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      cache: { condition: service_started }
+`);
+    expect(parsed.services[0]?.dependsOn).toEqual(["db", "migrate", "cache"]);
+    expect(parsed.services[0]?.advanced?.dependsOnConditions).toEqual({
+      db: "service_healthy", migrate: "service_completed_successfully", cache: "service_started",
+    });
+    expect(parsed.unsupported).toEqual([]);
   });
 
   it("extracts restart policy", () => {

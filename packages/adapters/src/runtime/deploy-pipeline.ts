@@ -154,6 +154,10 @@ export interface DeployEnvironment {
    */
   healthCheck?(containerId: string, config: DeployConfig): Promise<void>;
 
+  /** Container activation and its health gate succeeded. Publication may continue
+   * while independent services and startup dependents become runnable. */
+  onRuntimeReady?(containerId: string): void;
+
   /**
    * Restart a previously-STOPPED deployment — the non-overlap (bare) auto-revert
    * path. Only meaningful when deactivate() merely stopped the old deployment
@@ -182,7 +186,7 @@ export interface DeployRouting {
 }
 
 export interface DeploySsl {
-  provisionCert(domain: string): Promise<SslResult>;
+  provisionCert(domain: string, options?: { routeAlreadyConfigured?: boolean }): Promise<SslResult>;
 }
 
 // ─── Pipeline input / output ────────────────────────────────────────────────
@@ -415,6 +419,8 @@ export async function runDeployPipeline(
       await env.healthCheck(containerId, config);
       throwIfCancelled(signal);
     }
+
+    env.onRuntimeReady?.(containerId);
 
     // ── Register routes (repoint traffic to the new deployment) ───────
     const routeTarget = env.resolveRoute

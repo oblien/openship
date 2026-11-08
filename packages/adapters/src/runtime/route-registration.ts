@@ -1,3 +1,4 @@
+import { withDeploymentProgress } from "./deployment-progress";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { DeployError, safeErrorMessage, type ProxySettings } from "@repo/core";
 import { edgeDownExplanation } from "../system/edge-exec-error";
@@ -220,7 +221,7 @@ export async function registerResolvedRoutes(
       routeConfig.webhookProxy = options.webhookProxy;
     }
 
-    await routingProvider.registerRoute(routeConfig);
+    await withDeploymentProgress(logger, `route configuration for ${domain.hostname}`, () => routingProvider.registerRoute(routeConfig));
 
     if (domain.provisionSsl && ssl) {
       logger.log(`Checking SSL for ${domain.hostname}...\n`);
@@ -234,7 +235,7 @@ export async function registerResolvedRoutes(
       // the next deploy. Failing the whole deploy because of one cert is
       // a deeply hostile UX — the box is up, treat SSL as a follow-up.
       try {
-        await ssl.provisionCert(domain.hostname);
+        await withDeploymentProgress(logger, `TLS verification or issuance for ${domain.hostname}`, () => ssl.provisionCert(domain.hostname, { routeAlreadyConfigured: true }));
       } catch (err) {
         observeCaughtError(err, "adapters/runtime/route-registration");
         const message = safeErrorMessage(err);

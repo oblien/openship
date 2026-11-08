@@ -121,6 +121,16 @@ async function setup(local = false) {
 }
 
 describe("Certbot renewal after adopting a certificate", () => {
+  test("does not reload a route again when it already uses a valid certificate", async () => {
+    const s = await setup();
+    await s.put(DOMAIN, s.renewed);
+    await s.nginx.registerRoute({ domain: DOMAIN, targetUrl: "http://127.0.0.1:3009", tls: true });
+    s.reload.mockClear();
+    const result = await s.nginx.provisionCert(DOMAIN, { routeAlreadyConfigured: true });
+    expect(result.verified).toBe(true);
+    expect(s.reload).not.toHaveBeenCalled();
+    expect(s.commands.some(command => command.startsWith("certbot "))).toBe(false);
+  });
   test.each([false, true])(
     "renews an import on the first attempt using an unused name (leftover names: %s)",
     async (leftovers) => {
@@ -202,7 +212,7 @@ describe("Certbot renewal after adopting a certificate", () => {
       return `Successfully received certificate.\nCertificate is saved at: ${dir}/fullchain.pem\nKey is saved at: ${dir}/privkey.pem\n`;
     });
 
-    const result = await s.nginx.provisionCert(DOMAIN, { force: true });
+    const result = await s.nginx.provisionCert(DOMAIN, { force: true, routeAlreadyConfigured: true });
 
     expect(result.expiresAt).toBe(new X509Certificate(s.renewed.certPem).validToDate.toISOString());
     expect(await s.served()).toBe(s.renewed.certPem);
