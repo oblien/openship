@@ -88,7 +88,7 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
     // used to cost a `sudo test` even for a path that is simply not there. lstat keeps
     // them apart: a path behind a directory this login cannot search reports a
     // refusal, which still falls through to root's answer below.
-    if (inner.lstat && (await inner.lstat(path).then((stat) => stat === null, () => false))) {
+    if (inner.lstat && (await inner.lstat(path).then((stat) => stat === null, (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return false; }))) {
       return false;
     }
     // `test -e` answers absence with exit 1, which `exec` surfaces as a throw — so a
