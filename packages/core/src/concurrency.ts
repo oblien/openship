@@ -16,6 +16,7 @@ export async function mapConcurrent<T, R>(
         try {
           results[index] = await run(values[index]!, index);
         } catch (error) {
+          // diagnostics-ignore: retain the first failure and rethrow it after all admitted commands drain.
           if (!failed) failure = error;
           failed = true;
         }
@@ -73,6 +74,7 @@ export async function runDependencyTasks<T>(
     });
     readiness.set(key, readyPromise);
     // A leaf has no consumer, but its failure is still collected by tasks below.
+    // diagnostics-ignore: the corresponding task owns propagation; a leaf has no readiness consumer.
     void readyPromise.catch(() => {});
     tasks.set(
       key,

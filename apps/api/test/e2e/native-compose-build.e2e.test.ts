@@ -6,7 +6,14 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BuildLogger, DockerRuntime, NoopInfraProvider, sq, type BuildConfig, type LogEntry } from "@repo/adapters";
+import {
+  BuildLogger,
+  DockerRuntime,
+  NoopInfraProvider,
+  sq,
+  type BuildConfig,
+  type LogEntry,
+} from "@repo/adapters";
 import { repos } from "@repo/db";
 import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 import { deployComposeServices } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
@@ -46,16 +53,16 @@ describeDockerE2E("native Compose build batches", () => {
     await run("docker", ["build", "-q", "-t", image, fixture], { timeout: 300_000 });
     const port = await availablePort();
     target = // Nested CPU/RAM controls need a domain-capable cgroup hierarchy.
-    (
-      await run("docker", [
-        "create",
-        "--privileged",
-        "--cgroupns=host",
-        "-p",
-        `127.0.0.1:${port}:22`,
-        image,
-      ])
-    ).stdout.trim();
+      (
+        await run("docker", [
+          "create",
+          "--privileged",
+          "--cgroupns=host",
+          "-p",
+          `127.0.0.1:${port}:22`,
+          image,
+        ])
+      ).stdout.trim();
     await run("docker", ["cp", `${identity}.pub`, `${target}:/root/.ssh/authorized_keys`]);
     await run("docker", ["start", target]);
     await waitFor(() => sshReady(port));
@@ -249,20 +256,23 @@ describeDockerE2E("native Compose build batches", () => {
   it("honors healthy and completed dependency conditions with real containers", async () => {
     const { organizationId } = await seedOrg();
     const project = await seedProject(organizationId, {
-      slug: `conditions-${suffix}`, framework: "docker-compose", runtimeMode: "docker", routeStrategy: "container-ip",
+      slug: `conditions-${suffix}`,
+      framework: "docker-compose",
+      runtimeMode: "docker",
+      routeStrategy: "container-ip",
     });
     const parsed = parseComposeFile(`services:
   db:
     image: alpine:3.21
-    command: [sh, -c, "sleep 2; mkdir -p /www; echo ready >/www/index.html; exec httpd -f -p 8080 -h /www"]
+    command: [sh, -c, "sleep 2; touch /tmp/ready; exec sleep 300"]
     healthcheck:
-      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:8080/"]
+      test: [CMD-SHELL, "test -f /tmp/ready"]
       interval: 1s
       timeout: 1s
       retries: 10
   migrate:
     image: alpine:3.21
-    command: [wget, -qO-, "http://db:8080/"]
+    command: [sh, -c, "sleep 1; exit 0"]
     restart: "no"
     depends_on:
       db: { condition: service_healthy }
@@ -273,17 +283,47 @@ describeDockerE2E("native Compose build batches", () => {
     depends_on:
       migrate: { condition: service_completed_successfully }
 `);
-    await repos.service.syncFromCompose(project.id, parsed.services, { composeAuthoritative: true });
-    const deployment = await seedDeployment(project, { imageRef: "compose", containerId: "compose" });
-    const noop = new NoopInfraProvider();
-    const result = await deployComposeServices(project, deployment, runtime, logger(), {
-      executor, localHost: false, routing: noop, ssl: noop, usesManagedRouting: false,
+    await repos.service.syncFromCompose(project.id, parsed.services, {
+      composeAuthoritative: true,
     });
+    const persisted = await repos.service.listByProject(project.id);
+    expect(
+      persisted.find((service) => service.name === "app")?.advanced?.dependsOnConditions,
+    ).toEqual({ migrate: "service_completed_successfully" });
+    const deployment = await seedDeployment(project, {
+      imageRef: "compose",
+      containerId: "compose",
+    });
+    const noop = new NoopInfraProvider();
+    const ids = new Map<string, string>();
+    const activate = runtime.deployServiceWorkload.bind(runtime);
+    const activation = vi
+      .spyOn(runtime, "deployServiceWorkload")
+      .mockImplementation(async (...args) => {
+        const name = args[1].serviceName;
+        if (name === "migrate")
+          expect((await runtime.sampleStability(ids.get("db")!)).health).toBe("healthy");
+        if (name === "app")
+          expect((await runtime.sampleStability(ids.get("migrate")!)).exitCode).toBe(0);
+        const result = await activate(...args);
+        ids.set(name, result.containerId);
+        return result;
+      });
+    const result = await deployComposeServices(project, deployment, runtime, logger(), {
+      executor,
+      localHost: false,
+      routing: noop,
+      ssl: noop,
+      usesManagedRouting: false,
+    }).finally(() => activation.mockRestore());
     expect(result.status, JSON.stringify(result)).toBe("ready");
-    const migration = result.services.find(service => service.serviceName === "migrate")!;
-    const app = result.services.find(service => service.serviceName === "app")!;
-    expect((await runtime.sampleStability(migration.containerId!)).exitCode).toBe(0);
-    expect((await runtime.getRuntimeLogs(app.containerId!, 10)).map(entry => entry.message).join("\n"))
-      .toContain("dependency-completed");
+    expect(result.summary.failed, JSON.stringify({ result, logs })).toBe(0);
+    const migration = result.services.find((service) => service.serviceName === "migrate")!;
+    const app = result.services.find((service) => service.serviceName === "app")!;
+    const migrationSample = await runtime.sampleStability(migration.containerId!);
+    expect(migrationSample.exitCode, JSON.stringify({ migrationSample, result, logs })).toBe(0);
+    expect(
+      (await runtime.getRuntimeLogs(app.containerId!, 10)).map((entry) => entry.message).join("\n"),
+    ).toContain("dependency-completed");
   }, 60_000);
 });

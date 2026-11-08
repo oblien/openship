@@ -2802,6 +2802,7 @@ async function deployComposeServicesCore(
           }
         } catch (error) {
           throwIfDeploymentCancelled(opts?.signal);
+          // diagnostics-ignore: this expected startup refusal is logged and persisted as a failed service below.
           dependencyFailure = safeErrorMessage(error);
         }
       }

@@ -1817,7 +1817,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // The trusted SSH path uses the daemon's native BuildKit GC, like `docker
     // compose build`. Managed project-cache collection must not run per image
     // or evict unrelated native records after a successful deployment.
-    if (this.connectionOptions?.nativeBuilds && this.transport.kind === "ssh") return;
+    if (this.nativeBuildPolicy()) return;
     if (!this._docker?.modem) return;
     try {
       await this.pruneBuildCache({ all: true, keepStorageBytes: DEFAULT_BUILD_CACHE_KEEP_BYTES });
@@ -1850,8 +1850,12 @@ export class DockerRuntime implements RuntimeAdapter {
     return available;
   }
 
+  private nativeBuildPolicy(): boolean {
+    return this.connectionOptions?.nativeBuilds === true && this.transport.kind === "ssh";
+  }
+
   private usesNativeBuild(config: BuildConfig): boolean {
-    return this.connectionOptions?.nativeBuilds === true && this.transport.kind === "ssh" &&
+    return this.nativeBuildPolicy() &&
       Object.keys(dockerBuildResourceLimits(config.resources)).length === 0;
   }
 
@@ -4891,6 +4895,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     }
 
     const executor = this.managedBuildCacheExecutor();
+    let managed: BuildCachePruneResult | undefined;
     if (executor) {
       if (Object.keys(options.filters ?? {}).length)
         throw new AppError(
@@ -4899,7 +4904,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           this.connectionOptions?.transport === "cloud" || this.transport?.kind === "cloud"
             ? "CLOUD_BUILD_CACHE_FILTER_UNSUPPORTED" : "BUILD_CACHE_FILTER_UNSUPPORTED",
         );
-      return this.withBuildCacheLock(() => {
+      managed = await this.withBuildCacheLock(() => {
         options.abortSignal?.throwIfAborted();
         // Maintenance has a longer bounded scan window than the build path,
         // so caches deferred by a build can still be collected in the daily sweep.
@@ -4908,6 +4913,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           measurementTimeoutMs: 120_000,
         });
       });
+      // A trusted host may contain both native cache and private worker cache
+      // from explicitly capped builds. Explicit maintenance must cover both;
+      // automatic native retention stays with the Docker daemon's own GC.
+      if (!this.nativeBuildPolicy() || options.automaticRetention) return managed;
     }
 
     const query: Record<string, boolean | number | Record<string, string[]>> = {
@@ -4945,15 +4954,15 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       SpaceReclaimed?: unknown;
     };
     return {
-      cachesDeleted: Array.isArray(response.CachesDeleted)
+      cachesDeleted: [...(managed?.cachesDeleted ?? []), ...(Array.isArray(response.CachesDeleted)
         ? response.CachesDeleted.filter((id): id is string => typeof id === "string")
-        : [],
-      spaceReclaimed:
+        : [])],
+      spaceReclaimed: (managed?.spaceReclaimed ?? 0) + (
         typeof response.SpaceReclaimed === "number" &&
         Number.isFinite(response.SpaceReclaimed) &&
         response.SpaceReclaimed >= 0
           ? response.SpaceReclaimed
-          : 0,
+          : 0),
     };
   }
 

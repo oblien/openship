@@ -604,14 +604,14 @@ function parseAdvanced(
   const advanced: ComposeAdvanced = {};
 
   if (Object.hasOwn(svc, "depends_on")) {
-    advanced.dependsOnConditions = {};
+    const conditions: NonNullable<ComposeAdvanced["dependsOnConditions"]> = {};
     const dependencies = svc.depends_on;
     if (dependencies && typeof dependencies === "object" && !Array.isArray(dependencies)) {
       for (const [name, raw] of Object.entries(dependencies)) {
         const settings = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
         const condition = settings.condition ?? "service_started";
         if (condition === "service_started" || condition === "service_healthy" || condition === "service_completed_successfully") {
-          advanced.dependsOnConditions[name] = condition;
+          if (condition !== "service_started") conditions[name] = condition;
         } else {
           unsupported.push({ service: serviceName, field: "depends_on", blocking: true,
             reason: "A dependency has an unsupported startup condition." });
@@ -622,6 +622,7 @@ function parseAdvanced(
         }
       }
     }
+    if (Object.keys(conditions).length) advanced.dependsOnConditions = conditions;
   }
 
   const healthcheck = parseHealthcheck(svc.healthcheck, env);

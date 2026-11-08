@@ -61,6 +61,20 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
 }
 
 describe("Cloud Docker build execution limits", () => {
+  it("clears both native and protected caches on explicit trusted-host maintenance", async () => {
+    const h = fixture("ssh");
+    h.runtime.connectionOptions.nativeBuilds = true;
+    h.runtime.pruneManagedBuildState = vi.fn(async () => ({ cachesDeleted: ["private"], spaceReclaimed: 10 }));
+    h.runtime._docker.modem.dial = vi.fn((_options, callback) => callback(null, {
+      CachesDeleted: ["native"], SpaceReclaimed: 20,
+    }));
+    await expect(h.runtime.pruneBuildCache({ all: true })).resolves.toEqual({
+      cachesDeleted: ["private", "native"], spaceReclaimed: 30,
+    });
+    h.runtime._docker.modem.dial.mockClear();
+    await h.runtime.pruneBuildCache({ automaticRetention: true });
+    expect(h.runtime._docker.modem.dial).not.toHaveBeenCalled();
+  });
   it("keeps Cloud builds protected even if a connection carries the native opt-in", async () => {
     const h = fixture("cloud", true, { cpuCores: 0, memoryMb: 0, diskMb: 0 });
     h.runtime.connectionOptions.nativeBuilds = true;
