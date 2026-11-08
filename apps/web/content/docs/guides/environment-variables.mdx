@@ -90,6 +90,32 @@ never re-typed it, so it's never re-sent.
   the new values take effect the next time you deploy.
 </Callout>
 
+## Build logs and Docker secrets
+
+Generated Docker builds pass the environment through temporary BuildKit secret
+mounts. Values are available to workspace preparation, installation and build
+commands, without embedding them in the generated Dockerfile or image history.
+BuildKit must be available on the build host. Cloud and SSH builds use the existing
+protected worker; native Docker Engine API builds with explicit CPU/memory limits
+must use a protected server worker because the Engine API cannot enforce those
+limits under BuildKit.
+
+Deployment logs mask configured environment values before live streaming and
+storage, including values not marked secret in the editor. Failure summaries and
+notifications use the same protection. Shell-quoted, JSON-escaped and multi-line
+values are covered; an application's own encoding or transformation of a value
+cannot be reliably detected. Avoid printing credentials in application code.
+
+Repository Dockerfiles retain their existing build-argument behavior. Docker `ARG`
+and `ENV` can persist values in image metadata or layers, so they should not carry
+private runtime-only values. A framework may also intentionally bake public build
+variables into browser assets. Log masking does not make those assets private or
+change which variables your build receives.
+
+This protection applies to new builds. If an earlier build exposed credentials,
+rotate those credentials and remove the affected historical deployment logs and
+copies retained in notifications or backups.
+
 ## When your app sees these values
 
 Project-level variables are available at **two moments**:

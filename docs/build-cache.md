@@ -30,18 +30,25 @@ move them ahead of the source copy. Installed dependencies, compiled executables
 `.nuxt` and other required outputs are not automatically mounted as caches.
 Repository Dockerfiles remain the source of truth and can declare their own cache
 mounts. Native/bare builds are unchanged.
-Custom build images retain layer caching without automatic cache mounts, preserving
+Custom build images retain caching for environment-independent layers without automatic cache mounts, preserving
 their configured users, home directories and any preseeded offline dependencies.
 Yarn package archives also stay in image layers: both Classic and modern
 Plug'n'Play loaders can need the global cache at runtime. Yarn builds still reuse
 Docker layers and supported framework/Turborepo build-only caches.
 
-Legacy Docker builders use the original recipes. Engine-API builds with explicit
-CPU/RAM limits also retain their original builder behavior; enabling cache mounts
-must not silently remove those limits. Set `OPENSHIP_BUILD_CACHE_MOUNTS=false` on
-the OpenShip API/worker, or in a project's build environment, to disable automatic
-mounts. This also accommodates custom clean scripts that remove entire mounted
-cache directories. Docker layer caching remains available.
+Generated Docker builds require BuildKit. Build environment values travel through a
+required secret mount, never inline exports in the Dockerfile or inherited build
+arguments. Environment-dependent RUN steps use an opaque attempt-specific secret
+ID so a redeploy cannot reuse layers built with old values. Package and framework
+cache mount identities remain reusable; base-image and source layers still cache.
+
+Set `OPENSHIP_BUILD_CACHE_MOUNTS=false` on the OpenShip API/worker, or in a project's
+build environment, to disable automatic **cache** mounts. Required secret mounts
+remain enabled. A generated build with explicit CPU/RAM limits cannot run through
+the native Engine API, whose BuildKit backend ignores those limits; it fails before
+executing repository commands and directs the operator to the protected SSH server
+worker. Cloud and SSH worker limits remain enforced. Repository Dockerfiles retain
+their existing builder selection and explicit ARG semantics.
 
 ## Remote worker lifecycle
 

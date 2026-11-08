@@ -1,3 +1,4 @@
+import { BuildLogger, type LogEntry } from "@repo/adapters";
 import { createEncryption } from "@repo/db/encryption";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
@@ -43,6 +44,7 @@ const h = vi.hoisted(() => ({
   sessionStatuses: [] as Array<{ id: string; status: string; detail?: Record<string, unknown> }>,
   activePointer: [] as string[],
   notifications: [] as string[],
+  notificationPayloads: [] as unknown[],
   deletedUpdateStatuses: [] as string[],
   deleteUpdateStatusError: null as Error | null,
   finishedLogs: [] as unknown[][],
@@ -106,6 +108,7 @@ vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string }) => {
       h.notifications.push(e.eventType);
+      h.notificationPayloads.push(e);
     },
   },
 }));
@@ -164,6 +167,7 @@ beforeEach(() => {
   h.sessionStatuses = [];
   h.activePointer = [];
   h.notifications = [];
+  h.notificationPayloads = [];
   h.deletedUpdateStatuses = [];
   h.deleteUpdateStatusError = null;
   h.finishedLogs = [];
@@ -236,6 +240,24 @@ describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
         level: "error",
       }),
     ]);
+  });
+
+  it("redacts build output and failure details before every lifecycle sink (#1663)", async () => {
+    const secret = "example-private-lifecycle-value";
+    const ctx = ctxFor();
+    const logs: LogEntry[] = [];
+    const logger = new BuildLogger(entry => logs.push(entry));
+    logger.protectSecrets([secret]);
+    ctx.logger = logger;
+    ctx.persistLogs = () => { logger.flush(); return logs; };
+    logger.callback({ timestamp: "now", message: secret, rawData: Buffer.from(secret).toString("base64"), level: "info" });
+    await onFailure(ctx, `build failed: ${secret}`, 99, { errorDetails: { provider: { message: secret } } });
+    const sinks = JSON.stringify([h.statusWrites, h.sessionStatuses, h.finishedLogs, h.notificationPayloads]);
+    expect(sinks).not.toContain(secret);
+    expect(sinks).not.toContain(Buffer.from(secret).toString("base64"));
+    expect(h.statusWrites.at(-1)?.extra?.errorMessage).toBe("build failed: ***");
+    expect(h.notificationPayloads).toHaveLength(1);
+    expect(ctx.settled).toBe("failed");
   });
 
   it("does not duplicate a terminal reason already emitted by a lower layer", async () => {

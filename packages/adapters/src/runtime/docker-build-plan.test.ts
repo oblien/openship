@@ -1,3 +1,4 @@
+import { dockerBuildSecrets, BUILD_ENV_SOURCE } from "./docker-build-secrets";
 import { describe, it, expect } from "vitest";
 import { generateDockerfile } from "./docker-build-plan";
 import type { BuildConfig } from "../types";
@@ -6,6 +7,7 @@ import type { BuildConfig } from "../types";
 // fixtures readable (same pattern as deploy-pipeline.test.ts).
 function config(over: Partial<BuildConfig>): BuildConfig {
   return {
+    sessionId: "test-build",
     buildImage: "node:22",
     runtimeImage: "node:22",
     installCommand: "",
@@ -347,8 +349,8 @@ describe("generateDockerfile — node_modules/.bin on PATH (#623)", () => {
   });
 });
 
-// The way the fix above can silently undo itself. `buildEnvPrefix` emits its
-// inline `export` INSIDE the RUN line, i.e. after the stage-level `ENV PATH`, so
+// The way the fix above can silently undo itself. The mounted environment is
+// sourced inside RUN, after the stage-level `ENV PATH`, so
 // a project env var named PATH is the last writer and wins. And a PATH copied out
 // of another platform's dashboard is an absolute literal, not `$PATH:extra` — so
 // it deletes node_modules/.bin from the lookup path and every dependency binary is
@@ -399,17 +401,15 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/bin",
   };
 
-  /** What every RUN line's export segment must be, for all four recipes: the
-   *  ordinary var, the NO_COLOR default, and nothing else. One equality covers
-   *  PATH/FORCE_COLOR/TERM being dropped AND the ordinary var surviving. */
-  const EXPECTED_EXPORT = "export API_URL='https://api.example.com' NO_COLOR='1'";
+  /** The mounted environment preserves ordinary values and excludes host PATH. */
+  const EXPECTED_EXPORT = "export API_URL='https://api.example.com'\nexport NO_COLOR='1'\n";
 
   it("exports the project's other vars but never its PATH (JS recipe)", () => {
     const df = generateDockerfile(nextApp({ envVars: HOSTILE_ENV }));
     const exports = inlineExports(df);
-    // Guard: an empty list would make the equality below pass for the wrong reason.
-    expect(exports.length).toBeGreaterThan(0);
-    for (const segment of exports) expect(segment).toBe(EXPECTED_EXPORT);
+    expect(exports).toEqual([]);
+    expect(df).toContain(BUILD_ENV_SOURCE);
+    expect([...dockerBuildSecrets(nextApp({ envVars: HOSTILE_ENV })).values()]).toEqual([EXPECTED_EXPORT]);
   });
 
   it("never lets the project's PATH value into the recipe at all", () => {
@@ -441,13 +441,12 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     );
     const prepare = df.split("\n").find((line) => line.includes("prisma generate"));
     expect(prepare).toBeDefined();
-    expect(prepare).toContain("export API_URL=");
+    expect(prepare).toContain(BUILD_ENV_SOURCE);
     expect(prepare).not.toContain("PATH=");
-    expect(inlineExports(df).length).toBeGreaterThan(0);
-    for (const segment of inlineExports(df)) expect(segment).toBe(EXPECTED_EXPORT);
+    expect(inlineExports(df)).toEqual([]);
   });
 
-  it("covers the static recipe, which shares buildEnvPrefix", () => {
+  it("covers the static recipe, which shares the environment mount", () => {
     const df = generateDockerfile(
       config({
         isStatic: true,
@@ -461,8 +460,9 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     );
     expect(df).toContain('ENV PATH="/workspace/node_modules/.bin:$PATH"');
     const exports = inlineExports(df);
-    expect(exports.length).toBeGreaterThan(0);
-    for (const segment of exports) expect(segment).toBe(EXPECTED_EXPORT);
+    expect(exports).toEqual([]);
+    expect(df).toContain(BUILD_ENV_SOURCE);
+    expect([...dockerBuildSecrets(nextApp({ envVars: HOSTILE_ENV })).values()]).toEqual([EXPECTED_EXPORT]);
   });
 
   it("covers the PHP asset stage — a Node stage inside a composer project", () => {
@@ -473,8 +473,8 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     expect(df).toContain('ENV PATH="/workspace/node_modules/.bin:$PATH"');
     const exports = inlineExports(df);
     // Both the composer install line and the asset build line carry a prefix.
-    expect(exports.length).toBeGreaterThan(1);
-    for (const segment of exports) expect(segment).toBe(EXPECTED_EXPORT);
+    expect(exports).toEqual([]);
+    expect(df.split(BUILD_ENV_SOURCE).length).toBeGreaterThan(2);
     expect(df).not.toContain("/usr/local/sbin");
   });
 
@@ -487,10 +487,8 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
       }),
     );
     const exports = inlineExports(df);
-    expect(exports.length).toBeGreaterThan(0);
-    for (const segment of exports) {
-      expect(segment).toBe("export PATH_PREFIX='/base' NEXT_PUBLIC_PATH='/p' NO_COLOR='1'");
-    }
+    expect(exports).toEqual([]);
+    expect([...dockerBuildSecrets(nextApp({ envVars: { PATH: "/bad", PATH_PREFIX: "/base", NEXT_PUBLIC_PATH: "/p" } })).values()]).toEqual(["export PATH_PREFIX='/base'\nexport NEXT_PUBLIC_PATH='/p'\nexport NO_COLOR='1'\n"]);
   });
 });
 

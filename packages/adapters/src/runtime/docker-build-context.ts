@@ -735,15 +735,15 @@ export async function resolveServiceDockerfile(
   }
 
   const dockerfileName = repositoryDockerfileName ?? generatedName;
-  // Generated recipes declare cache mounts only on a confirmed BuildKit path.
-  // Reading a repository Dockerfile still detects its own syntax. A read
+  // Generated recipes require secret mounts independently of the cache setting.
+  // Repository Dockerfiles retain their own syntax-based builder selection. A read
   // failure here must not fail the build — the builder choice is an optimization,
   // and the build itself is about to read the same file.
   const requiresBuildKit = hasRepositoryDockerfile
     ? await readFile(join(buildContextDir, ...dockerfileName.split("/")), "utf-8")
         .then(dockerfileNeedsBuildKit)
         .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker-build-context"); return false; })
-    : config.buildCache === true;
+    : true;
   const ignoreContextPath =
     opts?.dockerignorePruned === false
       ? await loadContextIgnore(buildContextDir, contextKeepPaths(dockerfileName))

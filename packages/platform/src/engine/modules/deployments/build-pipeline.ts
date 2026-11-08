@@ -839,7 +839,10 @@ async function executeBuildAndDeploy(
    * all), and the rejected UPDATE used to be read as a deploy failure. This is
    * the ONE place the persisted array is built.
    */
-  const persistLogs = () => sanitizeLogsForPersistence(collapseTerminalLogs(logs));
+  const persistLogs = () => {
+    logger.flush();
+    return sanitizeLogsForPersistence(collapseTerminalLogs(logs));
+  };
 
   const provisioned: { imageRef?: string } = {};
   const ctx: LifecycleContext = {
@@ -1058,6 +1061,13 @@ async function executeBuildAndDeploy(
         errorDiagnostics.warn("platform/engine/modules/deployments/build-pipeline", `[build] failed to decrypt env var ${key}: ${safeErrorMessage(err)}`);
       },
     );
+    logger.protectSecrets([
+      ...Object.values(envMap),
+      ...serviceMode.servicePreflightServices.flatMap(service => [
+        ...Object.values(service.environment ?? {}),
+        ...Object.values(service.buildArgs ?? {}).filter((value): value is string => typeof value === "string"),
+      ]),
+    ]);
     if (snapshot.roleConfiguration && failedEnvKeys.length)
       throw new Error("The active environment could not be decrypted. Re-enter the affected variables before applying role settings.");
     // Surface dropped env in the BUILD LOG (not just the server console) so a
@@ -1267,6 +1277,7 @@ async function executeBuildAndDeploy(
     // hasServer=false but must build its OWN image, not the static nginx one —
     // so key strictly off the static workload, not `!hasServer` (issue #538-B).
     buildConfig.isStatic = workload === "static";
+    logger.protectSecrets([gitCred.token ?? "", gitCred.ssh?.privateKey ?? ""]);
     buildConfig.gitTokenRepositories = gitCred.tokenRepositories;
     // When opted in, the runtime clones on the remote build host instead of the
     // orchestrator transferring the context. The credential arrives either via
@@ -1739,8 +1750,8 @@ async function executeBuildAndDeploy(
       );
       return;
     }
-    const message = err instanceof Error ? err.message : "Unknown error";
-    if (process.env.OPENSHIP_DEBUG_PIPELINE) errorDiagnostics.error("platform/engine/modules/deployments/build-pipeline", "[pipeline]", err);
+    const message = logger.redact(err instanceof Error ? err.message : "Unknown error");
+    if (process.env.OPENSHIP_DEBUG_PIPELINE) errorDiagnostics.error("platform/engine/modules/deployments/build-pipeline", "[pipeline]", new Error(message));
     // Only an UNSETTLED error is a deploy failure. An error thrown after the
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
