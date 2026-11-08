@@ -85,12 +85,12 @@ beforeEach(() => {
 
 it("activates the purchased organization's Manage page before reading billing", async () => {
   const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
-  h.query = "organizationId=org-two&checkout=success&plan=priority";
+  h.query = "organizationId=org-two&checkout=success&plan=priority&tab=payment";
   await render();
   expect(h.get).not.toHaveBeenCalled();
   expect(h.setActive).toHaveBeenCalledWith({ organizationId: "org-two" });
   expect(navigate).toHaveBeenCalledWith(
-    "/billing/manage?checkout=success&plan=priority&organizationId=org-two",
+    "/billing/manage?checkout=success&plan=priority&tab=payment&organizationId=org-two",
   );
 });
 

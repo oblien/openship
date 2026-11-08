@@ -84,6 +84,8 @@ export function CloudBillingLink({
           if (typeof value === "string") query.set(key, value);
         }
         const path = tab === "home" ? "/billing" : `/billing/${tab}`;
+        if (tab === "manage" && (returnQuery?.tab === "overview" || returnQuery?.tab === "payment"))
+          query.set("tab", returnQuery.tab);
         if (serverId) {
           query.set("organizationId", organizationId);
           if (returnQuery?.changePlan === "1") query.set("changePlan", "1");
