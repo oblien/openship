@@ -6,7 +6,7 @@ import { PLANS, planServiceResources, formatCpuCores, formatMemoryMb } from "@re
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
-import { cloudUsagePercent, hasUnlimitedCloudCredits, isNewCloudCustomer } from "@/lib/billing-presentation";
+import { cloudUsagePercent, hasUnlimitedCloudCredits, isMonthlyCloudPlan, isNewCloudCustomer } from "@/lib/billing-presentation";
 import { ResourceLabel, ResourceMeter, ResourceRing } from "./ResourceMeter";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -42,7 +42,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
     },
     {
       label: copy.buildTime,
-      hint: state.compute?.billingMode === "monthly" ? t.billing.compute.buildHint : copy.buildHint,
+      hint: isMonthlyCloudPlan(state) ? t.billing.compute.buildHint : copy.buildHint,
       meter: buildMeter,
       unit: t.billing.header.min,
       Icon: "clock" as const,
@@ -143,7 +143,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
             })}
           </p>
         )}
-        {!state.compute && <details className="group mt-4 rounded-xl bg-muted/35 p-3">
+        {!state.compute && !isMonthlyCloudPlan(state) && <details className="group mt-4 rounded-xl bg-muted/35 p-3">
           <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
             <ResourceRing large label={copy.usageAllowance} used={percent} max={100}>
               <span className="text-sm font-medium tabular-nums">

@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
   quota: vi.fn(),
   pending: new Map<string, unknown[]>(),
   members: vi.fn(),
-  env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true, AFFILIATES_ENABLED: false, OBLIEN_AFFILIATE_NAMESPACE: "openship" },
+  env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true, REFERRALS_ENABLED: false, REFERRAL_NAMESPACE: "openship" },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env, runtimeTarget: { dashboard: "https://app.openship.io" } }));
 vi.mock("@repo/db", () => {
@@ -58,7 +58,7 @@ vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
 import { createCheckoutSession, createTopupCheckoutSession, createPortalSession, cancelSubscription, resumeSubscription, listActiveCreditPacks } from "@repo/platform/engine/modules/billing/billing.service";
 import { customSubscriptionOffer, validCustomOffer } from "@repo/platform/engine/modules/billing/billing-custom-offer";
 import { presentCloudPlans, subscriptionPlan } from "@repo/platform/engine/modules/billing/billing-catalog";
-import { affiliateParticipantKey } from "@repo/platform/engine/modules/affiliates/affiliate-provider";
+import { referralParticipantKey } from "@repo/platform/engine/modules/referrals/referral-provider";
 
 const ctx = (organizationId = "org-a") => ({ organizationId }) as never;
 const subscription = {
@@ -71,7 +71,7 @@ beforeEach(() => {
   h.pending.clear();
   h.env.BILLING_ENABLED = true;
   h.env.BILLING_TOPUPS_ENABLED = true;
-  h.env.AFFILIATES_ENABLED = false;
+  h.env.REFERRALS_ENABLED = false;
   h.members.mockResolvedValue([{ userId: "owner" }, { userId: "buyer" }]);
   h.namespace.mockImplementation(async (org) => `ns-${org}`);
   h.sync.mockImplementation(async (orgId) => {
@@ -94,24 +94,24 @@ beforeEach(() => {
 });
 describe("Cloud customer checkout", () => {
   it.each(["monthly", "annual"] as const)("binds verified buyer and workspace members to the normal %s referral checkout", async interval => {
-    h.env.AFFILIATES_ENABLED = true;
+    h.env.REFERRALS_ENABLED = true;
     await createCheckoutSession({ organizationId: "org-a", userId: "buyer" } as never, "starter", interval,
-      "affiliate-attempt-0001", undefined, undefined, "AF-0123456789");
+      "referral-attempt-0001", undefined, undefined, "AF-0123456789");
     expect(h.members).toHaveBeenCalledWith("org-a");
     expect(h.checkout).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       namespace: "ns-org-a", kind: "subscription", billingInterval: interval === "annual" ? "yearly" : "monthly",
-      affiliateCode: "AF-0123456789", affiliateBuyer: { namespace: "openship", buyerKey: affiliateParticipantKey("buyer"),
-        relatedKeys: [affiliateParticipantKey("owner"), affiliateParticipantKey("buyer")] },
+      affiliateCode: "AF-0123456789", affiliateBuyer: { namespace: "openship", buyerKey: referralParticipantKey("buyer"),
+        relatedKeys: [referralParticipantKey("owner"), referralParticipantKey("buyer")] },
     }));
     expect(h.pending.get("org-a")).toHaveLength(1);
   });
   it("saves buyer identity for later hosted code entry but rejects codes when the feature is disabled", async () => {
-    await expect(createCheckoutSession(ctx(), "starter", "monthly", "affiliate-disabled", undefined, undefined, "AF-0123456789"))
+    await expect(createCheckoutSession(ctx(), "starter", "monthly", "referral-disabled", undefined, undefined, "AF-0123456789"))
       .rejects.toMatchObject({ code: "AFFILIATE_INELIGIBLE" });
     expect(h.checkout).not.toHaveBeenCalled(); expect(h.members).not.toHaveBeenCalled();
-    h.env.AFFILIATES_ENABLED = true;
-    await createCheckoutSession({ organizationId: "org-a", userId: "buyer" } as never, "starter", "monthly", "affiliate-hosted-entry");
-    expect(h.checkout.mock.calls[0]![0]).toHaveProperty("affiliateBuyer.buyerKey", affiliateParticipantKey("buyer"));
+    h.env.REFERRALS_ENABLED = true;
+    await createCheckoutSession({ organizationId: "org-a", userId: "buyer" } as never, "starter", "monthly", "referral-hosted-entry");
+    expect(h.checkout.mock.calls[0]![0]).toHaveProperty("affiliateBuyer.buyerKey", referralParticipantKey("buyer"));
     expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("affiliateCode");
   });
   it("does not create a paid checkout while a complimentary plan is active", async () => {

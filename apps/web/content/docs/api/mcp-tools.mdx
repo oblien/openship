@@ -965,6 +965,17 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/projects/:id/services/:serviceId/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/projects/folder/scan/:sessionId/env-reveal` | Explicit dashboard secret reveal. MCP passes uploadSessionId to project ensure so real values stay server-side. |
 | `POST /api/projects/folder/upload/:sessionId` | Binary tarball upload; use the authenticated upload URL from folder/session outside JSON-RPC. |
+| `GET /api/referral-program` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/enroll` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/offers` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/offers` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/offers/revoke` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/payout-destination` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/payouts` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/payouts` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/payouts/cancel` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/referrals` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/referrals/payments` | Personal referral earnings and cash payout requests are managed in the Referral page. |
 | `GET /api/referrals/:code` | Public commercial referral terms for signup and checkout; contains no account or earnings data. |
 | `POST /api/services/terminal/ticket` | Single-use browser WebSocket terminal ticket. Use the service exec tool for bounded commands over MCP. |
 | `GET /api/services/terminal/ws/:serviceId` | WebSocket upgrade — auth happens inside upgradeWebSocket via ticket subprotocol or session-cookie fallback (HTTP middleware blocks the handshake) |

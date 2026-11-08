@@ -34,7 +34,7 @@ export function CloudBillingLink({
   returnQuery,
 }: {
   organizationId: string;
-  tab: BillingTab | "manage";
+  tab: BillingTab | "manage" | "home";
   workspaceId?: string;
   embedded?: boolean;
   newServer?: boolean;
@@ -65,7 +65,8 @@ export function CloudBillingLink({
           const value = returnQuery?.[key];
           if (typeof value === "string") query.set(key, value);
         }
-        window.location.assign(newServer ? newServerBillingHref(organizationId, purchase) : scopedBillingHref(`/billing/${tab}?${query}`, { workspaceId, organizationId }));
+        const path = tab === "home" ? "/billing" : `/billing/${tab}`;
+        window.location.assign(newServer ? newServerBillingHref(organizationId, purchase) : scopedBillingHref(`${path}?${query}`, { workspaceId, organizationId }));
       })
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/components/billing/CloudBillingLink");

@@ -29,6 +29,7 @@ import { BillingPageView, type BillingView } from "../_components/BillingViewCon
 import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import BillingPage from "../page";
+import { BillingHome } from "@/components/billing/BillingHome";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { BillingPlanSummary, BillingPaymentsPanel } from "../_components/billing-shared";
 import { BillingContent } from "../_components/BillingContent";
@@ -80,7 +81,7 @@ describe("billing page failure recovery", () => {
 
   it("reports unavailable Cloud billing without duplicating the layout's Manage view", async () => {
     mocks.get.mockRejectedValue(new ServerApiError(503, "Unavailable", { code: "OBLIEN_BILLING_UNAVAILABLE" }));
-    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({}) });
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ workspaceId: "cws-existing" }) });
     expect(findElement(page, BillingUnavailable)).toBeDefined();
   });
 
@@ -160,7 +161,7 @@ describe("billing page failure recovery", () => {
     const complimentary = { id: "grant-scale", expiresAt: null };
     mocks.get.mockResolvedValue({ data: { tier: "team", subscription: null, complimentary, billing: { enabled: true }, capabilities: { subscriptionChange: false } } });
 
-    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({}) });
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ workspaceId: "cws-existing" }) });
     const plans = findElement<Record<string, unknown>>(page, BillingPlansRoute)!;
 
     expect(plans.props).toMatchObject({ currentPlan: "team", subscription: null, complimentary, canChangeSubscription: false });
@@ -238,15 +239,35 @@ describe("billing page failure recovery", () => {
     expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view.topupsAvailable).toBe(true);
   });
 
-  it("shows only the plan comparison before the first subscription", async () => {
-    mocks.get.mockResolvedValue({ data: free });
+  it("hides credit top-ups for monthly plans even when a stale capability advertises them", async () => {
+    mocks.get.mockResolvedValue({ data: { ...free, tier: "starter", plan: { billingMode: "monthly" }, topups: { available: true } } });
+    const page = await loadPage();
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view.topupsAvailable).toBe(false);
+    await expect(BillingTabPage({ params: Promise.resolve({ tab: "topups" }), searchParams: Promise.resolve({ workspaceId: "monthly-space" }) }))
+      .rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/billing/overview?workspaceId=monthly-space;307;" });
+  });
+
+  it("opens unscoped Plans as a new purchase without reading a subscription", async () => {
     const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({}) });
-    expect(findElement(page, BillingPlansRoute)).toBeDefined();
+    expect(findElement(page, ManagedServerPurchase)).toBeDefined();
     expect(findElement(page, BillingOverview)).toBeUndefined();
     expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view).toMatchObject({
-      contextKey: "user-a:org-a", plansOnly: true,
+      contextKey: "user-a:org-a", plansOnly: true, newServer: true,
     });
-    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/state", { cache: "no-store", timeout: 45_000 });
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("uses the plan-card overview at the bare billing entry", async () => {
+    const page = await BillingPage({ searchParams: Promise.resolve({}) });
+    expect(findElement(page, BillingHome)).toBeDefined();
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("activates the requested organization before rendering its plan overview", async () => {
+    const page = await BillingPage({ searchParams: Promise.resolve({ organizationId: "org-b" }) });
+    expect(findElement<{ tab: string; organizationId: string }>(page, CloudBillingLink)?.props).toMatchObject({ tab: "home", organizationId: "org-b" });
+    expect(findElement(page, BillingHome)).toBeUndefined();
+    expect(mocks.get).not.toHaveBeenCalled();
   });
 
   it("opens a new-server purchase without selecting or fetching an existing subscription", async () => {

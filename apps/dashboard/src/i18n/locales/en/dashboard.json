@@ -55,7 +55,7 @@
     }
   },
   "nav": {
-    "affiliates": "Referral",
+    "referrals": "Referral",
     "resources": "Cloud spaces",
     "support": "Support",
     "scale": "Scale",
@@ -72,7 +72,7 @@
     "emails": "Emails",
     "jobs": "Jobs",
     "settings": "Settings",
-    "billing": "Billing & Usage",
+    "billing": "Plans & billing",
     "audit": "Audit log",
     "mailSetup": "Set up mail",
     "mailSetupProgress": "Setup progress",

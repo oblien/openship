@@ -24,7 +24,10 @@
     "connecting": "Connexion…",
     "streamUnavailable": "Les mises à jour en direct sont indisponibles. La dernière mesure est affichée.",
     "usageTitle": "Utilisation des ressources",
-    "setupPending": "L’utilisation apparaîtra une fois votre espace Cloud configuré."
+    "setupPending": "L’utilisation apparaîtra une fois votre espace Cloud configuré.",
+    "projectsAssigned": "Projets de cette offre",
+    "projectsAssignedHint": "Les projets partagent les ressources de calcul et le stockage de cette offre.",
+    "storageDetails": "À propos du stockage utilisé"
   },
   "github": {
     "title": "Accès GitHub",
@@ -67,12 +70,8 @@
     "addThisMachine": "Ajouter cette machine",
     "addThisMachineError": "Impossible d'ajouter cette machine comme serveur.",
     "emptyTitle": "Aucun serveur pour l'instant",
-    "emptyDescription": "Connectez un serveur via SSH et Openship s'occupe du reste : Docker, OpenResty, SSL et déploiements sont tous configurés automatiquement.",
+    "emptyDescription": "Connectez un serveur via SSH. OpenShip gère Docker, le routage, SSL et les déploiements.",
     "addFirstServer": "Ajouter votre premier serveur",
-    "whatGetsConfigured": "Ce qui est configuré",
-    "monitoring": "Supervision",
-    "monitoringDesc": "Vérifications de l'état",
-    "gitDesc": "Déploiements depuis les sources",
     "connected": "Connecté",
     "error": "Erreur",
     "forwarding": "{n} redirection(s)",
@@ -135,10 +134,6 @@
       "nothingToDo": "Rien à appliquer",
       "applyFailed": "Impossible de lancer les mises à jour"
     },
-    "featContainer": "Environnement d'exécution de conteneurs",
-    "featContainerDesc": "Exécute chaque application de manière isolée",
-    "featProxy": "Proxy inverse",
-    "featProxyDesc": "Routage et SSL",
     "seeDocs": "Voir la documentation"
   },
   "containers": {
@@ -1035,12 +1030,12 @@
       "description": "Utilisez un serveur que vous possédez déjà via SSH."
     },
     "managed": {
-      "label": "Obtenir un serveur géré",
-      "description": "Openship Cloud gère la configuration, le routage et HTTPS."
+      "label": "Ajouter un espace Cloud",
+      "description": "Les apps, builds et données partagent la capacité de leur espace Cloud."
     },
-    "signInHint": "Connectez votre compte Cloud pour utiliser un serveur géré existant ou en obtenir un nouveau.",
-    "chooseExisting": "Choisir un serveur Cloud existant",
-    "useServer": "Utiliser ce serveur"
+    "signInHint": "Connectez votre compte Cloud pour utiliser un espace Cloud existant ou en ajouter un nouveau.",
+    "chooseExisting": "Choisir un espace Cloud",
+    "useServer": "Utiliser cet espace Cloud"
   },
   "managedControls": {
     "retry": "Actualiser l’état",

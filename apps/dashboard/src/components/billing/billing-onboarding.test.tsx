@@ -629,6 +629,16 @@ describe("customer credit limits", () => {
     expect(container.textContent).toContain(copy.compute.features.noCredits);
     expect(container.textContent).not.toContain(copy.resourcesGuide.creditAllowances);
   });
+  it("does not offer compute credits or load credit packs for a saved monthly plan without live coverage", async () => {
+    const monthly = { ...paid, compute: undefined, plan: { ...hobby, billingMode: "monthly" as const, monthlyCredits: null },
+      topups: { available: true, status: "available" as const } };
+    await render(<><BillingOverview state={monthly} /><BillingTopups state={monthly} /></>);
+    expect(container.querySelector('[role="meter"][aria-label="Cloud usage"]')).toBeNull();
+    expect(container.textContent).not.toContain(copy.creditAlert.exhaustedTitle);
+    expect(mocks.get.mock.calls.some(([path]) => String(path).includes("billing/topup-packs"))).toBe(false);
+    expect(container.querySelector('a[href*="/billing/topups"]')).toBeNull();
+  });
+
   it("separates retained storage charges from expired compute coverage", async () => {
     const compute = monthlyCompute({ covered: false, status: "storage_payment_required" });
     compute.retention.amountDue = 1.25;
