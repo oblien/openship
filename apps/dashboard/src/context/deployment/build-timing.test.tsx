@@ -115,6 +115,82 @@ function clockText() {
   return label?.nextElementSibling?.textContent;
 }
 
+describe("build status on browser return", () => {
+  it("reconciles a missed finish once, without polling a healthy stream or settled result", async () => {
+    await mount(); await load();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(api.status).toHaveBeenCalledTimes(1);
+    api.status.mockResolvedValue(snapshot({ status: "ready", is_active: false, buildDurationMs: 42000 }));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    expect(build.state.deploymentSuccess).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+  });
+
+  it("rate-limits resume events and skips hidden or offline checks", async () => {
+    await mount(); await load();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    api.stream.isConnected = false;
+    await act(async () => root.render(<Harness />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(api.status).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("visible");
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(api.status).toHaveBeenCalledTimes(1);
+    online.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online")); window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(api.status).toHaveBeenCalledTimes(2);
+    visibility.mockRestore(); online.mockRestore();
+  });
+
+  it("returns the loaded snapshot immediately while streaming remains open", async () => {
+    let closeStream!: () => void;
+    api.stream.connect.mockReturnValueOnce(new Promise<void>(resolve => { closeStream = resolve; }));
+    await mount();
+    let finished = false;
+    let load!: Promise<void>;
+    try {
+      await act(async () => {
+        load = build.loadBuildSession("dep-old").then(result => { finished = result.success; });
+      });
+      expect(finished).toBe(true);
+      expect(build.state.isDeploying).toBe(true);
+    } finally {
+      await act(async () => { closeStream(); await load; });
+    }
+  });
+
+  it("coalesces a quick return into one trailing check instead of losing it to the rate limit", async () => {
+    await mount(); await load();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(api.status).toHaveBeenCalledTimes(2);
+    api.status.mockResolvedValue(snapshot({ status: "ready", is_active: false }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(api.status).toHaveBeenCalledTimes(3);
+    expect(build.state.deploymentSuccess).toBe(true);
+  });
+});
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(START.getTime() + 10_000);

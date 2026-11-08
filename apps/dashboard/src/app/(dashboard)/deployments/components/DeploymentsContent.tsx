@@ -4,7 +4,7 @@ import type { DeploymentHistorySummary } from "@repo/core";
 import { DeploymentOverview } from "./DeploymentOverview";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { deployApi, projectsApi, getApiErrorMessage } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -37,6 +37,8 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = (props) => 
 };
 
 const PAGE_SIZE = 20;
+const HISTORY_POLL_MS = 15_000;
+const HISTORY_RESUME_MIN_MS = 5_000;
 
 const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
   monitoring = false,
@@ -57,12 +59,14 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [query, setQuery] = useDeploymentHistoryQuery(isProject);
+  const readRef = useRef<{ controller: AbortController | null; startedAt: number; query: string | null }>({
+    controller: null, startedAt: 0, query: null,
+  });
   const { page, days, filter, searchQuery, selectedProjectId } = query;
   const refreshDeployments = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
     const controller = new AbortController();
-    setIsLoading(true);
     setError(null);
     const params = {
       page,
@@ -71,6 +75,11 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
       status: filter === "all" ? undefined : filter,
       search: searchQuery.trim() || undefined,
     };
+    // A background refresh retains the visible rows. Filter/page changes still
+    // show their loading state rather than presenting the previous query's data.
+    const requestKey = JSON.stringify([params, selectedProjectId]);
+    setIsLoading(readRef.current.query !== requestKey);
+    readRef.current = { controller, startedAt: Date.now(), query: requestKey };
     const request = projectId
       ? projectsApi.getDeployments(projectId, params, controller.signal)
       : deployApi.getAll({ ...params, projectId: selectedProjectId === "all" ? undefined : selectedProjectId }, controller.signal);
@@ -106,7 +115,10 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
     }).catch((err) => {
       if (!controller.signal.aborted) { setError(getApiErrorMessage(err, t.deployments.loadFailed)); setSummary(null); }
     }).finally(() => {
-      if (!controller.signal.aborted) setIsLoading(false);
+      if (!controller.signal.aborted) {
+        setIsLoading(false);
+        if (readRef.current.controller === controller) readRef.current.controller = null;
+      }
     });
     return () => controller.abort();
   }, [monitoring, days, projectId, projectName, isProject, page, filter, searchQuery, selectedProjectId, revision, t.deployments.loadFailed, setQuery]);
@@ -117,6 +129,40 @@ const DeploymentHistory: React.FC<DeploymentsContentProps> = ({
 
   const activeCount = (stats.building || 0) + (stats.pending || 0);
   const failedCount = (stats.failed || 0) + (stats.canceled || 0);
+
+  useEffect(() => {
+    let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+    const refreshVisible = () => {
+      const read = readRef.current;
+      if (
+        read.controller || document.visibilityState === "hidden" || navigator.onLine === false
+      ) return;
+      clearTimeout(resumeTimer);
+      const delay = HISTORY_RESUME_MIN_MS - (Date.now() - read.startedAt);
+      if (delay > 0) {
+        resumeTimer = setTimeout(refreshVisible, delay);
+        return;
+      }
+      // Focus, visibility and online often arrive together. Reserve this refresh
+      // before React rerenders so they produce one request, never overlapping reads.
+      read.startedAt = Date.now();
+      refreshDeployments();
+    };
+    const unsettled = deployments.some(deployment =>
+      ["pending", "building", "deploying", "reconciling"].includes(deployment.status),
+    );
+    const interval = unsettled ? window.setInterval(refreshVisible, HISTORY_POLL_MS) : undefined;
+    window.addEventListener("focus", refreshVisible);
+    window.addEventListener("online", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(interval);
+      clearTimeout(resumeTimer);
+      window.removeEventListener("focus", refreshVisible);
+      window.removeEventListener("online", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [deployments, refreshDeployments]);
 
   const filters = (
     <DeploymentsFilters
