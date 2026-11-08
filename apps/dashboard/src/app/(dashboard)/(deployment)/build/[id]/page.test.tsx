@@ -96,3 +96,20 @@ it("shows the original attempt after a rejected deep-link retry, without submitt
   expect(h.load).toHaveBeenCalledExactlyOnceWith(h.id);
   expect(host.textContent).toBe("dep-new:Failed");
 });
+
+it("loads the accepted retry on its new route without opening a redundant stream first", async () => {
+  h.search = "redeploy=true";
+  h.redeploy.mockImplementationOnce(async () => {
+    h.state = { ...INITIAL_STATE, deploymentId: "dep-retry", isDeploying: true };
+    return "dep-retry";
+  });
+  await render();
+  expect(h.router.replace).toHaveBeenCalledWith("/build/dep-retry", { scroll: false });
+  expect(host.textContent).toBe("Loading attempt");
+  expect(h.connect).not.toHaveBeenCalled();
+  expect(h.load).not.toHaveBeenCalled();
+  h.id = "dep-retry"; h.search = "";
+  await render();
+  expect(h.load).toHaveBeenCalledExactlyOnceWith("dep-retry");
+  expect(host.textContent).toBe("dep-retry:Building");
+});

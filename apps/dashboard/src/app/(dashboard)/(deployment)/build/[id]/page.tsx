@@ -86,23 +86,16 @@ const BuildSessionPage: React.FC<{ deploymentId: string }> = ({ deploymentId }) 
 
   // Handle redeploy with URL update.
   //
-  // `redeployBuildSession` on the server already calls `kickoffBuild`
-  // for us (see build.service.ts:1050), so the build is running by the
-  // time the response lands here. We attach via GET /:id/stream
-  // (`startBuild = false`) instead of re-POSTing /:id/build, mirroring
-  // the page-refresh codepath. The previous start-build round-trip was
-  // racy: if the POST stalled or transiently failed, the reconnect gate
-  // (`hasConnected || !lastStartBuild`) refused to retry and the user
-  // saw an empty terminal until they hit refresh.
+  // The server already starts an accepted retry. A new attempt follows the
+  // snapshot/resume path on entry; only a same-id retry reconnects in place.
   const handleRedeploy = useCallback(async (options?: { reuseBuild?: boolean }): Promise<string | null> => {
     const newDeploymentId = await redeploy(deploymentId, options);
 
     if (newDeploymentId) {
       setHydrated(true);
-      void connectToBuild(newDeploymentId, false);
       if (newDeploymentId !== deploymentId) {
         router.replace(`/build/${newDeploymentId}`, { scroll: false });
-      }
+      } else void connectToBuild(newDeploymentId, false);
     }
     // Return the id so the Redeploy button can hold its loading state until
     // navigation (success) and only re-enable itself on failure (null).
