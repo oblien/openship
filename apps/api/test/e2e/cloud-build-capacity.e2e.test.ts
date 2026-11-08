@@ -385,10 +385,10 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       await writeFile(join(directory, "Dockerfile"), generateDockerfile(config));
       const remote = runtime as unknown as {
         buildImageOnRemote(config: BuildConfig, directory: string, dockerfile: string,
-          tag: string, logger: BuildLogger): Promise<void>;
+          tag: string, logger: BuildLogger, options: { usesRepositoryDockerfile: boolean }): Promise<void>;
       };
       await remote.buildImageOnRemote(config, directory, "Dockerfile", tag,
-        new BuildLogger(entry => logs.push(entry.message)));
+        new BuildLogger(entry => logs.push(entry.message)), { usesRepositoryDockerfile: false });
       expect((await docker("ps", "-aq", "--filter", `name=^/${worker}$`)).stdout.trim()).toBe("");
       // A cached build must not need its cache volume or network at runtime.
       const result = await docker("run", "--rm", "--network", "none", tag);
