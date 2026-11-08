@@ -1,9 +1,9 @@
 /** Real CLI lifecycle against candidate image digests, on a disposable Linux daemon. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -12,11 +12,16 @@ if (process.env.OPENSHIP_TEST_ISOLATED_VPS !== "1" || process.platform !== "linu
   throw new Error("Set OPENSHIP_TEST_ISOLATED_VPS=1 only on a disposable Linux VPS/CI runner.");
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = process.env.OPENSHIP_E2E_CLI_ENTRY ?? join(repo, "apps/cli/dist/index.js");
+const payload = process.env.OPENSHIP_E2E_CLI_PAYLOAD;
 // A private mirror tag avoids depending on publication or a version bump during
 // manual candidate builds. The running image IDs must match the supplied digests.
-const version = "candidate";
-const baseline = process.env.OPENSHIP_E2E_OLD_VERSION;
-assert(baseline && baseline !== version, "Supply a distinct published baseline release");
+const version = payload
+  ? JSON.parse(readFileSync(join(repo, "apps/cli/package.json"), "utf8")).version
+  : "candidate";
+const baseline = process.env.OPENSHIP_E2E_OLD_VERSION ?? run("git", ["tag", "--merged", "HEAD", "--sort=-version:refname"], { cwd: repo })
+  .split("\n").find(tag => /^v\d+\.\d+\.\d+$/.test(tag) && tag !== `v${version}`)?.slice(1);
+assert(baseline && /^\d+\.\d+\.\d+$/.test(baseline) && baseline !== version,
+  "Supply a distinct published baseline release");
 const images = Object.fromEntries(["api", "dashboard", "edge"].map(component => {
   const ref = process.env[`OPENSHIP_E2E_NEW_${component.toUpperCase()}_IMAGE`];
   assert(ref, `Missing candidate ${component} image`);
@@ -25,12 +30,16 @@ const images = Object.fromEntries(["api", "dashboard", "edge"].map(component => 
 const root = mkdtempSync(join(tmpdir(), "openship-vps-cli-e2e-"));
 const id = `openship-vps-cli-e2e-${process.pid}`;
 const registryName = `${id}-registry`;
+const releaseName = `${id}-release`;
 const caPath = `/usr/local/share/ca-certificates/${id}.crt`;
 const homes = [join(root, "upgrade"), join(root, "fresh")];
 const admin = { name: "CLI upgrade test", email: "vps-cli-e2e@example.test", password: "CLI-Upgrade-Test-Only!" };
 const secretKeys = ["POSTGRES_PASSWORD", "BETTER_AUTH_SECRET", "INTERNAL_TOKEN"];
 let registryCertDir;
 let registryStarted = false;
+let releaseStarted = false;
+let originalHosts;
+let cert;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -51,11 +60,14 @@ function envFile(home) {
   }));
 }
 function invoke(entry, home, args) {
-  return run(process.execPath, [entry, ...args], { env: {
-    ...process.env, OPENSHIP_HOME: home, OPENSHIP_ADMIN_PASSWORD: admin.password,
+  const env = { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`,
+    OPENSHIP_HOME: home, OPENSHIP_ADMIN_PASSWORD: admin.password,
     // Explicit candidate selection, including manual prerelease image workflows.
-    OPENSHIP_VERSION: version,
-  } });
+    ...(payload ? { NODE_EXTRA_CA_CERTS: cert } : { OPENSHIP_VERSION: version }),
+  };
+  if (payload) delete env.OPENSHIP_VERSION;
+  return run(entry.endsWith(".js") ? process.execPath : entry,
+    [...(entry.endsWith(".js") ? [entry] : []), ...args], { env });
 }
 const upArgs = imageVersion => ["up", "--compose", "--yes", "--no-host-control", "--image-version", imageVersion,
   "--port", "14810", "--dashboard-port", "14811", "--public-url", "http://127.0.0.1:14811",
@@ -73,8 +85,10 @@ async function ready(home) {
     try {
       const login = await fetch("http://127.0.0.1:14811/login", { signal: AbortSignal.timeout(3000) });
       const proxy = await fetch("http://127.0.0.1:14811/api/proxy/api/health", { signal: AbortSignal.timeout(3000) });
-      await login.body?.cancel(); await proxy.body?.cancel();
-      if (login.status === 200 && proxy.ok) return;
+      const html = await login.text();
+      const health = await proxy.text();
+      if (login.status === 200 && /<html/i.test(html) && !/<title>[^<]*(?:502|504|Bad Gateway)/i.test(html)
+        && proxy.ok && JSON.parse(health).status === "ok") return;
       last = `login=${login.status}, proxy=${proxy.status}`;
     } catch (error) { last = error.message; }
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -98,17 +112,28 @@ async function login() {
     body: JSON.stringify({ email: admin.email, password: admin.password }), signal: AbortSignal.timeout(10_000),
   });
   assert.equal(response.status, 200, "Existing admin must be able to sign in");
-  await response.body?.cancel();
+  const body = await response.json();
+  assert.equal(body.user?.email, admin.email, "Login must authenticate the retained account");
+  assert(body.token, "Login must establish a session");
 }
 
 try {
   assert.equal(docker("ps", "-aq"), "", "This test requires an empty, disposable Docker daemon");
+  if (payload) {
+    assert(existsSync(resolve(payload)) && existsSync(`${resolve(payload)}.sha256`), "Missing packaged CLI or checksum");
+    for (const path of ["/usr/local/bin/openship", join(homedir(), ".local/bin/openship")]) {
+      let existing;
+      try { existing = lstatSync(path); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      assert(!existing, `Refusing to replace an existing CLI at ${path}`);
+    }
+  }
   const port = await freePort();
   const mirror = `127.0.0.1:${port}`;
   registryCertDir = `/etc/docker/certs.d/${mirror}`;
   const certs = join(root, "certs"); mkdirSync(certs);
+  cert = join(certs, "ca.crt");
   run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=OpenShip CLI E2E",
-    "-addext", "subjectAltName=IP:127.0.0.1", "-addext", "basicConstraints=critical,CA:TRUE",
+    "-addext", "subjectAltName=IP:127.0.0.1,DNS:github.com,DNS:api.github.com", "-addext", "basicConstraints=critical,CA:TRUE",
     "-keyout", join(certs, "key.pem"), "-out", join(certs, "ca.crt")]);
   privileged("mkdir", ["-p", registryCertDir]);
   privileged("install", ["-m", "644", join(certs, "ca.crt"), join(registryCertDir, "ca.crt")]);
@@ -122,6 +147,7 @@ try {
   const expected = {};
   for (const component of ["api", "dashboard", "edge"]) {
     for (const [tag, source] of [[baseline, `ghcr.io/oblien/openship-${component}:${baseline}`], [version, images[component]]]) {
+      console.log(`Preparing ${component}:${tag}`);
       docker("pull", source);
       const target = `${mirror}/openship-${component}:${tag}`;
       docker("tag", source, target); docker("push", target);
@@ -133,12 +159,71 @@ try {
     writeFileSync(join(home, "compose/.env"), `COMPOSE_PROJECT_NAME=${id}-${index}\nOPENSHIP_IMAGE_REGISTRY=${mirror}\n`, { mode: 0o600 });
   }
   const home = homes[0];
-  invoke(cli, home, upArgs(baseline));
+  let installed = cli;
+  const install = target => {
+    run("sh", [join(repo, "scripts/install.sh")], { env: { ...process.env,
+      PATH: `${dirname(process.execPath)}:${process.env.PATH}`, OPENSHIP_HOME: target,
+      OPENSHIP_VERSION: target === home ? baseline : version,
+    } });
+    return join(target, "bin/openship");
+  };
+  if (payload) {
+    // Use the released payload and real installer, without adding test URL
+    // overrides to the production update command. The only changed DNS is in
+    // this disposable Linux host; the candidate uses its normal GitHub URLs.
+    const assets = {};
+    for (const [tag, source] of [[baseline, null], [version, payload]]) {
+      const name = `openship-cli-v${tag}.tar.gz`;
+      const path = `/oblien/openship/releases/download/v${tag}/${name}`;
+      const local = source ?? process.env.OPENSHIP_E2E_BASELINE_PAYLOAD;
+      if (local) {
+        copyFileSync(resolve(local), join(root, name)); copyFileSync(`${resolve(local)}.sha256`, join(root, `${name}.sha256`));
+      } else {
+        for (const suffix of ["", ".sha256"])
+          run("curl", ["-fSL", "--connect-timeout", "15", "--max-time", "180", "--retry", "3",
+            `https://github.com${path}${suffix}`, "-o", join(root, name + suffix)]);
+      }
+      for (const suffix of ["", ".sha256"]) assets[path + suffix] = name + suffix;
+    }
+    writeFileSync(join(root, "release-origin.json"), JSON.stringify({ version, assets }));
+    writeFileSync(join(root, "release-state.json"), "{}");
+    docker("run", "-d", "--name", releaseName, "-v", `${root}:/fixture:ro`,
+      "-v", `${join(repo, "scripts/fixtures/cli-release-server.mjs")}:/server.mjs:ro`, "node:22-alpine", "node", "/server.mjs");
+    releaseStarted = true;
+    const address = docker("inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", releaseName);
+    originalHosts = readFileSync("/etc/hosts");
+    writeFileSync(join(root, "hosts"), `${originalHosts}\n${address} github.com api.github.com\n`);
+    privileged("cp", [join(root, "hosts"), "/etc/hosts"]);
+    run("curl", ["--fail", "--silent", "--retry", "10", "--retry-all-errors", "--retry-delay", "1", "--max-time", "5",
+      "--cacert", cert, "https://api.github.com/repos/oblien/openship/releases/latest"]);
+    console.log(`Installing the published ${baseline} CLI through scripts/install.sh`);
+    installed = install(home);
+    assert.equal(invoke(installed, home, ["--version"]), baseline);
+  }
+  console.log(`Starting the ${baseline} stack`);
+  invoke(installed, home, upArgs(baseline));
   await ready(home); await login();
   const before = envFile(home);
   const storage = ["postgres", "redis"].map(service => state(home, service).Id);
   compose(home, "exec", "-T", "redis", "redis-cli", "SET", "cli-upgrade-check", "preserved");
-  invoke(cli, home, ["--json", "update", "--apply-only"]);
+  if (payload) {
+    console.log("Verifying checksum rejection leaves the CLI, stack and configuration intact");
+    const config = readFileSync(join(home, "compose/.env"), "utf8");
+    const active = state(home, "api").Id;
+    writeFileSync(join(root, "release-state.json"), JSON.stringify({ badChecksum: true }));
+    assert.throws(() => invoke(installed, home, ["--json", "update"]), /checksum mismatch/);
+    assert.equal(invoke(installed, home, ["--version"]), baseline);
+    assert.equal(state(home, "api").Id, active);
+    assert.equal(readFileSync(join(home, "compose/.env"), "utf8"), config);
+    writeFileSync(join(root, "release-state.json"), "{}");
+  }
+  console.log(payload ? "Running plain openship update through the installed launcher" : "Running candidate CLI update reconciliation");
+  invoke(installed, home, ["--json", "update", ...(payload ? [] : ["--apply-only"])]);
+  if (payload) {
+    assert.equal(invoke(installed, home, ["--version"]), version);
+    assert.equal(JSON.parse(readFileSync(join(home, "cli-install.json"), "utf8")).tag, `v${version}`);
+    assert.equal(readlinkSync(join(home, "cli/current")), `v${version}`);
+  }
   await ready(home); await login();
   const after = envFile(home);
   for (const key of secretKeys) {
@@ -157,13 +242,22 @@ try {
     assert.equal(current.RestartCount, 0, `${service} restarted during update`);
     assert.equal(current.State.Running, true);
   }
-  invoke(cli, home, ["stop"]);
-  invoke(cli, home, upArgs(version));
+  if (payload) {
+    console.log("Retrying plain update after the current-version API was stopped");
+    compose(home, "stop", "api");
+    invoke(installed, home, ["--json", "update"]);
+    await ready(home); await login();
+  }
+  console.log("Checking cold restart and retained login");
+  invoke(installed, home, ["stop"]);
+  invoke(installed, home, upArgs(version));
   await ready(home); await login();
   compose(home, "down", "-v", "--remove-orphans");
-  invoke(cli, homes[1], upArgs(version));
+  console.log("Checking fresh candidate install");
+  const fresh = payload ? install(homes[1]) : cli;
+  invoke(fresh, homes[1], upArgs(version));
   await ready(homes[1]); await login();
-  console.log("PASS: real CLI install, update reconciliation, cold restart, fresh candidate install, login, dashboard→API proxy, exact images and retained state");
+  console.log(`PASS: ${payload ? "installed CLI download, checksum verification, re-exec, retry recovery" : "CLI reconciliation"}, cold restart, fresh install, login, dashboard→API proxy, exact images and retained state`);
 } catch (error) {
   for (const home of homes) {
     try { console.error(compose(home, "ps", "-a")); console.error(compose(home, "logs", "--tail", "60", "api")); } catch {}
@@ -172,6 +266,16 @@ try {
 } finally {
   for (const home of homes) { try { compose(home, "down", "-v", "--remove-orphans"); } catch {} }
   if (registryStarted) { try { docker("rm", "-fv", registryName); } catch {} }
+  if (originalHosts) {
+    writeFileSync(join(root, "hosts"), originalHosts);
+    privileged("cp", [join(root, "hosts"), "/etc/hosts"]);
+  }
+  if (releaseStarted) { try { docker("rm", "-fv", releaseName); } catch {} }
+  if (payload) for (const path of ["/usr/local/bin/openship", join(homedir(), ".local/bin/openship")]) {
+    try {
+      if (lstatSync(path).isSymbolicLink() && homes.some(home => readlinkSync(path) === join(home, "bin/openship"))) privileged("rm", ["-f", path]);
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
   if (registryCertDir) { try { privileged("rm", ["-rf", registryCertDir]); } catch {} }
   try { privileged("rm", ["-f", caPath]); privileged("update-ca-certificates", []); } catch {}
   rmSync(root, { recursive: true, force: true });

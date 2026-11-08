@@ -79,7 +79,10 @@ export async function downloadToFile(
           received += chunk.length;
           onProgress?.(received, total);
           callback(null, chunk);
-        } catch (error) { callback(error as Error); }
+        } catch (error) {
+          // diagnostics-ignore: pipeline receives this error through the Transform callback and rejects the download.
+          callback(error as Error);
+        }
       },
     });
     await pipeline(response, meter, createWriteStream(dest));
