@@ -73,9 +73,6 @@ export async function runDependencyTasks<T>(
       rejectReady = reject;
     });
     readiness.set(key, readyPromise);
-    // A leaf has no consumer, but its failure is still collected by tasks below.
-    // diagnostics-ignore: the corresponding task owns propagation; a leaf has no readiness consumer.
-    void readyPromise.catch(() => {});
     tasks.set(
       key,
       (async () => {
@@ -110,6 +107,8 @@ export async function runDependencyTasks<T>(
       })(),
     );
   }
-  await Promise.allSettled(tasks.values());
+  // Observe leaf readiness failures too; the task remains the owner of error
+  // propagation after all publication work has drained.
+  await Promise.allSettled([...tasks.values(), ...readiness.values()]);
   if (failed) throw failure;
 }
