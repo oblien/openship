@@ -53,6 +53,73 @@ describe("openship deploy — registered server target (#763)", () => {
     expect(fetchStub.calls).toHaveLength(1);
   });
 
+  it("sends --accept-compose-changes through the normal deployment trigger", async () => {
+    fetchStub = stubFetch((req) => {
+      expect(req.url).toBe("http://api.test/api/deployments");
+      expect(req.method).toBe("POST");
+      expect(req.body).toMatchObject({
+        projectId: "p1",
+        branch: "main",
+        environment: "production",
+        acceptComposeChanges: true,
+      });
+      return {
+        json: {
+          data: {
+            deployment_id: "dep1",
+            project_id: "p1",
+          },
+        },
+      };
+    });
+
+    const { code, out, err } = await runCommand(deployCommand, [
+      "--project",
+      "p1",
+      "--branch",
+      "main",
+      "--accept-compose-changes",
+    ]);
+
+    expect(code).toBe(0);
+    expect(`${out}${err}`).toContain("dep1");
+    expect(fetchStub.calls).toHaveLength(1);
+  });
+
+  it("prints which services changed when the compose review gate refuses the deploy", async () => {
+    fetchStub = stubFetch((req) => {
+      expect(req.url).toBe("http://api.test/api/deployments");
+      expect(req.method).toBe("POST");
+      return {
+        status: 409,
+        json: {
+          error:
+            "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+          code: "COMPOSE_REVIEW_REQUIRED",
+          projectId: "p1",
+          composeChanges: {
+            added: ["worker"],
+            changed: ["api"],
+            removed: ["old"],
+          },
+        },
+      };
+    });
+
+    const { code, out, err } = await runCommand(deployCommand, [
+      "--project",
+      "p1",
+      "--branch",
+      "main",
+    ]);
+
+    expect(code).toBe(1);
+    expect(`${out}${err}`).toContain("worker");
+    expect(`${out}${err}`).toContain("api");
+    expect(`${out}${err}`).toContain("old");
+    expect(`${out}${err}`).toContain("--accept-compose-changes");
+  });
+
   it("carries --server through folder ensure and build/access", async () => {
     const sourceDir = mkdtempSync(join(tmpdir(), "openship-cli-target-"));
     writeFileSync(join(sourceDir, "index.html"), "ok");

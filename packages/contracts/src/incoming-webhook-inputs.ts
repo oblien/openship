@@ -27,6 +27,11 @@ const ActionConfig = Type.Object(
     jobKey: Type.Optional(
       Type.String({ description: "job: the job to run (required when actionType='job')." }),
     ),
+    acceptComposeChanges: Type.Optional(
+      Type.Boolean({
+        description: "deploy: accept the current Compose source as reviewed for this deploy.",
+      }),
+    ),
   },
   { additionalProperties: true },
 );

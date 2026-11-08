@@ -31,6 +31,8 @@ export type IncomingWebhookActionConfig = {
   serviceIds?: string[];
   /** job: the `job.key` to run. */
   jobKey?: string;
+  /** deploy: accept the current Compose source as reviewed for this deploy. */
+  acceptComposeChanges?: boolean;
 };
 
 /** How an incoming call authenticates. */

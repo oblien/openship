@@ -32,6 +32,7 @@ vi.mock("@repo/platform/engine/lib/public-url", () => ({ incomingWebhookUrl: vi.
 vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false } }));
 
 import { triggerIncomingWebhook } from "@repo/platform/engine/modules/incoming-webhooks/incoming.service";
+import { OperationError } from "@repo/contracts";
 
 describe("incoming webhook multi-service dispatch", () => {
   beforeEach(() => {
@@ -169,6 +170,80 @@ describe("incoming webhook multi-service dispatch", () => {
       strictServiceScope: false,
       forcePullImages: true,
     });
+  });
+
+  it("passes acceptComposeChanges through to the deployment trigger", async () => {
+    findById.mockResolvedValue({
+      id: "hook-accept",
+      projectId: "project-1",
+      organizationId: "org-1",
+      name: "Deploy with compose accept",
+      enabled: true,
+      actionType: "deploy",
+      actionConfig: { acceptComposeChanges: true },
+      authMode: "none",
+    });
+    triggerDeployment.mockResolvedValue({ deployment: { id: "deployment-accept" } });
+
+    await expect(
+      triggerIncomingWebhook({ id: "hook-accept", rawBody: Buffer.alloc(0) }),
+    ).resolves.toEqual({ ok: true, action: "deploy", ref: "deployment-accept" });
+
+    expect(triggerDeployment).toHaveBeenCalledWith(expect.any(Object), {
+      projectId: "project-1",
+      trigger: "webhook",
+      serviceIds: undefined,
+      strictServiceScope: false,
+      forcePullImages: true,
+      acceptComposeChanges: true,
+    });
+  });
+
+  it("records which services changed when the compose review gate refuses a hook deploy", async () => {
+    findById.mockResolvedValue({
+      id: "hook-1",
+      projectId: "project-1",
+      organizationId: "org-1",
+      name: "Deploy everything",
+      enabled: true,
+      actionType: "deploy",
+      actionConfig: {},
+      authMode: "none",
+    });
+    triggerDeployment.mockRejectedValue(
+      new OperationError(
+        "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+        409,
+        "COMPOSE_REVIEW_REQUIRED",
+        {
+          projectId: "project-1",
+          composeChanges: {
+            added: ["worker"],
+            changed: ["api"],
+            removed: ["old"],
+          },
+        },
+      ),
+    );
+
+    await expect(
+      triggerIncomingWebhook({ id: "hook-1", rawBody: Buffer.alloc(0) }),
+    ).resolves.toEqual({ error: "action_failed" });
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed",
+        error:
+          "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+        summary: expect.objectContaining({
+          composeChanges: {
+            added: ["worker"],
+            changed: ["api"],
+            removed: ["old"],
+          },
+        }),
+      }),
+    );
   });
 });
 

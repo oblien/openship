@@ -48,6 +48,31 @@ describe("incoming webhook deploy targets", () => {
     expect(Value.Check(UpdateIncomingWebhookBody, { actionConfig })).toBe(true);
   });
 
+  it("preserves acceptComposeChanges through normalization", () => {
+    expect(normalizeDeployActionConfig({ acceptComposeChanges: true })).toEqual(
+      {
+        acceptComposeChanges: true,
+      },
+    );
+    expect(
+      normalizeDeployActionConfig({
+        serviceIds: ["svc_api"],
+        acceptComposeChanges: true,
+      }),
+    ).toEqual({ serviceIds: ["svc_api"], acceptComposeChanges: true });
+    expect(
+      Value.Check(CreateIncomingWebhookBody, {
+        actionType: "deploy",
+        actionConfig: { acceptComposeChanges: true },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(UpdateIncomingWebhookBody, {
+        actionConfig: { acceptComposeChanges: true },
+      }),
+    ).toBe(true);
+  });
+
   it("rejects malformed target arrays at the schema boundary", () => {
     for (const serviceIds of [[], ["svc_api", "svc_api"], ["svc_api", 2], ["   "]]) {
       expect(

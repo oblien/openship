@@ -82,7 +82,10 @@ import {
   type ProjectInfo,
   type ProjectSourceEnv,
 } from "./prepare.service";
-import { assertComposeReviewed } from "./compose-review";
+import {
+  assertComposeReviewed,
+  resolveComposeReviewedRevision,
+} from "./compose-review";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 import { getFolderSession } from "../projects/folder/session-store";
 import {
@@ -907,6 +910,8 @@ async function reconcileComposeSource(
   options: {
     changedPaths?: string[] | null;
     composeRevision?: string;
+    /** Accept the current Compose source as reviewed for this deploy only (derived from the scanned source; see resolveComposeReviewedRevision). */
+    acceptComposeChanges?: boolean;
     interpolationEnv?: Record<string, string>;
   } = {},
 ): Promise<ProjectInfo | undefined> {
@@ -988,7 +993,15 @@ async function reconcileComposeSource(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );
     }
-    assertComposeReviewed(project.id, composeRows, services, options.composeRevision);
+    assertComposeReviewed(
+      project.id,
+      composeRows,
+      services,
+      resolveComposeReviewedRevision(project.id, services, {
+        composeRevision: options.composeRevision,
+        acceptComposeChanges: options.acceptComposeChanges,
+      }),
+    );
     await repos.service.reconcileFromCompose(project.id, services);
     return info;
   } catch (err) {
@@ -2764,6 +2777,15 @@ export interface DeploymentTriggerInput {
      */
     changedPaths?: string[] | null;
     /**
+     * Accept the current Compose source as reviewed for THIS deployment only.
+     * Set by the CLI `--accept-compose-changes` flag and by incoming webhooks
+     * whose saved action config opts in. The gate derives the revision from
+     * the source scanned for this deploy, so it clears for exactly what is
+     * being deployed — it never accepts a different revision, and dashboard
+     * deploys keep requiring an explicit in-app review.
+     */
+    acceptComposeChanges?: boolean;
+    /**
      * Smart per-service routing for a MANUAL multi-service redeploy: trace the
      * files changed between the active deployment's commit and the new HEAD and
      * rebuild ONLY the affected services (same detection the webhook uses). Used
@@ -2981,6 +3003,7 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
     const sourceRef = requestedCommitSha ?? branch;
     let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
+      acceptComposeChanges: data.acceptComposeChanges,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),
     });
     sourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, sourceRef);
