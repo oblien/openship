@@ -53,5 +53,4 @@ it("settles only unleased GitHub observer events and preserves native work", asy
   expect(byDelivery.leased?.payload).toEqual(payload);
   expect(byDelivery.native?.finishedAt).toBeNull();
   expect(byDelivery.native?.payload).toEqual(payload);
-  expect((await actions.workflow(org, github.id))?.syncAfter.getTime()).toBe(0);
 });

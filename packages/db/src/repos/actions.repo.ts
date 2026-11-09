@@ -323,8 +323,8 @@ export function createActionsRepo(db: Database) {
       await db.delete(actionDelivery).where(lt(actionDelivery.finishedAt, cutoff));
     },
     /** Older releases queued full webhook payloads for GitHub-owned workflows.
-     * Their runs are polled from GitHub, so release those redundant payloads in
-     * bounded batches while requesting one fresh sync per affected workflow.
+     * Their runs are polled from GitHub every 30 seconds, so release those
+     * redundant payloads in bounded batches without forcing extra API polls.
      * Keep OpenShip-owned deliveries and any delivery with a live lease intact. */
     async settleGitHubObserverDeliveries(limit = 500) {
       const now = new Date();
@@ -366,11 +366,6 @@ export function createActionsRepo(db: Database) {
             ),
           )
           .returning();
-        if (settled.length)
-          await tx
-            .update(actionWorkflow)
-            .set({ syncAfter: new Date(0) })
-            .where(inArray(actionWorkflow.id, [...new Set(settled.map((row) => row.workflowId))]));
         return settled.length;
       });
     },
