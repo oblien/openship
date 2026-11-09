@@ -70,8 +70,8 @@ export function cancellationEmail(
     ? `Renewal has been canceled for ${cancellation.productName}. Your subscription is scheduled to end on ${end}.`
     : `Your subscription to ${cancellation.productName} has ended.`;
   const feedback =
-    "We're sorry to see you go. Was anything missing or not working as expected? Just reply — we'd appreciate your feedback and would be happy to help.";
-  const thanks = "Thank you for giving OpenShip a try.";
+    "If you're changing your setup or something wasn't working as expected, just reply. We'd appreciate your feedback and would be happy to help.";
+  const thanks = "Thank you for using OpenShip.";
   return {
     subject: "Your OpenShip cancellation is confirmed",
     text: `${hello(name)}\n\n${status}\n\n${feedback}\n\n${thanks}\n\nView your subscription: ${billingUrl}\n\nThe OpenShip team`,

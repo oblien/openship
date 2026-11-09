@@ -478,8 +478,8 @@ describe("subscription cancellation email", () => {
     });
     expect(mail.text).toContain("Renewal has been canceled for OpenShip Cloud — Production");
     expect(mail.text).toContain("UTC");
-    expect(mail.text).toContain("We're sorry to see you go");
-    expect(mail.text).toContain("Just reply");
+    expect(mail.text).toContain("If you're changing your setup");
+    expect(mail.text).toContain("just reply");
     expect(mail.text).toContain(
       `/billing/payment?organizationId=${f.orgId}&workspaceId=${f.workspace.id}`,
     );
