@@ -209,6 +209,8 @@
     "modeStandalone": "スタンドアロン",
     "modeServer": "サーバー",
     "modeWorker": "ワーカー",
+    "modeComposeOne": "Compose スタック · サービス {count} 件",
+    "modeComposeOther": "Compose スタック · サービス {count} 件",
     "infrastructure": "インフラ",
     "platform": "プラットフォーム",
     "mode": "モード",
