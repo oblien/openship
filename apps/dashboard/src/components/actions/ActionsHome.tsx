@@ -185,6 +185,7 @@ function Home() {
                   <div className="grid grid-cols-1 gap-4 @min-[660px]/actions-content:grid-cols-2">
                     {filteredWorkflows.map((workflow) => {
                       const last = data.runs.find((run) => run.workflowId === workflow.id);
+                      const lastStatus = workflow.latestRunStatus ?? last?.status;
                       return (
                         <Link
                           href={`/actions/workflows/${workflow.id}`}
@@ -218,8 +219,8 @@ function Home() {
                             </code>
                             {!workflow.enabled ? (
                               <span className="text-xs text-muted-foreground">{a.disabled}</span>
-                            ) : last ? (
-                              <ActionStatus status={last.status} />
+                            ) : lastStatus ? (
+                              <ActionStatus status={lastStatus} />
                             ) : (
                               <span className="text-xs text-muted-foreground">{a.noRuns}</span>
                             )}

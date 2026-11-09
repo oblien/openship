@@ -523,6 +523,22 @@ export function createActionsRepo(db: Database) {
         .orderBy(desc(actionRun.createdAt))
         .limit(Math.min(100, Math.max(1, limit)));
     },
+    async latestRunStatuses(org: string, workflowIds: string[]) {
+      if (!workflowIds.length) return [];
+      return db
+        .selectDistinctOn([actionRun.workflowId], {
+          workflowId: actionRun.workflowId,
+          status: actionRun.status,
+        })
+        .from(actionRun)
+        .where(and(eq(actionRun.organizationId, org), inArray(actionRun.workflowId, workflowIds)))
+        .orderBy(
+          asc(actionRun.workflowId),
+          desc(actionRun.createdAt),
+          desc(actionRun.attempt),
+          desc(actionRun.id),
+        );
+    },
     async run(org: string, id: string) {
       return (await db.select().from(actionRun).where(runWhere(org, id)).limit(1))[0];
     },
