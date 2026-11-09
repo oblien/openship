@@ -161,7 +161,7 @@ import { compileProjectRoutingFields } from "../../../lib/project-routing-fields
 import { buildCompositeRegistration, buildDomainFanoutRegistrations, planCompositeRoute, resolveDomainFanoutRoutes } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
 import { hasRestorableServicePorts } from "./cutover-route-identity";
-import { recoverServiceRouting } from "./recover-service-routing";
+import { restoreProjectRouting } from "./recover-service-routing";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import { replaysFrozenDeployment } from "../deployment-artifacts";
 import {
@@ -185,6 +185,8 @@ import {
   throwIfDeploymentCancelled,
 } from "../deployment-cancellation";
 import { liveMatchTiersForDeployment, resolveLiveServiceState } from "../../services/live-state";
+
+import { beginDeploymentVerification } from "../deployment-verification";
 
 const CARRIED_STATE_PREFLIGHT_TIMEOUT_MS = 15_000;
 
@@ -1838,6 +1840,7 @@ async function deployComposeServicesCore(
    * the per-domain failures the pipeline DOES report while its other routes land.
    */
   const registeredRoutes: PlannedRouteDomain[] = [];
+  const verificationUrls = new Set<string>();
   const unavailableServiceNames = new Set<string>();
   const dependencyChecks = new Map<string, Promise<void>>();
   /**
@@ -3526,22 +3529,8 @@ async function deployComposeServicesCore(
                 recover: async () => {
                   if (pending.recovered !== undefined) return pending.recovered;
                   if (!pending.published) return (pending.recovered = true);
-                  const warnings: string[] = [];
-                  const restore = async () => {
-                    const [{ reapplyProjectLiveRoutes }, { applyProjectRouting }] = await Promise.all([
-                      import("../../domains/project-route.service"), import("../../domains/routing-apply.service"),
-                    ]);
-                    const options = { onWarning: (message: string) => warnings.push(message),
-                      managedEdgeSyncedByCaller: true };
-                    await recoverServiceRouting(
-                      () => reapplyProjectLiveRoutes(project, [], options),
-                      () => applyProjectRouting(project.id, options),
-                      opts?.executor,
-                    );
-                    if (warnings.length) throw new Error(warnings.join("; "));
-                  };
                   try {
-                    await restore();
+                    await restoreProjectRouting(project, opts?.executor, true);
                     pending.recovered = true;
                     pending.preserveCandidate = false;
                   } catch (error) {
@@ -3818,6 +3807,7 @@ async function deployComposeServicesCore(
         // free URL via Openship Cloud, so a failure here (403, slug taken,
         // unreachable) must not flip a healthy service to "failed".
         const managedRoutes = proxyRoutes.filter((r) => r.isCloud && r.managedSubdomain);
+        let managedEdgeReady = true;
         if (routeContext?.usesManagedRouting && managedRoutes.length > 0) {
           for (const managedRoute of managedRoutes) {
             logger.log(`Syncing managed edge proxy for ${managedRoute.hostname}...\n`, "info", {
@@ -3832,6 +3822,7 @@ async function deployComposeServicesCore(
                 },
               );
             } catch (edgeErr) {
+              managedEdgeReady = false;
               observeCaughtError(edgeErr, "platform/engine/modules/deployments/compose/deploy.service");
               const edgeMessage = edgeErr instanceof Error ? edgeErr.message : "Unknown error";
               logger.log(
@@ -3844,6 +3835,13 @@ async function deployComposeServicesCore(
           }
         }
 
+        if (!deployResult.routeWarnings?.length && managedEdgeReady) {
+          for (const route of proxyRoutes) {
+            // Composite/project routes are published later, after app setup.
+            if (!project.compositeRoutes?.some(composite => composite.hostname === route.hostname))
+              verificationUrls.add(`${route.tls ? "https" : "http"}://${route.hostname}`);
+          }
+        }
         const openableRoute = proxyRoutes.find((route) => !isWildcardHostname(route.hostname));
         const publicUrl = openableRoute
           ? `https://${openableRoute.hostname}`
@@ -4099,6 +4097,10 @@ async function deployComposeServicesCore(
     (t) => t.serviceId && readinessByServiceId.get(t.serviceId)?.stabilization.enabled,
   );
   const stabilityWarnings: string[] = [];
+  if (!opts?.strictScope && successful > 0) {
+    logger.step("deploy", "completed", "Services started");
+    await beginDeploymentVerification(dep, logger, [...verificationUrls]);
+  }
 
   /**
    * Turn vetoing post-start findings into failures: rows + SSE through

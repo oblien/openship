@@ -8,10 +8,11 @@
  *   - healthCheck:      (optional, deferred) readiness gate for the new one
  *   - resolveTargetUrl: runtime.getContainerIp() → internal URL for routing
  *   - routing:          routing.registerRoute()   → reverse-proxy config
+ *   - verifyPublished:  (optional) observe startup while published links are live
  *   - deactivate:       runtime.stop()/destroy()  → stop the PREVIOUS one
  *
  * The order of activate vs deactivate depends on env.canOverlap:
- *   - OVERLAP (docker/cloud): activate new → health-gate → route → deactivate
+ *   - OVERLAP (docker/cloud): activate new → health-gate → route → verify → deactivate
  *     old LAST. Old serves until traffic is repointed (zero-downtime) and a
  *     failure before the repoint leaves it untouched (auto-revert).
  *   - NON-OVERLAP (fixed port): stop old (RETAINING it) → activate new → health →
@@ -147,12 +148,15 @@ export interface DeployEnvironment {
    * the deploy failed — in the overlap path this auto-reverts to the old
    * deployment (it was never touched).
    *
-   * The server deploy composes two checks here: a stabilization watch (the
-   * container didn't bounce or exit — asked of the runtime, so it also covers
-   * remote/SSH targets) and, for local targets, a TCP probe on the app's port.
-   * Omit it for deployments with nothing to probe (a static file-serve).
+   * Explicit readiness requirements belong here. A longer startup observation
+   * can use verifyPublished while retaining the previous release for recovery.
    */
   healthCheck?(containerId: string, config: DeployConfig): Promise<void>;
+
+  /** Final startup observation after publication, before retiring the previous release. */
+  verifyPublished?(containerId: string, config: DeployConfig, urls: string[]): Promise<void>;
+  /** Restore the incumbent's routing if final verification fails after publication. */
+  restorePublishedRoutes?(): Promise<void>;
 
   /** Activation, its health gate and route-target validation succeeded. Publication may continue
    * while independent services and startup dependents become runnable. */
@@ -245,6 +249,8 @@ export interface DeployPipelineResult {
    * routes registered.
    */
   routeWarnings?: string[];
+  /** Routing recovery was inconclusive; retain the candidate and its resource claims. */
+  preserveActivated?: boolean;
 }
 
 /**
@@ -280,8 +286,8 @@ const TEARDOWN_TIMEOUT_MS = 30_000;
 
 /**
  * Run the deploy pipeline. Order depends on env.canOverlap (see file header):
- *   overlap     → activate → health-gate → route → deactivate old (last)
- *   non-overlap → deactivate old → activate → health-gate → route
+ *   overlap     → activate → health-gate → route → verify → deactivate old (last)
+ *   non-overlap → stop old → activate → health-gate → route → verify → retire old
  *
  * Called by the service layer after a successful build. The service composes
  * the DeployEnvironment from the RuntimeAdapter's existing methods.
@@ -332,6 +338,9 @@ export async function runDeployPipeline(
   // report it back to the caller for cleanup — a started-but-unrouted
   // container must not orphan.
   let activatedContainerId: string | undefined;
+  let publicationAttempted = false;
+  let verifying = false;
+  let preserveActivated = false;
 
   // Set when the non-overlap pre-stop merely STOPPED the old deployment instead of
   // destroying it. Two consumers: the failure path starts it again, and the success
@@ -455,6 +464,7 @@ export async function runDeployPipeline(
 
     // Best-effort: returns per-domain warnings instead of throwing. A routing
     // failure here must NOT fail the deploy — the container is already up + healthy.
+    publicationAttempted = true;
     const routeWarnings = await registerResolvedRoutes(
       logger,
       routing,
@@ -469,6 +479,20 @@ export async function runDeployPipeline(
     }
     throwIfCancelled(signal);
 
+    if (env.verifyPublished) {
+      verifying = true;
+      logger.step("deploy", "completed", "Application started and routes configured");
+      // A route warning may mean the old destination is still serving. Do not
+      // advertise any URL as the new release when publication is uncertain.
+      const urls = routeWarnings.length || !routing || !routeTarget ? [] : domains
+        .filter(domain => !domain.hostname.includes("*"))
+        .map(domain => `${domain.tls ? "https" : "http"}://${domain.hostname}`);
+      if (!routeWarnings.length && url) urls.push(url);
+      await env.verifyPublished(containerId, config, [...new Set(urls)]);
+      throwIfCancelled(signal);
+      logger.step("verify", "completed", "Startup verification finished");
+    }
+
     // ── Overlap only: now the new one is healthy + routed, stop OLD LAST ─
     // Best-effort, and a no-op when the caller set deactivatePrevious=false
     // (snapshot rollback — archivePreviousDeployment stops+retains it instead).
@@ -480,7 +504,7 @@ export async function runDeployPipeline(
     // It didn't, so discard it now. No-op when nothing was retained.
     await retireRetainedPrevious();
 
-    logger.step("deploy", "completed", "Deployed successfully");
+    if (!verifying) logger.step("deploy", "completed", "Deployed successfully");
 
     return {
       status: "ready",
@@ -495,13 +519,13 @@ export async function runDeployPipeline(
     const errorDetails = err instanceof DeployError ? err.details : undefined;
     const cancelled = signal?.aborted || err instanceof DeployCancelledError;
     if (cancelled) {
-      logger.step("deploy", "failed", "Deployment cancelled");
+      logger.step(verifying ? "verify" : "deploy", "failed", "Deployment cancelled");
       logger.log(
         "Deployment cancelled while it was unwinding; the previous release was preserved.\n",
         "warn",
       );
     } else {
-      logger.step("deploy", "failed", `Deploy failed: ${msg}`);
+      logger.step(verifying ? "verify" : "deploy", "failed", `Deploy failed: ${msg}`);
       logger.log(`\x1b[1;31mDeploy failed: ${msg}\x1b[0m\n`, "error");
     }
 
@@ -545,10 +569,22 @@ export async function runDeployPipeline(
       }
     }
 
+    if (publicationAttempted && env.restorePublishedRoutes &&
+        !(cancelled && input.keepProvisionedOnCancel)) {
+      try {
+        await env.restorePublishedRoutes();
+      } catch (restoreError) {
+        preserveActivated = true;
+        observeCaughtError(restoreError, "adapters/runtime/deploy-pipeline");
+        logger.log(`Previous routing could not be fully restored; both releases were retained: ${safeErrorMessage(restoreError)}\n`, "warn");
+      }
+    }
+
     return {
       status: cancelled ? "cancelled" : "failed",
       ...(cancelled ? { error: "Deployment cancelled" } : { error: msg, errorCode, errorDetails }),
       containerId: activatedContainerId,
+      ...(preserveActivated ? { preserveActivated: true } : {}),
     };
   }
 }

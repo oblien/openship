@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   runDeployPipeline,
   type DeployEnvironment,
@@ -44,6 +44,96 @@ function recordingEnv(events: string[], over: Partial<DeployEnvironment> = {}): 
     ...over,
   };
 }
+
+describe("published deployment verification", () => {
+  const domains = [{ hostname: "app.example.test", tls: false, targetPort: 3000 }];
+
+  it("publishes before verification, retains the previous release, and waits before Ready", async () => {
+    const events: string[] = [];
+    const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const logger = fakeLogger();
+    logger.step = vi.fn();
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      healthCheck: async () => { events.push("readiness"); },
+      verifyPublished: async (_id, _config, urls) => {
+        events.push("verify");
+        entered.resolve();
+        expect(urls).toEqual(["http://app.example.test"]);
+        await gate.promise;
+      },
+    });
+    let finished = false;
+    const pending = runDeployPipeline(env, makeInput({ domains, routing: {
+      registerRoute: async () => { events.push("publish"); },
+    } }), logger).then(result => { finished = true; return result; });
+    await entered.promise;
+    expect(finished).toBe(false);
+    expect(events).toEqual(["activate", "readiness", "route", "publish", "verify"]);
+    gate.resolve();
+    expect((await pending).status).toBe("ready");
+    expect(events.at(-1)).toBe("deactivate");
+    expect(logger.step).toHaveBeenCalledWith("verify", "completed", "Startup verification finished");
+  });
+
+  it("restores the old route on failed verification without retiring the incumbent", async () => {
+    const events: string[] = [];
+    const result = await runDeployPipeline(recordingEnv(events, {
+      canOverlap: true,
+      verifyPublished: async () => { throw new Error("Container crash-looped"); },
+      restorePublishedRoutes: async () => { events.push("restore"); },
+    }), makeInput(), fakeLogger());
+    expect(result).toMatchObject({ status: "failed", containerId: "new-container", error: "Container crash-looped" });
+    expect(result.preserveActivated).toBeUndefined();
+    expect(events).toEqual(["activate", "route", "restore"]);
+  });
+
+  it("retains the candidate if previous routing cannot be restored", async () => {
+    const result = await runDeployPipeline(recordingEnv([], {
+      canOverlap: true,
+      verifyPublished: async () => { throw new Error("Container crash-looped"); },
+      restorePublishedRoutes: async () => { throw new Error("Host unreachable"); },
+    }), makeInput(), fakeLogger());
+    expect(result).toMatchObject({ status: "failed", preserveActivated: true, containerId: "new-container" });
+  });
+
+  it.each([false, true])("cancellation preserves keepProvisioned=%s semantics during verification", async keepProvisionedOnCancel => {
+    const controller = new AbortController();
+    const restore = vi.fn(async () => {});
+    const events: string[] = [];
+    const result = await runDeployPipeline(recordingEnv(events, {
+      canOverlap: true,
+      verifyPublished: async () => { controller.abort(); },
+      restorePublishedRoutes: restore,
+    }), makeInput({ signal: controller.signal, keepProvisionedOnCancel }), fakeLogger());
+    expect(result.status).toBe("cancelled");
+    expect(restore).toHaveBeenCalledTimes(keepProvisionedOnCancel ? 0 : 1);
+    expect(events).not.toContain("deactivate");
+  });
+
+  it("does not advertise URLs when publication failed", async () => {
+    const verify = vi.fn(async () => {});
+    const result = await runDeployPipeline(recordingEnv([], { canOverlap: true, verifyPublished: verify }),
+      makeInput({ domains, routing: { registerRoute: async () => { throw new Error("Edge unavailable"); } } }), fakeLogger());
+    expect(result.status).toBe("ready");
+    expect(result.routeWarnings).not.toHaveLength(0);
+    expect(verify).toHaveBeenCalledWith("new-container", config, []);
+  });
+
+  it("restarts the retained fixed-port release before restoring its route", async () => {
+    const events: string[] = [];
+    const result = await runDeployPipeline(recordingEnv(events, {
+      deactivateRetaining: async () => { events.push("retain-old"); },
+      stopActivated: async () => { events.push("stop-new"); },
+      reactivatePrevious: async () => { events.push("restart-old"); },
+      restorePublishedRoutes: async () => { events.push("restore-route"); },
+      verifyPublished: async () => { throw new Error("Startup failed"); },
+    }), makeInput(), fakeLogger());
+    expect(result.status).toBe("failed");
+    expect(events).toEqual(["retain-old", "activate", "route", "stop-new", "restart-old", "restore-route"]);
+  });
+});
 
 describe("runDeployPipeline cutover ordering", () => {
   it("announces runtime readiness after target validation and before publication", async () => {

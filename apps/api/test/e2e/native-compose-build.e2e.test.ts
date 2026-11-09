@@ -320,6 +320,7 @@ describeDockerE2E("native Compose build batches", () => {
       persisted.find((service) => service.name === "app")?.advanced?.dependsOnConditions,
     ).toEqual({ migrate: "service_completed_successfully" });
     const deployment = await seedDeployment(project, {
+      status: "deploying",
       imageRef: "compose",
       containerId: "compose",
     });
@@ -346,6 +347,7 @@ describeDockerE2E("native Compose build batches", () => {
       usesManagedRouting: false,
     }).finally(() => activation.mockRestore());
     expect(result.status, JSON.stringify(result)).toBe("ready");
+    await repos.deployment.updateStatus(deployment.id, "ready");
     expect(result.summary.failed, JSON.stringify({ result, logs })).toBe(0);
     const migration = result.services.find((service) => service.serviceName === "migrate")!;
     const app = result.services.find((service) => service.serviceName === "app")!;

@@ -99,6 +99,9 @@ Keep local building in the destination's advanced controls only when the runtime
 Remote Docker, static sandbox, service, managed Cloud and cluster builds name their build
 destination; a stale local-build preference must not advertise work on Desktop. Preserve the
 separate clone-location choice and existing source behavior when hiding unavailable builds.
+After routing is published, show **Live · Verifying** with Open site and Open project
+available while final startup checks continue. Without a published destination, show
+**Verifying**. Reserve Ready for the settled outcome; keep Stop available during verification.
 Image updates belong in the existing project and service Redeploy dropdown. Reuse the same
 **Refresh images & redeploy** and **Check image updates** actions for every stack, including
 prebuilt image services. Refresh preserves configured versions and digest pins. Image drift uses

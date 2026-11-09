@@ -483,6 +483,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
         await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
       const deployCompose = async (replicas = 2) => {
         const deployment = await seedDeployment(project, {
+          status: "deploying",
           imageRef: "compose",
           containerId: "compose",
           meta: { runtimeMode: "docker", deployTarget: "local", clusterConfig: { replicas } },
@@ -494,6 +495,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
           usesManagedRouting: false,
         });
         expect(result.status, JSON.stringify(result.services)).toBe("ready");
+        await repos.deployment.updateStatus(deployment.id, "ready");
         const rows = await repos.service.listByDeployment(deployment.id);
         expect(rows).toHaveLength(1);
         expect(rows[0]!.status).toBe("success");

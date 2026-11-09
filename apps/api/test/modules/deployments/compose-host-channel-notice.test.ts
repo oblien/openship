@@ -69,6 +69,7 @@ vi.mock("@repo/db", () => ({
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
+      setVerification: vi.fn(async () => true),
       findById: async (id: string) => h.deploymentById.get(id) ?? h.previousDeployment,
     },
     project: {

@@ -147,6 +147,7 @@ export {
   type PromptPayload,
   type PromptUserFn,
   runDeployPipeline,
+  DeployCancelledError,
 } from "./runtime/deploy-pipeline";
 export {
   type RoutedDomainInput,
