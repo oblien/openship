@@ -474,11 +474,11 @@ describe("subscription cancellation email", () => {
       to: (await repos.user.findById(f.userId))!.email,
       customerSender: "support",
       replyTo: "support@openship.io",
-      subject: "Your OpenShip cancellation is confirmed",
+      subject: "Your OpenShip subscription update",
     });
     expect(mail.text).toContain("Renewal has been canceled for OpenShip Cloud — Production");
     expect(mail.text).toContain("UTC");
-    expect(mail.text).toContain("If you're changing your setup");
+    expect(mail.text).toContain("What worked well, and what could we do better?");
     expect(mail.text).toContain("just reply");
     expect(mail.text).toContain(
       `/billing/payment?organizationId=${f.orgId}&workspaceId=${f.workspace.id}`,

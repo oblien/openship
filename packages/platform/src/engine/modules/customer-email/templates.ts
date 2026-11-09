@@ -70,14 +70,14 @@ export function cancellationEmail(
     ? `Renewal has been canceled for ${cancellation.productName}. Your subscription is scheduled to end on ${end}.`
     : `Your subscription to ${cancellation.productName} has ended.`;
   const feedback =
-    "If you're changing your setup or something wasn't working as expected, just reply. We'd appreciate your feedback and would be happy to help.";
+    "We'd love to hear about your experience with OpenShip. What worked well, and what could we do better?";
   const thanks = "Thank you for using OpenShip.";
   return {
-    subject: "Your OpenShip cancellation is confirmed",
-    text: `${hello(name)}\n\n${status}\n\n${feedback}\n\n${thanks}\n\nView your subscription: ${billingUrl}\n\nThe OpenShip team`,
+    subject: "Your OpenShip subscription update",
+    text: `${hello(name)}\n\n${status}\n\n${feedback}\n\n${help}\n\n${thanks}\n\nView your subscription: ${billingUrl}\n\nThe OpenShip team`,
     html: layout(
-      "Your cancellation is confirmed",
-      `<p>${escape(hello(name))}</p><p>${escape(status)}</p><p>${escape(feedback)}</p><p>${thanks}</p>${button(billingUrl, "View your subscription")}<p>The OpenShip team</p>`,
+      "We're here to help",
+      `<p>${escape(hello(name))}</p><p>${escape(status)}</p><p>${escape(feedback)}</p><p>${help}</p><p>${thanks}</p>${button(billingUrl, "View your subscription")}<p>The OpenShip team</p>`,
     ),
   };
 }
