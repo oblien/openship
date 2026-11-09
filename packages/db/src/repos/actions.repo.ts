@@ -322,6 +322,58 @@ export function createActionsRepo(db: Database) {
     async pruneDeliveries(cutoff: Date) {
       await db.delete(actionDelivery).where(lt(actionDelivery.finishedAt, cutoff));
     },
+    /** Older releases queued full webhook payloads for GitHub-owned workflows.
+     * Their runs are polled from GitHub, so release those redundant payloads in
+     * bounded batches while requesting one fresh sync per affected workflow.
+     * Keep OpenShip-owned deliveries and any delivery with a live lease intact. */
+    async settleGitHubObserverDeliveries(limit = 500) {
+      const now = new Date();
+      return db.transaction(async (tx) => {
+        const candidates = await tx
+          .select({ id: actionDelivery.id })
+          .from(actionDelivery)
+          .innerJoin(
+            actionWorkflow,
+            and(
+              eq(actionWorkflow.id, actionDelivery.workflowId),
+              eq(actionWorkflow.organizationId, actionDelivery.organizationId),
+            ),
+          )
+          .where(
+            and(
+              isNull(actionDelivery.finishedAt),
+              eq(actionWorkflow.controller, "github"),
+              or(isNull(actionDelivery.leaseUntil), lt(actionDelivery.leaseUntil, now)),
+            ),
+          )
+          .orderBy(asc(actionDelivery.createdAt))
+          .limit(limit);
+        if (!candidates.length) return 0;
+        const settled = await tx
+          .update(actionDelivery)
+          .set({
+            finishedAt: now,
+            payload: {},
+            error: null,
+            leaseOwner: null,
+            leaseUntil: null,
+          })
+          .where(
+            and(
+              inArray(actionDelivery.id, candidates.map((row) => row.id)),
+              isNull(actionDelivery.finishedAt),
+              or(isNull(actionDelivery.leaseUntil), lt(actionDelivery.leaseUntil, now)),
+            ),
+          )
+          .returning();
+        if (settled.length)
+          await tx
+            .update(actionWorkflow)
+            .set({ syncAfter: new Date(0) })
+            .where(inArray(actionWorkflow.id, [...new Set(settled.map((row) => row.workflowId))]));
+        return settled.length;
+      });
+    },
     /** Small batches; never remove active work, retained objects or a retry's parent. */
     async pruneRuns(cutoff: Date) {
       await db.execute(sql`DELETE FROM action_run WHERE id IN (
