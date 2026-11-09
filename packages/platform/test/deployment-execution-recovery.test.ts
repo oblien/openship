@@ -4,6 +4,7 @@ import type { Deployment, Project } from "@repo/db";
 const h = vi.hoisted(() => ({
   session: null as any,
   settle: vi.fn(),
+  live: vi.fn(),
   list: vi.fn(),
   find: vi.fn(),
   owner: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("@repo/db", () => ({
     deployment: {
       findBuildSessionByDeploymentId: async () => h.session,
       recoverFencedBuildExecution: h.settle,
+      hasLiveBuildExecution: h.live,
       listUnfinishedFencedBuildExecutions: h.list,
       findById: h.find,
     },
@@ -73,6 +75,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.session = { id: "build", executionFenced: true, startedAt: new Date(0), finishedAt: null };
   h.settle.mockResolvedValue(true);
+  h.live.mockResolvedValue(false);
   h.list.mockResolvedValue([]);
   h.find.mockResolvedValue(deployment);
   h.owner.mockResolvedValue(project);
@@ -159,9 +162,22 @@ describe("SSH deployment worker ownership", () => {
     h.settle.mockResolvedValue(true);
     expect(await recoverDeploymentExecution(deployment, project)).toBe(true);
   });
+
+  it("does not report cancellation complete while another session is still unfinished", async () => {
+    h.live.mockResolvedValue(true);
+    expect(await recoverDeploymentExecution(deployment, project)).toBe(false);
+    expect(h.settle).toHaveBeenCalledOnce();
+  });
 });
 
 describe("scheduled orphan recovery", () => {
+  it("recovers the exact older session even when the deployment's latest session already finished", async () => {
+    h.session.finishedAt = new Date();
+    h.list.mockResolvedValueOnce([{ deploymentId: deployment.id, projectId: project.id, organizationId: "org", buildSessionId: "older-build" }]);
+    expect(await recoverUnfinishedDeploymentExecutions()).toBe(1);
+    expect(h.settle).toHaveBeenCalledWith({ deploymentId: deployment.id, projectId: project.id, organizationId: "org", buildSessionId: "older-build", recoverInterrupted: true });
+  });
+
   it("continues with other projects after one failed recovery", async () => {
     h.list.mockResolvedValueOnce([
       {
@@ -193,9 +209,9 @@ describe("scheduled orphan recovery", () => {
     h.list
       .mockResolvedValueOnce(firstPage)
       .mockResolvedValueOnce([{ ...firstPage[0], buildSessionId: "last-build" }]);
-    h.owner.mockResolvedValue(null);
+    h.settle.mockResolvedValue(false);
     expect(await recoverUnfinishedDeploymentExecutions()).toBe(0);
     expect(h.list.mock.calls).toEqual([[undefined], ["build-199"]]);
-    expect(h.settle).not.toHaveBeenCalled();
+    expect(h.settle).toHaveBeenCalledTimes(201);
   });
 });

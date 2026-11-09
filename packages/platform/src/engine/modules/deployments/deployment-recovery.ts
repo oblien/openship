@@ -23,10 +23,13 @@ export async function recoverDeploymentExecution(
     // those untracked workers died during a rolling upgrade.
     const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
     if (!session?.executionFenced || !session.startedAt || session.finishedAt) return false;
-    return repos.deployment.recoverFencedBuildExecution({
+    const recovered = await repos.deployment.recoverFencedBuildExecution({
       deploymentId: dep.id, buildSessionId: session.id, projectId: project.id,
       organizationId: dep.organizationId, recoverInterrupted: options.recoverInterrupted,
     });
+    // A deployment can have older session records. Closing one must not claim
+    // quiescence while another execution acknowledgement is still outstanding.
+    return recovered && !(await repos.deployment.hasLiveBuildExecution(dep.id, project.id));
   })) === true;
 }
 
@@ -39,11 +42,12 @@ export async function recoverUnfinishedDeploymentExecutions(): Promise<number> {
     const page = await repos.deployment.listUnfinishedFencedBuildExecutions(afterId);
     for (const candidate of page) {
       try {
-        const [dep, project] = await Promise.all([
-          repos.deployment.findById(candidate.deploymentId),
-          repos.project.findByIdInOrganization(candidate.projectId, candidate.organizationId),
-        ]);
-        if (dep && project && await recoverDeploymentExecution(dep, project, { recoverInterrupted: true }))
+        // Recover this exact candidate, not the deployment's latest session:
+        // a later finished session must not hide an older orphan indefinitely.
+        // The repository rechecks the candidate's full identity under row locks.
+        if (await tryWithDeploymentExecutionOwnership(candidate.deploymentId, () =>
+          repos.deployment.recoverFencedBuildExecution({ ...candidate, recoverInterrupted: true }),
+        ))
           recovered++;
       } catch (error) {
         diagnostics.error("deployment-recovery", `Recovery remains pending for ${candidate.deploymentId}`, error);
