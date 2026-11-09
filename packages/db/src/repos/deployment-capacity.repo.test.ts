@@ -85,7 +85,7 @@ describe("resource edits and deployment admission", () => {
     expect(await repo.setVerification(dep!.id, "another-org", verification)).toBe(false);
     expect(await repo.setVerification(dep!.id, "org", verification)).toBe(true);
     const after = (await db.select().from(schema.deployment).where(eq(schema.deployment.id, dep!.id)))[0];
-    expect(after.meta).toEqual({ ...stored.meta, verification });
+    expect(after.meta).toEqual({ ...(stored.meta as Record<string, unknown>), verification });
     expect(after.status).toBe("deploying");
     expect((await repo.findById(dep!.id))?.meta).toMatchObject({ composeServices, verification });
     expect((await db.select().from(schema.project))[0].activeDeploymentId).toBe("active");

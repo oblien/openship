@@ -399,6 +399,8 @@
       "cancelled": "キャンセル済み",
       "failed": "失敗",
       "readyWarnings": "準備完了（警告あり）",
+      "verifying": "検証中",
+      "liveVerifying": "公開済み · 検証中",
       "ready": "準備完了",
       "building": "ビルド中"
     },

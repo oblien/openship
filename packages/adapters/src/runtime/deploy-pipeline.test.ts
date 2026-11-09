@@ -50,8 +50,10 @@ describe("published deployment verification", () => {
 
   it("publishes before verification, retains the previous release, and waits before Ready", async () => {
     const events: string[] = [];
-    const gate = Promise.withResolvers<void>();
-    const entered = Promise.withResolvers<void>();
+    let finishVerification!: () => void;
+    let enterVerification!: () => void;
+    const gate = new Promise<void>(resolve => { finishVerification = resolve; });
+    const entered = new Promise<void>(resolve => { enterVerification = resolve; });
     const logger = fakeLogger();
     logger.step = vi.fn();
     const env = recordingEnv(events, {
@@ -59,19 +61,19 @@ describe("published deployment verification", () => {
       healthCheck: async () => { events.push("readiness"); },
       verifyPublished: async (_id, _config, urls) => {
         events.push("verify");
-        entered.resolve();
+        enterVerification();
         expect(urls).toEqual(["http://app.example.test"]);
-        await gate.promise;
+        await gate;
       },
     });
     let finished = false;
     const pending = runDeployPipeline(env, makeInput({ domains, routing: {
       registerRoute: async () => { events.push("publish"); },
     } }), logger).then(result => { finished = true; return result; });
-    await entered.promise;
+    await entered;
     expect(finished).toBe(false);
     expect(events).toEqual(["activate", "readiness", "route", "publish", "verify"]);
-    gate.resolve();
+    finishVerification();
     expect((await pending).status).toBe("ready");
     expect(events.at(-1)).toBe("deactivate");
     expect(logger.step).toHaveBeenCalledWith("verify", "completed", "Startup verification finished");

@@ -399,6 +399,8 @@
       "cancelled": "ملغى",
       "failed": "فشل",
       "readyWarnings": "جاهز مع تحذيرات",
+      "verifying": "جارٍ التحقق",
+      "liveVerifying": "متاح · جارٍ التحقق",
       "ready": "جاهز",
       "building": "قيد البناء"
     },
