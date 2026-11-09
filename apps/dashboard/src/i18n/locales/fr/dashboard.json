@@ -55,7 +55,7 @@
     "appsEmptyDesc": "En un clic, entièrement auto-hébergé — bases de données, automatisation, analytique, coffres de mots de passe et plus encore, sur vos propres serveurs."
   },
   "nav": {
-    "affiliates": "Parrainage",
+    "referrals": "Parrainage",
     "resources": "Espaces Cloud",
     "support": "Assistance",
     "scale": "Mise à l’échelle",
@@ -70,7 +70,7 @@
     "servers": "Serveurs",
     "emails": "E-mails",
     "settings": "Paramètres",
-    "billing": "Facturation et utilisation",
+    "billing": "Offres et facturation",
     "audit": "Journal d'audit",
     "mailSetup": "Configurer la messagerie",
     "mailSetupProgress": "Progression de la configuration",

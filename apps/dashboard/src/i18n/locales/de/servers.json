@@ -24,7 +24,10 @@
     "connecting": "Verbinden…",
     "streamUnavailable": "Live-Updates sind nicht verfügbar. Die letzte Messung wird angezeigt.",
     "usageTitle": "Ressourcennutzung",
-    "setupPending": "Die Nutzung wird angezeigt, sobald dein Cloud-Bereich eingerichtet ist."
+    "setupPending": "Die Nutzung wird angezeigt, sobald dein Cloud-Bereich eingerichtet ist.",
+    "projectsAssigned": "Projekte in diesem Tarif",
+    "projectsAssignedHint": "Projekte, die Rechenleistung und Speicher dieses Tarifs gemeinsam nutzen.",
+    "storageDetails": "Zur Speichernutzung"
   },
   "github": {
     "title": "GitHub-Zugriff",
@@ -67,12 +70,8 @@
     "addThisMachine": "Diesen Rechner hinzufügen",
     "addThisMachineError": "Dieser Rechner konnte nicht als Server hinzugefügt werden.",
     "emptyTitle": "Noch keine Server",
-    "emptyDescription": "Verbinden Sie einen Server per SSH und Openship übernimmt den Rest – Docker, OpenResty, SSL und Deployments werden alle automatisch eingerichtet.",
+    "emptyDescription": "Verbinde einen Server per SSH. OpenShip kümmert sich um Docker, Routing, SSL und Deployments.",
     "addFirstServer": "Ersten Server hinzufügen",
-    "whatGetsConfigured": "Was konfiguriert wird",
-    "monitoring": "Überwachung",
-    "monitoringDesc": "Zustandsprüfungen",
-    "gitDesc": "Quell-Deployments",
     "connected": "Verbunden",
     "error": "Fehler",
     "forwarding": "{n} weitergeleitet",
@@ -135,10 +134,6 @@
       "nothingToDo": "Nichts anzuwenden",
       "applyFailed": "Updates konnten nicht gestartet werden"
     },
-    "featContainer": "Container-Laufzeitumgebung",
-    "featContainerDesc": "Führt jede App isoliert aus",
-    "featProxy": "Reverse-Proxy",
-    "featProxyDesc": "Routing und SSL",
     "seeDocs": "Dokumentation anzeigen"
   },
   "containers": {
@@ -1035,12 +1030,12 @@
       "description": "Nutze einen vorhandenen Server über SSH."
     },
     "managed": {
-      "label": "Verwalteten Server buchen",
-      "description": "Openship Cloud übernimmt Einrichtung, Routing und HTTPS."
+      "label": "Cloud-Bereich hinzufügen",
+      "description": "Apps, Builds und Daten teilen sich die Kapazität ihres Cloud-Bereichs."
     },
-    "signInHint": "Verbinde dein Cloud-Konto, um einen vorhandenen verwalteten Server zu nutzen oder einen neuen zu buchen.",
-    "chooseExisting": "Vorhandenen Cloud-Server auswählen",
-    "useServer": "Diesen Server verwenden"
+    "signInHint": "Verbinde dein Cloud-Konto, um einen vorhandenen Cloud-Bereich zu verwenden oder einen neuen hinzuzufügen.",
+    "chooseExisting": "Cloud-Bereich wählen",
+    "useServer": "Diesen Cloud-Bereich verwenden"
   },
   "managedControls": {
     "retry": "Status aktualisieren",

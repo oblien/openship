@@ -77,21 +77,22 @@ describe("getNavSections (the platform rail)", () => {
       href: "/actions",
     });
     expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
-    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
-    expect(find(s, "settings")?.items.find((item) => item.key === "affiliates")).toMatchObject({ href: "/affiliates" });
-    expect(keysOf(find(s, "infrastructure"))).toEqual(["resources", "servers", "emails", "jobs", "actions", "backups"]);
-    expect(find(s, "infrastructure")?.items[0]).toMatchObject({ href: "/resources" });
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "referrals", "audit"]);
+    expect(find(s, "settings")?.items.find((item) => item.key === "referrals")).toMatchObject({ href: "/referrals" });
+    expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "emails", "jobs", "actions", "backups"]);
+    expect(find(s, "settings")?.items.find(item => item.key === "billing")).toMatchObject({ href: "/billing", alsoAt: ["/resources"] });
   });
 
   it("keeps Infrastructure before Settings on a cloud-linked self-hosted box", () => {
     const s = getNavSections(true, true);
     expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings", "help"]);
     const keys = s.flatMap((x) => keysOf(x));
+    expect(keysOf(find(s, "infrastructure"))).not.toContain("resources");
     expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
     for (const host of ["servers", "emails", "jobs", "actions", "backups"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
-    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "affiliates", "audit"]);
+    expect(keysOf(find(s, "settings"))).toEqual(["settings", "billing", "referrals", "audit"]);
   });
 
   it("keeps /emails in the platform rail", () => {
@@ -420,4 +421,14 @@ describe("every rail label resolves in the English dictionary", () => {
     expect(nav["new-project"]).toEqual(expect.any(String));
     expect(nav.addMailbox).toEqual(expect.any(String));
   });
+});
+
+it("keeps Cloud space details under the single Plans & billing entry", () => {
+  const items = getNavSections(true, false).flatMap(section => section.items);
+  expect(items.filter(item => item.key === "billing")).toHaveLength(1);
+  expect(items.some(item => item.key === "resources")).toBe(false);
+  const billing = items.find(item => item.key === "billing")!;
+  for (const path of ["/billing", "/billing/plans", "/resources", "/resources/space-one"])
+    expect(isNavItemActive(billing, path, null)).toBe(true);
+  expect(isNavItemActive(billing, "/resources-legacy", null)).toBe(false);
 });

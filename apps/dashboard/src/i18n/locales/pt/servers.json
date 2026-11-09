@@ -24,7 +24,10 @@
     "connecting": "Conectando…",
     "streamUnavailable": "As atualizações ao vivo estão indisponíveis. Exibindo a última medição.",
     "usageTitle": "Uso de recursos",
-    "setupPending": "O uso aparecerá quando seu espaço Cloud estiver configurado."
+    "setupPending": "O uso aparecerá quando seu espaço Cloud estiver configurado.",
+    "projectsAssigned": "Projetos neste plano",
+    "projectsAssignedHint": "Projetos que partilham a computação e o armazenamento deste plano.",
+    "storageDetails": "Sobre o uso do armazenamento"
   },
   "github": {
     "title": "Acesso ao GitHub",
@@ -67,12 +70,8 @@
     "addThisMachine": "Adicionar esta máquina",
     "addThisMachineError": "Não foi possível adicionar esta máquina como servidor.",
     "emptyTitle": "Ainda não há servidores",
-    "emptyDescription": "Conecte um servidor via SSH e o Openship trata do resto — Docker, OpenResty, SSL e implantações, tudo configurado automaticamente.",
+    "emptyDescription": "Conecte um servidor via SSH. O OpenShip cuida do Docker, roteamento, SSL e implantações.",
     "addFirstServer": "Adicionar o Seu Primeiro Servidor",
-    "whatGetsConfigured": "O que é configurado",
-    "monitoring": "Monitoramento",
-    "monitoringDesc": "Verificações de saúde",
-    "gitDesc": "Implantações a partir do código-fonte",
     "connected": "Conectado",
     "error": "Erro",
     "forwarding": "{n} encaminhamento(s)",
@@ -135,10 +134,6 @@
       "nothingToDo": "Nada a aplicar",
       "applyFailed": "Não foi possível iniciar as atualizações"
     },
-    "featContainer": "Runtime de contêineres",
-    "featContainerDesc": "Executa cada aplicação de forma isolada",
-    "featProxy": "Proxy reverso",
-    "featProxyDesc": "Roteamento e SSL",
     "seeDocs": "Ver documentação"
   },
   "containers": {
@@ -1035,12 +1030,12 @@
       "description": "Use um servidor que você já possui via SSH."
     },
     "managed": {
-      "label": "Obter um servidor gerenciado",
-      "description": "O Openship Cloud cuida da configuração, das rotas e do HTTPS."
+      "label": "Adicionar espaço Cloud",
+      "description": "Apps, builds e dados compartilham a capacidade do seu espaço Cloud."
     },
-    "signInHint": "Conecte sua conta Cloud para usar um servidor gerenciado existente ou obter um novo.",
-    "chooseExisting": "Escolher um servidor Cloud existente",
-    "useServer": "Usar este servidor"
+    "signInHint": "Conecte sua conta Cloud para usar um espaço Cloud existente ou adicionar um novo.",
+    "chooseExisting": "Escolha um espaço Cloud",
+    "useServer": "Usar este espaço Cloud"
   },
   "managedControls": {
     "retry": "Atualizar status",

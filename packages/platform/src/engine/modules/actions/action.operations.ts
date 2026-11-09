@@ -79,8 +79,13 @@ async function requireApprovalAccess(ctx: ExecutionContext, run: ActionRun) {
 async function presentWorkflow(
   ctx: ExecutionContext,
   row: Awaited<ReturnType<typeof service.requireActionWorkflow>>,
+  latestRunStatus?: ActionRun["status"] | null,
 ) {
-  return { ...actionWorkflowView(row), projectIds: await visibleWorkflowProjectIds(ctx, row.id) };
+  return {
+    ...actionWorkflowView(row),
+    projectIds: await visibleWorkflowProjectIds(ctx, row.id),
+    ...(latestRunStatus !== undefined ? { latestRunStatus } : {}),
+  };
 }
 
 export const actionDependencies: ActionDependencies = withCloudActions({
@@ -94,11 +99,20 @@ export const actionDependencies: ActionDependencies = withCloudActions({
     },
     async list(ctx, input = {}) {
       if (input.projectId) await requireActionProject(ctx, input.projectId);
-      const result = [];
+      const visible = [];
       for (const row of await repos.actions.listWorkflows(ctx.organizationId, input.projectId))
-        if (await visibleAction(() => authorizeActionWorkflow(ctx, row)))
-          result.push(await presentWorkflow(ctx, row));
-      return result;
+        if (await visibleAction(() => authorizeActionWorkflow(ctx, row))) visible.push(row);
+      const latest = new Map(
+        (
+          await repos.actions.latestRunStatuses(
+            ctx.organizationId,
+            visible.map((row) => row.id),
+          )
+        ).map((run) => [run.workflowId, run.status]),
+      );
+      return Promise.all(
+        visible.map((row) => presentWorkflow(ctx, row, latest.get(row.id) ?? null)),
+      );
     },
     async create(ctx, input) {
       const row = await service.saveActionWorkflow(ctx, input);

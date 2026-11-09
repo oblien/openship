@@ -55,16 +55,16 @@ async function run(relative: string, args: string[] = []) {
 }
 
 describe("source release transfer entry points (#869)", () => {
-  it("ships runnable affiliate administration and its account lookup without opening local storage", async () => {
+  it("ships runnable referral administration and its account lookup without opening local storage", async () => {
     await symlink(resolve(import.meta.dirname, "../../node_modules"), join(directory, "api/node_modules"), "dir");
-    const help = await run("api/scripts/affiliate.ts", ["--help"]);
+    const help = await run("api/scripts/referral.ts", ["--help"]);
     expect(help.code, help.stderr).toBe(0);
-    expect(help.stdout).toContain("affiliate queue");
-    const refused = await run("api/scripts/affiliate.ts", ["queue"]);
+    expect(help.stdout).toContain("referral queue");
+    const refused = await run("api/scripts/referral.ts", ["queue"]);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain("Run in the Cloud API environment with PostgreSQL");
-    expect(await readFile(join(directory, "api/scripts/affiliate-accounts.ts"), "utf8"))
-      .toContain("affiliateQueueAccounts");
+    expect(await readFile(join(directory, "api/scripts/referral-accounts.ts"), "utf8"))
+      .toContain("referralQueueAccounts");
   });
 
   it("ships dependency patches with the manifest that installs the source release", async () => {

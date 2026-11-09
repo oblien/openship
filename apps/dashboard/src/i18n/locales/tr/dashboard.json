@@ -55,7 +55,7 @@
     "viewAllApps": "Tüm {count} uygulamayı gör →"
   },
   "nav": {
-    "affiliates": "Yönlendirmeler",
+    "referrals": "Yönlendirmeler",
     "resources": "Bulut alanları",
     "support": "Destek",
     "scale": "Ölçeklendirme",
@@ -72,7 +72,7 @@
     "emails": "E-postalar",
     "jobs": "Görevler",
     "settings": "Ayarlar",
-    "billing": "Faturalandırma ve Kullanım",
+    "billing": "Planlar ve faturalandırma",
     "audit": "Denetim kaydı",
     "mailSetup": "E-posta kur",
     "mailSetupProgress": "Kurulum ilerlemesi",

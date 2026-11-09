@@ -43,50 +43,6 @@
       "diskGb": 120
     }
   },
-  "payg": {
-    "version": 1,
-    "creditPackagesCents": [
-      500,
-      2000,
-      5000,
-      10000
-    ],
-    "tiers": [
-      {
-        "id": "tier_1",
-        "level": 1,
-        "minimumFundingCents": 500,
-        "pool": {
-          "cpuCores": 2,
-          "memoryMb": 8192,
-          "diskGb": 64,
-          "servers": 2
-        }
-      },
-      {
-        "id": "tier_2",
-        "level": 2,
-        "minimumFundingCents": 2000,
-        "pool": {
-          "cpuCores": 4,
-          "memoryMb": 16384,
-          "diskGb": 128,
-          "servers": 4
-        }
-      },
-      {
-        "id": "tier_3",
-        "level": 3,
-        "minimumFundingCents": 5000,
-        "pool": {
-          "cpuCores": 8,
-          "memoryMb": 32768,
-          "diskGb": 256,
-          "servers": 8
-        }
-      }
-    ]
-  },
   "plans": [
     {
       "id": "free",

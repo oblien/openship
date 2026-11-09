@@ -1,3 +1,4 @@
+import { resolveReferralCode } from "../referrals/referral-checkout";
 /** Organization-scoped billing operations. Oblien is the Cloud payment authority. */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
@@ -89,7 +90,7 @@ export async function createSubscription(ctx: ExecutionContext, input: NonNullab
     input.idempotencyKey,
     input.workspaceId,
     input.custom,
-    input.affiliateCode,
+    resolveReferralCode(input),
   );
 
   return { checkoutUrl };

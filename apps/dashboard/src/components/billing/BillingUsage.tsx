@@ -16,7 +16,7 @@ import {
   weeklyUsage,
   type CloudUsagePayload,
 } from "@/lib/billing-usage";
-import { isNewCloudCustomer } from "@/lib/billing-presentation";
+import { isMonthlyCloudPlan, isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingEmptyState } from "./BillingEmptyState";
 
 interface UsageResponse {
@@ -36,7 +36,7 @@ export function BillingUsage({ state }: { state: BillingState }) {
 function BillingUsageHistory({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
-  const monthly = state.compute?.billingMode === "monthly";
+  const monthly = isMonthlyCloudPlan(state);
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState(() => {
     const start = state.currentPeriod.start?.slice(0, 10);
