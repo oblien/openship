@@ -1,4 +1,25 @@
 import type { CommandExecutor } from "@repo/adapters";
+import type { Project } from "@repo/db";
+
+/** The single-app and Compose failure paths restore the same active release. */
+export async function restoreProjectRouting(
+  project: Project,
+  executor?: Pick<CommandExecutor, "runWithAbortSignal"> | null,
+  managedEdgeSyncedByCaller = false,
+): Promise<void> {
+  const [{ reapplyProjectLiveRoutes }, { applyProjectRouting }] = await Promise.all([
+    import("../../domains/project-route.service"),
+    import("../../domains/routing-apply.service"),
+  ]);
+  const warnings: string[] = [];
+  const options = { onWarning: (message: string) => warnings.push(message), managedEdgeSyncedByCaller };
+  await recoverServiceRouting(
+    () => reapplyProjectLiveRoutes(project, [], options),
+    () => applyProjectRouting(project.id, options),
+    executor,
+  );
+  if (warnings.length) throw new Error(warnings.join("; "));
+}
 
 /** Restore both routing views without leaving a writer behind after a timeout. */
 export async function recoverServiceRouting(

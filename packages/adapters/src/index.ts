@@ -147,6 +147,7 @@ export {
   type PromptPayload,
   type PromptUserFn,
   runDeployPipeline,
+  DeployCancelledError,
 } from "./runtime/deploy-pipeline";
 export {
   type RoutedDomainInput,
@@ -663,3 +664,5 @@ export { inspectDockerSwarm } from "./runtime/swarm/inspect";
 export { SwarmRuntime } from "./runtime/swarm/runtime";
 export { assertSwarmServiceConfig } from "./runtime/swarm/spec";
 export { prepareRemoteSource } from "./runtime/remote-source";
+
+export { withDeploymentProgress } from "./runtime/deployment-progress";

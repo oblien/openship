@@ -419,6 +419,8 @@
       "cancelled": "Cancelled",
       "failed": "Failed",
       "readyWarnings": "Ready with warnings",
+      "verifying": "Verifying",
+      "liveVerifying": "Live · Verifying",
       "ready": "Ready",
       "building": "Building"
     },

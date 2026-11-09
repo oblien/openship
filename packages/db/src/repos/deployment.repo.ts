@@ -1,4 +1,4 @@
-import type { RoleContainerRef } from "@repo/core";
+import type { RoleContainerRef, DeploymentVerification } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { ilike, type SQL, eq, and, asc, desc, gt, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { generateId, AppError, redactUrlCredentials, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
@@ -1258,6 +1258,16 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         .set({ finishedAt: now })
         .where(and(sql`${buildSession.startedAt} IS NOT NULL`, isNull(buildSession.finishedAt)));
       return swept.length;
+    },
+
+    /** Publication is progress, not a terminal outcome or a change of active release. */
+    async setVerification(id: string, organizationId: string, verification: DeploymentVerification) {
+      const rows = await db.update(deployment).set({
+        meta: sql`coalesce(${deployment.meta}, '{}'::jsonb) || jsonb_build_object('verification', ${JSON.stringify(verification)}::jsonb)`,
+        updatedAt: new Date(),
+      }).where(and(eq(deployment.id, id), eq(deployment.organizationId, organizationId),
+        eq(deployment.status, "deploying"))).returning();
+      return rows.length > 0;
     },
 
     async setContainerId(id: string, containerId: string, url?: string) {

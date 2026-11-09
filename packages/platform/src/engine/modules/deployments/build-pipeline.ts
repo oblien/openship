@@ -178,6 +178,8 @@ import { snapshotToClass } from "./deployment-class";
 import { resolveClonePlan } from "./clone-plan";
 import { collapseTerminalLogs } from "./terminal-logs";
 import { sanitizeLogsForPersistence } from "./build-log-sanitize";
+import { beginDeploymentVerification } from "./deployment-verification";
+import { restoreProjectRouting } from "./compose/recover-service-routing";
 import {
   executeComposePipeline,
   resolveProjectServicePreflightServices,
@@ -1704,6 +1706,8 @@ async function executeBuildAndDeploy(
             if (
               current &&
               pendingRoleHandover(current) &&
+              current.roleHandover?.phase !== "kept" &&
+              dep.roleHandover?.phase !== "kept" &&
               ctx.settled !== "ready" &&
               !deploymentCancellationKeepsProvisioned(cancellationSignal)
             ) {
@@ -1748,9 +1752,7 @@ async function executeBuildAndDeploy(
   } finally {
     await finishBuildCancellation?.();
     // The deploy is over either way — release the loopback bridges it opened.
-    // Safe here and not earlier: the readiness/stabilization gate runs INLINE as
-    // the pipeline's healthCheck hook, so nothing still needs a transport once
-    // this function settles.
+    // Readiness and final verification both settle before these transports close.
     for (const rt of transports) disposeRuntime(rt);
 
   }
@@ -1879,29 +1881,13 @@ function buildDeployEnvironment(
     canOverlap: serve.canOverlap,
     requireSuccessfulRoutes:
       effectiveTarget === "cloud" && phase.deployRouting.deployMode === "static-file-serve",
-    // Cloud container startup is checked before cutover; optional TCP/HTTP
-    // probes retain their own policy. A conclusive startup failure uses the
-    // pipeline's existing failed-deploy/revert path.
-    healthCheck: !readinessGate.active
+    // Explicit readiness probes still gate publication. The longer startup
+    // observation is the final, visible phase while the new route can be opened.
+    healthCheck: !readinessGate.probe.enabled
       ? undefined
       : (containerId, cfg) =>
           runReadinessGate({
-            gate: readinessGate,
-            // A path-shaped id is a static release DIR — files, not a process, so
-            // there is nothing to watch for a restart loop.
-            stabilize: containerId.includes("/")
-              ? undefined
-              : async (windowMs) => {
-                  const [unstable] = (
-                    await verifyDeployedContainers(
-                      runtime,
-                      [{ serviceName: project.name || project.slug || "app", containerId }],
-                      logger,
-                      { windowMs, onUnverified: onReadinessWarning },
-                    )
-                  ).filter((finding) => !finding.verdict.ok);
-                  return unstable ? unstable.detail : null;
-                },
+            gate: { ...readinessGate, stabilization: { ...readinessGate.stabilization, enabled: false } },
             // Non-local probes must support the target's transport. Static-output
             // checks always do; running-process checks support Server targets.
             probe:
@@ -1916,6 +1902,31 @@ function buildDeployEnvironment(
             onWarn: onReadinessWarning,
             log: (message, level) => logger.log(`${message}\n`, level ?? "info"),
           }),
+    verifyPublished: async (containerId, _cfg, urls) => {
+      await beginDeploymentVerification(phase.dep, logger, urls);
+      await runReadinessGate({
+        gate: { ...readinessGate, probe: { ...readinessGate.probe, enabled: false } },
+        // A static release is files, not a process; it has no restart loop.
+        stabilize: containerId.includes("/")
+          ? undefined
+          : async (windowMs) => {
+              const [unstable] = (
+                await verifyDeployedContainers(
+                  runtime,
+                  [{ serviceName: project.name || project.slug || "app", containerId }],
+                  logger,
+                  { windowMs, onUnverified: onReadinessWarning },
+                )
+              ).filter((finding) => !finding.verdict.ok);
+              return unstable ? unstable.detail : null;
+            },
+        onWarn: onReadinessWarning,
+        log: (message, level) => logger.log(`${message}\n`, level ?? "info"),
+      });
+    },
+    restorePublishedRoutes: project.activeDeploymentId
+      ? () => restoreProjectRouting(project, targetExecutor)
+      : undefined,
     // Auto-revert for the stop-first (non-overlap) path. Wired for BOTH runtimes:
     // Docker takes this path too whenever routeStrategy is loopback-port (the
     // default), and while it was bare-only a failed gate left the old container
@@ -2656,6 +2667,18 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     ...(prepareHostPorts ? { prepareHostPorts } : {}),
   });
 
+  // Publish managed edge mappings before advertising links. Obsolete routes
+  // stay available until verification succeeds, so recovery can restore them.
+  let postSync: { warningMessage?: string } = {};
+  const verifyPublished = deployEnv.verifyPublished!;
+  deployEnv.verifyPublished = async (containerId, config, urls) => {
+    postSync = await runPostDeploySync({
+      plannedDomains, obsoleteProjectDomains: [], routing, usesManagedRouting,
+      organizationId: dep.organizationId, serverId: phase.serverId ?? undefined, logger,
+    });
+    await verifyPublished(containerId, config, postSync.warningMessage ? [] : urls);
+  };
+
   // Gate on the ROUTABLE set, not the plan: `routableDomains` carries the
   // post-ensure SSL verdict (and drops hostnames another project owns), and it is
   // what `toRoutedDomainInputs` hands the pipeline. Reading the pre-ensure plan
@@ -2797,6 +2820,20 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     throw err;
   });
 
+  if (deployResult.preserveActivated) {
+    // The same durable "kept" journal used by cancellation prevents role
+    // recovery from removing a candidate that may still be receiving traffic.
+    if (dep.roleHandover) dep.roleHandover.phase = "kept";
+    await roleHandover?.kept().catch(error => {
+      observeCaughtError(error, "platform/engine/modules/deployments/build-pipeline");
+      logger.log("Could not persist retained role state; manual recovery is required.\n", "warn");
+    });
+    if (deployResult.containerId) await repos.deployment.setContainerId(dep.id, deployResult.containerId).catch(error => {
+      observeCaughtError(error, "platform/engine/modules/deployments/build-pipeline");
+      logger.log("Could not record the retained container; manual recovery is required.\n", "warn");
+    });
+  }
+
   if (deployResult.status === "cancelled") {
     if (deploymentCancellationKeepsProvisioned(phase.cancellationSignal))
       await roleHandover?.kept();
@@ -2804,7 +2841,8 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     // generated domain, but before the pipeline reaches its normal success/fail
     // convergence. Reclaim only claims this attempt newly owns; an existing
     // exact claim remains protected for the live release.
-    if (phase.hostPortTarget && attemptedHostPortAllocations.length > 0) {
+    const keepProvisioned = deployResult.preserveActivated || deploymentCancellationKeepsProvisioned(phase.cancellationSignal);
+    if (!keepProvisioned && phase.hostPortTarget && attemptedHostPortAllocations.length > 0) {
       await releaseNewPinnedHostPortClaims(
         phase.hostPortTarget,
         attemptedHostPortAllocations,
@@ -2815,15 +2853,14 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
         ); },
       );
     }
-    for (const id of createdDomainIds) {
+    for (const id of keepProvisioned ? [] : createdDomainIds) {
       await repos.domain.remove(id).catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline");
       });
     }
-    if (!deploymentCancellationKeepsProvisioned(phase.cancellationSignal)) await roleRollout?.abort();
+    if (!keepProvisioned) await roleRollout?.abort();
     if (
-      !deploymentCancellationKeepsProvisioned(phase.cancellationSignal) &&
-      deployResult.containerId &&
+      !keepProvisioned && deployResult.containerId &&
       !isStaticFileServe
     ) {
       await runtime
@@ -2836,13 +2873,13 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
         );
     }
     await onCancelled(ctx, buildResult.durationMs, {
-      keepProvisioned: deploymentCancellationKeepsProvisioned(phase.cancellationSignal),
+      keepProvisioned,
     });
     return;
   }
 
   if (deployResult.status === "failed") {
-    await roleRollout?.abort();
+    if (!deployResult.preserveActivated) await roleRollout?.abort();
     // Reap the container this deploy STARTED if it failed during/after routing.
     // activeDeploymentId only advances on SUCCESS, so a started-but-failed
     // container is never any future deploy's prevDep and the 1-deep
@@ -2850,7 +2887,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     // piled up (3 for one project). Destroy it via the current runtime now.
     // Static deploys have no container. Best-effort + idempotent.
     let failedWorkloadCleaned = !deployResult.containerId || isStaticFileServe;
-    if (deployResult.containerId && !isStaticFileServe) {
+    if (!deployResult.preserveActivated && deployResult.containerId && !isStaticFileServe) {
       try {
         await runtime.destroy(deployResult.containerId);
         failedWorkloadCleaned = true;
@@ -2919,7 +2956,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     // Roll back the domain rows this deploy created — it didn't take, so
     // its routes must not linger (they'd resurface as planned routes next
     // deploy). Best-effort; pre-existing rows are left untouched.
-    for (const id of createdDomainIds) {
+    for (const id of deployResult.preserveActivated ? [] : createdDomainIds) {
       await repos.domain
         .remove(id)
         .catch((err) =>
@@ -2932,7 +2969,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     await onFailure(ctx, deployResult.error, buildResult.durationMs, {
       errorCode: deployResult.errorCode,
       errorDetails: deployResult.errorDetails,
-    });
+    }, { keepProvisioned: deployResult.preserveActivated });
     return;
   }
 
@@ -2956,11 +2993,11 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     });
   }
 
-  const postSync = await runPostDeploySync({
+  await runPostDeploySync({
     plannedDomains,
     obsoleteProjectDomains,
     routing,
-    usesManagedRouting,
+    usesManagedRouting: false,
     organizationId: dep.organizationId,
     serverId: phase.serverId ?? undefined,
     // prevDep is intentionally NOT passed to runPostDeploySync anymore —

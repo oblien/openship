@@ -399,6 +399,8 @@
       "cancelled": "已取消",
       "failed": "失败",
       "readyWarnings": "就绪但有警告",
+      "verifying": "正在验证",
+      "liveVerifying": "已上线 · 正在验证",
       "ready": "就绪",
       "building": "构建中"
     },

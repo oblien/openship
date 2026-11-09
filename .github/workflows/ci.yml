@@ -106,6 +106,7 @@ jobs:
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/deployment-automation.e2e.test.ts
               test/e2e/monorepo-runtime-images.e2e.test.ts
+              test/e2e/dockerfile-cache.e2e.test.ts
           - suite: Database
             command: bun run --cwd packages/db test
           - suite: Mail database actions
@@ -135,23 +136,28 @@ jobs:
               test/e2e/volume-restore-integrity.e2e.test.ts
               test/e2e/backup-project-app.e2e.test.ts
               test/e2e/docker-exec-watchdog.e2e.test.ts
-          # Inventory identity, atomic cutover and role handover use real Docker.
+          # Separate independent daemons keep real-Docker coverage within the job
+          # budget. Tests remain serial inside each daemon to preserve isolation.
           - suite: Compose cutover and rollback
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/deployment-artifact-retry.e2e.test.ts
               test/e2e/buildkit-session-health.e2e.test.ts
+              test/e2e/native-compose-build.e2e.test.ts
               test/e2e/compose-port-preflight-atomic.e2e.test.ts
               test/e2e/rollback-compose-cycle.e2e.test.ts
+              test/e2e/service-swap.e2e.test.ts
+              test/e2e/compose-overlap-cutover.e2e.test.ts
+              test/e2e/compose-engine-overlap.e2e.test.ts
+              test/e2e/compose-unchanged-services.e2e.test.ts
+          - suite: Compose runtime and storage
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/runtime-roles.e2e.test.ts
               test/e2e/primary-app-infrastructure.e2e.test.ts
               test/e2e/image-volume-persistence.e2e.test.ts
               test/e2e/image-gc-concurrent-build.e2e.test.ts
               test/e2e/image-refresh.e2e.test.ts
-              test/e2e/service-swap.e2e.test.ts
-              test/e2e/compose-overlap-cutover.e2e.test.ts
-              test/e2e/compose-engine-overlap.e2e.test.ts
-              test/e2e/compose-unchanged-services.e2e.test.ts
           - suite: Security advisories
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e

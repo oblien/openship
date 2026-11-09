@@ -13,13 +13,24 @@ export interface CustomerPaymentEmail {
   productName: string;
 }
 
+export interface CustomerCancellationEmail {
+  scope: "hosting" | "management";
+  workspaceId?: string;
+  namespace: string;
+  productName: string;
+  /** Provider cancellation request time; stable across delivery retries and period end. */
+  canceledAt: string;
+  /** A scheduled end, or null when the subscription has already ended. */
+  endsAt: string | null;
+}
+
 /** SaaS transactional mail, separate from configurable infrastructure alerts.
  * Account deletion removes queued personal data. No historical mail is seeded. */
 export const cloudCustomerEmail = pgTable(
   "cloud_customer_email",
   {
     id: text("id").primaryKey(),
-    kind: text("kind").$type<"signup" | "purchase" | "invoice">().notNull(),
+    kind: text("kind").$type<"signup" | "purchase" | "invoice" | "cancellation">().notNull(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -27,6 +38,7 @@ export const cloudCustomerEmail = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     payment: jsonb("payment").$type<CustomerPaymentEmail>(),
+    cancellation: jsonb("cancellation").$type<CustomerCancellationEmail>(),
     status: text("status")
       .$type<"pending" | "sent" | "canceled" | "failed">()
       .notNull()
@@ -39,7 +51,10 @@ export const cloudCustomerEmail = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    check("cloud_customer_email_kind", sql`${t.kind} IN ('signup', 'purchase', 'invoice')`),
+    check(
+      "cloud_customer_email_kind",
+      sql`${t.kind} IN ('signup', 'purchase', 'invoice', 'cancellation')`,
+    ),
     check(
       "cloud_customer_email_status",
       sql`${t.status} IN ('pending', 'sent', 'canceled', 'failed')`,

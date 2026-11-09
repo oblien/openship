@@ -399,6 +399,8 @@
       "cancelled": "Cancelado",
       "failed": "Fallido",
       "readyWarnings": "Listo con advertencias",
+      "verifying": "Verificando",
+      "liveVerifying": "En línea · Verificando",
       "ready": "Listo",
       "building": "Compilando"
     },

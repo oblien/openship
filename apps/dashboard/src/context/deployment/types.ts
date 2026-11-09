@@ -851,6 +851,7 @@ export interface DeploymentState {
   buildLogs: BuildLog[];
   currentProgress: number;
   currentStepIndex: number;
+  verification: import("@repo/core").DeploymentVerification | null;
   screenshots: Screenshot[];
   projectId: string | null;
   /** Final build duration in ms (set when build finishes). */
@@ -882,6 +883,7 @@ export const BUILD_PHASES: ReadonlyArray<{ id: string; label: string; oneTime?: 
   { id: "install", label: "Install" },
   { id: "build", label: "Build" },
   { id: "deploy", label: "Deploy" },
+  { id: "verify", label: "Verify" },
 ];
 
 export const INITIAL_STATE: DeploymentState = {
@@ -906,6 +908,7 @@ export const INITIAL_STATE: DeploymentState = {
   buildLogs: [],
   currentProgress: 0,
   currentStepIndex: 0,
+  verification: null,
   screenshots: [],
   projectId: null,
   buildDurationMs: null,
@@ -947,7 +950,7 @@ export function resolveBuildElapsedMs(state: BuildTimingState, now = Date.now())
 
 // ─── Status ──────────────────────────────────────────────────────────────────
 
-export type DeploymentStatus = "building" | "deploying" | "ready" | "failed" | "cancelled";
+export type DeploymentStatus = "building" | "deploying" | "verifying" | "ready" | "failed" | "cancelled";
 
 // ─── Context type ────────────────────────────────────────────────────────────
 
