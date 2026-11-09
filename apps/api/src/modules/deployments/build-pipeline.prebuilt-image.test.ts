@@ -349,6 +349,7 @@ import { ensureEdgeChallengeReady } from "@repo/platform/engine/lib/edge-challen
 import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 import { executeComposePipeline, resolveProjectServicePreflightServices, shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
 import { CloudBuildAdmissionDeferredError, releaseCloudBuildSlot, runOutsideCloudBuildActivity } from "@repo/platform/engine/lib/cloud-build-activity";
+import { tryWithDeploymentExecutionOwnership } from "@repo/platform/engine/lib/deployment-execution-ownership";
 import { AppError } from "@repo/core";
 import { cloudBuildActivityContext } from "@repo/platform/engine/lib/cloud-build-activity-context";
 import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
@@ -1458,6 +1459,38 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.prepareImage).not.toHaveBeenCalled();
     expect(mocks.onSuccess).not.toHaveBeenCalled();
     expect(mocks.acknowledgeBuildExecutionFinished).not.toHaveBeenCalled();
+  });
+
+  it("does not start SSH backups or runtime work after recovery wins the ownership handoff", async () => {
+    const dep = deployment();
+    mocks.findDeploymentById.mockResolvedValue({ ...dep, status: "failed" });
+    await kickoffBuild(project(), dep);
+    await vi.waitFor(() => expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledOnce());
+    expect(firePreDeployBackups).not.toHaveBeenCalled();
+    expect(mocks.prepareImage).not.toHaveBeenCalled();
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
+  });
+
+  it("holds SSH execution ownership from pre-build backups through completion acknowledgement", async () => {
+    let finishBackups!: () => void;
+    const backups = new Promise<{ enqueued: number; completed: number }>(resolve => {
+      finishBackups = () => resolve({ enqueued: 0, completed: 0 });
+    });
+    vi.mocked(firePreDeployBackups).mockReturnValueOnce(backups);
+    await run();
+    try {
+      await vi.waitFor(() => expect(firePreDeployBackups).toHaveBeenCalledOnce());
+      const recover = vi.fn(async () => true);
+      expect(await tryWithDeploymentExecutionOwnership("deployment-1", recover)).toBeUndefined();
+      expect(recover).not.toHaveBeenCalled();
+      expect(mocks.acknowledgeBuildExecutionFinished).not.toHaveBeenCalled();
+      expect(mocks.claimBuildExecution).toHaveBeenCalledWith(expect.objectContaining({ executionFenced: true }));
+    } finally {
+      finishBackups();
+      await drainDeploymentExecutions();
+    }
+    expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledOnce();
   });
 
   it("fails and releases the claimed build when the live session cache is full", async () => {

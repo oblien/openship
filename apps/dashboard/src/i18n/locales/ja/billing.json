@@ -840,7 +840,11 @@
     "viewPlan": "プランを表示",
     "active": "有効",
     "inactive": "無効",
-    "management": "サーバー管理"
+    "management": "サーバー管理",
+    "paymentPending": "支払い待ち",
+    "paymentRequired": "支払いの確認が必要です",
+    "reviewPayment": "支払いを確認",
+    "paymentNotice": "このプランに保存された支払いを確認してください。アクセスは支払い確認後に更新されます。"
   },
   "managementDetail": {
     "servers": "このプランのサーバー",

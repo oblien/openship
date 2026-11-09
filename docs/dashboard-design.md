@@ -742,70 +742,41 @@ check retryable before starting the move.
   subscription changes; do not send users elsewhere just to start checkout. Keep the
   server form gated on the verified allowance, and reset the purchase state on account,
   organization or instance changes. Self-hosted connection forms stay unchanged.
-- Cloud billing keeps its header and tabs mounted when switching servers. List managed
-  servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
-  One server is a summary; several servers switch billing directly from the visible list.
-  Keep one Add resources action at the right of the page header; the sidebar
-  selects the server being inspected. Plans has no Cloud space switcher; return to the account's plan cards to choose another
-  subscription. Keep new purchases separate from the selected space's saved terms.
-  Billing tabs occupy their own full-width row underneath, with an uninterrupted divider.
-  Keep adjacent links at the shared tab height so the divider meets the active underline on a single row.
-  With one Cloud space, show its summary without a redundant menu. With one or two preset choices, show the saved subscription and capacity in
-  the standard 340px right column when the container has room; stack it first on smaller
-  screens. Keep a single priced offer at a maximum of 26rem, shrinking to the available
-  width on small screens. Complimentary-plan support guidance belongs inside the saved-plan
-  summary; dialogs without that summary retain their inline guidance. Wider comparisons and
-  Custom keep the compact summary below the tabs. Use the
-  picker's displayed choices for this layout too; an inactive subscription uses a short
-  inline notice. New purchases use the plan introduction
-  as the page title and description. Keep Plans / Custom in the purchase header and
-  Back to billing in the same header, using matching 40px controls. Purchasing does not require a server-name field.
-  An explicit workspace link without a plan retains that draft for recovery, without a
-  space switcher. Unscoped Plans never adopts an existing workspace automatically.
-  Do not repeat the introduction below the page heading. Default to relevant upgrades; offer
-  Other plans deliberately for lower-cost changes and Custom when no larger preset fits.
-  Do not call today's catalog terms the current plan if they differ from the saved purchase,
-  or offer a preset that would shrink an existing disk. New-server purchases have their own
-  explicit entry and never inherit the selected server's billing scope.
-  A preset chosen on the public Pricing page continues to Cloud checkout after
-  sign-in without a second plan-selection click. Validate it against the live
-  catalog and bind the retry identity to the authenticated organization. Reloads
-  reuse the same server and payment; generic Get server links remain browse-only.
-  Unscoped billing opens an existing subscription directly; never
-  auto-switch a checkout return or an explicitly selected server. New customers see
-  Cloud plans and Manage your server with a direct Payments & invoices link in the existing
-  tab row, so unfinished purchases remain recoverable before the first subscription.
-  Reuse the same preset and Custom resource controls in acquisition and destination dialogs.
-  Opening or configuring plans never starts a purchase. Place Monthly / Yearly beside
-  Plans / Custom without a redundant product tab or a second page header. Do not advertise
-  unavailable billing models or pricing previews.
-  Keep normal billing navigation for existing subscriptions, allocated servers and credit history, including stopped or
-  canceled servers. Show current plan, renewal date or inactive subscription state for
-  existing servers; never replace those with a first-purchase promotion.
-  In-app credit alerts
-  link directly to the scoped billing tab; only a genuine organization change needs
-  authorization and a context reload.
-  Payments and invoices share one tab and the existing scoped Stripe portal. Show Top-ups
-  only when the billing API enables them for the selected server; the purchase-view choice
-  must never override paid terms or provider entitlement.
-  Keep Pending payments inside Payments & invoices, including for unpaid servers, with
-  a yellow pending count on that tab. Share one scoped read with the recovery list, refresh
-  on return from hosted checkout, and remove counts only after confirmed cancellation.
-  Removing the selected unused server clears its billing URL selection and returns to
-  the new-server Plans view. A billing URL for a removed or deleting workspace recovers
-  there without checkout or automatic-purchase parameters, preserving only its organization
-  scope. Do not reselect a draft while its removal finishes.
-  Cloud lists unfinished payments across the organization's servers. Connected installations
-  use the same Cloud inventory, filtered to a selected server when requested, without
-  creating local execution links. Preserve local aliases for explicitly linked servers
-  and clear payment state when the connected Cloud account changes. Reuse the same compact recovery list in
-  Payments and in the unfinished-checkout dialog. Show saved offer terms and the server
-  name, with Resume and provider-supported cancellation. Never present a pending or
-  unknown cancellation as complete. After confirmed cancellation, offer another plan
-  and reuse the existing delete confirmation for an unused, unpaid server.
-  Distinguish failed cancellation checks (Refresh) from payments without provider-supported
-  cancellation (complete the payment or wait for expiry). Show the support link once;
-  neither condition may clear a payable checkout or allow a competing subscription.
+- Plans & billing is the account hub: one card per purchased compute plan, one for a
+  purchased Manage subscription, plus Add plan. A saved unfinished checkout also appears
+  as a pending plan card; merge its warning into an existing plan's card instead of
+  duplicating that plan. Show the saved offer and amount, and open its Payments & invoices
+  tab. Only redirect a confirmed-empty account to new plans after inventory, management
+  and pending-payment reads succeed. Errors are retryable and never mean empty.
+- Each named compute plan owns Overview, Usage, Payments & invoices and Activity. Overview
+  combines measured resources, assigned projects, billing-period counters and coverage;
+  Usage retains the existing scoped history. Keep the compact saved-plan summary and
+  Change plan modal beside the selected tab. Payments & invoices owns that plan's portal,
+  pending checkouts and renewal controls; do not repeat them as a sidebar card. Manage
+  follows the same Overview / Payments & invoices structure for its external servers.
+- Existing /billing/overview, /billing/usage, /billing/payment and invoice bookmarks
+  redirect into the explicitly selected plan. Unscoped history links return to the plan
+  hub without guessing a subscription. Preserve checkout reconciliation parameters and
+  authorize organization changes before reading any plan. Legacy metered top-up receipts
+  remain verifiable within their plan; monthly plans expose no top-up purchasing.
+- New plan browsing has only Cloud and Manage purchase choices, with no payment/history
+  tab or selected-space switcher. A preset chosen on public Pricing continues through
+  sign-in without a second selection. Bind retries to the authenticated organization;
+  opening or configuring plans never starts a purchase. Existing-plan changes use the
+  saved terms and actual allocated disk, rather than treating today's catalog as the
+  current contract. Unavailable billing models stay hidden.
+- Use one scoped pending-payment read for the plan's navigation count, attention notice
+  and recovery list. Keep a red payment-attention notice on the plan, including its
+  payment tab, until payment or cancellation is confirmed. A pending or unknown
+  cancellation cannot clear the warning or permit a competing subscription. A failed
+  payment read stays retryable. Never expose another plan's payments through a scoped view.
+  Resume uses the saved original checkout and price. After confirmed cancellation or
+  expiry, reuse the existing plan selection and unused-resource delete confirmation.
+  Show Refresh for failed cancellation checks, and provider guidance for unsupported
+  cancellation; neither may mark a payable checkout as complete.
+- Connected installations use the same authorized inventory and existing local aliases
+  for explicitly linked Cloud servers. Clear payment state on account, organization or
+  connection changes, without creating another execution link during billing navigation.
 - Monthly Cloud spaces show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
@@ -869,8 +840,8 @@ Use its customer-assigned name as the heading, with the offer name beneath it. K
 usage, assigned projects, Activity and subscription management together. The 340px sidebar
 uses one compact plan card: icon, offer name and status share a header row; price and billing
 cadence share a line; renewal and allocated capacity follow. Keep Change plan below the summary
-and payment controls in their existing separate subscription card. Hide only the inline Cancel
-subscription action; cancellation belongs in the billing portal. Do not add another
+and payment controls in the plan’s Payments & invoices tab. Hide the inline Cancel
+subscription action for compute plans; cancellation belongs in that plan’s billing portal. Do not add another
 Manage plan or Manage subscription detour, or repeat the selected plan in a separate picker.
 Change plan opens the existing scoped quote/confirmation flow in a dialog on this page.
 Size the dialog from the picker's rendered choices: narrow for one, two columns for two,
@@ -888,11 +859,10 @@ by measurement time from recent live readings and the host snapshot; a partial f
 erase measured storage. Keep each memory/storage group together, show the measurement time when a row uses an
 older sample, and leave unknown values and chart gaps unknown rather than substituting capacity or zero.
 Project storage inventory uses the existing snapshot request and is not scanned on every live tick.
-Cloud spaces and Billing reuse the shared destination picker rows, project counts and catalog plan names.
-Keep instant resource readings and project storage on Cloud spaces. Billing retains subscription,
-payment, billing-period usage and entitlement counters, with selected-space links instead of another
-host-usage snapshot. Show actual allocated capacity on Cloud spaces; pending plan changes remain
-in Billing's existing confirmation and resize flow.
+Plan cards and deployment destinations reuse the shared inventory, project counts and catalog names.
+A plan’s Overview combines the existing host measurements with billing-period counters; each keeps
+its own units and source. Show the allocated capacity beside the saved subscription, and reuse the
+existing quote, confirmation and resize flow for pending plan changes.
 Unfinished Cloud setup shows a calm Cloud space notice and does not subscribe to live metrics.
 
 Managed resources do not expose host terminals, SSH, provider networking, Runtime API credentials,

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { BillingOperations, ManagementPlanId } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { managementApi } from "@/lib/api/management";
@@ -8,11 +9,13 @@ import { useResourceScope, useScopedMutation } from "@/hooks/use-scoped-resource
 import { useManagementPlan, type ManagementPlanResource } from "./useManagementPlan";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs } from "@/components/ui/Tabs";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { PlanChangeModal } from "./PlanChangeModal";
 import { ManagementServers } from "./ManagementServers";
 import { managementMoney as money } from "./management-presentation";
 import { ManagementServerSlots } from "./ManagementServerSlots";
+import { subscriptionNeedsPayment } from "@/lib/billing-presentation";
 import { getApiErrorMessage } from "@/lib/api/client";
 
 type Quote = Awaited<ReturnType<BillingOperations["purchaseManagement"]>>;
@@ -48,12 +51,48 @@ function ManagementBillingContent({
   onBusyChange?: (busy: boolean) => void;
 }) {
   const resource = useManagementPlan();
+  if (detailView)
+    return (
+      <ManagementPlanDetails
+        resource={resource}
+        initialPlan={initialPlan}
+        onBusyChange={onBusyChange}
+      />
+    );
+  return (
+    <ManagementPlan resource={resource} initialPlan={initialPlan} onBusyChange={onBusyChange} />
+  );
+}
+
+function ManagementPlanDetails({
+  resource,
+  initialPlan,
+  onBusyChange,
+}: {
+  resource: ManagementPlanResource;
+  initialPlan?: ManagementPlanId;
+  onBusyChange?: (busy: boolean) => void;
+}) {
+  const query = useSearchParams();
+  const router = useRouter();
   return (
     <ManagementPlan
       resource={resource}
       initialPlan={initialPlan}
       onBusyChange={onBusyChange}
-      detailView={detailView}
+      detailView
+      detailTab={
+        query.get("tab") === "overview"
+          ? "overview"
+          : query.get("tab") === "payment" || resource.data?.pendingCheckout
+            ? "payment"
+            : "overview"
+      }
+      onDetailTabChange={(tab) => {
+        const params = new URLSearchParams(query.toString());
+        params.set("tab", tab);
+        router.replace(`/billing/manage${params.size ? `?${params}` : ""}`, { scroll: false });
+      }}
     />
   );
 }
@@ -65,8 +104,12 @@ export function ManagementPlan({
   embedded = false,
   onBusyChange,
   detailView = false,
+  detailTab = "overview",
+  onDetailTabChange,
 }: {
   detailView?: boolean;
+  detailTab?: "overview" | "payment";
+  onDetailTabChange?: (tab: "overview" | "payment") => void;
   resource: ManagementPlanResource;
   initialPlan?: ManagementPlanId;
   embedded?: boolean;
@@ -186,7 +229,7 @@ export function ManagementPlan({
         <Button onClick={refresh}>Try again</Button>
       </div>
     );
-  const showingDetails = detailView && Boolean(data.subscription);
+  const showingDetails = detailView && Boolean(data.subscription || data.pendingCheckout);
   const count =
     servers ??
     Math.max(data.pricing.includedServers, data.subscription?.servers ?? data.connectedServers);
@@ -390,7 +433,7 @@ export function ManagementPlan({
           {copy.description}
         </p>
       </div>
-      {showingDetails && editing === "plan" && (
+      {showingDetails && data.subscription && editing === "plan" && (
         <div className="grid gap-3 rounded-xl bg-muted/30 p-4 text-sm sm:grid-cols-2">
           <div>
             <p className="text-xs text-muted-foreground">{t.billing.pricing.currentPlan}</p>
@@ -712,11 +755,14 @@ export function ManagementPlan({
     </div>
   );
   if (!showingDetails) return purchaseContent;
-  const saved = data.subscription!;
+  const saved = data.subscription;
   const blocked =
-    action.busy || data.pendingCheckout || Boolean(data.change) || saved.cancelAtPeriodEnd;
+    action.busy ||
+    data.pendingCheckout ||
+    Boolean(data.change) ||
+    Boolean(saved?.cancelAtPeriodEnd);
   const openEditor = (mode: "plan" | "servers" = "plan") => {
-    if (blocked) return;
+    if (blocked || !saved) return;
     const next = mode === "servers" && saved.status !== "canceled" ? "servers" : "plan";
     setSelectedPlan(saved.plan ?? "basic");
     setServers(next === "servers" ? saved.servers + 1 : saved.servers);
@@ -728,67 +774,112 @@ export function ManagementPlan({
   };
   return (
     <div className="@container/manage-detail space-y-5">
+      <Tabs
+        tabs={[
+          { key: "overview", label: t.billing.tabs.overview, icon: "dashboard" },
+          { key: "payment", label: t.billing.tabs.payment, icon: "credit-card" },
+        ]}
+        value={detailTab}
+        onChange={(tab) => onDetailTabChange?.(tab)}
+        ariaLabel={t.billing.layout.title}
+      />
+      {data.change && !data.change.paymentUrl && detailTab === "overview" && (
+        <section
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/40 p-4 text-sm"
+        >
+          <p>Subscription change · {data.change.status.replaceAll("_", " ")}</p>
+          <Button variant="secondary" size="sm" onClick={() => onDetailTabChange?.("payment")}>
+            {t.billing.tabs.payment}
+          </Button>
+        </section>
+      )}
+      {(data.pendingCheckout ||
+        data.change?.paymentUrl ||
+        subscriptionNeedsPayment(saved?.status)) && (
+        <section
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-danger/10 p-4 text-sm text-danger"
+        >
+          <div>
+            <p className="font-medium">{t.billing.hub.paymentRequired}</p>
+            <p className="mt-1">{t.billing.hub.paymentNotice}</p>
+          </div>
+          {detailTab !== "payment" && (
+            <Button variant="secondary" size="sm" onClick={() => onDetailTabChange?.("payment")}>
+              {t.billing.hub.reviewPayment}
+            </Button>
+          )}
+        </section>
+      )}
       {!editing && (error || action.error) && (
         <p role="alert" className="rounded-xl bg-danger/10 p-4 text-sm text-danger">
           {action.error || error}
         </p>
       )}
       <div className="grid items-start gap-5 @min-[64rem]/manage-detail:grid-cols-[minmax(0,1fr)_340px]">
-        <ManagementServers
-          atCapacity={data.connectedServers >= data.serverLimit}
-          onUpgrade={() => openEditor("servers")}
-          upgradeDisabled={blocked || data.serverLimit >= data.pricing.maxServers}
-        />
-        <aside className="min-w-0 space-y-4">
-          <section className="space-y-4 rounded-2xl bg-card p-5">
-            <div className="flex items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
-                <Icon name={saved.plan === "priority" ? "shield" : "server"} className="size-5" />
-              </span>
-              <h2 className="min-w-0 flex-1 text-lg font-medium">{copy[saved.plan ?? "basic"]}</h2>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs ${data.active ? "bg-success-bg text-success" : "bg-muted text-muted-foreground"}`}
-              >
-                {data.active ? t.billing.hub.active : t.billing.hub.inactive}
-              </span>
-            </div>
-            <div>
-              <p className="flex flex-wrap items-baseline gap-2">
-                <span className="text-xl font-medium">{money(saved.priceCents)}</span>
-                <span className="text-xs text-muted-foreground">{copy.perMonth}</span>
-              </p>
-              {saved.periodEnd && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {interpolate(
-                    saved.cancelAtPeriodEnd
-                      ? t.billing.sidebar.accessUntil
-                      : t.billing.sidebar.renewsOn,
-                    { date: new Date(saved.periodEnd).toLocaleDateString() },
-                  )}
-                </p>
-              )}
-            </div>
-            <div className="flex items-baseline justify-between gap-3 rounded-xl bg-muted/40 p-3 text-sm">
-              <span className="text-muted-foreground">{copy.serverCount}</span>
-              <span className="font-medium tabular-nums">
-                {data.connectedServers} / {data.serverLimit}
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {saved.plan === "priority" ? copy.prioritySupport : copy.email}
-            </p>
-          </section>
-          <Button className="w-full" disabled={blocked} onClick={() => openEditor("plan")}>
-            {t.billing.workspaces.changePlan}
-            <Icon name="arrow-up-right" className="size-4" />
-          </Button>
+        {detailTab === "payment" ? (
           <div className="min-w-0 space-y-4">
             {recoveryControls}
             {subscriptionControls}
           </div>
-        </aside>
+        ) : (
+          <ManagementServers
+            atCapacity={data.connectedServers >= data.serverLimit}
+            onUpgrade={() => openEditor("servers")}
+            upgradeDisabled={blocked || data.serverLimit >= data.pricing.maxServers}
+          />
+        )}
+        {saved && (
+          <aside className="min-w-0 space-y-4">
+            <section className="space-y-4 rounded-2xl bg-card p-5">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
+                  <Icon name={saved.plan === "priority" ? "shield" : "server"} className="size-5" />
+                </span>
+                <h2 className="min-w-0 flex-1 text-lg font-medium">
+                  {copy[saved.plan ?? "basic"]}
+                </h2>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs ${data.active ? "bg-success-bg text-success" : "bg-muted text-muted-foreground"}`}
+                >
+                  {data.active ? t.billing.hub.active : t.billing.hub.inactive}
+                </span>
+              </div>
+              <div>
+                <p className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-xl font-medium">{money(saved.priceCents)}</span>
+                  <span className="text-xs text-muted-foreground">{copy.perMonth}</span>
+                </p>
+                {saved.periodEnd && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {interpolate(
+                      saved.cancelAtPeriodEnd
+                        ? t.billing.sidebar.accessUntil
+                        : t.billing.sidebar.renewsOn,
+                      { date: new Date(saved.periodEnd).toLocaleDateString() },
+                    )}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-baseline justify-between gap-3 rounded-xl bg-muted/40 p-3 text-sm">
+                <span className="text-muted-foreground">{copy.serverCount}</span>
+                <span className="font-medium tabular-nums">
+                  {data.connectedServers} / {data.serverLimit}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {saved.plan === "priority" ? copy.prioritySupport : copy.email}
+              </p>
+            </section>
+            <Button className="w-full" disabled={blocked} onClick={() => openEditor("plan")}>
+              {t.billing.workspaces.changePlan}
+              <Icon name="arrow-up-right" className="size-4" />
+            </Button>
+          </aside>
+        )}
       </div>
-      {editing && (
+      {editing && saved && (
         <PlanChangeModal
           busy={action.busy || checkingSlots}
           title={editing === "servers" ? t.billing.managementDetail.addSlots : undefined}

@@ -840,7 +840,11 @@
     "viewPlan": "Tarif ansehen",
     "active": "Aktiv",
     "inactive": "Inaktiv",
-    "management": "Serververwaltung"
+    "management": "Serververwaltung",
+    "paymentPending": "Zahlung ausstehend",
+    "paymentRequired": "Zahlung erfordert Aufmerksamkeit",
+    "reviewPayment": "Zahlung prüfen",
+    "paymentNotice": "Prüfe die gespeicherte Zahlung für diesen Tarif. Der Zugriff wird erst nach bestätigter Zahlung aktualisiert."
   },
   "managementDetail": {
     "servers": "Server in diesem Tarif",

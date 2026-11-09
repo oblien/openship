@@ -840,7 +840,11 @@
     "viewPlan": "查看套餐",
     "active": "已启用",
     "inactive": "未启用",
-    "management": "服务器管理"
+    "management": "服务器管理",
+    "paymentPending": "等待付款",
+    "paymentRequired": "付款需要处理",
+    "reviewPayment": "查看付款",
+    "paymentNotice": "请查看此套餐已保存的付款。仅在付款确认后更新访问权限。"
   },
   "managementDetail": {
     "servers": "此套餐中的服务器",

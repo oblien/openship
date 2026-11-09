@@ -840,7 +840,11 @@
     "viewPlan": "View plan",
     "active": "Active",
     "inactive": "Inactive",
-    "management": "Server management"
+    "management": "Server management",
+    "paymentPending": "Payment pending",
+    "paymentRequired": "Payment needs attention",
+    "reviewPayment": "Review payment",
+    "paymentNotice": "Review the saved payment for this plan. Access updates only after payment is confirmed."
   },
   "managementDetail": {
     "servers": "Servers on this plan",

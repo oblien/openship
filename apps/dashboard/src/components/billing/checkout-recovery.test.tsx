@@ -220,6 +220,20 @@ describe("unfinished checkout recovery", () => {
     expect(h.refresh).not.toHaveBeenCalled();
   });
 
+  it("returns from a removed pending plan to plan cards without replaying checkout", async () => {
+    window.history.replaceState(null, "", `/resources?pool=${server.serverId}&tab=payment&organizationId=org-a&checkout=cancelled&session_id=cs_pending&startCheckout=1`);
+    h.post.mockResolvedValueOnce({ data: expired });
+    await render();
+    await click(copy.cancel);
+    await click(copy.confirmCancel);
+    h.refresh.mockClear();
+    await click(copy.deleteServer);
+    await click(baseDictionary.billing.workspaces.confirmDelete);
+    expect(h.removed).toHaveBeenCalledExactlyOnceWith(server.id);
+    expect(h.replace).toHaveBeenCalledExactlyOnceWith("/billing?organizationId=org-a", { scroll: false });
+    expect(h.refresh).not.toHaveBeenCalled();
+  });
+
   it("preserves another server's billing selection when removing a canceled draft", async () => {
     window.history.replaceState(null, "", "/billing/payment?workspaceId=cws-paid&organizationId=org-a");
     h.post.mockResolvedValueOnce({ data: expired });

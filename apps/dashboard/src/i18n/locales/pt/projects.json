@@ -209,6 +209,8 @@
     "modeStandalone": "Autónomo",
     "modeServer": "Servidor",
     "modeWorker": "Worker",
+    "modeComposeOne": "Pilha Compose · {count} serviço",
+    "modeComposeOther": "Pilha Compose · {count} serviços",
     "infrastructure": "Infraestrutura",
     "platform": "Plataforma",
     "mode": "Modo",
