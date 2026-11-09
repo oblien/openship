@@ -27,6 +27,7 @@
     "setupPending": "クラウドスペースの設定が完了すると使用量が表示されます。",
     "projectsAssigned": "このプランのプロジェクト",
     "projectsAssignedHint": "このプランのコンピュートとストレージを共有するプロジェクト。",
+    "showAllProjects": "全{count}件のプロジェクトを表示",
     "storageDetails": "ストレージ使用量について"
   },
   "github": {

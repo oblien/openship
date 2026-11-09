@@ -27,6 +27,7 @@
     "setupPending": "云空间设置完成后将显示使用情况。",
     "projectsAssigned": "此套餐中的项目",
     "projectsAssignedHint": "共享此套餐计算和存储资源的项目。",
+    "showAllProjects": "查看全部 {count} 个项目",
     "storageDetails": "关于存储使用量"
   },
   "github": {

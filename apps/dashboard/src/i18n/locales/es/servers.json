@@ -27,6 +27,7 @@
     "setupPending": "El uso aparecerá cuando tu espacio Cloud esté configurado.",
     "projectsAssigned": "Proyectos de este plan",
     "projectsAssignedHint": "Proyectos que comparten el cómputo y almacenamiento de este plan.",
+    "showAllProjects": "Ver los {count} proyectos",
     "storageDetails": "Sobre el uso del almacenamiento"
   },
   "github": {

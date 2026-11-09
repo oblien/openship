@@ -39,6 +39,7 @@ type PlanProps = {
   resources?: CloudAllocation | null;
   refreshKey?: number;
   onUpdated: () => void;
+  header: (planName?: string) => ReactNode;
   children: ReactNode;
 };
 
@@ -64,6 +65,7 @@ function PlanContent({
   resources,
   refreshKey,
   onUpdated,
+  header,
   children,
 }: PlanProps) {
   const { t, locale } = useI18n();
@@ -123,6 +125,9 @@ function PlanContent({
   const returned = query.get("checkout") === "success" || query.get("topup") === "success";
   return (
     <div className="space-y-5">
+      {header(
+        state?.plan?.name ?? (server.planTierId === "free" ? pendingPurchase?.name : undefined),
+      )}
       <Tabs
         tabs={tabs.map((item) => ({ ...item, href: href(item.key) }))}
         value={tab}
@@ -175,7 +180,7 @@ function PlanContent({
       )}
       <div className="grid items-start gap-5 @min-[64rem]/resources:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
-          {(tab === "overview" || tab === "activity") && children}
+          {(tab === "overview" || tab === "usage" || tab === "activity") && children}
           {state ? (
             <>
               {tab === "overview" && (

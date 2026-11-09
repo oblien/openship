@@ -2,8 +2,6 @@
 
 import type { BillingState } from "@/lib/api/billing";
 import { BillingCapacity } from "./BillingCapacity";
-import { CloudUsageGuide } from "./CloudUsageGuide";
-import { BillingResourceUsage } from "./BillingResourceUsage";
 import { SubscribedServerResources } from "./SubscribedServerResources";
 import { CloudCreditAlert } from "./CloudCreditAlert";
 import { BillingComputeCoverage } from "./BillingComputeCoverage";
@@ -33,11 +31,6 @@ export function BillingOverview({
         onUpdated={onUpdated}
       />
       <BillingCapacity state={state} embedded={embedded} />
-      <BillingResourceUsage state={state} />
-      <CloudUsageGuide
-        collapsible
-        billingMode={state.compute?.billingMode ?? state.plan?.billingMode}
-      />
       {state.tier !== "free" && <BillingComputeCoverage state={state} />}
     </div>
   );

@@ -27,6 +27,7 @@
     "setupPending": "Die Nutzung wird angezeigt, sobald dein Cloud-Bereich eingerichtet ist.",
     "projectsAssigned": "Projekte in diesem Tarif",
     "projectsAssignedHint": "Projekte, die Rechenleistung und Speicher dieses Tarifs gemeinsam nutzen.",
+    "showAllProjects": "Alle {count} Projekte anzeigen",
     "storageDetails": "Zur Speichernutzung"
   },
   "github": {

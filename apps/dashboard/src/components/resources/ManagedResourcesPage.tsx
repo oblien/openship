@@ -153,29 +153,23 @@ export function ManagedResourceDetail({
     void onRefresh();
   });
   const activity = query.get("tab") === "activity";
+  const usageTab = query.get("tab") === "usage";
   if (!managed) return null;
   const refresh = () => {
     setRevision((value) => value + 1);
     void onRefresh();
   };
-  return (
-    <PageContainer className="@container/resources">
-      <Link
-        href="/billing"
-        className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-      >
-        <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
-        {t.billing.layout.title}
-      </Link>
+  const header = (planName?: string) => (
+    <>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-medium text-foreground">{server.name || managed.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {managed.planTierId !== "free" && (
-              <>{cloudSpacePlanLabel(managed.planTierId, locale, copy.customPlan)} · </>
-            )}
-            {copy.description}
-          </p>
+          <h1 className="text-2xl font-medium text-foreground">
+            {planName ??
+              (managed.planTierId === "free"
+                ? copy.space
+                : cloudSpacePlanLabel(managed.planTierId, locale, copy.customPlan))}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -199,15 +193,23 @@ export function ManagedResourceDetail({
           {error}
         </p>
       )}
+    </>
+  );
+  return (
+    <PageContainer className="@container/resources">
       {managed.connectionIssue ? (
-        <ManagedServerConnectionNotice
-          issue={managed.connectionIssue}
-          refresh={refresh}
-          busy={refreshing}
-        />
+        <>
+          {header()}
+          <ManagedServerConnectionNotice
+            issue={managed.connectionIssue}
+            refresh={refresh}
+            busy={refreshing}
+          />
+        </>
       ) : (
         <CloudPlanManagement
           key={managed.id}
+          header={header}
           workspaceId={managed.id}
           serverId={server.id}
           server={managed}
@@ -223,7 +225,8 @@ export function ManagedResourceDetail({
                 key={server.id}
                 serverId={server.id}
                 resources={managed.resources}
-                showProjects
+                showProjects={!usageTab}
+                metrics={usageTab}
                 resourcePool
                 liveEnabled={["running", "active", "ready"].includes(managed.state)}
                 unavailableHint={

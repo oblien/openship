@@ -27,6 +27,7 @@
     "setupPending": "Usage will appear once your Cloud space is set up.",
     "projectsAssigned": "Projects on this plan",
     "projectsAssignedHint": "Projects sharing this plan’s compute and storage.",
+    "showAllProjects": "Show all {count} projects",
     "storageDetails": "About storage usage"
   },
   "acquire": {

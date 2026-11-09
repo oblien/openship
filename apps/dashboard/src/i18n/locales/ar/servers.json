@@ -27,6 +27,7 @@
     "setupPending": "سيظهر الاستخدام بعد إعداد مساحتك السحابية.",
     "projectsAssigned": "المشاريع في هذه الخطة",
     "projectsAssignedHint": "مشاريع تشترك في موارد الحوسبة والتخزين لهذه الخطة.",
+    "showAllProjects": "عرض جميع المشاريع ({count})",
     "storageDetails": "حول استخدام التخزين"
   },
   "acquire": {
