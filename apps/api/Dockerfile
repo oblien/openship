@@ -63,9 +63,10 @@ RUN apt-get update \
 #   • the compiled apps/api/dist (+ apps/api/package.json)
 # Copying only apps/api/dist + node_modules (the previous version) made
 # @repo/db unresolvable and the API crashed on startup.
+# Keep this large, stable layer independent of application source and compilation.
+COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=builder /app/package.json /app/bun.lock /app/pnpm-workspace.yaml /app/tsconfig.base.json ./
 COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api ./apps/api
 # The iRedMail engine is DATA, not code: mail setup step 7 tars this tree and
 # stages it onto the target box (see resolveLocalEngineDir). Without it the
