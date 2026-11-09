@@ -26,6 +26,7 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
   auditApi,
@@ -289,14 +290,16 @@ function AuditDetailsBody({
             <p className="mt-2 text-sm text-muted-foreground">{description}</p>
           )}
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
           onClick={onClose}
-          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           aria-label={t.settings.common.close}
         >
-          {t.settings.common.close}
-        </button>
+          <UiIcon name="close" className="size-4" />
+        </Button>
       </div>
 
       <section className="rounded-xl bg-card p-4">
@@ -801,7 +804,7 @@ export function AuditLog() {
       let modalId = "";
       modalId = showModal({
         maxWidth: "720px",
-        showCloseButton: true,
+        showCloseButton: false,
         customContent: (
           <AuditDetailsBody
             event={event}
