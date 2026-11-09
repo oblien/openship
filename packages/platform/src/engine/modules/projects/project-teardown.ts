@@ -41,6 +41,7 @@ import {
 } from "./project-cleanup.service";
 import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sync";
 import { cancelBuildSession } from "../deployments/build.service";
+import { deploymentIsInFlight } from "./deployment-flags";
 import { restoreOrchestrator } from "../backups/restore.orchestrator";
 import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -661,6 +662,48 @@ async function stepUnlinkConsumers(
   return { ok: true, unlinked };
 }
 
+/**
+ * Settle build sessions orphaned by deployments that already reached a
+ * terminal status.
+ *
+ * A deployment row that already reached a terminal status can never run
+ * again, but its build session stays "live" until the worker's outermost
+ * finally stamps finishedAt — and a worker killed with its host never runs
+ * that finally, so the quiescence gate below can never be satisfied and the
+ * project becomes permanently undeletable (#1682). By the time this runs,
+ * the worker has had the full grace window: cancellation was requested above
+ * (cancelBuildSession flips the row and signals any live worker, which
+ * observes the durable cancelled row within one bounded poll interval), and
+ * the poll just waited QUIESCE_TIMEOUT_MS more. A live worker is therefore
+ * unwinding, not provisioning — it cannot start new work after observing
+ * cancellation — so acknowledging its session cannot race a fresh mutation
+ * the way settling a queued/building/deploying deployment could.
+ *
+ * This only acknowledges execution completion — the exact write the worker's
+ * own finally and the boot sweep (sweepStaleInFlight) perform — and preserves
+ * the recorded outcome: the deployment row itself is untouched. Non-terminal
+ * work is never settled here: a queued/building/deploying/reconciling
+ * deployment may still be provisioning, so it keeps blocking exactly as
+ * before, as do backups, restores, and migrations. A read or ack that fails
+ * is logged and skipped, never treated as proof the session is gone.
+ */
+async function settleOrphanedTerminalSessions(active: PreflightActiveState): Promise<number> {
+  let settled = 0;
+  for (const depId of active.activeDeploymentIds) {
+    try {
+      const dep = await repos.deployment.findById(depId);
+      if (!dep || deploymentIsInFlight(dep) || dep.status === "reconciling") continue;
+      const session = await repos.deployment.findBuildSessionByDeploymentId(depId);
+      if (!session || session.finishedAt) continue;
+      await repos.deployment.acknowledgeBuildExecutionFinished(session.id);
+      settled++;
+    } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
+    }
+  }
+  return settled;
+}
+
 async function stepCancelInFlight(
   ctx: RequestContext,
   projectId: string,
@@ -794,10 +837,23 @@ async function stepCancelInFlight(
   // manifest collection or any resource mutation.
   const deadline = Date.now() + QUIESCE_TIMEOUT_MS;
   let last = before;
+  let settledOrphanedSessions = 0;
   while (Date.now() < deadline) {
     last = await getActiveProjectState(projectId);
     if (!last.blocking) break;
     await new Promise((r) => setTimeout(r, QUIESCE_POLL_MS));
+  }
+
+  // The gate can never clear on its own when the only blocker is a build
+  // session orphaned by an already-terminal deployment: the worker that was
+  // supposed to stamp finishedAt is gone. Settle exactly those sessions,
+  // then re-read the gate once — anything still genuinely active keeps the
+  // project exactly as before.
+  if (last.blocking) {
+    settledOrphanedSessions = await settleOrphanedTerminalSessions(last);
+    if (settledOrphanedSessions > 0) {
+      last = await getActiveProjectState(projectId);
+    }
   }
 
   if (last.blocking) {
@@ -822,6 +878,9 @@ async function stepCancelInFlight(
       `${before.activeMigrationIds.length} migration(s)` +
       (before.activeBackupRunIds.length > 0
         ? `; cancelled or waited for ${before.activeBackupRunIds.length} backup capture(s)`
+        : "") +
+      (settledOrphanedSessions > 0
+        ? `; settled ${settledOrphanedSessions} orphaned build session(s) of already-terminal deployment(s)`
         : ""),
   });
   return true;
