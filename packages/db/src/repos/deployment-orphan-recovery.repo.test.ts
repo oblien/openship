@@ -34,37 +34,31 @@ describe("fenced orphaned build sessions (#1682)", () => {
     await db.delete(schema.buildSession);
     await db.delete(schema.deployment);
     await db.delete(schema.project);
-    await db
-      .insert(schema.project)
-      .values({
-        id: "project",
-        organizationId: "org",
-        groupId: "group",
-        name: "App",
-        slug: "app",
-        serverId: "ssh-server",
-        activeDeploymentId: "dep",
-      });
-    await db
-      .insert(schema.deployment)
-      .values({
-        id: "dep",
-        projectId: "project",
-        organizationId: "org",
-        branch: "main",
-        status: "queued",
-        containerId: "retained-runtime",
-      });
-    await db
-      .insert(schema.buildSession)
-      .values({
-        id: "build",
-        deploymentId: "dep",
-        projectId: "project",
-        status: "queued",
-        logs,
-        durationMs: 1234,
-      });
+    await db.insert(schema.project).values({
+      id: "project",
+      organizationId: "org",
+      groupId: "group",
+      name: "App",
+      slug: "app",
+      serverId: "ssh-server",
+      activeDeploymentId: "dep",
+    });
+    await db.insert(schema.deployment).values({
+      id: "dep",
+      projectId: "project",
+      organizationId: "org",
+      branch: "main",
+      status: "queued",
+      containerId: "retained-runtime",
+    });
+    await db.insert(schema.buildSession).values({
+      id: "build",
+      deploymentId: "dep",
+      projectId: "project",
+      status: "queued",
+      logs,
+      durationMs: 1234,
+    });
   });
   async function claim(status = "cancelled", executionFenced = true) {
     expect(await repo.claimBuildExecution({ ...input, executionFenced })).toBe("claimed");
@@ -158,15 +152,13 @@ describe("fenced orphaned build sessions (#1682)", () => {
 
   it("leaves managed work to command-aware recovery, even after a destination edit", async () => {
     await claim();
-    await db
-      .insert(schema.cloudBuildActivity)
-      .values({
-        deploymentId: "dep",
-        projectId: "project",
-        buildSessionId: "build",
-        workspaceId: "workspace",
-        organizationId: "org",
-      });
+    await db.insert(schema.cloudBuildActivity).values({
+      deploymentId: "dep",
+      projectId: "project",
+      buildSessionId: "build",
+      workspaceId: "workspace",
+      organizationId: "org",
+    });
     expect(await repo.recoverFencedBuildExecution(input)).toBe(false);
     await db.delete(schema.cloudBuildActivity);
     await db.update(schema.project).set({ workspaceId: "workspace" });
@@ -174,11 +166,21 @@ describe("fenced orphaned build sessions (#1682)", () => {
     expect(await repo.hasLiveBuildExecution("dep", "project")).toBe(true);
   });
 
-  it("retains an interrupted runtime handover for its own recovery path", async () => {
-    await claim();
+  it("acknowledges a dead worker while preserving a committing handover for its own recovery path", async () => {
+    await claim("building");
     await db.update(schema.deployment).set({ roleHandover: { phase: "committing" } as never });
-    expect(await repo.recoverFencedBuildExecution(input)).toBe(false);
-    expect(await repo.hasLiveBuildExecution("dep", "project")).toBe(true);
+    expect(await repo.recoverFencedBuildExecution({ ...input, recoverInterrupted: true })).toBe(
+      true,
+    );
+    expect(await repo.hasLiveBuildExecution("dep", "project")).toBe(false);
+    expect(await repo.findById("dep")).toMatchObject({
+      status: "building",
+      errorCode: null,
+      roleHandover: { phase: "committing" },
+    });
+    // Publication remains pending, but its own recovery can now proceed.
+    expect((await repo.listInFlightByProject("project")).map((d) => d.id)).toEqual(["dep"]);
+    expect((await repo.listPendingRoleHandovers("project")).map((d) => d.id)).toEqual(["dep"]);
   });
 
   it("rolls the deployment transition back if completion cannot be recorded", async () => {

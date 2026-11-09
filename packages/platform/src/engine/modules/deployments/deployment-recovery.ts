@@ -17,16 +17,17 @@ export async function recoverDeploymentExecution(
 ): Promise<boolean> {
   if (dep.projectId !== project.id || dep.organizationId !== project.organizationId) return false;
   if (project.workspaceId) return recoverManagedDeploymentExecution(dep, project, options);
-  const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
-  // Old replicas did not hold an execution fence for SSH/local builds. Never
-  // infer that those untracked workers died during a rolling upgrade.
-  if (!session?.executionFenced || !session.startedAt || session.finishedAt) return false;
-  return (await tryWithDeploymentExecutionOwnership(dep.id, () =>
-    repos.deployment.recoverFencedBuildExecution({
+  return (await tryWithDeploymentExecutionOwnership(dep.id, async () => {
+    // Read only after acquiring ownership: live builds need no session/log read.
+    // Old replicas did not hold a fence for SSH/local builds. Never infer that
+    // those untracked workers died during a rolling upgrade.
+    const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
+    if (!session?.executionFenced || !session.startedAt || session.finishedAt) return false;
+    return repos.deployment.recoverFencedBuildExecution({
       deploymentId: dep.id, buildSessionId: session.id, projectId: project.id,
       organizationId: dep.organizationId, recoverInterrupted: options.recoverInterrupted,
-    }),
-  )) === true;
+    });
+  })) === true;
 }
 
 /** Reuse the scheduled Cloud recovery job for SSH-connected projects too.

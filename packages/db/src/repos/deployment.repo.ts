@@ -413,15 +413,15 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           .where(and(eq(project.id, input.projectId), eq(project.organizationId, input.organizationId),
             isNull(project.workspaceId))).for("update");
         if (!owner) return false;
-        const [session] = await tx.select().from(buildSession)
+        const [session] = await tx.select({ id: buildSession.id, status: buildSession.status }).from(buildSession)
           .where(and(eq(buildSession.id, input.buildSessionId), eq(buildSession.projectId, owner.id),
             eq(buildSession.deploymentId, input.deploymentId), eq(buildSession.executionFenced, true),
             isNotNull(buildSession.startedAt), isNull(buildSession.finishedAt))).for("update");
         if (!session) return false;
-        const [work] = await tx.select().from(deployment)
+        const [work] = await tx.select({ id: deployment.id, status: deployment.status, roleHandover: deployment.roleHandover }).from(deployment)
           .where(and(eq(deployment.id, input.deploymentId), eq(deployment.projectId, owner.id),
             eq(deployment.organizationId, input.organizationId))).for("update");
-        if (!work || (work.roleHandover && work.roleHandover.phase !== "complete")) return false;
+        if (!work) return false;
         // Never bypass the managed-command ledger, even after a destination edit.
         const [activity] = await tx.select({ id: cloudBuildActivity.deploymentId }).from(cloudBuildActivity)
           .where(eq(cloudBuildActivity.deploymentId, work.id));
@@ -429,8 +429,12 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
 
         const interrupted = ["queued", "building", "deploying"].includes(work.status);
         if (interrupted && !input.recoverInterrupted) return false;
+        // A committing handover has its own durable recovery journal. Let that
+        // recovery finish publication after the dead worker is acknowledged;
+        // relabelling it failed or retaining a phantom live session strands it.
+        const failInterrupted = interrupted && work.roleHandover?.phase !== "committing";
         const now = new Date();
-        if (interrupted) {
+        if (failInterrupted) {
           await tx.update(deployment).set({ status: "failed", updatedAt: now,
             errorCode: "DEPLOYMENT_INTERRUPTED",
             errorMessage: "The deployment worker was interrupted. Redeploy to retry.",
@@ -441,7 +445,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         await tx.update(buildSession).set({
           finishedAt: now,
           ...(["queued", "building", "deploying"].includes(session.status)
-            ? { status: interrupted ? "failed" : work.status } : {}),
+            ? { status: failInterrupted ? "failed" : work.status } : {}),
         }).where(eq(buildSession.id, session.id));
         return true;
       });
