@@ -1,5 +1,10 @@
 import type { BillingState } from "./api/billing";
 
+/** Provider subscription states that require payment recovery, including renewals. */
+export function subscriptionNeedsPayment(status?: string | null): boolean {
+  return status === "past_due" || status === "unpaid" || status === "incomplete";
+}
+
 /** Complimentary grants provide a plan without a paid provider subscription. */
 export function needsCloudPlan(state: Pick<BillingState, "tier" | "subscription" | "complimentary">): boolean {
   if (state.complimentary) return false;

@@ -840,7 +840,11 @@
     "viewPlan": "Planı görüntüle",
     "active": "Etkin",
     "inactive": "Etkin değil",
-    "management": "Sunucu yönetimi"
+    "management": "Sunucu yönetimi",
+    "paymentPending": "Ödeme bekleniyor",
+    "paymentRequired": "Ödemenin incelenmesi gerekiyor",
+    "reviewPayment": "Ödemeyi incele",
+    "paymentNotice": "Bu plan için kaydedilen ödemeyi inceleyin. Erişim yalnızca ödeme onaylandıktan sonra güncellenir."
   },
   "managementDetail": {
     "servers": "Bu plandaki sunucular",

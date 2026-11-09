@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -15,7 +15,6 @@ import { cloudSpacePlanLabel } from "@/lib/cloud-spaces";
 import { CloudPlanManagement } from "@/components/billing/CloudPlanManagement";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
 import { BillingSupportLink } from "@/components/billing/BillingSupportLink";
-import { Tabs } from "@/components/ui/Tabs";
 import { ServerUsage } from "@/components/servers/ServerUsage";
 import { ManagedServerActivity } from "@/components/servers/managed/ManagedServerActivity";
 import { ManagedServerConnectionNotice } from "@/components/servers/managed/ManagedServerConnectionNotice";
@@ -147,7 +146,6 @@ export function ManagedResourceDetail({
 }) {
   const { t, locale } = useI18n();
   const copy = t.servers.resources;
-  const router = useRouter();
   const query = useSearchParams();
   const [revision, setRevision] = useState(0);
   const managed = server.managed;
@@ -160,23 +158,24 @@ export function ManagedResourceDetail({
     setRevision((value) => value + 1);
     void onRefresh();
   };
-  const changeTab = (tab: string) => {
-    const params = new URLSearchParams(query.toString());
-    params.set("pool", server.id);
-    if (tab === "activity") params.set("tab", tab);
-    else params.delete("tab");
-    router.replace(`/resources?${params}`, { scroll: false });
-  };
   return (
     <PageContainer className="@container/resources">
-      <Link href="/billing" className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
+      <Link
+        href="/billing"
+        className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+      >
         <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
         {t.billing.layout.title}
       </Link>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-foreground">{server.name || managed.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{cloudSpacePlanLabel(managed.planTierId, locale, copy.customPlan)} · {copy.description}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {managed.planTierId !== "free" && (
+              <>{cloudSpacePlanLabel(managed.planTierId, locale, copy.customPlan)} · </>
+            )}
+            {copy.description}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -191,7 +190,7 @@ export function ManagedResourceDetail({
               className={`size-4 ${refreshing ? "motion-safe:animate-spin" : ""}`}
             />
           </Button>
-          <ManagedServerStatus workspace={managed} />
+          {managed.planTierId !== "free" && <ManagedServerStatus workspace={managed} />}
           <BillingSupportLink />
         </div>
       </div>
@@ -200,62 +199,57 @@ export function ManagedResourceDetail({
           {error}
         </p>
       )}
-      <Tabs
-        tabs={[
-          { key: "overview", label: t.servers.detail.tabs.overview },
-          { key: "activity", label: t.servers.detail.tabs.activity },
-        ]}
-        value={activity ? "activity" : "overview"}
-        onChange={changeTab}
-        className="mb-6"
-      />
-      <div className="grid items-start gap-5 @min-[64rem]/resources:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-5 @min-[64rem]/resources:col-start-1">
-          {managed.connectionIssue ? (
-            <ManagedServerConnectionNotice
-              issue={managed.connectionIssue}
-              refresh={refresh}
-              busy={refreshing}
-            />
-          ) : activity ? (
-            <ManagedServerActivity server={managed} actions={actions} />
-          ) : (
-            <ServerUsage
-              key={server.id}
-              serverId={server.id}
-              resources={managed.resources}
-              showProjects
-              resourcePool
-              liveEnabled={["running", "active", "ready"].includes(managed.state)}
-              unavailableHint={
-                [
-                  "needs_plan",
-                  "not_provisioned",
-                  "not_deployed",
-                  "provisioning",
-                  "starting",
-                  "created",
-                ].includes(managed.state)
-                  ? copy.setupPending
-                  : undefined
-              }
-              projectTitle={copy.projectsAssigned}
-              refreshKey={`${revision}:${managed.state}`}
-            />
-          )}
-          {actions.error && (
-            <p role="alert" className="rounded-xl bg-card p-4 text-sm text-danger">
-              {actions.error}
-            </p>
-          )}
-        </div>
-        {!managed.connectionIssue && (
-          <aside className="min-w-0 @min-[64rem]/resources:col-start-2">
-            <CloudPlanManagement key={managed.id} workspaceId={managed.id} resources={managed.resources}
-              refreshKey={revision} onUpdated={refresh} />
-          </aside>
-        )}
-      </div>
+      {managed.connectionIssue ? (
+        <ManagedServerConnectionNotice
+          issue={managed.connectionIssue}
+          refresh={refresh}
+          busy={refreshing}
+        />
+      ) : (
+        <CloudPlanManagement
+          key={managed.id}
+          workspaceId={managed.id}
+          serverId={server.id}
+          server={managed}
+          resources={managed.resources}
+          refreshKey={revision}
+          onUpdated={refresh}
+        >
+          <div className="space-y-5">
+            {activity ? (
+              <ManagedServerActivity server={managed} actions={actions} />
+            ) : (
+              <ServerUsage
+                key={server.id}
+                serverId={server.id}
+                resources={managed.resources}
+                showProjects
+                resourcePool
+                liveEnabled={["running", "active", "ready"].includes(managed.state)}
+                unavailableHint={
+                  [
+                    "needs_plan",
+                    "not_provisioned",
+                    "not_deployed",
+                    "provisioning",
+                    "starting",
+                    "created",
+                  ].includes(managed.state)
+                    ? copy.setupPending
+                    : undefined
+                }
+                projectTitle={copy.projectsAssigned}
+                refreshKey={`${revision}:${managed.state}`}
+              />
+            )}
+            {actions.error && (
+              <p role="alert" className="rounded-xl bg-card p-4 text-sm text-danger">
+                {actions.error}
+              </p>
+            )}
+          </div>
+        </CloudPlanManagement>
+      )}
     </PageContainer>
   );
 }

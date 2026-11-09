@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PRICING } from "@repo/core";
-import type { ManagementState, ServerDetail } from "@repo/contracts";
+import type { BillingPendingCheckout, ManagementState, ServerDetail } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { BillingHome } from "./BillingHome";
@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   cloud: "cloud-a",
   list: vi.fn(),
   management: vi.fn(),
+  checkouts: vi.fn(),
   replace: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: h.replace }) }));
@@ -22,6 +23,7 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.cloud }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.list } }));
+vi.mock("@/lib/api/billing", () => ({ billingApi: { listCheckouts: h.checkouts } }));
 vi.mock("@/lib/api/management", () => ({ managementApi: { get: h.management } }));
 
 const space = (id: string, name: string, tier = "starter") =>
@@ -87,6 +89,7 @@ beforeEach(() => {
   h.cloud = "cloud-a";
   h.list.mockResolvedValue({ servers: [] });
   h.management.mockResolvedValue(freeManagement());
+  h.checkouts.mockResolvedValue({ items: [] });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -166,7 +169,11 @@ it("waits for both inventories before deciding an account has no purchased plans
 
 it("waits for the Cloud inventory before redirecting an empty account", async () => {
   let finish!: (value: { servers: ServerDetail[] }) => void;
-  h.list.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  h.list.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
   await render();
   expect(h.replace).not.toHaveBeenCalled();
   await act(async () => finish({ servers: [] }));
@@ -206,4 +213,87 @@ it("discards the previous account's cards immediately and ignores late inventory
     host.querySelector('a[href="/billing/plans?newServer=1&organizationId=org-b"]'),
   ).not.toBeNull();
   expect(h.replace).not.toHaveBeenCalled();
+});
+
+const pendingPayment = (
+  server = space("draft", "Pending production", "free"),
+): BillingPendingCheckout => ({
+  id: "payment-one",
+  checkoutId: "cs-one",
+  server: server.managed!,
+  kind: "subscription",
+  name: "Pro monthly",
+  amountCents: 4700,
+  currency: "usd",
+  interval: "monthly",
+  state: "open",
+  canResume: true,
+  canCancel: true,
+});
+it("shows unpaid drafts as pending plan cards instead of redirecting to purchases", async () => {
+  const pending = pendingPayment();
+  h.checkouts.mockResolvedValue({ items: [pending] });
+  await render();
+  const card = host.querySelector('a[href="/resources?pool=draft&tab=payment"]')!;
+  expect(card.textContent).toContain("Pending production");
+  expect(card.textContent).toContain("Pro monthly");
+  expect(card.textContent).toContain("$47.00");
+  expect(card.textContent).toContain(baseDictionary.billing.hub.paymentRequired);
+  expect(host.querySelector('a[href*="/billing/payment"]')).toBeNull();
+  expect(h.replace).not.toHaveBeenCalled();
+});
+it("adds payment attention to the existing plan card without duplicating it", async () => {
+  const server = space("production", "Production");
+  h.list.mockResolvedValue({ servers: [server] });
+  h.checkouts.mockResolvedValue({
+    items: [pendingPayment(server), { ...pendingPayment(server), id: "payment-two" }],
+  });
+  await render();
+  expect(host.querySelectorAll('a[href^="/resources?pool=production"]')).toHaveLength(1);
+  expect(host.querySelector('a[href="/resources?pool=production&tab=payment"]')).not.toBeNull();
+});
+it("waits for unfinished-payment inventory before deciding an account is empty", async () => {
+  let finish!: (value: { items: BillingPendingCheckout[] }) => void;
+  h.checkouts.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await render();
+  expect(h.replace).not.toHaveBeenCalled();
+  await act(async () => finish({ items: [pendingPayment()] }));
+  expect(h.replace).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Pending production");
+});
+it("keeps payment lookup failures distinct from an empty account", async () => {
+  h.checkouts.mockRejectedValue(new Error("Payments unavailable"));
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Payments unavailable");
+  expect(h.replace).not.toHaveBeenCalled();
+});
+it("keeps an unfinished Manage purchase as a plan card before a subscription exists", async () => {
+  h.management.mockResolvedValue({ ...freeManagement(), pendingCheckout: true });
+  await render();
+  const card = host.querySelector('a[href="/billing/manage?tab=payment&organizationId=org-a"]')!;
+  expect(card.textContent).toContain(baseDictionary.billing.hub.paymentRequired);
+  expect(h.replace).not.toHaveBeenCalled();
+});
+it("keeps renewal payment recovery on the existing plan", async () => {
+  const server = space("production", "Production");
+  server.managed!.subscriptionStatus = "past_due";
+  h.list.mockResolvedValue({ servers: [server] });
+  await render();
+  expect(
+    host.querySelector('a[href="/resources?pool=production&tab=payment"]')?.textContent,
+  ).toContain(baseDictionary.billing.hub.paymentRequired);
+});
+
+it("matches an existing linked plan through its canonical Cloud reference without adding another card", async () => {
+  const local = space("local-production", "Production");
+  local.cloudReference = { serverId: "remote-production", workspaceId: "subscription-remote-production" };
+  h.list.mockResolvedValue({ servers: [local] });
+  h.checkouts.mockResolvedValue({ items: [pendingPayment(space("remote-production", "Cloud production"))] });
+  await render();
+  expect(host.querySelectorAll('a[href^="/resources?pool="]')).toHaveLength(1);
+  expect(host.querySelector('a[href="/resources?pool=local-production&tab=payment"]')?.textContent).toContain(baseDictionary.billing.hub.paymentRequired);
 });

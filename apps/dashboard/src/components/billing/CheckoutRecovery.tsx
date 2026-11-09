@@ -202,6 +202,13 @@ function CheckoutRow({
     onServerRemoved?.(item.server.id);
     const current = new URL(window.location.href);
     if (
+      current.pathname === "/resources" &&
+      current.searchParams.get("pool") === item.server.serverId
+    ) {
+      router.replace(scopedBillingHref("/billing", {
+        organizationId: current.searchParams.get("organizationId"),
+      }), { scroll: false });
+    } else if (
       (current.pathname === "/billing" || current.pathname.startsWith("/billing/")) &&
       current.searchParams.get("workspaceId") === item.server.id
     ) {

@@ -840,7 +840,11 @@
     "viewPlan": "Voir l’offre",
     "active": "Active",
     "inactive": "Inactive",
-    "management": "Gestion de serveurs"
+    "management": "Gestion de serveurs",
+    "paymentPending": "Paiement en attente",
+    "paymentRequired": "Un paiement nécessite votre attention",
+    "reviewPayment": "Vérifier le paiement",
+    "paymentNotice": "Vérifiez le paiement enregistré pour cette offre. Les accès sont mis à jour après confirmation du paiement."
   },
   "managementDetail": {
     "servers": "Serveurs de cette offre",

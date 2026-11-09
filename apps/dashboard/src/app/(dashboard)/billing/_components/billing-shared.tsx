@@ -67,13 +67,18 @@ export function BillingPlanSummary({
   const plan = state.plan;
   const interval = state.subscription?.interval ?? "monthly";
   const price = plan?.price[interval];
-  const status = state.compute?.billingMode === "monthly"
-    ? state.compute.covered ? t.billing.compute.covered : t.billing.compute.needsAttention
-    : hasPlan
-    ? ((t.billing.sidebar.statuses as Record<string, string>)[state.status] ??
-      state.status.replace(/_/g, " "))
-    : t.billing.sidebar.statusInactive;
-  const healthy = state.compute ? state.compute.covered : hasPlan && (state.status === "active" || state.status === "trialing");
+  const status =
+    state.compute?.billingMode === "monthly"
+      ? state.compute.covered
+        ? t.billing.compute.covered
+        : t.billing.compute.needsAttention
+      : hasPlan
+        ? ((t.billing.sidebar.statuses as Record<string, string>)[state.status] ??
+          state.status.replace(/_/g, " "))
+        : t.billing.sidebar.statusInactive;
+  const healthy = state.compute
+    ? state.compute.covered
+    : hasPlan && (state.status === "active" || state.status === "trialing");
   const complimentary = state.complimentary;
   const renewal = state.subscription?.currentPeriod.end ?? state.currentPeriod?.end;
   const formatDate = (value: string) =>
@@ -99,13 +104,25 @@ export function BillingPlanSummary({
       aria-label={t.billing.pricing.currentPlan}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <span className={`flex shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground/80 ${compact ? "size-8" : "size-10"}`}>
-          {hasPlan ? <PlanIcon planId={state.subscription?.tier ?? state.tier} /> : <UiIcon name="server" className="size-4" />}
+        <span
+          className={`flex shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground/80 ${compact ? "size-8" : "size-10"}`}
+        >
+          {hasPlan ? (
+            <PlanIcon planId={state.subscription?.tier ?? state.tier} />
+          ) : (
+            <UiIcon name="server" className="size-4" />
+          )}
         </span>
         <h2 className="min-w-0 flex-1 break-words text-lg font-medium tracking-tight text-foreground">
-          {hasPlan ? (plan?.name ?? PLANS[state.subscription?.tier ?? state.tier].name) : t.billing.sidebar.noActivePlan}
+          {hasPlan
+            ? (plan?.name ?? PLANS[state.subscription?.tier ?? state.tier].name)
+            : t.billing.sidebar.noActivePlan}
         </h2>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${healthy ? "bg-success-bg text-success" : "bg-warning-bg text-warning"}`}>{status}</span>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${healthy ? "bg-success-bg text-success" : "bg-warning-bg text-warning"}`}
+        >
+          {status}
+        </span>
       </div>
       <div className={compact ? "min-w-0" : ""}>
         {!hasPlan ? (
@@ -161,8 +178,13 @@ export function BillingPlanSummary({
           </p>
         )}
       </div>
-      {allocatedResources ? <CapacitySummary resources={allocatedResources} /> : hasPlan && plan && (
-        <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} compact={compact} />
+      {allocatedResources ? (
+        <CapacitySummary resources={allocatedResources} />
+      ) : (
+        hasPlan &&
+        plan && (
+          <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} compact={compact} />
+        )
       )}
       {notice && <div className={compact ? "basis-full" : undefined}>{notice}</div>}
       {showPlanAction && (
@@ -181,35 +203,45 @@ export function BillingPlanSummary({
   );
 }
 
-type PortalPanelProps = { portalAvailable?: boolean; hasHistory?: boolean };
+type PortalPanelProps = {
+  portalAvailable?: boolean;
+  hasHistory?: boolean;
+  workspaceId?: string;
+  children?: ReactNode;
+};
 
 export function BillingPaymentsPanel({
   portalAvailable = false,
   hasHistory = true,
+  workspaceId,
+  children,
 }: PortalPanelProps) {
   const { t } = useI18n();
   const copy = t.billing.paymentPanel;
   return (
     <div className="space-y-4">
       <section className="rounded-2xl bg-card p-5">
-        <PendingCheckoutsPanel />
+        <PendingCheckoutsPanel workspaceId={workspaceId} />
       </section>
-      {hasHistory ? (
-        <section className="rounded-2xl bg-card p-5">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-              <UiIcon name="credit-card" className="size-5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-base font-medium text-foreground">{copy.title}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
+      {children ||
+        (hasHistory ? (
+          <section className="rounded-2xl bg-card p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+                <UiIcon name="credit-card" className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-medium text-foreground">{copy.title}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
+              </div>
             </div>
-          </div>
-          <div className="mt-5">
-            <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
-          </div>
-        </section>
-      ) : <BillingEmptyState kind="payment" />}
+            <div className="mt-5">
+              <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
+            </div>
+          </section>
+        ) : !workspaceId ? (
+          <BillingEmptyState kind="payment" />
+        ) : null)}
     </div>
   );
 }

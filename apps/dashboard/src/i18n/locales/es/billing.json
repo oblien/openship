@@ -840,7 +840,11 @@
     "viewPlan": "Ver plan",
     "active": "Activo",
     "inactive": "Inactivo",
-    "management": "Gestión de servidores"
+    "management": "Gestión de servidores",
+    "paymentPending": "Pago pendiente",
+    "paymentRequired": "El pago requiere atención",
+    "reviewPayment": "Revisar pago",
+    "paymentNotice": "Revisa el pago guardado para este plan. El acceso se actualiza solo después de confirmar el pago."
   },
   "managementDetail": {
     "servers": "Servidores de este plan",
