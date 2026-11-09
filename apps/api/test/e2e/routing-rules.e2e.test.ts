@@ -46,7 +46,7 @@
  * See test/helpers/docker-e2e.ts.
  */
 
-import { it, expect, beforeAll, afterAll, vi } from "vitest";
+import { it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -183,6 +183,8 @@ function ask(
         host: "127.0.0.1",
         port,
         path,
+        // Probe the current configuration without pooling sockets across reloads.
+        agent: false,
         method: options.method ?? "GET",
         headers: {
           ...options.headers,
@@ -336,6 +338,14 @@ http {
     );
     port = await bootAll();
   }, 600_000);
+
+  afterEach(async ({ task }) => {
+    if (task.result?.state !== "fail") return;
+    for (const c of started) {
+      const logs = await c.logs({ stdout: true, stderr: true, tail: 80 });
+      process.stderr.write(`OpenResty (${luaMode}, ${c.id}):\n${logs.toString()}\n`);
+    }
+  });
 
   afterAll(async () => {
     for (const c of started) await c.remove({ force: true }).catch(() => {});
