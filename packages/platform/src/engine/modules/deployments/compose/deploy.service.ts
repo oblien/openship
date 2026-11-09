@@ -3063,12 +3063,12 @@ async function deployComposeServicesCore(
             routeContext,
             logger,
           });
-          for (const route of staticRoutes) {
+          await mapConcurrent(staticRoutes, 4, async (route) => {
             const routeKey = route.hostname.toLowerCase();
-            if (seenRouteDomains.has(routeKey)) continue;
+            if (seenRouteDomains.has(routeKey)) return;
             seenRouteDomains.add(routeKey);
             try {
-              await registerProjectRoute(project, routeContext.routing, {
+              await withDeploymentProgress(logger, `route configuration for ${route.hostname}`, () => registerProjectRoute(project, routeContext.routing!, {
                 domain: route.hostname,
                 staticRoot,
                 tls: true,
@@ -3082,7 +3082,7 @@ async function deployComposeServicesCore(
                 // ever gets cleanUrls/trailingSlash, so without it the flags never applied.
                 ...routingFields,
                 ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
-              });
+              }));
             } catch (err) {
               observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
               composeRouteWarnings.push(
@@ -3090,7 +3090,7 @@ async function deployComposeServicesCore(
               );
               // No vhost → nothing for ACME to answer the challenge on. Attempting a
               // cert here would burn a guaranteed-failed Let's Encrypt attempt.
-              continue;
+              return;
             }
             // Past the register: this route really is on the edge, so the TLS audit
             // and the output audit may both ask about it.
@@ -3116,7 +3116,7 @@ async function deployComposeServicesCore(
               logger.log(`Checking SSL for ${route.hostname}...\n`, "info", {
                 serviceName: svc.name,
               });
-              await routeContext.trackedSsl.provisionCert(route.hostname).catch((err) => {
+              await withDeploymentProgress(logger, `TLS verification or issuance for ${route.hostname}`, () => routeContext!.trackedSsl.provisionCert(route.hostname)).catch((err) => {
                 observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
                 logger.log(
                   `SSL provisioning failed for ${route.hostname} (route is up on HTTP, retry from ` +
@@ -3126,7 +3126,7 @@ async function deployComposeServicesCore(
                 );
               });
             }
-          }
+          });
         }
 
         // UPSERT, not insert: scoped/reused deployment flows can already have a row
@@ -4490,14 +4490,14 @@ async function deployComposeServicesCore(
       const projectLevelHostnames = projectLevelRoutes.map((r) => r.hostname);
       const pathOnlyHostnames = new Set((project.compositeRoutes ?? [])
         .filter(route => !route.rootServiceId).map(route => route.hostname.toLowerCase()));
-      for (const route of projectLevelRoutes) {
+      await mapConcurrent(projectLevelRoutes, 4, async (route) => {
         const routeKey = route.hostname.toLowerCase();
         // The topology below owns these domains. A project port default must
         // never create a temporary catch-all for a path-only hostname.
-        if (pathOnlyHostnames.has(routeKey)) continue;
+        if (pathOnlyHostnames.has(routeKey)) return;
         // A hostname a SERVICE already registered this pass is that service's, not the
         // project's — never overwrite the more specific answer with a broader one.
-        if (seenRouteDomains.has(routeKey) || route.targetPort === undefined) continue;
+        if (seenRouteDomains.has(routeKey) || route.targetPort === undefined) return;
         // Built from THIS deploy's results, not a fresh daemon read: the containers were
         // just created and their publishing is what is about to be persisted. The port's
         // owning service is picked by the resolver the live re-apply shares.
@@ -4512,7 +4512,7 @@ async function deployComposeServicesCore(
           // A SCOPED pass (per-service Start / add) holds results only for what it
           // touched, so it may never have seen the service that owns this hostname — it
           // is not the authority on that route and says nothing about it either way.
-          if (opts?.targetServiceIds || opts?.strictScope) continue;
+          if (opts?.targetServiceIds || opts?.strictScope) return;
           logger.log(
             `Domain ${route.hostname} not routed — no service offers port ${route.targetPort} ` +
               `(${describeCandidatePorts({ services: enabled, rowByService: projectUpstreamRows })}).\n`,
@@ -4521,7 +4521,7 @@ async function deployComposeServicesCore(
           composeRouteWarnings.push(
             `${route.hostname}: no service offers port ${route.targetPort}`,
           );
-          continue;
+          return;
         }
         // A canonical redirect (the `www` sibling "Include www" mints) is served INSTEAD
         // of the app. Omitting it is not "leaving it alone": `registerRoute` replaces the
@@ -4550,7 +4550,7 @@ async function deployComposeServicesCore(
               },
             ],
           });
-          await registerProjectRoute(project, routeContext.routing, {
+          await withDeploymentProgress(logger, `route configuration for ${route.hostname}`, () => registerProjectRoute(project, routeContext.routing!, {
             domain: route.hostname,
             targetUrl: resolved.url,
             tls: route.tls,
@@ -4561,7 +4561,7 @@ async function deployComposeServicesCore(
             ...routingFields,
             ...(redirectHost ? { redirectHost } : {}),
             ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
-          });
+          }));
         } catch (err) {
           observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
           composeRouteWarnings.push(
@@ -4569,7 +4569,7 @@ async function deployComposeServicesCore(
           );
           // No vhost → nothing for ACME to answer the challenge on, so a cert attempt
           // here would burn a guaranteed-failed Let's Encrypt issuance.
-          continue;
+          return;
         }
         logger.log(
           `Routed ${route.hostname} → service "${resolved.owner.serviceName}" at ${resolved.url} ` +
@@ -4596,7 +4596,7 @@ async function deployComposeServicesCore(
         // is what answers the challenge, so a failed cert is a follow-up the tracked
         // provider records as Action Required — never a failed deploy.
         if (route.provisionSsl) {
-          await routeContext.trackedSsl.provisionCert(route.hostname).catch((err) => {
+          await withDeploymentProgress(logger, `TLS verification or issuance for ${route.hostname}`, () => routeContext!.trackedSsl.provisionCert(route.hostname)).catch((err) => {
             observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
             logger.log(
               `SSL provisioning failed for ${route.hostname} (route is up on HTTP, retry from ` +
@@ -4605,7 +4605,7 @@ async function deployComposeServicesCore(
             );
           });
         }
-      }
+      });
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
       // Staged replacement must preserve an incumbent that any failed route

@@ -56,6 +56,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DockerRuntime,
+  BuildLogger,
+  registerResolvedRoutes,
   DockerEdgeExecutor,
   loopbackPortInventoryFor,
   rootChecked,
@@ -591,6 +593,33 @@ http {
   }
 
   // ── The rule this whole change exists for ────────────────────────────────────
+
+  it("publishes independent domains and changes both live upstreams on redeployment", async () => {
+    const routing = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS, containerEdge: true, pinPaths: true,
+      executor: rootChecked(new DockerEdgeExecutor({ containerName: started[0]!.id, docker: runtime.docker, fileMode: "container" }), "isolated E2E route updates"),
+    });
+    const routes = ["parallel-a.test", "parallel-b.test"].map(hostname => ({ hostname, tls: false, targetPort: 9901 }));
+    const logger = new BuildLogger(() => {});
+    for (const [upstream, body] of [[9901, "APP"], [9904, "BACKEND"]] as const) {
+      const warnings = await registerResolvedRoutes(logger, routing, undefined, routes, { targetUrl: `http://127.0.0.1:${upstream}` });
+      expect(warnings).toEqual([]);
+      for (const route of routes) {
+        await vi.waitFor(async () => {
+          const response = await ask(port, "/deployment", route.hostname);
+          expect(response.status).toBe(200);
+          expect(response.body).toContain(`${body} uri=/deployment`);
+        }, { timeout: 10_000 });
+      }
+    }
+    const warnings = await registerResolvedRoutes(logger, routing, undefined,
+      [{ hostname: "invalid.test", tls: false }, ...routes], { targetUrl: "http://127.0.0.1:9901" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("invalid.test");
+    for (const route of routes) {
+      await vi.waitFor(async () => expect((await ask(port, "/deployment", route.hostname)).body).toContain("APP uri=/deployment"), { timeout: 10_000 });
+    }
+  });
 
   it("preserves path-only upstreams after an incomplete retry and returns 404 elsewhere", async () => {
     const api = await ask(port, "/v3/items?limit=2", "pathonly.test");

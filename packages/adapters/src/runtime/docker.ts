@@ -2043,20 +2043,13 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     log: BuildLogger,
     opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; sharedWorker?: boolean },
   ): Promise<BaseImageReceipt[] | undefined> {
-    const build = async () => {
-      const pin = await this.pinBuildBaseImages(config, remoteBuildDir, dockerfileName, log, opts?.signal, this.connectionOptions?.executor);
-      try {
-        await this.runRemoteImageBuild(config, remoteBuildDir, dockerfileName, tag, log, opts);
-        return pin.baseImages;
-      } finally {
-        await pin.restore();
-      }
-    };
-    // Explicit security refreshes temporarily pin FROM lines. Two services may
-    // share this Dockerfile; never restore it underneath a sibling's context read.
-    return config.refreshBaseImages
-      ? withKeyedMutex(`dockerfile-refresh:${this.transport.description}:${remoteBuildDir}/${dockerfileName}`, build)
-      : build();
+    const pin = await this.pinBuildBaseImages(config, remoteBuildDir, dockerfileName, log, opts?.signal, this.connectionOptions?.executor);
+    try {
+      await this.runRemoteImageBuild(config, remoteBuildDir, dockerfileName, tag, log, opts);
+      return pin.baseImages;
+    } finally {
+      await pin.restore();
+    }
   }
 
   private async runRemoteImageBuild(
@@ -3835,7 +3828,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       const sameBudget = specs.every(spec => spec.config.projectId === source.projectId &&
         JSON.stringify(dockerBuildResourceLimits(spec.config.resources)) ===
           JSON.stringify(dockerBuildResourceLimits(source.resources)));
-      const concurrency = sameBudget ? await this.batchBuildConcurrency(source, specs.length) : 1;
+      const concurrency = isSsh && sameBudget ? await this.batchBuildConcurrency(source, specs.length) : 1;
+      const refreshedDockerfiles = new Set(resolvedList.filter(item => item.spec.config.refreshBaseImages)
+        .map(item => `${item.remoteBuildDir}/${item.dockerfileName}`));
       if (isSsh && sameBudget && !allCancelled() && resolvedList.some(item => !item.error && item.dockerfileName)) {
         sharedWorker = true;
         protectedBatch = !this.usesNativeBuild(source);
@@ -3888,14 +3883,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
           let baseImages: BaseImageReceipt[] | undefined;
           if (isSsh) {
-            baseImages = await this.buildImageOnRemote(
-              spec.config,
-              remoteBuildDir,
-              dockerfileName,
-              tag,
-              spec.logger,
+            const build = () => this.buildImageOnRemote(
+              spec.config, remoteBuildDir, dockerfileName, tag, spec.logger,
               { signal, requiresBuildKit, sharedWorker },
             );
+            const dockerfile = `${remoteBuildDir}/${dockerfileName}`;
+            // Security refresh temporarily pins FROM lines. Include ordinary
+            // readers of that same Dockerfile in the lock, not only the writer.
+            baseImages = refreshedDockerfiles.has(dockerfile)
+              ? await withKeyedMutex(`dockerfile-refresh:${this.transport.description}:${dockerfile}`, build)
+              : await build();
           } else {
             // The shared tree belongs to the batch, so only restore this
             // Dockerfile here; outer cleanup runs after every service finishes.

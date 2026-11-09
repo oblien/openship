@@ -84,13 +84,13 @@ describe("tracked SSL provisioning progress", () => {
     },
   );
 
-  it("reuses a valid certificate after route registration without reissuing or activating it twice", async () => {
+  it("reuses a valid certificate without bypassing activation or the final verification", async () => {
     const { ssl, tracked } = create(active);
-    await tracked.provisionCert(missing.domain, { routeAlreadyConfigured: true });
+    await tracked.provisionCert(missing.domain);
     await expect(tracked.verifyCert(missing.domain)).resolves.toEqual(active);
-    expect(ssl.verifyCert).toHaveBeenCalledOnce();
+    expect(ssl.verifyCert).toHaveBeenCalledTimes(2);
     expect(ssl.provisionCert).not.toHaveBeenCalled();
-    expect(ssl.activateCert).not.toHaveBeenCalled();
+    expect(ssl.activateCert).toHaveBeenCalledExactlyOnceWith(missing.domain);
   });
 
   it("still activates an existing certificate when the caller did not register its route", async () => {
@@ -100,10 +100,26 @@ describe("tracked SSL provisioning progress", () => {
     expect(ssl.provisionCert).not.toHaveBeenCalled();
   });
 
+  it("does not reuse successful issuance evidence after the certificate disappears", async () => {
+    const { ssl, tracked } = create(active);
+    await tracked.provisionCert(missing.domain);
+    vi.mocked(ssl.verifyCert).mockResolvedValue(missing);
+    await expect(tracked.verifyCert(missing.domain)).resolves.toEqual(missing);
+    await tracked.provisionCert(missing.domain);
+    expect(ssl.provisionCert).toHaveBeenCalledOnce();
+  });
+
+  it("records activation failures even when the certificate itself is valid", async () => {
+    const { ssl, tracked } = create(active);
+    vi.mocked(ssl.activateCert!).mockRejectedValue(new Error("nginx reload failed"));
+    await expect(tracked.provisionCert(missing.domain)).resolves.toMatchObject({ verified: false, reason: "read_error" });
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith("dom_1", "nginx reload failed", "unknown");
+  });
+
   it("keeps the renewal path for certificates inside the existing renewal window", async () => {
     const { ssl, tracked } = create({ ...active, expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
-    await tracked.provisionCert(missing.domain, { routeAlreadyConfigured: true });
-    expect(ssl.provisionCert).toHaveBeenCalledExactlyOnceWith(missing.domain, { routeAlreadyConfigured: true });
+    await tracked.provisionCert(missing.domain);
+    expect(ssl.provisionCert).toHaveBeenCalledExactlyOnceWith(missing.domain);
   });
 
   it("does not let a failed read-only progress probe block issuance", async () => {

@@ -744,6 +744,36 @@ describe.each(engineBuildCases)(
 });
 
 describe("shared batch worker lifecycle", () => {
+  it("protects ordinary readers of a Dockerfile while a sibling pins its base images", async () => {
+    const repo = await makeRepo();
+    let release!: () => void;
+    const pinned = new Promise<void>(resolve => { release = resolve; });
+    const runtime = runtimeFor({ kind: "ssh", description: "mixed-refresh-test" }, {
+      connectionOptions: { executor: { exec: vi.fn(async () => "") } },
+      transferBuildContext: vi.fn(async () => {}), batchBuildConcurrency: vi.fn(async () => 3),
+    });
+    const started: string[] = [];
+    let restored = false;
+    const internals = runtime as unknown as Record<string, any>;
+    internals.buildImageOnRemote = vi.fn(async (config: BuildConfig) => {
+      started.push(config.sessionId);
+      if (config.refreshBaseImages) { await pinned; restored = true; }
+      else if (config.sessionId === "reader") expect(restored).toBe(true);
+    });
+    const work = runtime.buildImages([
+      spec(serviceConfig(repo, { sessionId: "refresh", refreshBaseImages: true })),
+      spec(serviceConfig(repo, { sessionId: "reader" })),
+      spec(serviceConfig(repo, { sessionId: "independent", rootDirectory: "", buildContextDirectory: "", dockerfilePath: "Dockerfile" })),
+    ], new BuildLogger(() => {}));
+    try {
+      await vi.waitFor(() => expect(started).toHaveLength(2));
+      expect([...started].sort()).toEqual(["independent", "refresh"]);
+    } finally { release(); }
+    const result = await work;
+    expect(result.map(item => item.result.status)).toEqual(["deploying", "deploying", "deploying"]);
+    expect(started.at(-1)).toBe("reader");
+  });
+
   it("keeps one worker until every concurrent service finishes, including failure", async () => {
     const repo = await makeRepo();
     let release!: () => void;

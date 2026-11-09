@@ -1,6 +1,6 @@
 import { withDeploymentProgress } from "./deployment-progress";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { DeployError, safeErrorMessage, type ProxySettings } from "@repo/core";
+import { DeployError, mapConcurrent, safeErrorMessage, type ProxySettings } from "@repo/core";
 import { edgeDownExplanation } from "../system/edge-exec-error";
 import { resolveServedStaticPath } from "./stack-output";
 
@@ -235,7 +235,7 @@ export async function registerResolvedRoutes(
       // the next deploy. Failing the whole deploy because of one cert is
       // a deeply hostile UX — the box is up, treat SSL as a follow-up.
       try {
-        await withDeploymentProgress(logger, `TLS verification or issuance for ${domain.hostname}`, () => ssl.provisionCert(domain.hostname, { routeAlreadyConfigured: true }));
+        await withDeploymentProgress(logger, `TLS verification or issuance for ${domain.hostname}`, () => ssl.provisionCert(domain.hostname));
       } catch (err) {
         observeCaughtError(err, "adapters/runtime/route-registration");
         const message = safeErrorMessage(err);
@@ -247,7 +247,7 @@ export async function registerResolvedRoutes(
     }
   };
 
-  for (const domain of domains) {
+  const registerDomain = async (domain: RoutedDomainInput): Promise<string | undefined> => {
     let lastError = "";
     for (let attempt = 1; attempt <= ROUTE_MAX_ATTEMPTS; attempt++) {
       try {
@@ -289,16 +289,30 @@ export async function registerResolvedRoutes(
         // remedy) instead of the raw daemon blob, and carry the marker into the warning
         // so downstream (deployWarning, the routing-unsynced flag) recognises edge-down.
         logger.log(`Routing ${domain.hostname} could not be applied — ${edgeDown}\n`, "warn");
-        warnings.push(`${domain.hostname}: ${edgeDown}`);
+        return `${domain.hostname}: ${edgeDown}`;
       } else {
         logger.log(
           `Routing failed for ${domain.hostname} (deploy continues; the app is up — fix DNS/routing and retry): ${lastError}\n`,
           "warn",
         );
-        warnings.push(`${domain.hostname}: ${lastError}`);
+        return `${domain.hostname}: ${lastError}`;
       }
     }
-  }
+  };
 
-  return warnings;
+  // Independent hosts can verify TLS while another route is being applied.
+  // Keep repeated updates of one hostname ordered, and let providers retain
+  // their config/ACME locks. Bound remote reads instead of fanning out unboundedly.
+  const byHostname = new Map<string, { domain: RoutedDomainInput; index: number }[]>();
+  domains.forEach((domain, index) => {
+    const key = domain.hostname.toLowerCase();
+    const group = byHostname.get(key) ?? [];
+    group.push({ domain, index });
+    byHostname.set(key, group);
+  });
+  const results: (string | undefined)[] = new Array(domains.length);
+  await mapConcurrent([...byHostname.values()], 4, async (group) => {
+    for (const { domain, index } of group) results[index] = await registerDomain(domain);
+  });
+  return results.filter((warning): warning is string => !!warning);
 }

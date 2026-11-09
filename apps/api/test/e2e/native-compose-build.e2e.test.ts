@@ -189,12 +189,41 @@ describeDockerE2E("native Compose build batches", () => {
           await container.remove({ force: true });
         }
       }
-      console.log(`[native-build] ${attempt}: ${Date.now() - started}ms, three verified images`);
+      process.stdout.write(`[native-build] ${attempt}: ${Date.now() - started}ms, three verified images\n`);
     }
     expect(
       (await executor.exec("docker ps -a --filter name=buildx_buildkit --format '{{.ID}}'")).trim(),
     ).toBe("");
   }, 180_000);
+
+  it("finishes sibling builds when one image fails", async () => {
+    const repo = join(directory, "source");
+    await writeFile(join(repo, "Dockerfile.failure"),
+      "FROM alpine:3.21\nARG SERVICE\nRUN if [ \"$SERVICE\" = api ]; then echo expected-build-failure >&2; exit 23; else echo sibling-ready > /proof; fi\n");
+    await run("git", ["-C", repo, "add", "."]);
+    await commit(repo, "failure fixture");
+    const jobs = specs("failure").slice(0, 2).map(job => ({ ...job, config: { ...job.config, dockerfilePath: "Dockerfile.failure" } }));
+    const results = await runtime.buildImages(jobs, logger());
+    expect(results.map(item => item.result.status)).toEqual(["failed", "deploying"]);
+    expect((await runtime.docker.getImage(results[1]!.result.imageRef!).inspect()).Id).toMatch(/^sha256:/);
+  });
+
+  it("cancels in-flight and queued batch builds without returning deployable images", async () => {
+    const repo = join(directory, "source");
+    await writeFile(join(repo, "Dockerfile.cancel"),
+      "FROM alpine:3.21\nRUN echo openship-cancel-ready; sleep 30\n");
+    await run("git", ["-C", repo, "add", "."]);
+    await commit(repo, "cancellation fixture");
+    logs.length = 0;
+    const jobs = specs("cancel").map(job => ({ ...job, config: { ...job.config, dockerfilePath: "Dockerfile.cancel" } }));
+    const pending = runtime.buildImages(jobs, logger());
+    try {
+      await waitFor(async () => logs.some(entry => /\d+\.\d+ openship-cancel-ready/.test(entry.message)));
+    } finally {
+      await runtime.cancelBuild(`native-${suffix}-cancel`);
+    }
+    expect((await pending).map(item => item.result.status)).toEqual(["cancelled", "cancelled", "cancelled"]);
+  });
 
   it("reuses one protected worker for the batch and retains its private cache after cleanup", async () => {
     await runtime.dispose();

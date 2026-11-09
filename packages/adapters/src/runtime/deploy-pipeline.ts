@@ -186,7 +186,7 @@ export interface DeployRouting {
 }
 
 export interface DeploySsl {
-  provisionCert(domain: string, options?: { routeAlreadyConfigured?: boolean }): Promise<SslResult>;
+  provisionCert(domain: string): Promise<SslResult>;
 }
 
 // ─── Pipeline input / output ────────────────────────────────────────────────

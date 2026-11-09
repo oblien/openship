@@ -2688,7 +2688,7 @@ ${serveLocation}
       const certificate = await this.resolveCertificate(domain);
       if (certificate.kind !== "unavailable" || certificate.info.reason === "read_error") {
         const existing = await this.readCertInfo(domain, certificate);
-        if (existing.verified && !opts?.routeAlreadyConfigured) await this.activateCert(domain);
+        if (existing.verified) await this.activateCert(domain);
         return existing;
       }
     }

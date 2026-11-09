@@ -282,7 +282,12 @@ export async function watchContainerStability(
   const now = deps.now ?? (() => Date.now());
 
   const first = await deps.sample();
-  const alreadyUp = Math.max(0, Math.min(opts.alreadyRunningMs ?? 0, opts.windowMs));
+  // A wall-clock start time proves continuous uptime only if the workload has
+  // never restarted. Otherwise observe a fresh window: a running snapshot in
+  // between crashes must not pass just because routing consumed the old window.
+  const alreadyUp = first.state === "running" && first.restartCount === 0 && !first.oomKilled
+    ? Math.max(0, Math.min(opts.alreadyRunningMs ?? 0, opts.windowMs))
+    : 0;
   const started = now();
   const deadline = now() + Math.max(0, opts.windowMs - alreadyUp);
 
