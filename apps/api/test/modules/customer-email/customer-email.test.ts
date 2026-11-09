@@ -3,22 +3,26 @@ import { randomUUID } from "node:crypto";
 import { db, repos, schema, seedOwner } from "../jobs/_harness";
 import { closeDb, eq } from "@repo/db";
 import type { Database } from "@repo/db";
+import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 import { CustomerEmailService } from "@repo/platform/engine/modules/customer-email/service";
-import { prepareCustomerPaymentEmails } from "@repo/platform/engine/modules/customer-email/payment";
+import { prepareCustomerBillingEmails } from "@repo/platform/engine/modules/customer-email/billing";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
 import {
   signupWelcome,
   purchaseWelcome,
   invoiceEmail,
+  cancellationEmail,
 } from "@repo/platform/engine/modules/customer-email/templates";
 
 let now: Date;
 const send = vi.fn();
+const readSubscription = vi.fn<(namespace: string) => Promise<OblienSubscription>>();
 const worker = (enabled = true) =>
   new CustomerEmailService({
     enabled: () => enabled,
     repo: repos.cloudCustomerEmail,
     send,
+    readSubscription,
     dashboardUrl: "https://app.openship.io",
     now: () => now,
   });
@@ -49,14 +53,15 @@ const event = (f: Fixture, extra = {}) => ({
   },
   ...extra,
 });
-async function commit(input: Parameters<typeof prepareCustomerPaymentEmails>[0]) {
-  const enqueue = await prepareCustomerPaymentEmails(input);
+async function commit(input: Parameters<typeof prepareCustomerBillingEmails>[0]) {
+  const enqueue = await prepareCustomerBillingEmails(input);
   if (enqueue) await db.transaction((tx) => enqueue(tx as unknown as Database));
 }
 beforeEach(async () => {
   now = new Date(Date.now() + 60_000);
   await db.delete(schema.cloudCustomerEmail);
   send.mockReset().mockResolvedValue(true);
+  readSubscription.mockReset().mockResolvedValue(null);
 });
 afterAll(() => closeDb());
 
@@ -173,7 +178,7 @@ describe("Cloud customer email delivery with real SQL", () => {
 
   it("rolls email and the webhook checkpoint back together when processing cannot commit", async () => {
     const f = await fixture();
-    const enqueue = await prepareCustomerPaymentEmails(event(f));
+    const enqueue = await prepareCustomerBillingEmails(event(f));
     const id = randomUUID();
     await expect(
       db.transaction(async (tx) => {
@@ -406,10 +411,221 @@ describe("Cloud customer email delivery with real SQL", () => {
       signupWelcome("<script>", url, url),
       purchaseWelcome("<script>", payment, url),
       invoiceEmail("<script>", payment, url),
+      cancellationEmail(
+        "<script>",
+        {
+          ...payment,
+          canceledAt: now.toISOString(),
+          endsAt: null,
+        },
+        url,
+        now,
+      ),
     ]) {
       expect(mail.html).not.toContain("<script>");
       expect(mail.html).not.toContain("<img src=x");
       expect(mail.html).toContain("&amp;workspaceId");
     }
+  });
+});
+
+const subscription = (
+  extra: Partial<NonNullable<OblienSubscription>> = {},
+): NonNullable<OblienSubscription> => ({
+  tierId: "capacity",
+  status: "active",
+  billingInterval: "monthly",
+  periodStart: new Date(now.getTime() - 86400_000).toISOString(),
+  periodEnd: new Date(now.getTime() + 30 * 86400_000).toISOString(),
+  cancelAtPeriodEnd: true,
+  canceledAt: new Date(now.getTime() - 3600_000).toISOString(),
+  ...extra,
+});
+const cancellationEvent = (f: Fixture, extra = {}) =>
+  event(f, {
+    eventType: "subscription.updated",
+    subscription: subscription(),
+    data: { namespace: f.namespace, metadata: { openship_organization: f.orgId } },
+    ...extra,
+  });
+
+describe("subscription cancellation email", () => {
+  it("confirms the scoped end date and asks for feedback once across repeated provider events", async () => {
+    const f = await fixture();
+    const current = subscription();
+    readSubscription.mockResolvedValue(current);
+    await Promise.all(Array.from({ length: 4 }, () => commit(cancellationEvent(f))));
+    await commit(cancellationEvent(f, { eventType: "subscription.canceled" }));
+    expect(await rows()).toMatchObject([
+      {
+        kind: "cancellation",
+        status: "pending",
+        cancellation: {
+          namespace: f.namespace,
+          canceledAt: current.canceledAt,
+          endsAt: current.periodEnd,
+        },
+      },
+    ]);
+    expect(await worker().flush()).toEqual({ sent: 1, failed: 0, canceled: 0 });
+    expect(readSubscription).toHaveBeenCalledExactlyOnceWith(f.namespace);
+    const mail = send.mock.calls[0][0];
+    expect(mail).toMatchObject({
+      to: (await repos.user.findById(f.userId))!.email,
+      customerSender: "support",
+      replyTo: "support@openship.io",
+      subject: "Your OpenShip cancellation is confirmed",
+    });
+    expect(mail.text).toContain("Renewal has been canceled for OpenShip Cloud — Production");
+    expect(mail.text).toContain("UTC");
+    expect(mail.text).toContain("We're sorry to see you go");
+    expect(mail.text).toContain("Just reply");
+    expect(mail.text).toContain(
+      `/billing/payment?organizationId=${f.orgId}&workspaceId=${f.workspace.id}`,
+    );
+    expect(mail.text).not.toContain("has ended");
+    await commit(
+      cancellationEvent(f, {
+        eventType: "subscription.canceled",
+        subscription: { ...current, status: "canceled", cancelAtPeriodEnd: false },
+      }),
+    );
+    await worker().flush();
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { cancelAtPeriodEnd: false, canceledAt: null },
+    { canceledAt: null },
+    { canceledAt: "invalid" },
+    { periodEnd: null },
+    { periodEnd: "invalid" },
+  ])("does not trust an old cancellation event or invent dates: %j", async (changes) => {
+    const f = await fixture();
+    await commit(
+      cancellationEvent(f, {
+        eventType: "subscription.canceled",
+        subscription: subscription(changes),
+        data: { namespace: f.namespace, cancelAtPeriodEnd: true, endsAt: "2099-01-01" },
+      }),
+    );
+    expect(await rows()).toEqual([]);
+  });
+
+  it.each(["resumed", "replaced", "missing"])(
+    "suppresses queued mail when the subscription is %s",
+    async (state) => {
+      const f = await fixture();
+      await commit(cancellationEvent(f));
+      readSubscription.mockResolvedValue(
+        state === "missing"
+          ? null
+          : subscription(
+              state === "resumed"
+                ? { cancelAtPeriodEnd: false, canceledAt: null }
+                : { canceledAt: now.toISOString() },
+            ),
+      );
+      expect(await worker().flush()).toEqual({ sent: 0, failed: 0, canceled: 1 });
+      expect(send).not.toHaveBeenCalled();
+      expect(await rows()).toMatchObject([{ status: "canceled" }]);
+    },
+  );
+
+  it("rechecks delayed deliveries, retries provider failures and reports an already ended subscription accurately", async () => {
+    const f = await fixture();
+    const current = subscription();
+    await commit(cancellationEvent(f));
+    readSubscription.mockRejectedValueOnce(new Error("provider unavailable"));
+    expect(await worker().flush()).toEqual({ sent: 0, failed: 1, canceled: 0 });
+    expect(send).not.toHaveBeenCalled();
+    expect(await rows()).toMatchObject([{ status: "pending", attempts: 1 }]);
+    now = new Date(now.getTime() + 32 * 86400_000);
+    readSubscription.mockResolvedValue({
+      ...current,
+      status: "canceled",
+      cancelAtPeriodEnd: false,
+    });
+    expect(await worker().flush()).toMatchObject({ sent: 1 });
+    expect(send.mock.calls[0][0].text).toContain(
+      "Your subscription to OpenShip Cloud — Production has ended.",
+    );
+    expect(send.mock.calls[0][0].text).not.toContain("scheduled to end");
+  });
+
+  it("uses the latest period end and can confirm a new cancellation after resumption", async () => {
+    const f = await fixture();
+    await commit(cancellationEvent(f));
+    readSubscription.mockResolvedValue(subscription({ periodEnd: "2099-12-31T12:00:00Z" }));
+    await worker().flush();
+    expect(send.mock.calls[0][0].text).toContain("December 31, 2099 at 12:00 PM UTC");
+    const next = subscription({ canceledAt: now.toISOString() });
+    await commit(cancellationEvent(f, { subscription: next }));
+    readSubscription.mockResolvedValue(next);
+    await worker().flush();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(new Set(send.mock.calls.map(([mail]) => mail.messageId)).size).toBe(2);
+  });
+
+  it("keeps cancellation private to the current owner and the confirmed namespace", async () => {
+    const a = await fixture(),
+      b = await fixture();
+    await expect(
+      commit(cancellationEvent(a, { data: { namespace: b.namespace } })),
+    ).rejects.toThrow("ownership mismatch");
+    await expect(
+      commit(cancellationEvent(a, { data: { metadata: { openship_organization: b.orgId } } })),
+    ).rejects.toThrow("ownership mismatch");
+    await commit(cancellationEvent(a));
+    await commit(cancellationEvent(b));
+    expect(await rows()).toHaveLength(2);
+    await db.delete(schema.member).where(eq(schema.member.userId, a.userId));
+    readSubscription.mockResolvedValue(subscription());
+    expect(await worker().flush()).toEqual({ sent: 1, failed: 0, canceled: 1 });
+    expect(readSubscription).toHaveBeenCalledExactlyOnceWith(b.namespace);
+    expect(send.mock.calls[0][0].to).toBe((await repos.user.findById(b.userId))!.email);
+  });
+
+  it("uses Manage billing for a managed-service cancellation without affecting sibling Cloud plans", async () => {
+    const f = await fixture();
+    await commit(cancellationEvent(f, { scope: "management", workspaceId: undefined }));
+    readSubscription.mockResolvedValue(subscription());
+    await worker().flush();
+    expect(send.mock.calls[0][0].text).toContain("OpenShip managed service");
+    expect(send.mock.calls[0][0].text).toContain(`/billing/manage?organizationId=${f.orgId}`);
+    expect(send.mock.calls[0][0].text).not.toContain("workspaceId=");
+  });
+
+  it("confirms cancellations of independent workspaces in the same account separately", async () => {
+    const a = await fixture();
+    const workspace = await repos.cloudWorkspace.create({
+      organizationId: a.orgId,
+      name: "Staging",
+    });
+    const b = { ...a, workspace, namespace: `ns-${workspace.id}` };
+    await repos.cloudWorkspace.setNamespace(workspace.id, a.orgId, b.namespace);
+    await commit(cancellationEvent(a));
+    await commit(cancellationEvent(b));
+    readSubscription.mockResolvedValue(subscription());
+    expect(await worker().flush()).toMatchObject({ sent: 2 });
+    expect(send.mock.calls.map(([mail]) => mail.text)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(`workspaceId=${a.workspace.id}`),
+        expect.stringContaining(`workspaceId=${b.workspace.id}`),
+      ]),
+    );
+  });
+
+  it("commits cancellation mail with its webhook checkpoint, never before it", async () => {
+    const f = await fixture();
+    const enqueue = await prepareCustomerBillingEmails(cancellationEvent(f));
+    await expect(
+      db.transaction(async (tx) => {
+        await enqueue!(tx as unknown as Database);
+        throw new Error("checkpoint failed");
+      }),
+    ).rejects.toThrow("checkpoint failed");
+    expect(await rows()).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
   });
 });
