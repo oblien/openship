@@ -27,6 +27,7 @@
     "setupPending": "Bulut alanınız kurulduğunda kullanım görüntülenecek.",
     "projectsAssigned": "Bu plandaki projeler",
     "projectsAssignedHint": "Bu planın işlem ve depolama kaynaklarını paylaşan projeler.",
+    "showAllProjects": "{count} projenin tümünü göster",
     "storageDetails": "Depolama kullanımı hakkında"
   },
   "github": {

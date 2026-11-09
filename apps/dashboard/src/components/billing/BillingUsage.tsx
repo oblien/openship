@@ -18,6 +18,8 @@ import {
 } from "@/lib/billing-usage";
 import { isMonthlyCloudPlan, isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingEmptyState } from "./BillingEmptyState";
+import { BillingResourceUsage } from "./BillingResourceUsage";
+import { CloudUsageGuide } from "./CloudUsageGuide";
 
 interface UsageResponse {
   data: { usage: CloudUsagePayload | null };
@@ -29,7 +31,14 @@ export function BillingUsage({ state }: { state: BillingState }) {
   return isNewCloudCustomer(state) ? (
     <BillingEmptyState kind="usage" />
   ) : (
-    <BillingUsageHistory state={state} />
+    <div className="space-y-5">
+      <BillingResourceUsage state={state} />
+      <BillingUsageHistory state={state} />
+      <CloudUsageGuide
+        collapsible
+        billingMode={state.compute?.billingMode ?? state.plan?.billingMode}
+      />
+    </div>
   );
 }
 
@@ -149,9 +158,17 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs text-muted-foreground">{monthly ? t.billing.resourceOverview.cpu : copy.selectedRange}</p>
+          <p className="text-xs text-muted-foreground">
+            {monthly ? t.billing.resourceOverview.cpu : copy.selectedRange}
+          </p>
           <p className="mt-1 text-xl font-medium tabular-nums text-foreground" aria-live="polite">
-            {loading || error ? "—" : monthly ? totals?.vcpu_hours == null ? "—" : formatBillingNumber(totals.vcpu_hours, locale) : formatBillingNumber(totals?.credits ?? 0, locale)}
+            {loading || error
+              ? "—"
+              : monthly
+                ? totals?.vcpu_hours == null
+                  ? "—"
+                  : formatBillingNumber(totals.vcpu_hours, locale)
+                : formatBillingNumber(totals?.credits ?? 0, locale)}
             <span className="ms-1.5 text-sm font-normal text-muted-foreground">
               {monthly ? "vCPU-h" : t.billing.usage.kpi.credits}
             </span>
@@ -203,10 +220,16 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
             {t.billing.usage.empty}
           </div>
         ) : (
-          <UsageChart buckets={buckets} granularity={granularity} metric={monthly ? "vcpu_hours" : "credits"} />
+          <UsageChart
+            buckets={buckets}
+            granularity={granularity}
+            metric={monthly ? "vcpu_hours" : "credits"}
+          />
         )}
         <p className="mt-2 text-xs text-muted-foreground">
-          {monthly ? t.billing.compute.usageIncluded : interpolate(copy.creditsChart, { unit: t.billing.usage.granularity[granularity] })}
+          {monthly
+            ? t.billing.compute.usageIncluded
+            : interpolate(copy.creditsChart, { unit: t.billing.usage.granularity[granularity] })}
         </p>
       </div>
 

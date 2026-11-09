@@ -69,9 +69,14 @@ Tool activity stays compact, with accurate pending/error states and private deta
 Use semantic classes from [theme.css](../apps/dashboard/src/styles/theme.css). The nested-card
 rules in [globals.css](../apps/dashboard/src/app/globals.css) supply the theme-specific layering.
 Keep palette definitions there instead of introducing page-specific colors.
-Empty-state illustrations follow Projects and Backups: neutral layered cards,
-thin theme-token borders, muted placeholders and dashed connectors. Keep any
-color accent small; avoid large status-colored surfaces or decorative glows.
+Feature and empty-state artwork follows the approved [product illustration
+style](illustrations.md): flat rounded shapes, neutral foreground layers,
+clear negative space and small warm accents. Reuse `FeatureIllustration` from
+`@repo/ui/illustrations` for approved compact artwork. The linked guide owns
+its geometry, theme variables, sizing and HTML review catalog; the surrounding
+page continues to use this guide's surfaces and typography. Keep status colors
+in semantic status components and avoid large colored illustration surfaces,
+perspective, material shading or decorative glows.
 
 | Element           | Treatment                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------- |
@@ -751,9 +756,10 @@ check retryable before starting the move.
   duplicating that plan. Show the saved offer and amount, and open its Payments & invoices
   tab. Only redirect a confirmed-empty account to new plans after inventory, management
   and pending-payment reads succeed. Errors are retryable and never mean empty.
-- Each named compute plan owns Overview, Usage, Payments & invoices and Activity. Overview
-  combines measured resources, assigned projects, billing-period counters and coverage;
-  Usage retains the existing scoped history. Keep the compact saved-plan summary and
+- Each compute plan owns Overview, Usage, Payments & invoices and Activity. Overview
+  shows a compact assigned-project list, plan allowances and coverage. Usage owns live
+  resource measurements, billing-period compute/edge totals, the usage guide and scoped history.
+  Keep the compact saved-plan summary and
   Change plan modal beside the selected tab. Payments & invoices owns that plan's portal,
   pending checkouts and renewal controls; do not repeat them as a sidebar card. Manage
   follows the same Overview / Payments & invoices structure for its external servers.
@@ -783,8 +789,9 @@ check retryable before starting the move.
 - Monthly Cloud spaces show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
-  details in a compact disclosure. Put Monthly coverage after the main billing overview and
-  usage guide, so plan capacity and usage lead the page. Existing metered subscriptions retain their credit view.
+  details in a compact disclosure. Put Monthly coverage after plan allowances in Overview;
+  keep the usage guide with the measurements in Usage. Existing metered subscriptions
+  retain their credit view.
   A saved monthly plan never falls back to compute credits when live coverage is unavailable.
   Hide top-up navigation and purchasing for monthly plans, including stale capability responses;
   preserve receipt verification for previously completed purchases.
@@ -839,8 +846,11 @@ create another server. A missing control route on an older Cloud API shows **Con
 with upgrade guidance; structured resource and permission 404s retain their original meaning.
 
 The **Plans & billing** account entry owns each purchased compute plan's named page.
-Use its customer-assigned name as the heading, with the offer name beneath it. Keep measured
-usage, assigned projects, Activity and subscription management together. The 340px sidebar
+Use the plan's offer name as the heading, rather than its underlying server name or a
+“server” suffix. Keep navigation identities unchanged. Omit the extra back-to-billing
+link from both Cloud and Manage detail pages; use the browser and existing sidebar navigation.
+Keep usage, assigned projects, Activity and subscription management in their respective tabs.
+The 340px sidebar
 uses one compact plan card: icon, offer name and status share a header row; price and billing
 cadence share a line; renewal and allocated capacity follow. Keep Change plan below the summary
 and payment controls in the plan’s Payments & invoices tab. Hide the inline Cancel
@@ -849,8 +859,12 @@ Manage plan or Manage subscription detour, or repeat the selected plan in a sepa
 Change plan opens the existing scoped quote/confirmation flow in a dialog on this page.
 Size the dialog from the picker's rendered choices: narrow for one, two columns for two,
 and wider for larger comparisons; Custom keeps the form's normal width. Do not refetch the
-catalog or recompute eligible offers just to size the dialog. Assigned projects use responsive
-cards with a project icon and storage usage; put storage-estimation details in a disclosure.
+catalog or recompute eligible offers just to size the dialog. Assigned projects use compact
+responsive rows, with at most four shown in Overview. When there are more, **Show all**
+opens a searchable, scrolling dialog of projects from the same authorized snapshot. Reuse
+one row component and existing project links; opening the dialog must not scan again or
+fetch unrelated projects. Preserve keyboard focus and close it on a workspace/tab change.
+Keep storage-estimation details in a disclosure.
 Independent allocations retain their existing execution identities and shared deployment flow.
 
 Cloud spaces uses the read-only provider metrics stream through Openship's authenticated monitor
@@ -863,8 +877,10 @@ erase measured storage. Keep each memory/storage group together, show the measur
 older sample, and leave unknown values and chart gaps unknown rather than substituting capacity or zero.
 Project storage inventory uses the existing snapshot request and is not scanned on every live tick.
 Plan cards and deployment destinations reuse the shared inventory, project counts and catalog names.
-A plan’s Overview combines the existing host measurements with billing-period counters; each keeps
-its own units and source. Show the allocated capacity beside the saved subscription, and reuse the
+A plan’s Usage tab combines the existing live measurements with billing-period counters and
+history; each keeps its own units and source. Overview must not subscribe to live metrics or
+fetch compute totals. Switching to Usage reuses the existing snapshot, and leaving it stops
+the live stream. Show the allocated capacity beside the saved subscription, and reuse the
 existing quote, confirmation and resize flow for pending plan changes.
 Unfinished Cloud setup shows a calm Cloud space notice and does not subscribe to live metrics.
 

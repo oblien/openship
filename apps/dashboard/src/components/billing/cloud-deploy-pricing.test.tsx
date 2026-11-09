@@ -14,9 +14,18 @@ import type { ApiPlan } from "./PricingCards";
 import { BillingUsage } from "./BillingUsage";
 import { BillingCapacity } from "./BillingCapacity";
 
-const mocks = vi.hoisted(() => ({ state: vi.fn(), get: vi.fn(), post: vi.fn(), deploy: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  state: vi.fn(),
+  resources: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+  deploy: vi.fn(),
+  toast: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/lib/api/billing", () => ({ billingApi: { getBillingState: mocks.state } }));
+vi.mock("@/lib/api/billing", () => ({
+  billingApi: { getBillingState: mocks.state, getResources: mocks.resources },
+}));
 vi.mock("@/lib/api/client", async (original) => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: mocks.get, post: mocks.post } }));
 vi.mock("./UsageChart", () => ({ UsageChart: ({ buckets }: { buckets: unknown }) => <div data-testid="chart">{JSON.stringify(buckets)}</div> }));
 
@@ -73,6 +82,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.state.mockResolvedValue(free);
+  mocks.resources.mockResolvedValue({
+    compute: { status: "unavailable" },
+    edge: { status: "unavailable", limits: {} },
+  });
   mocks.get.mockResolvedValue({ data: { locale: "en", annual: { enabled: true, monthsFree: 0 }, ui: pricingUi("en"), plans } });
   mocks.deploy.mockRejectedValue(restriction());
   mocks.post.mockResolvedValue({ data: { checkoutUrl: "https://checkout.example.test/session" } });

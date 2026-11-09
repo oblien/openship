@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { CapacitySummary } from "@/components/shared/CapacitySummary";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
-import { cloudSpaceHref } from "@/lib/cloud-spaces";
+import { cloudSpaceHref, cloudSpacePlanLabel } from "@/lib/cloud-spaces";
 import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
 import { subscriptionNeedsPayment } from "@/lib/billing-presentation";
 import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
@@ -145,7 +145,11 @@ export function BillingPlanCards({
             href={cloudSpaceHref(server.id, paymentRequired ? "payment" : undefined)}
             icon="cloud"
             kind={t.servers.resources.space}
-            title={server.name || space.name}
+            title={
+              space.planTierId === "free"
+                ? (payment?.name ?? t.servers.resources.space)
+                : cloudSpacePlanLabel(space.planTierId, locale, t.servers.resources.customPlan)
+            }
             status={
               paymentRequired ? (
                 <span className="rounded-full bg-danger/10 px-2 py-1 text-xs text-danger">

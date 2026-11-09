@@ -20,7 +20,7 @@ import {
   filterMarketplaceApps,
   type MarketplaceApp,
 } from "@/lib/app-marketplace";
-import { MarketplaceLogo } from "./marketplace-logo";
+import { MarketplaceAppLink } from "./marketplace-app-link";
 
 const categoryIcons = {
   backend: Layers,
@@ -164,35 +164,9 @@ export function AppDirectory({
           </div>
         </div>
         {visible.length ? (
-          <div className="marketplace-grid">
+          <div className="marketing-grid marketplace-grid">
             {visible.map((app) => (
-              <Link href={`/apps/${app.id}`} key={app.id} className="marketplace-card group">
-                <div className="flex items-center justify-between gap-3">
-                  <MarketplaceLogo id={app.id} logo={app.logo} name={app.name} />
-                  {!app.available && <span className="marketplace-badge">Coming soon</span>}
-                  {app.available && app.experimental && (
-                    <span className="marketplace-badge">Experimental</span>
-                  )}
-                  {app.available && !app.experimental && (
-                    <ArrowUpRight size={18} className="marketplace-card-arrow" aria-hidden="true" />
-                  )}
-                </div>
-                <h2 className="mt-5 text-lg font-medium tracking-tight th-text-heading">
-                  {app.name}
-                </h2>
-                {(app.gpu || !app.supportsCloud) && <p className="mt-2 text-xs th-text-muted">
-                  {[app.gpu === "required" ? "NVIDIA GPU required" : app.gpu === "recommended" ? "GPU recommended" : null, !app.supportsCloud ? "Self-hosted only" : null].filter(Boolean).join(" · ")}
-                </p>}
-                <p className="mt-2 line-clamp-3 text-sm leading-relaxed th-text-secondary">
-                  {app.description}
-                </p>
-                <div className="marketplace-card-bottom">
-                  <span className="truncate text-xs th-text-muted">
-                    {APP_CATEGORY_LABELS[app.category]}
-                  </span>
-                  <span className="shrink-0 text-xs font-medium th-text-strong">Explore app</span>
-                </div>
-              </Link>
+              <MarketplaceAppLink app={app} key={app.id} />
             ))}
           </div>
         ) : (

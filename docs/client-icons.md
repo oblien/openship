@@ -1,5 +1,10 @@
 # Client icons
 
+Feature cards, onboarding and empty-state graphics use the approved
+[product illustration style](illustrations.md) and shared
+`@repo/ui/illustrations` entry point. That larger artwork complements the
+compact control glyphs documented here.
+
 The dashboard, Openship Cloud UI, and desktop chrome use the same icon catalog
 from `@repo/ui/icons`. The default theme is `outline-modern`, with 201 bundled
 PNGs in `apps/dashboard/public/icons` (about 454 KiB total). Source files retain

@@ -6,11 +6,11 @@ function models(from: string | null) { return [
     tag: "Managed",
     title: "Openship Cloud",
     lead:
-      "Build and deploy web apps from your repository. Manage deployments, domains, and logs in one place.",
+      "A shared CPU, RAM and storage pool for your projects. Deploy apps, databases, and workers within your plan’s capacity.",
     points: [
-      "Managed builds and application runtimes",
+      "Resources shared across projects and builds",
       "HTTPS domains and static site hosting",
-      "Track credit usage in your dashboard",
+      "Track resource usage in your dashboard",
     ],
     price: from ? `From ${from}${UI.perMonth}` : "See Cloud plans",
     priceNote: "Monthly or annual billing",
@@ -51,7 +51,7 @@ export async function DeploymentModels() {
   const MODELS = models(cloudFrom(pricing));
   return (
     <section className="dm-section">
-      <div className="dm-container">
+      <div className="site-container dm-container">
         <header className="dm-head">
           <p className="dm-eyebrow">Where it runs</p>
           <h2 className="dm-title">

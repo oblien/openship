@@ -8,7 +8,7 @@ const PAGE_URL = "https://openship.io/migrate";
 export const revalidate = 60;
 const TITLE = "Move your app to Openship";
 const DESCRIPTION =
-  "Hosting bill growing with your traffic? App hitting memory limits, or split across three services? Openship Cloud runs your whole app as it is, on a server with fixed resources.";
+  "Bring your repository, Compose stack, or running Docker services to Openship. Plan your migration to Cloud or your own infrastructure, from data transfer to domain cutover.";
 
 const metadata: Metadata = {
   title: TITLE,

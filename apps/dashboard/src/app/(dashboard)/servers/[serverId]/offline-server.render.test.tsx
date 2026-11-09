@@ -225,7 +225,7 @@ describe("managed resources on retained server links", () => {
         projectCount: 0, operation: null, createdAt: "2026-10-01T00:00:00Z" },
     }, deployMode);
     expect(errors).toEqual([]);
-    expect(container.querySelector("h1")?.textContent).toBe(OFFLINE_SERVER.name);
+    expect(container.querySelector("h1")?.textContent).toBe("Starter");
     expect(text).toContain(baseDictionary.servers.resources.capacity);
     expect(text).not.toContain(baseDictionary.servers.detail.tabs.terminal);
     const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));

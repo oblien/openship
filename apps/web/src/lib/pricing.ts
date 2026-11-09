@@ -32,7 +32,10 @@ export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
     const body = await response.json();
     const data = parseInput(BillingPlansSchema, body.data);
     const tiers = data.plans.filter(
-      (plan): plan is PricedPlan => plan.price.monthly !== null && plan.price.monthly > 0 && plan.availableForPurchase !== false,
+      (plan): plan is PricedPlan =>
+        plan.price.monthly !== null &&
+        plan.price.monthly > 0 &&
+        plan.availableForPurchase !== false,
     );
     if (data.provider !== "oblien") throw new Error("Cloud plans unavailable");
     return {
@@ -44,7 +47,12 @@ export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
     };
   } catch (error) {
     reportCaughtError(error, "web/lib/pricing");
-    return { available: false, annual: { enabled: false, monthsFree: 0 }, tiers: [], customTiers: [] };
+    return {
+      available: false,
+      annual: { enabled: false, monthsFree: 0 },
+      tiers: [],
+      customTiers: [],
+    };
   }
 });
 
@@ -64,17 +72,35 @@ export function chooseLabel(name: string): string {
   return UI.ctaChoose.replace(/\{name\}/g, name);
 }
 
+export function cloudPlanSummary(plan: CloudPlan): string {
+  const projects = plan.limits.maxProjects;
+  return projects == null
+    ? "Shared CPU, RAM and storage for your projects."
+    : `Shared CPU, RAM and storage for up to ${projects.toLocaleString("en")} ${projects === 1 ? "project" : "projects"}.`;
+}
+
 export function priceParts(plan: CloudPlan, interval: "monthly" | "annual" = "monthly") {
   const price = plan.price[interval];
   return {
-    amount: price === null ? UI.custom : price === 0 ? UI.free : money(interval === "annual" ? price / 12 : price),
+    amount:
+      price === null
+        ? UI.custom
+        : price === 0
+          ? UI.free
+          : money(interval === "annual" ? price / 12 : price),
     per: price !== null && price > 0 ? UI.perMonth : null,
   };
 }
 export function cloudFrom(pricing: CloudPricing): string | null {
-  return pricing.tiers.length
-    ? money(Math.min(...pricing.tiers.map((plan) => plan.price.monthly)))
-    : null;
+  const plan = startingCloudPlan(pricing);
+  return plan ? money(plan.price.monthly) : null;
+}
+export function startingCloudPlan(pricing: CloudPricing): PricedPlan | null {
+  if (!pricing.available) return null;
+  return pricing.tiers.reduce<PricedPlan | null>(
+    (lowest, plan) => (!lowest || plan.price.monthly < lowest.price.monthly ? plan : lowest),
+    null,
+  );
 }
 export function paidLadder(pricing: CloudPricing): string {
   return pricing.tiers

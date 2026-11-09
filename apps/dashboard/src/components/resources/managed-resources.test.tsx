@@ -202,10 +202,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows measured pool usage and assigned projects with no host controls", async () => {
+it("shows plan capacity and assigned projects without live metrics or host controls", async () => {
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Production");
-  expect(host.textContent).toContain("23");
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
+  expect(host.textContent).not.toContain(baseDictionary.servers.resources.usageTitle);
+  expect(h.monitor).toHaveBeenLastCalledWith(null, false, "usage");
+  expect(h.resources).not.toHaveBeenCalled();
   expect(host.textContent).toContain("Application A");
   expect(host.querySelector('a[href="/projects/project-a"]')).not.toBeNull();
   expect(host.textContent).not.toMatch(/SSH|Terminal|Runtime API|Networking|Workloads/);
@@ -289,13 +291,14 @@ it("does not call an unobserved pool empty when usage is unavailable", async () 
 it("opens the named plan without repeating its name in a Cloud space selector", async () => {
   h.list.mockResolvedValue([pool("a", "Production"), pool("b", "Staging")]);
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Production");
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
   expect(host.querySelector('button[aria-haspopup="listbox"]')).toBeNull();
-  expect(host.querySelector('a[href="/billing"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/billing"]')).toBeNull();
   expect(host.textContent).not.toContain("Staging");
 });
 
 it("shows unfinished Cloud setup without attempting a live connection or exposing old server copy", async () => {
+  h.params = new URLSearchParams("pool=a&tab=usage");
   const space = pool("a", "Production");
   space.managed!.state = "not_provisioned";
   h.list.mockResolvedValue([space]);
@@ -396,6 +399,7 @@ it.each([
     older: false,
   },
 ])("$name", async ({ live, history, snapshot, expected, older }) => {
+  h.params = new URLSearchParams("pool=a&tab=usage");
   h.usage.mockResolvedValue(snapshot);
   h.monitor.mockReturnValue({
     usage: live,
@@ -432,8 +436,10 @@ it("keeps usage history on the plan and reads only its workspace", async () => {
   h.params = new URLSearchParams("pool=b&tab=usage");
   h.list.mockResolvedValue([pool("b", "Staging")]);
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Staging");
-  expect(h.usage).not.toHaveBeenCalled();
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
+  expect(h.usage).toHaveBeenCalledExactlyOnceWith("b");
+  expect(h.resources).toHaveBeenCalledExactlyOnceWith("workspace-b");
+  expect(h.monitor).toHaveBeenLastCalledWith("b", true, "usage");
   expect(h.apiGet).toHaveBeenCalledWith(
     "billing/usage",
     expect.objectContaining({ params: expect.objectContaining({ workspaceId: "workspace-b" }) }),
@@ -444,7 +450,7 @@ it("shows the pending warning and recovery list inside the plan's payments tab u
   h.params = new URLSearchParams("pool=a&tab=payment");
   h.checkouts.mockResolvedValue({ items: [pendingPayment()] });
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Production");
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain(
     baseDictionary.billing.hub.paymentRequired,
   );
@@ -495,4 +501,104 @@ it("only clears the plan warning after confirmed cancellation", async () => {
   h.cancelPayment.mockResolvedValue({ status: "expired", checkoutId: "cs-a", checkoutUrl: null });
   await act(async () => button(baseDictionary.billing.pendingPayments.retryCancel).click());
   expect(host.textContent).not.toContain(baseDictionary.billing.hub.paymentRequired);
+});
+
+it("uses the plan name instead of the infrastructure label", async () => {
+  const server = pool("a", "Pro server");
+  server.managed!.planTierId = "pro";
+  h.list.mockResolvedValue([server]);
+  const state = billingFixture("workspace-a");
+  h.billing.mockResolvedValue({ ...state, plan: { ...state.plan, name: "Pro" } });
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("Pro");
+  expect(host.textContent).not.toContain("Pro server");
+});
+
+it("moves live metrics and compute totals to Usage and stops streaming when leaving it", async () => {
+  await render();
+  expect(host.textContent).not.toContain(baseDictionary.billing.resourceOverview.computeTitle);
+  expect(h.resources).not.toHaveBeenCalled();
+  h.params = new URLSearchParams("pool=a&tab=usage");
+  await render();
+  expect(host.textContent).toContain(baseDictionary.servers.resources.usageTitle);
+  expect(host.textContent).toContain(baseDictionary.billing.resourceOverview.computeTitle);
+  expect(host.textContent).not.toContain(baseDictionary.servers.resources.projectsAssigned);
+  expect(h.monitor).toHaveBeenLastCalledWith("a", true, "usage");
+  // Switching between overview and usage reuses the existing project/resource snapshot.
+  expect(h.usage).toHaveBeenCalledExactlyOnceWith("a");
+  h.params = new URLSearchParams("pool=a");
+  await render();
+  expect(h.monitor).toHaveBeenLastCalledWith(null, false, "usage");
+  expect(host.textContent).not.toContain(baseDictionary.billing.resourceOverview.computeTitle);
+});
+
+it("limits the overview to four projects and opens the full scoped list without another read", async () => {
+  h.usage.mockResolvedValue({
+    ...usage(),
+    projects: Array.from({ length: 6 }, (_, i) => ({
+      id: `project-${i}`,
+      name: `Application ${i}`,
+      diskMb: null,
+    })),
+  });
+  await render();
+  expect(host.querySelectorAll('a[href^="/projects/"]')).toHaveLength(4);
+  const showAll = button("Show all 6 projects");
+  showAll.focus();
+  await act(async () => showAll.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.querySelectorAll('a[href^="/projects/"]')).toHaveLength(6);
+  expect(h.usage).toHaveBeenCalledOnce();
+  const search = dialog.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "Application 5",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(dialog.querySelectorAll('a[href^="/projects/"]')).toHaveLength(1);
+  expect(dialog.querySelector("a")?.getAttribute("href")).toBe("/projects/project-5");
+  await act(async () =>
+    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(showAll);
+});
+
+it("does not offer a full list for four projects or retain a dialog after changing workspace", async () => {
+  h.usage.mockResolvedValue({
+    ...usage(),
+    projects: Array.from({ length: 4 }, (_, i) => ({
+      id: `project-${i}`,
+      name: `Application ${i}`,
+      diskMb: null,
+    })),
+  });
+  await render();
+  expect(host.textContent).not.toContain("Show all");
+  h.list.mockResolvedValue([pool("b", "Another plan")]);
+  h.usage.mockResolvedValue({
+    ...usage(),
+    projects: Array.from({ length: 5 }, (_, i) => ({
+      id: `project-${i}`,
+      name: `Private ${i}`,
+      diskMb: null,
+    })),
+  });
+  await render(<ManagedResourcesPage />, "account-b:org-b");
+  await act(async () => button("Show all 5 projects").click());
+  h.list.mockResolvedValue([pool("c", "Third plan")]);
+  h.usage.mockResolvedValue(usage("Third app"));
+  await render(<ManagedResourcesPage />, "account-c:org-c");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Private");
+});
+
+it("uses the saved offer name for custom or older subscriptions", async () => {
+  const state = billingFixture("workspace-a");
+  h.billing.mockResolvedValue({ ...state, plan: { ...state.plan, name: "Custom Cloud plan" } });
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("Custom Cloud plan");
+  expect(h.billing).toHaveBeenCalledOnce();
 });
