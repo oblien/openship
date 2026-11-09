@@ -382,6 +382,71 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         .orderBy(asc(buildSession.startedAt), asc(buildSession.id)).limit(Math.min(100, Math.max(0, limit)));
     },
 
+    /** Candidates only: age gives a newly claimed worker time to enter its
+     * ownership lock; it is never evidence that a running worker stopped.
+     * Keyset pages cannot skip rows when another replica finishes a session. */
+    async listUnfinishedFencedBuildExecutions(afterId?: string, limit = 200) {
+      return db.select({
+        deploymentId: deployment.id, buildSessionId: buildSession.id,
+        projectId: project.id, organizationId: project.organizationId,
+      }).from(buildSession)
+        .innerJoin(project, eq(project.id, buildSession.projectId))
+        .innerJoin(deployment, and(eq(deployment.id, buildSession.deploymentId),
+          eq(deployment.projectId, project.id), eq(deployment.organizationId, project.organizationId)))
+        .where(and(eq(buildSession.executionFenced, true), isNotNull(buildSession.startedAt),
+          isNull(buildSession.finishedAt), isNull(project.workspaceId),
+          sql`${buildSession.startedAt} < now() - interval '30 seconds'`,
+          afterId ? gt(buildSession.id, afterId) : undefined))
+        .orderBy(asc(buildSession.id)).limit(Math.min(200, Math.max(1, limit)));
+    },
+
+    /** Caller MUST hold this deployment's exact execution ownership lock.
+     * Only fenced workers can be recovered across replicas. Legacy rows and
+     * managed commands retain their existing, stricter recovery paths. */
+    async recoverFencedBuildExecution(input: {
+      deploymentId: string; buildSessionId: string; projectId: string;
+      organizationId: string; recoverInterrupted?: boolean;
+    }): Promise<boolean> {
+      return db.transaction(async tx => {
+        // Same lock order as worker admission, including during project deletion.
+        const [owner] = await tx.select({ id: project.id }).from(project)
+          .where(and(eq(project.id, input.projectId), eq(project.organizationId, input.organizationId),
+            isNull(project.workspaceId))).for("update");
+        if (!owner) return false;
+        const [session] = await tx.select().from(buildSession)
+          .where(and(eq(buildSession.id, input.buildSessionId), eq(buildSession.projectId, owner.id),
+            eq(buildSession.deploymentId, input.deploymentId), eq(buildSession.executionFenced, true),
+            isNotNull(buildSession.startedAt), isNull(buildSession.finishedAt))).for("update");
+        if (!session) return false;
+        const [work] = await tx.select().from(deployment)
+          .where(and(eq(deployment.id, input.deploymentId), eq(deployment.projectId, owner.id),
+            eq(deployment.organizationId, input.organizationId))).for("update");
+        if (!work || (work.roleHandover && work.roleHandover.phase !== "complete")) return false;
+        // Never bypass the managed-command ledger, even after a destination edit.
+        const [activity] = await tx.select({ id: cloudBuildActivity.deploymentId }).from(cloudBuildActivity)
+          .where(eq(cloudBuildActivity.deploymentId, work.id));
+        if (activity) return false;
+
+        const interrupted = ["queued", "building", "deploying"].includes(work.status);
+        if (interrupted && !input.recoverInterrupted) return false;
+        const now = new Date();
+        if (interrupted) {
+          await tx.update(deployment).set({ status: "failed", updatedAt: now,
+            errorCode: "DEPLOYMENT_INTERRUPTED",
+            errorMessage: "The deployment worker was interrupted. Redeploy to retry.",
+          }).where(eq(deployment.id, work.id));
+        }
+        // Preserve recorded outcomes, logs and billed duration. Recovery time is
+        // not build time, and successful releases must stay active and intact.
+        await tx.update(buildSession).set({
+          finishedAt: now,
+          ...(["queued", "building", "deploying"].includes(session.status)
+            ? { status: interrupted ? "failed" : work.status } : {}),
+        }).where(eq(buildSession.id, session.id));
+        return true;
+      });
+    },
+
     /** FIFO within a workspace; global scans interleave workspace queues before
      * applying the strict limit so one full workspace cannot hide all others.
      * Offset pages are deterministic for an unchanged queue. Collect pages before
@@ -763,6 +828,8 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       buildSessionId: string;
       projectId: string;
       organizationId: string;
+      /** Caller wraps the whole worker in the shared execution ownership lock. */
+      executionFenced?: boolean;
       cloudBuildReservation?: { workspaceId: string; resources: CloudBuildResources | null; exclusivePreparation?: boolean };
     }): Promise<"claimed" | "project_unavailable" | "state_changed"> {
       const claimed = await db.transaction(async (tx) => {
@@ -824,7 +891,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
 
         await tx
           .update(buildSession)
-          .set({ status: "building", startedAt: new Date() })
+          .set({ status: "building", startedAt: new Date(), executionFenced: input.executionFenced === true })
           .where(eq(buildSession.id, input.buildSessionId));
         return true;
       });

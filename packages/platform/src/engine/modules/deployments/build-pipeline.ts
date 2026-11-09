@@ -1,5 +1,6 @@
 /** Build → deploy execution engine. Extracted from build.service.ts — private pipeline: kickoffBuild fires executeBuildAndDeploy, which runs the build, deploy phases, and post-deploy sync. */
 
+import { withDeploymentExecutionOwnership } from "../../lib/deployment-execution-ownership";
 import { createProjectRouteRegistrar } from "../../lib/project-route-registration";
 import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import { reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
@@ -15,7 +16,6 @@ import {
 import {
   CloudBuildAdmissionDeferredError,
   withCloudBuildActivity,
-  withCloudBuildExecutionOwnership,
   releaseCloudBuildSlot,
   runOutsideCloudBuildActivity,
 } from "../../lib/cloud-build-activity";
@@ -307,10 +307,6 @@ function detachedDeploymentContext<T>(work: () => T): T {
     runOutsideCloudWorkspaceActivity(() => runOutsideCloudBuildActivity(work))));
 }
 
-function ownedDeploymentExecution<T>(project: Project, dep: Deployment, work: () => Promise<T>): Promise<T> {
-  return env.CLOUD_MODE && project.workspaceId ? withCloudBuildExecutionOwnership(dep.id, work) : work();
-}
-
 async function finishCloudBuildPhase(workspaceId: string | null) {
   if (!env.CLOUD_MODE || !workspaceId) return;
   await releaseCloudBuildSlot();
@@ -360,6 +356,7 @@ async function kickoffBuildNow(project: Project, dep: Deployment, reservedBuildR
     buildSessionId: buildSession.id,
     projectId: project.id,
     organizationId: dep.organizationId,
+    executionFenced: true,
     ...(env.CLOUD_MODE && project.workspaceId ? { cloudBuildReservation: {
       workspaceId: project.workspaceId, resources: reservedBuildResources ?? null,
       exclusivePreparation: (backupPolicies?.length ?? 0) > 0,
@@ -376,17 +373,17 @@ async function kickoffBuildNow(project: Project, dep: Deployment, reservedBuildR
   }
   dep.status = "building";
 
-  void detachedDeploymentContext(() => ownedDeploymentExecution(project, dep, () => withDiagnosticSpan({ kind: "deployment", operation: "deployment.execute", component: "build-pipeline", projectId: project.id,
+  void detachedDeploymentContext(() => withDeploymentExecutionOwnership(dep.id, () => withDiagnosticSpan({ kind: "deployment", operation: "deployment.execute", component: "build-pipeline", projectId: project.id,
     deploymentId: dep.id, organizationId: dep.organizationId, serverId: project.serverId ?? undefined }, async () => {
     // A deferred row can be claimed again before this worker unwinds. Register
     // only after exact execution ownership, so it cannot reuse the old signal.
     const cancellationSignal = registerDeploymentExecution(dep.id);
     let deferred = false;
     try {
-      if (env.CLOUD_MODE && project.workspaceId) {
-        const current = await repos.deployment.findById(dep.id);
-        if (!current || !["building", "deploying"].includes(current.status)) return;
-      }
+      // Recovery/cancellation can win before this delayed worker owns its fence.
+      // This guard applies to SSH/local workers as well as managed Cloud builds.
+      const current = await repos.deployment.findById(dep.id);
+      if (!current || !["building", "deploying"].includes(current.status)) return;
       // Session admission can fail at capacity. It belongs inside the worker's
       // failure/lease cleanup so the claimed deployment cannot remain stuck.
       if (env.CLOUD_MODE && project.workspaceId && sessionManager.getSession(dep.id)) {
