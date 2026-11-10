@@ -66,6 +66,44 @@ describe("GitHub operations shared by SDK and HTTP", () => {
     for (const client of [restricted.native, restricted.remote]) await expect(client.github.publishChange(input)).rejects.toBeDefined();
     expect(provider.fetch).not.toHaveBeenCalled();
   });
+  it("publishes a file replacement as one commit and refuses to delete an absent file", async () => {
+    const c = await clients(await seedOwner());
+    const base = "a".repeat(40), tree = "b".repeat(40), next = "c".repeat(40), commit = "d".repeat(40);
+    const postedTrees: unknown[] = [];
+    provider.fetch.mockImplementation(async ({ url, params }: { url: string; params?: unknown }) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith("/git/ref/heads/main")) return { object: { sha: base } };
+      if (path.endsWith(`/git/commits/${base}`)) return { tree: { sha: tree } };
+      if (path.endsWith(`/git/trees/${tree}`)) return {
+        tree: [
+          { path: "src/old.ts", mode: "100644", type: "blob" },
+          { path: "src/link.ts", mode: "120000", type: "blob" },
+        ], truncated: false,
+      };
+      if (path.endsWith("/git/trees")) { postedTrees.push(params); return { sha: next }; }
+      if (path.endsWith("/git/commits")) return { sha: commit, html_url: `https://github.com/acme/app/commit/${commit}` };
+      if (path.endsWith("/git/refs")) return {};
+      throw new Error("Unexpected GitHub call");
+    });
+    const patch = { baseBranch: "main", baseSha: base, title: "Replace old source", description: "Review replacement",
+      files: [{ path: "src/old.ts", delete: true as const }, { path: "src/new.ts", content: "export const ready = true;" }] };
+    for (const client of [c.native, c.remote]) {
+      const result = await client.github.publishChange({ owner: "acme", repo: "app", requestId: randomUUID(), pullRequest: false, patch });
+      expect(result.pullRequestUrl).toBeNull();
+    }
+    expect(postedTrees).toHaveLength(2);
+    for (const params of postedTrees) expect(params).toMatchObject({ base_tree: tree, tree: [
+      { path: "src/old.ts", mode: "100644", type: "blob", sha: null },
+      { path: "src/new.ts", mode: "100644", type: "blob", content: "export const ready = true;" },
+    ] });
+    for (const client of [c.native, c.remote]) {
+      await expect(client.github.publishChange({ owner: "acme", repo: "app", requestId: randomUUID(), pullRequest: false,
+        patch: { ...patch, files: [{ path: "src/missing.ts", delete: true }] } })).rejects.toBeDefined();
+      await expect(client.github.publishChange({ owner: "acme", repo: "app", requestId: randomUUID(), pullRequest: false,
+        patch: { ...patch, files: [{ path: "src/link.ts", delete: true }] } })).rejects.toBeDefined();
+    }
+    expect(postedTrees).toHaveLength(2);
+  });
   it("returns branch pagination through native operations and HTTP without truncating later pages", async () => {
     const c = await clients(await seedOwner());
     const branch = { name: "main", commit: { sha: "abc", url: "https://api.github.com/commit/abc" }, protected: false };

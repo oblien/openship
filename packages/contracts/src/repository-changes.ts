@@ -8,13 +8,22 @@ export const RepositoryPatch = Type.Object(
     title: Type.String({ minLength: 1, maxLength: 200 }),
     description: Type.String({ maxLength: 4000 }),
     files: Type.Array(
-      Type.Object(
-        {
-          path: Type.String({ minLength: 1, maxLength: 1024 }),
-          content: Type.String({ maxLength: 64000 }),
-        },
-        { additionalProperties: false },
-      ),
+      Type.Union([
+        Type.Object(
+          {
+            path: Type.String({ minLength: 1, maxLength: 1024 }),
+            content: Type.String({ maxLength: 64000 }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            path: Type.String({ minLength: 1, maxLength: 1024 }),
+            delete: Type.Literal(true),
+          },
+          { additionalProperties: false },
+        ),
+      ]),
       { minItems: 1, maxItems: 10 },
     ),
   },

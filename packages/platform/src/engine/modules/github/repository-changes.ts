@@ -31,7 +31,7 @@ export async function publishChange(ctx: ExecutionContext, input: PublishReposit
     ) ||
     new Set(paths).size !== paths.length ||
     paths.some((path) => paths.some((other) => other !== path && path.startsWith(`${other}/`))) ||
-    patch.files.reduce((n, f) => n + Buffer.byteLength(f.content), 0) > 256000
+    patch.files.reduce((n, f) => n + ("content" in f ? Buffer.byteLength(f.content) : 0), 0) > 256000
   )
     throw fail("Choose distinct repository files and a patch smaller than 256 KB.", 400);
   if (
@@ -102,6 +102,10 @@ export async function publishChange(ctx: ExecutionContext, input: PublishReposit
         "Patches can change regular files only; directories, symlinks and submodules are excluded.",
         400,
       );
+    if ("delete" in file) {
+      if (!previous) throw fail("Delete requires an existing regular file.", 400);
+      return { path: file.path, mode: previous.mode, type: "blob", sha: null };
+    }
     return {
       path: file.path,
       mode: previous?.mode ?? "100644",
