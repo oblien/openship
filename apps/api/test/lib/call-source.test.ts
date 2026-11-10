@@ -217,6 +217,42 @@ describe("which client of the surface", () => {
   });
 });
 
+describe("token-principal fallback", () => {
+  // The auth layer mints the session id for a token principal from the
+  // hashed-token lookup (`pat:<id>` / `oauth:<clientId>`) — it is not
+  // caller-supplied, so it is as trustworthy as actorUserId on the same
+  // row. A REST write made with token A and the same write made with
+  // token B must be distinguishable in the audit log, and the MCP
+  // dispatcher signs this same value for its own calls.
+  const patWithSession = { sessionKind: "bearer", principalKind: "pat", sessionId: "pat:pat_123" };
+  const oauthWithSession = { sessionKind: "bearer", principalKind: "oauth", sessionId: "oauth:cli_abc" };
+
+  it("fills the client id from the token principal's session id", async () => {
+    expect(await clientFor({ ctx: patWithSession })).toBe("pat:pat_123");
+    expect(await clientFor({ ctx: oauthWithSession })).toBe("oauth:cli_abc");
+  });
+
+  it("never fills it from a browser session id", async () => {
+    // A cookie session id is a Better Auth session row, not a principal id.
+    expect(await clientFor({ ctx: { ...cookieCtx, sessionId: "sess_abc123" } })).toBeNull();
+    expect(await clientFor({ ctx: { ...zeroAuthCtx, sessionId: "zero-auth" } })).toBeNull();
+  });
+
+  it("is null when the session id is not a principal id", async () => {
+    expect(await clientFor({ ctx: { ...patCtx, sessionId: "not-a-principal" } })).toBeNull();
+    expect(await clientFor({ ctx: { ...patCtx, sessionId: "pat:" } })).toBeNull();
+    expect(await clientFor({ ctx: patCtx })).toBeNull();
+  });
+
+  it("still prefers the nonce-signed claim over the fallback", async () => {
+    // The MCP dispatcher signs the same principal id; if it ever signs a
+    // different one, the signed claim is the one a dispatcher stands behind.
+    expect(
+      await clientFor({ headers: internalClientHeader("pat:pat_999"), ctx: patWithSession }),
+    ).toBe("pat:pat_999");
+  });
+});
+
 describe("isAuditClientId", () => {
   it("accepts the two principal-id shapes and nothing else", () => {
     expect(isAuditClientId("oauth:cli_abc")).toBe(true);

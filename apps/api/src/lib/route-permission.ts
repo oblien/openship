@@ -758,12 +758,29 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
       throw new Error("An operation-authorized route did not apply its authorized context");
 
     // After handler success: emit an audit event for write/admin/list-
-    // -with-side-effects. Read/list are typically too noisy to log unless
-    // the route opts in (TODO: per-route auditOnRead flag).
+    // -with-side-effects. Reads are typically too noisy to log for a
+    // browser session — but a token principal (PAT / OAuth) is an
+    // automation, not a person browsing, and the same "what did it look
+    // at" question MCP answers for its reads applies here: a script
+    // holding a token gets its reads audited, a dashboard read does not.
+    // One exception: reads of the audit log itself. Every read of the
+    // log would append a row to the log, so its total could never be
+    // stable and its facets would be dominated by whoever reads it most.
+    // Writes to audit settings stay audited — they change config.
     const action = parsed.action;
+    // The permission check above already built a RequestContext, so this
+    // cannot throw here.
+    const principalKind = getRequestContext(c).principalKind;
+    const isTokenPrincipal = principalKind === "pat" || principalKind === "oauth";
+    const auditable =
+      action === "write" ||
+      action === "admin" ||
+      (isTokenPrincipal &&
+        (action === "read" || action === "list") &&
+        parsed.root !== "audit");
     // A cloud proxy may finish before reaching a migrated operation. Only skip
     // this emitter when that operation actually recorded this invocation.
-    if ((!spec.auditHandledByOperation || !c.get("operationAuditRecorded")) && (action === "write" || action === "admin")) {
+    if ((!spec.auditHandledByOperation || !c.get("operationAuditRecorded")) && auditable) {
       const status = c.res.status;
       if (status >= 200 && status < 400) {
         // For CREATE flows, the handler stamps the new id via

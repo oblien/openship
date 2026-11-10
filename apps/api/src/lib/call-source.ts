@@ -87,13 +87,31 @@ function trustedClaim(c: Context): AuditSource | null {
  * Which client of the surface made this request — `oauth:<clientId>` /
  * `pat:<tokenId>` — or null when nobody trustworthy said.
  *
- * Deliberately NOT derived from the credential as a fallback: the surfaces that
- * have one client per request (a browser, the CLI) gain nothing from the column,
- * and guessing here would put a value in it that no dispatcher stands behind.
+ * The nonce-signed claim from the MCP dispatcher wins. Otherwise, fall back
+ * to the credential the auth layer already resolved: a token principal's
+ * session id IS its canonical principal id, minted from the hashed-token
+ * lookup — not from anything the caller supplied — so it is as trustworthy
+ * as `actorUserId` on the same row. One user can hold many tokens and the
+ * token is the unit an operator revokes, so a PAT write that carries no
+ * client id is indistinguishable from the same write made with another
+ * token. Cookie / zero-auth sessions have no principalKind and never reach
+ * the fallback: a browser session id is not a principal id.
  */
 export function resolveCallClientId(c: Context): string | null {
   const claimed = signedPayload(c.req.header(CALL_CLIENT_HEADER));
-  return isAuditClientId(claimed) ? claimed : null;
+  if (isAuditClientId(claimed)) return claimed;
+  try {
+    const ctx = getRequestContext(c);
+    if (
+      (ctx.principalKind === "pat" || ctx.principalKind === "oauth") &&
+      isAuditClientId(ctx.sessionId)
+    ) {
+      return ctx.sessionId;
+    }
+  } catch {
+    // Pre-auth: no RequestContext yet, so there is no credential to derive from.
+  }
+  return null;
 }
 
 /**
