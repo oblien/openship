@@ -467,6 +467,25 @@ describe("provisionRecords", () => {
 });
 
 describe("releaseRecords", () => {
+  it("releases owned records after the zone is no longer delegated", async () => {
+    registered.names = ["digitalocean"];
+    credentialRepo.listActiveByProvider.mockResolvedValue([
+      row({ id: "dns_do", provider: "digitalocean" }),
+    ]);
+    doProvider.findZone.mockResolvedValue({ id: "example.com", name: "example.com", status: "pending" });
+    doProvider.listRecords.mockResolvedValue([
+      rec({ id: "owned", comment: OPENSHIP_RECORD_COMMENT }),
+      rec({ id: "foreign", comment: undefined }),
+    ]);
+    doProvider.deleteRecord.mockResolvedValue(undefined);
+
+    const out = await releaseRecords("org_1", "app.example.com", ["app.example.com"]);
+    expect(out).toEqual({ deleted: 1 });
+    expect(doProvider.deleteRecord).toHaveBeenCalledExactlyOnceWith(
+      { apiToken: "cf-token" }, "example.com", "owned",
+    );
+  });
+
   beforeEach(() => credentialRepo.listActiveByProvider.mockResolvedValue([row()]));
 
   it("deletes ONLY records carrying our ownership marker", async () => {

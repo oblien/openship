@@ -257,13 +257,11 @@ async function listOwned(
     const fqdn = normalizeName(filter.name);
     const params = new URLSearchParams({ name: fqdn });
     if (filter.type) params.set("type", filter.type);
-    items = await doList<DoRecordItem>(token, `${recordsPath(zone)}?${params}`, "domain_records");
     const markerParams = new URLSearchParams({ name: ownerMarkerName(fqdn), type: "TXT" });
-    markers = await doList<DoRecordItem>(
-      token,
-      `${recordsPath(zone)}?${markerParams}`,
-      "domain_records",
-    );
+    [items, markers] = await Promise.all([
+      doList<DoRecordItem>(token, `${recordsPath(zone)}?${params}`, "domain_records"),
+      doList<DoRecordItem>(token, `${recordsPath(zone)}?${markerParams}`, "domain_records"),
+    ]);
   } else {
     const all = await doList<DoRecordItem>(token, recordsPath(zone), "domain_records");
     markers = all.filter((r) => r.type === "TXT" && isMarkerName(toFqdn(r.name, zone)));

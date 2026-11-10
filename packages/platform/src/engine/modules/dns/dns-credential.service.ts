@@ -154,6 +154,7 @@ export type DnsManagerLookup =
 export async function resolveDnsManager(
   organizationId: string,
   hostname: string,
+  options: { allowInactiveZone?: boolean } = {},
 ): Promise<DnsManagerLookup> {
   // The generic credential store is the single source of truth: `dns_credential` was one
   // of three places Openship kept a third-party secret, each with its own shape and form.
@@ -210,10 +211,9 @@ export async function resolveDnsManager(
     try {
       const provider = resolveDnsProvider(cred.providerName);
       const zone = await provider.findZone({ apiToken }, hostname);
-      // A zone that is not active (DigitalOcean: not delegated to its name servers)
-      // answers for nobody; writing there would report records nobody resolves.
-      // Treated like Cloudflare's non-active zones: not a match.
-      if (zone && zone.status === "active") {
+      // Writes require an active zone. Cleanup also needs access to owned records
+      // left in a zone after the operator moved their nameservers elsewhere.
+      if (zone && (zone.status === "active" || options.allowInactiveZone)) {
         return {
           status: "matched",
           manager: { credentialId: cred.id, provider, zone, credentials: { apiToken } },
@@ -513,7 +513,7 @@ export async function releaseRecords(
   hostname: string,
   names: string[],
 ): Promise<{ deleted: number; reason?: string }> {
-  const lookup = await resolveDnsManager(organizationId, hostname);
+  const lookup = await resolveDnsManager(organizationId, hostname, { allowInactiveZone: true });
   if (lookup.status === "unauthorized") {
     await markCredentialInvalid(organizationId, lookup.credentialId);
   }
