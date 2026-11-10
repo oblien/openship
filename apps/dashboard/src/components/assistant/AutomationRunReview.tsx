@@ -121,17 +121,21 @@ export function AutomationRunReview({
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              {patch.files.length} changed {patch.files.length === 1 ? "file" : "files"} · Complete
-              proposed contents
+              {patch.files.length} changed {patch.files.length === 1 ? "file" : "files"} · Review
+              each file operation
             </p>
             {patch.files.map((file) => (
               <details key={file.path} className="rounded-xl bg-card p-4">
                 <summary className="cursor-pointer break-all text-sm font-medium">
-                  {file.path}
+                  {file.path}{"delete" in file ? " · Delete" : ""}
                 </summary>
-                <pre className="mt-4 max-h-80 overflow-auto rounded-lg bg-background p-4 text-xs leading-5">
-                  <code>{file.content}</code>
-                </pre>
+                {"delete" in file ? (
+                  <p className="mt-4 text-sm text-muted-foreground">Delete this existing file.</p>
+                ) : (
+                  <pre className="mt-4 max-h-80 overflow-auto rounded-lg bg-background p-4 text-xs leading-5">
+                    <code>{file.content}</code>
+                  </pre>
+                )}
               </details>
             ))}
             <p className="text-xs leading-5 text-muted-foreground">
