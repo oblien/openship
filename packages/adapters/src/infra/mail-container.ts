@@ -77,6 +77,18 @@ export const MAIL_CONTAINER_MOUNTS: ReadonlyArray<MailMount> = [
   // HIDES the database baked into the image: with nothing copying it across, clamd
   // finds an empty database directory and exits (issue #565).
   { host: `${MAIL_HOST_STATE_DIR}/clamav`, container: "/var/lib/clamav", seed: true },
+  // Mail logs (rsyslog: mail.log, dovecot/*.log, fail2ban.log) + supervisord's
+  // per-program logs. They live in files under /var/log, which `docker logs`
+  // never holds — without this mount every update wipes the record of
+  // deliveries, auth failures and bans (issue #1701). Pure data, no seed: the
+  // entrypoint pre-creates the files it needs. Rotation is logrotate's daily
+  // job, run by the cron program in supervisord.conf.
+  { host: `${MAIL_HOST_STATE_DIR}/logs`, container: "/var/log" },
+  // fail2ban's own SQLite database (default /var/lib/fail2ban/fail2ban.sqlite3),
+  // which restores bans after a restart and keeps ban history. Without this
+  // mount every update starts from an empty database ("New database created").
+  // Pure data, no seed: fail2ban creates it on first start.
+  { host: `${MAIL_HOST_STATE_DIR}/fail2ban`, container: "/var/lib/fail2ban" },
   { host: "/etc/letsencrypt", container: "/etc/letsencrypt", readonly: true },
 ];
 

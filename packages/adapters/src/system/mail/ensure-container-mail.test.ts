@@ -40,6 +40,12 @@ describe("buildMailRunCommand", () => {
     expect(cmd).toContain("--env-file");
     // The Postfix queue must be a bind mount or a recreate drops in-flight mail.
     expect(cmd).toContain("/var/spool/postfix");
+    // The mail logs must survive a recreate (issue #1701): rsyslog writes them
+    // to files under /var/log, which `docker logs` never holds.
+    expect(cmd).toContain("/var/lib/openship/mail/logs:/var/log:z");
+    // fail2ban's own SQLite database must survive a recreate (issue #1701), or
+    // every update starts from an empty database ("New database created").
+    expect(cmd).toContain("/var/lib/openship/mail/fail2ban:/var/lib/fail2ban:z");
     // The cert store is shared with the edge and mounted read-only.
     expect(cmd).toContain("/etc/letsencrypt:ro,z");
     // Image is the final, shell-quoted token.
@@ -276,6 +282,57 @@ describe("ensureContainerMail image acquisition gate", () => {
       "docker rm -f 'custom-mail-db' 2>/dev/null || true",
       "docker rm -f 'openship-mail' 2>/dev/null || true",
     ]);
+  });
+
+  it("passes OPENSHIP_MAIL_F2B_IGNOREIP through to engine.env when set (issue #1701)", async () => {
+    // Operator fail2ban ignoreip additions (space-separated IPs/CIDRs/hostnames).
+    // The entrypoint renders them into a jail.d override on every boot so they
+    // survive a recreate; the env-file's own CR/LF guard still applies, so a
+    // multi-line value fails closed here instead of injecting env records.
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const previous = process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+    process.env.OPENSHIP_MAIL_F2B_IGNOREIP = "203.0.113.5 198.51.100.0/24";
+    try {
+      const box = firstBootExecutor({ imagePresent: true });
+      const writeFile = vi.fn(async (_path: string, _content: string) => {});
+      await ensureContainerMail(
+        { exec: box.exec, writeFile, streamExec: box.streamExec } as never,
+        {
+          domain: "example.com",
+          secrets: {},
+          onLog: () => {},
+        },
+      );
+      expect(writeFile.mock.calls.find(([path]) => path.endsWith("engine.env"))?.[1]).toContain(
+        "OPENSHIP_MAIL_F2B_IGNOREIP=203.0.113.5 198.51.100.0/24\n",
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+      else process.env.OPENSHIP_MAIL_F2B_IGNOREIP = previous;
+    }
+  });
+
+  it("writes no OPENSHIP_MAIL_F2B_IGNOREIP record when it is unset (issue #1701)", async () => {
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const previous = process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+    delete process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+    try {
+      const box = firstBootExecutor({ imagePresent: true });
+      const writeFile = vi.fn(async (_path: string, _content: string) => {});
+      await ensureContainerMail(
+        { exec: box.exec, writeFile, streamExec: box.streamExec } as never,
+        {
+          domain: "example.com",
+          secrets: {},
+          onLog: () => {},
+        },
+      );
+      expect(writeFile.mock.calls.find(([path]) => path.endsWith("engine.env"))?.[1]).not.toContain(
+        "OPENSHIP_MAIL_F2B_IGNOREIP",
+      );
+    } finally {
+      if (previous !== undefined) process.env.OPENSHIP_MAIL_F2B_IGNOREIP = previous;
+    }
   });
 
   it("skips the registry pull when the image is already present locally (delivered dev tag)", async () => {

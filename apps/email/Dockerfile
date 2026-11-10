@@ -33,9 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Runtime + build prerequisites. supervisor = PID-1 process manager (iRedMail's
 # daemons have no systemd here); postgresql-client + netcat = the entrypoint's
-# wait-for-sidecar + schema bootstrap; the rest are iRedMail.sh's own deps.
+# wait-for-sidecar + schema bootstrap; logrotate = the binary behind the daily
+# rotation of the persisted mail logs (issue #1701) — only a Recommends of
+# rsyslog, so it must be named explicitly rather than relied on from the
+# installer's package set; the rest are iRedMail.sh's own deps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      supervisor ca-certificates curl gnupg procps rsync cron \
+      supervisor ca-certificates curl gnupg procps rsync cron logrotate \
       netcat-openbsd postgresql-client bsdmainutils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -122,6 +125,13 @@ RUN set -eu; \
       exit 1; \
     }; \
     echo "openship-mail: all mail daemons present ->$(echo ' postfix dovecot doveadm amavisd clamd freshclam spamd fail2ban iredapd')"
+# logrotate + cron are the persisted-logs rotation path (issue #1701): cron runs
+# logrotate's daily job from inside the engine. Neither is a supervisord-launched
+# mail daemon, so they are gated separately from the daemon list above.
+RUN [ -x /usr/sbin/logrotate ] && [ -x /usr/sbin/cron ] || { \
+      echo "FATAL: logrotate or cron missing — persisted mail logs would never rotate (issue #1701)." >&2; \
+      exit 1; \
+    }
 
 # Runtime prerequisites the installer does not leave in place under our stubbed-
 # init build (its late service/DB steps abort — see the `|| true` above):

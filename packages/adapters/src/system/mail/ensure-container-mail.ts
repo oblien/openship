@@ -768,6 +768,14 @@ export async function ensureContainerMail(
     OPENSHIP_MAIL_DB_PORT: String(dbPort),
     OPENSHIP_MAIL_DB_NAME: MAIL_DB_NAME,
     OPENSHIP_MAIL_DB_USER: MAIL_DB_USER,
+    // Operator fail2ban ignoreip additions (issue #1701): space-separated IPs,
+    // CIDRs or hostnames, rendered by the entrypoint into a jail.d override on
+    // every boot so they survive a recreate. Only written when set — an empty
+    // record would be noise. writeEnvFile's CR/LF guard still applies, so a
+    // multi-line value fails closed here instead of injecting env records.
+    ...(process.env.OPENSHIP_MAIL_F2B_IGNOREIP?.trim()
+      ? { OPENSHIP_MAIL_F2B_IGNOREIP: process.env.OPENSHIP_MAIL_F2B_IGNOREIP.trim() }
+      : {}),
     // Spread LAST so the retained value wins: the engine's first-boot bootstrap connects
     // as the superuser, and it has to use the password the cluster actually has, not the
     // one this deploy generated.
