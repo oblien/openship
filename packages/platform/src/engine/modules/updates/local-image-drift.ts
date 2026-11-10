@@ -76,7 +76,12 @@ export async function verifyUnknownImageDrift(
   if (!resolved) return;
   const { runtime } = resolved;
   try {
-    await verifyUnknownImageServices(runtime, rows, pending);
+    // `prepareDeploymentImage` is Docker-only; other runtimes (Kubernetes,
+    // bare) leave the services unknown instead of failing the feed — the
+    // same guard `recordDeploymentArtifacts` uses on a `RuntimeAdapter`.
+    if (runtime instanceof DockerRuntime) {
+      await verifyUnknownImageServices(runtime, rows, pending);
+    }
   } finally {
     disposeRuntime(runtime);
   }
