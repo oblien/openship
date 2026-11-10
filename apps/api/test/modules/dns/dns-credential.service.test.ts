@@ -58,6 +58,7 @@ const doProvider = vi.hoisted(() => ({
   listRecords: vi.fn(),
   upsertRecord: vi.fn(),
   deleteRecord: vi.fn(),
+  pruneOrphanedMarkers: vi.fn(async () => {}),
   formatContent: vi.fn((_type: string, content: string) => content),
 }));
 const registered = vi.hoisted(() => ({ names: ["cloudflare"] as string[] }));
@@ -172,7 +173,29 @@ describe("resolveDnsManager", () => {
 
     const out = await resolveDnsManager("org_1", "app.example.com");
     expect(out.status).toBe("unauthorized");
-    if (out.status === "unauthorized") expect(out.credentialId).toBe("dns_1");
+    if (out.status === "unauthorized") {
+      expect(out.credentialId).toBe("dns_1");
+      expect(out.provider).toBe("cloudflare");
+    }
+  });
+
+  it("treats a stored credential without a token as unauthorized, never asking the API", async () => {
+    credentialRepo.listActiveByProvider.mockResolvedValue([
+      row({ secretsEnc: `enc1:${JSON.stringify({ apiToken: "  " })}` }),
+    ]);
+
+    const out = await resolveDnsManager("org_1", "app.example.com");
+    expect(out).toMatchObject({ status: "unauthorized", credentialId: "dns_1" });
+    expect(provider.findZone).not.toHaveBeenCalled();
+  });
+
+  it("does not match a zone that is not active, so callers fall back to manual records", async () => {
+    // DigitalOcean reports "pending" for a domain in the account whose name servers
+    // point elsewhere: records written there are served by nobody.
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
+    provider.findZone.mockResolvedValue({ id: "example.com", name: "example.com", status: "pending" });
+
+    expect(await resolveDnsManager("org_1", "app.example.com")).toEqual({ status: "none" });
   });
 
   it("treats an undecryptable token as unauthorized, not as a crash", async () => {
@@ -306,7 +329,21 @@ describe("planRecords", () => {
     credentialRepo.markInvalid.mockResolvedValue(undefined);
     const out = await plan1();
     expect(out.status).toBe("unauthorized");
+    expect(out).toMatchObject({ credentialId: "dns_1", provider: "cloudflare" });
     expect(out.records).toEqual([]);
+  });
+
+  it("names and marks invalid the credential the zone lookup rejected", async () => {
+    // The dashboard reconnects exactly this credential, so it must be in the result.
+    provider.findZone.mockRejectedValue(new DnsApiError("cloudflare", 401, "Invalid token"));
+    const out = await plan1();
+    expect(out).toMatchObject({
+      status: "unauthorized",
+      credentialId: "dns_1",
+      provider: "cloudflare",
+      records: [],
+    });
+    expect(credentialRepo.markInvalid).toHaveBeenCalledWith("org_1", "dns_1", expect.any(String));
   });
 });
 
@@ -472,6 +509,29 @@ describe("releaseRecords", () => {
 
     expect(out.deleted).toBe(0);
     expect(out.reason).toContain("503");
+  });
+
+  it("prunes orphaned ownership markers without counting them or failing on them", async () => {
+    registered.names = ["digitalocean"];
+    credentialRepo.listActiveByProvider.mockResolvedValue([
+      row({ id: "dns_do", provider: "digitalocean" }),
+    ]);
+    doProvider.findZone.mockResolvedValue({ id: "example.com", name: "example.com", status: "active" });
+    doProvider.listRecords.mockResolvedValue([rec({ id: "rec_ours" })]);
+    doProvider.deleteRecord.mockResolvedValue(undefined);
+    doProvider.pruneOrphanedMarkers.mockRejectedValueOnce(
+      new DnsApiError("digitalocean", 429, "Rate limited"),
+    );
+
+    const out = await releaseRecords("org_1", "example.com", ["example.com", "www.example.com"]);
+
+    expect(out).toEqual({ deleted: 2 });
+    expect(doProvider.pruneOrphanedMarkers).toHaveBeenCalledTimes(2);
+    expect(doProvider.pruneOrphanedMarkers).toHaveBeenCalledWith(
+      expect.anything(),
+      "example.com",
+      "www.example.com",
+    );
   });
 
   it("is a no-op when no connected provider hosts the zone", async () => {

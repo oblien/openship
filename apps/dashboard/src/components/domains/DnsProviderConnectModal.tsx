@@ -19,11 +19,17 @@ import { authClient } from "@/lib/auth-client";
 export function DnsProviderConnectModal({
   hostname,
   reconnect = false,
+  rejectedCredentialId,
+  rejectedProvider,
   onClose,
   onConnected,
 }: {
   hostname?: string;
   reconnect?: boolean;
+  /** The credential the failed lookup named, when the API reported one. */
+  rejectedCredentialId?: string;
+  /** The provider of that credential, when the API reported one. */
+  rejectedProvider?: string;
   onClose: () => void;
   onConnected: () => void;
 }) {
@@ -72,25 +78,40 @@ export function DnsProviderConnectModal({
         setProviders(available);
         setDescriptors(dns.data);
         setCredentials(held.data);
-        // A reconnect opens on the provider whose token was rejected, not on whichever
-        // provider happens to be listed first.
-        const rejected = held.data.find(
-          (entry) =>
-            entry.status === "invalid" &&
-            available.some((provider) => provider.id === entry.provider),
+        // A reconnect opens on the credential the failed lookup named. Only when the
+        // API did not name one do we guess: the first invalid DNS credential, then
+        // whichever provider happens to be listed first.
+        const isAvailable = (id?: string) =>
+          !!id && available.some((provider) => provider.id === id);
+        const named = reconnect
+          ? held.data.find(
+              (entry) => entry.id === rejectedCredentialId && isAvailable(entry.provider),
+            )
+          : undefined;
+        const guessed = held.data.find(
+          (entry) => entry.status === "invalid" && isAvailable(entry.provider),
         );
-        const initial = (reconnect ? rejected?.provider : undefined) ?? available[0]?.id ?? "";
+        const initial =
+          (reconnect
+            ? (named?.provider ??
+              (isAvailable(rejectedProvider) ? rejectedProvider : undefined) ??
+              guessed?.provider)
+            : undefined) ??
+          available[0]?.id ??
+          "";
         setProviderId(initial);
         const sameProvider = held.data.filter((entry) => entry.provider === initial);
         const invalid = sameProvider.filter((entry) => entry.status === "invalid");
         // Never silently replace an unrelated account's working token.
         setCredentialId(
           reconnect
-            ? invalid.length === 1
-              ? invalid[0].id
-              : sameProvider.length === 1
-                ? sameProvider[0].id
-                : ""
+            ? named
+              ? named.id
+              : invalid.length === 1
+                ? invalid[0].id
+                : sameProvider.length === 1
+                  ? sameProvider[0].id
+                  : ""
             : "",
         );
       } catch (err) {
@@ -105,7 +126,7 @@ export function DnsProviderConnectModal({
     return () => {
       cancelled = true;
     };
-  }, [revision, reconnect, copy.loadFailed]);
+  }, [revision, reconnect, rejectedCredentialId, rejectedProvider, copy.loadFailed]);
 
   const provider = providers.find((entry) => entry.id === providerId);
   const descriptor = descriptors.find((entry) => entry.name === providerId);

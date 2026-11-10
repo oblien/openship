@@ -73,7 +73,8 @@ export interface DnsZone {
   id: string;
   /** Apex zone name (e.g. "example.com"). */
   name: string;
-  /** Zone status: "active", "pending", etc. */
+  /** Zone status: "active", "pending", etc. Only an "active" zone is managed:
+   *  records written to any other are served by nobody. */
   status: string;
 }
 
@@ -146,6 +147,17 @@ export interface DnsProvider {
     credentials: DnsProviderCredentials,
     zoneId: string,
     recordId: string,
+  ): Promise<void>;
+
+  /**
+   * Remove ownership bookkeeping at `name` whose record no longer exists (deleted
+   * outside Openship, or a delete whose bookkeeping cleanup failed). Only providers
+   * that keep the marker beside the record, rather than on it, need this.
+   */
+  pruneOrphanedMarkers?(
+    credentials: DnsProviderCredentials,
+    zoneId: string,
+    name: string,
   ): Promise<void>;
 }
 

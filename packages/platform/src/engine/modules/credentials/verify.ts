@@ -217,6 +217,12 @@ const verifyCloudflare: Verifier = async ({ secrets }) => {
  *
  * Not `/v2/account`: that endpoint needs `account:read`, so a token scoped to exactly the
  * domain permissions Openship asks for would be reported as rejected.
+ *
+ * This proves `domain:read` ONLY. DigitalOcean has no side-effect-free way to ask a token
+ * which scopes it carries, and creating a throwaway record to probe `domain:create` would
+ * write to a zone the operator never pointed us at. A token missing a write scope is caught
+ * on its first write instead: the DNS provider reports that 403 as missing write scope and
+ * the credential is marked invalid.
  */
 const verifyDigitalOcean: Verifier = async ({ secrets }) => {
   const apiToken = secrets.apiToken ?? "";
@@ -229,7 +235,8 @@ const verifyDigitalOcean: Verifier = async ({ secrets }) => {
     if (res.status === 401 || res.status === 403) {
       return {
         ok: false,
-        reason: "DigitalOcean rejected this token. It needs the domain read scope.",
+        reason:
+          "DigitalOcean rejected this token. It needs at least the domain read scope (writing records also needs domain create, update and delete).",
       };
     }
     return { ok: false, reason: `DigitalOcean answered ${res.status}.` };

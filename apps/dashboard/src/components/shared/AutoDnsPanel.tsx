@@ -503,6 +503,8 @@ export function AutoDnsPanel({
         <DnsProviderConnectModal
           hostname={hostname}
           reconnect={s.plan?.status === "unauthorized"}
+          rejectedCredentialId={s.plan?.status === "unauthorized" ? s.plan.credentialId : undefined}
+          rejectedProvider={s.plan?.status === "unauthorized" ? s.plan.provider : undefined}
           onClose={() => hideModal(id)}
           onConnected={() => {
             hideModal(id);

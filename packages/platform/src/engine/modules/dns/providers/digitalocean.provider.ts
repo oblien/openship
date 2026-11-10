@@ -14,7 +14,14 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
  * (`isOpenshipManaged`, plan/apply, `releaseRecords`) apply unchanged. The
  * marker is bound to the record ID, so a record the operator deleted and
  * recreated by hand is theirs, and an adopted record never gets one.
+ *
+ * DELEGATION. DigitalOcean has no zone status: a domain added to the account
+ * exists whether or not the registrar points at DigitalOcean's name servers.
+ * `findZone` therefore checks the public NS set and reports an undelegated zone
+ * as "pending", which the caller treats like a non-active Cloudflare zone.
  */
+
+import { Resolver } from "node:dns/promises";
 
 import {
   DigitalOceanApiError,
@@ -22,6 +29,8 @@ import {
   digitaloceanRequest,
 } from "../../../lib/digitalocean-api";
 import { dnsTxtValue } from "../../../lib/dns-txt";
+import { PUBLIC_DNS_SERVERS } from "../../../lib/public-dns";
+import { normalizeName, zoneCandidates } from "../names";
 import type {
   DnsProvider,
   DnsProviderCredentials,
@@ -36,12 +45,6 @@ import {
   OPENSHIP_RECORD_COMMENT,
   isOpenshipManaged,
 } from "../types";
-
-/**
- * How many domain suffixes we'll probe when looking for the zone. Same bound
- * and reasoning as the Cloudflare provider: real hostnames are 2-5 labels.
- */
-const MAX_ZONE_CANDIDATES = 8;
 
 /** DigitalOcean rejects a TTL below 30 seconds. */
 const MIN_TTL = 30;
@@ -60,6 +63,18 @@ const WILDCARD_LABEL = "_wildcard";
 
 const MARKER_PATTERN = /^openship-owner;type=([A-Z]+);id=(\d+)$/;
 
+/** The name servers a domain must be delegated to for DigitalOcean to answer for it. */
+const DIGITALOCEAN_NAMESERVERS = new Set([
+  "ns1.digitalocean.com",
+  "ns2.digitalocean.com",
+  "ns3.digitalocean.com",
+]);
+
+/** Resolver answers that mean "this name has no public NS set", i.e. not delegated. */
+const NOT_DELEGATED_CODES = new Set(["ENOTFOUND", "ENODATA"]);
+
+const SOURCE = "platform/engine/modules/dns/providers/digitalocean.provider";
+
 interface DoDomainItem {
   name: string;
 }
@@ -73,12 +88,26 @@ interface DoRecordItem {
   priority?: number | null;
 }
 
-/** Preserve the DNS provider's public error contract. */
+/**
+ * Preserve the DNS provider's public error contract.
+ *
+ * A 403 on a write is named for what it almost always is: the token was verified
+ * with `domain:read` only (the one scope we can check without writing), and
+ * lacks create/update/delete. Still a 403, so the caller marks it invalid.
+ */
 async function doRequest<T>(token: string, path: string, options?: RequestInit): Promise<T> {
   try {
     return await digitaloceanRequest<T>(token, path, options);
   } catch (error) {
     if (error instanceof DigitalOceanApiError) {
+      const method = (options?.method ?? "GET").toUpperCase();
+      if (error.providerStatus === 403 && method !== "GET") {
+        throw new DnsApiError(
+          "digitalocean",
+          403,
+          "This token can read domains but lacks write scope. Re-create it with domain create, update and delete.",
+        );
+      }
       throw new DnsApiError("digitalocean", error.providerStatus, error.message);
     }
     throw error;
@@ -96,20 +125,40 @@ async function doList<T>(token: string, path: string, key: string): Promise<T[]>
   }
 }
 
-/** Trailing dots and case are not part of a name's identity. */
-function normalizeName(name: string): string {
-  return name.trim().toLowerCase().replace(/\.+$/, "");
+/** A wildcard label can never be a zone; `*.example.com` lives in `example.com`. */
+function stripWildcard(hostname: string): string {
+  const name = normalizeName(hostname);
+  return name.startsWith("*.") ? name.slice(2) : name;
 }
 
-/** "a.b.example.com" → ["a.b.example.com", "b.example.com", "example.com"], bounded. */
-function zoneCandidates(hostname: string): string[] {
-  const parts = normalizeName(hostname).split(".").filter(Boolean);
-  const out: string[] = [];
-  for (let i = 0; i <= parts.length - 2; i++) {
-    out.push(parts.slice(i).join("."));
+/**
+ * "active" when the zone's public NS set is DigitalOcean's, "pending" when the
+ * name is not delegated to it (other name servers, or no NS set at all).
+ *
+ * An inconclusive lookup (timeout, SERVFAIL, no reachable resolver) is NOT proof
+ * of non-delegation: it keeps the pre-check behaviour and reports "active", so an
+ * unreachable resolver (UDP 53 blocked on the API host, say) cannot turn a working
+ * zone into manual records or fail a certificate renewal. Only a definite answer
+ * (NXDOMAIN, no NS set, or name servers that are not DigitalOcean's) demotes it.
+ */
+async function delegationStatus(zone: string): Promise<"active" | "pending"> {
+  let nameservers: string[];
+  try {
+    // Public resolvers: delegation is the internet's view, not this host's (which
+    // may be split-horizon). Bounded so a black-holed resolver can't stall a lookup.
+    const resolver = new Resolver({ timeout: 3_000, tries: 2 });
+    resolver.setServers([...PUBLIC_DNS_SERVERS]);
+    nameservers = await resolver.resolveNs(zone);
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code && NOT_DELEGATED_CODES.has(code)) return "pending";
+    observeCaughtError(err, SOURCE);
+    return "active";
   }
-  // Keep the apex end: a deep name's zone is near the apex.
-  return out.slice(-MAX_ZONE_CANDIDATES);
+  const delegated =
+    nameservers.length > 0 &&
+    nameservers.every((ns) => DIGITALOCEAN_NAMESERVERS.has(normalizeName(ns)));
+  return delegated ? "active" : "pending";
 }
 
 /** DigitalOcean names records relative to the zone, with `@` for the apex. */
@@ -156,8 +205,15 @@ function absoluteTarget(value: string): string {
   return value.endsWith(".") ? value : `${value}.`;
 }
 
+/**
+ * DigitalOcean takes TXT data as the plain value (it adds the DNS quoting and
+ * chunking itself), and `toRecord` reports it decoded. Decode an input given in
+ * presentation syntax (`"v=spf1 -all"`, `"abc" "def"`) the same way, or it is
+ * stored with literal quotes and never compares in-sync.
+ */
 function formatContent(type: DnsRecordType, content: string): string {
-  return type === "CNAME" || type === "MX" ? absoluteTarget(content) : content;
+  if (type === "CNAME" || type === "MX") return absoluteTarget(content);
+  return type === "TXT" ? dnsTxtValue(content) : content;
 }
 
 function toRecord(item: DoRecordItem, zone: string, owned: boolean): DnsRecord {
@@ -238,6 +294,42 @@ async function deleteById(token: string, zone: string, id: string): Promise<void
   }
 }
 
+/**
+ * Delete the ownership markers that name `recordId`. With the record's name we
+ * look only where its marker lives; without it (the record is already gone) we
+ * sweep the zone's TXT records for markers naming that ID.
+ *
+ * Best effort and never thrown: it runs after the record itself is handled, so a
+ * 429 here must not report a deleted record as failed. A marker left behind names
+ * an ID that no longer exists, can never claim another record, and is swept by
+ * `pruneOrphanedMarkers` on the next release.
+ */
+async function dropMarkersFor(
+  token: string,
+  zone: string,
+  recordId: string,
+  fqdn?: string,
+): Promise<void> {
+  try {
+    const markers = fqdn
+      ? await doList<DoRecordItem>(
+          token,
+          `${recordsPath(zone)}?${new URLSearchParams({ name: ownerMarkerName(fqdn), type: "TXT" })}`,
+          "domain_records",
+        )
+      : (
+          await doList<DoRecordItem>(token, `${recordsPath(zone)}?type=TXT`, "domain_records")
+        ).filter((r) => isMarkerName(toFqdn(r.name, zone)));
+    for (const marker of markers) {
+      if (parseOwnerMarker(marker.data)?.id === recordId) {
+        await deleteById(token, zone, String(marker.id));
+      }
+    }
+  } catch (err) {
+    observeCaughtError(err, SOURCE);
+  }
+}
+
 export const digitaloceanDnsProvider: DnsProvider = {
   name: "digitalocean",
 
@@ -257,15 +349,22 @@ export const digitaloceanDnsProvider: DnsProvider = {
       return { ok: false, reason: "DigitalOcean API token is missing." };
     }
 
+    // Proves domain:read only. There is no side-effect-free way to check the write
+    // scopes; a token without them is reported (and marked invalid) on its first
+    // write, through `doRequest`'s 403 mapping.
     try {
       // Not /account: that needs account:read, which a DNS-only token rightly lacks.
       await doRequest(credentials.apiToken, "/domains?per_page=1", { method: "GET" });
-      return { ok: true, detail: "DigitalOcean API token can read domains." };
+      return {
+        ok: true,
+        detail:
+          "DigitalOcean API token can read domains. Write access is confirmed on the first record write.",
+      };
     } catch (err) {
-      observeCaughtError(err, "platform/engine/modules/dns/providers/digitalocean.provider");
+      observeCaughtError(err, SOURCE);
       const reason =
         err instanceof DnsApiError && err.isAuthFailure
-          ? "DigitalOcean rejected this token. Check it was copied in full and has the domain read, create, update and delete scopes."
+          ? "DigitalOcean rejected this token. Check it was copied in full and has at least the domain read scope (writing records also needs domain create, update and delete)."
           : err instanceof Error
             ? err.message
             : String(err);
@@ -274,25 +373,16 @@ export const digitaloceanDnsProvider: DnsProvider = {
   },
 
   async findZone(credentials: DnsProviderCredentials, hostname: string): Promise<DnsZone | null> {
-    for (const candidate of zoneCandidates(hostname)) {
-      try {
-        const body = await doRequest<{ domain: DoDomainItem }>(
-          credentials.apiToken,
-          `/domains/${encodeURIComponent(candidate)}`,
-          { method: "GET" },
-        );
-        // DigitalOcean has no zone status: a domain added to the account is served
-        // by its name servers once the registrar delegates to them.
-        if (body?.domain?.name)
-          return { id: body.domain.name, name: body.domain.name, status: "active" };
-      } catch (err) {
-        // 404 is "not this suffix". Anything else (auth, rate limit) must reach the
-        // caller, or a 429 reads as "no provider manages this domain".
-        if (err instanceof DnsApiError && err.providerStatus === 404) continue;
-        throw err;
-      }
-    }
-    return null;
+    const candidates = zoneCandidates(stripWildcard(hostname));
+    if (candidates.length === 0) return null;
+    // One paginated list instead of a GET per suffix. Not caught: an auth failure
+    // or a 429 must reach the caller, or it reads as "no provider manages this".
+    const domains = await doList<DoDomainItem>(credentials.apiToken, "/domains", "domains");
+    const hosted = new Set(domains.map((d) => normalizeName(d.name)));
+    // Candidates run most specific first, so the longest hosted suffix wins.
+    const zone = candidates.find((candidate) => hosted.has(candidate));
+    if (!zone) return null;
+    return { id: zone, name: zone, status: await delegationStatus(zone) };
   },
 
   async listRecords(
@@ -368,10 +458,7 @@ export const digitaloceanDnsProvider: DnsProvider = {
       // An unmarked record we created would outlive the domain: nothing could
       // prove it is ours. Take it back down and report the original failure.
       await deleteById(token, zoneId, id).catch((cleanupFailure) =>
-        observeCaughtError(
-          cleanupFailure,
-          "platform/engine/modules/dns/providers/digitalocean.provider",
-        ),
+        observeCaughtError(cleanupFailure, SOURCE),
       );
       throw err;
     }
@@ -393,25 +480,48 @@ export const digitaloceanDnsProvider: DnsProvider = {
       );
       record = body.domain_record;
     } catch (err) {
-      // Already gone. A marker left behind names an ID that no longer exists, so
-      // it can never claim a different record.
-      if (err instanceof DnsApiError && err.providerStatus === 404) return;
+      // Already gone (deleted in the console, or by an earlier attempt whose marker
+      // cleanup failed). Its marker may still be there: sweep for it by ID.
+      if (err instanceof DnsApiError && err.providerStatus === 404) {
+        await dropMarkersFor(token, zoneId, recordId);
+        return;
+      }
       throw err;
     }
 
     await deleteById(token, zoneId, recordId);
+    await dropMarkersFor(token, zoneId, recordId, toFqdn(record.name, zoneId));
+  },
 
-    const fqdn = toFqdn(record.name, zoneId);
-    const params = new URLSearchParams({ name: ownerMarkerName(fqdn), type: "TXT" });
+  async pruneOrphanedMarkers(
+    credentials: DnsProviderCredentials,
+    zoneId: string,
+    name: string,
+  ): Promise<void> {
+    const token = credentials.apiToken;
+    const fqdn = normalizeName(name);
     const markers = await doList<DoRecordItem>(
       token,
-      `${recordsPath(zoneId)}?${params}`,
+      `${recordsPath(zoneId)}?${new URLSearchParams({ name: ownerMarkerName(fqdn), type: "TXT" })}`,
       "domain_records",
     );
+    if (markers.length === 0) return;
+    const present = new Set(
+      (
+        await doList<DoRecordItem>(
+          token,
+          `${recordsPath(zoneId)}?${new URLSearchParams({ name: fqdn })}`,
+          "domain_records",
+        )
+      ).map((r) => `${r.type}|${r.id}`),
+    );
     for (const marker of markers) {
-      if (parseOwnerMarker(marker.data)?.id === recordId) {
-        await deleteById(token, zoneId, String(marker.id));
-      }
+      const parsed = parseOwnerMarker(marker.data);
+      // Unparseable: not a marker we wrote, so not ours to remove. A marker only
+      // ever claims a record at its own name, so one naming a record that is not
+      // here marks nothing and is safe to drop.
+      if (!parsed || present.has(`${parsed.type}|${parsed.id}`)) continue;
+      await deleteById(token, zoneId, String(marker.id));
     }
   },
 };

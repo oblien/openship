@@ -75,7 +75,10 @@ export interface DnsRecordPlan {
  */
 export interface DnsPlanResult {
   status: "matched" | "none" | "unauthorized" | "unavailable";
+  /** The matched provider, or for `unauthorized` the provider whose token was rejected. */
   provider?: string;
+  /** For `unauthorized`: the rejected credential, so a reconnect targets it. */
+  credentialId?: string;
   zoneName?: string;
   /** Present for unauthorized/unavailable — safe to show an operator. */
   reason?: string;

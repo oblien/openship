@@ -139,7 +139,9 @@ export interface MatchedDnsManager {
  *   none          → asked, and no connected provider hosts this zone. Normal:
  *                   the operator just hasn't delegated this domain to us.
  *   unauthorized  → a stored token was rejected (or can't be decrypted). The
- *                   operator has to act; provisioning marks it invalid.
+ *                   operator has to act; plan/apply/release mark it invalid.
+ *                   Carries the credential and its provider so the dashboard
+ *                   reconnects THAT token rather than guessing.
  *   unavailable   → the provider was rate-limited or down. Nothing is wrong with
  *                   the configuration and nothing should be marked invalid.
  */
@@ -147,7 +149,7 @@ export type DnsManagerLookup =
   | { status: "matched"; manager: MatchedDnsManager }
   | { status: "none" }
   | { status: "unavailable"; reason: string }
-  | { status: "unauthorized"; credentialId: string; reason: string };
+  | { status: "unauthorized"; credentialId: string; provider: DnsProviderName; reason: string };
 
 export async function resolveDnsManager(
   organizationId: string,
@@ -178,7 +180,8 @@ export async function resolveDnsManager(
 
   // Remembered, not returned immediately: a second credential may still own this
   // zone, and one broken token shouldn't hide a working one.
-  let unauthorized: { credentialId: string; reason: string } | null = null;
+  let unauthorized: { credentialId: string; provider: DnsProviderName; reason: string } | null =
+    null;
   let unavailable: string | null = null;
 
   for (const cred of credentials) {
@@ -188,16 +191,29 @@ export async function resolveDnsManager(
       // as a REASON rather than skipped, so this does not read as "no DNS provider".
       unauthorized ??= {
         credentialId: cred.id,
+        provider: cred.providerName,
         reason: "Stored token could not be decrypted. Re-connect the credential.",
       };
       continue;
     }
-    const apiToken = cred.secrets.apiToken!;
+    const apiToken = cred.secrets.apiToken?.trim();
+    if (!apiToken) {
+      // A row without a token can only be re-entered; never send an empty bearer.
+      unauthorized ??= {
+        credentialId: cred.id,
+        provider: cred.providerName,
+        reason: "Stored credential has no API token. Re-connect the credential.",
+      };
+      continue;
+    }
 
     try {
       const provider = resolveDnsProvider(cred.providerName);
       const zone = await provider.findZone({ apiToken }, hostname);
-      if (zone) {
+      // A zone that is not active (DigitalOcean: not delegated to its name servers)
+      // answers for nobody; writing there would report records nobody resolves.
+      // Treated like Cloudflare's non-active zones: not a match.
+      if (zone && zone.status === "active") {
         return {
           status: "matched",
           manager: { credentialId: cred.id, provider, zone, credentials: { apiToken } },
@@ -205,7 +221,11 @@ export async function resolveDnsManager(
       }
     } catch (err) {
       if (err instanceof DnsApiError && err.isAuthFailure) {
-        unauthorized ??= { credentialId: cred.id, reason: safeErrorMessage(err) };
+        unauthorized ??= {
+          credentialId: cred.id,
+          provider: cred.providerName,
+          reason: safeErrorMessage(err),
+        };
         continue;
       }
       if (err instanceof DnsApiError) {
@@ -285,7 +305,10 @@ export interface DnsRecordPlan {
  */
 export interface DnsPlanResult {
   status: DnsManagerLookup["status"];
+  /** The matched provider, or for `unauthorized` the provider whose token was rejected. */
   provider?: DnsProviderName;
+  /** For `unauthorized`: the credential to reconnect. */
+  credentialId?: string;
   zoneName?: string;
   /** Present for unauthorized/unavailable — safe to show an operator. */
   reason?: string;
@@ -337,12 +360,20 @@ export async function planRecords(
   if (provisionable.length === 0) return { status: "none", records: [] };
 
   const lookup = await resolveDnsManager(organizationId, hostname);
+  if (lookup.status === "unauthorized") {
+    await markCredentialInvalid(organizationId, lookup.credentialId);
+    return {
+      status: "unauthorized",
+      provider: lookup.provider,
+      credentialId: lookup.credentialId,
+      reason: lookup.reason,
+      records: [],
+    };
+  }
   if (lookup.status !== "matched") {
     return {
       status: lookup.status,
-      ...(lookup.status === "unauthorized" || lookup.status === "unavailable"
-        ? { reason: lookup.reason }
-        : {}),
+      ...(lookup.status === "unavailable" ? { reason: lookup.reason } : {}),
       records: [],
     };
   }
@@ -366,7 +397,13 @@ export async function planRecords(
       // own vocabulary.
       if (err instanceof DnsApiError && err.isAuthFailure) {
         await markCredentialInvalid(organizationId, lookup.manager.credentialId);
-        return { status: "unauthorized", reason: safeErrorMessage(err), records: [] };
+        return {
+          status: "unauthorized",
+          provider: provider.name,
+          credentialId: lookup.manager.credentialId,
+          reason: safeErrorMessage(err),
+          records: [],
+        };
       }
       return { status: "unavailable", reason: safeErrorMessage(err), records: [] };
     }
@@ -477,6 +514,9 @@ export async function releaseRecords(
   names: string[],
 ): Promise<{ deleted: number; reason?: string }> {
   const lookup = await resolveDnsManager(organizationId, hostname);
+  if (lookup.status === "unauthorized") {
+    await markCredentialInvalid(organizationId, lookup.credentialId);
+  }
   if (lookup.status !== "matched") {
     return {
       deleted: 0,
@@ -496,10 +536,21 @@ export async function releaseRecords(
       }
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/dns/dns-credential.service");
+      if (err instanceof DnsApiError && err.isAuthFailure) {
+        await markCredentialInvalid(organizationId, lookup.manager.credentialId);
+      }
       // Best effort by design: a domain must still be removable from Openship
       // when the provider is unreachable. The leftover record is visible in the
       // operator's zone; a blocked delete is not.
       return { deleted, reason: safeErrorMessage(err) };
+    }
+    // Bookkeeping whose record is already gone (deleted in the provider's console,
+    // or an earlier delete whose marker cleanup failed). Not counted, and never a
+    // reason to report the release as failed: the records themselves are handled.
+    try {
+      await provider.pruneOrphanedMarkers?.(credentials, zone.id, name);
+    } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/dns/dns-credential.service");
     }
   }
 

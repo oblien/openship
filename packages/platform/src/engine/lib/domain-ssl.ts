@@ -21,7 +21,11 @@ import {
   resolveDeploymentPlatform,
   type DeploymentMeta,
 } from "./deployment-runtime";
-import { resolveDnsManager, type MatchedDnsManager } from "../modules/dns/dns-credential.service";
+import {
+  markCredentialInvalid,
+  resolveDnsManager,
+  type MatchedDnsManager,
+} from "../modules/dns/dns-credential.service";
 
 /**
  * The per-domain issuance lock key. EVERY path that can open an ACME order
@@ -584,6 +588,23 @@ echo "Timed out waiting for \${RECORD_NAME} TXT propagation" >&2
 exit 1
 `;
 
+/** Shared cleanup hook: delete the record the auth hook saved, by ID. Only the
+ * provider's records collection URL differs. Both arguments are validated by the
+ * caller before they are embedded in shell. */
+function dnsCleanupHookScript(recordsUrl: string, apiToken: string): string {
+  return `#!/bin/sh
+if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
+  RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
+  if [ -n "$RECORD_ID" ]; then
+    curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "${recordsUrl}/\${RECORD_ID}" \\
+      -H "Authorization: Bearer ${apiToken}" \\
+      -H "Content-Type: application/json" || true
+  fi
+  rm -f "$OPENSHIP_DNS_RECORD_FILE"
+fi
+`;
+}
+
 function cloudflareHookScripts(manager: MatchedDnsManager): DnsHookScripts {
   // Both values are embedded in a POSIX script. Cloudflare issues identifiers
   // and API tokens from this alphabet; reject anything else rather than allow a
@@ -620,17 +641,10 @@ echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
 
 ${DNS_PROPAGATION_WAIT}`;
 
-  const cleanupScript = `#!/bin/sh
-if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
-  RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
-  if [ -n "$RECORD_ID" ]; then
-    curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records/\${RECORD_ID}" \\
-      -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
-      -H "Content-Type: application/json" || true
-  fi
-  rm -f "$OPENSHIP_DNS_RECORD_FILE"
-fi
-`;
+  const cleanupScript = dnsCleanupHookScript(
+    `https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records`,
+    manager.credentials.apiToken,
+  );
   return { authHookScript: authScript, cleanupHookScript: cleanupScript };
 }
 
@@ -692,17 +706,10 @@ echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
 
 ${DNS_PROPAGATION_WAIT}`;
 
-  const cleanupScript = `#!/bin/sh
-if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
-  RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
-  if [ -n "$RECORD_ID" ]; then
-    curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "https://api.digitalocean.com/v2/domains/${zone}/records/\${RECORD_ID}" \\
-      -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
-      -H "Content-Type: application/json" || true
-  fi
-  rm -f "$OPENSHIP_DNS_RECORD_FILE"
-fi
-`;
+  const cleanupScript = dnsCleanupHookScript(
+    `https://api.digitalocean.com/v2/domains/${zone}/records`,
+    manager.credentials.apiToken,
+  );
   return { authHookScript: authScript, cleanupHookScript: cleanupScript };
 }
 
@@ -741,6 +748,7 @@ async function resolveDns01Hooks(
   }
 
   if (dnsLookup.status === "unauthorized") {
+    await markCredentialInvalid(organizationId, dnsLookup.credentialId);
     throw new Error(`DNS provider credential rejected: ${dnsLookup.reason}`);
   }
   if (dnsLookup.status === "unavailable") {

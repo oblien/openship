@@ -65,6 +65,7 @@ export const dnsDependencies: DnsDependencies = {
             matched: false,
             status: "unauthorized",
             credentialId: lookup.credentialId,
+            provider: lookup.provider,
             message: lookup.reason,
           };
         case "unavailable":

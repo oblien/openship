@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
   recordSslFailure: vi.fn(),
+  markCredentialInvalid: vi.fn(async () => {}),
   markVerifiedActive: vi.fn(),
   disposePlatform: vi.fn(),
   provisionCert: vi.fn(async (domain: string, _opts?: unknown) => ({
@@ -98,6 +99,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
 
 vi.mock("@repo/platform/engine/modules/dns/dns-credential.service", () => ({
   resolveDnsManager: vi.fn(async () => h.dnsManagerResult),
+  markCredentialInvalid: h.markCredentialInvalid,
 }));
 
 import {
@@ -455,6 +457,7 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
     h.dnsManagerResult = {
       status: "unauthorized",
       credentialId: "cred_1",
+      provider: "cloudflare",
       reason: "Invalid token",
     } as unknown as typeof h.dnsManagerResult;
     domain("app.example.com", { sslChallenge: "dns-01" });
@@ -462,6 +465,8 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
     await expect(manageDomainSsl("app.example.com", { action: "provision" })).rejects.toThrow(
       /DNS provider credential rejected: Invalid token/,
     );
+    // Marked like every other rejection, so the dashboard shows it needs reconnecting.
+    expect(h.markCredentialInvalid).toHaveBeenCalledWith(expect.any(String), "cred_1");
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(h.recordSslFailure).toHaveBeenCalledWith(
       "dom_app.example.com",

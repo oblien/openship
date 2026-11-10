@@ -23,6 +23,11 @@ interface DigitalOceanErrorBody {
   message?: string;
 }
 
+/** Never echo the token. Guarded: `replaceAll("")` would insert the mask between every character. */
+function redact(text: string, token: string): string {
+  return token ? text.replaceAll(token, "[redacted]") : text;
+}
+
 /**
  * One bounded transport for the v2 API. Never include requests or response
  * bodies in errors: a body pasted into a support thread must not carry a token.
@@ -33,6 +38,9 @@ export async function digitaloceanRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  // An empty token would be sent as `Bearer ` and answered 401 anyway; refuse it here so
+  // no request leaves without credentials. 401 so callers treat it as a token to re-enter.
+  if (!token.trim()) throw new DigitalOceanApiError(401, "API token is missing.");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
@@ -61,7 +69,7 @@ export async function digitaloceanRequest<T>(
       const detail = typeof message === "string" ? message.slice(0, 500) : "";
       throw new DigitalOceanApiError(
         res.status,
-        (detail || `Request failed (${res.status}).`).replaceAll(token, "[redacted]"),
+        redact(detail || `Request failed (${res.status}).`, token),
       );
     }
     return body as T;
