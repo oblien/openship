@@ -2669,6 +2669,12 @@ export async function evaluateDrift(
         latestDigest,
         // Fail-soft: a digest we couldn't resolve is not evidence of drift.
         behind: latestDigest ? isBehind(current, latest) : false,
+        // The deployed side is a database row, not the running container. A
+        // NULL digest means the row lost what the service runs on — the
+        // comparison above cannot speak for it, so the service is unknown,
+        // not up to date. `updates.service` resolves the unknown ones
+        // against the live container before any surface renders them.
+        unknown: !running?.digest,
       };
     });
     return {
@@ -2677,6 +2683,9 @@ export async function evaluateDrift(
       behind: services.some((s) => s.behind),
       latestInProgress: active?.trigger === "update",
       inProgressDeploymentId,
+      // At least one service whose deployed state could not be determined —
+      // the feed keeps the project visible instead of dropping it as fine.
+      unverified: services.some((s) => s.unknown),
       services,
     };
   }

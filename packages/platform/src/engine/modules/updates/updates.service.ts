@@ -56,6 +56,7 @@ import {
   type DriftStatus,
   type UpstreamDrift,
 } from "@repo/platform/engine/modules/projects/project-crud.service";
+import { verifyUnknownImageDrift } from "./local-image-drift";
 import { redeployBuildSession, triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
 
@@ -471,6 +472,14 @@ async function driftItem(
   const status: DriftStatus = await evaluateDrift(project, resolved.upstream, actor).catch(
     (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return ({ supported: false }) as DriftStatus; },
   );
+  if (status.supported && status.mode === "image") {
+    // A service whose row lost its digest is unknown until the live daemon
+    // speaks for it. Never fail the item over a container check — the
+    // unknown flag is the answer, not an error.
+    await verifyUnknownImageDrift(project, status).catch((diagnosticFailure) =>
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"),
+    );
+  }
   const view = presentation(status);
   if (!view || !status.supported) return null;
   return {
@@ -483,6 +492,9 @@ async function driftItem(
     behind: status.behind,
     latestInProgress: status.latestInProgress,
     inProgressDeploymentId: status.inProgressDeploymentId,
+    // At least one service whose deployed state could not be determined.
+    // The feed keeps such projects visible rather than reporting them fine.
+    unverified: status.mode === "image" ? status.unverified : false,
     currentLabel: view.currentLabel,
     latestLabel: view.latestLabel,
     detail: view.detail,
@@ -531,9 +543,18 @@ export async function listOrganizationUpdates(
     if (item) items.push(item);
   });
 
-  // Deterministic despite the concurrency: behind first, then by name.
-  items.sort((a, b) => Number(b.behind) - Number(a.behind) || a.name.localeCompare(b.name));
-  return opts?.behindOnly ? items.filter((i) => i.behind || i.latestInProgress) : items;
+  // Deterministic despite the concurrency: behind first, then unverified —
+  // a project we could not verify is not "up to date", so it sorts above
+  // the ones we could — then by name.
+  items.sort(
+    (a, b) =>
+      Number(b.behind) - Number(a.behind) ||
+      Number(b.unverified) - Number(a.unverified) ||
+      a.name.localeCompare(b.name),
+  );
+  return opts?.behindOnly
+    ? items.filter((i) => i.behind || i.latestInProgress || i.unverified)
+    : items;
 }
 
 /**
@@ -550,7 +571,16 @@ export async function getProjectDrift(
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!hasDeployedSide(project)) return { supported: false };
   return withTimeout(
-    pollUpstream(ctx, project).then((upstream) => evaluateDrift(project, upstream, ctx)),
+    pollUpstream(ctx, project)
+      .then((upstream) => evaluateDrift(project, upstream, ctx))
+      .then(async (status) => {
+        if (status.supported && status.mode === "image") {
+          await verifyUnknownImageDrift(project, status).catch((diagnosticFailure) =>
+            observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"),
+          );
+        }
+        return status;
+      }),
     FEED_BUDGET_MS,
     "Project update check timed out",
   ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return ({ supported: false }); });

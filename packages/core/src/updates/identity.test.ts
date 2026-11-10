@@ -5,6 +5,7 @@ import {
   identityLabel,
   isBehind,
   isFullCommitSha,
+  resolveUnknownDigestDrift,
   type UpdatableIdentity,
 } from "./identity";
 
@@ -131,5 +132,91 @@ describe("identityLabel", () => {
     expect(identityLabel({ kind: "commit", sha: "abcdef1234" })).toBe("abcdef1");
     expect(identityLabel({ kind: "release", version: "0.3.1" })).toBe("0.3.1");
     expect(identityLabel({ kind: "image", ref: "n8nio/n8n:latest" })).toBe("n8nio/n8n:latest");
+  });
+});
+
+/**
+ * The reported failure: `GET /api/updates?behind=1` returned `[]` for a service
+ * whose container ran an older image than its tag now points to. The active
+ * `service_deployment` row had `image_digest` NULL (carried forward by a
+ * per-service update), so `isBehind` — which only compares digests when both
+ * are known — fell back to the equal ref strings and reported "up to date".
+ * The deployed side was unknown, not equal. When the database row has no
+ * digest, the local daemon is the only witness: compare the running
+ * container's image ID with the image ID the tag resolves to right now.
+ */
+describe("resolveUnknownDigestDrift", () => {
+  const OLD_IMAGE = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+  const NEW_IMAGE = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+  const REGISTRY_DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const TAG_REPO_DIGEST = `docker.io/library/nginx@${REGISTRY_DIGEST}`;
+
+  it("a container on a different image from its tag is behind", () => {
+    // The reported case: the local tag was re-pulled, the container kept the
+    // old image, the row has no digest. A redeploy would recreate it.
+    expect(
+      resolveUnknownDigestDrift({
+        containerImageId: OLD_IMAGE,
+        tagImageId: NEW_IMAGE,
+        latestDigest: REGISTRY_DIGEST,
+      }),
+    ).toEqual({ behind: true, unknown: false });
+  });
+
+  it("a differing local image is behind even when the digests would agree", () => {
+    // The container's content differs from what the tag points to locally.
+    // That is drift by itself — the registry comparison must not overrule it.
+    expect(
+      resolveUnknownDigestDrift({
+        containerImageId: OLD_IMAGE,
+        tagImageId: NEW_IMAGE,
+        tagRegistryDigest: TAG_REPO_DIGEST,
+        latestDigest: REGISTRY_DIGEST,
+      }),
+    ).toEqual({ behind: true, unknown: false });
+  });
+
+  it("matching images with matching digests are current, and the digest is recovered", () => {
+    expect(
+      resolveUnknownDigestDrift({
+        containerImageId: NEW_IMAGE,
+        tagImageId: NEW_IMAGE,
+        tagRegistryDigest: TAG_REPO_DIGEST,
+        latestDigest: REGISTRY_DIGEST,
+      }),
+    ).toEqual({ behind: false, unknown: false, recoveredDigest: TAG_REPO_DIGEST });
+  });
+
+  it("matching images with a moved registry tag are behind", () => {
+    expect(
+      resolveUnknownDigestDrift({
+        containerImageId: NEW_IMAGE,
+        tagImageId: NEW_IMAGE,
+        tagRegistryDigest: TAG_REPO_DIGEST,
+        latestDigest:
+          "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      }),
+    ).toEqual({ behind: true, unknown: false, recoveredDigest: TAG_REPO_DIGEST });
+  });
+
+  it("matching images with no digest anywhere stay unknown, not current", () => {
+    // The container runs what the tag points to, but without a digest the
+    // registry question is unanswerable — an image from `docker load` has no
+    // RepoDigests, and the registry may still have moved the tag.
+    expect(
+      resolveUnknownDigestDrift({ containerImageId: NEW_IMAGE, tagImageId: NEW_IMAGE }),
+    ).toEqual({ behind: false, unknown: true });
+  });
+
+  it("a missing container or an unresolvable tag stays unknown", () => {
+    expect(resolveUnknownDigestDrift({ tagImageId: NEW_IMAGE })).toEqual({
+      behind: false,
+      unknown: true,
+    });
+    expect(resolveUnknownDigestDrift({ containerImageId: OLD_IMAGE })).toEqual({
+      behind: false,
+      unknown: true,
+    });
+    expect(resolveUnknownDigestDrift({})).toEqual({ behind: false, unknown: true });
   });
 });
