@@ -109,7 +109,7 @@ export function resolveCallClientId(c: Context): string | null {
       return ctx.sessionId;
     }
   } catch {
-    // Pre-auth: no RequestContext yet, so there is no credential to derive from.
+    // diagnostics-ignore: pre-auth request has no RequestContext yet, so there is no credential to derive from.
   }
   return null;
 }
