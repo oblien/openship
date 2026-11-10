@@ -164,9 +164,8 @@ export async function resolveDnsManager(
   //
   // listProviderCredentials, not a single lookup: zone ownership is discovered by ASKING
   // each token which zones it can see, so a second token owning a second zone needs the
-  // whole list. Every registered provider is asked, in registry order and each
-  // provider's credentials in the store's order, so the same zone always resolves to
-  // the same token when two of them can see it.
+  // whole list. Try the oldest credentials first across all providers, so adding
+  // another token does not replace an existing connection for the same zone.
   const credentials = (
     await Promise.all(
       listDnsProviders().map(async (name) =>
@@ -176,7 +175,9 @@ export async function resolveDnsManager(
         })),
       ),
     )
-  ).flat();
+  )
+    .flat()
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   if (credentials.length === 0) return { status: "none" };
 
   // Remembered, not returned immediately: a second credential may still own this

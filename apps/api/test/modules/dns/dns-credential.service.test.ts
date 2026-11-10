@@ -193,7 +193,11 @@ describe("resolveDnsManager", () => {
     // DigitalOcean reports "pending" for a domain in the account whose name servers
     // point elsewhere: records written there are served by nobody.
     credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
-    provider.findZone.mockResolvedValue({ id: "example.com", name: "example.com", status: "pending" });
+    provider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "pending",
+    });
 
     expect(await resolveDnsManager("org_1", "app.example.com")).toEqual({ status: "none" });
   });
@@ -221,6 +225,33 @@ describe("resolveDnsManager", () => {
     expect(out.status).toBe("matched");
     if (out.status === "matched") expect(out.manager.credentialId).toBe("dns_good");
   });
+
+  it.each(["cloudflare", "digitalocean"])(
+    "selects the oldest matching credential when it belongs to %s",
+    async (oldestProvider) => {
+      registered.names = ["cloudflare", "digitalocean"];
+      credentialRepo.listActiveByProvider.mockImplementation(async (_org: string, name: string) => [
+        row({ id: `${name}_new`, provider: name, createdAt: new Date("2026-03-01") }),
+        row({
+          id: `${name}_old`,
+          provider: name,
+          createdAt: new Date(name === oldestProvider ? "2026-01-01" : "2026-02-01"),
+        }),
+      ]);
+      doProvider.findZone.mockResolvedValue({
+        id: "example.com",
+        name: "example.com",
+        status: "active",
+      });
+
+      const result = await resolveDnsManager("org_1", "app.example.com");
+
+      expect(result).toMatchObject({
+        status: "matched",
+        manager: { credentialId: `${oldestProvider}_old`, provider: { name: oldestProvider } },
+      });
+    },
+  );
 
   it("asks every registered provider's tokens, with each token's own provider", async () => {
     registered.names = ["cloudflare", "digitalocean"];
@@ -472,7 +503,11 @@ describe("releaseRecords", () => {
     credentialRepo.listActiveByProvider.mockResolvedValue([
       row({ id: "dns_do", provider: "digitalocean" }),
     ]);
-    doProvider.findZone.mockResolvedValue({ id: "example.com", name: "example.com", status: "pending" });
+    doProvider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "pending",
+    });
     doProvider.listRecords.mockResolvedValue([
       rec({ id: "owned", comment: OPENSHIP_RECORD_COMMENT }),
       rec({ id: "foreign", comment: undefined }),
@@ -482,7 +517,9 @@ describe("releaseRecords", () => {
     const out = await releaseRecords("org_1", "app.example.com", ["app.example.com"]);
     expect(out).toEqual({ deleted: 1 });
     expect(doProvider.deleteRecord).toHaveBeenCalledExactlyOnceWith(
-      { apiToken: "cf-token" }, "example.com", "owned",
+      { apiToken: "cf-token" },
+      "example.com",
+      "owned",
     );
   });
 
@@ -535,7 +572,11 @@ describe("releaseRecords", () => {
     credentialRepo.listActiveByProvider.mockResolvedValue([
       row({ id: "dns_do", provider: "digitalocean" }),
     ]);
-    doProvider.findZone.mockResolvedValue({ id: "example.com", name: "example.com", status: "active" });
+    doProvider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "active",
+    });
     doProvider.listRecords.mockResolvedValue([rec({ id: "rec_ours" })]);
     doProvider.deleteRecord.mockResolvedValue(undefined);
     doProvider.pruneOrphanedMarkers.mockRejectedValueOnce(
