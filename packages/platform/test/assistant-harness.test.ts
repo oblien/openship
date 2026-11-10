@@ -198,6 +198,24 @@ for (const provider of ["codex", "claude"] as const)
     }
   });
 
+test("scoped Claude removes the unused bypass opt-in while preserving permission mode, MCP policy and argument boundaries", async () => {
+  const fixture = await harnessFixture("claude", "2.1.293");
+  try {
+    const probe = await fixture.probe();
+    await writeHarnessWrapper(fixture.wrapper, probe);
+    const args = ["-p", "--input-format", "stream-json", "--allow-dangerously-skip-permissions",
+      "--permission-mode", "dontAsk", "--mcp-config", "/tmp/path with spaces/config.json", "--system-prompt", "Keep scoped tools."];
+    const result = await invokeWrapper(fixture, "claude", args);
+    expect(result.args).toEqual([...probe.flags, ...args.filter(arg => arg !== "--allow-dangerously-skip-permissions")]);
+    expect(result.args).toContain("--strict-mcp-config");
+    expect(result.args).toContain("AskUserQuestion");
+    expect(result.args).not.toContain("bypassPermissions");
+    expect(result.args).not.toContain("--dangerously-skip-permissions");
+  } finally {
+    await fixture.close();
+  }
+});
+
 import { spawn } from "node:child_process";
 import { CODEX_GUARD } from "../src/engine/modules/assistant/codex-guard";
 test("Node guard strips external MCP, dynamic tools and permission changes before native execution", async () => {

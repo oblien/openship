@@ -143,6 +143,7 @@ import { isRuntimeNotFoundError } from "../system/errors";
 import { OPENSHIP_LABEL } from "../system/port-owner";
 import { dirOf, ensureOwnedDir } from "../system/elevated-executor";
 import { dockerConfigJsonFor, registryForImage, resolveDockerAuth } from "./docker-auth";
+import { pullWithAnonymousFallback } from "./registry-pull";
 
 import type {
   RuntimeAdapter,
@@ -5254,10 +5255,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       ? await this.connectionOptions.resolveRegistryAuth(ref)
       : await resolveDockerAuth(ref);
     try {
-      const stream = await this.docker.pull(ref, authconfig ? { authconfig } : {});
-      await new Promise<void>((resolve, reject) => {
-        this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
-      });
+      const pull = async (anonymous: boolean) => {
+        opts?.signal?.throwIfAborted();
+        const stream = await this.docker.pull(ref, !anonymous && authconfig ? { authconfig } : {});
+        await new Promise<void>((resolve, reject) => {
+          this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+        });
+      };
+      if (authconfig) await pullWithAnonymousFallback(pull,
+        () => opts?.logger?.log("Registry login was rejected; retrying public image access without credentials.\n", "warn"), opts?.signal);
+      else await pull(true);
     } catch (err) {
       observeCaughtError(err, "adapters/runtime/docker");
       // Name the registry and KEEP the daemon's reason. The credential we sent is
@@ -5395,47 +5402,54 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * registry credential. Docker progress streams over SSH may never end. */
   private async runRemoteRegistryCommand(action: "pull" | "push", ref: string, signal?: AbortSignal, logger?: BuildLogger): Promise<string> {
     const executor = this.connectionOptions!.executor!;
-    const auth = await this.connectionOptions?.resolveRegistryAuth?.(ref);
-    const config = auth ? dockerConfigJsonFor(auth) : null;
-    const dir = `/tmp/openship-${action}-${randomUUID()}`;
-    let ownsDirectory = false;
     const bounded = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(10 * 60_000)]);
-    const execute = async (command: string) => {
-      if (!logger || typeof executor.streamExec !== "function")
-        return executor.exec(command, { timeout: 10 * 60_000 });
-      const result = await executor.streamExec(command, logger.callback, { signal: bounded });
-      if (result.code !== 0) throw new Error(`Docker ${action} failed (exit ${result.code}): ${result.output.slice(-2000)}`);
-      return result.output;
-    };
-    const run = async () => {
-      bounded.throwIfAborted();
-      // Without a saved credential, preserve the target's own Docker login.
-      if (!config) return execute(`docker ${action} ${sq(ref)}`);
-      // Credentials go through file writes, never process arguments. Creation
-      // is exclusive and private; cleanup also runs after interruption.
-      await executor.exec(`mkdir -m 700 ${sq(dir)}`);
-      ownsDirectory = true;
-      await executor.writeFile(`${dir}/config.json`, config);
-      await executor.exec(`chmod 600 ${sq(dir)}/config.json`);
-      bounded.throwIfAborted();
-      return execute(
-        `DOCKER_CONFIG=${sq(dir)} docker ${action} ${sq(ref)}; rc=$?; rm -rf ${sq(dir)}; exit $rc`,
-      );
-    };
-    try {
-      return executor.runWithAbortSignal
-        ? await executor.runWithAbortSignal(bounded, run)
-        : await run();
-    } finally {
-      if (ownsDirectory) {
-        const cleanup = () => executor.exec(`rm -rf ${sq(dir)}`, { timeout: 10_000 });
-        await (executor.runWithAbortSignal
-          ? executor.runWithAbortSignal(AbortSignal.timeout(10_000), cleanup)
-          : cleanup()).catch((diagnosticFailure) => {
-            observeCaughtError(diagnosticFailure, "adapters/runtime/docker");
-          });
+    const attempt = async (anonymous: boolean): Promise<string> => {
+      const auth = anonymous ? undefined : await this.connectionOptions?.resolveRegistryAuth?.(ref);
+      // An empty config also excludes the target's saved Docker login and helpers.
+      const config = anonymous ? '{"auths":{}}' : auth ? dockerConfigJsonFor(auth) : null;
+      const dir = `/tmp/openship-${action}-${randomUUID()}`;
+      let ownsDirectory = false;
+      const execute = async (command: string) => {
+        if (!logger || typeof executor.streamExec !== "function")
+          return executor.exec(command, { timeout: 10 * 60_000 });
+        const result = await executor.streamExec(command, logger.callback, { signal: bounded });
+        if (result.code !== 0) throw new Error(`Docker ${action} failed (exit ${result.code}): ${result.output.slice(-2000)}`);
+        return result.output;
+      };
+      const run = async () => {
+        bounded.throwIfAborted();
+        // Without a saved credential, preserve the target's own Docker login.
+        if (!config) return execute(`docker ${action} ${sq(ref)}`);
+        // Credentials go through file writes, never process arguments. Creation
+        // is exclusive and private; cleanup also runs after interruption.
+        await executor.exec(`mkdir -m 700 ${sq(dir)}`);
+        ownsDirectory = true;
+        await executor.writeFile(`${dir}/config.json`, config);
+        await executor.exec(`chmod 600 ${sq(dir)}/config.json`);
+        bounded.throwIfAborted();
+        return execute(
+          `DOCKER_CONFIG=${sq(dir)} docker ${action} ${sq(ref)}; rc=$?; rm -rf ${sq(dir)}; exit $rc`,
+        );
+      };
+      try {
+        return executor.runWithAbortSignal
+          ? await executor.runWithAbortSignal(bounded, run)
+          : await run();
+      } finally {
+        if (ownsDirectory) {
+          const cleanup = () => executor.exec(`rm -rf ${sq(dir)}`, { timeout: 10_000 });
+          await (executor.runWithAbortSignal
+            ? executor.runWithAbortSignal(AbortSignal.timeout(10_000), cleanup)
+            : cleanup()).catch((diagnosticFailure) => {
+              observeCaughtError(diagnosticFailure, "adapters/runtime/docker");
+            });
+        }
       }
-    }
+    };
+    return action === "pull"
+      ? pullWithAnonymousFallback(attempt,
+          () => logger?.log("Registry login was rejected; retrying public image access without credentials.\n", "warn"), bounded)
+      : attempt(false);
   }
 
   /** Publish a source build once; cluster nodes consume the immutable digest. */
