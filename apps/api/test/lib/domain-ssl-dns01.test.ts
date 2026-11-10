@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Domain } from "@repo/db";
 import type { SslProvider } from "@repo/adapters";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -225,10 +225,103 @@ else:
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  const compactRecord =
+    '{"domain_record":{"id":28448433,"type":"TXT","name":"x","data":"y","ttl":30}}';
+  // How a pretty-printing proxy or a future API change could return the same record.
+  const multilineRecord = `{
+  "domain_record": {
+    "id": 28448433,
+    "type": "TXT",
+    "name": "x",
+    "data": "y",
+    "ttl": 30
+  }
+}`;
+
   it.each([
-    ["app.example.com", "_acme-challenge.app"],
-    ["*.example.com", "_acme-challenge"],
-  ])("the DigitalOcean hook writes %s's challenge relative to the zone", (certbotDomain, name) => {
+    ["app.example.com", "_acme-challenge.app", "compact", true, compactRecord],
+    ["*.example.com", "_acme-challenge", "compact", true, compactRecord],
+    ["app.example.com", "_acme-challenge.app", "multiline", true, multilineRecord],
+    ["app.example.com", "_acme-challenge.app", "multiline", false, multilineRecord],
+    ["app.example.com", "_acme-challenge.app", "compact", false, compactRecord],
+  ])(
+    "the DigitalOcean hook writes %s's challenge as %s and cleans up its %s record (python3: %s)",
+    (certbotDomain, name, _format, pythonWorks, response) => {
+      const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
+      try {
+        const hooks = createDnsHookScripts({
+          credentialId: "cred_do",
+          provider: {
+            name: "digitalocean",
+            descriptor: { name: "digitalocean", displayName: "DigitalOcean", description: "" },
+          },
+          zone: { id: "example.com", name: "example.com", status: "active" },
+          credentials: { apiToken: "dop_v1_abc123" },
+        } as never);
+        const auth = join(dir, "auth.sh");
+        const cleanup = join(dir, "cleanup.sh");
+        const payload = join(dir, "payload.json");
+        const calls = join(dir, "curl-calls");
+        const responseFile = join(dir, "response.json");
+        writeFileSync(auth, hooks.authHookScript);
+        writeFileSync(cleanup, hooks.cleanupHookScript);
+        writeFileSync(responseFile, response);
+        // A POSIX curl stand-in, so the python3 stub below can shadow the real one.
+        writeFileSync(
+          join(dir, "curl"),
+          `#!/bin/sh
+printf '%s\\n' "$*" >> "$CURL_CALLS"
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--data" ]; then
+    printf '%s' "$arg" > "$CAPTURE_PAYLOAD"
+    cat "$RESPONSE_FILE"
+    exit 0
+  fi
+  prev="$arg"
+done
+case "$*" in *DELETE*) exit 0 ;; esac
+printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
+`,
+          { mode: 0o700 },
+        );
+        if (!pythonWorks)
+          writeFileSync(join(dir, "python3"), "#!/bin/sh\nexit 127\n", { mode: 0o700 });
+        const env = {
+          ...process.env,
+          PATH: `${dir}:/usr/bin:/bin`,
+          CAPTURE_PAYLOAD: payload,
+          CURL_CALLS: calls,
+          RESPONSE_FILE: responseFile,
+          CERTBOT_DOMAIN: certbotDomain,
+          CERTBOT_VALIDATION: "test_validation",
+          OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+        };
+        execFileSync("/bin/sh", [auth], { timeout: 5000, env });
+        expect(JSON.parse(readFileSync(payload, "utf8"))).toEqual({
+          type: "TXT",
+          name,
+          data: "test_validation",
+          ttl: 30,
+        });
+        expect(readFileSync(join(dir, "record-id"), "utf8").trim()).toBe("28448433");
+
+        execFileSync("/bin/sh", [cleanup], { timeout: 5000, env });
+        const deletes = readFileSync(calls, "utf8")
+          .split("\n")
+          .filter((line) => line.includes("DELETE"));
+        expect(deletes).toHaveLength(1);
+        expect(deletes[0]).toContain(
+          "https://api.digitalocean.com/v2/domains/example.com/records/28448433",
+        );
+        expect(existsSync(join(dir, "record-id"))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("fails without saving an id when DigitalOcean answers with an error body", () => {
     const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
     try {
       const hooks = createDnsHookScripts({
@@ -241,43 +334,26 @@ else:
         credentials: { apiToken: "dop_v1_abc123" },
       } as never);
       const auth = join(dir, "auth.sh");
-      const payload = join(dir, "payload.json");
       writeFileSync(auth, hooks.authHookScript);
       writeFileSync(
         join(dir, "curl"),
-        `#!/usr/bin/env python3
-import json, os, sys
-if '--data' in sys.argv:
-    value = sys.argv[sys.argv.index('--data') + 1]
-    json.loads(value)
-    open(os.environ['CAPTURE_PAYLOAD'], 'w').write(value)
-    print('{"domain_record":{"id":28448433,"type":"TXT","name":"x","data":"y","ttl":30}}')
-else:
-    print(json.dumps({'Answer': [{'type':16, 'data': '"test_validation"'}]}))
-`,
+        `#!/bin/sh\nprintf '%s' '{"id": "unauthorized", "message": "Unable to authenticate you."}'\n`,
         { mode: 0o700 },
       );
-      execFileSync("/bin/sh", [auth], {
-        timeout: 5000,
-        env: {
-          ...process.env,
-          PATH: `${dir}:/usr/bin:/bin`,
-          CAPTURE_PAYLOAD: payload,
-          CERTBOT_DOMAIN: certbotDomain,
-          CERTBOT_VALIDATION: "test_validation",
-          OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
-        },
-      });
-      expect(JSON.parse(readFileSync(payload, "utf8"))).toEqual({
-        type: "TXT",
-        name,
-        data: "test_validation",
-        ttl: 30,
-      });
-      expect(readFileSync(join(dir, "record-id"), "utf8").trim()).toBe("28448433");
-      expect(hooks.cleanupHookScript).toContain(
-        "api.digitalocean.com/v2/domains/example.com/records/",
-      );
+      expect(() =>
+        execFileSync("/bin/sh", [auth], {
+          timeout: 5000,
+          stdio: "pipe",
+          env: {
+            ...process.env,
+            PATH: `${dir}:/usr/bin:/bin`,
+            CERTBOT_DOMAIN: "app.example.com",
+            CERTBOT_VALIDATION: "test_validation",
+            OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+          },
+        }),
+      ).toThrow();
+      expect(existsSync(join(dir, "record-id"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

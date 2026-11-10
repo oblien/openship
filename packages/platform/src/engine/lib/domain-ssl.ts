@@ -667,8 +667,22 @@ RES=$(curl -s -S --connect-timeout 5 --max-time 15 -X POST "https://api.digitalo
   -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
   -H "Content-Type: application/json" \\
   --data "$DNS_PAYLOAD")
-# A created record carries a numeric id; an error body's id is a string.
-RECORD_ID=$(echo "$RES" | grep -o '"id":[0-9][0-9]*' | head -n 1 | cut -d: -f2)
+# Read domain_record.id structurally: the API may format its JSON with spaces or
+# newlines. certbot is a Python program, so python3 is on every host that runs this
+# hook; the whitespace-tolerant sed is a fallback for an interpreter we cannot start.
+# An error body's id is a string, so only a numeric id counts as created.
+RECORD_ID=$(printf '%s' "$RES" | python3 -c 'import json, sys
+try:
+    record_id = json.load(sys.stdin)["domain_record"]["id"]
+except Exception:
+    sys.exit(1)
+if isinstance(record_id, bool) or not isinstance(record_id, int):
+    sys.exit(1)
+print(record_id)' 2>/dev/null || true)
+if [ -z "$RECORD_ID" ]; then
+  RECORD_ID=$(printf '%s' "$RES" | tr -d '\\r\\n' | sed -n 's/.*"domain_record"[[:space:]]*:[[:space:]]*{[^{}]*"id"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p')
+fi
+case "$RECORD_ID" in ''|*[!0-9]*) RECORD_ID="" ;; esac
 if [ -z "$RECORD_ID" ]; then
   echo "DigitalOcean rejected the ACME TXT record request" >&2
   echo "$RES" >&2
