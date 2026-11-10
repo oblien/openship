@@ -1626,6 +1626,16 @@
             "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。My Profile → API Tokens で作成してください。"
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "カスタムドメインに必要なDNSレコードを、OpenshipがDigitalOcean DNSに自動登録します。",
+        "fields": {
+          "apiToken": {
+            "label": "APIトークン",
+            "help": "domainの読み取り・作成・更新・削除のカスタムスコープを持つトークン。API → Tokens で作成してください。"
+          }
+        }
       }
     }
   },

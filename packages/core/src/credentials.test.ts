@@ -70,7 +70,7 @@ describe("the provider catalogue", () => {
 
   it("is queried by capability, not by id", () => {
     expect(credentialProvidersFor("image-pull").map((p) => p.id)).toEqual(["docker-registry"]);
-    expect(credentialProvidersFor("dns").map((p) => p.id)).toEqual(["cloudflare"]);
+    expect(credentialProvidersFor("dns").map((p) => p.id)).toEqual(["cloudflare", "digitalocean"]);
   });
 
   it("returns undefined for an unknown id rather than throwing", () => {

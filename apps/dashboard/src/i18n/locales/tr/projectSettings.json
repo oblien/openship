@@ -1177,7 +1177,7 @@
       "notice": "Joker alan adı için HTTPS, DNS doğrulaması gerektirir. Kaydettikten sonra bir DNS sağlayıcısı bağlayın veya HTTPS kurulumundaki TXT kaydını ekleyin.",
       "automatic": "Otomatik sağlayıcı",
       "manual": "Manuel TXT",
-      "automaticHint": "Sertifika doğrulama kayıtları oluşturmak ve HTTPS'i otomatik yenilemek için Ayarlar → DNS bölümünden Cloudflare'i bağlayın.",
+      "automaticHint": "Sertifika doğrulama kayıtları oluşturmak ve HTTPS'i otomatik yenilemek için Ayarlar → Kimlik bilgileri bölümünden bir DNS sağlayıcısı bağlayın.",
       "manualHint": "DNS sağlayıcınızda geçici bir TXT kaydı ekleyin. Her yenileme yeni bir TXT kaydı gerektirir; Openship yenileme zamanını gösterecektir.",
       "routing": "1. Alan adını bu sunucuya yönlendirin",
       "certificate": "2. HTTPS'i etkinleştirin",

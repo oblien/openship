@@ -23,7 +23,7 @@
 
 import { AppError } from "@repo/core";
 
-export type DnsProviderName = "cloudflare";
+export type DnsProviderName = "cloudflare" | "digitalocean";
 
 export type DnsRecordType = "A" | "AAAA" | "CNAME" | "TXT" | "MX" | "NS" | "SRV";
 

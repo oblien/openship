@@ -72,8 +72,16 @@ export function DnsProviderConnectModal({
         setProviders(available);
         setDescriptors(dns.data);
         setCredentials(held.data);
-        setProviderId(available[0]?.id ?? "");
-        const sameProvider = held.data.filter((entry) => entry.provider === available[0]?.id);
+        // A reconnect opens on the provider whose token was rejected, not on whichever
+        // provider happens to be listed first.
+        const rejected = held.data.find(
+          (entry) =>
+            entry.status === "invalid" &&
+            available.some((provider) => provider.id === entry.provider),
+        );
+        const initial = (reconnect ? rejected?.provider : undefined) ?? available[0]?.id ?? "";
+        setProviderId(initial);
+        const sameProvider = held.data.filter((entry) => entry.provider === initial);
         const invalid = sameProvider.filter((entry) => entry.status === "invalid");
         // Never silently replace an unrelated account's working token.
         setCredentialId(

@@ -212,9 +212,37 @@ const verifyCloudflare: Verifier = async ({ secrets }) => {
   }
 };
 
+/**
+ * DigitalOcean, by listing one domain — the same check the DNS provider's preflight makes.
+ *
+ * Not `/v2/account`: that endpoint needs `account:read`, so a token scoped to exactly the
+ * domain permissions Openship asks for would be reported as rejected.
+ */
+const verifyDigitalOcean: Verifier = async ({ secrets }) => {
+  const apiToken = secrets.apiToken ?? "";
+  if (!apiToken) return { ok: false, reason: "An API token is required." };
+  try {
+    const res = await fetchWithTimeout("https://api.digitalocean.com/v2/domains?per_page=1", {
+      authorization: `Bearer ${apiToken}`,
+    });
+    if (res.status === 200) return { ok: true };
+    if (res.status === 401 || res.status === 403) {
+      return {
+        ok: false,
+        reason: "DigitalOcean rejected this token. It needs the domain read scope.",
+      };
+    }
+    return { ok: false, reason: `DigitalOcean answered ${res.status}.` };
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/credentials/verify");
+    return { ok: false, reason: "DigitalOcean could not be reached." };
+  }
+};
+
 const VERIFIERS: Record<string, Verifier> = {
   "docker-registry": verifyDockerRegistry,
   cloudflare: verifyCloudflare,
+  digitalocean: verifyDigitalOcean,
 };
 
 /** True when this provider can be checked — a provider without one cannot be stored. */

@@ -9,9 +9,11 @@
 import type { DnsProvider, DnsProviderDescriptor, DnsProviderName } from "./types";
 import { UnknownDnsProviderError } from "./types";
 import { cloudflareDnsProvider } from "./providers/cloudflare.provider";
+import { digitaloceanDnsProvider } from "./providers/digitalocean.provider";
 
 const PROVIDERS: Record<DnsProviderName, DnsProvider> = {
   cloudflare: cloudflareDnsProvider,
+  digitalocean: digitaloceanDnsProvider,
 };
 
 export function resolveDnsProvider(name: string): DnsProvider {

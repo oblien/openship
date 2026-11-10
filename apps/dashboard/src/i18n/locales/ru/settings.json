@@ -1712,6 +1712,16 @@
             "help": "Токен с правами Zone:Read и DNS:Edit для зон, которыми должен управлять Openship. Создайте его в разделе My Profile → API Tokens."
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Позволить Openship создавать DNS-записи для пользовательских доменов в DigitalOcean DNS.",
+        "fields": {
+          "apiToken": {
+            "label": "API токен",
+            "help": "Токен с пользовательскими правами на чтение, создание, обновление и удаление доменов (domain). Создайте его в разделе API → Tokens."
+          }
+        }
       }
     }
   },

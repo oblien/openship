@@ -225,6 +225,78 @@ else:
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it.each([
+    ["app.example.com", "_acme-challenge.app"],
+    ["*.example.com", "_acme-challenge"],
+  ])("the DigitalOcean hook writes %s's challenge relative to the zone", (certbotDomain, name) => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
+    try {
+      const hooks = createDnsHookScripts({
+        credentialId: "cred_do",
+        provider: {
+          name: "digitalocean",
+          descriptor: { name: "digitalocean", displayName: "DigitalOcean", description: "" },
+        },
+        zone: { id: "example.com", name: "example.com", status: "active" },
+        credentials: { apiToken: "dop_v1_abc123" },
+      } as never);
+      const auth = join(dir, "auth.sh");
+      const payload = join(dir, "payload.json");
+      writeFileSync(auth, hooks.authHookScript);
+      writeFileSync(
+        join(dir, "curl"),
+        `#!/usr/bin/env python3
+import json, os, sys
+if '--data' in sys.argv:
+    value = sys.argv[sys.argv.index('--data') + 1]
+    json.loads(value)
+    open(os.environ['CAPTURE_PAYLOAD'], 'w').write(value)
+    print('{"domain_record":{"id":28448433,"type":"TXT","name":"x","data":"y","ttl":30}}')
+else:
+    print(json.dumps({'Answer': [{'type':16, 'data': '"test_validation"'}]}))
+`,
+        { mode: 0o700 },
+      );
+      execFileSync("/bin/sh", [auth], {
+        timeout: 5000,
+        env: {
+          ...process.env,
+          PATH: `${dir}:/usr/bin:/bin`,
+          CAPTURE_PAYLOAD: payload,
+          CERTBOT_DOMAIN: certbotDomain,
+          CERTBOT_VALIDATION: "test_validation",
+          OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+        },
+      });
+      expect(JSON.parse(readFileSync(payload, "utf8"))).toEqual({
+        type: "TXT",
+        name,
+        data: "test_validation",
+        ttl: 30,
+      });
+      expect(readFileSync(join(dir, "record-id"), "utf8").trim()).toBe("28448433");
+      expect(hooks.cleanupHookScript).toContain(
+        "api.digitalocean.com/v2/domains/example.com/records/",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a DigitalOcean zone that is not a plain domain name", () => {
+    expect(() =>
+      createDnsHookScripts({
+        credentialId: "cred_do",
+        provider: {
+          name: "digitalocean",
+          descriptor: { name: "digitalocean", displayName: "DigitalOcean", description: "" },
+        },
+        zone: { id: "example.com$(id)", name: "example.com", status: "active" },
+        credentials: { apiToken: "dop_v1_abc123" },
+      } as never),
+    ).toThrow("invalid zone identifier");
+  });
+
   it("reuses a valid wildcard certificate without requiring DNS credentials for a new order", async () => {
     h.dnsManagerResult = { status: "none" } as unknown as typeof h.dnsManagerResult;
     domain("*.example.com", { sslChallenge: "dns-01" });
@@ -293,7 +365,7 @@ else:
     domain("*.example.com", { sslChallenge: "dns-01" });
 
     await expect(manageDomainSsl("*.example.com", { action: "provision" })).rejects.toThrow(
-      /connected DNS provider.*Settings → DNS.*Manual TXT/,
+      /connected DNS provider.*Settings → Credentials.*Manual TXT/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(h.recordSslFailure).toHaveBeenCalledWith(

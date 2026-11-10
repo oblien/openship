@@ -9,9 +9,9 @@ Adding a custom domain normally ends with Openship telling you which records to 
 to create them. Connect a DNS provider and Openship can preview and apply those records for you without
 leaving the page. Applying DNS is always an explicit action: creating a project domain or saving a service
 route never changes the provider's zone silently. In the dashboard, credentials live under
-**Settings → DNS** and each pending domain's records panel contains the apply action.
+**Settings → Credentials** and each pending domain's records panel contains the apply action.
 
-Cloudflare is the only provider today. The provider list is served by the API rather than hard-coded in the
+Cloudflare and DigitalOcean are supported today. The provider list is served by the API rather than hard-coded in the
 dashboard, so `GET /api/dns/providers` is the authoritative answer to "what can I connect?".
 
 ## Connect a provider
@@ -43,7 +43,7 @@ curl -X POST "$OPENSHIP_URL/api/dns/credentials" \
 
 <TypeTable
   type={{
-    provider: { type: '"cloudflare"', description: 'Provider to connect. Must be one of the names returned by GET /api/dns/providers.', required: true },
+    provider: { type: '"cloudflare" | "digitalocean"', description: 'Provider to connect. Must be one of the names returned by GET /api/dns/providers.', required: true },
     name: { type: 'string', description: 'Your label for this credential, e.g. "Cloudflare production". Unique per provider within the organization.', required: true },
     apiToken: { type: 'string', description: 'The provider API token. Verified against the provider before it is stored, so a token that does not work is rejected here rather than failing silently later.', required: true },
   }}
@@ -52,6 +52,12 @@ curl -X POST "$OPENSHIP_URL/api/dns/credentials" \
 For Cloudflare, create a token at
 [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) scoped to
 **Zone:Zone:Read** and **Zone:DNS:Edit**, limited to the zones you want Openship to manage.
+
+For DigitalOcean, create a custom-scoped token at
+[cloud.digitalocean.com/account/api/tokens](https://cloud.digitalocean.com/account/api/tokens) with
+**domain:read**, **domain:create**, **domain:update** and **domain:delete**. DigitalOcean records have no
+comment field, so each record Openship creates is paired with a TXT ownership marker at
+`_openship-owner.<record name>`; only records with a matching marker are deleted when a domain is removed.
 
 <Callout title="The token is write-only from here on" type="warn">
 It is encrypted at rest (AES-256-GCM, key derived from `BETTER_AUTH_SECRET`) and no endpoint returns it —

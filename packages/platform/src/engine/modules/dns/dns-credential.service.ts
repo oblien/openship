@@ -14,7 +14,7 @@ import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostic
 import { ConflictError, ENV_MASK, NotFoundError, safeErrorMessage } from "@repo/core";
 import { repos, type DnsCredential } from "@repo/db";
 import { encryptSecretField, decryptSecretField } from "../../lib/credential-encryption";
-import { resolveDnsProvider } from "./registry";
+import { listDnsProviders, resolveDnsProvider } from "./registry";
 import * as credentialService from "../credentials/credential.service";
 import { listProviderCredentials } from "../credentials/credential.service";
 import {
@@ -80,10 +80,15 @@ function asDnsCredential(
   };
 }
 
+/** A credential row this view owns: one a registered DNS provider can use. */
+function isDnsProvider(provider: string): boolean {
+  return (listDnsProviders() as string[]).includes(provider);
+}
+
 export async function listCredentials(organizationId: string): Promise<SanitizedDnsCredential[]> {
   const rows = await credentialService.listCredentials(organizationId);
   return rows
-    .filter((r) => r.provider === "cloudflare")
+    .filter((r) => isDnsProvider(r.provider))
     .map((r) => asDnsCredential(organizationId, r));
 }
 
@@ -92,7 +97,7 @@ export async function getCredential(
   id: string,
 ): Promise<SanitizedDnsCredential | null> {
   const row = await credentialService.getCredential(organizationId, id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/dns/dns-credential.service"); return null; });
-  if (!row || row.provider !== "cloudflare") return null;
+  if (!row || !isDnsProvider(row.provider)) return null;
   return asDnsCredential(organizationId, row);
 }
 
@@ -100,10 +105,10 @@ export async function addCredential(
   organizationId: string,
   input: { provider: string; name: string; apiToken: string },
 ): Promise<SanitizedDnsCredential> {
-  // The credential service verifies with Cloudflare before storing — the same rule this
+  // The credential service verifies with the provider before storing — the same rule this
   // function used to enforce with `provider.preflight`, now applied to every provider.
   const row = await credentialService.createCredential(organizationId, {
-    provider: "cloudflare",
+    provider: resolveDnsProvider(input.provider).name,
     name: input.name,
     // Org-wide: the token addresses every zone it can see, so there is nothing to scope it
     // to, and the unique index treats a NULL selector as "" so labels stay unique.
@@ -115,7 +120,7 @@ export async function addCredential(
 
 export async function removeCredential(organizationId: string, id: string): Promise<void> {
   const existing = await credentialService.getCredential(organizationId, id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/dns/dns-credential.service"); return null; });
-  if (!existing || existing.provider !== "cloudflare") throw new NotFoundError("DNS credential", id);
+  if (!existing || !isDnsProvider(existing.provider)) throw new NotFoundError("DNS credential", id);
   await credentialService.deleteCredential(organizationId, id);
 }
 
@@ -156,8 +161,19 @@ export async function resolveDnsManager(
   //
   // listProviderCredentials, not a single lookup: zone ownership is discovered by ASKING
   // each token which zones it can see, so a second token owning a second zone needs the
-  // whole list.
-  const credentials = await listProviderCredentials(organizationId, "cloudflare");
+  // whole list. Every registered provider is asked, in registry order and each
+  // provider's credentials in the store's order, so the same zone always resolves to
+  // the same token when two of them can see it.
+  const credentials = (
+    await Promise.all(
+      listDnsProviders().map(async (name) =>
+        (await listProviderCredentials(organizationId, name)).map((cred) => ({
+          ...cred,
+          providerName: name,
+        })),
+      ),
+    )
+  ).flat();
   if (credentials.length === 0) return { status: "none" };
 
   // Remembered, not returned immediately: a second credential may still own this
@@ -179,7 +195,7 @@ export async function resolveDnsManager(
     const apiToken = cred.secrets.apiToken!;
 
     try {
-      const provider = resolveDnsProvider("cloudflare");
+      const provider = resolveDnsProvider(cred.providerName);
       const zone = await provider.findZone({ apiToken }, hostname);
       if (zone) {
         return {

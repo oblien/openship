@@ -1108,7 +1108,7 @@
       "notice": "HTTPS con comodín requiere verificación DNS. Después de guardar, conecta un proveedor DNS o añade el registro TXT de la configuración de HTTPS.",
       "automatic": "Proveedor automático",
       "manual": "TXT manual",
-      "automaticHint": "Conecta Cloudflare en Ajustes → DNS para crear las verificaciones del certificado y renovar HTTPS automáticamente.",
+      "automaticHint": "Conecta un proveedor DNS en Ajustes → Credenciales para crear las verificaciones del certificado y renovar HTTPS automáticamente.",
       "manualHint": "Añade un registro TXT temporal en tu proveedor DNS. Cada renovación necesita un registro TXT nuevo; Openship mostrará cuándo debes renovar.",
       "routing": "1. Apunta el dominio a este servidor",
       "certificate": "2. Habilita HTTPS",

@@ -1626,6 +1626,16 @@
             "help": "رمز وصول مع صلاحيات Zone:Read و DNS:Edit على النطاقات التي تريد إدارتها بواسطة Openship. أنشئه من My Profile → API Tokens."
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "دع Openship يكتب سجلات DNS التي يحتاجها النطاق المخصص على DigitalOcean DNS.",
+        "fields": {
+          "apiToken": {
+            "label": "رمز API",
+            "help": "رمز بصلاحيات مخصصة تشمل قراءة النطاقات وإنشاءها وتحديثها وحذفها (domain). أنشئه من API → Tokens."
+          }
+        }
       }
     }
   },

@@ -17,6 +17,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getCredentialProvider } from "@repo/core";
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -160,9 +161,12 @@ function outcomeBadgeClass(outcome: "applied" | "skipped" | "failed"): string {
   }
 }
 
+/** The catalogue's brand label ("DigitalOcean"), so an id is never title-cased by guess. */
 function displayProvider(provider?: string): string {
   if (!provider) return "";
-  return provider.charAt(0).toUpperCase() + provider.slice(1);
+  return (
+    getCredentialProvider(provider)?.label ?? provider.charAt(0).toUpperCase() + provider.slice(1)
+  );
 }
 
 export interface AutoDnsViewProps {

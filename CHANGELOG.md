@@ -6,6 +6,13 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Domains
+
+- **DigitalOcean DNS** — connect a DigitalOcean token in Settings → Credentials to preview
+  and apply a custom domain's records and issue DNS-verified HTTPS automatically, as with
+  Cloudflare. Each record Openship creates is paired with an `_openship-owner` TXT marker,
+  so removing a domain deletes only Openship's own records.
+
 ## 0.9.11
 
 Recommended update for Desktop sign-in recovery, assistant connections, repository

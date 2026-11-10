@@ -1626,6 +1626,16 @@
             "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec Openship. Créez-le dans My Profile → API Tokens."
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Permettre à Openship d'écrire dans DigitalOcean DNS les enregistrements DNS nécessaires à un domaine personnalisé.",
+        "fields": {
+          "apiToken": {
+            "label": "Jeton d'API",
+            "help": "Un jeton à portées personnalisées avec lecture, création, mise à jour et suppression des domaines. Créez-le dans API → Tokens."
+          }
+        }
       }
     }
   },

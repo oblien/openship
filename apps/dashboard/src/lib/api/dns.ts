@@ -2,7 +2,7 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 
 export interface DnsProviderDescriptor {
-  name: "cloudflare";
+  name: "cloudflare" | "digitalocean";
   displayName: string;
   description: string;
   /** The exact token scopes to grant, shown on the connect form. */
@@ -26,7 +26,7 @@ export interface SanitizedDnsCredential {
 }
 
 export interface AddDnsCredentialInput {
-  provider: "cloudflare";
+  provider: "cloudflare" | "digitalocean";
   name: string;
   apiToken: string;
 }

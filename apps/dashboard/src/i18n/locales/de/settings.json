@@ -1626,6 +1626,16 @@
             "help": "Ein Token mit Zone:Read und DNS:Edit für die Zonen, die Openship verwalten soll. Erstellen Sie ihn unter My Profile → API Tokens."
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Openship die benötigten DNS-Einträge für benutzerdefinierte Domains in DigitalOcean DNS schreiben lassen.",
+        "fields": {
+          "apiToken": {
+            "label": "API-Token",
+            "help": "Ein Token mit benutzerdefinierten Scopes zum Lesen, Erstellen, Aktualisieren und Löschen von Domains. Erstellen Sie ihn unter API → Tokens."
+          }
+        }
       }
     }
   },

@@ -44,9 +44,27 @@ const provider = vi.hoisted(() => ({
   formatContent: vi.fn((_type: string, content: string) => content),
 }));
 
+/** A second registered provider, only consulted by the tests that register it. */
+const doProvider = vi.hoisted(() => ({
+  name: "digitalocean" as const,
+  descriptor: {
+    name: "digitalocean" as const,
+    displayName: "DigitalOcean",
+    description: "",
+    requiredScopes: [],
+  },
+  preflight: vi.fn(),
+  findZone: vi.fn(),
+  listRecords: vi.fn(),
+  upsertRecord: vi.fn(),
+  deleteRecord: vi.fn(),
+  formatContent: vi.fn((_type: string, content: string) => content),
+}));
+const registered = vi.hoisted(() => ({ names: ["cloudflare"] as string[] }));
+
 vi.mock("@repo/platform/engine/modules/dns/registry", () => ({
-  resolveDnsProvider: () => provider,
-  listDnsProviders: () => ["cloudflare"],
+  resolveDnsProvider: (name: string) => (name === "digitalocean" ? doProvider : provider),
+  listDnsProviders: () => registered.names,
   describeDnsProviders: () => [provider.descriptor],
 }));
 
@@ -91,6 +109,7 @@ const rec = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  registered.names = ["cloudflare"];
   provider.formatContent.mockImplementation((_type: string, content: string) => content);
   decrypt.mockImplementation((v: string) => String(v).replace(/^enc1:/, ""));
   provider.findZone.mockResolvedValue({ id: "zone_1", name: "example.com", status: "active" });
@@ -178,6 +197,31 @@ describe("resolveDnsManager", () => {
     const out = await resolveDnsManager("org_1", "app.example.com");
     expect(out.status).toBe("matched");
     if (out.status === "matched") expect(out.manager.credentialId).toBe("dns_good");
+  });
+
+  it("asks every registered provider's tokens, with each token's own provider", async () => {
+    registered.names = ["cloudflare", "digitalocean"];
+    credentialRepo.listActiveByProvider.mockImplementation(async (_org: string, name: string) =>
+      name === "digitalocean"
+        ? [row({ id: "dns_do", provider: "digitalocean" })]
+        : [row({ id: "dns_cf" })],
+    );
+    provider.findZone.mockResolvedValue(null);
+    doProvider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "active",
+    });
+
+    const out = await resolveDnsManager("org_1", "app.example.com");
+    expect(out.status).toBe("matched");
+    if (out.status === "matched") {
+      expect(out.manager.credentialId).toBe("dns_do");
+      expect(out.manager.provider.name).toBe("digitalocean");
+    }
+    // The Cloudflare token was never handed to the DigitalOcean API, or vice versa.
+    expect(provider.findZone).toHaveBeenCalledTimes(1);
+    expect(doProvider.findZone).toHaveBeenCalledTimes(1);
   });
 });
 

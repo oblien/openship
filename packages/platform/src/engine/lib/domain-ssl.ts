@@ -558,6 +558,33 @@ export interface DnsHookScripts {
 /** Build hook bodies only. NginxProvider writes them through its executor, so
  * they exist in the same local/SSH/container filesystem in which Certbot runs. */
 export function createDnsHookScripts(manager: MatchedDnsManager): DnsHookScripts {
+  switch (manager.provider.name) {
+    case "digitalocean":
+      return digitaloceanHookScripts(manager);
+    case "cloudflare":
+      return cloudflareHookScripts(manager);
+  }
+}
+
+/** Shared tail of every auth hook. Wait for the public resolver to observe the
+ * exact value: a fixed sleep makes issuance flaky when provider propagation is
+ * slower than usual. */
+const DNS_PROPAGATION_WAIT = `ATTEMPT=0
+while [ "$ATTEMPT" -lt 30 ]; do
+  ANSWER=$(curl -s -S --connect-timeout 5 --max-time 15 --get "https://cloudflare-dns.com/dns-query" \\
+    -H "Accept: application/dns-json" \\
+    --data-urlencode "name=\${RECORD_NAME}" --data-urlencode "type=TXT" || true)
+  if echo "$ANSWER" | grep -Fq "$CERTBOT_VALIDATION"; then
+    exit 0
+  fi
+  ATTEMPT=$((ATTEMPT + 1))
+  sleep 2
+done
+echo "Timed out waiting for \${RECORD_NAME} TXT propagation" >&2
+exit 1
+`;
+
+function cloudflareHookScripts(manager: MatchedDnsManager): DnsHookScripts {
   // Both values are embedded in a POSIX script. Cloudflare issues identifiers
   // and API tokens from this alphabet; reject anything else rather than allow a
   // malformed credential to become shell syntax on the edge host.
@@ -591,28 +618,71 @@ if [ -z "$RECORD_ID" ]; then
 fi
 echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
 
-# Wait for the public resolver to observe the exact value. A fixed sleep makes
-# issuance flaky when provider propagation is slower than usual.
-ATTEMPT=0
-while [ "$ATTEMPT" -lt 30 ]; do
-  ANSWER=$(curl -s -S --connect-timeout 5 --max-time 15 --get "https://cloudflare-dns.com/dns-query" \\
-    -H "Accept: application/dns-json" \\
-    --data-urlencode "name=\${RECORD_NAME}" --data-urlencode "type=TXT" || true)
-  if echo "$ANSWER" | grep -Fq "$CERTBOT_VALIDATION"; then
-    exit 0
-  fi
-  ATTEMPT=$((ATTEMPT + 1))
-  sleep 2
-done
-echo "Timed out waiting for \${RECORD_NAME} TXT propagation" >&2
-exit 1
-`;
+${DNS_PROPAGATION_WAIT}`;
 
   const cleanupScript = `#!/bin/sh
 if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
   RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
   if [ -n "$RECORD_ID" ]; then
     curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records/\${RECORD_ID}" \\
+      -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
+      -H "Content-Type: application/json" || true
+  fi
+  rm -f "$OPENSHIP_DNS_RECORD_FILE"
+fi
+`;
+  return { authHookScript: authScript, cleanupHookScript: cleanupScript };
+}
+
+function digitaloceanHookScripts(manager: MatchedDnsManager): DnsHookScripts {
+  // Both values are embedded in a POSIX script. A DigitalOcean zone ID is its domain
+  // name and its tokens are `dop_v1_` plus hex; reject anything else rather than allow
+  // a malformed value to become shell syntax on the edge host.
+  const zone = manager.zone.id.toLowerCase();
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(zone)) {
+    throw new Error("DNS provider returned an invalid zone identifier");
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(manager.credentials.apiToken)) {
+    throw new Error("DNS provider returned an invalid API token");
+  }
+  const authScript = `#!/bin/sh
+set -e
+DOMAIN="\${CERTBOT_DOMAIN#\\*.}"
+ZONE="${zone}"
+RECORD_NAME="_acme-challenge.\${DOMAIN}"
+case "$DOMAIN" in ''|*[!A-Za-z0-9.-]*) echo "Invalid ACME domain" >&2; exit 1;; esac
+case "$CERTBOT_VALIDATION" in ''|*[!A-Za-z0-9_-]*) echo "Invalid ACME validation value" >&2; exit 1;; esac
+# DigitalOcean names records relative to the zone.
+if [ "$DOMAIN" = "$ZONE" ]; then
+  RELATIVE_NAME="_acme-challenge"
+else
+  case "$DOMAIN" in
+    *."$ZONE") RELATIVE_NAME="_acme-challenge.\${DOMAIN%.$ZONE}" ;;
+    *) echo "ACME domain is outside the DNS zone" >&2; exit 1 ;;
+  esac
+fi
+DNS_PAYLOAD=$(printf '%s' '{"type":"TXT","name":"' "$RELATIVE_NAME" \\
+  '","data":"' "$CERTBOT_VALIDATION" '","ttl":30}')
+RES=$(curl -s -S --connect-timeout 5 --max-time 15 -X POST "https://api.digitalocean.com/v2/domains/${zone}/records" \\
+  -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
+  -H "Content-Type: application/json" \\
+  --data "$DNS_PAYLOAD")
+# A created record carries a numeric id; an error body's id is a string.
+RECORD_ID=$(echo "$RES" | grep -o '"id":[0-9][0-9]*' | head -n 1 | cut -d: -f2)
+if [ -z "$RECORD_ID" ]; then
+  echo "DigitalOcean rejected the ACME TXT record request" >&2
+  echo "$RES" >&2
+  exit 1
+fi
+echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
+
+${DNS_PROPAGATION_WAIT}`;
+
+  const cleanupScript = `#!/bin/sh
+if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
+  RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
+  if [ -n "$RECORD_ID" ]; then
+    curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "https://api.digitalocean.com/v2/domains/${zone}/records/\${RECORD_ID}" \\
       -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
       -H "Content-Type: application/json" || true
   fi
@@ -663,7 +733,7 @@ async function resolveDns01Hooks(
     throw new Error(`DNS provider unavailable: ${dnsLookup.reason}`);
   }
   throw new Error(
-    `DNS-01 for ${domainRecord.hostname} needs a connected DNS provider in Settings → DNS, or choose Manual TXT in the domain's HTTPS setup.`,
+    `DNS-01 for ${domainRecord.hostname} needs a connected DNS provider in Settings → Credentials, or choose Manual TXT in the domain's HTTPS setup.`,
   );
 }
 
