@@ -1243,10 +1243,14 @@ export function useDeploymentBuild(
       interval = setInterval(tick, BUILD_STATUS_POLL_MS);
     }
     const resume = () => {
-      if (document.visibilityState === "hidden" || navigator.onLine === false) return;
+      if (cancelled || document.visibilityState === "hidden" || navigator.onLine === false) return;
       clearTimeout(resumeTimer);
-      const delay = BUILD_STATUS_POLL_MS - (Date.now() - lastBuildStatusPollRef.current);
-      if (delay > 0) resumeTimer = setTimeout(() => { void tick(); }, delay);
+      // An older in-flight response may predate this return. Keep one trailing
+      // check instead of losing the resume event or overlapping the request.
+      const delay = buildStatusPollInFlightRef.current
+        ? BUILD_STATUS_POLL_MS
+        : BUILD_STATUS_POLL_MS - (Date.now() - lastBuildStatusPollRef.current);
+      if (delay > 0) resumeTimer = setTimeout(resume, delay);
       else void tick();
     };
     window.addEventListener("focus", resume);

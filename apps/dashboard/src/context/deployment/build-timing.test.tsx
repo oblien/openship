@@ -148,6 +148,24 @@ it("does not let an older poll hide publication received over the stream", async
 });
 
 describe("build status on browser return", () => {
+  it("reconciles again when browser return overlaps a stale in-flight read", async () => {
+    await mount(); await load();
+    const stale = Promise.withResolvers<ReturnType<typeof snapshot>>();
+    api.status.mockReturnValueOnce(stale.promise);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    api.status.mockResolvedValue(snapshot({ status: "ready", is_active: false }));
+    await act(async () => stale.resolve(snapshot()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(api.status).toHaveBeenCalledTimes(3);
+    expect(build.state.deploymentSuccess).toBe(true);
+  });
+
   it("does not consume buffered stream logs during a healthy resume status check", async () => {
     await mount();
     await load({ lastEventId: 5 });
