@@ -60,8 +60,9 @@ export function internalClientHeader(principalId: string): Record<string, string
 
 /** Constant-time, because the nonce is the whole gate: leak it and `mcp` is claimable. */
 function nonceMatches(candidate: string): boolean {
-  if (candidate.length !== PROCESS_NONCE.length) return false;
-  return timingSafeEqual(Buffer.from(candidate), Buffer.from(PROCESS_NONCE));
+  const supplied = Buffer.from(candidate);
+  const expected = Buffer.from(PROCESS_NONCE);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
 /**
@@ -84,18 +85,8 @@ export function resolveTrustedCallSource(c: Context): AuditSource | null {
 }
 
 /**
- * Which client of the surface made this request — `oauth:<clientId>` /
- * `pat:<tokenId>` — or null when nobody trustworthy said.
- *
- * The nonce-signed claim from the MCP dispatcher wins. Otherwise, fall back
- * to the credential the auth layer already resolved: a token principal's
- * session id IS its canonical principal id, minted from the hashed-token
- * lookup — not from anything the caller supplied — so it is as trustworthy
- * as `actorUserId` on the same row. One user can hold many tokens and the
- * token is the unit an operator revokes, so a PAT write that carries no
- * client id is indistinguishable from the same write made with another
- * token. Cookie / zero-auth sessions have no principalKind and never reach
- * the fallback: a browser session id is not a principal id.
+ * Prefer the nonce-verified client claim, then the authenticated token principal
+ * (`pat:<tokenId>` / `oauth:<clientId>`). Browser session IDs are never client IDs.
  */
 export function resolveCallClientId(c: Context): string | null {
   const claimed = signedPayload(c.req.header(CALL_CLIENT_HEADER));

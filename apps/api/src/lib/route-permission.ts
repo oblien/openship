@@ -758,22 +758,9 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
     if (spec.authorizationHandledByOperation && c.res.status < 400 && !c.get("operationContextApplied"))
       throw new Error("An operation-authorized route did not apply its authorized context");
 
-    // After handler success: emit an audit event for write/admin/list-
-    // -with-side-effects. Reads are typically too noisy to log for a
-    // browser session — but a token principal (PAT / OAuth) is an
-    // automation, not a person browsing, and the same "what did it look
-    // at" question MCP answers for its reads applies here: a script
-    // holding a token gets its reads audited, a dashboard read does not.
-    // Internally dispatched MCP reads already have a tool-call audit row.
-    // Only the nonce-verified source can delegate to that emitter: deriving
-    // "mcp" from an OAuth credential must not suppress direct REST reads.
-    // One exception: reads of the audit log itself. Every read of the
-    // log would append a row to the log, so its total could never be
-    // stable and its facets would be dominated by whoever reads it most.
-    // Writes to audit settings stay audited — they change config.
+    // Audit token REST reads; only nonce-verified MCP reads use the tool-call emitter.
+    // TODO: per-route auditOnRead flag for browser reads.
     const action = parsed.action;
-    // The permission check above already built a RequestContext, so this
-    // cannot throw here.
     const principalKind = getRequestContext(c).principalKind;
     const isTokenPrincipal = principalKind === "pat" || principalKind === "oauth";
     const auditable =

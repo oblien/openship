@@ -75,6 +75,19 @@ describe("a claimed source is trusted only when it came from this process", () =
     expect(await sourceFor({ headers: forged, ctx: patCtx })).toBe("api");
   });
 
+  it("rejects a multi-byte forged nonce without breaking the request", async () => {
+    const nonce = "é".repeat(32);
+    expect(
+      await sourceFor({ headers: { "x-openship-call-source": `mcp.${nonce}` }, ctx: patCtx }),
+    ).toBe("api");
+    expect(
+      await clientFor({
+        headers: { "x-openship-call-client": `pat:forged.${nonce}` },
+        ctx: { ...patCtx, sessionId: "pat:token-1" },
+      }),
+    ).toBe("pat:token-1");
+  });
+
   it("ignores a claim with no nonce at all", async () => {
     expect(await sourceFor({ headers: { "x-openship-call-source": "mcp" }, ctx: patCtx })).toBe("api");
     expect(await sourceFor({ headers: { "x-openship-call-source": ".mcp" }, ctx: patCtx })).toBe("api");
@@ -218,12 +231,7 @@ describe("which client of the surface", () => {
 });
 
 describe("token-principal fallback", () => {
-  // The auth layer mints the session id for a token principal from the
-  // hashed-token lookup (`pat:<id>` / `oauth:<clientId>`) — it is not
-  // caller-supplied, so it is as trustworthy as actorUserId on the same
-  // row. A REST write made with token A and the same write made with
-  // token B must be distinguishable in the audit log, and the MCP
-  // dispatcher signs this same value for its own calls.
+  // Token identities come from authentication, independently of MCP dispatch.
   const patWithSession = { sessionKind: "bearer", principalKind: "pat", sessionId: "pat:pat_123" };
   const oauthWithSession = { sessionKind: "bearer", principalKind: "oauth", sessionId: "oauth:cli_abc" };
 
