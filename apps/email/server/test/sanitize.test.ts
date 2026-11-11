@@ -83,6 +83,20 @@ describe('sanitizeMailHtml', () => {
   });
 
   describe('legitimate mail content survives', () => {
+    it('preserves inherited document colors as sanitized fragment wrappers', () => {
+      const out = sanitizeMailHtml(
+        '<html style="color:#eee;background:#222"><head><title>Not message content</title></head>' +
+        '<body style="color:#111;background:#fff" onload="alert(1)"><h1>Title</h1></body></html>',
+      );
+
+      expect(out).toBe(
+        '<div style="color:#eee;background:#222"><div style="color:#111;background:#fff"><h1>Title</h1></div></div>',
+      );
+      expect(out).not.toContain('Not message content');
+      expect(sanitizeMailHtml(out)).toBe(out);
+      assertInert(out);
+    });
+
     it('keeps text, headings and inline styles', () => {
       const out = sanitizeMailHtml(
         '<h1>Title</h1><p style="color:#333">Hello <strong>you</strong></p>',
@@ -139,6 +153,19 @@ describe('sanitizeMailHtml', () => {
 });
 
 describe('blockRemoteContent', () => {
+  it('blocks trackers in preserved document styles without dropping the canvas colors', () => {
+    const clean = sanitizeMailHtml(
+      '<body style="color:#eee;background-color:#222;background-image:url(https://tracker.tld/pixel)"><h1>Title</h1></body>',
+    );
+    const result = blockRemoteContent(clean);
+
+    expect(result.blocked).toBe(true);
+    expect(result.html).not.toContain('tracker.tld');
+    expect(result.html).toContain('color:#eee');
+    expect(result.html).toContain('background-color:#222');
+    assertInert(result.html);
+  });
+
   it('replaces remote <img src> and flags it', () => {
     const { html, blocked } = blockRemoteContent('<img src="https://tracker.tld/px.gif">');
 
