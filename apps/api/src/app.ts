@@ -1,6 +1,6 @@
 import { chatAppRoutes } from "./modules/chat-apps/chat-apps.routes";
-import { referralRoutes } from "./modules/affiliates/referral.routes";
-import { affiliateRoutes } from "./modules/affiliates/affiliate.routes";
+import { referralRoutes } from "./modules/referrals/referral.routes";
+import { referralProgramRoutes, legacyReferralProgramRoutes } from "./modules/referrals/referral-program.routes";
 import { actionRoutes } from "./modules/actions/action.routes";
 import { actionRuntimeRoutes, actionTwirpRoutes } from "./modules/actions/action-runtime.routes";
 import { actionOidcRoutes } from "./modules/actions/action-oidc.routes";
@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
+import { publicContactOrigin } from "./modules/cloud-support/contact-origin";
 import { handleApiError } from "./middleware/error-handler";
 import { observeRequestErrors } from "./middleware/error-observation";
 import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
@@ -135,7 +136,7 @@ app.use("*", observeRequestErrors);
 app.use(
   "*",
   cors({
-    origin: trustedOrigins,
+    origin: (origin, c) => trustedOrigins.includes(origin) || publicContactOrigin(c.req.path, origin) ? origin : undefined,
     credentials: true,
     exposeHeaders: ["X-Request-ID"],
   }),
@@ -226,7 +227,9 @@ app.route("/api/mcp", mcpRoutes);
 app.route("/api/assistant", assistantRoutes);
 app.route("/api/chat-apps", chatAppRoutes);
 app.route("/api/billing", billingPlansRoutes);
-app.route("/api/affiliates", affiliateRoutes);
+app.route("/api/referral-program", referralProgramRoutes);
+// Existing SDKs use the same handlers; new clients use /api/referral-program.
+app.route("/api/affiliates", legacyReferralProgramRoutes);
 app.route("/api/referrals", referralRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);

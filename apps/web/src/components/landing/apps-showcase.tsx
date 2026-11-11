@@ -27,7 +27,7 @@ export async function AppsShowcase() {
 
   return (
     <section id="apps" className="ha-section" aria-labelledby="home-apps-title">
-      <div className="ha-container">
+      <div className="site-container ha-container">
         <div className="ha-intro">
           <p className="ha-eyebrow">
             <Boxes className="size-4" aria-hidden="true" /> The app catalog

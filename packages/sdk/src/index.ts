@@ -28,4 +28,7 @@ export {
   ValidationError,
 } from "@repo/contracts";
 
+export type { ReferralOperations, ReferralOverview, ReferralOffer, ReferralCustomer, ReferralPayment, ReferralPayout } from "@repo/contracts";
+
+/** @deprecated Import the corresponding Referral types. */
 export type { AffiliateOperations, AffiliateOverview, AffiliateOffer, AffiliateReferral, AffiliatePayment, AffiliatePayout } from "@repo/contracts";

@@ -25,7 +25,7 @@
     "@electron-forge/maker-zip": "^7.11.1",
     "@reforged/maker-appimage": "^4.0.0",
     "@types/node": "^22.13.0",
-    "electron": "44.9.2",
+    "electron": "44.11.1",
     "electronmon": "^2.0.4",
     "esbuild": "^0.25.0",
     "typescript": "^5.9.3",

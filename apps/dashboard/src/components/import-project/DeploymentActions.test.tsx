@@ -64,6 +64,38 @@ function compose() {
 }
 
 describe("deployment destinations", () => {
+  it("shows Live · Verifying with published links and Stop, without allowing a competing redeploy", async () => {
+    deployment.deploymentStatus = "verifying";
+    deployment.state.deploymentSuccess = false;
+    deployment.state.verification = { startedAt: new Date().toISOString(), urls: ["http://example.test:8080/path"] };
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(copy.status.liveVerifying);
+    expect(host.querySelector(`a[href="http://example.test:8080/path"]`)).not.toBeNull();
+    expect(button(copy.openProject)).toBeDefined();
+    expect(button(copy.redeploy)).toBeUndefined();
+    await act(async () => button(copy.stopDeployment).click());
+    expect(mocks.stop).toHaveBeenCalledOnce();
+  });
+
+  it("does not call a private or unpublished deployment Live or invent links from its configuration", async () => {
+    deployment.deploymentStatus = "verifying";
+    deployment.state.deploymentSuccess = false;
+    deployment.state.verification = { startedAt: new Date().toISOString(), urls: [] };
+    deployment.config.publicEndpoints = [endpoint("not-published.test")];
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(copy.status.verifying);
+    expect(host.querySelector('[role="status"]')?.textContent).not.toContain(copy.status.liveVerifying);
+    expect([...host.querySelectorAll('a')].some(a => a.textContent === copy.openSite)).toBe(false);
+  });
+
+  it.each(["failed", "cancelled"] as const)("hides previously published links after %s verification", async status => {
+    deployment.deploymentStatus = status;
+    deployment.state.verification = { startedAt: new Date().toISOString(), urls: ["https://example.test"] };
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(copy.status[status]);
+    expect(host.querySelector('a[href="https://example.test/"]')).toBeNull();
+  });
+
   it("waits for the account and Cloud identity before making a navigable investigation link", async () => {
     deployment.deploymentStatus = "failed";
     mocks.scopeReady = false;

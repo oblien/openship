@@ -7,7 +7,7 @@
 export function MailServer() {
   return (
     <section className="ms-section">
-      <div className="ms-container">
+      <div className="site-container ms-container">
         <div className="ms-grid">
           {/* Text side */}
           <div className="ms-lead">

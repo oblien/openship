@@ -69,9 +69,31 @@ Tool activity stays compact, with accurate pending/error states and private deta
 Use semantic classes from [theme.css](../apps/dashboard/src/styles/theme.css). The nested-card
 rules in [globals.css](../apps/dashboard/src/app/globals.css) supply the theme-specific layering.
 Keep palette definitions there instead of introducing page-specific colors.
-Empty-state illustrations follow Projects and Backups: neutral layered cards,
-thin theme-token borders, muted placeholders and dashed connectors. Keep any
-color accent small; avoid large status-colored surfaces or decorative glows.
+Feature and empty-state artwork follows the approved [product illustration
+style](illustrations.md): flat rounded shapes, neutral foreground layers,
+clear negative space and small warm accents. Reuse `FeatureIllustration` from
+`@repo/ui/illustrations` for approved compact artwork. The linked guide owns
+its geometry, theme variables, sizing and HTML review catalog; the surrounding
+page continues to use this guide's surfaces and typography. In the dashboard,
+`theme.css` binds the artwork's foreground and accent to the active appearance
+tokens, including personal themes and appearance previews. Billing, onboarding and empty-state artwork use
+`illustration-color`: light-mode shapes use softened neutral title ink, with the
+appearance accent only in small details. Never tint the main silhouette with the
+accent color. The home welcome uses
+`illustration-soft` to keep its light-mode gray layers. Other artwork retains its
+original palette; dim and dark keep their existing treatment. Adjust these shared
+palettes rather than adding opacity to whole illustrations or page-specific colors.
+Use 56–64 px artwork
+beside plan names and 80 px for onboarding and empty states, without an extra icon
+tile. Use the shared calendar for Jobs, snapshots for Backups, server racks for Clusters,
+and the connected shield for Private networks. Projects, deployments, Actions, monitoring,
+and repository/folder import use the same compact artwork and palette. Keep metrics,
+progress rings, navigation, controls and provider logos as utility icons or their original
+artwork. Monitoring uses the chart for an empty incident
+feed, the calendar for empty history, and a utility search icon for filtered results.
+Empty lists do not imply a health verdict; avoid success badges or checkmarks. Keep status colors
+in semantic status components and avoid large colored illustration surfaces,
+perspective, material shading or decorative glows.
 
 | Element           | Treatment                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------- |
@@ -99,6 +121,9 @@ Keep local building in the destination's advanced controls only when the runtime
 Remote Docker, static sandbox, service, managed Cloud and cluster builds name their build
 destination; a stale local-build preference must not advertise work on Desktop. Preserve the
 separate clone-location choice and existing source behavior when hiding unavailable builds.
+After routing is published, show **Live · Verifying** with Open site and Open project
+available while final startup checks continue. Without a published destination, show
+**Verifying**. Reserve Ready for the settled outcome; keep Stop available during verification.
 Image updates belong in the existing project and service Redeploy dropdown. Reuse the same
 **Refresh images & redeploy** and **Check image updates** actions for every stack, including
 prebuilt image services. Refresh preserves configured versions and digest pins. Image drift uses
@@ -106,6 +131,18 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
+Repository-owned image changes use the shared **Propose image update** editor in saved
+project/service settings and security review. Reuse the repository file browser. Show the branch,
+exact source commit and a diff before **Create draft PR**; edits invalidate that review. The editor
+changes one literal Dockerfile `FROM` or Compose `image` reference, preserving the source formatting.
+Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.
+Creating a PR never changes the running deployment or clears an advisory. Reset private source and
+pending reviews when the account, workspace or project changes.
+Check source publication access when the editor opens. Show workspace grant failures separately
+from GitHub connection failures. Link the latter to the existing Git settings in a new tab to
+preserve the draft, with **Check access again** on return. Keep publication disabled while access
+is missing. If GitHub refuses the PR after creating the branch, link to the existing branch instead
+of submitting the same publication again.
 Security advisories use the existing deployment pipeline and root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app
@@ -506,14 +543,40 @@ check retryable before starting the move.
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
-- Add Server keeps the connected/managed choice stacked in the right sidebar above setup
-  guidance. On narrow screens, place that same choice before the form and guidance after it.
-  Reuse the shared acquisition picker in both setup modes and dialogs.
-  Selecting Get a managed server on `/servers/new` opens Billing's explicit new-server
-  purchase. Keep inline destination dialogs in place so they preserve the deployment form.
-  Cloud Add server opens plan selection first. Reuse the same plan and Custom purchase
-  component in Billing, managed server setup and destination dialogs. Create the server
-  with its default name only after a plan is chosen, then use the shared scoped checkout.
+- **Plans & billing** is one sidebar entry for Cloud spaces and server-management
+  subscriptions. Bare `/billing` shows one card per owned Cloud space, a purchased
+  Manage subscription card, and an **Add plan** card. Show each product's actual capacity
+  or saved server allowance; do not invent current prices for an older contract. Clicking
+  a card opens that space or subscription's existing details. Existing resources URLs
+  remain under the same active navigation entry. Servers remains the separate inventory
+  of customer infrastructure; deployment APIs and quota enforcement stay shared.
+  Pair each plan card's leading icon with its title in the same header row; keep status
+  at the opposite edge instead of reserving a separate icon row.
+  A purchased Manage plan opens its own named detail page, with covered external servers
+  in a card grid and its saved price, allowance, payment and cancellation controls beside
+  them. Exclude local hosts, Cloud allocations and migration sources from that grid, using
+  the shared destination inventory. An empty server list stays on the plan page. Add server
+  opens the normal connection form while an allowance slot is available; at the limit it
+  opens a quantity-only dialog showing additional slots, the verified monthly total and
+  amount due before checkout. Change plan compares the saved plan with proposed upgrades
+  or downgrades. Both use the existing locked quote/confirmation path; never calculate
+  prorated charges in the browser. Reuse the management quote,
+  confirmation, pending-payment and cancellation flow; browsing never starts a purchase.
+  Keep a plain Support link with the shared help icon in Billing, Plans and each plan's
+  header. It opens the normal Support page without a filled button or separate card.
+- When no purchased plans are known and both inventory reads succeeded, replace bare
+  `/billing` with the organization-scoped `/billing/plans` purchase route. Keep the loading
+  skeleton during that handoff; plan selection lives only on the plans route. Failed or
+  pending reads must never be treated as an empty account or trigger that redirect.
+  Included Basic management is a Cloud benefit, not an additional purchased subscription.
+  Unscoped `/billing/plans` always starts a new purchase with no Cloud space switcher.
+  Omit a Back to billing button from new purchases; an empty overview redirects here.
+  Explicit workspace URLs retain scoped upgrades, recovery and checkout verification.
+- Add Server keeps connection setup in the main column and a compact **Add Cloud space**
+  action above guidance. On narrow screens, place the action before the form and guidance
+  after it. The existing acquisition dialog preserves the connection or deployment form
+  beneath it. Reuse Billing's preset and Custom plans, creating a workspace only after a
+  plan is chosen. Disable acquisition switching while checkout is being prepared.
 - Destination settings use the normal page layout: server selection first, then visible
   runtime, resource and rollback sections, with a 340px preview/Continue sidebar. Keep the
   same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
@@ -630,16 +693,19 @@ check retryable before starting the move.
   below the comparison, alongside shared capabilities. Keep additional transfer, backup
   and storage terms in a compact disclosure. Follow this with the catalog's Enterprise
   contact card; do not repeat these details inside every plan or in a separate text card.
-- Billing uses one navigation for overview, usage, plans and payments. Plan selection
-  offers Cloud plans, Prepaid PAYG and Manage your server, in that order. Manage opens
-  the shared management subscription view; do not repeat it as a compute-plan card or
-  a separate Cloud/Manage product switch. Its coverage and allowance belong to the
-  workspace, independently of the selected Cloud server. Load it only when selected.
-  Preserve Cloud form state when switching views. Hide Cloud capacity controls while
-  Manage is open and disable switching while checkout is in progress. Deployment and
-  server-acquisition dialogs retain their compute-only choices. The direct Manage URL
-  remains available for payment returns and reuses the same view.
-- The referral program is labeled **Referral** in the sidebar and page heading, with
+- Each selected subscription keeps the existing overview, usage, plan changes and payment
+  tabs. Plan selection offers Cloud plans and Manage your server. Manage reuses the existing
+  account-scoped purchase and recovery component; load it only when selected and preserve
+  Cloud form state. Disable switching while checkout is in progress. Deployment and
+  acquisition dialogs use the same preset and Custom resource controls without a
+  single-item product tab. The Manage URL remains available for payment returns.
+- The referral program uses `/referrals` on the dashboard and website, with the account
+  API under `/api/referral-program` and SDK operations in `referralProgram`. Redirect
+  retired page URLs and retain authenticated SDK/API aliases for existing clients.
+  Provider participant hashes, issued codes and financial payload fields remain stable.
+  New checkout requests use `referralCode`; normalize the legacy field before creating
+  financial records and reject conflicting aliases.
+  The program is labeled **Referral** in the sidebar and page heading, with
   the shared `gift` icon in the sidebar. It uses full-width tabs for links,
   customers and payout history. Keep the
   four earnings cards above the tabs. Place program terms and first-use guidance in
@@ -661,7 +727,7 @@ check retryable before starting the move.
   name, commission terms and optional expiration in a compact side card on wide screens.
   Distinguish all eligible plans (including
   future plans) from explicit checked combinations. Annual earnings use the full annual
-  payment. Separate the customer's billing cadence and charge from the affiliate's
+  payment. Separate the customer's billing cadence and charge from the referral's
   commission per confirmed payment. Explain that earnings start with the first payment,
   without waiting for the billing period to end. Renewal copy follows the program's
   reward window: a 12-month window covers the first annual payment, not next year's
@@ -713,117 +779,53 @@ check retryable before starting the move.
   subscription changes; do not send users elsewhere just to start checkout. Keep the
   server form gated on the verified allowance, and reset the purchase state on account,
   organization or instance changes. Self-hosted connection forms stay unchanged.
-- Cloud billing keeps its header and tabs mounted when switching servers. List managed
-  servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
-  One server is a summary; several servers switch billing directly from the visible list.
-  Keep one Add resources action at the right of the page header; the sidebar
-  selects the server being inspected. Plans keeps the shared Cloud space picker beside
-  Add resources in that header, with the normal destination summary and searchable menu.
-  Billing tabs occupy their own full-width row underneath, with an uninterrupted divider.
-  Keep adjacent links at the shared tab height so the divider meets the active underline on a single row.
-  With one Cloud space, show its summary without a redundant menu. With one or two preset choices, show the saved subscription and capacity in
-  the standard 340px right column when the container has room; stack it first on smaller
-  screens. Keep a single priced offer at a maximum of 26rem, shrinking to the available
-  width on small screens. Complimentary-plan support guidance belongs inside the saved-plan
-  summary; dialogs without that summary retain their inline guidance. Wider comparisons and
-  Custom keep the compact summary below the tabs. Use the
-  picker's displayed choices for this layout too; an inactive subscription uses a short
-  inline notice. New purchases use the plan introduction
-  as the page title and description. Keep Plans / Custom in the purchase header and
-  Back to billing in the same header, using matching 40px controls. Purchasing does not require a server-name field.
-  An existing server without a plan keeps the server selector, including when every
-  server is unpaid. Only an explicit new-server purchase replaces it with Back to billing.
-  Do not repeat the introduction below the page heading. Default to relevant upgrades; offer
-  Other plans deliberately for lower-cost changes and Custom when no larger preset fits.
-  Do not call today's catalog terms the current plan if they differ from the saved purchase,
-  or offer a preset that would shrink an existing disk. New-server purchases have their own
-  explicit entry and never inherit the selected server's billing scope.
-  A preset chosen on the public Pricing page continues to Cloud checkout after
-  sign-in without a second plan-selection click. Validate it against the live
-  catalog and bind the retry identity to the authenticated organization. Reloads
-  reuse the same server and payment; generic Get server links remain browse-only.
-  Unscoped billing opens an existing subscription directly; never
-  auto-switch a checkout return or an explicitly selected server. New customers see
-  Cloud plans and Pay as you go with a direct Payments & invoices link in the existing
-  tab row, so unfinished purchases remain recoverable before the first subscription.
-  Reuse the same purchase controls in server setup and destination dialogs. Switching
-  these views keeps resource inputs and never starts a purchase. The page's purchase
-  tabs sit directly above the plan cards. Standalone setup and destination dialogs reuse
-  the same Plans / Custom control beside their tabs, without a separate page header. Until a usage
-  offer is supported, show its unavailable state without invented rates or a checkout action.
-  Keep normal billing navigation for existing subscriptions, allocated servers and credit history, including stopped or
-  canceled servers. Show current plan, renewal date or inactive subscription state for
-  existing servers; never replace those with a first-purchase promotion.
-  In-app credit alerts
-  link directly to the scoped billing tab; only a genuine organization change needs
-  authorization and a context reload.
-  Payments and invoices share one tab and the existing scoped Stripe portal. Show Top-ups
-  only when the billing API enables them for the selected server; the purchase-view choice
-  must never override paid terms or provider entitlement.
-  Keep Pending payments inside Payments & invoices, including for unpaid servers, with
-  a yellow pending count on that tab. Share one scoped read with the recovery list, refresh
-  on return from hosted checkout, and remove counts only after confirmed cancellation.
-  Removing the selected unused server clears its billing URL selection and returns to
-  the new-server Plans view. A billing URL for a removed or deleting workspace recovers
-  there without checkout or automatic-purchase parameters, preserving only its organization
-  scope. Do not reselect a draft while its removal finishes.
-  Cloud lists unfinished payments across the organization's servers. Connected installations
-  use the same Cloud inventory, filtered to a selected server when requested, without
-  creating local execution links. Preserve local aliases for explicitly linked servers
-  and clear payment state when the connected Cloud account changes. Reuse the same compact recovery list in
-  Payments and in the unfinished-checkout dialog. Show saved offer terms and the server
-  name, with Resume and provider-supported cancellation. Never present a pending or
-  unknown cancellation as complete. After confirmed cancellation, offer another plan
-  and reuse the existing delete confirmation for an unused, unpaid server.
-  Distinguish failed cancellation checks (Refresh) from payments without provider-supported
-  cancellation (complete the payment or wait for expiry). Show the support link once;
-  neither condition may clear a payable checkout or allow a competing subscription.
+- Plans & billing is the account hub: one card per purchased compute plan, one for a
+  purchased Manage subscription, plus Add plan. A saved unfinished checkout also appears
+  as a pending plan card; merge its warning into an existing plan's card instead of
+  duplicating that plan. Show the saved offer and amount, and open its Payments & invoices
+  tab. Only redirect a confirmed-empty account to new plans after inventory, management
+  and pending-payment reads succeed. Errors are retryable and never mean empty.
+- Each compute plan owns Overview, Usage, Payments & invoices and Activity. Overview
+  shows a compact assigned-project list, plan allowances and coverage. Usage owns live
+  resource measurements, billing-period compute/edge totals, the usage guide and scoped history.
+  Keep the compact saved-plan summary and
+  Change plan modal beside the selected tab. Payments & invoices owns that plan's portal,
+  pending checkouts and renewal controls; do not repeat them as a sidebar card. Manage
+  follows the same Overview / Payments & invoices structure for its external servers.
+- Existing /billing/overview, /billing/usage, /billing/payment and invoice bookmarks
+  redirect into the explicitly selected plan. Unscoped history links return to the plan
+  hub without guessing a subscription. Preserve checkout reconciliation parameters and
+  authorize organization changes before reading any plan. Legacy metered top-up receipts
+  remain verifiable within their plan; monthly plans expose no top-up purchasing.
+- New plan browsing has only Cloud and Manage purchase choices, with no payment/history
+  tab or selected-space switcher. A preset chosen on public Pricing continues through
+  sign-in without a second selection. Bind retries to the authenticated organization;
+  opening or configuring plans never starts a purchase. Existing-plan changes use the
+  saved terms and actual allocated disk, rather than treating today's catalog as the
+  current contract. Unavailable billing models stay hidden.
+- Use one scoped pending-payment read for the plan's navigation count, attention notice
+  and recovery list. Keep a red payment-attention notice on the plan, including its
+  payment tab, until payment or cancellation is confirmed. A pending or unknown
+  cancellation cannot clear the warning or permit a competing subscription. A failed
+  payment read stays retryable. Never expose another plan's payments through a scoped view.
+  Resume uses the saved original checkout and price. After confirmed cancellation or
+  expiry, reuse the existing plan selection and unused-resource delete confirmation.
+  Show Refresh for failed cancellation checks, and provider guidance for unsupported
+  cancellation; neither may mark a payable checkout as complete.
+- Connected installations use the same authorized inventory and existing local aliases
+  for explicitly linked Cloud servers. Clear payment state on account, organization or
+  connection changes, without creating another execution link during billing navigation.
 - Monthly Cloud spaces show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
-  details in a compact disclosure. Put Monthly coverage after the main billing overview and
-  usage guide, so plan capacity and usage lead the page. Existing metered subscriptions retain their credit view.
-  Prepaid PAYG shows package amounts beside their credit value, using the provider's
-  conversion and published resource rates. Keep the Openship resource tiers inside the
-  resource card, using compact shared tabs above its inputs. Present the selected tier's
-  CPU, RAM, disk and server-count limits as plain capacity values in a compact summary
-  that wraps on smaller screens. These limits stay fixed while configuring a server.
-  Keep the cumulative credit-purchase threshold by the tabs
-  and the selected package's qualifying tier in the credit card. These are pool ceilings,
-  not monthly subscriptions or a copy of the reseller owner's Oblien plan. Spending
-  credits never lowers a tier. Keep credit-package and resource-tier selections separate;
-  changing either must preserve resource inputs. An oversized configuration should show
-  which limits are exceeded and offer the smallest available tier that fits, without
-  silently resizing the user's servers. The catalog and unlock display remain a preview
-  until verified customer funding and runtime entitlement are connected.
-  Reuse the monthly resource editor for the interactive estimate, with two resource
-  controls per row when they fit. Configure one server; show its hourly price at full
-  CPU usage and state that basis beside the estimate. PAYG prices come
-  directly from usage rates and do not depend on
-  monthly-plan quotes or ceilings. Keep the pricing preview until customer-funded
-  purchases are supported. A shared balance is funding,
-  not a multiplied resource pool; estimates for several hosts must spend that balance
-  once. Use three columns when space permits: the resource editor, readable credit
-  package rows in the middle, and the 340px estimate card on the right, aligned at the top.
-  Keep the CPU-hour explanation and rate details with the estimate. Give packages
-  280–320px and let the resource editor use the remaining space. Stack the
-  packages below resources at intermediate widths, then stack all sections on mobile.
-  Monthly and PAYG share the catalog's Enterprise contact card at the end of the picker.
-  Keep one compact purchase bar visible at the bottom while configuring resources;
-  use a translucent popover surface with backdrop blur while keeping its text readable.
-  Lead with estimated dollars per hour and the matching credits per hour, with
-  the per-server scope and full-CPU basis beside them. Keep the CPU, RAM and storage
-  hourly breakdown visible. Do not turn a full-month projection into a purchase
-  requirement or suggest a larger deposit to cover it. Balance duration belongs in
-  an optional disclosure and follows prepaid funds divided by resource usage cost;
-  reserved RAM and storage stay included at full and idle CPU. A monthly spending
-  ceiling requires an enforceable provider quote, not a UI-derived promise.
-  Show CPU-hours as allocated vCPUs multiplied by average activity and elapsed time;
-  label time online as elapsed time. Show resource-hours and their costs under a clear
-  per-elapsed-hour heading for the configured server. Distinguish active CPU from
-  reserved RAM and retained storage. Keep checkout unavailable until customer-funded purchases are
-  supported. Do not expose reseller wallet balances or call hypothetical comparisons
-  recorded savings.
+  details in a compact disclosure. Put Monthly coverage after plan allowances in Overview;
+  keep the usage guide with the measurements in Usage. Existing metered subscriptions
+  retain their credit view.
+  A saved monthly plan never falls back to compute credits when live coverage is unavailable.
+  Hide top-up navigation and purchasing for monthly plans, including stale capability responses;
+  preserve receipt verification for previously completed purchases.
+  Offer only monthly and yearly plans for new Cloud spaces; do not display prepaid
+  compute tiers, credit-package estimators or unavailable purchase previews.
 - Cloud deployment plan dialogs show recovery guidance once above the picker;
   do not repeat the restriction message in a separate callout.
 - Custom resources sit beside the preset plan choice. Keep CPU, RAM and disk controls
@@ -856,7 +858,7 @@ check retryable before starting the move.
   scrollable content so the plans receive most of the available viewport height, including
   on short screens. Keep actions side by side on phones, allowing long labels to wrap.
 - On `/billing/plans`, collapse the desktop sidebar automatically for comparisons with
-  three or more visible plans and the PAYG configurator. One or two upgrade choices,
+  three or more visible plans. One or two upgrade choices,
   Custom, and loading or error states keep the normal sidebar preference. Use the picker's
   displayed choices; navigation must not fetch or filter plans again. Keep manual toggles
   across filter and purchase-view changes. The Scale canvas still opens collapsed; restore
@@ -872,17 +874,27 @@ plan changes, provisioning, edits or deletion. Reconnect refreshes the same link
 create another server. A missing control route on an older Cloud API shows **Control unavailable**
 with upgrade guidance; structured resource and permission 404s retain their original meaning.
 
-Cloud navigation and the page heading use **Cloud spaces**. Each independently purchased allocation
-is presented as a **Cloud space**: show measured CPU, memory and storage usage
-and assigned projects in Overview, with lifecycle progress in Activity. Put the compact Cloud space
-dropdown in the 340px right column above plan capacity. The picker shows the selected name,
-plan and project count, with a compact status ring at the right of the selected row instead
-of a separate badge below. Keep a readable status label for assistive technology and hover.
-Use the shared cloud icon for managed destinations and Cloud spaces navigation. Activity
-explains setup, capacity changes and recovery, with Cloud space wording in its progress logs.
-Other choices appear only when opened. On narrow screens,
-place the picker before usage and keep plan capacity below the main content. Spaces are deployment destinations using existing purchased workspace identities,
-not organization workspaces or combined capacity. Keep resource and billing actions on the existing billing flow.
+The **Plans & billing** account entry owns each purchased compute plan's named page.
+Use the plan's offer name as the heading, rather than its underlying server name or a
+“server” suffix. Keep navigation identities unchanged. Omit the extra back-to-billing
+link from both Cloud and Manage detail pages; use the browser and existing sidebar navigation.
+Keep usage, assigned projects, Activity and subscription management in their respective tabs.
+The 340px sidebar
+uses one compact plan card: icon, offer name and status share a header row; price and billing
+cadence share a line; renewal and allocated capacity follow. Keep Change plan below the summary
+and payment controls in the plan’s Payments & invoices tab. Hide the inline Cancel
+subscription action for compute plans; cancellation belongs in that plan’s billing portal. Do not add another
+Manage plan or Manage subscription detour, or repeat the selected plan in a separate picker.
+Change plan opens the existing scoped quote/confirmation flow in a dialog on this page.
+Size the dialog from the picker's rendered choices: narrow for one, two columns for two,
+and wider for larger comparisons; Custom keeps the form's normal width. Do not refetch the
+catalog or recompute eligible offers just to size the dialog. Assigned projects use compact
+responsive rows, with at most four shown in Overview. When there are more, **Show all**
+opens a searchable, scrolling dialog of projects from the same authorized snapshot. Reuse
+one row component and existing project links; opening the dialog must not scan again or
+fetch unrelated projects. Preserve keyboard focus and close it on a workspace/tab change.
+Keep storage-estimation details in a disclosure.
+Independent allocations retain their existing execution identities and shared deployment flow.
 
 Cloud spaces uses the read-only provider metrics stream through Openship's authenticated monitor
 endpoint. Title the card Resource usage, and show Live only after a valid sample; pause hidden pages and cancel subscriptions when
@@ -893,11 +905,12 @@ by measurement time from recent live readings and the host snapshot; a partial f
 erase measured storage. Keep each memory/storage group together, show the measurement time when a row uses an
 older sample, and leave unknown values and chart gaps unknown rather than substituting capacity or zero.
 Project storage inventory uses the existing snapshot request and is not scanned on every live tick.
-Cloud spaces and Billing reuse the shared destination picker rows, project counts and catalog plan names.
-Keep instant resource readings and project storage on Cloud spaces. Billing retains subscription,
-payment, billing-period usage and entitlement counters, with selected-space links instead of another
-host-usage snapshot. Show actual allocated capacity on Cloud spaces; pending plan changes remain
-in Billing's existing confirmation and resize flow.
+Plan cards and deployment destinations reuse the shared inventory, project counts and catalog names.
+A plan’s Usage tab combines the existing live measurements with billing-period counters and
+history; each keeps its own units and source. Overview must not subscribe to live metrics or
+fetch compute totals. Switching to Usage reuses the existing snapshot, and leaving it stops
+the live stream. Show the allocated capacity beside the saved subscription, and reuse the
+existing quote, confirmation and resize flow for pending plan changes.
 Unfinished Cloud setup shows a calm Cloud space notice and does not subscribe to live metrics.
 
 Managed resources do not expose host terminals, SSH, provider networking, Runtime API credentials,
@@ -981,6 +994,15 @@ not replace its framework artwork.
 Migration retries reuse the shared destination picker after a fresh scan, even when opened
 from an existing run. Keep loading, fetch errors and empty inventory distinct, and preserve
 the selected destination's validation and transfer review before enabling Migrate.
+
+Platform imports share three steps: Connect, Select services, and Review & import. Show
+provider marks through `AppLogo` and service marks through `ServiceIcon`. Reuse the Connections
+form for authorization and tokens, with an explicit access test and retry. Keep service cards
+compact; expand configuration for missing secrets and review blockers. The final review lists
+what will be copied, kept external or started empty, and collects any required source-pause
+acknowledgments. Changing the source, destination or selections invalidates that review.
+Use the shared destination picker and durable migration progress; never add a preview-only
+import path or claim that metadata access verifies a data transfer.
 
 Catalog brand artwork is bundled in both dashboard and website public assets and mapped in
 the shared `AppLogo` renderer. Preserve upstream attribution and keep setup behavior in
@@ -1159,6 +1181,15 @@ secret values out of the review. Save shared and local edits together, reject st
 reviews, and link to each affected service's existing environment apply/redeploy flow.
 Explain that these settings live in Openship and do not edit repository files.
 
+Environment toolbars keep **Add variable** beside Paste/Upload .env, and insert its row at the
+top so long lists do not require scrolling to add a value. **Edit as text** uses the shared
+.env editor for project, service, deployment and migration environments. Apply validates the
+complete draft before updating the host's existing rows; Cancel discards it. Normal Save and
+deployment actions remain responsible for persistence and runtime changes. Preserve saved-value
+masks, secret classification, source identities and managed-row restrictions. Never fetch saved
+secret plaintext merely to open text editing. Quotes and multiline values use the shared .env
+parser and serializer; reject invalid syntax and duplicate keys instead of dropping lines.
+
 ### Adding project services
 
 - The topology resource chooser has a compact header with Close and a padded, scrollable body. Fit the chooser to its options within the canvas height; keep resource forms in the full-height inspector.
@@ -1314,6 +1345,10 @@ Use one heading and one connection surface. Show each provider's name and mark o
 in the compact selector; do not repeat them as a second header inside its form.
 Keep connection status in the selector and host information in the footer.
 Use the shared connection forms in settings and agent-editor dialogs as well.
+Custom API setup reuses the native agent's setup control and installation polling.
+An absent agent is a setup state, not an outdated runtime. Preserve connection inputs
+while setup runs, and offer an update hint only after an available agent reports
+that custom API support is missing.
 Preserve unfinished sign-in forms when switching providers or returning to chat;
 hidden content must not capture keyboard focus. Identify the connection host.
 Using a different connection from an existing conversation opens a fresh chat;

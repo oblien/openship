@@ -1,4 +1,13 @@
 import { ServerSecurityResultSchema } from "./server-security";
+import {
+  RuntimeSourceInputSchema,
+  RuntimeSourceEditSchema,
+  RuntimeSourceSchema,
+  RuntimeSourcePreviewSchema,
+  PublishRuntimeSourceSchema,
+} from "./runtime-source";
+import { PublishedRepositoryChange } from "./repository-changes";
+export * from "./runtime-source";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ReleaseFeedSnapshot, SecurityManifest } from "@repo/core";
 import { CreateDeploymentResultSchema, isCreateDeploymentResult } from "./deployments";
@@ -125,6 +134,7 @@ export const ProjectUpdateSchema = Type.Object({
   appTemplateId: nullableString,
   kind: Type.Union([Type.Literal("commit"), Type.Literal("release"), Type.Literal("image")]),
   behind: Type.Boolean(),
+  unverified: Type.Optional(Type.Boolean()),
   latestInProgress: Type.Boolean(),
   inProgressDeploymentId: Type.Optional(nullableString),
   currentLabel: nullableString,
@@ -155,6 +165,17 @@ export const UpdateCollectionSchemas = {
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const UpdateProjectSchemas = {
+  runtimeSource: { action: "read", input: RuntimeSourceInputSchema, output: RuntimeSourceSchema },
+  previewRuntimeSource: {
+    action: "read",
+    input: RuntimeSourceEditSchema,
+    output: RuntimeSourcePreviewSchema,
+  },
+  publishRuntimeSource: {
+    action: "write",
+    input: PublishRuntimeSourceSchema,
+    output: PublishedRepositoryChange,
+  },
   security: { action: "read", output: ProjectSecurityResultSchema },
   checkSecurity: { action: "read", output: ProjectSecurityResultSchema },
   securityPolicy: {

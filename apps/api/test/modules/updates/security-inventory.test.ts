@@ -134,6 +134,40 @@ describe("scoped runtime inventory", () => {
     expect(h.exec).not.toHaveBeenCalled();
     expect(h.dispose).toHaveBeenCalledTimes(1);
   });
+  it("does not report a successful check without applicable runtimes as a probe failure", async () => {
+    const f = await fixture();
+    h.exec.mockResolvedValue("\nOPENSHIP_NO_APPLICABLE_RUNTIME\n");
+    const result = await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    expect(result.runtimes).toEqual([]);
+    expect(result.unknownServices).toEqual([]);
+    const row = await repos.securityAdvisory.project(f.project.id);
+    expect(row?.probeFailures).toBe(0);
+    expect(row!.nextInspectionAt!.getTime() - row!.checkedAt!.getTime()).toBeGreaterThanOrEqual(
+      6 * 3_600_000,
+    );
+    await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    expect(h.exec).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    "",
+    "OPENSHIP_RUNTIME_php\nerror loading shared libraries\n",
+    "error\nOPENSHIP_NO_APPLICABLE_RUNTIME\n",
+  ])("keeps missing or failed probe output unknown: %j", async (output) => {
+    const f = await fixture();
+    h.exec.mockResolvedValue(output);
+    const result = await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    expect(result.unknownServices).toEqual([f.service.id]);
+    expect((await repos.securityAdvisory.project(f.project.id))?.probeFailures).toBe(1);
+  });
+  it("does not clear an earlier runtime warning merely because its binary is now absent", async () => {
+    const f = await fixture();
+    const before = await projectSecurityInventory(f.ctx, f.project.id, advisories);
+    h.exec.mockResolvedValue("\nOPENSHIP_NO_APPLICABLE_RUNTIME\n");
+    const after = await projectSecurityInventory(f.ctx, f.project.id, advisories, true);
+    expect(after.runtimes).toEqual(before.runtimes);
+    expect(after.checkedAt).toBe(before.checkedAt);
+    expect(after.unknownServices).toEqual([f.service.id]);
+  });
   it("preserves previously observed runtime warnings during temporary probe failures", async () => {
     const f = await fixture();
     const initial = await projectSecurityInventory(f.ctx, f.project.id, advisories);

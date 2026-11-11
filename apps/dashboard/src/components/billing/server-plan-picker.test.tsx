@@ -3,7 +3,7 @@ import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PRICING, pricingUi, resolvePlan, type CustomServerResources, type PlanTierId } from "@repo/core";
-import type { ManagementState, BillingCustomQuote, BillingPlans, BillingSubscription, CloudWorkspaceSummary } from "@repo/contracts";
+import type { ManagementState, BillingCustomQuote, BillingSubscription, CloudWorkspaceSummary } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { ModalProvider } from "@/context/ModalContext";
@@ -11,7 +11,7 @@ import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayout
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { baseDictionary } from "@/i18n";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
-import { BillingPlansRoute } from "@/app/(dashboard)/billing/_components/BillingPlansRoute";
+import { CloudPlanPicker as BillingPlansRoute } from "./CloudPlanPicker";
 import { BillingPurchaseContent } from "@/app/(dashboard)/billing/_components/BillingPurchaseContent";
 import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
@@ -41,13 +41,7 @@ const plans: ApiPlan[] = (["hobby", "starter", "pro", "team", "enterprise"] as c
     listPrice: { monthly: source.price.monthly }, effectivePrice: { monthly: source.price.monthly }, campaign: null };
 });
 const offer = (id: PlanTierId) => plans.find(plan => plan.id === id)!;
-const catalog = { data: { plans, custom: PRICING.custom, payg: PRICING.payg, ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } } };
-const computePricing: NonNullable<BillingPlans["computePricing"]> = {
-  tariffId: "test-tariff", currency: "usd", creditsPerDollar: 100, paygCapPercent: 125,
-  usage: { activeVcpuHourCents: 3, reservedGiBHourCents: 0.8, retainedGiBMonthCents: 5, monthHours: 720 },
-  network: { managedProxyGiBCents: 10, minimumTopupCents: 500 }, retentionDays: 30,
-  paygCheckoutAvailable: false,
-};
+const catalog = { data: { plans, custom: PRICING.custom, ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } } };
 const subscription = (tier: PlanTierId): BillingSubscription => ({
   tier, configuration: "preset", status: "active", interval: "monthly", offerReference: `saved-${tier}`,
   currentPeriod: { start: "2026-10-01T00:00:00Z", end: "2026-11-01T00:00:00Z" },
@@ -133,10 +127,10 @@ describe("Manage purchase tab", () => {
     return document.getElementById(tab.getAttribute("aria-controls")!)!;
   };
 
-  it("offers Manage third and loads its shared subscription view only when selected", async () => {
+  it("offers Cloud plans and Manage and loads its shared subscription view only when selected", async () => {
     await render(billing());
     expect([...host.querySelectorAll('[role="tab"]')].map(tab => tab.textContent)).toEqual([
-      copy.purchase.monthly, copy.purchase.payg, copy.purchase.manage,
+      copy.purchase.monthly, copy.purchase.manage,
     ]);
     expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
     expect(h.get.mock.calls.some(([path]) => path === "/billing/manage")).toBe(false);
@@ -223,7 +217,7 @@ describe("referral checkout handoff", () => {
     await act(async () => resolve({ data: referral }));
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
-      workspaceId: server.id, planTierId: "starter", affiliateCode: code,
+      workspaceId: server.id, planTierId: "starter", referralCode: code,
     }));
   });
 
@@ -243,7 +237,7 @@ describe("referral checkout handoff", () => {
     expect(card("Hobby").querySelector("s")).toBeNull();
     await click("Yearly");
     expect(card("Hobby").querySelector("s")?.textContent).toBe("$10");
-    await click(baseDictionary.affiliates.remove);
+    await click(baseDictionary.referrals.remove);
     expect(card("Hobby").querySelector("s")).toBeNull();
     expect(card("Hobby").textContent).toContain("$10");
     expect(h.post).not.toHaveBeenCalled();
@@ -255,7 +249,7 @@ describe("referral checkout handoff", () => {
     await render(purchase());
     expect(host.textContent).toContain("Referral expired");
     expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
-    await click(baseDictionary.affiliates.remove);
+    await click(baseDictionary.referrals.remove);
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.not.objectContaining({ affiliateCode: expect.anything() }));
   });
 });
@@ -418,171 +412,53 @@ describe("plans for an existing server", () => {
 });
 
 describe("buying another managed server", () => {
-  it("uses normal width for Custom and extra width for the full comparison and PAYG", async () => {
-    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+  it("reports the visible choices when an upgrade dialog changes its contents", async () => {
+    const onVisiblePlanCountChange = vi.fn();
+    await render(picker("starter", { onVisiblePlanCountChange }));
+    expect(onVisiblePlanCountChange).toHaveBeenLastCalledWith(2);
+    await render(picker("pro", { onVisiblePlanCountChange }));
+    expect(onVisiblePlanCountChange).toHaveBeenLastCalledWith(1);
+    await render(picker("starter", { onVisiblePlanCountChange }));
+    await click(copy.plansRoute.otherPlans);
+    expect(onVisiblePlanCountChange).toHaveBeenLastCalledWith(4);
+    await click(copy.custom.name);
+    expect(onVisiblePlanCountChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("uses normal width for Custom and extra width for the full comparison", async () => {
     await render(<ManagedServerPurchase />);
     expect(sidebarState()).toBe("collapsed");
     await click(copy.custom.name);
     expect(sidebarState()).toBe("expanded");
     await click(copy.custom.presets);
     expect(sidebarState()).toBe("collapsed");
-    await click(copy.purchase.payg);
-    expect(sidebarState()).toBe("collapsed");
     expect(h.post).not.toHaveBeenCalled();
   });
 
-  it("keeps typed resources when switching PAYG tiers and offers a pool that fits the server", async () => {
-    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+  it("offers preset and custom plans without an unavailable billing model or credit estimator", async () => {
     await render(<ManagedServerPurchase />);
-    await click(copy.purchase.payg);
-    await click("Tier 1");
-    await edit(input(copy.custom.cpu)!, "3");
-    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    expect(panel.querySelector('[role="alert"]')?.textContent).toContain("exceeds Tier 1");
-    expect(panel.querySelector("aside")?.textContent).not.toContain("$0.1077");
-    await click("View Tier 2");
-    expect(input(copy.custom.cpu)?.value).toBe("3");
-    expect(panel.querySelector('[role="alert"]')).toBeNull();
-    expect(panel.querySelector("aside")?.textContent).toContain("$0.1077");
-    await click(copy.purchase.monthly);
-    await click(copy.purchase.payg);
-    expect(buttons("Tier 2")[0]?.getAttribute("aria-selected")).toBe("true");
-    expect(input(copy.custom.cpu)?.value).toBe("3");
-    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
-  });
-
-  it("keeps resource limits separate from credit packages and never treats a selection as paid access", async () => {
-    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
-    await render(<ManagedServerPurchase />);
-    await click(copy.purchase.payg);
-    await click("Tier 1");
-    await edit(input(copy.custom.cpu)!, "3");
-    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    await act(async () => panel.querySelector<HTMLButtonElement>('button[value="10000"]')!.click());
-    expect(buttons("Tier 1")[0]?.getAttribute("aria-selected")).toBe("true");
-    expect(panel.querySelector('[role="alert"]')?.textContent).toContain("exceeds Tier 1");
-    expect(panel.textContent).toContain("This package unlocks Tier 3");
-    expect(buttons("Add 10,000 credits")[0]?.disabled).toBe(true);
-    await click("Tier 3");
-    await act(async () => panel.querySelector<HTMLButtonElement>('button[value="500"]')!.click());
-    expect(buttons("Tier 3")[0]?.getAttribute("aria-selected")).toBe("true");
-    expect(panel.textContent).toContain("Tier 3 needs $50.00 in total credit purchases");
-    expect(h.post).not.toHaveBeenCalled(); expect(h.create).not.toHaveBeenCalled();
-  });
-
-  it("previews one server at full CPU without checkout, and preserves resources across billing modes", async () => {
-    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
-    await render(<ManagedServerPurchase />);
-    await click(copy.purchase.payg);
-    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    const estimate = panel.querySelector("aside")!;
-    expect(estimate.textContent).toContain("$0.0477");
-    expect(estimate.textContent).toContain("4.77 credits/hour");
-    expect(estimate.textContent).toContain(copy.purchase.hourlyHint);
-    expect(panel.querySelectorAll('input[type="number"]')).toHaveLength(3);
-    expect(estimate.querySelector("details")?.open).toBe(false);
-    expect(estimate.textContent).not.toMatch(/30-day|Assumes|Compare monthly hosts/);
-    expect(estimate.textContent).toContain("17.5 days");
-    expect(estimate.textContent).toContain("47 days");
-    await act(async () => panel.querySelector<HTMLButtonElement>('button[value="500"]')!.click());
-    expect(estimate.textContent).toContain("4.4 days");
-    expect(estimate.textContent).toContain("11.7 days");
-    await edit(input(copy.custom.cpu)!, "2");
-    expect(estimate.textContent).toContain("2.7 days");
-    expect(estimate.textContent).toContain("$0.0777");
-    expect(estimate.textContent).toContain("2 vCPU-h");
-    expect(estimate.textContent).toContain("6 credits");
-    expect(panel.textContent).toContain("2 vCPU × 100% = 2 vCPU-h");
-    expect(buttons("Add 500 credits")[0]?.disabled).toBe(true);
-    await click(copy.purchase.monthly);
-    expect(buttons(copy.purchase.monthly)[0]?.getAttribute("aria-selected")).toBe("true");
-    await click(copy.purchase.payg);
-    expect(input(copy.custom.cpu)?.value).toBe("2");
-    expect(panel.querySelector('button[value="500"]')?.getAttribute("aria-pressed")).toBe("true");
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.post).not.toHaveBeenCalled();
-    expect(window.open).not.toHaveBeenCalled();
-  });
-
-  it("estimates custom PAYG resources immediately without requesting a monthly quote", async () => {
-    vi.useFakeTimers();
-    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
-    await render(<ManagedServerPurchase />);
-    await click(copy.purchase.payg);
-    h.get.mockClear();
-    await edit(input(copy.custom.cpu)!, "4");
-    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
-    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    expect(panel.querySelector("aside")?.textContent).toContain("$0.1377");
-    expect(h.get).not.toHaveBeenCalled();
-    expect(h.post).not.toHaveBeenCalled();
-  });
-
-  it("clears an invalid estimate and cannot open PAYG checkout even if the catalog advertises availability", async () => {
-    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing: { ...computePricing, paygCheckoutAvailable: true } } });
-    await render(<ManagedServerPurchase />);
-    await click(copy.purchase.payg);
-    await edit(input(copy.custom.cpu)!, "0");
-    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    expect(panel.querySelector('[role="alert"]')?.textContent).toBe(copy.purchase.invalid);
-    expect(panel.querySelector("aside")?.textContent).not.toContain("17.5 days");
-    const buy = buttons("Add 2,000 credits")[0]!;
-    expect(buy.disabled).toBe(true);
-    await act(async () => buy.click());
-    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
-  });
-
-  it("keeps configuration in the page header and retains custom resources across purchase modes", async () => {
-    vi.useFakeTimers();
-    await render(<CloudPurchaseProvider tabs="header">
-      <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase />
-    </CloudPurchaseProvider>);
-    expect(host.querySelector("h1")?.textContent).toBe(copy.onboarding.compareTitle);
-    expect([...host.querySelectorAll("h1, h2")].filter(node => node.textContent === copy.onboarding.compareTitle)).toHaveLength(1);
-    expect(host.querySelectorAll('[role="tablist"]')).toHaveLength(1);
-    expect(buttons(copy.custom.presets)).toHaveLength(1);
-    expect(buttons(copy.custom.name)).toHaveLength(1);
-    expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelector("header")?.contains(buttons(copy.custom.name)[0]!)).toBe(true);
-    await click(copy.custom.name); await flushQuote();
-    expect(buttons(copy.custom.name)[0]?.getAttribute("aria-pressed")).toBe("true");
-    expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("false");
-    await edit(input(copy.custom.cpu)!, "3"); await flushQuote();
-    const monthly = buttons(copy.purchase.monthly)[0]!;
-    const panel = document.getElementById(monthly.getAttribute("aria-controls")!)!;
-    expect(panel.hidden).toBe(false);
-
-    await click(copy.purchase.payg);
-    expect(host.querySelector("h1")?.textContent).toBe(copy.purchase.title);
-    expect(panel.hidden).toBe(true);
-    expect(buttons(copy.purchase.payg)[0]?.getAttribute("aria-selected")).toBe("true");
-    const payg = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    expect(payg.hidden).toBe(false);
-    expect(payg.textContent).toContain(copy.purchase.ratesUnavailable);
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.post).not.toHaveBeenCalled();
-
-    await click(copy.purchase.compareMonthly);
-    expect(host.querySelector("h1")?.textContent).toBe(copy.onboarding.compareTitle);
-    expect(panel.hidden).toBe(false);
-    expect(input(copy.custom.cpu)?.value).toBe("3");
-    expect(buttons(copy.custom.name)[0]?.getAttribute("aria-pressed")).toBe("true");
-    await click(copy.custom.presets);
     expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
-    expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(host.querySelector('[role="tabpanel"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/PAYG|pay.as.you.go|Prepaid hosting|Credit package/i);
+    expect(buttons(copy.custom.name)).toHaveLength(1);
+    await click(copy.custom.name);
+    expect(host.querySelectorAll('input[type="number"]')).toHaveLength(3);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
   });
 
   it("supports keyboard switching and resets the purchase choice when the account changes", async () => {
-    const page = (scopeKey: string) => <CloudPurchaseProvider scopeKey={scopeKey} tabs="header">
+    const page = (scopeKey: string) => <CloudPurchaseProvider management scopeKey={scopeKey} tabs="header">
       <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase preserveProject />
     </CloudPurchaseProvider>;
     await render(page("user-a:org-a"));
     const monthly = buttons(copy.purchase.monthly)[0]!;
     monthly.focus();
     await act(async () => monthly.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
-    const payg = buttons(copy.purchase.payg)[0]!;
-    expect(document.activeElement).toBe(payg);
-    expect(payg.getAttribute("aria-selected")).toBe("true");
+    const manage = buttons(copy.purchase.manage)[0]!;
+    expect(document.activeElement).toBe(manage);
+    expect(manage.getAttribute("aria-selected")).toBe("true");
     h.user = "user-b";
     await render(page("user-b:org-a"));
     expect(buttons(copy.purchase.monthly)[0]?.getAttribute("aria-selected")).toBe("true");
@@ -590,34 +466,34 @@ describe("buying another managed server", () => {
     expect(h.create).not.toHaveBeenCalled();
   });
 
-  it("keeps mode navigation in the page header when billing state resolves", async () => {
+  it("keeps configuration in the page header when billing state resolves without adding a single-item tab", async () => {
     vi.useFakeTimers();
     const page = (ready: boolean) => <CloudPurchaseProvider tabs={ready ? "header" : "none"}>
       <BillingHeader />{ready && <CloudPurchaseTabs />}<ManagedServerPurchase preserveProject />
     </CloudPurchaseProvider>;
     await render(page(false));
     expect(host.querySelector('[role="tablist"]')).toBeNull();
-    expect(host.querySelector('[role="tabpanel"]')).toBeNull();
     await click(copy.custom.name); await flushQuote();
     await edit(input(copy.custom.cpu)!, "3"); await flushQuote();
     await render(page(true));
-    expect(host.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
     expect(input(copy.custom.cpu)?.value).toBe("3");
     expect(host.querySelector("header")?.contains(buttons(copy.custom.name)[0]!)).toBe(true);
+    expect([...host.querySelectorAll("h1, h2")].filter(node => node.textContent === copy.onboarding.compareTitle)).toHaveLength(1);
   });
 
-  it("locks the billing model while a checkout is being prepared", async () => {
+  it("locks purchase navigation while a checkout is being prepared", async () => {
     let finish!: (server: CloudWorkspaceSummary) => void;
     h.create.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-    await render(<CloudPurchaseProvider tabs="header">
+    await render(<CloudPurchaseProvider management tabs="header">
       <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase preserveProject />
     </CloudPurchaseProvider>);
     await click("Choose Starter");
     const monthly = buttons(copy.purchase.monthly)[0]!;
-    const payg = buttons(copy.purchase.payg)[0]!;
-    expect(payg.closest('fieldset')?.disabled).toBe(true);
+    const manage = buttons(copy.purchase.manage)[0]!;
+    expect(manage.closest('fieldset')?.disabled).toBe(true);
     expect(buttons(copy.custom.name)[0]?.closest('fieldset')?.disabled).toBe(true);
-    await act(async () => payg.click());
+    await act(async () => manage.click());
     expect(monthly.getAttribute("aria-selected")).toBe("true");
     await act(async () => finish(server));
     expect(h.create).toHaveBeenCalledOnce();
@@ -629,11 +505,26 @@ describe("buying another managed server", () => {
     await click("Add a destination");
     const dialog = document.querySelector('[role="dialog"]')!;
     expect([...dialog.querySelectorAll("article h3")].map(heading => heading.textContent)).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
-    expect(dialog.querySelector("header h2")?.textContent).toBe(baseDictionary.servers.setup.addServer);
+    expect(dialog.querySelector("header h2")?.textContent).toBe(copy.workspaces.create);
     expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
     await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(host.querySelector<HTMLInputElement>('input[aria-label="Project name"]')?.value).toBe("Keep this project");
+  });
+
+  it("keeps the acquisition flow in place while its checkout is being prepared", async () => {
+    let finish!: (server: CloudWorkspaceSummary) => void;
+    h.create.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await render(<ModalProvider><AddServerFromProject /></ModalProvider>);
+    await click("Add a destination");
+    await click("Choose Starter");
+    const connect = buttons(baseDictionary.servers.acquire.connected.label)[0]!;
+    expect(connect.disabled).toBe(true);
+    await act(async () => connect.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Choose Pro");
+    await act(async () => finish(server));
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post).toHaveBeenCalledOnce();
   });
 
   it("creates a server with its default name only after a plan is chosen", async () => {

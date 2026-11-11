@@ -115,6 +115,152 @@ function clockText() {
   return label?.nextElementSibling?.textContent;
 }
 
+it("restores live verification, keeps progress monotonic and ignores progress after a terminal outcome", async () => {
+  await mount();
+  const verification = { startedAt: START.toISOString(), urls: ["https://example.test"] };
+  await load({ status: "deploying", currentStep: 5, progress: 90, verification });
+  expect(build.deploymentStatus).toBe("verifying");
+  expect(build.state.verification).toEqual(verification);
+  await act(async () => api.callbacks.onProgress(4, 80));
+  expect(build.state.currentStepIndex).toBe(5);
+  expect(build.state.verification).toEqual(verification);
+  await act(async () => api.callbacks.onSuccess());
+  expect(build.deploymentStatus).toBe("ready");
+  expect(build.state.verification).toBeNull();
+  await act(async () => api.callbacks.onProgress(5, 90, verification));
+  expect(build.state.verification).toBeNull();
+  expect(build.state.currentStepIndex).toBe(6);
+});
+
+it("does not let an older poll hide publication received over the stream", async () => {
+  api.stream.isConnected = false;
+  await mount();
+  await load({ status: "deploying", currentStep: 4, progress: 80 });
+  const delayed = Promise.withResolvers<ReturnType<typeof snapshot>>();
+  api.status.mockReturnValueOnce(delayed.promise);
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  const verification = { startedAt: START.toISOString(), urls: ["https://example.test"] };
+  await act(async () => api.callbacks.onProgress(5, 90, verification));
+  await act(async () => { delayed.resolve(snapshot({ status: "deploying", currentStep: 4, progress: 80 })); });
+  expect(build.deploymentStatus).toBe("verifying");
+  expect(build.state.verification).toEqual(verification);
+  expect(build.state.currentStepIndex).toBe(5);
+});
+
+describe("build status on browser return", () => {
+  it("reconciles again when browser return overlaps a stale in-flight read", async () => {
+    await mount(); await load();
+    const stale = Promise.withResolvers<ReturnType<typeof snapshot>>();
+    api.status.mockReturnValueOnce(stale.promise);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    api.status.mockResolvedValue(snapshot({ status: "ready", is_active: false }));
+    await act(async () => stale.resolve(snapshot()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(api.status).toHaveBeenCalledTimes(3);
+    expect(build.state.deploymentSuccess).toBe(true);
+  });
+
+  it("does not consume buffered stream logs during a healthy resume status check", async () => {
+    await mount();
+    await load({ lastEventId: 5 });
+    const write = vi.fn();
+    build.terminalRef.current = { write } as any;
+    build.onTerminalReady();
+    api.status.mockResolvedValue(snapshot({
+      lastEventId: 6,
+      logEntries: [{ eventId: 6, text: "Published image", serviceName: "api" }],
+    }));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    const bytes = new TextEncoder().encode("Published image\r\n");
+    await act(async () => {
+      api.callbacks.onLog({ eventId: 6, serviceName: "api" }, "Published image", bytes);
+      api.callbacks.onLog({ eventId: 6, serviceName: "api" }, "Published image", bytes);
+    });
+    expect(write).toHaveBeenCalledExactlyOnceWith(bytes);
+    expect(build.state.buildLogs.map(log => log.text)).toEqual(["Published image"]);
+  });
+
+  it("reconciles a missed finish once, without polling a healthy stream or settled result", async () => {
+    await mount(); await load();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(api.status).toHaveBeenCalledTimes(1);
+    api.status.mockResolvedValue(snapshot({ status: "ready", is_active: false, buildDurationMs: 42000 }));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    expect(build.state.deploymentSuccess).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+  });
+
+  it("rate-limits resume events and skips hidden or offline checks", async () => {
+    await mount(); await load();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    api.stream.isConnected = false;
+    await act(async () => root.render(<Harness />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(api.status).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("visible");
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(api.status).toHaveBeenCalledTimes(1);
+    online.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online")); window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(api.status).toHaveBeenCalledTimes(2);
+    visibility.mockRestore(); online.mockRestore();
+  });
+
+  it("returns the loaded snapshot immediately while streaming remains open", async () => {
+    let closeStream!: () => void;
+    api.stream.connect.mockReturnValueOnce(new Promise<void>(resolve => { closeStream = resolve; }));
+    await mount();
+    let finished = false;
+    let load!: Promise<void>;
+    try {
+      await act(async () => {
+        load = build.loadBuildSession("dep-old").then(result => { finished = result.success; });
+      });
+      expect(finished).toBe(true);
+      expect(build.state.isDeploying).toBe(true);
+    } finally {
+      await act(async () => { closeStream(); await load; });
+    }
+  });
+
+  it("coalesces a quick return into one trailing check instead of losing it to the rate limit", async () => {
+    await mount(); await load();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(api.status).toHaveBeenCalledTimes(2);
+    api.status.mockResolvedValue(snapshot({ status: "ready", is_active: false }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(api.status).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(api.status).toHaveBeenCalledTimes(3);
+    expect(build.state.deploymentSuccess).toBe(true);
+  });
+});
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(START.getTime() + 10_000);

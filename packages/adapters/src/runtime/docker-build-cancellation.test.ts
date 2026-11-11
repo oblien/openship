@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { diagnosticError, errorReporter } from "@repo/core/diagnostics";
 import type { BuildConfig, CommandExecutor } from "../types";
 import { BuildLogger } from "./build-pipeline";
 import { DockerRuntime, packBuildContext } from "./docker";
@@ -312,6 +313,33 @@ describe("DockerRuntime build cancellation", () => {
     // nobody is waiting for must not pay for it.
     expect(cloneSourceOnRemote).not.toHaveBeenCalled();
     expect(executor.streamExec).not.toHaveBeenCalled();
+  });
+
+  it("masks batch failures before diagnostic reporting without losing the original internal cause", async () => {
+    const secret = "example-private-".repeat(150);
+    const cause = new Error(`remote build failed: ${secret}`, { cause: new Error(secret) });
+    const executor = {
+      exec: vi.fn(async () => ""),
+      streamExec: vi.fn(async () => { throw cause; }),
+    } as unknown as CommandExecutor;
+    const { runtime } = runtimeWith(executor);
+    const enabled = vi.spyOn(errorReporter, "isEnabled").mockReturnValue(true);
+    const capture = vi.spyOn(errorReporter, "capture").mockReturnValue("test-event");
+    try {
+      const result = await runtime.buildImages([{
+        serviceName: "api",
+        config: { ...buildConfig("secret-failure-batch-api"), envVars: { PRIVATE_VALUE: secret } },
+        logger: new BuildLogger(),
+      }], new BuildLogger());
+      expect(result[0]?.result).toMatchObject({
+        status: "failed", errorMessage: "Docker build failed: remote build failed: ***", errorCause: cause,
+      });
+      expect(capture).toHaveBeenCalled();
+      expect(JSON.stringify(capture.mock.calls.map(([error]) => diagnosticError(error)))).not.toContain("example-private-");
+    } finally {
+      capture.mockRestore();
+      enabled.mockRestore();
+    }
   });
 
   it("returns cancelled when the cancel lands during a static service's extract", async () => {

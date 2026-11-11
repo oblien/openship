@@ -23,6 +23,7 @@ export function record(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
+export const ACTIONS_YAML_ALIAS_LIMIT = 50;
 function unsupported(field: string): never {
   throw new ValidationError(
     `${field} requires a repository workflow in .github/workflows. Connect that file to use it with your Openship runners; standalone workflows do not support this feature.`,
@@ -51,7 +52,7 @@ export async function parseActionWorkflow(
     );
   const doc = parseDocument(source, { uniqueKeys: true });
   if (doc.errors.length) throw new ValidationError(doc.errors[0]!.message);
-  const raw = record(doc.toJS({ maxAliasCount: 0 }));
+  const raw = record(doc.toJS({ maxAliasCount: ACTIONS_YAML_ALIAS_LIMIT }));
   const triggers =
     typeof raw.on === "string"
       ? { [raw.on]: {} }

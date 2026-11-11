@@ -37,7 +37,7 @@ const ROWS = [{ key: "PORT", value: "3000", visible: true }];
 describe("EnvironmentVariables empty state", () => {
   it("puts Add Variable inside the empty state, not in a row below it", () => {
     const html = render();
-    // The one dashed box, and the CTA lives in it — the bottom add row (the
+    // The inline CTA stays in the empty box alongside the top toolbar action — the bottom add row (the
     // full-width dashed variant) only exists once there are rows to add after.
     expect(html).toContain("border border-dashed");
     expect(html).toContain("bg-primary");

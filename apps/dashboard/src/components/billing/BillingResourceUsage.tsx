@@ -3,7 +3,6 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { useEffect, useState } from "react";
-import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { billingApi, type BillingResources, type BillingState } from "@/lib/api/billing";
 import { Button } from "@/components/ui/button";
@@ -105,12 +104,6 @@ export function BillingResourceUsage({ state }: { state: BillingState }) {
           <p className="mt-1 text-xs text-muted-foreground">{periodLabel(compute?.period)}</p>
         </div>
         <div className="flex items-center gap-1">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/billing/usage">
-              {copy.viewUsage}
-              <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" aria-hidden="true" />
-            </Link>
-          </Button>
           <Button
             variant="ghost"
             size="icon"

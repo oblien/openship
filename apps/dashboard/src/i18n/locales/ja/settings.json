@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "チーム",
       "notifications": "通知",
-      "credentials": "認証情報",
+      "credentials": "接続",
       "cloud": "クラウド",
       "infrastructure": "インフラ",
       "instance": "インスタンス",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "認証情報",
+    "title": "接続",
     "description": "Openship があなたの代わりに使うトークンとログイン情報です（プライベートイメージの取得、DNS レコードの書き込みなど）。暗号化して保存され、保存後に再表示されることはありません。",
     "noProviders": "このインスタンスで利用できるプロバイダーはありません。",
     "noneForProvider": "まだ追加されていません。",
@@ -1623,7 +1623,17 @@
         "fields": {
           "apiToken": {
             "label": "APIトークン",
-            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。"
+            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。My Profile → API Tokens で作成してください。"
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "カスタムドメインに必要なDNSレコードを、OpenshipがDigitalOcean DNSに自動登録します。",
+        "fields": {
+          "apiToken": {
+            "label": "APIトークン",
+            "help": "domainの読み取り・作成・更新・削除のカスタムスコープを持つトークン。API → Tokens で作成してください。"
           }
         }
       }

@@ -83,8 +83,8 @@ export function getNavSections(
   ];
   // Billing is available on Cloud and on installations linked to a Cloud account.
   if (isSaaS) {
-    settingsItems.push({ key: "billing", href: "/billing", icon: "credit-card" });
-    settingsItems.push({ key: "affiliates", href: "/affiliates", icon: "gift" });
+    settingsItems.push({ key: "billing", href: "/billing", icon: "credit-card", alsoAt: ["/resources"] });
+    settingsItems.push({ key: "referrals", href: "/referrals", icon: "gift" });
   }
   // Keep audit history alongside account settings and billing.
   settingsItems.push({ key: "audit", href: "/audit", icon: "clipboard-list" });
@@ -92,7 +92,6 @@ export function getNavSections(
   // Cloud's Emails entry connects existing IMAP/SMTP backends through the
   // generic webmail app; local control planes retain mail-server administration.
   const infraItems: NavItem[] = [
-    ...(!selfHosted ? [{ key: "resources", href: "/resources", icon: "cloud" as const }] : []),
     { key: "servers", href: "/servers", icon: "server" },
     { key: "emails", href: "/emails", icon: "mail" },
     { key: "jobs", href: "/jobs", icon: "clock" },
@@ -335,5 +334,7 @@ export function isNavItemActive(
   // Home is an exact match or it would swallow every route below it.
   if (item.href === "/") return pathname === "/";
   const path = item.href.split("?")[0];
-  return owns(path) || pathname.startsWith(path + "/");
+  return [path, ...(item.alsoAt ?? [])].some(
+    (alias) => pathname === alias || (alias !== "/" && pathname.startsWith(alias + "/")),
+  );
 }

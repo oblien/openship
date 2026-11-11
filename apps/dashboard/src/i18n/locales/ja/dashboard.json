@@ -55,7 +55,7 @@
     "appsEmptyDesc": "ワンクリックで完全セルフホスト — データベース、自動化、アナリティクス、パスワード管理などを自分のサーバーで実行できます。"
   },
   "nav": {
-    "affiliates": "紹介",
+    "referrals": "紹介",
     "resources": "クラウドスペース",
     "support": "サポート",
     "scale": "スケーリング",
@@ -70,7 +70,7 @@
     "servers": "サーバー",
     "emails": "メール",
     "settings": "設定",
-    "billing": "請求と使用状況",
+    "billing": "プランと請求",
     "audit": "監査ログ",
     "mailSetup": "メールをセットアップ",
     "mailSetupProgress": "セットアップの進行状況",

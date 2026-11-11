@@ -5,7 +5,6 @@ import { CLOUD_CAPABILITIES } from "@repo/core";
 import { serverApi, ServerApiError } from "@/lib/server/api";
 import { getDeploymentInfo } from "@/lib/server/session";
 import type { BillingState } from "@/lib/api/billing";
-import type { ServerDetail } from "@repo/contracts";
 import type { BillingUnavailableReason } from "./BillingUnavailable";
 
 interface BillingStateResponse {
@@ -112,23 +111,6 @@ async function fetchBillingState(workspaceId?: string): Promise<BillingFetchResu
       };
     }
     return { kind: "unavailable", reason: "billing-unreachable" };
-  }
-}
-
-/** Pick a billing view only after an unscoped read reports multiple servers.
- * This uses the same authorized inventory as the picker, never a mutation default. */
-export async function getDefaultBillingWorkspace(): Promise<string | undefined> {
-  try {
-    const data = await serverApi.get<{ servers: ServerDetail[] }>("system/servers/destinations", { cache: "no-store" });
-    const servers = data.servers.filter(server => server.managed);
-    // Prefer an allocated server (including stopped servers and previous
-    // subscriptions) over an unfinished purchase. Provider state can lead the saved tier.
-    const selected = servers.find(({ managed }) => managed && (managed.planTierId !== "free" || managed.resources)) ?? servers[0];
-    return selected?.managed?.id;
-  } catch (diagnosticFailure) {
-    observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/billing/_components/billing-state");
-    // Keep the explicit picker and its retry available if inventory cannot load.
-    return undefined;
   }
 }
 

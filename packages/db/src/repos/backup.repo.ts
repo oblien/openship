@@ -11,8 +11,10 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   and,
+  asc,
   desc,
   eq,
+  gt,
   inArray,
   isNotNull,
   isNull,
@@ -29,6 +31,7 @@ import {
   backupPolicy,
   backupRestore,
   backupRun,
+  cloudWorkspace,
   clusterDatabase,
   clusterStorage,
   mailServers,
@@ -1087,6 +1090,65 @@ export function createBackupRunRepo(db: Database) {
           isNull(backupRun.deletedAt),
         ),
       });
+    },
+
+    /** Discovery only: neither status nor age proves its worker has exited.
+     * Cloud recovery must acquire the original workspace/project fences and
+     * confirm recorded remote commands before acknowledging these candidates. */
+    async listUnfinishedCloudExecutions(afterId?: string, limit = 100) {
+      return db
+        .select({
+          runId: backupRun.id,
+          projectId: project.id,
+          organizationId: project.organizationId,
+          workspaceId: cloudWorkspace.id,
+        })
+        .from(backupRun)
+        .innerJoin(project, and(
+          eq(project.id, backupRun.projectId),
+          eq(project.organizationId, backupRun.organizationId),
+        ))
+        .innerJoin(cloudWorkspace, and(
+          eq(cloudWorkspace.id, project.workspaceId),
+          eq(cloudWorkspace.organizationId, project.organizationId),
+        ))
+        .where(and(
+          liveBackupExecution,
+          isNull(backupRun.deletedAt),
+          isNull(cloudWorkspace.remote),
+          afterId ? gt(backupRun.id, afterId) : undefined,
+        ))
+        .orderBy(asc(backupRun.id))
+        .limit(limit);
+    },
+
+    /** The caller has fenced the dead controller and verified remote exit.
+     * Preserve existing terminal verdicts; unfinished capture cannot be replayed. */
+    async acknowledgeRecoveredExecution(input: {
+      runId: string;
+      projectId: string;
+      organizationId: string;
+    }) {
+      const terminal = inArray(backupRun.status, TERMINAL_RUN_STATUSES);
+      const now = new Date();
+      const rows = await db
+        .update(backupRun)
+        .set({
+          executionFinishedAt: now,
+          status: sql`case when ${terminal} then ${backupRun.status} else 'server_error' end`,
+          finishedAt: sql`case when ${terminal} then ${backupRun.finishedAt} else ${sql.param(now, backupRun.finishedAt)} end`,
+          lastEventAt: sql`case when ${terminal} then ${backupRun.lastEventAt} else ${sql.param(now, backupRun.lastEventAt)} end`,
+          errorMessage: sql`case when ${terminal} then ${backupRun.errorMessage} else 'The backup controller was interrupted. Remote work has been recovered; start a new backup to retry.' end`,
+        })
+        .where(and(
+          eq(backupRun.id, input.runId),
+          eq(backupRun.projectId, input.projectId),
+          eq(backupRun.organizationId, input.organizationId),
+          liveBackupExecution,
+          isNull(backupRun.deletedAt),
+        ))
+        .returning();
+      return rows.length === 1;
     },
 
     /** Queued runs awaiting a worker. Used by the in-process runner's

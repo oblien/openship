@@ -12,6 +12,9 @@ import { JOURNAL_PATH } from "./takeover-journal";
 import type { CommandExecutor } from "../../types";
 import type { InstallerConfig } from "../types";
 
+const replacement = vi.hoisted(() => vi.fn());
+vi.mock("./replace-edge-container", () => ({ replaceEdgeContainer: replacement }));
+
 const IMAGE = "ghcr.io/oblien/openship-edge:1.2.3";
 
 /**
@@ -59,6 +62,7 @@ interface BoxOpts {
   mountedSources?: Record<string, string>;
   identityLabels?: Record<string, string> | null;
   identityReadFails?: boolean;
+  replacementPending?: boolean;
 }
 
 /** procfs socket table rows: state 0A = LISTEN, hex 0050 = 80, 01BB = 443. */
@@ -88,6 +92,11 @@ const PROC_LISTENING = [
  */
 function box(opts: BoxOpts = {}) {
   const commands: string[] = [];
+  replacement.mockReset().mockImplementation(async (_executor, args) => {
+    commands.push("replace-edge");
+    commands.push(buildEdgeRunCommand(args.container, args.image, args.mounts, args.predecessor.labels, "create"));
+    return { swapped: !opts.runFails, down: Boolean(opts.runFails) };
+  });
   const files = new Map<string, string>();
   let edgeState = opts.edgeStatus ?? (opts.edgeContainer ? "running" : "");
   let unitUp = Boolean(opts.hostOpenResty);
@@ -103,6 +112,7 @@ function box(opts: BoxOpts = {}) {
   const answer = async (cmd: string): Promise<string> => {
     commands.push(cmd);
     if (cmd.includes("{{json .Swarm}}")) return '{"LocalNodeState":"inactive"}';
+    if (opts.replacementPending && cmd.includes("--filter name='openship-edge-update-'")) return "openship-edge-update-fixture-next";
 
     if (cmd.startsWith("docker ps --filter name=openship-edge")) {
       return opts.edgeContainer?.includes("openship-edge") ? opts.edgeContainer : "";
@@ -361,6 +371,15 @@ describe("resolveEdgeContainerMounts", () => {
 });
 
 describe("ensureContainerEdge", () => {
+  it.each([undefined, "restarting"])("does not repair over an unfinished detached replacement (state=%s)", async (edgeStatus) => {
+    const { executor, commands, onLog } = box({
+      replacementPending: true,
+      edgeContainer: edgeStatus ? "openship-edge" : undefined,
+      edgeStatus,
+    });
+    await expect(ensureContainerEdge(executor, { onLog, image: IMAGE })).rejects.toThrow("edge replacement is in progress");
+    expect(commands.some(c => c.startsWith("docker rm") || c.startsWith("docker run"))).toBe(false);
+  });
   it("is a no-op when our edge is already running the pinned image", async () => {
     const { executor, commands, onLog } = box({
       edgeContainer: "openship-edge",
@@ -393,7 +412,7 @@ describe("ensureContainerEdge", () => {
     const result = await ensureContainerEdge(executor, { onLog, image: IMAGE });
 
     expect(result.container).toBe("openship-edge");
-    const run = commands.find((command) => command.startsWith("docker run -d"));
+    const run = commands.find((command) => command.startsWith("docker create"));
     expect(run).toContain(
       "'/private/var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z'",
     );
@@ -443,38 +462,17 @@ describe("ensureContainerEdge", () => {
 
     expect(result.updated).toBe(true);
     // Pull before the old one is removed, same rule as the migration path.
-    expect(idx(commands, "docker pull")).toBeLessThan(idx(commands, "docker rm -f"));
-    expect(commands.some((c) => c.includes(`docker run -d --name 'openship-edge'`))).toBe(true);
+    expect(idx(commands, "docker pull")).toBeLessThan(idx(commands, "replace-edge"));
+    expect(replacement).toHaveBeenCalledOnce();
+    expect(commands.some((c) => c.startsWith("docker rm -f"))).toBe(false);
   });
 
-  it("restores a serving edge after the replacement launch loses its SSH channel", async () => {
-    const previousImage = "ghcr.io/oblien/openship-edge:1.0.0";
-    const { executor, commands, onLog } = box({
-      edgeContainer: "openship-edge",
-      edgeContainerImage: previousImage,
-      identityLabels: { "openship.project": "proj-native", "openship.service": "edge" },
-      imagePresent: true,
-    });
-    vi.mocked(executor.streamExec).mockImplementationOnce(async () => {
-      // Removal succeeded, but the replacement's command channel could not open.
-      throw new Error("SSH channel closed during docker run");
-    });
-
-    const result = await ensureContainerEdge(executor, {
-      onLog,
-      image: IMAGE,
-      verifyTimeoutMs: 50,
-    });
-
-    expect(result).toMatchObject({ updated: false, edgeDown: false });
-    expect(await executor.exec("docker inspect -f '{{.State.Status}}' openship-edge")).toBe(
-      "running",
-    );
-    const restored = commands.find((command) => command.startsWith("docker run -d"));
-    expect(restored).toContain(`'${previousImage}'`);
-    expect(restored).toContain("--label 'openship.project=proj-native'");
-    expect(restored).toContain("--label 'openship.service=edge'");
-    expect(said(onLog)).toContain("SSH channel closed during docker run");
+  it("does not race a server-owned replacement with client-side rollback after connection loss", async () => {
+    const { executor, commands, onLog } = box({ edgeContainer: "openship-edge", edgeContainerImage: "edge:old", imagePresent: true });
+    replacement.mockRejectedValueOnce(new Error("SSH channel closed"));
+    await expect(ensureContainerEdge(executor, { onLog, image: IMAGE })).rejects.toThrow("SSH channel closed");
+    expect(replacement).toHaveBeenCalledOnce();
+    expect(commands.some(c => c.startsWith("docker rm") || c.startsWith("docker run"))).toBe(false);
   });
 
   it.each([false, true])("preserves service identity through image update and rollback (failure=%s)", async (runFails) => {
@@ -489,8 +487,8 @@ describe("ensureContainerEdge", () => {
       edgeContainer: "openship-edge", edgeContainerImage: "edge:old", identityLabels, runFails,
     });
     await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
-    const runs = commands.filter(command => command.startsWith("docker run -d"));
-    expect(runs).toHaveLength(runFails ? 2 : 1);
+    const runs = commands.filter(command => command.startsWith("docker create"));
+    expect(runs).toHaveLength(1);
     for (const run of runs) {
       expect(run).toContain("--label 'openship.project=proj-native'");
       expect(run).toContain("--label 'openship.deployment=dep-current'");
@@ -500,8 +498,8 @@ describe("ensureContainerEdge", () => {
       expect(run).not.toContain("config-hash");
       expect(run).not.toContain("image.revision");
     }
-    expect(commands.find(command => command.startsWith("docker rm -f"))).toBe(`docker rm -f '${"a".repeat(64)}'`);
-    expect(idx(commands, "{{json .Config.Labels}}")).toBeLessThan(idx(commands, "docker rm -f"));
+    expect(replacement.mock.calls[0]?.[1].predecessor.id).toBe("a".repeat(64));
+    expect(idx(commands, "{{json .Config.Labels}}")).toBeLessThan(idx(commands, "replace-edge"));
   });
 
   it.each(["running", "restarting"])("keeps the existing %s edge when its identity cannot be read", async (edgeStatus) => {
@@ -522,7 +520,7 @@ describe("ensureContainerEdge", () => {
     await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
     const inspect = commands.find(command => command.includes("{{json .Config.Labels}}"));
     expect(inspect).toContain("'renamed-edge'");
-    const run = commands.find(command => command.startsWith("docker run -d"));
+    const run = commands.find(command => command.startsWith(cause === "stale mounts" ? "docker create" : "docker run -d"));
     expect(run).toContain("--label 'openship.project=project-one'");
     expect(run).toContain("--label 'openship.service=edge'");
   });
@@ -572,7 +570,7 @@ describe("ensureContainerEdge", () => {
     expect(commands.some((c) => c.startsWith("docker rm -f"))).toBe(false);
   });
 
-  it("puts the OLD image back when the new one won't come up", async () => {
+  it("reports the server-owned replacement recovery outcome", async () => {
     const { executor, commands, onLog } = box({
       edgeContainer: "openship-edge",
       edgeContainerImage: "ghcr.io/oblien/openship-edge:1.0.0",
@@ -581,8 +579,7 @@ describe("ensureContainerEdge", () => {
     const result = await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
 
     expect(result.updated).toBe(false);
-    const runs = commands.filter((c) => c.startsWith("docker run -d"));
-    expect(runs.at(-1)).toContain("openship-edge:1.0.0");
+    expect(replacement).toHaveBeenCalledOnce();
     // Neither image came up, so the box has NO edge — and that has to be reported,
     // not just logged, or the worst outcome this function has is invisible.
     expect(result.edgeDown).toBe(true);
@@ -796,6 +793,6 @@ describe("ensureContainerEdge — image acquisition gate", () => {
 
     expect(result.updated).toBe(true);
     expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
-    expect(commands.some((c) => c.includes(`docker run -d --name 'openship-edge'`))).toBe(true);
+    expect(replacement).toHaveBeenCalledOnce();
   });
 });

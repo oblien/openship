@@ -112,9 +112,10 @@ The panel shows the records for your deployment:
 
 Copy each value exactly as shown — don't retype it, use the Copy button.
 
-If Cloudflare hosts your DNS, choose **Connect a DNS provider** in this panel. An owner or admin can
-add a token with **Zone:Read** and **DNS:Edit** for the relevant zones without leaving the deployment
-setup. The connection is saved in **Settings → Credentials** and can be reused across the workspace.
+If Cloudflare or DigitalOcean hosts your DNS, choose **Connect a DNS provider** in this panel. An
+owner or admin can add a token without leaving the deployment setup: for Cloudflare, one with
+**Zone:Read** and **DNS:Edit** for the relevant zones; for DigitalOcean, a custom-scoped token with
+the **domain** read, create, update and delete scopes. The connection is saved in **Settings → Connections** and can be reused across the workspace.
 Connecting verifies the token; it does not change DNS records.
 
 Credentials belong to the instance where you connect them. For a Cloud project opened through a
@@ -127,8 +128,14 @@ record sets are left for manual review. The record list refreshes after applying
 
 During a new deployment, you can connect the provider ahead of time. If the domain has not been saved
 yet, deploy first and apply the records from its DNS settings afterward, or use **Manual DNS setup**
-to publish them now. Cloudflare is currently the supported provider for automatic record writes;
-other providers use the manual steps below.
+to publish them now. Cloudflare and DigitalOcean are the supported providers for automatic record
+writes; other providers use the manual steps below.
+
+DigitalOcean records have no comment field, so Openship marks each record it creates with a TXT record
+at `_openship-owner.<record name>`. That marker is how Openship knows which records it may delete
+when you remove the domain. Leave those TXT records in place: deleting one turns its record into one
+you manage yourself. DigitalOcean only serves a domain's records once the registrar points the domain
+at DigitalOcean's name servers.
 
 </Step>
 
@@ -198,8 +205,8 @@ on the wildcard's card. The inline panel separates routing DNS from certificate 
 
 ### Automatic provider
 
-Connect **Cloudflare** from the DNS panel or **Settings → Credentials**, using a token with **Zone:Read** and **DNS:Edit** for
-the relevant zone. Choose **Automatic provider**, then **Enable HTTPS automatically**. Openship
+Connect **Cloudflare** or **DigitalOcean** from the DNS panel or **Settings → Connections**, using a
+token that can edit DNS records for the relevant zone. Choose **Automatic provider**, then **Enable HTTPS automatically**. Openship
 publishes the certificate challenge, waits for DNS, obtains the certificate and removes its temporary
 TXT record. Keep the connection enabled so Openship can renew the certificate automatically.
 
@@ -226,7 +233,7 @@ switch methods. Installation that has already started must finish.
 <Callout title="Manual TXT also means manual renewal" type="warn">
 When the certificate is within 14 days of expiry, the domain details show that renewal needs attention.
 Choose **Renew SSL**, publish the new TXT value and complete the check. Openship does not repeatedly
-attempt unattended issuance for a manual domain. To enable automatic renewal, connect Cloudflare,
+attempt unattended issuance for a manual domain. To enable automatic renewal, connect a DNS provider,
 open the setup panel and choose **Automatic provider**.
 </Callout>
 

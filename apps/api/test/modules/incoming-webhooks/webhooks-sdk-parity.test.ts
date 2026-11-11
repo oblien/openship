@@ -69,7 +69,10 @@ describe("incoming webhooks share management, dispatch and authority across SDK/
     expect((await c.remote.webhooks.list(p.id))[0]?.secret).toBe(rotated.secret);
     await flushAudit();
     const events = await db.select().from(schema.auditEvent).where(eq(schema.auditEvent.resourceId, p.id));
-    expect(events).toHaveLength(3);
+    // Three management writes, plus the two remote lists above: token reads
+    // are audited now, so the reads leave `project:read` rows.
+    expect(events).toHaveLength(5);
+    expect(events.filter((row) => row.eventType === "project:read")).toHaveLength(2);
     expect(JSON.stringify(events)).not.toContain(created.secret!);
     await c.remote.webhooks.remove(p.id, created.id);
     expect(await c.native.webhooks.list(p.id)).toEqual([]);

@@ -6,7 +6,7 @@ import React from "react";
  * already landed. The shield restates the promise the copy makes: the source
  * keeps its units, nothing is torn down.
  *
- * Same construction as {@link ProjectIllustration}: one flat SVG, every colour
+ * One flat SVG, every colour
  * from a `--th-*` token so it tracks light / dark / dim with no per-theme
  * branching. Surfaces use `--th-sf-*` rather than `--th-card-bg` on purpose —
  * this sits ON a card, and the card fill would render it invisible.

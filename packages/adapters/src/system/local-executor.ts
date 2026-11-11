@@ -12,7 +12,8 @@ import {
 import { dirname } from "node:path";
 import { assertLocalHostExecutionAllowed } from "@repo/core";
 
-import type { CommandExecutor, LogEntry } from "../types";
+import type { CommandExecutor, FileStat, LogEntry } from "../types";
+import { lstatFile } from "./file-stat";
 import {
   getLocalExecEnv,
   getLocalShellArgs,
@@ -162,6 +163,10 @@ export class LocalExecutor implements CommandExecutor {
 
   async readFile(path: string): Promise<string> {
     return fsReadFile(path, "utf-8");
+  }
+
+  async lstat(path: string): Promise<FileStat | null> {
+    return lstatFile(path);
   }
 
   async exists(path: string): Promise<boolean> {

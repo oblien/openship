@@ -1,0 +1,11 @@
+/var/log/clamav/freshclam.log {
+    rotate 12
+    weekly
+    compress
+    delaycompress
+    missingok
+    create 640 clamav adm
+    postrotate
+        /usr/bin/supervisorctl -c /opt/openship-mail/supervisord.conf signal HUP clamav-freshclam > /dev/null || true
+    endscript
+}

@@ -142,3 +142,4 @@ export * from "./compose-interpolation";
 export * from "./service-env-layers";
 
 export * from "./locale";
+export * from "./concurrency";

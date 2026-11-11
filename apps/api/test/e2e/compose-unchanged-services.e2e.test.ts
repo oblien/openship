@@ -81,6 +81,7 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
       const current = (await repos.project.findById(project.id))!;
       const resources = current.resources as ResourceConfig | null;
       const deployment = await seedDeployment(project, {
+        status: "deploying",
         imageRef: "compose",
         containerId: "compose",
         meta: {
@@ -109,6 +110,7 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
         },
       );
       expect(result.status, JSON.stringify(result)).toBe("ready");
+      await repos.deployment.updateStatus(deployment.id, "ready");
       await setActive(project.id, deployment.id);
       const rows = await repos.service.listByDeployment(deployment.id);
       expect(rows).toHaveLength(2);

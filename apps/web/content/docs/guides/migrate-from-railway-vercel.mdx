@@ -1,0 +1,133 @@
+---
+title: Migrate from Railway or Vercel
+description: Connect a platform, review its services and data, and import through Openship's normal deployment workflow.
+---
+
+Open **New project → Import existing project** and choose **Railway** or **Vercel**.
+Railway imports the complete selected project environment in one operation, with each service
+becoming an Openship project. Repository access, deployments, private service
+connections, data transfer and destination selection use the same workflows as other projects.
+
+## Connect the source
+
+An organization administrator can add a connection in the import flow or in
+**Settings → Connections**. Choose an existing connection, authorize a provider account when
+OAuth is configured, or enter an API token. Tokens remain encrypted on the server.
+
+**Test & connect** saves and verifies a new token connection. For a saved connection, use
+**Test connection** to check it again. The source step also checks project access and shows
+how many projects are available; an empty account and a failed access check are shown separately.
+
+- **Railway:** choose the token's account, workspace or project scope. Workspace tokens also
+  require the workspace ID. Project tokens are limited to their project and environment.
+- **Vercel:** enter the team ID when using a team-scoped token. Choose the project and its
+  production or preview environment. Openship reads the latest ready deployment in that environment.
+
+Railway imports require permission to stop and deploy services, update their configuration,
+register a temporary SSH key and read the attached storage. A metadata-only token is insufficient.
+
+## Discover and review
+
+Select the source project and environment. Railway keeps all services in the import so their
+writers, dependencies and storage move together. Open **Configure** to inspect the repository or image, destination name,
+variables, storage and domains. Missing secrets open automatically. Private repositories
+also need [GitHub access](/docs/guides/git-authentication) in Openship.
+
+GitHub applications import the deployed commit. Automatic deployment on push stays off until
+you enable it. Image services use the normal registry pull flow; add a registry connection
+when an image is private. Openship pins the running image digest when Railway supplies it;
+otherwise review warns that the image tag may have changed. Custom Dockerfile paths, HTTP
+health checks and restart policies are preserved when they can be represented in Openship.
+
+Exportable variables stay on the server. Railway sealed values and Vercel Secret/Sensitive
+values need to be entered again. Optional variables can be excluded. Railway private addresses
+become ordinary Openship project connections, preserving the original protocol, credentials,
+database name and URL options. Unresolved provider references are
+shown as blockers instead of being silently copied.
+
+Choose a destination using the normal server picker. Its permissions, subscription and capacity
+checks still apply. Choose **Check import** to check the configuration before deployment.
+Blocked services stay in the editor with the issue shown. A successful check opens a separate
+review listing the import's data choices. Changing a selection or destination requires a new check.
+
+## Choose what happens to data
+
+- **Railway persistent volumes:** Openship stops the complete source project, temporarily runs
+  export-only containers on its existing mounts, and streams every selected volume into new
+  destination volumes. Databases, queues, SQLite and arbitrary file stores use the same copy
+  path. Files, database directories, persisted accounts, ownership, permissions and symlinks
+  travel together. All volumes finish copying before any destination application starts.
+  Existing destination data is never overwritten. This requires compatible application images
+  and storage formats; it is not a database version upgrade or a copy of ephemeral container files.
+- **External PostgreSQL:** keep the existing connection, or copy its configured database.
+  Copying requires its major version and a direct public connection URL with TLS. After entering
+  a missing PostgreSQL URL, review adds the database to the same selection list.
+- **Empty storage:** explicitly starts the destination without copying source data.
+
+Allow downtime for the Railway project and pause external deployment automation or jobs that
+could restart or modify it. Openship stops the selected environment's services automatically.
+It restores their original configuration after copying and leaves them stopped for cutover.
+For an external PostgreSQL copy, pause writers yourself and keep them paused through cutover.
+
+<Callout type="warn" title="Review platform-specific dependencies">
+  This is not an export of every provider feature. Vercel Blob, Edge Config, provider-specific
+  functions and external storage other than supported PostgreSQL copies need separate handling. Cron
+  services, multiple replicas, Railway pre-deploy commands, multiple public ports, non-GitHub
+  repositories, unsupported build settings and unresolved connections block review. Sleeping
+  services run continuously after import. Dependency cycles and variables containing several private
+  service addresses require review. External PostgreSQL logical copies do not include other
+  databases or server-wide roles; a Railway volume copy preserves the whole persisted directory.
+</Callout>
+
+## Import, verify and finish
+
+Start the reviewed import. The configuration is checked again, destination projects are allocated,
+and the source lifecycle and storage copy are recorded in a recovery checkpoint. The saved migration
+page shows progress, deployment logs and links to every project and survives a browser refresh.
+Dependencies deploy before their consumers, and imported containers must pass runtime verification.
+
+Open the imported projects, verify their data, and add a test domain in **Domains & Routes**.
+Then move your custom domains through the normal domain flow and confirm cutover. Provider-owned
+domains such as `vercel.app` addresses cannot be transferred.
+
+Source services, domains and data remain at the provider. Retire them there after verification.
+A failed Railway import retains copied data and configuration, stops the destination workloads
+started by that import, then restores the original source deployments. Process-restart recovery
+uses the same checkpoint. Operator changes or an unreachable destination can require manual
+review before the source resumes. Temporary SSH grants are revoked after completion or recovery.
+Review retained destination projects before retrying; partial volumes are not overwritten.
+
+## Configure OAuth on your installation
+
+API tokens work without a registered OAuth application. To offer account authorization, configure
+these variables on the Openship API server:
+
+| Provider | Variables                                                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Railway  | `OPENSHIP_CONNECTION_RAILWAY_CLIENT_ID`, `OPENSHIP_CONNECTION_RAILWAY_CLIENT_SECRET`                                              |
+| Vercel   | `OPENSHIP_CONNECTION_VERCEL_CLIENT_ID`, `OPENSHIP_CONNECTION_VERCEL_CLIENT_SECRET`, `OPENSHIP_CONNECTION_VERCEL_INTEGRATION_SLUG` |
+
+Register the exact callback `<canonical-dashboard-url>/connections/callback`. For Vercel, use an
+API integration with an external installation flow and access to projects, deployments, domains
+and environment variables. For Railway, use an OAuth application supporting Authorization Code
+with PKCE and the requested workspace scope. Keep client secrets out of public dashboard variables.
+
+## Related guides
+
+<Cards>
+  <Card
+    title="Server-to-server migration"
+    href="/docs/guides/server-to-server-migration"
+    description="Import Docker workloads from a server or move existing Openship projects."
+  />
+  <Card
+    title="Custom domains"
+    href="/docs/guides/custom-domains"
+    description="Verify destination routing before moving production traffic."
+  />
+  <Card
+    title="Backups and restore"
+    href="/docs/guides/backups-restore"
+    description="Set up ongoing protection for the imported data."
+  />
+</Cards>

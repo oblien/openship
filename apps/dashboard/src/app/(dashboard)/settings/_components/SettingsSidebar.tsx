@@ -52,7 +52,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "security" | "git" | "tokens" | "mcp" | "assistant" | "chat-apps" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "security" | "git" | "tokens" | "mcp" | "assistant" | "chat-apps" | "team" | "notifications" | "email" | "credentials" | "connections" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -69,12 +69,13 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
-  // Keep old DNS bookmarks working now that tokens live in Credentials.
-  const allowedTabs: SettingsTabId[] = ["general", "security", "git", "tokens", "mcp", "assistant", "chat-apps", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  // Keep DNS and Credentials bookmarks working under Connections.
+  const allowedTabs: SettingsTabId[] = ["general", "security", "git", "tokens", "mcp", "assistant", "chat-apps", "team", "notifications", "email", "credentials", "connections",
+    "dns", "cloud", "infrastructure", "instance"];
   const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
-  // DNS credentials moved into Credentials — one screen for every third-party secret
-  // instead of three. The old link lands on the screen that now owns them.
-  const activeTab: SettingsTabId = requested === "dns" ? "credentials"
+  // Connections owns both provider tokens and organization OAuth grants.
+  const activeTab: SettingsTabId = requested === "dns" || requested === "credentials"
+      ? "connections"
     : requested === "security" && authMode !== "local" ? "general" : requested;
 
   const tabs: SettingsTab[] = [
@@ -85,7 +86,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
     // mail-only shell, which deploys nothing from source.
     { id: "git", label: t.settings.sidebar.tabs.git, icon: "git-branch", visible: productView !== "mail" },
-    { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: "key", visible: true, requiresRole: "admin" },
+    { id: "connections", label: t.settings.sidebar.tabs.credentials, icon: "key", visible: true, requiresRole: "admin" },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: "terminal", visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: "mcp", visible: true },
     { id: "assistant", label: "Assistant", icon: "assistant", visible: productView !== "mail" },

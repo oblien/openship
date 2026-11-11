@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { elevatedExecutor, elevateCommand, ensureOwnedDir } from "./elevated-executor";
+import { framedCatCommand } from "./exact-file-read";
 import { probeOutput } from "./environment.fixtures";
 import { sq } from "./local-shell";
 import type { CommandExecutor, LogEntry } from "../types";
@@ -191,15 +192,62 @@ describe("elevatedExecutor", () => {
   it("retries a REFUSED read as root, so a 0700 cert dir reports what is actually there", async () => {
     const { inner, readFile, exec } = fakeExecutor();
     readFile.mockRejectedValue(new Error("EACCES: permission denied, open '/etc/letsencrypt/live/x/fullchain.pem'"));
-    exec.mockResolvedValue("-----BEGIN CERTIFICATE-----");
+    exec.mockResolvedValue("<openship-file>-----BEGIN CERTIFICATE-----\n</openship-file>");
 
     const el = elevatedExecutor(inner);
     const pem = await el.readFile("/etc/letsencrypt/live/x/fullchain.pem");
 
-    expect(pem).toBe("-----BEGIN CERTIFICATE-----");
+    expect(pem).toBe("-----BEGIN CERTIFICATE-----\n");
     expect(String(exec.mock.calls[0]?.[0])).toBe(
-      elevateCommand(`cat ${sq("/etc/letsencrypt/live/x/fullchain.pem")}`),
+      elevateCommand(framedCatCommand("/etc/letsencrypt/live/x/fullchain.pem")),
     );
+  });
+
+  // `exec` trims its output. A vhost read that lost its trailing newline never compared
+  // equal to the bytes about to be written, and restoring it wrote the truncated text back.
+  it("returns a refused file's exact bytes, even though exec trims what it prints", async () => {
+    const { inner, readFile, exec } = fakeExecutor();
+    const vhost = "\nserver {\n    listen 80;\n}\n";
+    readFile.mockRejectedValue(new Error("EACCES: permission denied"));
+    exec.mockImplementation(async (command: string) =>
+      // What a real `sh -c` prints for the framed read, after SshExecutor's trim().
+      command === elevateCommand(framedCatCommand("/etc/openresty/sites-enabled/a.conf"))
+        ? `<openship-file>${vhost}</openship-file>`.trim()
+        : "",
+    );
+
+    expect(await elevatedExecutor(inner).readFile("/etc/openresty/sites-enabled/a.conf")).toBe(vhost);
+  });
+
+  it("rethrows the original error when the elevated output is not framed", async () => {
+    const { inner, readFile, exec } = fakeExecutor();
+    readFile.mockRejectedValue(new Error("EACCES: permission denied"));
+    exec.mockResolvedValue("truncated");
+
+    await expect(elevatedExecutor(inner).readFile("/etc/x.conf")).rejects.toThrow(/EACCES/);
+  });
+
+  it("trusts lstat's \"no such file\" and skips the sudo probe for an absent path", async () => {
+    const { inner, exists, exec } = fakeExecutor();
+    exists.mockResolvedValue(false);
+    const lstat = vi.fn(async (_path: string) => null);
+    const el = elevatedExecutor(Object.assign(inner, { lstat }));
+
+    expect(await el.exists("/etc/openresty/sites-enabled/_oblien-challenge-x.conf")).toBe(false);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("still asks root when lstat is refused, since the path may sit behind a 0700 directory", async () => {
+    const { inner, exists, exec } = fakeExecutor();
+    exists.mockResolvedValue(false);
+    const lstat = vi.fn(async (_path: string) => {
+      throw Object.assign(new Error("Permission denied"), { code: 3 });
+    });
+    exec.mockResolvedValue("");
+    const el = elevatedExecutor(Object.assign(inner, { lstat }));
+
+    expect(await el.exists("/etc/letsencrypt/live/x/fullchain.pem")).toBe(true);
+    expect(String(exec.mock.calls[0]?.[0])).toContain("test -e");
   });
 
   it("reports a genuinely missing file with the original error, not sudo's", async () => {

@@ -1,5 +1,6 @@
-import { UI, paidLadder, type CloudPricing } from "@/lib/pricing";
+import { UI, money, paidLadder, type CloudPricing } from "@/lib/pricing";
 import { cloudPlanHref } from "@/lib/cloud-links";
+import { CLOUD_SLA } from "@/lib/cloud-service";
 
 export interface FaqItem {
   q: string;
@@ -16,8 +17,10 @@ export function faq(pricing: CloudPricing): FaqItem[] {
         ladder
           ? `Plans are ${ladder}, ${UI.billedMonthly}.`
           : "See your dashboard for current Cloud plans and availability.",
-        pricing.annual.enabled ? "Yearly billing is also available; the cards show the monthly equivalent and full yearly charge." : null,
-        "Each subscription includes one Cloud Space for your projects, with no per-seat fees. Choose a plan and deploy; Openship handles server setup.",
+        pricing.annual.enabled
+          ? "Yearly billing is also available; the cards show the monthly equivalent and full yearly charge."
+          : null,
+        "Each subscription includes one Cloud Space for your projects, with no per-seat fees. Share the included CPU, RAM and storage across your projects and builds.",
         pricing.customTiers.length > 0
           ? "Enterprise limits and pricing are agreed with sales."
           : null,
@@ -27,15 +30,29 @@ export function faq(pricing: CloudPricing): FaqItem[] {
     },
     {
       q: "What does a Cloud Space include?",
-      a: "A Cloud Space subscription covers its purchased CPU, RAM and disk for the entire paid period. Your apps and builds share those resources, with no second compute-credit allowance. Managed proxy transfer and backups are separate. Existing subscriptions keep their saved terms, shown in Billing.",
+      a: "A Cloud Space is a shared resource pool. Its subscription covers the purchased CPU, RAM and storage for the entire paid period. Your apps and builds share those resources, with no second compute-credit allowance. Managed proxy transfer and backups are separate. Existing subscriptions keep their saved terms, shown in Billing.",
+    },
+    {
+      q: "Do all Cloud plans include an uptime SLA and support?",
+      a: `Yes. Every paid Openship Cloud plan includes a ${CLOUD_SLA.monthlyUptimePercent}% monthly uptime guarantee for Openship-managed infrastructure, whether billed monthly or annually. If we miss it, you can request service credits under the Cloud SLA in our Terms of Service. Maintenance announced at least ${CLOUD_SLA.maintenanceNoticeDays} days in advance is excluded only within its announced window. Contact support by email, through the app, or from our public support page. The guarantee does not cover servers you host yourself, free trials, or preview and beta features.`,
     },
     {
       q: "How is capacity shared?",
-      a: "Your projects and builds share the Cloud Space’s CPU, RAM and disk. Container limits do not allocate another machine or disk. Your dashboard shows actual usage separately from purchased capacity; add another subscribed server when you need a separate pool.",
+      a: "Your projects and builds share the Cloud Space’s CPU, RAM and disk. Container limits do not allocate another machine or disk. Your dashboard shows actual usage separately from purchased capacity; add another Cloud Space when you need a separate resource pool.",
     },
     {
       q: "Can I change or cancel my plan?",
-      a: "Cancel renewal from Billing and keep access until the end of your paid period. Upgrades use the provider’s prorated price and apply after payment. Resource reductions and billing-mode changes start at renewal. Review the amount due, effective date and any server restarts before confirming. Retained disks can incur storage charges after coverage ends until they are deleted.",
+      a: "Cancel renewal from Billing and keep access until the end of your paid period. Upgrades use the provider’s prorated price and apply after payment. Resource reductions and billing-mode changes start at renewal. Review the amount due, effective date and any required restarts before confirming. Retained disks can incur storage charges after coverage ends until they are deleted.",
+    },
+    {
+      q: "Can I manage my own servers from Cloud?",
+      a: pricing.management
+        ? `${pricing.management.includedWithCloud ? `Paid Cloud Spaces include basic management for ${pricing.management.includedServers} of your own servers. ` : ""}Standalone management starts at ${money(pricing.management.monthlyCents)} per workspace per month for ${pricing.management.includedServers} servers. Additional servers cost ${money(pricing.management.extraServerMonthlyCents)} each per month. You provide the compute and storage.`
+        : "Choose Server management to see the current plans for managing your own infrastructure through Openship Cloud.",
+    },
+    {
+      q: "Is managed email included?",
+      a: "Cloud resource pools host your applications; they do not provision a mail server. Managed email is coming soon. Self-hosted mail is available on your own server.",
     },
     {
       q: "What happens if I cancel Manage?",

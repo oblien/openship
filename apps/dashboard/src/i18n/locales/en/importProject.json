@@ -181,6 +181,17 @@
       "show": "Show values",
       "hide": "Hide values",
       "error": "Couldn’t reveal values"
+    },
+    "textEditor": {
+      "edit": "Edit as text",
+      "title": "Edit .env",
+      "hint": "Use KEY=value entries, comments and quoted multiline values. Removing an entry removes that variable.",
+      "apply": "Apply changes",
+      "savedValues": "Saved values stay masked. Leave •••••••• unchanged to keep a value, or replace it with a new value. Managed variables must stay unchanged.",
+      "invalidRows": "Fix empty, invalid or duplicate variable names in the row editor first.",
+      "invalid": "Keep saved-value placeholders on their original keys and leave managed variables unchanged.",
+      "invalidLine": "Invalid .env syntax on line {line}. Use unique KEY=value entries and close all quotes.",
+      "stale": "Variables changed while this editor was open. Close and reopen it before applying."
     }
   },
   "composeServices": {
@@ -419,6 +430,8 @@
       "cancelled": "Cancelled",
       "failed": "Failed",
       "readyWarnings": "Ready with warnings",
+      "verifying": "Verifying",
+      "liveVerifying": "Live · Verifying",
       "ready": "Ready",
       "building": "Building"
     },

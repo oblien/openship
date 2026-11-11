@@ -14,23 +14,69 @@ import { getApiErrorMessage } from "@/lib/api/client";
 import type { BillingState } from "@/lib/api/billing";
 
 /** Billing shares the server's revision check, restart confirmation and worker. */
-export function SubscribedServerResources({ state }: { state: BillingState }) {
+export function SubscribedServerResources({
+  state,
+  embedded = false,
+  server,
+  onUpdated,
+}: {
+  state: BillingState;
+  embedded?: boolean;
+  server?: CloudWorkspaceSummary;
+  onUpdated?: () => void;
+}) {
   const serverId = state.workspace?.serverId;
-  if (!serverId || state.tier === "free" || state.status !== "active" || !state.plan?.resourceLimits) return null;
-  return <ResourceChange key={serverId} serverId={serverId} state={state} />;
+  if (
+    !serverId ||
+    state.tier === "free" ||
+    state.status !== "active" ||
+    !state.plan?.resourceLimits
+  )
+    return null;
+  return (
+    <ResourceChange
+      key={serverId}
+      serverId={serverId}
+      state={state}
+      embedded={embedded}
+      providedServer={server}
+      onUpdated={onUpdated}
+    />
+  );
 }
 
-function ResourceChange({ serverId, state }: { serverId: string; state: BillingState }) {
+function ResourceChange({
+  serverId,
+  state,
+  embedded,
+  providedServer,
+  onUpdated,
+}: {
+  serverId: string;
+  state: BillingState;
+  embedded: boolean;
+  providedServer?: CloudWorkspaceSummary;
+  onUpdated?: () => void;
+}) {
   const { t } = useI18n();
   const router = useRouter();
-  const [server, setServer] = useState<CloudWorkspaceSummary | null>(null);
+  const [server, setServer] = useState<CloudWorkspaceSummary | null>(providedServer ?? null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const actions = useManagedServerActions(serverId, updated => { setServer(updated); router.refresh(); });
+  const actions = useManagedServerActions(serverId, (updated) => {
+    setServer(updated);
+    onUpdated?.();
+    router.refresh();
+  });
   const pending = ["queued", "running"].includes(server?.operation?.status ?? "");
   const resizeFailed = server?.operation?.kind === "resize" && server.operation.status === "failed";
 
   useEffect(() => {
+    if (providedServer) setServer(providedServer);
+  }, [providedServer]);
+
+  useEffect(() => {
+    if (providedServer) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     async function refresh() {
@@ -46,41 +92,81 @@ function ResourceChange({ serverId, state }: { serverId: string; state: BillingS
       }
     }
     void refresh();
-    return () => { disposed = true; clearTimeout(timer); };
-  }, [serverId, state.subscription?.offerReference, pending, attempt]);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [serverId, state.subscription?.offerReference, pending, attempt, providedServer]);
 
   const saved = state.plan!.resourceLimits!;
   const allocated = server?.resources;
-  const changed = allocated && (
-    saved.max_total_vcpus !== allocated.cpuCores || saved.max_total_ram_mb !== allocated.memoryMb ||
-    (saved.max_total_disk_gb != null && saved.max_total_disk_gb * 1024 !== allocated.diskMb)
-  );
-  if (!error && !changed && !actions.preview && !actions.error && server?.operation?.kind !== "resize") return null;
-  if (!error && !changed && !actions.preview && !actions.error && !pending && server?.operation?.status === "succeeded") return null;
+  const changed =
+    allocated &&
+    (saved.max_total_vcpus !== allocated.cpuCores ||
+      saved.max_total_ram_mb !== allocated.memoryMb ||
+      (saved.max_total_disk_gb != null && saved.max_total_disk_gb * 1024 !== allocated.diskMb));
+  if (
+    !error &&
+    !changed &&
+    !actions.preview &&
+    !actions.error &&
+    server?.operation?.kind !== "resize"
+  )
+    return null;
+  if (
+    !error &&
+    !changed &&
+    !actions.preview &&
+    !actions.error &&
+    !pending &&
+    server?.operation?.status === "succeeded"
+  )
+    return null;
 
   return (
     <section className="space-y-4 rounded-2xl bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-medium">{t.billing.custom.resizeTitle}</h2>
-        <Button asChild variant="ghost" size="sm"><Link href={cloudSpaceHref(serverId)}>{t.billing.custom.openServer}</Link></Button>
+        {!embedded && (
+          <Button asChild variant="ghost" size="sm">
+            <Link href={cloudSpaceHref(serverId)}>{t.billing.custom.openServer}</Link>
+          </Button>
+        )}
       </div>
       {error ? (
         <div role="alert" className="space-y-3 text-sm text-danger">
           <p>{error}</p>
-          <Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>{t.billing.plansRoute.tryAgain}</Button>
+          <Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+            {t.billing.plansRoute.tryAgain}
+          </Button>
         </div>
       ) : (
         <>
           <p role={pending ? "status" : undefined} className="text-sm text-muted-foreground">
             {pending ? t.billing.custom.applying : t.billing.custom.resizeDescription}
           </p>
-          {resizeFailed && server.operation!.error && <p role="alert" className="text-sm text-danger">{server.operation!.error}</p>}
+          {resizeFailed && server.operation!.error && (
+            <p role="alert" className="text-sm text-danger">
+              {server.operation!.error}
+            </p>
+          )}
           {!actions.preview && (
-            <Button variant="secondary" disabled={actions.busy || pending} onClick={() => void (resizeFailed ? actions.retry() : actions.previewResize())}>
+            <Button
+              variant="secondary"
+              disabled={actions.busy || pending}
+              onClick={() => void (resizeFailed ? actions.retry() : actions.previewResize())}
+            >
               {resizeFailed ? t.billing.plansRoute.tryAgain : t.billing.custom.reviewResize}
             </Button>
           )}
-          {server && <ManagedServerActionFeedback server={server} actions={actions} deleting={false} onCancelDelete={() => {}} />}
+          {server && (
+            <ManagedServerActionFeedback
+              server={server}
+              actions={actions}
+              deleting={false}
+              onCancelDelete={() => {}}
+            />
+          )}
         </>
       )}
     </section>

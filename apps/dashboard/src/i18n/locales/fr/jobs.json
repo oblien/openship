@@ -94,9 +94,8 @@
     "command": "Commande",
     "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
     "commandHint": "S'exécute sur chaque serveur sélectionné. Utilisez docker run --rm pour une tâche en conteneur.",
-    "cloudServersHint": "Utilisez un serveur existant ou ajoutez un serveur dédié avec son propre abonnement.",
-    "cloudUsageHint": "Les tâches partagent la capacité et le quota d'utilisation du serveur sélectionné. Son abonnement doit être actif.",
-    "addDedicatedServer": "Ajouter un serveur dédié",
+    "cloudServersHint": "Choisissez un serveur Cloud ou un serveur connecté via Manage.",
+    "cloudUsageHint": "Les tâches Cloud utilisent le forfait et le quota du serveur. Les tâches SSH nécessitent un accès Manage actif.",
     "scheduleType": "Quand exécuter",
     "scheduleTypes": {
       "recurring": "Selon une planification",
@@ -186,7 +185,7 @@
     "close": "Fermer",
     "exit": "Code de sortie {code}"
   },
-  "cloudSubtitle": "Commandes planifiées et à la demande sur vos serveurs gérés.",
+  "cloudSubtitle": "Commandes planifiées et à la demande sur vos serveurs Cloud et connectés.",
   "systemJobLabels": {
     "github:deployment-checks": "Vérifications de déploiement GitHub",
     "cloud:workspace-recovery": "Opérations d'espace de travail Cloud",

@@ -6,6 +6,7 @@ import { NginxProvider } from "../infra/nginx";
 import { OPENRESTY_DEFAULT_PATHS } from "../infra/openresty-lua";
 import { rootChecked } from "./privilege";
 import { loopbackPortInventoryFor } from "./proxy/api";
+import { framedCatCommand } from "./exact-file-read";
 
 /**
  * Fake daemon: records the options handed to `exec.start` and replays a
@@ -80,13 +81,18 @@ describe("DockerEdgeExecutor — exec transport", () => {
  * per-command exit code), so the container-mode file ops can be pinned to the
  * exact shell they emit.
  */
-function recordingDocker(exitFor: (cmd: string) => number = () => 0) {
+function recordingDocker(
+  exitFor: (cmd: string) => number = () => 0,
+  stdoutFor: (cmd: string) => string = () => "",
+) {
   const commands: string[] = [];
+  let lastCmd = "";
   const docker = {
     getContainer: () => ({
       exec: async (o: { Cmd: string[] }) => {
         const cmd = o.Cmd[2] ?? "";
         commands.push(cmd);
+        lastCmd = cmd;
         const stream = new PassThrough();
         return {
           start: async () => {
@@ -98,7 +104,9 @@ function recordingDocker(exitFor: (cmd: string) => number = () => 0) {
       },
     }),
     modem: {
-      demuxStream: (s: PassThrough) => {
+      demuxStream: (s: PassThrough, out: PassThrough) => {
+        const stdout = stdoutFor(lastCmd);
+        if (stdout) out.write(stdout);
         s.resume();
       },
     },
@@ -169,17 +177,22 @@ describe("DockerEdgeExecutor — container file mode", () => {
   });
 
   it("reads, mkdirs and removes through the daemon", async () => {
-    const { docker, commands } = recordingDocker();
+    const conf = "\nhttp {\n}\n";
+    const { docker, commands } = recordingDocker(
+      () => 0,
+      (cmd) => (cmd === framedCatCommand("/etc/openresty/nginx.conf") ? `<openship-file>${conf}</openship-file>` : ""),
+    );
     const ex = new DockerEdgeExecutor({
       containerName: "openship-edge",
       docker,
       fileMode: "container",
     });
-    await ex.readFile("/etc/openresty/nginx.conf");
+    // Byte-exact: exec trims its output, which must not reach the file content.
+    expect(await ex.readFile("/etc/openresty/nginx.conf")).toBe(conf);
     await ex.mkdir("/var/www/acme");
     await ex.rm("/etc/openresty/sites-enabled/old.conf");
     expect(commands).toEqual([
-      "cat '/etc/openresty/nginx.conf'",
+      framedCatCommand("/etc/openresty/nginx.conf"),
       "mkdir -p '/var/www/acme'",
       "rm -rf '/etc/openresty/sites-enabled/old.conf'",
     ]);
@@ -435,5 +448,37 @@ describe("socket edge port inventory", () => {
     await expect(inventory(config, 1).reader.listLoopbackUpstreamPortsStrict()).rejects.toThrow(
       "edge config unreadable",
     );
+  });
+});
+
+describe("DockerEdgeExecutor.lstat", () => {
+  it("reports type and mode through the mount in mounted mode", async () => {
+    const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "openship-edge-lstat-"));
+    try {
+      await writeFile(join(dir, "a.conf"), "x", { mode: 0o600 });
+      const { docker } = recordingDocker();
+      const ex = new DockerEdgeExecutor({
+        containerName: "openship-edge",
+        docker,
+        fileMode: "mounted",
+      });
+      expect(await ex.lstat!(join(dir, "a.conf"))).toEqual({ kind: "file", mode: 0o600 });
+      expect(await ex.lstat!(join(dir, "missing.conf"))).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not advertise file metadata in container file mode", () => {
+    const { docker } = recordingDocker();
+    const ex = new DockerEdgeExecutor({
+      containerName: "openship-edge",
+      docker,
+      fileMode: "container",
+    });
+    expect(ex.lstat).toBeUndefined();
   });
 });

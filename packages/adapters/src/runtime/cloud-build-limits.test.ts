@@ -20,6 +20,7 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
   const executor = {
     exec: vi.fn(async (command: string): Promise<string> =>
       command.includes("buildx version") ? (buildKit ? "OPENSHIP_BUILDKIT_OK\n" : "") :
+      command.includes("docker info --format '{{.ID}}'") ? "test-daemon" :
       command.startsWith("docker info --format") ? JSON.stringify({ OSType: "linux", SecurityOptions: [] }) :
       command.startsWith("docker image inspect") ? JSON.stringify([{ Config: { Labels: { "org.openship.build-metadata-policy": "1" }, Entrypoint: ["/usr/local/bin/openship-buildkitd"] } }]) :
       command.includes("df -Pk") ? "104857600 52428800\n200000 100000\n" : "",
@@ -34,6 +35,7 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
     transport: { kind: transport },
     connectionOptions: { transport, executor },
     _docker: {
+      info: vi.fn(async () => ({ ID: "test-daemon" })),
       modem: { dial: (_options: unknown, callback: (error: unknown, data: unknown) => void) => callback(null, {}) },
       listVolumes: vi.fn(async () => ({ Volumes: [] })),
       listContainers: vi.fn(async () => []),
@@ -59,6 +61,56 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
 }
 
 describe("Cloud Docker build execution limits", () => {
+  it("clears both native and protected caches on explicit trusted-host maintenance", async () => {
+    const h = fixture("ssh");
+    h.runtime.connectionOptions.nativeBuilds = true;
+    h.runtime.pruneManagedBuildState = vi.fn(async () => ({ cachesDeleted: ["private"], spaceReclaimed: 10 }));
+    h.runtime._docker.modem.dial = vi.fn((_options, callback) => callback(null, {
+      CachesDeleted: ["native"], SpaceReclaimed: 20,
+    }));
+    await expect(h.runtime.pruneBuildCache({ all: true })).resolves.toEqual({
+      cachesDeleted: ["private", "native"], spaceReclaimed: 30,
+    });
+    h.runtime._docker.modem.dial.mockClear();
+    await h.runtime.pruneBuildCache({ automaticRetention: true });
+    expect(h.runtime._docker.modem.dial).not.toHaveBeenCalled();
+  });
+  it("keeps Cloud builds protected even if a connection carries the native opt-in", async () => {
+    const h = fixture("cloud", true, { cpuCores: 0, memoryMb: 0, diskMb: 0 });
+    h.runtime.connectionOptions.nativeBuilds = true;
+    await h.run();
+    expect(h.commands()).toContain("--output type=docker");
+    expect(h.commands()).not.toContain("--builder 'default'");
+  });
+
+  it("uses the native Docker image store only for explicitly trusted uncapped SSH builds", async () => {
+    const h = fixture("ssh", true, { cpuCores: 0, memoryMb: 0, diskMb: 0 });
+    h.runtime.connectionOptions.nativeBuilds = true;
+    await h.run();
+    expect(h.commands()).toContain("docker buildx build --builder 'default'");
+    expect(h.commands()).not.toContain("--output type=docker");
+    expect(h.commands()).not.toContain("buildx create");
+    expect(h.commands()).not.toContain("buildx rm");
+  });
+
+  it("rejects a native CLI pointed at a different daemon before any build command", async () => {
+    const h = fixture("ssh", true, { cpuCores: 0, memoryMb: 0, diskMb: 0 });
+    h.runtime.connectionOptions.nativeBuilds = true;
+    h.runtime._docker.info.mockResolvedValue({ ID: "another-daemon" });
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_DAEMON_MISMATCH" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+  });
+
+  it.each([{ cpuCores: 1, memoryMb: 0, diskMb: 0 }, { cpuCores: 0, memoryMb: 512, diskMb: 0 }])(
+    "preserves explicit resource limits instead of silently using the native builder (%j)", async resources => {
+      const h = fixture("ssh", true, resources);
+      h.runtime.connectionOptions.nativeBuilds = true;
+      await h.run();
+      expect(h.commands()).toContain("--output type=docker");
+      expect(h.commands()).not.toContain("--builder 'default'");
+    },
+  );
+
   it("passes verified public OCI images to the real build command without sharing writable state", async () => {
     const h = fixture();
     Object.assign(h.runtime.connectionOptions, { softwareCacheRoot: "/srv/public-images" });

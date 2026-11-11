@@ -50,3 +50,6 @@ next-env.d.ts
 .sentryclirc
 .react-router
 .wrangler
+
+# Generated and maintained by the Inlang SDK.
+/project.inlang/.gitignore

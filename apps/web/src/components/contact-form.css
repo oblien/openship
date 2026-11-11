@@ -1,0 +1,104 @@
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.contact-form input,
+.contact-form textarea {
+  width: 100%;
+  border: 1px solid var(--th-bd-default);
+  border-radius: 10px;
+  background: var(--th-bg-card);
+  color: var(--th-text-heading);
+  font-size: 15px;
+}
+.contact-form input {
+  height: 44px;
+  padding: 0 14px;
+}
+.contact-form textarea {
+  min-height: 140px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+.contact-form input:focus-visible,
+.contact-form textarea:focus-visible {
+  outline: 2px solid var(--th-text-heading);
+  outline-offset: 2px;
+}
+.contact-form-note,
+.contact-error {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.contact-form-note {
+  color: var(--th-text-body);
+}
+.contact-error {
+  color: var(--th-clr-terra);
+}
+.contact-submit,
+.contact-again {
+  min-height: 48px;
+  padding: 12px 24px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.contact-submit {
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+}
+.contact-submit:hover {
+  background: var(--th-btn-bg-hover);
+}
+.contact-submit:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.contact-receipt {
+  padding-block: 32px;
+  text-align: center;
+  color: var(--th-text-body);
+}
+.contact-receipt-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 24px;
+  border-radius: 50%;
+  background: var(--th-clr-sea-wash);
+  color: var(--th-clr-sea);
+}
+.contact-receipt h2 {
+  color: var(--th-text-heading);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.contact-receipt p {
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.contact-receipt strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.contact-receipt a {
+  color: var(--th-text-heading);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  overflow-wrap: anywhere;
+}
+.contact-again {
+  margin-top: 24px;
+  background: var(--th-bg-subtle);
+  color: var(--th-text-heading);
+}
+.contact-again:hover {
+  background: var(--th-bg-hover);
+}

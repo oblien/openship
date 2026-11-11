@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import type { CommandExecutor, LogEntry } from "../types";
 import { resolveEnvironment } from "./environment";
 import { sq } from "./local-shell";
+import { framedCatCommand, unframeFileRead } from "./exact-file-read";
 
 // apt/dpkg non-interactive env, re-set INSIDE the sudo'd root shell. sudo
 // resets the environment and many sudoers configs reject -E / --preserve-env,
@@ -72,7 +73,8 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
       return await inner.readFile(path);
     } catch (err) {
       try {
-        return await inner.exec(elevateCommand(`cat ${sq(path)}`));
+        // Framed: `exec` trims its output, and a file read must come back byte-exact.
+        return unframeFileRead(await inner.exec(elevateCommand(framedCatCommand(path))), path);
       } catch (diagnosticFailure) {
         observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor");
         throw err;
@@ -82,6 +84,13 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
 
   const existsElevated = async (path: string): Promise<boolean> => {
     if (await inner.exists(path).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return false; })) return true;
+    // `exists` folds "no such file" and "permission denied" into one false, so a miss
+    // used to cost a `sudo test` even for a path that is simply not there. lstat keeps
+    // them apart: a path behind a directory this login cannot search reports a
+    // refusal, which still falls through to root's answer below.
+    if (inner.lstat && (await inner.lstat(path).then((stat) => stat === null, (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/system/elevated-executor"); return false; }))) {
+      return false;
+    }
     // `test -e` answers absence with exit 1, which `exec` surfaces as a throw — so a
     // false here means "root can't see it either", not "the probe broke".
     return await inner

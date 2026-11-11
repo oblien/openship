@@ -1,10 +1,9 @@
 {
-  "cloudSubtitle": "Geplante und manuell gestartete Befehle auf deinen verwalteten Servern.",
+  "cloudSubtitle": "Geplante und manuell gestartete Befehle auf deinen Cloud- und verbundenen Servern.",
   "create": {
     "commandHint": "Wird auf jedem ausgewählten Server ausgeführt. Verwende docker run --rm für eine Aufgabe in einem Container.",
-    "cloudServersHint": "Nutze einen vorhandenen Server oder füge einen dedizierten Server mit eigenem Abonnement hinzu.",
-    "cloudUsageHint": "Jobs teilen sich die Kapazität und das Nutzungskontingent des ausgewählten Servers. Zur Ausführung muss sein Tarif aktiv sein.",
-    "addDedicatedServer": "Dedizierten Server hinzufügen",
+    "cloudServersHint": "Wähle einen Cloud-Server oder einen über Manage verbundenen Server.",
+    "cloudUsageHint": "Cloud-Jobs nutzen den Tarif und das Kontingent des Servers. SSH-Jobs benötigen aktiven Manage-Zugriff.",
     "title": "Neuer Job",
     "name": "Name",
     "namePlaceholder": "Nächtliches DB-Vakuum",

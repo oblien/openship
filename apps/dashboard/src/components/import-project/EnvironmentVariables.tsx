@@ -10,7 +10,8 @@ import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
-import type { EnvironmentVariable } from "./types";
+import type { EnvironmentVariableRow } from "./types";
+import { EnvironmentTextEditor } from "./EnvironmentTextEditor";
 import { useDemoMode } from "@/lib/demo-mode";
 import { parseDotenv, serializeDotenv } from "@/lib/dotenv";
 import { isEnvironmentValueMissing, type EnvironmentVariableMeta } from "./environment-resolution";
@@ -20,13 +21,7 @@ import { isEnvironmentValueMissing, type EnvironmentVariableMeta } from "./envir
 // a save round-trips it and the backend restores the stored secret; "show
 // values" reveals real values into a display-only overlay; editing a revealed
 // row replaces the sentinel with the typed value.
-export type EnvironmentVariableRow = EnvironmentVariable & {
-  sourceId?: string;
-  originLabel?: string;
-  keyReadOnly?: boolean;
-  removalDisabled?: boolean;
-  removalLabel?: string;
-};
+export type { EnvironmentVariableRow } from "./types";
 
 interface EnvironmentVariablesPropsOptional {
   mode?: "deploy" | "settings";
@@ -123,10 +118,17 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
       ? onEnvVarsChange
       : (newVars: EnvironmentVariableRow[]) => deployment?.updateConfig({ envVars: newVars });
 
-  const addEnvVar = useCallback(() => {
+  const addEnvVar = useCallback((atTop = false) => {
     // Default visible so you can see what you type; the eye toggles to hide.
-    const newEnvVars = [...currentEnvVars, { key: "", value: "", visible: true }];
+    const row = { key: "", value: "", visible: true };
+    const newEnvVars = atTop ? [row, ...currentEnvVars] : [...currentEnvVars, row];
     updateEnvVars(newEnvVars);
+    setExpanded(true);
+    if (atTop) {
+      requestAnimationFrame(() => {
+        pasteZoneRef.current?.querySelector<HTMLInputElement>('[data-env-index="0"] input')?.focus();
+      });
+    }
     // Auto-enable editing mode when adding in settings mode
     if (mode === "settings") {
       setIsEditingMode(true);
@@ -762,6 +764,30 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             </div>
           )}
           <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
+            {isEditingMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => addEnvVar(true)}
+                  disabled={isSaving}
+                  className={actionBtn}
+                >
+                  <UiIcon name="plus" className="size-3.5" />
+                  {ev.addVariable}
+                </button>
+                <EnvironmentTextEditor
+                  rows={currentEnvVars}
+                  onChange={(rows) => {
+                    updateEnvVars(rows);
+                    maybeAutoApplyDetectedPort(rows);
+                    setIsEditingMode(true);
+                    setExpanded(true);
+                  }}
+                  disabled={isSaving}
+                  className={actionBtn}
+                />
+              </>
+            )}
             {mode === "settings" && !isEditingMode && (
               <>
                 {/* Paste / Upload always available — clicking either
@@ -1037,7 +1063,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
               {isEditingMode && (
                 <button
                   type="button"
-                  onClick={addEnvVar}
+                  onClick={() => addEnvVar()}
                   className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   <UiIcon name="plus" className="size-3.5" />
@@ -1051,7 +1077,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={addEnvVar}
+                onClick={() => addEnvVar()}
                 className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
               >
                 <UiIcon name="plus" className="size-3.5" />
